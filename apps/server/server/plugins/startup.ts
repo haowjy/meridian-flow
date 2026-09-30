@@ -33,7 +33,8 @@ export default async function startupPlugin() {
   }
 
   yjsGateway = getYjsGateway(await getApp());
-  // Recovery stops before the document gateway it can use is drained.
+  // Shutdown callbacks start together so document persistence gets the full
+  // process deadline even when runtime settlement is slow.
   registerProcessShutdownCallback(async () => {
     await yjsGateway?.drain();
   });

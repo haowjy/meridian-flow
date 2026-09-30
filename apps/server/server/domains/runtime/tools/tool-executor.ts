@@ -74,6 +74,11 @@ export type ToolExecutorWithBatch = ToolExecutor & {
   executeTools(calls: ToolCallInput[], ctx: ToolExecutionContext): Promise<ToolExecutionResult[]>;
 };
 
+/** Adapt a domain refusal to the handler error envelope without losing its code. */
+export function toolFailureResult(result: { ok: false; error: MeridianError }) {
+  return { isError: true, output: meridianErrorToJson(result.error) };
+}
+
 /**
  * Constructs the default MeridianError result for a tool call that failed.
  */

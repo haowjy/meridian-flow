@@ -2,6 +2,7 @@
  * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
  *
  * Typed wrappers for list/create thread, append user message, cancel turn,
+ * queue or withdraw writer controls, retry a handoff brief or a failed reply,
  * delete thread, and fetch/deserialize a thread snapshot. Owns the thread
  * network surface the chat flow and snapshot sync build on.
  */
@@ -11,6 +12,11 @@ import {
   apiAvailableSkillsPath,
   apiThreadAdmissionPath,
   apiThreadCancelPath,
+  apiThreadControlsPath,
+  apiThreadControlWithdrawPath,
+  apiThreadForkPath,
+  apiThreadHandoffBriefPath,
+  apiThreadHandoffPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
@@ -18,26 +24,40 @@ import {
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
   apiThreadTitlePath,
+  apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
+  apiThreadTurnRetryPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   type CreateThreadRequest,
+  type ForkThreadRequest,
+  type HandoffBriefRetryRequest,
+  type HandoffThreadRequest,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   type ModelRequestDebugListResponse,
   type RenameThreadRequest,
   type RenameThreadResponse,
+  type ReplyRetryRequest,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
   type ThreadAvailableSkillsResponse,
   type ThreadRecentDocumentItem,
   type ThreadSnapshotResponse,
+  type TranscriptPagePathOptions,
+  type TranscriptPageResponse,
+  type Turn,
   type TurnContextPreview,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
+import type {
+  EnqueueThreadControlRequest,
+  EnqueueThreadControlResponse,
+  WithdrawThreadControlResponse,
+} from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
 import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
@@ -77,6 +97,49 @@ export async function listThreads(init?: {
 
 export function createThread({ data }: { data: CreateThreadInput }): Promise<Thread> {
   return postJson(API_THREADS_PATH, data) as unknown as Promise<Thread>;
+}
+
+/** Create-or-get a fork under the client-minted `request.id`; a retry lands on the same thread. */
+export function forkThread(sourceThreadId: string, request: ForkThreadRequest): Promise<Thread> {
+  return postJson(apiThreadForkPath(sourceThreadId), request) as unknown as Promise<Thread>;
+}
+
+/** Create-or-get a handoff under the client-minted `request.id`; its brief runs in the background. */
+export function handoffThread(
+  sourceThreadId: string,
+  request: HandoffThreadRequest,
+): Promise<Thread> {
+  return postJson(apiThreadHandoffPath(sourceThreadId), request) as unknown as Promise<Thread>;
+}
+
+/**
+ * Write a new brief for a handoff destination whose latest one ended without
+ * one. `request.id` is the new seed's client-minted id: a repeat returns the
+ * same seed (201 new, 200 existing). 409 while anything holds the destination.
+ */
+export function retryHandoffBrief(
+  threadId: string,
+  request: HandoffBriefRetryRequest,
+): Promise<Turn> {
+  return postJson(apiThreadHandoffBriefPath(threadId), request);
+}
+
+/** Retry a latest failed reply: the server answers the same messages under `request.id`. */
+export function retryReply(
+  threadId: string,
+  failedTurnId: string,
+  request: ReplyRetryRequest,
+): Promise<Turn> {
+  return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
+}
+
+/** One page of a thread's effective or inherited transcript. */
+export function readThreadTranscript(
+  threadId: string,
+  options: TranscriptPagePathOptions,
+  signal?: AbortSignal,
+): Promise<TranscriptPageResponse> {
+  return getJson(apiThreadTranscriptPath(threadId, options), { signal });
 }
 
 export function appendUserMessage({
@@ -119,6 +182,25 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
   return postJson(apiThreadCancelPath(data.threadId, data.turnId), {
     reason: data.reason,
   });
+}
+
+/**
+ * Queue a writer control. The id is client-minted, so a retry with the same id
+ * is a no-op on the server (201 new, 200 existing).
+ */
+export function enqueueThreadControl(
+  threadId: string,
+  request: EnqueueThreadControlRequest,
+): Promise<EnqueueThreadControlResponse> {
+  return postJson(apiThreadControlsPath(threadId), request);
+}
+
+/** Withdraw a queued control; one that already started answers `already_started`. */
+export function withdrawThreadControl(
+  threadId: string,
+  controlId: string,
+): Promise<WithdrawThreadControlResponse> {
+  return postJson(apiThreadControlWithdrawPath(threadId, controlId), {});
 }
 
 export function deleteThread({ data }: { data: { threadId: string } }): Promise<void> {

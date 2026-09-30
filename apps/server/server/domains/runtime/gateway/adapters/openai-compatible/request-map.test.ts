@@ -13,6 +13,22 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
     expect(params).not.toHaveProperty("cache_control");
   });
 
+  it("uses the registered descriptor TTL for explicit cache marks", () => {
+    const params = toOpenAIChatCompletionParams(
+      {
+        messages: [
+          {
+            role: "system",
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+          },
+        ],
+      },
+      "anthropic/claude-sonnet-4",
+      5 * 60 * 1_000,
+    );
+    expect(params).toMatchObject({ cache_control: { type: "ephemeral", ttl: "5m" } });
+  });
+
   it("emits an explicit OpenRouter-style cache_control on the marked system part, plus a top-level automatic mark", () => {
     const params = toOpenAIChatCompletionParams(
       {
@@ -31,6 +47,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
         ],
       },
       "anthropic/claude-sonnet-4",
+      60 * 60 * 1_000,
     );
     expect(params.messages[0]).toEqual({
       role: "system",
@@ -73,6 +90,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
         ],
       },
       "anthropic/claude-sonnet-4",
+      60 * 60 * 1_000,
     );
     expect(params.messages[1]).toEqual({
       role: "tool",

@@ -17,7 +17,6 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -27,31 +26,60 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
+import {
+  announce,
+  announceError,
+  useIsThreadPendingCreation,
+  useThreadActions,
+  useThreadStore,
+} from "@/client/stores";
 import {
   Composer,
+  type ComposerChatCommand,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { useAccountId } from "@/features/project/context/account-feature-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { answeredControlIds } from "./compaction/compaction-model";
+import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
+import { useThreadControls } from "./compaction/useThreadControls";
+import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import {
+  canDeriveFrom,
+  type TurnDerivation,
+  TurnDerivationProvider,
+} from "./derivation/DeriveTurnActions";
+import {
+  type DerivationDeps,
+  startDerivation,
+  useDerivationStatus,
+  whenDerived,
+} from "./derivation/derive-conversation";
+import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
+import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
+import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
+import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
-import { activeDescendants } from "./thread-activity";
+import { activeChildren } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
 import {
   type FailedChatSubmission,
@@ -63,6 +91,7 @@ import {
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
+import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
@@ -112,17 +141,58 @@ export function ChatView({
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
-  const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
   const accountId = useAccountId();
-  const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const accountSignal = useAccountEpochSignal();
+  const openThread = useOpenChatThread();
+  const pendingCreation = useIsThreadPendingCreation(threadId);
+  const derivation = useDerivationStatus(threadId);
+  const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
+  const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const brief = useHandoffBrief({ threadId, storedTurns });
+  const replyRetry = useReplyRetry({ threadId, storedTurns });
+  // A handoff's brief is on its way the moment the writer lands; until the
+  // server's seed arrives the card stands in for it (it has nothing to stop
+  // yet). A Retry's new card, or a failed reply's new reply, stands after the
+  // turn it followed until the server has it.
+  const intent = derivation?.intent;
+  const { localSeeds } = brief;
+  const { standIns: replyStandIns } = replyRetry;
+  const turns = useMemo(() => {
+    const opening =
+      intent?.kind === "handoff" &&
+      derivation?.state !== "failed" &&
+      !storedTurns.some(isHandoffSeed)
+        ? [
+            optimisticHandoffSeed({
+              threadId,
+              sourceThreadId: intent.sourceThreadId,
+              sourceTitle: intent.sourceTitle,
+              cutoffTurnId: intent.originTurnId,
+              createdAt: intent.createdAt,
+            }),
+          ]
+        : [];
+    const placed = placeStandIns(storedTurns, [...localSeeds, ...replyStandIns]);
+    return opening.length ? [...opening, ...placed] : placed;
+  }, [derivation?.state, intent, localSeeds, replyStandIns, storedTurns, threadId]);
+  // Live announcements follow the server's replies: a Retry's stand-in speaks
+  // for itself, and a lost one is not a failed run.
   const latestAssistantTurn =
-    [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
+    [...turns]
+      .reverse()
+      .find((turn) => turn.role === "assistant" && replyRetry.requestOf(turn.id) === null) ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
+  // Only what the server has can be stopped: a stand-in brief is not a run yet.
+  const { canStop: canStopSeed } = brief;
+  const run = useMemo(
+    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
+    [canStopSeed, turns],
+  );
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -134,18 +204,110 @@ export function ChatView({
   const availableSkills = useThreadAvailableSkills(threadId);
   const activity = useThreadActivity({
     threadId,
-    rootThreadId: activeThread?.rootThreadId ?? threadId,
     seed: snapshotLiveState,
   });
-  const runningSubagents = activeDescendants(activity.activity);
+  const runningSubagents = activeChildren(activity.activity);
   const runningBackgroundSubagents = runningSubagents.filter(
-    (node) => node.parentThreadId === threadId && node.deliveryMode === "background_notification",
+    (node) => node.deliveryMode === "background_notification",
   );
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
   const queuedWriterTurnIds = useMemo(
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
   );
+  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const controls = useThreadControls({
+    threadId,
+    pending: pendingInbox,
+    answeredControlIds: answeredControls,
+  });
+  useControlTurnAnnouncements(turns);
+  // The snapshot revalidates as a compaction reserves and settles, so its live
+  // state is fresher here than the subscription seed.
+  const liveStatus = snapshotLiveState?.status ?? activity.status;
+  const { enqueue: enqueueControl } = controls;
+  // `/compact` is always the command. A chat with nothing to summarize yet is
+  // refused by the server, and that refusal shows on the command's own row.
+  const chatCommands = useMemo<readonly ComposerChatCommand[]>(
+    () => [
+      {
+        slug: "compact",
+        name: t`Compact conversation`,
+        description: t`Summarize earlier messages so the model has room to keep going`,
+        run: (instructions) => {
+          requestTailFollow();
+          enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });
+        },
+      },
+    ],
+    [enqueueControl],
+  );
+
+  // Only a primary the server already has can be forked or handed off; a
+  // subagent's view offers neither (the server refuses both there).
+  const canDerive = canDeriveFrom({
+    kind: activeThread?.kind ?? null,
+    pendingCreation,
+    canOpen: openThread !== null,
+  });
+  const inheritedView = inherited.view;
+  const turnDerivation = useMemo<TurnDerivation | null>(() => {
+    if (!canDerive || !activeThread || !openThread) return null;
+    const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+    const base = {
+      projectId,
+      sourceThreadId: threadId,
+      sourceTitle: activeThread.title,
+      workId: activeWork?.id ?? activeThread.workId,
+    };
+    return {
+      projectId,
+      sourceAgent: {
+        name: activeThread.agentName,
+        definitionRevisionId: activeThread.agentDefinitionRevisionId,
+      },
+      fork: (originTurnId) => {
+        startDerivation(
+          {
+            ...base,
+            kind: "fork",
+            originTurnId,
+            agent: null,
+            agentName: activeThread.agentName,
+          },
+          {
+            ...deps,
+            source: activeThread,
+            inherited: optimisticForkPrefix({
+              source: activeThread,
+              sourceInherited: inheritedView,
+              localTurns: storedTurns,
+              cutoffTurnId: originTurnId,
+            }),
+            open: openThread,
+          },
+        );
+      },
+      handoff: (originTurnId, agent) => {
+        startDerivation(
+          { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
+          { ...deps, source: activeThread, inherited: null, open: openThread },
+        );
+      },
+    };
+  }, [
+    accountId,
+    accountSignal,
+    actions,
+    activeThread,
+    activeWork?.id,
+    canDerive,
+    inheritedView,
+    openThread,
+    projectId,
+    storedTurns,
+    threadId,
+  ]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -203,6 +365,17 @@ export function ChatView({
     // while the server still holds the lease must reuse it, not append a second
     // pending copy. Cleared below on acknowledgement or proved rejection.
     rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
+    // A fork or handoff opened before the server had it: the message is shown
+    // now and sent once the thread exists. If creation failed, the message
+    // fails with it and keeps Retry.
+    if (!(await whenDerived(threadId))) {
+      submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    }
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
@@ -226,14 +399,6 @@ export function ChatView({
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       };
-    } finally {
-      // The PRIOR assistant turn may have errored and the projector clears it
-      // off `status:error` when the next user turn arrives — a side-effect with
-      // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn. Ambiguous transport failures
-      // retain the row until a later acknowledgement or reload can reconcile;
-      // a proved rejection keeps the failed row for edit/retry recovery.
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
 
@@ -285,6 +450,13 @@ export function ChatView({
   );
 
   function handleStop() {
+    // A compaction or brief has no reply stream for the run controller to
+    // stop: cancel its turn, as the divider's and the card's own Stop do.
+    if (run?.kind === "placeholder") {
+      if (run.turn.role === "compaction") controls.stop(run.turn.id);
+      else brief.stop(run.turn.id);
+      return;
+    }
     controller.cancel(threadId);
   }
 
@@ -377,9 +549,10 @@ export function ChatView({
               }}
               ref={composerRef}
               variant="pinned"
-              streaming={isStreaming}
+              running={run !== null}
               referenceCatalog={referenceCatalog}
               availableSkills={availableSkills.skills}
+              commands={chatCommands}
               uploadPort={uploadIntakePort}
               uploadScope={
                 activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
@@ -402,27 +575,35 @@ export function ChatView({
           </div>
         }
       >
-        <SubagentDisclosureProvider>
-          <SubagentActivityProvider nodes={activity.activity.descendants} turns={turns}>
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              <RunningSubagentsStrip threadId={threadId} />
-              <TurnList
-                threadId={threadId}
-                turns={turns}
-                awaitingSubagents={runningBackgroundSubagents.length > 0}
-                historySettled={historySettled}
-                tailFollowRevision={tailFollowRevision}
-                ariaLabel={t`Chat`}
-                onRespondToInterrupt={handleRespondToInterrupt}
-                failedSendRetry={failedSendRetry}
-                changeTrails={changeTrails.byId}
-                submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-                queuedWriterTurnIds={queuedWriterTurnIds}
-                threadUsage={snapshotThreadUsage}
-              />
-            </div>
-          </SubagentActivityProvider>
-        </SubagentDisclosureProvider>
+        <TurnDerivationProvider value={turnDerivation}>
+          <SubagentDisclosureProvider>
+            <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <RunningSubagentsStrip threadId={threadId} />
+                <TurnList
+                  threadId={threadId}
+                  turns={turns}
+                  awaitingSubagents={runningBackgroundSubagents.length > 0}
+                  historySettled={historySettled}
+                  tailFollowRevision={tailFollowRevision}
+                  ariaLabel={t`Chat`}
+                  onRespondToInterrupt={handleRespondToInterrupt}
+                  failedSendRetry={failedSendRetry}
+                  changeTrails={changeTrails.byId}
+                  submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                  queuedWriterTurnIds={queuedWriterTurnIds}
+                  controls={controls}
+                  brief={brief}
+                  replyRetry={replyRetry}
+                  busy={liveStatus.kind === "awake" || run !== null}
+                  inherited={inheritedView}
+                  onRetryInherited={inherited.failed ? inherited.retry : null}
+                  threadUsage={snapshotThreadUsage}
+                />
+              </div>
+            </SubagentActivityProvider>
+          </SubagentDisclosureProvider>
+        </TurnDerivationProvider>
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
   );

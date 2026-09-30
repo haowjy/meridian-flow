@@ -19,6 +19,14 @@ export type MeridianError = {
   details?: JsonValue;
 };
 
+export const meridianErrorSchema: z.ZodType<MeridianError> = z.object({
+  code: z.string().min(1),
+  message: z.string(),
+  retryable: z.boolean(),
+  source: z.enum(["gateway", "tool", "child-agent", "system"]),
+  details: z.json().optional(),
+});
+
 export const artifactRefSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("image"),

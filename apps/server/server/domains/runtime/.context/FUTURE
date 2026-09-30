@@ -1,3 +1,5 @@
+# FUTURE: nice-to-have follow-ups (runtime)
+
 - Measure the auto-spend from a background report waking the parent: the report
   auto-starts a parent turn with no writer action (design open q2). No
   budget/billing numeric assertion records what bounds that turn; measure
@@ -13,3 +15,15 @@
 - Debug packaged add should resolve launch-agents by coordinate, not scan every system package (`apps/server/server/domains/packages/domain/account-skill-install.ts`).
 - Share fuzzy filter / group-heading chrome between composer `/` and manuscript slash (`apps/app/src/components/app/composer/command/`, `apps/app/src/core/editor/extensions/slash/`).
 - OpenAI-compatible and OpenRouter usage mapping reads `prompt_tokens_details.cached_tokens` but no cache-write counter, so Anthropic-via-OpenRouter cache writes don't appear as `cacheWriteTokens` (they still count as misses in `inputTokens`, so hit rate is right; write-premium cost visibility isn't). Map OpenRouter's cache-write field in `gateway/adapters/openai-compatible/stream-collect.ts` when cost-by-cache-layer matters.
+
+- `summary/transcript.ts`: consider extracting the document body for the short
+  read excerpt, while preserving result status and its re-readable URI. The
+  current 1,200-character rendered-result prefix is correct but spends some of
+  its excerpt budget on the agent-edit envelope (p8916, non-blocking).
+
+- `loop/run-session.ts` / `adapters/drizzle-run-claim.ts`: distinguish intentional
+  terminal-transaction lease release from lease loss in the heartbeat. `renew`
+  currently returns the same false for both. A durable row read cannot identify
+  who deleted it; any owner-local release signal must become visible only after
+  commit (and handle a renewal racing commit). Avoid a second lifecycle tracker
+  solely to suppress this harmless log until the claim port gains that signal.

@@ -1,0 +1,30 @@
+/**
+ * Writer copy for a queued `/compact`.
+ *
+ * The queued row and the polite announcer that speaks its change read the
+ * same string, so what a writer hears matches what they see. The row's place
+ * in the queue says when it runs; the copy does not promise a moment.
+ */
+import { t } from "@lingui/core/macro";
+import type { QueuedControlStatus } from "./thread-controls";
+
+/** What the queued row says in each status. */
+export function controlStatusCopy(status: QueuedControlStatus): string {
+  switch (status) {
+    case "queued":
+    case "withdraw_failed":
+      return t`Compaction queued`;
+    case "failed":
+      return t`Couldn't queue the compaction.`;
+  }
+}
+
+/** What the announcer says when Withdraw came after the compaction began. */
+export function controlAlreadyStartedCopy(): string {
+  return t`This compaction already started.`;
+}
+
+/** What the announcer says as a withdrawn row disappears. */
+export function controlWithdrawnCopy(): string {
+  return t`Compaction withdrawn`;
+}

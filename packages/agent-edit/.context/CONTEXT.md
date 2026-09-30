@@ -20,3 +20,10 @@ Read the page that owns the seam you are changing:
 
 Deferred work remains in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 alternatives live in [ALTERNATIVES.md](ALTERNATIVES.md).
+
+## Host revision identity
+
+The optional synchronous `documentRevision(doc)` host port identifies the exact
+runtime read or authority apply. Its result stays on host outcomes and response
+receipts, not `AgentEditResultV1`. A host without revision identity, or recovery
+without proof of the original apply state, returns null.

@@ -18,24 +18,27 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
-import { createInMemoryRepositories } from "../../threads/index.js";
+import { compactionTurnMetadata, createInMemoryRepositories } from "../../threads/index.js";
 import type { Gateway, GenerateRequest, Message, ModelInfo } from "../gateway/index.js";
 import { createToolRegistry } from "../tools/index.js";
 import { formatInvokedSkills } from "./activated-skills.js";
+import { createLocalTurn } from "./local-turn.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
 
 const MODEL_ID = "fixture-model";
 
-/** Declares "caching" so `assembleNextTurnContext` applies Anthropic cache marks. */
+/** Declares explicit caching so `assembleNextTurnContext` applies cache marks. */
 function cachingGateway(): Pick<Gateway, "getDefaultModel" | "listModels"> {
   const model: ModelInfo = {
     id: MODEL_ID,
     provider: "test",
+    tokenizer: "o200k",
     displayName: "Fixture",
     contextWindow: 100_000,
     maxOutputTokens: 4_096,
-    capabilities: new Set(["caching"]),
+    promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+    capabilities: new Set(),
   };
   return {
     getDefaultModel: () => MODEL_ID,
@@ -61,17 +64,19 @@ function noWorkContext(projectId: string): WorkContextReader {
   };
 }
 
-function userTurn(id: string, text: string): { turn: Turn; block: Block } {
+function userTurn(id: string, text: string, position = 1): { turn: Turn; block: Block } {
   return {
     turn: {
       id,
       threadId: "",
+      position,
       prevTurnId: null,
       parentTurnId: null,
       role: "user",
       origin: "writer",
       writeMode: null,
       status: "complete",
+      promptBakeId: null,
       finishReason: null,
       inputTokens: 0,
       outputTokens: 0,
@@ -98,24 +103,27 @@ function userTurn(id: string, text: string): { turn: Turn; block: Block } {
   };
 }
 
-function systemNoticeTurn(id: string, text: string): { turn: Turn; block: Block } {
-  const built = userTurn(id, text);
+function systemNoticeTurn(id: string, text: string, position = 1): { turn: Turn; block: Block } {
+  const built = userTurn(id, text, position);
   return { turn: { ...built.turn, role: "system", origin: "system" }, block: built.block };
 }
 
 function assistantToolExchangeTurn(
   id: string,
   toolCallId: string,
+  position = 2,
 ): { turn: Turn; blocks: Block[] } {
   const turn: Turn = {
     id,
     threadId: "",
+    position,
     prevTurnId: null,
     parentTurnId: null,
     role: "assistant",
     origin: "assistant",
     writeMode: null,
     status: "complete",
+    promptBakeId: null,
     finishReason: "tool_use",
     inputTokens: 0,
     outputTokens: 0,
@@ -189,6 +197,7 @@ describe("prefix stability across a growing thread", () => {
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
     const thread0 = await repos.threads.create({
+      id: "00000000-0000-4000-8000-000000000040",
       userId: "user-1",
       projectId: project.id,
       title: "Prefix stability",
@@ -226,7 +235,8 @@ describe("prefix stability across a growing thread", () => {
         gateway,
         baseTools: liveBaseTools,
         persistBake: true,
-        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        promptBakes: repos.promptBakes,
+        bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
         workContext,
       });
     }
@@ -236,13 +246,13 @@ describe("prefix stability across a growing thread", () => {
     const r0 = await assemble([t1.turn], [t1.block]);
 
     // 1. Steer: an adopted message folds into the same pending trailing message.
-    const steer = userTurn("turn-2", "Also keep the pacing tight.");
+    const steer = userTurn("turn-2", "Also keep the pacing tight.", 3);
     const r1 = await assemble([t1.turn, steer.turn], [t1.block, steer.block]);
     assertIsStableExtension(r0.generateRequest, r1.generateRequest);
     expect(r1.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
     // 2. Work-switch notice: also folds in, still no new message.
-    const workSwitch = systemNoticeTurn("turn-3", "Work switched to Drafting.");
+    const workSwitch = systemNoticeTurn("turn-3", "Work switched to Drafting.", 4);
     const r2 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn],
       [t1.block, steer.block, workSwitch.block],
@@ -254,6 +264,7 @@ describe("prefix stability across a growing thread", () => {
     const subagentDone = systemNoticeTurn(
       "turn-4",
       'Subagent p1 finished (success). Read its report with thread_report({"ref":"p1"}).',
+      5,
     );
     const r3 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn],
@@ -264,7 +275,7 @@ describe("prefix stability across a growing thread", () => {
 
     // 4. Skill invocation: the activated skill's body is a durable hidden
     // `system`-role turn chained right after the activating turn (baked once
-    // by `persistSkillBodies`, never a block on the writer's own turn and
+    // by `prepareSkillBodies`, never a block on the writer's own turn and
     // never a request-only rendering), so it is byte-identical on every later
     // request. It renders adjacent to turn-1 in the model's history exactly
     // like a Work-switch or subagent notice, merged into the same message by
@@ -276,6 +287,7 @@ describe("prefix stability across a growing thread", () => {
       formatInvokedSkills([
         { slug: "story-review", description: "Review drafts.", body: "story-review body." },
       ]),
+      2,
     );
     const r4 = await assemble(
       [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn],
@@ -285,7 +297,7 @@ describe("prefix stability across a growing thread", () => {
     expect(r4.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
     // 5. Tool call/result: a genuine append. The merged user message freezes.
-    const toolExchange = assistantToolExchangeTurn("turn-5", "call_1");
+    const toolExchange = assistantToolExchangeTurn("turn-5", "call_1", 6);
     const r5 = await assemble(
       [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn],
       [
@@ -304,7 +316,7 @@ describe("prefix stability across a growing thread", () => {
     // message is untouched — proving the step-5 freeze holds for history, not
     // just the immediately-prior request — and only the tool_result message
     // (final at step 5) may lose its cache mark now that it is no longer final.
-    const nextTurn = userTurn("turn-6", "Continue into the next scene.");
+    const nextTurn = userTurn("turn-6", "Continue into the next scene.", 7);
     const r6 = await assemble(
       [
         t1.turn,
@@ -356,6 +368,78 @@ describe("prefix stability across a growing thread", () => {
     );
     expect(r7.generateRequest.tools).toEqual(r0.generateRequest.tools);
 
+    const beforeCutTurns = [
+      t1.turn,
+      skillTurn.turn,
+      steer.turn,
+      workSwitch.turn,
+      subagentDone.turn,
+      toolExchange.turn,
+      nextTurn.turn,
+    ];
+    const beforeCutBlocks = [
+      t1.block,
+      skillTurn.block,
+      steer.block,
+      workSwitch.block,
+      subagentDone.block,
+      ...toolExchange.blocks,
+      nextTurn.block,
+    ];
+    const c = createLocalTurn({
+      id: "cut",
+      threadId: thread0.id,
+      position: 8,
+      prevTurnId: nextTurn.turn.id,
+      role: "compaction",
+      origin: "system",
+      status: "pending",
+      metadata: compactionTurnMetadata({
+        trigger: "auto",
+        compactedThrough: { turnId: toolExchange.turn.id },
+        pinnedRequestTurnIds: [nextTurn.turn.id],
+      }),
+    });
+    const late = userTurn("late", "A late direction.", 9);
+    for (const status of ["pending", "error", "cancelled"] as const) {
+      const next = await assemble(
+        [...beforeCutTurns, { ...c, status }, late.turn],
+        [...beforeCutBlocks, late.block],
+      );
+      assertIsStableExtension(r7.generateRequest, next.generateRequest);
+    }
+    const summaryBlock: Block = {
+      responseId: null,
+      id: "summary",
+      turnId: c.id,
+      blockType: "custom",
+      sequence: 0,
+      createdAt: c.createdAt,
+      content: {
+        kind: "compaction",
+        props: {
+          summary: "The writer is drafting chapter 4 with tight pacing.",
+          excludedTurnCount: 6,
+          tokensBefore: 5000,
+          tokensAfter: 500,
+          model: "summary-model",
+        },
+      },
+    };
+    const compacted = await assemble(
+      [
+        ...beforeCutTurns,
+        { ...c, status: "complete", promptBakeId: r0.thread.initialPromptBakeId },
+        late.turn,
+      ],
+      [...beforeCutBlocks, summaryBlock, late.block],
+    );
+    expect(compacted.generateRequest.tools).toEqual(r7.generateRequest.tools);
+    expect(compacted.generateRequest.messages[0]).toEqual(r7.generateRequest.messages[0]);
+    expect(withoutCacheMarks(compacted.generateRequest.messages[1])).not.toEqual(
+      withoutCacheMarks(r7.generateRequest.messages[1]),
+    );
+
     // The frozen system message carries the same cache mark on every request,
     // and every request carries the thread's stable prompt-cache routing key.
     for (const request of [r0, r1, r2, r3, r4, r5, r6]) {
@@ -369,7 +453,7 @@ describe("prefix stability across a growing thread", () => {
     }
   });
 
-  it("never marks tools or messages when the model lacks the caching capability", async () => {
+  it("never marks tools or messages when the model is not explicitly cacheable", async () => {
     const projects = createInMemoryProjectRepository();
     const project = await projects.create({ userId: "user-1", title: "Serial" });
     const repos = createInMemoryRepositories({ projects });
@@ -401,15 +485,18 @@ describe("prefix stability across a growing thread", () => {
           {
             id: "no-caching-model",
             provider: "test",
+            tokenizer: "o200k" as const,
             displayName: "No caching",
             contextWindow: 1000,
             maxOutputTokens: 100,
+            promptCache: { kind: "none", ttlMs: null },
             capabilities: new Set(),
           },
         ],
       },
       persistBake: true,
-      bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+      promptBakes: repos.promptBakes,
+      bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
       workContext: noWorkContext(project.id),
     });
     for (const message of assembled.generateRequest.messages) {

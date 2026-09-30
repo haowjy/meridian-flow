@@ -34,7 +34,13 @@ export type CliEvent =
       interruptId: string;
     }
   | { type: "turn.finished"; seq: string; turnId: string }
-  | { type: "turn.failed"; seq: string; message: string; error?: unknown }
+  | {
+      type: "turn.failed";
+      seq: string;
+      message: string;
+      error?: unknown;
+      failureReason?: string;
+    }
   | { type: "event"; seq: string; name: string; value?: unknown };
 
 type ToolCallState = { name: string; args: string };
@@ -55,15 +61,23 @@ export class RunEventMapper {
         return [{ type: "turn.started", seq, turnId: String(e.runId) }];
       case "RUN_FINISHED":
         return [{ type: "turn.finished", seq, turnId: String(e.runId) }];
-      case "RUN_ERROR":
+      case "RUN_ERROR": {
+        const details =
+          sequenced.error?.details &&
+          typeof sequenced.error.details === "object" &&
+          !Array.isArray(sequenced.error.details)
+            ? sequenced.error.details
+            : undefined;
         return [
           {
             type: "turn.failed",
             seq,
             message: String(e.message ?? "run failed"),
             ...(sequenced.error ? { error: sequenced.error } : {}),
+            ...(typeof details?.reason === "string" ? { failureReason: details.reason } : {}),
           },
         ];
+      }
       case "TEXT_MESSAGE_START":
       case "REASONING_MESSAGE_START":
         this.messages.set(String(e.messageId), {
@@ -190,6 +204,6 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
     case "turn.failed":
-      return `turn.failed ${event.message}`;
+      return `turn.failed ${event.message}${event.failureReason ? ` (failure reason: ${event.failureReason})` : ""}`;
   }
 }

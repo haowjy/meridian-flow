@@ -137,7 +137,7 @@ describe("runtime credits", () => {
 
     interruptRegistry.resolve({
       threadId: thread.id,
-      turnId: handle.assistantTurnId,
+      turnId: handle.executionTurnId,
       interruptId: "cp-1",
       value: {},
     });

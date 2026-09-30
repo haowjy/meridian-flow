@@ -2,6 +2,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { processDetachedWork } from "../detached-work.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -24,7 +25,7 @@ else
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
@@ -39,7 +40,7 @@ else
     const eventWriter = createDrizzleEventJournalWriter(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       const scenario = await executionScenario(db, ids);
       await scenario.admit();
     });
@@ -66,6 +67,7 @@ else
       {
         const controller = new AbortController();
         const orchestrator = createRuntimeHarness({
+          backgroundTasks: processDetachedWork,
           repos,
           eventWriter,
           delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
@@ -84,12 +86,12 @@ else
           later.id,
         ]);
         expect((await handle.execute()).status).toBe("cancelled");
-        expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
+        expect((await repos.turns.findById(handle.executionTurnId))?.status).toBe("cancelled");
         expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.caller)).toBeNull();
         const next = await orchestrator.prepare({ threadId: ids.caller, drain: true });
         expect(next.userTurnId).toBe(later.id);
-        expect(next.assistantTurnId).not.toBe(handle.assistantTurnId);
+        expect(next.executionTurnId).not.toBe(handle.executionTurnId);
         await next.execute();
       }
     });
@@ -130,6 +132,7 @@ else
         },
       };
       const harness = createRuntimeHarness({
+        backgroundTasks: processDetachedWork,
         repos,
         eventWriter: splitWriter,
         delivery: createTestDrizzleDelivery(db, {
@@ -195,7 +198,6 @@ else
               terminal = await authority.readRunningTurnId(ids.child);
               splitState = {
                 run: await authority.holder(ids.child),
-                oldCancel: await authority.cancelExecution(ids.child, selector),
                 report: await repos.executionReports.findByExecution(ids.child, selector),
                 lookup: await readThreadReport({
                   callerThreadId: ids.caller,
@@ -237,12 +239,12 @@ else
           threadId: ids.child,
           userText: "start",
           signal: controller.signal,
-          onAssistantTurnChanged: (id) => {
+          onCurrentTurnChanged: ({ id }) => {
             terminal = id;
             if (boundary === "cancel") controller.abort();
           },
         });
-        selector = run.assistantTurnId;
+        selector = run.executionTurnId;
         const outcome = await run.execute();
         const events = (await createDrizzleEventJournalReader(db).listByThread(ids.child)).map(
           (entry) => entry.payload,
@@ -255,7 +257,7 @@ else
           expect(terminal).toBeNull();
           expect((await repos.turns.findById(selector))?.status).toBe("error");
           expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject({
-            terminalAssistantTurnId: selector,
+            terminalTurnId: selector,
             outcome: "failed",
             summary: "before steer",
           });
@@ -275,8 +277,8 @@ else
         expect((await repos.turns.findById(selector))?.status).toBe("complete");
         const report = await repos.executionReports.findByExecution(ids.child, selector);
         expect(report).toMatchObject({
-          assistantTurnId: selector,
-          terminalAssistantTurnId: terminal,
+          executionTurnId: selector,
+          terminalTurnId: terminal,
           outcome: boundary === "cancel" ? "cancelled" : "succeeded",
           summary: boundary === "cancel" ? "" : "after steer",
         });
@@ -295,8 +297,7 @@ else
         if (boundary !== "cancel") {
           expect(splitState).toMatchObject({
             run: run.runId,
-            oldCancel: false,
-            report: { outcome: null, terminalAssistantTurnId: null },
+            report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
             pending: {
               items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
@@ -319,8 +320,12 @@ else
             { repos, eventWriter },
             {
               threadId: ids.child,
-              assistantTurnId: ids.execution,
-              cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+              turnId: ids.execution,
+              cause: {
+                kind: "failed",
+                reason: "budget",
+                error: "budget exhausted",
+              },
             },
           );
           throw new Error("outer rollback");
@@ -337,11 +342,19 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
-          cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+          turnId: ids.execution,
+          cause: {
+            kind: "failed",
+            reason: "budget",
+            error: "budget exhausted",
+          },
         },
       );
       expect(first.events.map((event) => event.type)).toEqual(["turn.error"]);
+      expect(first.events[0]).toMatchObject({
+        type: "turn.error",
+        error: { details: { reason: "budget" } },
+      });
       expect(first.report).toMatchObject({
         outcome: "failed",
         source: "return_result",
@@ -352,8 +365,12 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
-          cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+          turnId: ids.execution,
+          cause: {
+            kind: "failed",
+            reason: "budget",
+            error: "budget exhausted",
+          },
         },
       );
       expect(replay.events).toEqual([]);
@@ -368,6 +385,9 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "3",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       const final = await repos.modelResponses.create({
         turnId: ids.execution,
@@ -376,6 +396,9 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "4",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       await repos.blocks.create({
         turnId: ids.execution,
@@ -402,7 +425,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );

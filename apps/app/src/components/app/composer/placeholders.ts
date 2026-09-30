@@ -100,12 +100,12 @@ function selectPagePlaceholders(): {
 const PAGE_PLACEHOLDERS = selectPagePlaceholders();
 const subscribeToNoChanges = () => () => {};
 
-export function useComposerPlaceholder(streaming: boolean): string {
+export function useComposerPlaceholder(running: boolean): string {
   const { i18n } = useLingui();
   const placeholder = useSyncExternalStore(
     subscribeToNoChanges,
-    () => (streaming ? PAGE_PLACEHOLDERS.interject : PAGE_PLACEHOLDERS.compose),
-    () => (streaming ? SERVER_PLACEHOLDERS.interject : SERVER_PLACEHOLDERS.compose),
+    () => (running ? PAGE_PLACEHOLDERS.interject : PAGE_PLACEHOLDERS.compose),
+    () => (running ? SERVER_PLACEHOLDERS.interject : SERVER_PLACEHOLDERS.compose),
   );
 
   return i18n._(placeholder);

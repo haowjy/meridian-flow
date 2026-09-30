@@ -58,6 +58,7 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
+import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -69,6 +70,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
+import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import { isCacheReset } from "../../threads/domain/cache-reset.js";
@@ -81,16 +83,27 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { readThreadActivity } from "../../threads/index.js";
+import {
+  agentRequestMetadata,
+  loadThreadConversationContext,
+  readThreadActivity,
+  ThreadConversationContextError,
+  writerSendMetadata,
+} from "../../threads/index.js";
+import { nextTurnPosition } from "../../threads/order-turns.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
-import type { ImageAssetPort } from "../ports/image-asset.js";
+import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
+import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
+import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
+  activatedSkillMetadata,
   formatInvokedSkills,
   isSkillBodyTurn,
   readActivatedSkillSlugs,
@@ -98,8 +111,15 @@ import {
 } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import {
+  type CompactionDecision,
+  CompactionPreparationError,
+  type ForcedCompactionDecision,
+} from "./compaction/decision.js";
+import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
+import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
+import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import { loadThreadConversationContext } from "./fork-thread-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -107,7 +127,12 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import { createLocalTurn } from "./local-turn.js";
+import {
+  createLocalTurn,
+  currentTurnKind,
+  readCompactionTrigger,
+  reservationTurn,
+} from "./local-turn.js";
 import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
@@ -121,16 +146,18 @@ import {
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
+import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
   isDrainRun,
-  NoPendingWakeError,
   type PreparedLoop,
   type RunLoopInput,
 } from "./run-turn-port.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
+import { settleSummaryResponses } from "./settle-summary-responses.js";
 import {
   collectToolCalls,
   contentPartToBlockInput,
@@ -139,15 +166,31 @@ import {
 } from "./streaming.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
-import { assembleNextTurnContext } from "./turn-context-assembly.js";
-import { writerUserTurnBlocks } from "./user-turn-blocks.js";
+import {
+  type AssembledNextTurnContext,
+  persistPreparedPromptBake,
+} from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
+import { persistWriterTurn } from "./writer-enqueue.js";
 
 const MAX_TURN_ITERATIONS = 32;
+
+class RequestPreparationError extends Error {
+  constructor(readonly original: unknown) {
+    super(original instanceof Error ? original.message : String(original), { cause: original });
+    this.name = "RequestPreparationError";
+  }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error });
+}
 
 export interface OrchestratorRepositories {
   threads: ThreadRepository;
   turns: TurnRepository;
+  promptBakes: ThreadRepositories["promptBakes"];
+  imageInclusions: ThreadRepositories["imageInclusions"];
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ThreadRepositories["executionReports"];
@@ -161,9 +204,15 @@ export interface OrchestratorRepositories {
 }
 
 export interface OrchestratorDeps {
+  /** One app-owned lifecycle tracker shared by every detached runtime caller. */
+  backgroundTasks: DetachedWorkTracker;
+  /** Shared app shutdown state read by run starts, wakes and handoff briefs. */
+  shutdown: { started: boolean };
+  summarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
   referenceReader: ReferenceReader;
+  documentRevisions: DocumentRevisions;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
   headSeq(threadId: ThreadId): Promise<bigint>;
@@ -188,9 +237,11 @@ export interface OrchestratorDeps {
   childRunCoordinator: ChildRunCoordinator;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
   /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;
+  handoffBriefs: HandoffBriefStopper;
   /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
   activeDocuments: ActiveDocumentResolver;
@@ -237,15 +288,35 @@ export function createOrchestrator(deps: OrchestratorDeps) {
     ...deps,
     setup: (input) => prepareLoop(deps, input),
     async finalizeFailure(input) {
+      const error =
+        input.error instanceof RequestPreparationError ? input.error.original : input.error;
+      const contextError = error instanceof ThreadConversationContextError ? error : null;
+      const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
+      const requestPreparationFailed = input.error instanceof RequestPreparationError;
+      const shutdownAbort = input.signal?.reason === "shutdown";
+      const failedTurn = await deps.repos.turns.findById(input.turnId);
+      if (!failedTurn) throw new Error(`Failure turn not found: ${input.turnId}`);
       const outcome = await deps.delivery.close({
         lease: input.lease,
-        assistantTurnId: input.assistantTurnId,
+        turnId: input.turnId,
         cause: input.signal?.aborted
-          ? { kind: "cancelled", reason: "cancelled" }
+          ? shutdownAbort
+            ? {
+                kind: "failed",
+                reason: "shutdown",
+                error: "Runtime shut down before the response completed",
+              }
+            : { kind: "cancelled", reason: "cancelled" }
           : {
               kind: "failed",
-              reason: "execution_error",
-              error: input.error instanceof Error ? input.error.message : String(input.error),
+              reason:
+                (error instanceof CompactionPreparationError ? error.reason : contextError?.code) ??
+                (imageResolutionError
+                  ? "image_resolution_failed"
+                  : requestPreparationFailed
+                    ? "request_preparation_failed"
+                    : "execution_error"),
+              error: error instanceof Error ? error.message : String(error),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -319,7 +390,7 @@ async function admitRunExecution(
   deps: OrchestratorDeps,
   input: RunLoopInput,
   thread: Thread,
-  assistantTurnId: TurnId,
+  executionTurnId: TurnId,
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
@@ -336,7 +407,7 @@ async function admitRunExecution(
     };
     await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
-      assistantTurnId,
+      executionTurnId,
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
@@ -363,93 +434,59 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   }
 
   if (isDrainRun(input)) {
-    return runDrainTurn(deps, input, thread);
+    return runDrainTurn(deps, input);
   }
-
-  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
-    const value = await persistAndAppendTurnStartEvents(
-      deps,
-      input.threadId,
-      thread.activeLeafTurnId,
-      async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
-        // Read inside the setup transaction so the turn's durable write vocabulary
-        // matches the mode in effect at the moment the turn was minted.
-        const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-        const workPlan = planMessageTurns({
-          threadId: input.threadId,
-          batch: batch.filter((message) => message.body.kind === "work_context_refresh"),
-          prevTurnId,
-          knownTurnIds: new Set(priorTurns.map((turn) => turn.id)),
-          workContext,
-        });
-        const userTurn = createLocalTurn({
-          threadId: input.threadId,
-          prevTurnId: workPlan.leafTurnId,
-          role: "user",
-          // A child run's first turn is the spawning parent's prompt, not the
-          // writer's; every other caller mints this from an actual writer send.
-          origin: input.child ? "system" : "writer",
-          status: "complete",
-          metadata: input.userTurnMetadata ?? null,
-        });
-        const userBlocks = writerUserTurnBlocks(
-          userTurn.id,
-          input.userBlocks ?? [{ type: "text", text: input.userText }],
-        );
-
-        const assistantTurn = createLocalTurn({
-          threadId: input.threadId,
-          prevTurnId: userTurn.id,
-          role: "assistant",
-          origin: "assistant",
-          status: "streaming",
-          writeMode,
-        });
-
-        return {
-          result: {
-            userTurn,
-            assistantTurn,
-            priorTurns: [...priorTurns, ...workPlan.turns],
-            inheritedTurns,
-            inheritedBlocks,
-          },
-          events: [
-            ...workPlan.events,
-            { type: "turn.created", turn: userTurn },
-            ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
-            { type: "turn.created", turn: assistantTurn },
-          ],
-        };
-      },
-      {
-        afterEvents: ({ assistantTurn }) =>
-          admitRunExecution(deps, input, thread, assistantTurn.id),
-      },
-    );
-    return { value, turnId: value.result.assistantTurn.id, messageIds: [] };
+  const userTurnId = crypto.randomUUID() as TurnId;
+  const userMetadata = input.userTurnMetadata;
+  const skillMetadata = activatedSkillMetadata(input.activatedSkillSlugs ?? []);
+  const metadata = writerSendMetadata({
+    ...(userMetadata && typeof userMetadata === "object" && !Array.isArray(userMetadata)
+      ? userMetadata
+      : {}),
+    ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
+      ? skillMetadata
+      : {}),
+    ...(input.child ? agentRequestMetadata(input.child.origin) : {}),
   });
-
-  const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
-  return {
-    userTurnId: userTurn.id,
-    assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
-        deps,
-        input,
-        thread,
-        userTurn.id,
-        assistantTurn,
-        [...inheritedTurns, ...priorTurns, userTurn],
-        inheritedBlocks,
-        input.treeBudget ??
-          createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
-        input.activatedSkillSlugs,
-      ),
-  };
+  let reservedTurnId: TurnId | undefined;
+  const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
+    const thread = await deps.repos.threads.findById(input.threadId);
+    if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
+    return persistWriterTurn({
+      persistence: deps,
+      threadId: input.threadId,
+      userTurnId,
+      userBlocks: input.userBlocks ?? [{ type: "text", text: input.userText }],
+      userTurnMetadata: metadata,
+      seedBlocks: input.seedBlocks,
+      origin: input.child ? "system" : "writer",
+      producer,
+      afterTurnCreated: () => {
+        reservedTurnId = crypto.randomUUID() as TurnId;
+      },
+      draft: {
+        id: userTurnId,
+        threadId: input.threadId,
+        intent: "message",
+        provenance: input.child
+          ? { kind: "agent", threadId: input.threadId }
+          : { kind: "writer", actorId: thread.userId },
+        body: { kind: "text", text: input.userText },
+        idempotencyKey: userTurnId,
+      },
+    });
+  });
+  try {
+    if (!reservedTurnId) throw new Error("Direct writer turn did not allocate its reservation ID");
+    return await runDrainTurn(deps, { ...input, drain: true }, reservedTurnId);
+  } catch (error) {
+    if (input.signal?.aborted) {
+      await deps.delivery.withThreadLock(input.threadId, (producer) =>
+        producer.acknowledge([userTurn.id]),
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -464,108 +501,245 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  thread: Thread,
+  reservedTurnId: TurnId = crypto.randomUUID(),
 ): Promise<PreparedLoop> {
-  let initialBatchIds: string[] = [];
-  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
-    const value = await persistAndAppendTurnStartEvents(
-      deps,
-      input.threadId,
-      thread.activeLeafTurnId,
-      async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
-        const knownTurnIds = new Set<string>([
-          ...inheritedTurns.map((turn) => turn.id),
-          ...priorTurns.map((turn) => turn.id),
-        ]);
-
-        initialBatchIds = batch.map(({ id }) => id);
-        // The wake sweep only starts a thread with a derived wake need; a race that
-        // drains the last message first must leave no phantom assistant turn behind.
-        if (!batch.some((message) => message.intent === "message")) {
-          throw new NoPendingWakeError(input.threadId);
-        }
-
-        // A writer send persisted its turn at enqueue with its activated skill
-        // slugs stamped on the turn; read them back so the drain inlines the
-        // bodies into the writer's message. A fresh non-writer message carries none.
-        const turnById = new Map(
-          [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
-        );
-        const activatedSkillSlugs = [
-          ...new Set(
-            batch.flatMap((message) => {
-              const turn = turnById.get(message.id);
-              return turn ? readActivatedSkillSlugs(turn) : [];
-            }),
-          ),
-        ];
-
-        const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-        const plan = planMessageTurns({
+  let preparationError: Error | null = null;
+  const setup = await deps.delivery.adoptBatch(
+    input.lease,
+    async (selection) => {
+      const setupThread = await deps.repos.threads.findById(input.threadId);
+      if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
+      const batch = selection.batch;
+      const control = selection.next.kind === "control" ? selection.next.control : null;
+      if (selection.next.kind === "none" && !input.replyTurnId) return null;
+      const ctx = await loadRunStartContext(deps, setupThread);
+      preparationError = ctx.contextError;
+      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const existingTurns = [...inheritedTurns, ...priorTurns];
+      const previousTurn = prevTurnId
+        ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
+        : null;
+      if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
+      const turnById = new Map(
+        [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
+      );
+      const knownTurnIds = new Set([
+        ...inheritedTurns.map((turn) => turn.id as TurnId),
+        ...priorTurns.map((turn) => turn.id as TurnId),
+      ]);
+      let skillBody: ReturnType<typeof createSkillBodyArtifacts> | null = null;
+      const makePlan = (notices: typeof selection.notices) =>
+        planMessageTurns({
           threadId: input.threadId,
           batch,
-          prevTurnId,
+          prevTurnId: skillBody?.turn.id ?? prevTurnId,
+          prevTurnPosition: skillBody?.turn.position ?? previousTurn?.position ?? null,
           knownTurnIds,
-          workContext,
+          workContext: selection.workContext,
+          notices,
         });
-
-        const assistantTurn = createLocalTurn({
+      const activatedSkillSlugs = [
+        ...new Set(
+          batch.flatMap((message) => {
+            const turn = turnById.get(message.id);
+            return turn ? readActivatedSkillSlugs(turn) : [];
+          }),
+        ),
+      ];
+      const skillBodies = createSkillBodyPreparation(activatedSkillSlugs);
+      if (!preparationError) {
+        try {
+          skillBody = await skillBodies.prepare({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            invokingTurnId: prevTurnId,
+            invokingTurnPosition: previousTurn?.position ?? null,
+          });
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      let plan = makePlan(preparationError ? [] : selection.notices);
+      const referenceUserTurnId =
+        [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
+        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
+        prevTurnId ??
+        reservedTurnId;
+      let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
+      if (!preparationError) {
+        try {
+          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
+          const prepareInput = {
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            referenceTurnId: referenceUserTurnId,
+            currentTurnId: input.replyTurnId ?? reservedTurnId,
+            control,
+            pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+            turns: [
+              ...inheritedTurns,
+              ...priorTurns,
+              ...(skillBody ? [skillBody.turn] : []),
+              ...plan.turns,
+            ],
+            blocks: [
+              ...inheritedBlocks,
+              ...previousBlocks,
+              ...plan.blocks.map(localBlockFromEvent),
+              ...(skillBody ? [localBlockFromEvent(skillBody.block)] : []),
+            ],
+            baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+            signal: input.signal,
+          };
+          preflight = await prepareRequestContext(prepareInput);
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      if (preparationError) {
+        preflight = null;
+        skillBody = null;
+        plan = makePlan([]);
+      }
+      const imageUpdateTurn = preflight?.turns.at(-1);
+      const reservedTurn = reservationTurn(
+        {
+          id:
+            preflight?.compaction.kind === "compact"
+              ? crypto.randomUUID()
+              : (input.replyTurnId ?? reservedTurnId),
           threadId: input.threadId,
-          prevTurnId: plan.leafTurnId,
-          role: "assistant",
-          origin: "assistant",
-          status: "streaming",
-          writeMode,
-        });
-
-        return {
-          result: {
-            assistantTurn,
-            referenceUserTurnId: plan.leafTurnId ?? assistantTurn.id,
-            messageTurns: plan.turns,
-            priorTurns,
-            inheritedTurns,
-            inheritedBlocks,
-            activatedSkillSlugs,
-          },
-          events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
+          prevTurnId: imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+          position: nextTurnPosition(
+            imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+          ),
+        },
+        preflight?.compaction ?? { kind: "generate" },
+      );
+      if (preparationError && control?.body.kind === "compact") {
+        reservedTurn.role = "compaction";
+        reservedTurn.origin = "system";
+        reservedTurn.status = "pending";
+        reservedTurn.metadata = {
+          trigger: "manual",
+          controlMessageId: control.id,
+          ...(control.body.instructions ? { instructions: control.body.instructions } : {}),
         };
-      },
-      {
-        afterEvents: ({ assistantTurn }) =>
-          admitRunExecution(deps, input, thread, assistantTurn.id),
-      },
-    );
-    return { value, turnId: value.result.assistantTurn.id, messageIds: initialBatchIds };
-  });
+      }
+      const value = {
+        thread: setupThread,
+        skillBodies,
+        controlTurns: preflight?.turns ?? [],
+        reservedTurn,
+        skillBody,
+        referenceUserTurnId,
+        preflight,
+        messageTurns: plan.turns,
+        priorTurns,
+        inheritedTurns,
+        inheritedBlocks,
+        executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
+      };
+      const events = [
+        ...(skillBody
+          ? [
+              { type: "turn.created" as const, turn: skillBody.turn },
+              { type: "block.upserted" as const, block: skillBody.block },
+            ]
+          : []),
+        ...plan.events,
+        ...(preflight?.events ?? []),
+        { type: "turn.created" as const, turn: reservedTurn },
+      ];
+      return {
+        value,
+        turnId: reservedTurn.id,
+        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
+        turnKind: currentTurnKind(reservedTurn),
+        messageIds: [...batch.map(({ id }) => id)],
+        ...(preparationError === null ? {} : { preparationFailure: preparationError }),
+        persist: async () => {
+          await persistAndAppendTurnStartEvents(
+            deps,
+            input.threadId,
+            selection.activeLeafTurnId,
+            async () => {
+              await reconcileOrphanedPendingWrites(deps, input.threadId);
+              if (preflight)
+                await persistPreparedPromptBake(
+                  preflight.assembled,
+                  deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
+                );
+              reservedTurn.writeMode = setupThread.workId
+                ? await deps.workWriteMode.read(setupThread.workId)
+                : "direct";
+              return {
+                result: undefined,
+                events,
+              };
+            },
+            {
+              afterEvents: async () => {
+                if (selection.outstanding.length > 0 || input.replyTurnId)
+                  await admitRunExecution(deps, input, setupThread, reservedTurn.id);
+              },
+            },
+          );
+        },
+      };
+    },
+    {
+      signal: input.signal,
+    },
+  );
 
   const {
-    assistantTurn,
+    reservedTurn,
+    skillBody,
     referenceUserTurnId,
+    preflight,
     messageTurns,
     priorTurns,
     inheritedTurns,
     inheritedBlocks,
-    activatedSkillSlugs,
-  } = setup.result;
+  } = setup;
+  setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
     userTurnId: referenceUserTurnId,
-    assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
+    currentTurn: {
+      id: reservedTurn.id,
+      kind: currentTurnKind(reservedTurn),
+    },
+    execute: async () => {
+      if (preparationError) throw new RequestPreparationError(preparationError);
+      if (!preflight && reservedTurn.role !== "system")
+        throw new Error("Request context is unavailable after preparation failed");
+      return executeLoop({
         deps,
         input,
-        thread,
-        referenceUserTurnId,
-        assistantTurn,
-        [...inheritedTurns, ...priorTurns, ...messageTurns],
+        thread: preflight?.assembled.thread ?? setup.thread,
+        reservedTurn,
+        initialTurns: [
+          ...inheritedTurns,
+          ...priorTurns,
+          ...(skillBody ? [skillBody.turn] : []),
+          ...messageTurns,
+          ...setup.controlTurns,
+        ],
         inheritedBlocks,
-        input.treeBudget ??
+        initialContext: preflight?.assembled,
+        initialCompaction: preflight?.compaction ?? { kind: "generate" },
+        initialExecutionAdmitted: setup.executionAdmitted,
+        treeBudget:
+          input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
-        activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
-      ),
+        skillBodies: setup.skillBodies,
+      });
+    },
   };
 }
 
@@ -583,24 +757,45 @@ async function loadRunStartContext(
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
   prevTurnId: TurnId | null;
+  contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
-  await reconcileOrphanedPendingWrites(deps, thread.id);
   const priorTurns = await repos.turns.listByThread(thread.id);
-  const conversation = await loadThreadConversationContext(
-    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
-    thread,
-  );
+  let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
+  try {
+    conversation = await loadThreadConversationContext(
+      { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+      thread,
+    );
+  } catch (error) {
+    if (!(error instanceof ThreadConversationContextError)) throw error;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.orchestrator",
+      name: "thread.conversation_context.load_failed",
+      correlation: { threadId: error.threadId },
+      payload: {
+        threadId: error.threadId,
+        cutoffTurnId: error.originTurnId,
+        errorCode: error.code,
+      },
+    });
+    return {
+      priorTurns,
+      inheritedTurns: [],
+      inheritedBlocks: [],
+      prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
+      contextError: error,
+    };
+  }
   const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
   const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
   const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
   const inheritedBlocks = conversation.blocks.filter((block) => inheritedTurnIds.has(block.turnId));
   const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
-  // Chain from the durable leaf when present: `priorTurns` sorts by `createdAt`,
-  // which can disagree with `activeLeafTurnId` after a restart or an
-  // equal-timestamp batch, which would fork the turn chain.
+  // The durable leaf owns causal chaining; position owns transcript ordering.
   const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
-  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId };
+  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId, contextError: null };
 }
 
 async function reconcileOrphanedPendingWrites(
@@ -609,7 +804,7 @@ async function reconcileOrphanedPendingWrites(
 ): Promise<void> {
   const blocks = await deps.repos.blocks.listByThread(threadId);
   for (const block of blocks) {
-    if (block.blockType !== "tool_result" || block.pruned) continue;
+    if (block.blockType !== "tool_result") continue;
     const content = block.content as {
       output?: unknown;
       metadata?: { stagedWrite?: unknown };
@@ -631,8 +826,10 @@ async function persistModelResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
-  currentAssistantTurn: Turn;
+  currentTurn: Turn;
   result: GenerateResult;
+  requestMessageCount: number;
+  predictedCacheState: PrefixCacheState;
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
@@ -645,10 +842,9 @@ async function persistModelResponse(input: {
   toolCalls: ReturnType<typeof collectToolCalls>;
   nextBlockSeq: number;
 }> {
-  const { deps, runInput, thread, currentAssistantTurn, result, treeBudget, turnAccounting } =
-    input;
+  const { deps, runInput, thread, currentTurn, result, treeBudget, turnAccounting } = input;
   let blockSeq = input.blockSeq;
-  const responseSeq = currentAssistantTurn.responseCount;
+  const responseSeq = currentTurn.responseCount;
   const toolCalls = collectToolCalls(result);
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
@@ -660,7 +856,7 @@ async function persistModelResponse(input: {
           result,
           thread,
           runInput.threadId,
-          currentAssistantTurn.id,
+          currentTurn.id,
           treeBudget,
           responseId,
         );
@@ -670,7 +866,7 @@ async function persistModelResponse(input: {
         );
         const response: ModelResponseReceivedRow = {
           id: responseId,
-          turnId: currentAssistantTurn.id,
+          turnId: currentTurn.id,
           sequence: responseSeq,
           provider: result.provider,
           model: result.model,
@@ -691,8 +887,11 @@ async function persistModelResponse(input: {
           finishReason: result.finishReason,
           ...modelResponseTimingFields(result),
           rawUsage: toJsonValue(result.usage),
+          requestMessageCount: input.requestMessageCount,
+          predictedCacheState: input.predictedCacheState.state,
+          predictedCacheReason: input.predictedCacheState.reason,
         };
-        const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+        const updatedTurn = applyResponseToTurnSnapshot(currentTurn, response);
 
         const createdBlocks: Block[] = [];
         const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
@@ -772,13 +971,15 @@ async function settleCancelledResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
-  currentAssistantTurn: Turn;
+  currentTurn: Turn;
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
+  requestMessageCount: number;
+  predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
     model: input.model,
@@ -788,28 +989,30 @@ async function settleCancelledResponse(input: {
       : {}),
   });
 
-  let currentAssistantTurn = input.currentAssistantTurn;
+  let currentTurn = input.currentTurn;
   if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
-      currentAssistantTurn,
+      currentTurn,
       result: settlement.result,
+      requestMessageCount: input.requestMessageCount,
+      predictedCacheState: input.predictedCacheState,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq: input.blockSeq,
       // The terminal cancellation retires the lease receipt after settlement.
       inboxAckIds: [],
     });
-    currentAssistantTurn = persistedResponse.updatedTurn;
+    currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
     await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
       threadId: input.runInput.threadId,
-      turnId: currentAssistantTurn.id,
+      turnId: currentTurn.id,
     });
   }
-  return currentAssistantTurn;
+  return currentTurn;
 }
 
 async function persistToolRejection(input: {
@@ -916,12 +1119,14 @@ async function persistCommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   output: unknown;
+  documentRevision: DocumentRevisionEvidence;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
   } | null;
-  const metadata = content?.metadata ?? {};
+  const metadata = { ...content?.metadata };
+  metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
@@ -946,19 +1151,19 @@ async function persistCommittedWriteResult(input: {
 }
 
 /**
- * Loads and persists the text-reference reads for one user turn, returning the
- * turn's blocks with the read results applied. Used both
+ * Loads text-reference reads for one user turn, returning prepared events and
+ * blocks with read results applied. Used both
  * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
  * writer turn whose references were never read.
  */
-async function persistReferenceReads(input: {
+async function prepareReferenceReads(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[] }> {
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[] }> {
   const loaded = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
@@ -967,36 +1172,34 @@ async function persistReferenceReads(input: {
     reader: input.deps.referenceReader,
     signal: input.signal,
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks] };
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => ({
-    result: loaded,
-    events: loaded.map((block) => ({
-      type: "block.upserted" as const,
-      block: contentForBlockInput({
-        id: block.id,
-        turnId: block.turnId,
-        responseId: block.responseId,
-        blockType: block.blockType,
-        sequence: block.sequence,
-        content: block.content,
-        status: "complete",
-      }),
-    })),
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [] };
+  const events = loaded.map((block) => ({
+    type: "block.upserted" as const,
+    block: contentForBlockInput({
+      id: block.id,
+      turnId: block.turnId,
+      responseId: block.responseId,
+      blockType: block.blockType,
+      sequence: block.sequence,
+      content: block.content,
+      status: "complete",
+    }),
   }));
-  const updatedById = new Map(persisted.result.map((block) => [block.id, block]));
+  const updatedById = new Map(loaded.map((block) => [block.id, block]));
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
+    events,
   };
 }
 
-/** The outcome of trying to persist one turn's activated skill bodies. */
-type SkillBodyPersistResult =
+/** Prepared body turns for one turn's activated skills. */
+type SkillBodyPreparation =
   | { kind: "none" }
   | { kind: "existing"; turn: Turn }
   | { kind: "created"; turn: Turn; block: Block };
 
 /**
- * Loads and persists one hidden `system`-role turn carrying every activated
+ * Loads and prepares one hidden `system`-role turn carrying every activated
  * skill's body, chained immediately after the turn that invoked them. Never a
  * block on the invoking turn itself -- `UserTurn.tsx`'s `projectUserTurn` (and
  * chat previews, fork/handoff copies) concatenates every text block of a user
@@ -1008,88 +1211,121 @@ type SkillBodyPersistResult =
  *
  * Idempotent: `existingTurns` (the run's accumulated turn list, seeded from
  * durable history at run start) is searched for an already-persisted body
- * turn chained from `invokingTurnId` before minting a new one, so a retried
- * drain (a crash between commit and ack) never double-persists. Baking the
- * body in once means a later request reproduces the exact bytes an earlier
+ * turn chained from `invokingTurnId` before preparing a new one, so a retried
+ * drain (a crash between commit and ack) never double-persists. Persisting the
+ * body once means a later request reproduces the exact bytes an earlier
  * request saw even if the skill's live content changes afterward -- unlike
  * the deleted request-only splice, which vanished on the very next request.
  */
-async function persistSkillBodies(input: {
+async function prepareSkillBodies(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   invokingTurnId: TurnId;
   existingTurns: readonly Turn[];
   slugs: readonly string[];
   loadSkillBodies: (slugs: readonly string[]) => Promise<ActivatedSkillBody[]>;
-}): Promise<SkillBodyPersistResult> {
+}): Promise<SkillBodyPreparation> {
   if (input.slugs.length === 0) return { kind: "none" };
   const existing = input.existingTurns.find(
     (turn) => turn.prevTurnId === input.invokingTurnId && isSkillBodyTurn(turn),
   );
   if (existing) return { kind: "existing", turn: existing };
+  const invokingTurn = input.existingTurns.find((turn) => turn.id === input.invokingTurnId);
+  if (!invokingTurn) throw new Error(`Skill invocation turn not found: ${input.invokingTurnId}`);
   const skills = await input.loadSkillBodies(input.slugs);
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const turn = createLocalTurn({
-      threadId: input.threadId,
-      prevTurnId: input.invokingTurnId,
-      role: "system",
-      // The platform bakes the skill body in, never the writer.
-      origin: "system",
-      status: "complete",
-      metadata: SKILL_BODY_METADATA,
-    });
-    const block = contentForBlockInput({
-      id: turn.id,
-      turnId: turn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: `<system_update>\n${formatInvokedSkills(skills)}\n</system_update>`,
-      status: "complete",
-    });
-    return {
-      result: { turn, block: localBlockFromEvent(block) },
-      events: [
-        { type: "turn.created" as const, turn },
-        { type: "block.upserted" as const, block },
-      ],
-    };
-  });
-  return { kind: "created", turn: persisted.result.turn, block: persisted.result.block };
+  const artifacts = createSkillBodyArtifacts(
+    input.threadId,
+    input.invokingTurnId,
+    nextTurnPosition(invokingTurn),
+    skills,
+  );
+  return { kind: "created", turn: artifacts.turn, block: localBlockFromEvent(artifacts.block) };
 }
 
-async function buildGenerateRequest(input: {
-  deps: OrchestratorDeps;
-  runInput: RunLoopInput;
-  thread: Thread;
-  turns: Turn[];
-  blocks: Block[];
-  gatewaySignal?: AbortSignal;
-}): Promise<{
+/** Stage once per boundary attempt; only a committed body consumes the pending activations. */
+function createSkillBodyPreparation(slugs: readonly string[]) {
+  let pending = slugs;
+  let stagedTurnId: TurnId | undefined;
+  return {
+    async prepare(input: {
+      deps: OrchestratorDeps;
+      thread: Thread;
+      threadId: ThreadId;
+      invokingTurnId: TurnId | null;
+      invokingTurnPosition: number | null;
+    }) {
+      if (pending.length === 0) return null;
+      if (!input.invokingTurnId || input.invokingTurnPosition === null)
+        throw new Error("Activated skill body has no invoking turn");
+      const skills = await Promise.all(
+        pending.map((slug) =>
+          loadUserSkillBody({
+            thread: input.thread,
+            slug,
+            agentRevisions: input.deps.agentRevisions,
+            accountSkillInstalls: input.deps.accountSkillInstalls,
+          }),
+        ),
+      );
+      const body = createSkillBodyArtifacts(
+        input.threadId,
+        input.invokingTurnId,
+        nextTurnPosition({ position: input.invokingTurnPosition }),
+        skills,
+      );
+      stagedTurnId = body.turn.id;
+      return body;
+    },
+    committed(turns: readonly Turn[]) {
+      if (turns.some((turn) => turn.id === stagedTurnId)) pending = [];
+    },
+  };
+}
+
+function createSkillBodyArtifacts(
+  threadId: ThreadId,
+  invokingTurnId: TurnId,
+  position: number,
+  skills: readonly ActivatedSkillBody[],
+) {
+  const turn = createLocalTurn({
+    threadId,
+    position,
+    prevTurnId: invokingTurnId,
+    role: "system",
+    origin: "system",
+    status: "complete",
+    metadata: SKILL_BODY_METADATA,
+  });
+  const block = contentForBlockInput({
+    id: turn.id,
+    turnId: turn.id,
+    blockType: "text",
+    sequence: 0,
+    textContent: `<system_update>\n${formatInvokedSkills(skills)}\n</system_update>`,
+    status: "complete",
+  });
+  return { turn, block };
+}
+
+type BuiltGenerateRequest = {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
+  resolvedModel: AssembledNextTurnContext["resolvedModel"];
   permissionGate: PermissionGate;
-}> {
-  const assembled = await assembleNextTurnContext({
-    thread: input.thread,
-    turns: input.turns,
-    blocks: input.blocks,
-    agentRevisions: input.deps.agentRevisions,
-    toolRegistry: input.deps.toolRegistry,
-    gateway: input.deps.gateway,
-    imageAssets: input.deps.imageAssets,
-    baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
-    persistBake: true,
-    bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
-      input.deps.repos.threads,
-    ),
-    workContext: input.deps.workContext,
-    eventSink: input.deps.eventSink,
-  });
+};
 
+function buildGenerateRequestFromAssembled(input: {
+  assembled: AssembledNextTurnContext;
+  runInput: RunLoopInput;
+  gatewaySignal?: AbortSignal;
+}): BuiltGenerateRequest {
+  const { assembled } = input;
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
+    resolvedModel: assembled.resolvedModel,
     permissionGate: permissionGateFromToolPolicy(
       assembled.policy,
       assembled.thread.kind === "subagent" ? ["return_result"] : [],
@@ -1110,7 +1346,10 @@ function createResponseScope(input: {
   allBlocks: Block[];
 }) {
   const { deps, threadId, turnId, allBlocks } = input;
-  const writes = new Map<string, Array<{ block: Block; writeId: string; settlementId: string }>>();
+  const writes = new Map<
+    string,
+    Array<{ block: Block; writeId: string; settlementId: string; uri: string | null }>
+  >();
   let id = input.responseId;
   let active = true;
   return {
@@ -1133,8 +1372,11 @@ function createResponseScope(input: {
         throw new Error(
           `Staged write result missing write or settlement id for ${metadata.documentId}.`,
         );
+      // Capture the source address before commit, not from a loosely typed block after apply.
+      const [{ uri }] = metadata.documentRevisions as [DocumentRevisionEvidence];
       const blocks = writes.get(metadata.documentId) ?? [];
       blocks.push({
+        uri,
         block: dispatched.block,
         writeId: metadata.writeId,
         settlementId: metadata.settlementId,
@@ -1155,6 +1397,12 @@ function createResponseScope(input: {
                       deps,
                       threadId,
                       block: write.block,
+                      documentRevision: {
+                        documentId,
+                        uri: write.uri,
+                        revision: settledReceipt(settled.receipts, documentId, write.settlementId)
+                          .revision,
+                      },
                       output: settledReceipt(settled.receipts, documentId, write.settlementId)
                         .result,
                     })
@@ -1234,27 +1482,36 @@ function createResponseScope(input: {
   };
 }
 
-async function executeLoop(
-  deps: OrchestratorDeps,
-  input: RunLoopInput,
-  thread: Thread,
-  /** The user turn whose admitted references load before the first request. */
-  referenceUserTurnId: TurnId,
-  assistantTurn: Turn,
+async function executeLoop({
+  deps,
+  input,
+  thread,
+  reservedTurn,
+  initialTurns,
+  inheritedBlocks,
+  initialContext,
+  initialCompaction,
+  initialExecutionAdmitted,
+  treeBudget,
+  skillBodies,
+}: {
+  deps: OrchestratorDeps;
+  input: RunLoopInput;
+  thread: Thread;
+  reservedTurn: Turn;
   /** Full ordered history before the assistant container, including drained messages. */
-  initialTurns: Turn[],
-  inheritedBlocks: Block[],
-  treeBudget: TreeBudget,
-  /**
-   * Writer-activated skill slugs for this run's triggering turn. A writer start
-   * carries them on its input; a drain start reads them back off the persisted
-   * writer turn it serves. `undefined` when the run activated none.
-   */
-  activatedSkillSlugs: readonly string[] | undefined,
-): Promise<Turn> {
+  initialTurns: Turn[];
+  inheritedBlocks: Block[];
+  initialContext: AssembledNextTurnContext | undefined;
+  initialCompaction: CompactionDecision;
+  initialExecutionAdmitted: boolean;
+  treeBudget: TreeBudget;
+  skillBodies: ReturnType<typeof createSkillBodyPreparation>;
+}): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
 
   // The loop is the only writer of the lease phase, so `authority.read` cannot
   // split-brain. Publishing is observational: a failure must not fail the turn,
@@ -1274,41 +1531,94 @@ async function executeLoop(
     }
   }
 
-  let currentAssistantTurn: Turn = assistantTurn;
+  let currentTurn: Turn = reservedTurn;
+  const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
+  let preferredSuccessorTurnId =
+    requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
+      ? requestedReplyTurnId
+      : undefined;
+  let preparedContext: AssembledNextTurnContext | undefined = initialContext;
+  let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
+  let pendingSummary:
+    | {
+        kind: "compaction";
+        turnId: TurnId;
+        summarizer: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
+      }
+    | undefined;
+
+  async function settlePendingSummary(rows = pendingSummaryResponses) {
+    if (pendingSummary) {
+      const turn = await repos.turns.findById(pendingSummary.turnId);
+      if (!turn) throw new Error("Summary placeholder disappeared");
+      await recordCompactionSummary(deps, turn, pendingSummary.summarizer);
+    }
+    await settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget });
+  }
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
-  const allTurns: Turn[] = [...initialTurns, assistantTurn];
+  const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
   ];
-  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined;
+  // The reservation already prepared this request, so its first generation is
+  // not another boundary.
+  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
+    turns: [],
+    blocks: [],
+    events: [],
+    ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
+  };
+  let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let endTurnRequested = false;
+  let terminalControl = false;
+  let continuingTask = false;
+  let iteration = 0;
+  // One emergency retry per reply, even across tool iterations and compaction splits.
+  let retriedContextOverflow = false;
 
-  function boundaryInput(): DeliveryBoundary {
+  function boundaryInput(forcedDecision?: ForcedCompactionDecision): DeliveryBoundary {
     return {
       lease: input.lease,
-      currentTurn: currentAssistantTurn,
+      currentTurn: currentTurn,
+      ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
+      current: { kind: "assistant" },
+      // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
+      continueTask:
+        continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
+      admit: async (turn) => {
+        if (
+          thread.kind === "subagent" &&
+          (!executionSelector ||
+            !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
+        ) {
+          await admitRunExecution(deps, input, thread, turn.id);
+          executionSelector = turn.id;
+        }
+      },
+      signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
       prepareAdoptedTurn: async (turn, blocks) => {
-        const withReferences = await persistReferenceReads({
+        const withReferences = await prepareReferenceReads({
           deps,
           threadId: input.threadId,
           userTurnId: turn.id,
-          assistantTurnId: currentAssistantTurn.id,
+          assistantTurnId: currentTurn.id,
           blocks,
           signal: input.signal,
         });
-        const skillBody = await persistSkillBodies({
+        const skillBody = await prepareSkillBodies({
           deps,
           threadId: input.threadId,
           invokingTurnId: turn.id,
-          existingTurns: allTurns,
+          existingTurns: [...allTurns, turn],
           slugs: readActivatedSkillSlugs(turn),
           loadSkillBodies,
         });
         return {
           blocks: withReferences.blocks,
+          events: withReferences.events,
           extraTurns:
             skillBody.kind === "created"
               ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]
@@ -1317,22 +1627,143 @@ async function executeLoop(
                 : [],
         };
       },
+      prepareNextContext: async (drain, _current, selection) => {
+        // Run-start preparation already froze the first request before its
+        // assistant turn was reserved. Do not resolve its assets a second
+        // time before that request is sent.
+        if (
+          !forcedDecision &&
+          preparedContext &&
+          drain.turns.length === 0 &&
+          drain.blocks.length === 0
+        ) {
+          return { events: [], turns: [], blocks: [], requiresSplit: false };
+        }
+        const leaf = drain.turns.at(-1) ?? allTurns.at(-1);
+        const deferredSkillBody = await skillBodies.prepare({
+          deps,
+          thread,
+          threadId: thread.id,
+          invokingTurnId: leaf?.id ?? null,
+          invokingTurnPosition: leaf?.position ?? null,
+        });
+        const latestUserTurn =
+          [...drain.turns].reverse().find((turn) => turn.role === "user") ??
+          [...allTurns].reverse().find((turn) => turn.role === "user");
+        const skillEvents: OrchestratorEvent[] = deferredSkillBody
+          ? [
+              { type: "turn.created", turn: deferredSkillBody.turn },
+              { type: "block.upserted", block: deferredSkillBody.block },
+            ]
+          : [];
+        const skillTurns = deferredSkillBody ? [deferredSkillBody.turn] : [];
+        const skillBlocks = deferredSkillBody ? [localBlockFromEvent(deferredSkillBody.block)] : [];
+        const prepared = await prepareRequestContext({
+          deps,
+          thread,
+          threadId: input.threadId,
+          referenceTurnId: latestUserTurn?.id ?? currentTurn.id,
+          currentTurnId: currentTurn.id,
+          turns: [...allTurns, ...drain.turns, ...skillTurns],
+          blocks: [...allBlocks, ...drain.blocks, ...skillBlocks],
+          baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+          readReferences: false,
+          signal: input.signal,
+          forcedDecision,
+          assertNoResponseScope: () => {
+            if (responseScope)
+              throw new Error("Undo revision query requires no open response scope");
+          },
+          pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+        });
+        thread = prepared.assembled.thread;
+        preparedContext = prepared.assembled;
+        return {
+          events: [...skillEvents, ...prepared.events],
+          turns: [...skillTurns, ...prepared.turns],
+          blocks: [...skillBlocks, ...prepared.blocks],
+          requiresSplit: skillEvents.length + prepared.events.length > 0,
+          compaction: prepared.compaction,
+        };
+      },
     };
   }
-  function acceptBoundary(result: AdoptedBatch) {
+  async function acceptBoundary(
+    result: AdoptedBatch<unknown>,
+  ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
+    if (result.split && result.next.id === preferredSuccessorTurnId)
+      preferredSuccessorTurnId = undefined;
+    if (result.completed) {
+      const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
+      allTurns[index] = result.completed;
+    }
+    // A genuinely new input starts a new reply budget. Rebased context rows and
+    // the compaction successor itself do not grant another emergency retry.
+    if (
+      result.split &&
+      result.drain.turns.some(
+        (turn) =>
+          result.drain.ackIds.includes(turn.id) &&
+          !allTurns.some((existing) => existing.id === turn.id),
+      )
+    )
+      retriedContextOverflow = false;
+    skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
       else allBlocks[index] = block;
     }
-    if (result.split) {
-      allTurns.push(result.next);
-      currentAssistantTurn = result.next;
-      endTurnRequested = false;
-      input.onAssistantTurnChanged?.(result.next.id);
+    if (result.terminal) {
+      currentTurn = result.next;
+      terminalControl = true;
+      return result.drain;
     }
+    if (result.compaction && currentTurn.role === "assistant") continuingTask = true;
+    if (result.split) {
+      const next = result.next;
+      allTurns.push(next);
+      currentTurn = next;
+      endTurnRequested = false;
+      input.onCurrentTurnChanged?.({
+        id: next.id,
+        kind: currentTurnKind(next),
+      });
+    }
+    if (result.preparationFailure !== undefined) {
+      throw new RequestPreparationError(result.preparationFailure);
+    }
+    if (result.compaction) return compact(result.compaction);
     return result.drain;
+  }
+
+  async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
+    await publishPhase("compacting");
+    const result = await executeCompaction({
+      deps,
+      assertNoResponseScope: () => {
+        if (responseScope)
+          throw new Error("Compaction revision query requires no open response scope");
+      },
+      input,
+      thread,
+      currentTurn: currentTurn,
+      allTurns,
+      allBlocks,
+      boundary: boundaryInput(),
+      decision,
+      settleResponses: (rows) => settlePendingSummary(rows),
+      recordResponses: (rows, summarizer) => {
+        pendingSummaryResponses = rows;
+        pendingSummary = { kind: "compaction", turnId: currentTurn.id, summarizer };
+      },
+    });
+    pendingSummaryResponses = [];
+    pendingSummary = undefined;
+    preparedContext = result.preparedContext;
+    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
+    return acceptBoundary(result.successor);
   }
 
   async function rollbackActiveResponse(): Promise<void> {
@@ -1344,18 +1775,27 @@ async function executeLoop(
   async function exitRun(continueOnPending: boolean, cause: TerminalCause): Promise<boolean> {
     const outcome = await deps.delivery.close({
       lease: input.lease,
-      assistantTurnId: currentAssistantTurn.id,
+      turnId: currentTurn.id,
       cause,
+      settleSummaryResponses: () => settlePendingSummary(),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
     if (outcome.kind === "split") {
-      queuedDrain = acceptBoundary(outcome.adopted);
+      queuedDrain = await acceptBoundary(outcome.adopted);
       return true;
     }
-    currentAssistantTurn = outcome.completion.turn;
+    currentTurn = outcome.completion.turn;
     return false;
   }
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
+  const abortTerminal = (): TerminalCause =>
+    input.signal?.reason === "shutdown"
+      ? {
+          kind: "failed",
+          reason: "shutdown",
+          error: "Runtime shut down before the response completed",
+        }
+      : cancelTerminal;
   const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
@@ -1371,7 +1811,7 @@ async function executeLoop(
   // cannot diverge.
   async function cancelExit(): Promise<boolean> {
     await rollbackActiveResponse();
-    return exitRun(false, cancelTerminal);
+    return exitRun(false, abortTerminal());
   }
 
   // One loader for request-only skill bodies: a writer start passes its
@@ -1389,461 +1829,548 @@ async function executeLoop(
       ),
     );
 
-  try {
-    let iteration = 0;
-    // The in-process abort is the fast cancel path; the durable lease flag is the
-    // cross-process one, read at each iteration's safe boundary. Either set means
-    // the run exits, so no suppression state is needed.
-    let leaseCancelled = false;
-    const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
-    const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
-
-    // Every cancellation/error path must persist terminal events, not just
-    // return/throw, so subscribers see the turn lifecycle closure.
-    async function iterate(): Promise<boolean> {
-      iteration += 1;
-      if (iteration > MAX_TURN_ITERATIONS) {
-        return exitRun(false, errorTerminal("exceeded max tool iterations"));
-      }
-
-      // A cancel from another process has no local abort; the lease flag is the
-      // only signal. Read it before acting so the interrupt's next turn starts
-      // from a clean, already-released run.
-      const status = await deps.runClaim.read(input.threadId);
-      if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
-      if (isCancelled()) {
-        return cancelExit();
-      }
-
-      const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
-      if (budgetError) {
-        return exitRun(false, errorTerminal(budgetError));
-      }
-
-      turnAccounting.recordIterationSpend(treeBudget);
-
-      const gatewayAbort = new AbortController();
-      let cancelRequested = isCancelled();
-      if (input.signal) {
-        input.signal.addEventListener(
-          "abort",
-          () => {
-            cancelRequested = true;
-            gatewayAbort.abort();
-          },
-          { once: true },
-        );
-      }
-
-      if (iteration === 1) {
-        const prepared = await persistReferenceReads({
-          deps,
-          threadId: input.threadId,
-          userTurnId: referenceUserTurnId,
-          assistantTurnId: currentAssistantTurn.id,
-          blocks: allBlocks,
-          signal: input.signal,
-        });
-        for (const block of prepared.blocks) {
-          const index = allBlocks.findIndex((existing) => existing.id === block.id);
-          if (index >= 0) allBlocks[index] = block;
-        }
-        if (activatedSkillSlugs?.length) {
-          const skillBody = await persistSkillBodies({
-            deps,
-            threadId: input.threadId,
-            invokingTurnId: referenceUserTurnId,
-            existingTurns: allTurns,
-            slugs: activatedSkillSlugs,
-            loadSkillBodies,
-          });
-          if (skillBody.kind === "created") {
-            // Render immediately after the invoking turn, not at the tail:
-            // `assistantTurn` is already the last entry in `allTurns`.
-            const invokingIndex = allTurns.findIndex((t) => t.id === referenceUserTurnId);
-            allTurns.splice(invokingIndex + 1, 0, skillBody.turn);
-            allBlocks.push(skillBody.block);
-          }
-        }
-      }
-
-      const drain =
-        queuedDrain ?? acceptBoundary(await deps.delivery.splitAndContinue(boundaryInput()));
-
-      queuedDrain = undefined;
-
-      const built = await buildGenerateRequest({
-        deps,
-        runInput: input,
-        thread,
-        turns: allTurns,
-        blocks: allBlocks,
-        gatewaySignal: gatewayAbort.signal,
-      });
-      thread = built.thread;
-      const request = built.request;
-      const gatewayCallId = crypto.randomUUID();
-      request.correlation = {
-        gatewayCallId,
-        threadId: input.threadId,
-        turnId: currentAssistantTurn.id,
-        iteration: iteration - 1,
-        ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
-      };
-
-      // Notices, adopted-turn skill bodies, and message turns are already durable
-      // by this point: `drain` came from `deps.delivery.splitAndContinue`, which
-      // persists its whole batch (including the trailing notices turn) in one
-      // transition before returning. `buildGenerateRequest` above already
-      // rendered them from `allTurns`/`allBlocks`, so there is nothing left to
-      // splice onto `request.messages` here.
-      const inboxAckIds = drain.ackIds;
-
-      try {
-        deps.modelRequestDebug.capture({
-          gatewayCallId,
-          threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
-          iteration: iteration - 1,
-          agentSlug: built.agentSlug,
-          request,
-
-          toolRegistry: deps.toolRegistry,
-        });
-      } catch (cause) {
-        eventSink.emit({
-          timestamp: new Date().toISOString(),
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "model_request_debug.capture_failed",
-          sensitivity: "safe",
-          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-          payload: unknownToEventPayload(cause),
+  for (;;) {
+    try {
+      if (initialCompaction.kind === "compact") {
+        const firstDecision = initialCompaction;
+        initialCompaction = { kind: "generate" };
+        queuedDrain = await acceptBoundary({
+          next: currentTurn,
+          split: false,
+          drain: { turns: [], blocks: [], events: [], ackIds: [] },
+          compaction: firstDecision,
         });
       }
+      if (terminalControl) return currentTurn;
+      // The in-process abort is the fast cancel path; the durable lease flag is the
+      // cross-process one, read at each iteration's safe boundary. Either set means
+      // the run exits, so no suppression state is needed.
+      let leaseCancelled = false;
+      const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
+      const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
-      // The gateway yields a self-terminating stream: a sequence of
-      // text/reasoning/tool_call deltas followed by exactly one 'end'
-      // (with the assembled GenerateResult) or one 'error'.
-      // On cancel, abort the gateway call and drain through 'end' so partial
-      // usage can be persisted before turn.cancelled.
-      await publishPhase("generating");
-      let result: GenerateResult | undefined;
-      let streamModel = request.model ?? "unknown";
-      const partialToolCalls = new Map<
-        string,
-        { toolName: string; arguments: string; targetRecorded: boolean }
-      >();
-      for await (const event of gateway.stream(request)) {
-        if (isCancelled()) {
-          cancelRequested = true;
+      // Every cancellation/error path must persist terminal events, not just
+      // return/throw, so subscribers see the turn lifecycle closure.
+      async function iterate(): Promise<boolean> {
+        iteration += 1;
+        if (iteration > MAX_TURN_ITERATIONS) {
+          return exitRun(false, errorTerminal("exceeded max tool iterations"));
         }
 
-        if (thread.kind === "subagent" && event.type === "tool_call.delta") {
-          let partialCall = partialToolCalls.get(event.id);
-          const firstDelta = partialCall === undefined;
-          if (!partialCall) {
-            partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
-            partialToolCalls.set(event.id, partialCall);
-          } else if (event.name) {
-            // Some compatible providers split the tool name from the first
-            // arguments chunk; keep the newest nonempty canonical name.
-            partialCall.toolName = event.name;
-          }
-
-          if (!partialCall.targetRecorded) {
-            partialCall.arguments += event.argumentsDelta;
-            const partialInput = parsePartialToolActivityInput(
-              partialCall.toolName,
-              partialCall.arguments,
-            );
-            const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
-            if (
-              (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
-              hasTarget
-            ) {
-              const currentTool = {
-                toolCallId: event.id,
-                toolName: partialCall.toolName,
-                input: partialInput,
-              };
-              await appendSubagentActivityForToolChangeBestEffort({
-                recordCurrentTool: () => deps.runClaim.setCurrentTool(input.lease, currentTool),
-                currentTool,
-                eventWriter,
-                readActivity: (threadId) =>
-                  readThreadActivity(
-                    {
-                      threads: repos.threads,
-                      statusReader: deps.runClaim,
-                      executionReports: deps.repos.executionReports,
-                    },
-                    threadId,
-                  ),
-                rootThreadId: (thread.rootThreadId ?? thread.id) as ThreadId,
-                childThreadId: thread.id,
-                eventSink,
-              });
-              partialCall.targetRecorded = hasTarget;
-              if (hasTarget) partialCall.arguments = "";
-            }
-          }
-        }
-
-        if (event.type === "start") {
-          streamModel = event.model;
-        }
-
-        const mapped = mapStreamEvent(event);
-        if (mapped) {
-          await appendEvent(eventWriter, input.threadId, mapped);
-        }
-
-        if (event.type === "end") {
-          result = event.result;
-        }
-        if (event.type === "error") {
-          if (cancelRequested) {
-            break;
-          }
-          return exitRun(
-            false,
-            errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
-          );
-        }
-      }
-
-      if (cancelRequested) {
-        const settled = await settleCancelledResponse({
-          deps,
-          runInput: input,
-          thread,
-          currentAssistantTurn,
-          treeBudget,
-          turnAccounting,
-          blockSeq: allBlocks.filter(
-            (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-          ).length,
-          allBlocks,
-          result,
-          model: result?.model ?? streamModel,
-        });
-
-        currentAssistantTurn = settled;
-        return exitRun(false, cancelTerminal);
-      }
-
-      if (!result) {
-        return exitRun(false, errorTerminal("Stream ended without result"));
-      }
-
-      // blockSeq is the turn-scoped display order. It starts at the blocks
-      // already stored for this assistant turn and is handed to interrupt/tool
-      // collaborators so later blocks remain contiguous.
-      let blockSeq = allBlocks.filter(
-        (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-      ).length;
-      const persistedResponse = await persistModelResponse({
-        deps,
-        runInput: input,
-        thread,
-        currentAssistantTurn,
-        result,
-        treeBudget,
-        turnAccounting,
-        blockSeq,
-        inboxAckIds,
-      });
-      currentAssistantTurn = persistedResponse.updatedTurn;
-      blockSeq = persistedResponse.nextBlockSeq;
-      const responseId = persistedResponse.responseId;
-      const toolCallsFromResult = persistedResponse.toolCalls;
-      allBlocks.push(...persistedResponse.createdBlocks);
-
-      if (result.finishReason === "error") {
-        return exitRun(false, errorTerminal("Model returned error finish reason"));
-      }
-      if (result.finishReason === "max_tokens") {
-        return exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
-      }
-
-      // blockSeq continues across tool_result blocks so all blocks for this
-      // turn are numbered contiguously regardless of which iteration
-      // created them.
-      if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
-        const scope = createResponseScope({
-          deps,
-          threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
-          responseId,
-          allBlocks,
-        });
-        responseScope = scope;
+        // A cancel from another process has no local abort; the lease flag is the
+        // only signal. Read it before acting so the interrupt's next turn starts
+        // from a clean, already-released run.
+        const status = await deps.runClaim.read(input.threadId);
+        if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
         if (isCancelled()) {
           return cancelExit();
         }
 
-        // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-        // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-        for (const call of toolCallsFromResult) {
+        const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+        if (budgetError) {
+          return exitRun(false, errorTerminal(budgetError));
+        }
+
+        turnAccounting.recordIterationSpend(treeBudget);
+
+        const gatewayAbort = new AbortController();
+        let cancelRequested = isCancelled();
+        if (input.signal) {
+          input.signal.addEventListener(
+            "abort",
+            () => {
+              cancelRequested = true;
+              gatewayAbort.abort(input.signal?.reason);
+            },
+            { once: true },
+          );
+        }
+
+        const drain =
+          queuedDrain ??
+          (await acceptBoundary(await deps.delivery.splitAndContinue(boundaryInput())));
+
+        queuedDrain = undefined;
+        if (terminalControl) return false;
+
+        if (!preparedContext)
+          throw new Error("Request context must be prepared before assistant generation");
+        const built = buildGenerateRequestFromAssembled({
+          assembled: preparedContext,
+          runInput: input,
+          gatewaySignal: gatewayAbort.signal,
+        });
+        const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
+        preparedContext = undefined;
+        thread = built.thread;
+        const request = built.request;
+        const gatewayCallId = crypto.randomUUID();
+        request.correlation = {
+          gatewayCallId,
+          threadId: input.threadId,
+          turnId: currentTurn.id,
+          iteration: iteration - 1,
+          ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
+        };
+
+        // Notices, adopted-turn skill bodies, and image events are durable before
+        // their assistant turn is reserved; the context uses only that history.
+        const inboxAckIds = drain.ackIds;
+        let predictedCacheState: PrefixCacheState;
+        try {
+          predictedCacheState = await prefixCacheStateFor({
+            threadId: input.threadId,
+            model: built.resolvedModel,
+            now: Date.now(),
+            knownLocalTurns: allTurns,
+          });
+        } catch (cause) {
+          predictedCacheState = { state: "cold", reason: "facts_unavailable" };
+          emitEvent(eventSink, {
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "prefix_cache_state.derive_failed",
+            correlation: { threadId: input.threadId, turnId: currentTurn.id },
+            payload: unknownToEventPayload(cause),
+          });
+        }
+
+        try {
+          deps.modelRequestDebug.capture({
+            gatewayCallId,
+            threadId: input.threadId,
+            turnId: currentTurn.id,
+            iteration: iteration - 1,
+            agentSlug: built.agentSlug,
+            request,
+            toolRegistry: deps.toolRegistry,
+          });
+        } catch (cause) {
+          eventSink.emit({
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "model_request_debug.capture_failed",
+            sensitivity: "safe",
+            correlation: { threadId: input.threadId, turnId: currentTurn.id },
+            payload: unknownToEventPayload(cause),
+          });
+        }
+
+        // The gateway yields a self-terminating stream: a sequence of
+        // text/reasoning/tool_call deltas followed by exactly one 'end'
+        // (with the assembled GenerateResult) or one 'error'.
+        // On cancel, abort the gateway call and drain through 'end' so partial
+        // usage can be persisted before turn.cancelled.
+        await publishPhase("generating");
+        let result: GenerateResult | undefined;
+        let streamModel = request.model ?? "unknown";
+        const partialToolCalls = new Map<
+          string,
+          { toolName: string; arguments: string; targetRecorded: boolean }
+        >();
+        for await (const event of gateway.stream(request)) {
+          if (isCancelled()) {
+            cancelRequested = true;
+          }
+
+          if (thread.kind === "subagent" && event.type === "tool_call.delta") {
+            let partialCall = partialToolCalls.get(event.id);
+            const firstDelta = partialCall === undefined;
+            if (!partialCall) {
+              partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
+              partialToolCalls.set(event.id, partialCall);
+            } else if (event.name) {
+              // Some compatible providers split the tool name from the first
+              // arguments chunk; keep the newest nonempty canonical name.
+              partialCall.toolName = event.name;
+            }
+
+            if (!partialCall.targetRecorded) {
+              partialCall.arguments += event.argumentsDelta;
+              const partialInput = parsePartialToolActivityInput(
+                partialCall.toolName,
+                partialCall.arguments,
+              );
+              const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
+              if (
+                (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
+                hasTarget
+              ) {
+                const currentTool = {
+                  toolCallId: event.id,
+                  toolName: partialCall.toolName,
+                  input: partialInput,
+                };
+                await appendSubagentActivityForToolChangeBestEffort({
+                  recordCurrentTool: () => deps.runClaim.setCurrentTool(input.lease, currentTool),
+                  currentTool,
+                  eventWriter,
+                  readActivity: (threadId) =>
+                    readThreadActivity(
+                      {
+                        threads: repos.threads,
+                        statusReader: deps.runClaim,
+                        executionReports: deps.repos.executionReports,
+                      },
+                      threadId,
+                    ),
+                  parentThreadId: thread.parentThreadId as ThreadId,
+                  childThreadId: thread.id,
+                  eventSink,
+                });
+                partialCall.targetRecorded = hasTarget;
+                if (hasTarget) partialCall.arguments = "";
+              }
+            }
+          }
+
+          if (event.type === "start") {
+            streamModel = event.model;
+          }
+
+          const mapped = mapStreamEvent(event);
+          if (mapped) {
+            await appendEvent(eventWriter, input.threadId, mapped);
+          }
+
+          if (event.type === "end") {
+            result = event.result;
+          }
+          if (event.type === "error") {
+            if (cancelRequested) {
+              break;
+            }
+            if (event.code === "context_overflow") {
+              // Partial output from the rejected request is not a completed tool group.
+              // Keep its paid usage, but only prior completed responses remain in A.
+              if (event.result) {
+                const paid = await persistModelResponse({
+                  deps,
+                  runInput: input,
+                  thread,
+                  currentTurn,
+                  result: { ...event.result, content: [], toolCalls: [], finishReason: "error" },
+                  requestMessageCount: request.messages.length,
+                  predictedCacheState,
+                  treeBudget,
+                  turnAccounting,
+                  blockSeq: 0,
+                  inboxAckIds: [],
+                });
+                currentTurn = paid.updatedTurn;
+              }
+              if (retriedContextOverflow) {
+                return exitRun(false, {
+                  kind: "failed",
+                  reason: "context_window_exceeded",
+                  error: "Model context overflowed after compaction retry",
+                });
+              }
+              retriedContextOverflow = true;
+              if (usableWindowTokens === null)
+                throw new Error("Context overflow requires a resolved model");
+              queuedDrain = await acceptBoundary(
+                await deps.delivery.splitAndContinue(
+                  boundaryInput({
+                    kind: "compact",
+                    trigger: "auto",
+                    knownTooLarge: true,
+                    fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
+                  }),
+                ),
+              );
+              return true;
+            }
+            return exitRun(
+              false,
+              errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
+            );
+          }
+        }
+
+        if (cancelRequested) {
+          const settled = await settleCancelledResponse({
+            deps,
+            runInput: input,
+            thread,
+            currentTurn,
+            treeBudget,
+            turnAccounting,
+            blockSeq: allBlocks.filter((b) => (b.turnId as string) === (currentTurn.id as string))
+              .length,
+            allBlocks,
+            result,
+            model: result?.model ?? streamModel,
+            requestMessageCount: request.messages.length,
+            predictedCacheState,
+          });
+
+          currentTurn = settled;
+          return exitRun(false, abortTerminal());
+        }
+
+        if (!result) {
+          return exitRun(false, errorTerminal("Stream ended without result"));
+        }
+
+        // blockSeq is the turn-scoped display order. It starts at the blocks
+        // already stored for this assistant turn and is handed to interrupt/tool
+        // collaborators so later blocks remain contiguous.
+        let blockSeq = allBlocks.filter(
+          (b) => (b.turnId as string) === (currentTurn.id as string),
+        ).length;
+        const persistedResponse = await persistModelResponse({
+          deps,
+          runInput: input,
+          thread,
+          currentTurn,
+          result,
+          requestMessageCount: request.messages.length,
+          predictedCacheState,
+          treeBudget,
+          turnAccounting,
+          blockSeq,
+          inboxAckIds,
+        });
+        currentTurn = persistedResponse.updatedTurn;
+        blockSeq = persistedResponse.nextBlockSeq;
+        const responseId = persistedResponse.responseId;
+        const toolCallsFromResult = persistedResponse.toolCalls;
+        allBlocks.push(...persistedResponse.createdBlocks);
+
+        if (result.finishReason === "error") {
+          return exitRun(false, errorTerminal("Model returned error finish reason"));
+        }
+        if (result.finishReason === "max_tokens") {
+          return exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
+        }
+
+        // blockSeq continues across tool_result blocks so all blocks for this
+        // turn are numbered contiguously regardless of which iteration
+        // created them.
+        if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
+          const scope = createResponseScope({
+            deps,
+            threadId: input.threadId,
+            turnId: currentTurn.id,
+            responseId,
+            allBlocks,
+          });
+          responseScope = scope;
           if (isCancelled()) {
             return cancelExit();
           }
 
-          if (
-            call.name === "work" &&
-            call.arguments &&
-            typeof call.arguments === "object" &&
-            "command" in call.arguments &&
-            call.arguments.command === "switch" &&
-            scope.hasWrites
-          ) {
-            const boundary = await scope.commit();
-
-            if (boundary.status === "draft_closed") {
-              return exitRun(true, cancelTerminal);
+          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+          for (const call of toolCallsFromResult) {
+            if (isCancelled()) {
+              return cancelExit();
             }
-            scope.rotate();
-          }
 
-          // If denied, we still persist a tool_result block (with isError: true)
-          // so the model sees the rejection in the next turn's context build.
-          const decision = built.permissionGate.check(call.name, call.arguments);
-          if (!decision.allowed) {
-            const persistedRejection = await persistToolRejection({
-              deps,
-              threadId: input.threadId,
-              turn: currentAssistantTurn,
-              call,
-              decision: { ...decision, category: "tool_denied" },
-              blockSeq,
-            });
-            blockSeq = persistedRejection.nextBlockSeq;
-            allBlocks.push(persistedRejection.block);
+            if (
+              call.name === "work" &&
+              call.arguments &&
+              typeof call.arguments === "object" &&
+              "command" in call.arguments &&
+              call.arguments.command === "switch" &&
+              scope.hasWrites
+            ) {
+              const boundary = await scope.commit();
 
-            continue;
-          }
+              if (boundary.status === "draft_closed") {
+                return exitRun(true, abortTerminal());
+              }
+              scope.rotate();
+            }
 
-          await publishPhase("waiting");
-          const interruptState = {
-            thread,
-            threadId: input.threadId,
-            currentTurn: currentAssistantTurn,
-            autoResume: interruptAutoResume,
-            signal: input.signal,
-            blockSeqRef: { value: blockSeq },
-            allBlocks,
-          };
-          const interruptSession = createInterruptSession(
-            {
-              interruptRegistry: deps.interruptRegistry,
-              interruptArtifacts: deps.interruptArtifacts,
-              persistenceDeps: deps,
-              eventSink,
-            },
-            interruptState,
-          );
-          const dispatched = await dispatchToolCall(
-            {
-              toolExecutor: deps.toolExecutor,
-              childRunCoordinator: deps.childRunCoordinator,
-              eventSink,
-              persistenceDeps: deps,
-              executionReports: deps.repos.executionReports,
-              readSnapshot: deps.repos.readSnapshot,
-              runClaim: deps.runClaim,
-            },
-            call,
-            {
+            // If denied, we still persist a tool_result block (with isError: true)
+            // so the model sees the rejection in the next turn's context build.
+            const decision = built.permissionGate.check(call.name, call.arguments);
+            if (!decision.allowed) {
+              const persistedRejection = await persistToolRejection({
+                deps,
+                threadId: input.threadId,
+                turn: currentTurn,
+                call,
+                decision: { ...decision, category: "tool_denied" },
+                blockSeq,
+              });
+              blockSeq = persistedRejection.nextBlockSeq;
+              allBlocks.push(persistedRejection.block);
+
+              continue;
+            }
+
+            await publishPhase("waiting");
+            const interruptState = {
               thread,
-              lease: input.lease,
-              agentSlug: built.agentSlug,
-              responseId,
-              editResponseId: scope.id,
-              state: interruptState,
-              interruptSession,
-              interruptAutoResume,
-              treeBudget,
-              blockSeqRef: interruptState.blockSeqRef,
-              allTurns,
-            },
-          );
-          currentAssistantTurn = interruptState.currentTurn;
-          blockSeq = interruptState.blockSeqRef.value;
+              threadId: input.threadId,
+              currentTurn: currentTurn,
+              autoResume: interruptAutoResume,
+              signal: input.signal,
+              blockSeqRef: { value: blockSeq },
+              allBlocks,
+            };
+            const interruptSession = createInterruptSession(
+              {
+                interruptRegistry: deps.interruptRegistry,
+                interruptArtifacts: deps.interruptArtifacts,
+                persistenceDeps: deps,
+                eventSink,
+              },
+              interruptState,
+            );
+            const dispatched = await dispatchToolCall(
+              {
+                toolExecutor: deps.toolExecutor,
+                childRunCoordinator: deps.childRunCoordinator,
+                eventSink,
+                persistenceDeps: deps,
+                executionReports: deps.repos.executionReports,
+                readSnapshot: deps.repos.readSnapshot,
+                runClaim: deps.runClaim,
+              },
+              call,
+              {
+                thread,
+                lease: input.lease,
+                agentSlug: built.agentSlug,
+                responseId,
+                editResponseId: scope.id,
+                state: interruptState,
+                interruptSession,
+                interruptAutoResume,
+                treeBudget,
+                blockSeqRef: interruptState.blockSeqRef,
+                allTurns,
+              },
+            );
+            currentTurn = interruptState.currentTurn;
+            blockSeq = interruptState.blockSeqRef.value;
 
-          if (!dispatched.cancelled) scope.stage(dispatched);
-          if (dispatched.cancelled || isCancelled()) {
+            if (!dispatched.cancelled) scope.stage(dispatched);
+            if (dispatched.cancelled || isCancelled()) {
+              return cancelExit();
+            }
+            if (dispatched.endTurn === true) endTurnRequested = true;
+          }
+          if (isCancelled()) {
             return cancelExit();
           }
-          if (dispatched.endTurn === true) endTurnRequested = true;
-        }
-        if (isCancelled()) {
-          return cancelExit();
-        }
-        const concurrentEdits = await scope.commit();
-        responseScope = undefined;
+          const concurrentEdits = await scope.commit();
+          responseScope = undefined;
 
-        if (concurrentEdits.status === "draft_closed") {
-          return exitRun(true, cancelTerminal);
-        }
+          if (concurrentEdits.status === "draft_closed") {
+            return exitRun(true, abortTerminal());
+          }
 
-        await scope.backfill(
-          concurrentEdits.concurrentEdits,
-          deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-        );
+          await scope.backfill(
+            concurrentEdits.concurrentEdits,
+            deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
+          );
 
-        if (endTurnRequested) {
-          // A child called return_result: the report is captured and persisted,
-          // so the turn ends here instead of looping into another model round.
-          // A message that landed in the exit window keeps the run going.
-          return exitRun(true, completeTerminal(result));
+          if (endTurnRequested) {
+            // A child called return_result: the report is captured and persisted,
+            // so the turn ends here instead of looping into another model round.
+            // A message that landed in the exit window keeps the run going.
+            return exitRun(true, completeTerminal(result));
+          }
+
+          return true;
         }
 
-        return true;
+        return exitRun(true, completeTerminal(result));
       }
-
-      return exitRun(true, completeTerminal(result));
-    }
-    while (await iterate()) {
-      /* The next request starts only after its boundary commits. */
-    }
-  } catch (err) {
-    try {
-      await rollbackActiveResponse();
-    } catch (rollbackError) {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "runtime.orchestrator",
-        name: "response_rollback.failed",
-        correlation: { threadId: input.threadId },
-        payload: unknownToEventPayload(rollbackError),
+      while (await iterate()) {
+        /* The next request starts only after its boundary commits. */
+      }
+    } catch (err) {
+      try {
+        await rollbackActiveResponse();
+      } catch (rollbackError) {
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "runtime.orchestrator",
+          name: "response_rollback.failed",
+          correlation: { threadId: input.threadId },
+          payload: unknownToEventPayload(rollbackError),
+        });
+        // Keep the original turn failure visible. rollbackResponse invalidates
+        // staged runtimes before surfacing cleanup failures, so a second failure
+        // here should not hide the error that broke the response.
+      }
+      const state = await deps.runClaim.read(input.threadId);
+      if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
+        await exitRun(false, abortTerminal());
+      } else if (currentTurnKind(currentTurn) === "compaction") {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.compaction",
+          name: "successor.failed",
+          correlation: { threadId: input.threadId, turnId: currentTurn.id },
+          payload: unknownToEventPayload(err),
+        });
+        const optional = readCompactionTrigger(currentTurn.metadata) === "manual";
+        let failed: Awaited<ReturnType<typeof failCompactionSuccessor>>;
+        try {
+          failed = await failCompactionSuccessor({
+            deps,
+            threadId: input.threadId,
+            placeholder: currentTurn,
+            failure: err,
+            optional,
+            boundary: boundaryInput(),
+            settleResponses: () => settlePendingSummary(),
+          });
+        } catch (failure) {
+          // A failed status read must not replace the terminal-commit marker.
+          const latest = await deps.runClaim.read(input.threadId).catch(() => null);
+          if (input.signal?.aborted || (latest?.kind === "awake" && latest.cancelRequested)) {
+            await exitRun(false, abortTerminal());
+            return currentTurn;
+          }
+          throw failure;
+        }
+        pendingSummaryResponses = [];
+        pendingSummary = undefined;
+        queuedDrain = await acceptBoundary(failed);
+        if (optional && !terminalControl) continue;
+      } else if (
+        err instanceof RequestPreparationError ||
+        err instanceof ImageAssetResolutionError ||
+        err instanceof ThreadConversationContextError
+      ) {
+        throw err instanceof RequestPreparationError ? err : new RequestPreparationError(err);
+      } else {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.orchestrator",
+          name: "execution.failed",
+          correlation: { threadId: input.threadId, turnId: currentTurn.id },
+          payload: unknownToEventPayload(err),
+        });
+        await exitRun(
+          false,
+          errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
+        );
+      }
+    } finally {
+      await rollbackActiveResponse().catch((error) => {
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "runtime.orchestrator",
+          name: "response_rollback.failed",
+          correlation: { threadId: input.threadId },
+          payload: unknownToEventPayload(error),
+        });
       });
-      // Keep the original turn failure visible. rollbackResponse invalidates
-      // staged runtimes before surfacing cleanup failures, so a second failure
-      // here should not hide the error that broke the response.
+      // Helper result delivery is flushed by callers after their live-turn registry
+      // is cleared. Draining here would race queued helper system turns into a
+      // still-running parent thread.
     }
-    const state = await deps.runClaim.read(input.threadId);
-    if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
-      await exitRun(false, cancelTerminal);
-    } else {
-      await exitRun(
-        false,
-        errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
-      );
-    }
-  } finally {
-    await rollbackActiveResponse().catch((error) => {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "runtime.orchestrator",
-        name: "response_rollback.failed",
-        correlation: { threadId: input.threadId },
-        payload: unknownToEventPayload(error),
-      });
-    });
-    // Helper result delivery is flushed by callers after their live-turn registry
-    // is cleared. Draining here would race queued helper system turns into a
-    // still-running parent thread.
+    break;
   }
-  return currentAssistantTurn;
+  return currentTurn;
 }

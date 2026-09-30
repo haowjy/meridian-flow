@@ -12,9 +12,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { deleteDrizzleRows, useRollbackTestDatabase } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
     const { expectWorkRepositoryLifecycleContract } = await import(
       "../__conformance__/work-repository-contract.js"
@@ -24,7 +23,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000a10";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000a11";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 

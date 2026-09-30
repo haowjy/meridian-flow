@@ -104,6 +104,8 @@ function toSearchResult(
 ): SearchResult {
   return {
     uri: uriFor(scheme, hit.path, authority),
+    documentId: hit.documentId,
+    revision: hit.revision,
     matches: hit.matches,
     matchCount: hit.matchCount,
     score: hit.score,
@@ -316,7 +318,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: canonical });
       }
       if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
-      return callAdapter(canonical, () => adapter.ensureTrackedDocument(path, options));
+      const ensured = await callAdapter(canonical, () =>
+        adapter.ensureTrackedDocument(path, options),
+      );
+      return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
     },
 
     async createTrackedDocument(

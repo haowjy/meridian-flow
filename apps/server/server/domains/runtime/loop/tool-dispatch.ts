@@ -108,7 +108,7 @@ export async function dispatchToolCall(
           },
           threadId,
         ),
-      rootThreadId: (ctx.thread.rootThreadId ?? ctx.thread.id) as ThreadId,
+      parentThreadId: ctx.thread.parentThreadId as ThreadId,
       childThreadId: ctx.thread.id,
       eventSink: deps.eventSink,
     });
@@ -170,6 +170,7 @@ export async function dispatchToolCall(
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
+            from: spawnInput.from,
             description: spawnInput.description,
             ...(spawnInput.append_system_prompt !== undefined
               ? { appendSystemPrompt: spawnInput.append_system_prompt }

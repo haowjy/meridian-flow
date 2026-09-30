@@ -1,0 +1,36 @@
+{
+  "corpora": [
+    {
+      "id": "cjk-heavy",
+      "description": "Chinese fiction in text, tool input, and tool result",
+      "system": "你是长篇仙侠小说的连载编辑。只保留已有事实，不要续写故事。",
+      "request": "请先调用 read_chapter 读取下列章节，再指出沈砚是否已经打开玄玉令。必须调用工具一次。",
+      "prose": "青云宗外门弟子沈砚在寒潭底找到一枚裂开的玄玉令。令牌上的古篆与师尊三年前留下的残卷完全相同；他没有立刻认主，而是先检查灵气流向，发现裂缝中封着一缕来自北境的魔息。",
+      "proseCopies": 24,
+      "toolInputCopies": 72,
+      "toolResultCopies": 72
+    },
+    {
+      "id": "image-heavy",
+      "description": "Four 1024-square images and a text file part",
+      "system": "Describe the visible details in the attached chapter reference images. Do not invent anything.",
+      "request": "Compare the four character and location reference images, then use the attached chapter notes. Reply briefly.",
+      "imageCount": 4,
+      "imageWidth": 1024,
+      "imageHeight": 1024,
+      "fileName": "chapter-notes.txt",
+      "fileText": "本章设定：沈砚没有认主玄玉令。他先观察裂纹中流出的灵气，确认那缕魔息来自北境。掌门尚未知道此事，师尊的残卷只留下了半句警告。",
+      "fileTextCopies": 72
+    },
+    {
+      "id": "english-control",
+      "description": "English control with matching tool structure",
+      "system": "You are an editor for a long-running fantasy serial. Preserve stated facts and do not continue the story.",
+      "request": "Call read_chapter once to load the chapter excerpt, then say whether Shen Yan opened the jade token.",
+      "prose": "Outer-sect disciple Shen Yan found a cracked black-jade token beneath the cold pool. Its old seal-script matched the fragment his master left three years ago. He did not claim it at once; he studied the flow of spiritual energy and found a trace of northern demonic breath inside the crack.",
+      "proseCopies": 24,
+      "toolInputCopies": 72,
+      "toolResultCopies": 72
+    }
+  ]
+}

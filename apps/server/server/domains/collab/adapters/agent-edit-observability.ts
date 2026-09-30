@@ -18,12 +18,12 @@ import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
-    rerunFailed({ documentId, cause }) {
+    backgroundFailed({ documentId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
         source: "collab.branch_pull",
-        name: "rerun.failed",
+        name: "background.failed",
         correlation: { documentId },
         payload: unknownToEventPayload(cause),
       });

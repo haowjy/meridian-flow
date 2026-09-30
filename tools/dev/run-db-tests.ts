@@ -1,12 +1,9 @@
 #!/usr/bin/env tsx
 /** Run the shared DB suite against a database owned by this invocation. */
-import { spawn } from "node:child_process";
-import {
-  cloneDatabaseForUrl,
-  dropDatabaseForUrl,
-  ensureDatabaseForUrl,
-  isLocalDevPostgres,
-} from "./lib/dev-db";
+import { fork, spawn } from "node:child_process";
+import { closeSync, mkdirSync, openSync } from "node:fs";
+import { join } from "node:path";
+import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -53,8 +50,16 @@ async function main(): Promise<void> {
   }
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
+  if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
+    throw new Error(
+      "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
+    );
+  }
   const workerDatabaseUrls = local
-    ? Array.from({ length: 4 }, (_, index) => managedTestDatabaseWorkerUrl(databaseUrl, index + 1))
+    ? Array.from({ length: workerCount }, (_, index) =>
+        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+      )
     : [];
 
   try {
@@ -68,10 +73,6 @@ async function main(): Promise<void> {
       );
       if (migrationExit !== 0)
         throw new Error(`DB migrations exited with status ${migrationExit}.`);
-      const functionsExit = await run(repoRoot, ["db:apply-functions"], databaseUrl);
-      if (functionsExit !== 0) {
-        throw new Error(`DB function installation exited with status ${functionsExit}.`);
-      }
       await Promise.all(
         workerDatabaseUrls.map(async (workerDatabaseUrl) => {
           const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl);
@@ -85,18 +86,44 @@ async function main(): Promise<void> {
       ["exec", "vitest", "run", "--config", "apps/server/vitest.db.config.ts", ...testArgs],
       databaseUrl,
       workerDatabaseUrls.length > 0
-        ? { DB_TEST_DATABASE_URLS: JSON.stringify(workerDatabaseUrls) }
+        ? {
+            DB_TEST_DATABASE_URLS: JSON.stringify(
+              workerDatabaseUrls.map((workerUrl) => {
+                const url = new URL(workerUrl);
+                // Postgres.js forwards unknown URL parameters as session startup settings.
+                // Only these owned throwaway connections sacrifice crash durability.
+                url.searchParams.set("synchronous_commit", "off");
+                return url.toString();
+              }),
+            ),
+          }
         : {},
     );
     process.exitCode = testExit;
   } finally {
     if (local) {
-      for (const workerDatabaseUrl of workerDatabaseUrls) {
-        const result = await dropDatabaseForUrl(workerDatabaseUrl, mainDatabaseNames);
-        console.log(`DB tests: dropped worker database ${result.targetDb}.`);
-      }
-      const result = await dropDatabaseForUrl(databaseUrl, mainDatabaseNames);
-      console.log(`DB tests: dropped owned database ${result.targetDb}.`);
+      const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
+      mkdirSync(logDirectory, { recursive: true });
+      const logPath = join(logDirectory, `${process.pid}.log`);
+      const log = openSync(logPath, "a", 0o600);
+      const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
+        cwd: repoRoot,
+        detached: true,
+        stdio: ["ignore", log, log, "ipc"],
+      });
+      closeSync(log);
+      await new Promise<void>((resolve, reject) => {
+        cleanup.once("error", reject);
+        cleanup.once("exit", (code) =>
+          reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
+        );
+        cleanup.on("message", (message) => {
+          if (message === "ready") resolve();
+        });
+        cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
+      });
+      cleanup.unref();
+      console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
     }
   }
 }

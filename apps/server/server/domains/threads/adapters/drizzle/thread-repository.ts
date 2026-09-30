@@ -5,10 +5,16 @@
  */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { SpawnStatus, ThreadKind, ThreadLifecycleStatus } from "@meridian/contracts/threads";
+import type {
+  PromptBake,
+  SpawnStatus,
+  Thread,
+  ThreadKind,
+  ThreadLifecycleStatus,
+} from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -18,13 +24,14 @@ import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
+  PromptBakeContent,
   SubagentThreadFactory,
-  ThreadDescendant,
+  ThreadChild,
   ThreadRepository,
   ThreadStatusReader,
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
-import { mapThread } from "./mappers.js";
+import { mapPromptBake, mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { threadActionRequiredSql } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
@@ -131,6 +138,7 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
 async function insertThreadRow(
   db: DrizzleDatabase,
   values: Omit<typeof schema.threads.$inferInsert, "ref" | "kind"> & { kind: ThreadKind },
+  options: { ignoreIdConflict?: boolean } = {},
 ) {
   return runInDrizzleTransaction(db, async () => {
     const activeDb = currentDrizzleDb(db);
@@ -144,10 +152,10 @@ async function insertThreadRow(
       .returning({ n: schema.projectThreadCounters.n });
     if (!counter) throw new Error("Failed to allocate thread ref");
     const ref = formatThreadRef(values.kind, counter.n);
-    const [created] = await activeDb
-      .insert(schema.threads)
-      .values({ ...values, ref })
-      .returning(threadColumns);
+    const insert = activeDb.insert(schema.threads).values({ ...values, ref });
+    const [created] = options.ignoreIdConflict
+      ? await insert.onConflictDoNothing({ target: schema.threads.id }).returning(threadColumns)
+      : await insert.returning(threadColumns);
     return created;
   });
 }
@@ -167,7 +175,6 @@ export function createDrizzleThreadRepository(
         createdByUserId: input.userId as string,
         kind: normalized.kind,
         title: normalized.title,
-        composedSystemPrompt: normalized.systemPrompt,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
         spawnStatus: normalized.spawnStatus,
@@ -185,12 +192,10 @@ export function createDrizzleThreadRepository(
         createdByUserId: thread.userId,
         kind: thread.kind,
         title: thread.title ?? "",
-        composedSystemPrompt: thread.composedSystemPrompt,
-        bakedSkillSlugs: thread.bakedSkillSlugs,
-        bakedTools: thread.bakedTools,
+        initialPromptBakeId: thread.initialPromptBakeId ?? null,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.rootThreadId,
-        originTurnId: input.originTurnId ?? thread.id,
+        originTurnId: input.originTurnId,
         originType: "spawn",
         spawnStatus: thread.spawnStatus,
         spawnDepth: thread.spawnDepth,
@@ -201,24 +206,28 @@ export function createDrizzleThreadRepository(
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
-      const row = await insertThreadRow(db, {
-        id: thread.id,
-        projectId: thread.projectId as ProjectId,
-        createdByUserId: thread.userId,
-        kind: "primary",
-        title: thread.title ?? "",
-        composedSystemPrompt: thread.composedSystemPrompt,
-        bakedSkillSlugs: thread.bakedSkillSlugs,
-        bakedTools: thread.bakedTools,
-        parentThreadId: thread.parentThreadId,
-        rootThreadId: thread.rootThreadId,
-        originTurnId: thread.originTurnId,
-        originType: thread.originType,
-        spawnDepth: thread.spawnDepth,
-        status: thread.status,
-      });
-      if (!row) throw new Error("Failed to create derived primary thread");
-      return mapThread({ ...row, workId: thread.workId });
+      const row = await insertThreadRow(
+        db,
+        {
+          id: thread.id,
+          projectId: thread.projectId as ProjectId,
+          createdByUserId: thread.userId,
+          kind: "primary",
+          title: thread.title ?? "",
+          initialPromptBakeId: thread.initialPromptBakeId ?? null,
+          parentThreadId: thread.parentThreadId,
+          rootThreadId: thread.rootThreadId,
+          originTurnId: thread.originTurnId,
+          originType: thread.originType,
+          spawnDepth: thread.spawnDepth,
+          status: thread.status,
+        },
+        { ignoreIdConflict: true },
+      );
+      if (row) return { thread: mapThread({ ...row, workId: thread.workId }), created: true };
+      const existing = await this.findByIdIncludingDeleted(input.id);
+      if (!existing) throw new Error("Derived thread ID conflict disappeared");
+      return { thread: existing, created: false };
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const [row] = await currentDrizzleDb(db)
@@ -253,6 +262,17 @@ export function createDrizzleThreadRepository(
             isNull(schema.projects.deletedAt),
           ),
         );
+      return row ? mapThread(row) : null;
+    },
+    async findByIdIncludingDeleted(id: ThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
+        .from(schema.threads)
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(eq(schema.threads.id, id));
       return row ? mapThread(row) : null;
     },
     async findLiveByProjectRef(projectId: ProjectId, ref: string) {
@@ -349,50 +369,82 @@ export function createDrizzleThreadRepository(
         mapThreadListRow(row, leaseStates?.get(row.id as ThreadId)?.runningTurnId ?? null),
       );
     },
-    async listDescendants(threadId: ThreadId) {
-      const activeDb = currentDrizzleDb(db);
-      const descendants: ThreadDescendant[] = [];
-      const seen = new Set<string>([threadId]);
-      let frontier: ThreadId[] = [threadId];
-      // Level-by-level BFS so each hop is an index lookup on
-      // `threads_parent_created_active` (parent_thread_id, created_at DESC).
-      while (frontier.length > 0) {
-        const rows = await activeDb
-          .select({
-            id: schema.threads.id,
-            parentThreadId: schema.threads.parentThreadId,
-            rootThreadId: schema.threads.rootThreadId,
-            spawnDepth: schema.threads.spawnDepth,
-            ref: schema.threads.ref,
-            title: schema.threads.title,
-            agentName,
-            spawnStatus: schema.threads.spawnStatus,
-            originTurnId: schema.threads.originTurnId,
-          })
-          .from(schema.threads)
-          .where(
-            and(inArray(schema.threads.parentThreadId, frontier), isNull(schema.threads.deletedAt)),
-          )
-          .orderBy(asc(schema.threads.createdAt), asc(schema.threads.id));
-        frontier = [];
-        for (const row of rows) {
-          if (seen.has(row.id)) continue;
-          seen.add(row.id);
-          descendants.push({
-            id: row.id,
-            parentThreadId: row.parentThreadId,
-            rootThreadId: row.rootThreadId ?? row.id,
-            spawnDepth: row.spawnDepth,
-            ref: row.ref,
-            title: row.title === "" ? null : row.title,
-            agentName: row.agentName ?? null,
-            spawnStatus: row.spawnStatus as SpawnStatus | null,
-            originTurnId: row.originTurnId ?? null,
-          });
-          frontier.push(row.id);
-        }
-      }
-      return descendants;
+    async listLineageChildren({ rootThreadId, parentIds, limit, after }) {
+      const ids = sql.join(
+        parentIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      );
+      const edges = sql`(
+        SELECT id, parent_thread_id AS up_thread_id FROM threads
+        WHERE parent_thread_id IN (${ids}) AND deleted_at IS NULL
+        UNION ALL
+        SELECT t.id, cut.thread_id AS up_thread_id FROM threads t
+        JOIN turns cut ON cut.id = t.origin_turn_id
+        WHERE t.root_thread_id = ${rootThreadId} AND t.origin_type IN ('fork','handoff')
+          AND t.deleted_at IS NULL AND cut.thread_id IN (${ids})
+      )`;
+      const rows = await currentDrizzleDb(db)
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+          upThreadId: sql<ThreadId>`edges.up_thread_id`,
+          cursorCreatedAt: sql<string>`to_char(${schema.threads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          siblingCount: sql<number>`edges.sibling_count::int`,
+        })
+        .from(schema.threads)
+        .innerJoin(
+          sql`(SELECT *, count(*) OVER (PARTITION BY up_thread_id) AS sibling_count FROM ${edges} e) edges`,
+          sql`edges.id = ${schema.threads.id}`,
+        )
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(
+          and(
+            eq(schema.threads.rootThreadId, rootThreadId),
+            after
+              ? sql`(${schema.threads.createdAt}, ${schema.threads.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(schema.threads.createdAt), desc(schema.threads.id))
+        .limit(limit);
+      return rows.map((row) => ({
+        ...mapThread(row),
+        createdAt: row.cursorCreatedAt,
+        upThreadId: row.upThreadId,
+        siblingCount: row.siblingCount,
+      }));
+    },
+    async listChildren(threadId: ThreadId) {
+      const rows = await currentDrizzleDb(db)
+        .select({
+          id: schema.threads.id,
+          parentThreadId: schema.threads.parentThreadId,
+          ref: schema.threads.ref,
+          title: schema.threads.title,
+          agentName,
+          spawnStatus: schema.threads.spawnStatus,
+          originTurnId: schema.threads.originTurnId,
+        })
+        .from(schema.threads)
+        .where(
+          and(
+            eq(schema.threads.parentThreadId, threadId),
+            eq(schema.threads.kind, "subagent"),
+            isNull(schema.threads.deletedAt),
+          ),
+        )
+        .orderBy(asc(schema.threads.createdAt), asc(schema.threads.id));
+      return rows.map(
+        (row): ThreadChild => ({
+          id: row.id,
+          parentThreadId: row.parentThreadId,
+          ref: row.ref,
+          title: row.title === "" ? null : row.title,
+          agentName: row.agentName ?? null,
+          spawnStatus: row.spawnStatus as SpawnStatus | null,
+          originTurnId: row.originTurnId ?? null,
+        }),
+      );
     },
     async listRecentByWork(projectId: ProjectId, workId: WorkId, limit: number) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
@@ -455,28 +507,38 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
-    async bakeComposedSystemPrompt(id, input) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          composedSystemPrompt: input.composedSystemPrompt,
-          bakedSkillSlugs: input.bakedSkillSlugs,
-          bakedTools: input.bakedTools,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
-        .returning(threadColumns);
-      if (row) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-      }
-      const existing = await this.findById(id);
-      if (!existing) throw new Error(`Thread not found: ${id}`);
-      return existing;
+    async bakeInitialPrompt(
+      id,
+      input: PromptBakeContent,
+    ): Promise<{ thread: Thread; bake: PromptBake }> {
+      return runInDrizzleTransaction(db, async () => {
+        const locked = await lockThreadForMutation(db, id);
+        if (!locked) throw new Error(`Thread not found: ${id}`);
+        const thread = await this.findById(id);
+        if (!thread) throw new Error(`Thread not found: ${id}`);
+        if (thread.initialPromptBakeId != null) {
+          const [row] = await currentDrizzleDb(db)
+            .select()
+            .from(schema.promptBakes)
+            .where(eq(schema.promptBakes.id, thread.initialPromptBakeId));
+          if (!row) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
+          return { thread, bake: mapPromptBake(row) };
+        }
+        const [bakeRow] = await currentDrizzleDb(db)
+          .insert(schema.promptBakes)
+          .values({ ownerThreadId: id, ...input })
+          .returning();
+        if (!bakeRow) throw new Error("Failed to create prompt bake");
+        const [updated] = await currentDrizzleDb(db)
+          .update(schema.threads)
+          .set({ initialPromptBakeId: bakeRow.id, updatedAt: new Date() })
+          .where(and(eq(schema.threads.id, id), isNull(schema.threads.initialPromptBakeId)))
+          .returning();
+        if (!updated) throw new Error(`Thread initial bake changed while locked: ${id}`);
+        const current = await this.findById(id);
+        if (!current) throw new Error(`Thread not found: ${id}`);
+        return { thread: current, bake: mapPromptBake(bakeRow) };
+      });
     },
     async recomputeCostFromModelResponses(id) {
       await writeThreadCostRecompute(db, id);

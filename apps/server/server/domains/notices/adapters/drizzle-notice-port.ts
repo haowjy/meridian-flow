@@ -1,4 +1,4 @@
-/** Drizzle-backed destructive delivery queue for model-context notices. */
+/** Drizzle-backed storage for model-context notices with ID-based consumption. */
 import type { Database } from "@meridian/database";
 import { pendingNotices } from "@meridian/database/schema";
 import { asc, eq, inArray } from "drizzle-orm";
@@ -23,22 +23,21 @@ export function createDrizzleNoticePort(db: Database): NoticePort {
       });
     },
 
-    async drainForModelContext(threadId) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db);
-        const rows = await tx
-          .select()
-          .from(pendingNotices)
-          .where(eq(pendingNotices.threadId, threadId))
-          .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
-        if (rows.length === 0) return [];
-        await tx.delete(pendingNotices).where(
-          inArray(
-            pendingNotices.id,
-            rows.map(({ id }) => id),
-          ),
-        );
-        return rows.map(mapNotice);
+    async peek(threadId) {
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(pendingNotices)
+        .where(eq(pendingNotices.threadId, threadId))
+        .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
+      return rows.map(mapNotice);
+    },
+
+    async consume(ids) {
+      if (ids.length === 0) return;
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db)
+          .delete(pendingNotices)
+          .where(inArray(pendingNotices.id, [...ids]));
       });
     },
   };

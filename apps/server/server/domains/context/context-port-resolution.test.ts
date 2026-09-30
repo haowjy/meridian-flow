@@ -33,6 +33,7 @@ function thread(): Thread {
     status: "idle",
     title: "Custom project thread",
     ref: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,
@@ -45,6 +46,7 @@ function thread(): Thread {
     deletedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    lastActivityAt: new Date().toISOString(),
   };
 }
 

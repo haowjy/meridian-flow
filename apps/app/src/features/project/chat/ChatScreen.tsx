@@ -11,11 +11,24 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
+import { useThreadActions } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer } from "@/features/chat/CreationComposer";
+import {
+  type DerivationDeps,
+  derivationFailureCopy,
+  retryDerivation,
+  useDerivationResume,
+  useDerivationStatus,
+} from "@/features/chat/derivation/derive-conversation";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -42,6 +55,9 @@ export function ChatScreen({
   const { threads: projectThreads } = useProjectThreads(projectId);
   const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
     useChatNavigation();
+  const derivationDeps = useDerivationDeps();
+  // A fork or handoff reloaded mid-creation re-issues its request first.
+  const resumingDerivation = useDerivationResume(threadId, derivationDeps);
 
   // New chat: the same frame a live chat uses, with nothing above the composer
   // yet, so the first Send grows a transcript without moving the composer.
@@ -63,8 +79,11 @@ export function ChatScreen({
     );
   }
 
+  if (resumingDerivation) return <ChatFrame title={t`New chat`}>{null}</ChatFrame>;
+
   return (
     <ChatScreenLoaded
+      derivationDeps={derivationDeps}
       projectId={projectId}
       threadId={threadId}
       activeWork={activeWork}
@@ -76,7 +95,15 @@ export function ChatScreen({
   );
 }
 
+function useDerivationDeps(): DerivationDeps {
+  const accountId = useAccountId();
+  const accountSignal = useAccountEpochSignal();
+  const threadActions = useThreadActions();
+  return { accountId, accountSignal, threadActions };
+}
+
 function ChatScreenLoaded({
+  derivationDeps,
   projectId,
   threadId,
   activeWork,
@@ -85,6 +112,7 @@ function ChatScreenLoaded({
   onSelectThread,
   onOpenContextTarget,
 }: {
+  derivationDeps: DerivationDeps;
   projectId: string;
   threadId: string;
   activeWork: Work | null;
@@ -106,13 +134,13 @@ function ChatScreenLoaded({
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const ancestors = snapshot?.ancestors ?? [];
   const activity = useThreadActivity({
-    threadId: thread?.rootThreadId ?? threadId,
-    rootThreadId: thread?.rootThreadId ?? threadId,
+    threadId: thread?.parentThreadId ?? threadId,
     seed: null,
   });
-  const currentRun = activity.activity.descendants.find((node) => node.threadId === threadId);
+  const currentRun = activity.activity.children.find((node) => node.threadId === threadId);
 
   const isSubagent = thread?.kind === "subagent";
+  const derivation = useDerivationStatus(threadId);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -127,6 +155,17 @@ function ChatScreenLoaded({
           endedAt={currentRun?.runEndedAt}
           onOpenParent={onSelectThread}
         />
+      ) : null}
+
+      {derivation?.state === "failed" ? (
+        <div className="border-b border-destructive/30 bg-card px-4 py-2" data-derivation-failed>
+          <div className="mx-auto max-w-3xl">
+            <InlineErrorRow
+              message={derivationFailureCopy(derivation.intent.kind)}
+              onRetry={() => retryDerivation(threadId, derivationDeps)}
+            />
+          </div>
+        </div>
       ) : null}
 
       {isError ? (

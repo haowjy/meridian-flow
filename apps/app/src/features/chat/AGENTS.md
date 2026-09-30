@@ -80,7 +80,22 @@ lists every direct child.
 `subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
 notices by child thread, ref, and execution. A saved running card with no live
 lease is `unknown`, not running. `transcript-model.ts` classifies turns and
-derives response parts, delivery rows, and reveal targets in one pass.
+derives transcript rows, response parts, delivery rows, and reveal targets in
+one pass. Rows have kinds (turn, compaction divider, handoff brief card,
+`from` reference) and stay index-aligned with the visible turns; grouping
+switches on row kind, never on role. Compaction turns are divider rows there,
+never in the head; see
+[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Queued
+`/compact` waits at the transcript tail until replies finish. Fork,
+handoff, the brief card, and a fork's inherited rows are in
+[`.context/fork-and-handoff.md`](.context/fork-and-handoff.md). The handoff
+brief is not an inbox command: `derivation/useHandoffBrief.ts` owns its Retry
+(an optimistic card after the turn it followed, reconciled by the seed's id) and Stop (turn
+cancel on the seed), and a pending seed is the composer's active run. A failed
+reply's Retry (`useReplyRetry.ts`) shares that optimistic half
+(`useRetryStandIns.ts`); see
+[`.context/failed-reply-retry.md`](.context/failed-reply-retry.md). Hand off
+also sits under a delivered writer message; Fork stays on replies.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their
@@ -90,7 +105,7 @@ notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
-`meridian.block.upserted` and `meridian.block.pruned` projection for the whole
+`meridian.block.upserted` projection for the whole
 mounted thread lifetime. The existing upsert frame also carries historical card
 replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather

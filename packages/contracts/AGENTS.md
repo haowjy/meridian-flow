@@ -32,6 +32,18 @@ runtime shapes, and observability records.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
+- `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
+  placeholders (`compaction` and handoff seed `system`); the database partial
+  index and orphan-repair queries derive from it.
+- `ControlBody` in `threads/` is the one list of thread control kinds
+  (`compact`). Four restatements do not
+  fail to compile when a kind is missing, so change them with it: the
+  websocket pending schema (`protocol/ws-protocol.ts`), the controls route's
+  request schema, runtime `pending-inbox.ts`, and the database inbox body
+  check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
+  queued item from the tray or fails its enqueue.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
+- Blocks describe the writer transcript. Model-only document-text elisions belong
+  to compaction metadata, never a block lifecycle flag or client event.

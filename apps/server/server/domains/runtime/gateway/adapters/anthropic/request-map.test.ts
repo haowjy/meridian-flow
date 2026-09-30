@@ -153,6 +153,8 @@ describe("Anthropic message alternation", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
     expect(params.messages[1]).toMatchObject({
@@ -173,7 +175,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
         messages: [
           {
             ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
           },
           assistant([
             {
@@ -201,6 +203,8 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.system).toEqual([
       { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
@@ -227,6 +231,26 @@ describe("Anthropic prompt-cache breakpoints", () => {
     expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
   });
 
+  it("maps the descriptor's five-minute TTL into cache_control", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
+          },
+        ],
+      },
+      "claude-sonnet-4",
+      256,
+      "anthropic",
+      5 * 60 * 1_000,
+    );
+    expect(params.system).toEqual([
+      { type: "text", text: "You are Writer.", cache_control: { type: "ephemeral", ttl: "5m" } },
+    ]);
+  });
+
   it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
     // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
     // the previous request's tail (read point), and this request's tail.
@@ -235,11 +259,11 @@ describe("Anthropic prompt-cache breakpoints", () => {
         messages: [
           {
             ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
           },
           {
             ...user("History line one."),
-            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true }],
+            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true as const }],
           },
           assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
           {
@@ -258,10 +282,53 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      undefined,
+      60 * 60 * 1_000,
     );
     const wireJson = JSON.stringify(params);
     const breakpointCount = wireJson.split('"cache_control"').length - 1;
     expect(breakpointCount).toBe(3);
     expect(breakpointCount).toBeLessThanOrEqual(4);
   });
+});
+
+it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
+  const request = {
+    messages: [
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: "Task", cacheBreakpoint: true as const }],
+      },
+    ],
+    reasoning: { effort: "low" as const },
+  };
+  const original = toAnthropicMessageParams(
+    request,
+    "claude-sonnet-4-20250514",
+    16384,
+    "anthropic",
+    3600000,
+  );
+  const capped = toAnthropicMessageParams(
+    { ...request, maxTokens: 4096 + 300 },
+    "claude-sonnet-4-20250514",
+    16384,
+    "anthropic",
+    3600000,
+  );
+  expect(capped).toEqual({ ...original, max_tokens: 4396 });
+});
+
+it.each([
+  [{ effort: "medium" as const }, 4096],
+  [{ effort: "max" as const }, undefined],
+])("keeps implicit thinking below the output limit (%s, %s)", (reasoning, maxTokens) => {
+  const params = toAnthropicMessageParams(
+    { messages: [], reasoning, maxTokens },
+    "claude-sonnet-4-20250514",
+    16384,
+  );
+  expect(params.thinking?.type).toBe("enabled");
+  if (params.thinking?.type === "enabled")
+    expect(params.thinking.budget_tokens).toBeLessThan(params.max_tokens);
 });

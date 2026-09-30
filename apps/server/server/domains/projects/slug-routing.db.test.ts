@@ -24,7 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../context/adapters/project-context-availability.js"
     );
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const availability = createDrizzleProjectContextAvailability(db);
@@ -42,7 +42,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.projects, schema.works]);
+      await deleteDrizzleRows(db, [schema.users, schema.projects, schema.works]);
     });
     afterAll(async () => db.$client.end());
 
@@ -181,11 +181,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
       });
+      const spawnTurn = await db
+        .insert(schema.turns)
+        .values({
+          threadId: first.id,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+        .returning({ id: schema.turns.id });
       const child = await chats.createSubagent({
         userId,
         projectId: project.id,
         parentThreadId: first.id,
         rootThreadId: first.id,
+        originTurnId: spawnTurn[0].id,
         spawnDepth: 1,
       });
       expect(child.ref).toBe("p4");

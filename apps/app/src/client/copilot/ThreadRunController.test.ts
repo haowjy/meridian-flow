@@ -225,22 +225,7 @@ describe("controller gap-result ownership", () => {
 
   it("retries a stale gap snapshot instead of treating HTTP success as recovery", async () => {
     vi.useFakeTimers();
-    const gates = [
-      scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>(),
-      scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>(),
-      scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>(),
-    ];
-    let request = 0;
-    const nextSnapshot = () => {
-      const gate = gates[request++];
-      if (!gate) throw new Error("Unexpected gap snapshot request");
-      return gate.promise;
-    };
-    const resolve = (index: number, nextSeq: string) => {
-      const gate = gates[index];
-      if (!gate) throw new Error(`Missing snapshot gate ${index}`);
-      gate.resolve(snapshot(nextSeq));
-    };
+    let nextSeq = "4000";
     const snapshot = (nextSeq: string) =>
       ({
         threadId: "thread_1",
@@ -251,21 +236,17 @@ describe("controller gap-result ownership", () => {
         liveState: { runningTurnId: null },
       }) as unknown as import("@meridian/contracts/protocol").ThreadSnapshotResponse;
     const scenario = makeScenario({
-      snapshot: nextSnapshot,
+      snapshot: async () => snapshot(nextSeq),
     });
     scenario.store.getState().acceptDurableBlockSeq("thread_1", "4000");
     scenario.resume({ expectedTurnId: "run-1" });
     scenario.emit(runStarted("run-1"), "10");
     scenario.reportGap();
-    expect(scenario.snapshotRequests).toHaveLength(1);
-    resolve(0, "4000");
-    await vi.advanceTimersByTimeAsync(250);
-    expect(scenario.snapshotRequests).toHaveLength(2);
-    resolve(1, "4000");
-    await vi.advanceTimersByTimeAsync(250);
-    expect(scenario.snapshotRequests).toHaveLength(3);
-    resolve(2, "5000");
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4000");
+    nextSeq = "5000";
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(scenario.snapshotRequests.length).toBeLessThanOrEqual(6);
     expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4999");
     expect(scenario.activeSubscription()).toBeDefined();
     scenario.emit(

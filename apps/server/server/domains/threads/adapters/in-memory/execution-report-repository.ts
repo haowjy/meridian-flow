@@ -29,6 +29,11 @@ export function createInMemoryExecutionReportRepository(
     const row = rows.get(execution);
     return row?.childThreadId === child ? row : null;
   };
+  const positionForReport = (executionTurnId: string) => {
+    const turn = deps.turns.get(executionTurnId);
+    if (!turn) throw new Error(`Execution report turn not found: ${executionTurnId}`);
+    return turn.position;
+  };
   return {
     async findByTurn(child, turnId) {
       let turn = deps.turns.get(turnId);
@@ -42,12 +47,12 @@ export function createInMemoryExecutionReportRepository(
     async admit(input) {
       assertExecutionReportAdmission(input, {
         child: deps.threads.get(input.childThreadId) ?? null,
-        assistant: deps.turns.get(input.assistantTurnId) ?? null,
+        assistant: deps.turns.get(input.executionTurnId) ?? null,
         caller: input.callerThreadId ? (deps.threads.get(input.callerThreadId) ?? null) : null,
         callerTurn: input.callerTurnId ? (deps.turns.get(input.callerTurnId) ?? null) : null,
         card: input.cardBlockId ? (deps.blocks.get(input.cardBlockId) ?? null) : null,
       });
-      const existing = rows.get(input.assistantTurnId);
+      const existing = rows.get(input.executionTurnId);
       const identity = reportIdentity(input);
       if (existing) {
         assertReportIdentity(existing, identity);
@@ -56,7 +61,7 @@ export function createInMemoryExecutionReportRepository(
       const row: SavedExecutionReport = {
         ...identity,
         admittedAt: new Date().toISOString(),
-        terminalAssistantTurnId: null,
+        terminalTurnId: null,
         capture: null,
         captureToolCallId: null,
         outcome: null,
@@ -69,7 +74,7 @@ export function createInMemoryExecutionReportRepository(
         publication: "none",
         publishedAt: null,
       };
-      rows.set(input.assistantTurnId, row);
+      rows.set(input.executionTurnId, row);
       return row;
     },
     async captureOnce(child, execution, toolCallId, capture) {
@@ -89,7 +94,7 @@ export function createInMemoryExecutionReportRepository(
       return next;
     },
     async finalizeOnce(input) {
-      const row = find(input.childThreadId, input.assistantTurnId);
+      const row = find(input.childThreadId, input.executionTurnId);
       if (!row) throw new Error("Execution report was not admitted");
       const content = reportTerminalContent(input);
       if (row.outcome !== null) {
@@ -102,7 +107,7 @@ export function createInMemoryExecutionReportRepository(
         terminalAt: new Date().toISOString(),
         publication: reportPublicationByDelivery[row.deliveryMode],
       };
-      rows.set(input.assistantTurnId, next);
+      rows.set(input.executionTurnId, next);
       return next;
     },
     async findByExecution(child, execution) {
@@ -117,7 +122,7 @@ export function createInMemoryExecutionReportRepository(
         if (
           !current ||
           row.admittedAt > current.admittedAt ||
-          (row.admittedAt === current.admittedAt && row.assistantTurnId > current.assistantTurnId)
+          (row.admittedAt === current.admittedAt && row.executionTurnId > current.executionTurnId)
         ) {
           latest.set(row.childThreadId, row);
         }
@@ -136,9 +141,8 @@ export function createInMemoryExecutionReportRepository(
         .filter((row) => row.childThreadId === child && row.outcome !== null)
         .sort(
           (a, b) =>
-            (deps.turns.get(a.assistantTurnId)?.createdAt ?? "").localeCompare(
-              deps.turns.get(b.assistantTurnId)?.createdAt ?? "",
-            ) || a.assistantTurnId.localeCompare(b.assistantTurnId),
+            positionForReport(a.executionTurnId) - positionForReport(b.executionTurnId) ||
+            a.executionTurnId.localeCompare(b.executionTurnId),
         );
     },
     async listUnfinalized(limit, afterExecutionId) {
@@ -146,33 +150,39 @@ export function createInMemoryExecutionReportRepository(
       return [...rows.values()]
         .filter(
           (row) =>
-            row.outcome === null && (!afterExecutionId || row.assistantTurnId > afterExecutionId),
+            row.outcome === null && (!afterExecutionId || row.executionTurnId > afterExecutionId),
         )
-        .sort((a, b) => a.assistantTurnId.localeCompare(b.assistantTurnId))
+        .sort((a, b) => a.executionTurnId.localeCompare(b.executionTurnId))
         .slice(0, limit)
-        .map(({ childThreadId, assistantTurnId }) => ({ childThreadId, assistantTurnId }));
+        .map(({ childThreadId, executionTurnId }) => ({ childThreadId, executionTurnId }));
     },
     async listPendingPublication(limit, afterExecutionId) {
       const eligible = [];
       for (const row of rows.values()) {
         if (row.publication !== "pending") continue;
-        if (afterExecutionId && row.assistantTurnId <= afterExecutionId) continue;
-        const caller = row.callerThreadId ? deps.threads.get(row.callerThreadId) : null;
-        if (caller?.deletedAt) continue;
-        if (caller && deps.projects) {
+        if (afterExecutionId && row.executionTurnId <= afterExecutionId) continue;
+        if (!row.callerThreadId) {
+          throw new Error("Pending publication violates caller-thread invariant");
+        }
+        const caller = deps.threads.get(row.callerThreadId);
+        if (!caller) {
+          throw new Error("Pending publication violates caller-thread invariant");
+        }
+        if (caller.deletedAt) continue;
+        if (deps.projects) {
           const project = await deps.projects.findById(caller.projectId);
           if (project?.deletedAt) continue;
         }
         eligible.push({
           childThreadId: row.childThreadId,
-          assistantTurnId: row.assistantTurnId,
-          callerThreadId: caller?.id ?? null,
+          executionTurnId: row.executionTurnId,
+          callerThreadId: caller.id,
         });
       }
-      eligible.sort((a, b) => a.assistantTurnId.localeCompare(b.assistantTurnId));
-      return eligible.slice(0, limit).map(({ childThreadId, assistantTurnId, callerThreadId }) => ({
+      eligible.sort((a, b) => a.executionTurnId.localeCompare(b.executionTurnId));
+      return eligible.slice(0, limit).map(({ childThreadId, executionTurnId, callerThreadId }) => ({
         childThreadId,
-        assistantTurnId,
+        executionTurnId,
         callerThreadId,
       }));
     },

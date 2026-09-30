@@ -31,12 +31,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { useTextSize } from "@/hooks/use-text-size";
 import { useUiTheme } from "@/hooks/use-ui-theme";
 import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
+import { changeStatsForNerds } from "@/lib/stats-for-nerds";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
 import { changeUiTheme, UI_THEMES, type UiTheme } from "@/lib/ui-theme";
 import { cn } from "@/lib/utils";
@@ -402,6 +405,8 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
                 </SelectContent>
               </Select>
             </div>
+
+            <StatsForNerdsRow />
           </div>
         </TabsContent>
 
@@ -409,6 +414,28 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
           <WorkingSetSyncPreferenceRow />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/** Device-local, like theme and text size: a way of looking, not account data. */
+function StatsForNerdsRow() {
+  const enabled = useStatsForNerds();
+  return (
+    <div className="flex items-center justify-between gap-6">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">
+          <Trans>Stats for nerds</Trans>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          <Trans>Shows token counts and the model on each reply and compaction</Trans>
+        </p>
+      </div>
+      <Switch
+        checked={enabled}
+        onCheckedChange={changeStatsForNerds}
+        aria-label={t`Stats for nerds`}
+      />
     </div>
   );
 }

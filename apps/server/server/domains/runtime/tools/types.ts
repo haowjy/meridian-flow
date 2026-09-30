@@ -20,6 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
+import type { DocumentTextPolicy } from "./document-text.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
@@ -237,6 +238,8 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
  *   base `ToolHandlerContext`.
  */
 export interface ToolRegistration {
+  documentText?: DocumentTextPolicy;
+  historyPreview?: (input: JsonObject, output?: JsonValue) => string;
   /**
    * Provenance of the registration, used for collision policy. Skill
    * resolution must never bind a package skill slug to a non-skill tool.

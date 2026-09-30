@@ -19,7 +19,7 @@ export function SkillToken({
           /{slug}
         </span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="pointer-events-none max-w-56">
+      <TooltipContent side="top" className="max-w-56">
         <span className="block">{name}</span>
         {description ? <span className="block text-background/70">{description}</span> : null}
       </TooltipContent>

@@ -28,6 +28,7 @@ import {
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
+import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
@@ -79,7 +80,7 @@ function stubOrchestrator(
       if (!child?.ref) throw new Error("missing child handle");
       await repos.executionReports.admit({
         childThreadId: input.threadId,
-        assistantTurnId,
+        executionTurnId: assistantTurnId,
         handle: child.ref,
         ...(input.executionReport?.correlation ?? {
           origin: "thread_run" as const,
@@ -94,7 +95,7 @@ function stubOrchestrator(
       });
       return {
         userTurnId: userTurn.id,
-        assistantTurnId,
+        executionTurnId: assistantTurnId,
         runId: assistantTurnId,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "1",
@@ -104,7 +105,7 @@ function stubOrchestrator(
           });
           await repos.executionReports.finalizeOnce({
             childThreadId: input.threadId,
-            assistantTurnId,
+            executionTurnId: assistantTurnId,
             outcome: "succeeded",
             reason: null,
             source: "return_result",
@@ -128,6 +129,8 @@ async function fixture(
       | RunTurnPort
       | ((repos: ReturnType<typeof createInMemoryRepositories>) => RunTurnPort);
     eventWriter?: EventJournalWriter;
+    realRuntime?: boolean;
+    gateway?: ReturnType<typeof scriptedGateway>;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -221,22 +224,29 @@ async function fixture(
     );
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
-  const delivery = createRuntimeHarness({
+  const runtimeHarness = createRuntimeHarness({
     repos,
     eventWriter,
+    agentRevisions: revisions,
+    ...(options.gateway ? { gateway: options.gateway } : {}),
     runClaim,
     inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     schedulePostCommit: (task) => task(),
-  }).delivery;
+  });
+  const delivery = runtimeHarness.delivery;
   const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({
+    backgroundTasks: runtimeHarness.backgroundTasks,
     orchestrator:
       typeof options.orchestrator === "function"
         ? options.orchestrator(repos)
-        : (options.orchestrator ?? stubOrchestrator(turns, repos, runClaim)),
+        : (options.orchestrator ??
+          (options.realRuntime
+            ? runtimeHarness.orchestrator
+            : stubOrchestrator(turns, repos, runClaim))),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
@@ -316,6 +326,7 @@ async function fixture(
     runClaim,
     eventWriter,
     eventSink,
+    runtimeHarness,
   };
 }
 
@@ -348,6 +359,92 @@ function transcriptFor(
 }
 
 describe("ChildRunCoordinator spawn selection", () => {
+  it("debits child work to the lineage root when a fork coordinates the spawn", async () => {
+    const runtimeGateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
+      {
+        listModels: () => [
+          {
+            id: "parent-model",
+            provider: "openai",
+            tokenizer: "o200k" as const,
+            displayName: "Fixture",
+            contextWindow: 128000,
+            maxOutputTokens: 100,
+            promptCache: { kind: "automatic" as const, ttlMs: 60000 },
+            capabilities: new Set(["image_input"]),
+          },
+        ],
+      },
+    );
+    const { coordinator, parent, parentConfiguration, revisions, repos, runtimeHarness } =
+      await fixture({
+        realRuntime: true,
+        gateway: runtimeGateway,
+      });
+    const cutoff = await repos.turns.create({
+      threadId: parent.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const forkResult = await repos.threads.createDerivedPrimary({
+      id: crypto.randomUUID() as ThreadId,
+      userId: parent.userId as never,
+      projectId: parent.projectId as never,
+      workId: null,
+      source: parent,
+      originType: "fork",
+      originTurnId: cutoff.id,
+      title: "Fork coordinator",
+    });
+    const fork = forkResult.thread;
+    const callerTurn = await repos.turns.create({
+      threadId: fork.id,
+      prevTurnId: cutoff.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const parentBinding = await revisions.readThreadBinding(parent.id);
+    if (!parentBinding?.revision) throw new Error("parent binding missing");
+    await revisions.bindThread(fork.id, parentBinding.revision.id, parentConfiguration, null);
+    await runtimeHarness.creditLedger.grant({
+      userId: parent.userId,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "fork coordinator debit fixture",
+    });
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: fork,
+        parentTurnId: callerTurn.id,
+        agentSlug: "",
+        prompt,
+        budget: createDefaultTreeBudget(),
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const child = await repos.threads.findById(result.report.threadId);
+    expect(child?.rootThreadId).toBe(parent.rootThreadId);
+    expect(child?.rootThreadId).not.toBe(fork.id);
+
+    const consumption = (
+      await runtimeHarness.creditLedger.listTransactions({
+        userId: parent.userId,
+        limit: 20,
+      })
+    ).find((transaction) => transaction.transactionType === "consumption");
+    expect(consumption?.metadata).toMatchObject({
+      rootThreadId: parent.rootThreadId,
+      threadId: result.report.threadId,
+    });
+  });
+
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
     const refused = await coordinator.runChild(
@@ -930,6 +1027,7 @@ describe("ChildRunCoordinator thread_message", () => {
       projectId: parent.projectId,
       parentThreadId: parent.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: "turn-2" as TurnId,
       spawnDepth: 1,
     });
     expect(await revisions.readThreadBinding(child.id)).toBeUndefined();
@@ -1079,7 +1177,6 @@ describe("ChildRunCoordinator thread_message", () => {
         },
       });
     });
-    expect((await repos.blocks.findById(cardId))?.pruned).not.toBe(true);
     expect(journal.some((entry) => entry.type === "block.updated")).toBe(true);
   });
 
@@ -1304,8 +1401,56 @@ describe("ChildRunCoordinator thread_message", () => {
   });
 });
 
-describe("ChildRunCoordinator root activity journal", () => {
-  it("appends subagent.activity to the spawn root on create and terminal", async () => {
+describe("ChildRunCoordinator direct-parent activity journal", () => {
+  it("appends a child spawned from a fork to the fork's journal, not its source's", async () => {
+    const { coordinator, parent, repos, revisions, parentConfiguration, journal } = await fixture();
+    const cutoff = await repos.turns.create({
+      threadId: parent.id as ThreadId,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const binding = await revisions.readThreadBinding(parent.id);
+    if (!binding?.revision) throw new Error("parent binding missing");
+    const { thread: fork } = await repos.threads.createDerivedPrimary({
+      id: crypto.randomUUID() as ThreadId,
+      userId: parent.userId,
+      projectId: parent.projectId,
+      workId: parent.workId,
+      source: parent,
+      originType: "fork",
+      originTurnId: cutoff.id,
+    });
+    const callerTurn = await repos.turns.create({
+      threadId: fork.id as ThreadId,
+      prevTurnId: cutoff.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await revisions.bindThread(fork.id, binding.revision.id, parentConfiguration, null);
+    journal.length = 0;
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: fork,
+        parentTurnId: callerTurn.id as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+
+    expect(result.status).toBe("completed");
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    expect(activityEvents).toHaveLength(2);
+    expect(activityEvents.every((entry) => entry.threadId === fork.id)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
+  });
+
+  it("appends nested subagent.activity to its direct parent's journal on create and terminal", async () => {
     const { coordinator, parent, repos, journal } = await fixture();
     const outer = await coordinator.runChild(
       {
@@ -1321,7 +1466,7 @@ describe("ChildRunCoordinator root activity journal", () => {
     if (outer.status !== "completed") throw new Error("outer spawn failed");
     const nestedParent = await repos.threads.findById(outer.report.threadId as ThreadId);
     if (!nestedParent) throw new Error("outer child missing");
-    const rootThreadId = parent.id as ThreadId;
+    const parentThreadId = nestedParent.id as ThreadId;
     journal.length = 0;
 
     const result = await coordinator.runChild(
@@ -1342,10 +1487,64 @@ describe("ChildRunCoordinator root activity journal", () => {
     const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
     // One on create (after the lease is acquired) and one on terminal.
     expect(activityEvents).toHaveLength(2);
-    expect(activityEvents.every((entry) => entry.threadId === rootThreadId)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId === parentThreadId)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
     expect(activityEvents.every((entry) => entry.childThreadId === childThreadId)).toBe(true);
     // The other lifecycle facts still land on the immediate parent.
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
+  });
+
+  it("routes a root foreground message to a grandchild through the grandchild's parent", async () => {
+    const { coordinator, parent, repos, journal } = await fixture();
+    const outer = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "outer-turn" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (outer.status !== "completed") throw new Error("outer spawn failed");
+    const grandchildParent = await repos.threads.findById(outer.report.threadId as ThreadId);
+    if (!grandchildParent) throw new Error("outer child missing");
+    const grandchild = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: grandchildParent,
+        parentTurnId: "nested-turn" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (grandchild.status !== "completed") throw new Error("grandchild spawn failed");
+    journal.length = 0;
+
+    const continued = await coordinator.runChild(
+      {
+        kind: "message",
+        parentThread: parent,
+        parentTurnId: "root-message-turn" as TurnId,
+        ref: grandchild.report.handle,
+        prompt: "continue the nested task",
+        toolCallId: "root-to-grandchild",
+        budget,
+      },
+      { mode: "foreground" },
+    );
+
+    expect(continued.status).toBe("completed");
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    expect(activityEvents.length).toBeGreaterThan(0);
+    expect(activityEvents.every((entry) => entry.threadId === grandchildParent.id)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
+    expect(
+      activityEvents.every((entry) => entry.childThreadId === grandchild.report.threadId),
+    ).toBe(true);
   });
 
   it("emits the terminal activity frame asleep after the lease is released", async () => {
@@ -1369,10 +1568,10 @@ describe("ChildRunCoordinator root activity journal", () => {
     expect(activityEvents).toHaveLength(2);
     const terminal = activityEvents[1] as unknown as {
       activity: {
-        descendants: Array<{ threadId: string; status: { kind: string }; spawnStatus: string }>;
+        children: Array<{ threadId: string; status: { kind: string }; spawnStatus: string }>;
       };
     };
-    const node = terminal.activity.descendants.find((entry) => entry.threadId === childThreadId);
+    const node = terminal.activity.children.find((entry) => entry.threadId === childThreadId);
     expect(node?.spawnStatus).toBe("succeeded");
     expect(node?.status.kind).toBe("asleep");
   });

@@ -34,6 +34,7 @@ import type {
   UpdateOrigin,
 } from "../contracts.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
+import { versioned } from "./document-revision.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -85,6 +86,13 @@ type MarkdownDocumentEngineDeps = {
 
 export type MarkdownDocumentEngine = {
   serializeDocument(documentId: DocumentId, doc: Y.Doc): Promise<string>;
+  serializeVersionedDocument(
+    documentId: DocumentId,
+    doc: Y.Doc,
+  ): Promise<{ content: string; revision: string }>;
+  readVersionedMarkdown(
+    documentId: string,
+  ): Promise<Result<{ content: string; revision: string }, SyncError>>;
   restoreFromYDoc(
     documentId: DocumentId,
     snapshot: Y.Doc,
@@ -324,11 +332,17 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  return {
+  const engine: MarkdownDocumentEngine = {
     async serializeDocument(documentId, doc) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
       return serializeForSchema(documentId, doc, format.value.schemaType);
+    },
+
+    async serializeVersionedDocument(documentId, doc) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) throwSyncError(format.error);
+      return versioned(doc, (doc) => serializeForSchema(documentId, doc, format.value.schemaType));
     },
 
     async restoreFromYDoc(documentId, snapshot, origin) {
@@ -342,11 +356,18 @@ export function createMarkdownDocumentEngine(
     },
 
     async readAsMarkdown(documentId) {
+      const read = await engine.readVersionedMarkdown(documentId);
+      return read.ok ? Ok(read.value.content) : read;
+    },
+
+    async readVersionedMarkdown(documentId) {
       try {
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
+          versioned(doc, (doc) =>
+            serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
+          ),
         );
         return Ok(markdown);
       } catch (cause) {
@@ -411,6 +432,7 @@ export function createMarkdownDocumentEngine(
       };
     },
   };
+  return engine;
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;

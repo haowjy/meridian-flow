@@ -53,7 +53,7 @@ specialists."
 **What to do instead.** Characters think "Tier 5. Great." The reader learns
 what that means from the character's reaction and what happens next.
 Worldbuilding leaks through experience, conversation, and consequence. Even
-in briefing scenes, filter through the POV character's attention: they
+in scenes that explain the world, filter through the POV character's attention: they
 notice what matters to them, not everything.
 
 **Why the instinct fires.** Training rewarded complete information delivery.

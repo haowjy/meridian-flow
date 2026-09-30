@@ -1,6 +1,7 @@
 /** Business mutations, durable Work notice history, and request-boundary replay against Postgres. */
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import {
   createDrizzleProjectWorkRepository,
@@ -10,7 +11,12 @@ import {
 } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
-import { createDrizzleEventJournalWriter } from "../../threads/index.js";
+import {
+  classifyHistoryItem,
+  createDrizzleEventJournalWriter,
+  hashPromptBakeContent,
+  isSystemUpdateMetadata,
+} from "../../threads/index.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -44,9 +50,15 @@ else
     const delivery = () =>
       createTestDrizzleDelivery(db, { repos, workContext, eventWriter, runClaim });
     const updates = async () =>
-      (await repos.turns.listByThread(ids.threadId)).filter(
-        (turn) => (turn.metadata as { kind?: string })?.kind === "system_update",
+      (await repos.turns.listByThread(ids.threadId)).filter((turn) =>
+        isSystemUpdateMetadata(turn.metadata),
       );
+    const currentBake = async () => {
+      const thread = await repos.threads.findById(ids.threadId);
+      return thread?.initialPromptBakeId
+        ? repos.promptBakes.findById(thread.initialPromptBakeId)
+        : null;
+    };
     const rebind = (workId: string, notices = delivery()) =>
       repos.transaction(() =>
         rebindThreadWork(
@@ -66,10 +78,15 @@ else
         .set({ archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
       await repos.threadWorks.addMembership(ids.threadId, ids.workId, true);
-      await db
-        .update(schema.threads)
-        .set({ composedSystemPrompt: "frozen prompt", bakedSkillSlugs: [] })
-        .where(eq(schema.threads.id, ids.threadId));
+      const content = {
+        composedSystemPrompt: "frozen prompt",
+        bakedSkillSlugs: [],
+        bakedTools: [],
+      };
+      await repos.threads.bakeInitialPrompt(ids.threadId, {
+        ...content,
+        contentHash: hashPromptBakeContent(content),
+      });
     });
     afterAll(() => db.close());
 
@@ -126,9 +143,7 @@ else
       expect(blocks[0]?.textContent).not.toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);
-      expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
-        "frozen prompt",
-      );
+      expect((await currentBake())?.composedSystemPrompt).toBe("frozen prompt");
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
     });
@@ -137,6 +152,7 @@ else
       const otherThreadId = "00000000-0000-4000-8000-000000000479" as typeof ids.threadId;
       await db.insert(schema.threads).values({
         id: otherThreadId,
+        rootThreadId: otherThreadId,
         projectId: ids.projectId,
         createdByUserId: ids.userId,
         title: "Other Work thread",
@@ -247,10 +263,7 @@ else
       await delivery().sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
       expect(await delivery().selectPending(ids.threadId)).toEqual([]);
-      const events = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.threadId));
+      const events = await journalEventsByThread(db, ids.threadId);
       expect(events.filter((row) => row.eventType === "work_context.changed")).toHaveLength(1);
     });
 
@@ -291,21 +304,27 @@ else
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,
+        position: 1,
         prevTurnId: null,
         role: "assistant",
         origin: "assistant",
         status: "streaming",
       });
       try {
-        await notices.adoptBatch(lease, async () => {
-          await persistAndAppendTurnStartEvents(
-            { repos, eventWriter },
-            ids.threadId,
-            null,
-            async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
-          );
-          return { value: null, turnId: assistant.id, messageIds: [] };
-        });
+        await notices.adoptBatch(lease, async () => ({
+          value: null,
+          turnKind: "assistant" as const,
+          turnId: assistant.id,
+          messageIds: [],
+          persist: async () => {
+            await persistAndAppendTurnStartEvents(
+              { repos, eventWriter },
+              ids.threadId,
+              null,
+              async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
+            );
+          },
+        }));
         await rebind(ids.targetWorkId, notices);
         await expect(notices.materializeIdle(ids.threadId)).resolves.toBe("pending");
         const message = await notices.enqueue({
@@ -318,13 +337,21 @@ else
         const boundary = await notices.splitAndContinue({
           lease,
           currentTurn: assistant,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(boundary.split).toBe(true);
-        expect(
-          boundary.drain.turns.map((turn) => (turn.metadata as { kind: string }).kind),
-        ).toEqual(["system_update", "inbox_message"]);
+        expect(boundary.drain.turns.map((turn) => classifyHistoryItem(turn).kind)).toEqual([
+          "work_update",
+          "agent_request",
+        ]);
         expect(boundary.drain.turns[0]?.prevTurnId).toBe(assistant.id);
         expect(boundary.drain.turns[1]?.prevTurnId).toBe(boundary.drain.turns[0]?.id);
         expect(boundary.next.prevTurnId).toBe(message.id);
@@ -332,19 +359,24 @@ else
         expect((await notices.selectPending(ids.threadId)).map((row) => row.id)).toEqual([
           message.id,
         ]);
-        expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
-          "frozen prompt",
-        );
+        expect((await currentBake())?.composedSystemPrompt).toBe("frozen prompt");
         await notices.threadChanged(ids.threadId);
         const noticeOnly = await notices.splitAndContinue({
           lease,
           currentTurn: boundary.next,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([
             assistant.id,
             ...boundary.drain.turns.map((turn) => turn.id),
             boundary.next.id,
           ]),
           expectedLeafTurnId: boundary.next.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(noticeOnly.split).toBe(true);
         expect(noticeOnly.drain.turns[0]?.prevTurnId).toBe(boundary.next.id);
@@ -419,21 +451,27 @@ else
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,
+        position: 1,
         prevTurnId: null,
         role: "assistant",
         origin: "assistant",
         status: "streaming",
       });
       try {
-        await notices.adoptBatch(lease, async () => {
-          await persistAndAppendTurnStartEvents(
-            { repos, eventWriter },
-            ids.threadId,
-            null,
-            async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
-          );
-          return { value: null, turnId: assistant.id, messageIds: [] };
-        });
+        await notices.adoptBatch(lease, async () => ({
+          value: null,
+          turnKind: "assistant" as const,
+          turnId: assistant.id,
+          messageIds: [],
+          persist: async () => {
+            await persistAndAppendTurnStartEvents(
+              { repos, eventWriter },
+              ids.threadId,
+              null,
+              async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
+            );
+          },
+        }));
         const send = (writerId: string) =>
           persistWriterEnqueue({
             persistence: { repos, eventWriter },
@@ -465,8 +503,15 @@ else
         const boundary = await notices.splitAndContinue({
           lease,
           currentTurn: assistant,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(boundary.split).toBe(true);
         const [work] = await updates();

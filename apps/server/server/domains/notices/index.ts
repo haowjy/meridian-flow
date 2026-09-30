@@ -27,7 +27,8 @@ export type Notice = NoticeFields & {
 
 export interface NoticePort {
   record(input: NoticeInput): Promise<void>;
-  drainForModelContext(threadId: string): Promise<Notice[]>;
+  peek(threadId: string): Promise<Notice[]>;
+  consume(ids: readonly number[]): Promise<void>;
 }
 
 export type WriterWorkSwitchedNoticeData = {

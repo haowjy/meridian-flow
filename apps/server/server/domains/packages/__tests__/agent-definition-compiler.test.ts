@@ -120,6 +120,7 @@ describe("Agent definition compiler", () => {
     { tools: { edit: "ask" } },
     { subagents: null },
     { approval: "yolo" },
+    { autocompact: 0 },
     { autocompact: -1 },
     { autocompact_pct: 101 },
     { "user-invocable": "yes" },

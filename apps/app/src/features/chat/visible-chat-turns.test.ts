@@ -64,7 +64,7 @@ describe("filterVisibleTurns", () => {
 
   it("hides a hidden notices turn the same way", () => {
     const turn = systemTurn("notices-1", { kind: "system_update", section: "notices" }, [
-      textBlock("b1", "notices-1", "<system_update>\nAn undo notice.\n</system_update>"),
+      textBlock("b1", "notices-1", "<system_update>\nA work notice.\n</system_update>"),
     ]);
 
     expect(isVisibleChatTurn(turn)).toBe(false);

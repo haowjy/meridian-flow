@@ -52,7 +52,7 @@ export async function recordAwarenessDegradedNotice(input: {
     kind: "awareness_degraded",
     scope: { kind: "thread", threadId: input.threadId },
     message:
-      "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
+      "Your changes are committed, but concurrent user content could not be verified. Re-read to confirm current state.",
     data: { documentIds: [...input.documentIds], documentNames },
   });
 }

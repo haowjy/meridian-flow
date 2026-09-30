@@ -18,6 +18,7 @@ export function buildOptimisticUserTurn(input: {
   return {
     id: input.id,
     threadId: input.threadId,
+    position: 0,
     prevTurnId: input.prevTurnId ?? null,
     role: "user",
     origin: "writer",
@@ -25,6 +26,7 @@ export function buildOptimisticUserTurn(input: {
     // Pending until the server admission/lookup renames this row to the
     // canonical user turn. A user row must not look settled before ack.
     status: "pending",
+    promptBakeId: null,
     finishReason: null,
     error: null,
     model: null,
