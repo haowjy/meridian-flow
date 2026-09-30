@@ -43,8 +43,9 @@ autocompaction's failed reply comes after its divider, so it stays current.
 Pending ("Compacting", or "Stopping" once Stop is pressed; a waiting
 `/compact` is a queued row, never a divider; Stop through the existing cancel
 route on C),
-complete (the icon and state label are one button, named by the full label,
-that opens and closes the summary; there is no separate Summary control; the
+complete (the icon and state label are one button, named by the full label plus
+", summary", that opens and closes the summary; there is no separate Summary
+control; the section itself is unnamed so the state words are read once; the
 summary is the model's text alone, with no token sentence), failed, cancelled. Only a complete
 divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
@@ -71,7 +72,9 @@ Stop, Withdraw, Retry, any status words in the row (queued rows too), and the
 instructions and failure copy under the line all use the small action size
 (`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
-last; the section's accessible name keeps the full label.
+last. Without a summary, the section's accessible name keeps the full label.
+With one, the toggle is named `` `${full}, summary` `` and the section drops
+its own name, so the state words are read once.
 
 ## Composer during a run
 
