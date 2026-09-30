@@ -470,6 +470,8 @@ export interface TurnRepository {
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Latest local requester text per thread, without walking inherited transcript spans. */
+  listLatestLocalRequesterText(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, string>>;
   /** Keyset page of pending placeholders eligible for orphan repair. */
   listPendingPlaceholders(
     limit: number,

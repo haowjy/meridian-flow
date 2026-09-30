@@ -35,6 +35,17 @@ Domain refusals leave handlers through `toolFailureResult`, keeping their code:
 a caller whose bound model the gateway does not list gets `model_unavailable`,
 not a generic `tool_error`.
 
+## `thread_ls`
+
+Every listed row is followed, when available, by an indented `last asked`
+snippet from its newest local requester turn. Primary chats, forks, and
+handoffs use a user-origin request; subagents use their parent agent's spawn
+prompt, steer, or message. The bounded row set is loaded in one repository
+query, never one query per thread. Snippets include only text blocks, collapse
+whitespace, use JSON quoting, and truncate near 100 characters on a word
+boundary. A derived primary with no local turn has no snippet; inherited
+source history is intentionally not a fallback.
+
 ## `thread_history`
 
 History projects the shared `readTranscriptPageForProjection` and bounded

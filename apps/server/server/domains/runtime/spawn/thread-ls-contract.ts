@@ -1,8 +1,8 @@
 /** Connected listing follows spawn and cutoff-owner edges, with bounded pages. */
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
-import { listReadableThreads } from "./thread-ls.js";
+import { formatLastAsked, listReadableThreads } from "./thread-ls.js";
 
 export function defineThreadLsContract(
   createHarness: () => Promise<{
@@ -51,9 +51,125 @@ export function defineThreadLsContract(
     };
     const read = (caller = root, input = {}) =>
       listReadableThreads({ repos, statusReader, caller, input });
-    return { repos, root, child, fork, read };
+    async function requester(
+      thread: Awaited<ReturnType<typeof child>> | typeof root,
+      text: string,
+      options: { origin?: "writer" | "system"; metadata?: Record<string, string> } = {},
+    ) {
+      const previous = await repos.turns.getLatestByThread(thread.id as ThreadId);
+      const turn = await repos.turns.create({
+        threadId: thread.id,
+        prevTurnId: previous?.id ?? null,
+        role: "user",
+        origin: options.origin ?? "writer",
+        status: "complete",
+        metadata: options.metadata ?? null,
+      });
+      await repos.blocks.create({
+        turnId: turn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: text,
+      });
+      return turn;
+    }
+    return { repos, root, child, fork, requester, read };
   }
   describe("thread_ls", () => {
+    it("formats collapsed, quoted snippets at a word boundary", () => {
+      expect(formatLastAsked('  Ask   about "the jade token".\nThen verify the gate.  ')).toBe(
+        '"Ask about \\"the jade token\\". Then verify the gate."',
+      );
+      expect(formatLastAsked(`Read ${"continuity ".repeat(15)}notes`)).toBe(
+        '"Read continuity continuity continuity continuity continuity continuity continuity continuity…"',
+      );
+    });
+
+    it("renders the latest local requester turn, skips non-request rows, and omits empty rows", async () => {
+      const f = await fixture();
+      const child = await f.child(f.root, "Chapter 2 continuity check");
+      await f.requester(f.root, "Make the gate guardian suspicious of his jade token.");
+      const childRequest = await f.requester(
+        child,
+        "Read the referenced planning conversation and identify the three continuity risks.",
+        {
+          origin: "system",
+          metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+        },
+      );
+      await f.repos.blocks.create({
+        turnId: childRequest.id,
+        blockType: "custom",
+        sequence: 1,
+        content: { kind: "thread-reference", text: "ignore inherited reference text" },
+      });
+      const assistant = await f.repos.turns.create({
+        threadId: child.id,
+        prevTurnId: (await f.repos.turns.getLatestByThread(child.id))?.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await f.repos.blocks.create({
+        turnId: assistant.id,
+        blockType: "tool_result",
+        sequence: 0,
+        content: { output: "ignore me" },
+      });
+      const notice = await f.repos.turns.create({
+        threadId: child.id,
+        prevTurnId: assistant.id,
+        role: "system",
+        origin: "system",
+        status: "complete",
+        metadata: { kind: "system_update", section: "notices" },
+      });
+      await f.repos.blocks.create({
+        turnId: notice.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: "ignore this notice",
+      });
+      const emptyFork = await f.fork();
+
+      expect(await f.read(f.root, { ref: child.ref })).toMatchInlineSnapshot(`
+        "c1 › spawn p2   (you are c1)
+        p2  asleep  running  Chapter 2 continuity check
+             last asked: "Read the referenced planning conversation and identify the three continuity risks.""
+      `);
+      expect(emptyFork.ref).toBe("c3");
+      const rootOutput = await f.read();
+      expect(rootOutput).toContain(
+        'last asked: "Make the gate guardian suspicious of his jade token."',
+      );
+      expect(rootOutput).toContain("c3  asleep    fork  fork");
+      expect(rootOutput).not.toContain("c3  asleep    fork  fork\n       last asked:");
+    });
+
+    it("uses one batched requester read and lets a parent message replace the spawn prompt", async () => {
+      const f = await fixture();
+      const child = await f.child(f.root, "continuity");
+      await f.requester(child, "Initial spawn prompt", {
+        origin: "system",
+        metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+      });
+      await f.requester(child, "Check the revised ending instead.", {
+        origin: "system",
+        metadata: { kind: "inbox_message" },
+      });
+      let reads = 0;
+      const original = f.repos.turns.listLatestLocalRequesterText.bind(f.repos.turns);
+      f.repos.turns.listLatestLocalRequesterText = async (threadIds) => {
+        reads += 1;
+        return original(threadIds);
+      };
+
+      const output = await f.read();
+      expect(reads).toBe(1);
+      expect(output).toContain('last asked: "Check the revised ending instead."');
+      expect(output).not.toContain("Initial spawn prompt");
+    });
+
     it("allows every lineage edge in both directions, enforces roots and denies live outsiders and trash", async () => {
       const f = await fixture();
       const fork = await f.fork();
