@@ -43,8 +43,10 @@ autocompaction's failed reply comes after its divider, so it stays current.
 Pending ("Compacting", or "Stopping" once Stop is pressed; a waiting
 `/compact` is a queued row, never a divider; Stop through the existing cancel
 route on C),
-complete (summary disclosure; token counts only when the context shrank),
-failed, cancelled. A manual failure speaks on the divider with the server's
+complete (the icon and state label are one button, named by the full label,
+that opens and closes the summary; there is no separate Summary control;
+token counts only when the context shrank), failed, cancelled. Only a complete
+divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
 null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's

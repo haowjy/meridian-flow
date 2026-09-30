@@ -4,9 +4,9 @@
  * One quiet rule across the transcript, with the state in words at its start
  * and its controls right after the words (bare transcript rows never
  * right-align controls). A compaction is a turn: once it finishes, its action
- * is Fork (no Copy, no Hand off), revealed like a reply's actions. The summary
- * sits behind a disclosure; a running compaction's Stop lives on the same
- * line. The writer's `/compact <instructions>` sit under the line, verbatim. A
+ * is Fork (no Copy, no Hand off), revealed like a reply's actions. A finished
+ * divider's state words (icon and label, one button) open and close its
+ * summary; a running compaction's Stop lives on the same line. The writer's `/compact <instructions>` sit under the line, verbatim. A
  * manual compaction's failure speaks on the divider it belongs to. An
  * autocompaction's failure stays quiet (R3): the failed reply under the
  * writer's newest message already says so. State changes are spoken by the
@@ -16,7 +16,7 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { ChevronRight, CircleAlert, FoldVertical } from "lucide-react";
+import { CircleAlert, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -83,35 +83,31 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
       {/* One line at every width: a narrow column shows the short label, and
           the label truncates before a control or the rule would wrap. */}
       <div className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-        <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-          <DividerMark state={view.state} loud={loud} />
-          <span
-            className={cn(
-              "min-w-0 truncate text-caption font-medium",
-              view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted",
-            )}
-          >
-            <span className="hidden @lg/divider:inline">{label.full}</span>
-            <span className="@lg/divider:hidden">{label.short}</span>
-          </span>
-        </span>
-
         {view.summary ? (
-          <Button
+          // The state words are the summary's disclosure: icon and label are
+          // one button, so the row carries no separate "Summary" control.
+          <button
             type="button"
-            variant="quiet"
-            size="meta"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
             aria-controls={panelId}
+            aria-label={label.full}
+            // Negative margin: the hover wash grows outward, so the icon keeps
+            // the edge every other divider state and the instructions align to.
+            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-0.5 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
           >
-            <ChevronRight
-              aria-hidden
-              className={cn("transition-transform duration-200", open && "rotate-90")}
+            <DividerMark state={view.state} loud={loud} />
+            <DividerLabel label={label} className="text-inherit" />
+          </button>
+        ) : (
+          <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
+            <DividerMark state={view.state} loud={loud} />
+            <DividerLabel
+              label={label}
+              className={view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted"}
             />
-            <Trans>Summary</Trans>
-          </Button>
-        ) : null}
+          </span>
+        )}
 
         {view.state === "pending" && onStop ? (
           <Button
@@ -164,6 +160,19 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** Full words on a wide column, the short form narrow; truncates before the row wraps. */
+function DividerLabel({ label, className }: { label: StateLabel; className: string }) {
+  return (
+    <span
+      data-compaction-label
+      className={cn("min-w-0 truncate text-caption font-medium", className)}
+    >
+      <span className="hidden @lg/divider:inline">{label.full}</span>
+      <span className="@lg/divider:hidden">{label.short}</span>
+    </span>
   );
 }
 

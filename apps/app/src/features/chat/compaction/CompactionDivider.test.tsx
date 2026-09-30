@@ -125,25 +125,30 @@ describe("CompactionDivider", () => {
     expect(onStop).not.toHaveBeenCalled();
   });
 
-  it("complete: the summary sits behind a disclosure wired to its panel", async () => {
-    await render({ turn: divider() });
-    const toggle = button("Summary");
+  it("complete: the state label is the toggle for the summary, wired to its panel", async () => {
+    await render({ turn: divider({ metadata: { trigger: "auto" } }) });
+    const toggle = button("Conversation compacted automatically");
     const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(toggle?.getAttribute("aria-controls")).toBe(panel?.id);
+    // The icon is inside the same button: clicking either opens the summary.
+    expect(toggle?.querySelector("svg")).not.toBeNull();
     expect(panel?.hidden).toBe(true);
     await act(async () => toggle?.click());
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(panel?.hidden).toBe(false);
     expect(panel?.textContent).toContain("The keeper counts ships.");
+    await act(async () => toggle?.click());
+    expect(panel?.hidden).toBe(true);
   });
 
-  it("complete: the summary disclosure is its only control", async () => {
+  it("complete: there is no separate Summary control", async () => {
     await render({ turn: divider(), onStop: vi.fn() });
+    expect(button("Summary")).toBeUndefined();
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Summary"]);
+    expect(names).toEqual(["Conversation compacted"]);
   });
 
   it("complete: a compaction is a turn whose only action is Fork", async () => {
@@ -152,9 +157,20 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Summary", "Fork from here"]);
+    expect(names).toEqual(["Conversation compacted", "Fork from here"]);
     await act(async () => button("Fork from here")?.click());
     expect(actions.fork).toHaveBeenCalledWith("c");
+  });
+
+  it("pending, stopped and failed dividers are not toggles", async () => {
+    await render({ turn: divider({ status: "pending", blocks: [] }), onStop: vi.fn() });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    await render({ turn: divider({ status: "cancelled", blocks: [] }) });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    expect(host.querySelectorAll("button")).toHaveLength(0);
+    await render({ turn: divider({ status: "error", blocks: [] }) });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    expect(host.querySelectorAll("button")).toHaveLength(0);
   });
 
   it("offers Fork only once the compaction finished", async () => {
@@ -195,7 +211,7 @@ describe("CompactionDivider", () => {
     await render({ turn: divider({ metadata: { trigger: "auto" } }) });
     const section = host.querySelector("[data-compaction-divider]");
     expect(section?.getAttribute("aria-label")).toBe("Conversation compacted automatically");
-    const labels = [...(section?.querySelectorAll("span.truncate > span") ?? [])].map(
+    const labels = [...(section?.querySelectorAll("[data-compaction-label] > span") ?? [])].map(
       (node) => node.textContent,
     );
     expect(labels).toEqual(["Conversation compacted automatically", "Compacted"]);
@@ -207,7 +223,7 @@ describe("CompactionDivider", () => {
     button("Stop compaction")?.focus();
     expect(document.activeElement).toBe(button("Stop compaction"));
     await render({ turn: divider(), onStop });
-    expect(document.activeElement).toBe(button("Summary"));
+    expect(document.activeElement).toBe(button("Conversation compacted"));
   });
 
   it("failed manual: says why on the divider", async () => {
