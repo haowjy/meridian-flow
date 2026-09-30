@@ -7,10 +7,9 @@ contracts. They do not replace the project checks. `C` means a compaction turn;
 ## Setup and evidence
 
 Use a disposable worktree. `pnpm bootstrap` provisions its database if needed.
-M4 migrations now follow main’s Work migrations as 0014–0024. Reset this
-worktree’s dev database with `pnpm db:reset` if it applied the old M4 chain
-or the original `0009_repair_saved_subagent_contracts`; its in-place repair
-preserves fork cutoffs. DB tests provision their own fresh databases.
+M4 migrations now follow main’s Work migrations as 0014–0024. If this
+worktree’s dev database applied them under their old 0010–0020 numbers, reset it
+with `pnpm db:reset`. DB tests provision their own fresh databases.
 Start `MODEL_PROVIDER=mock pnpm dev --no-tailscale`, then `pnpm portless:list`.
 Use only that worktree's routes. All commands below run from its checkout.
 Set `E` to a directory under the active work item's `evidence/`, not the repo.

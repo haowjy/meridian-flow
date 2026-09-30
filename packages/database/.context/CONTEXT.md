@@ -7,17 +7,23 @@ transaction propagation live in `apps/server`.
 
 ## Migration integrity
 
-The M4 integration corrected `0009_repair_saved_subagent_contracts` in place to
-retain fork cutoffs and cross-thread parents. A scoped dev database that applied
-the original needs `pnpm db:reset` from its own checkout; migration replay cannot
-restore deleted cutoffs. Never hand-patch an applied database’s migration ledger
-or reset a shared database.
+M4's `0014_threads_origin_turn_fk` repairs forward what main's
+`0009_repair_saved_subagent_contracts` left before adding the origin foreign
+key.
+Forks and handoffs whose origin notices 0009 deleted become ordinary (organic)
+chats that keep their own turns, their descendant subtrees are re-rooted under
+them, and their orphaned first turns become roots. Main's 0009 is frozen and
+already applied everywhere under the merged-migration freeze ([#639]), so its
+repair lives in 0014 rather than changing 0009. Never hand-patch an applied
+database's migration ledger or reset a shared database.
+
+[#639]: https://github.com/haowjy/meridian-flow/issues/639
 
 After the Work screen merge, main owns 0010–0013. M4’s migrations are
 `0014_threads_origin_turn_fk` through `0024_married_khan`; their SQL bodies
 are unchanged, with cumulative snapshots and increasing journal timestamps
 rebased after main. A worktree that applied M4’s old 0010–0020 chain also
-requires a scoped reset.
+requires `pnpm db:reset` from its own checkout.
 
 ## Contracts
 
