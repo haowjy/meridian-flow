@@ -2504,6 +2504,12 @@ msgstr "打开“{name}”"
 msgid "Open {0}"
 msgstr ""
 
+#. placeholder {0}: work.name
+#. placeholder {1}: work.status
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {0} ({1})"
+msgstr ""
+
 #. placeholder {0}: documentDisplayName(path)
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
