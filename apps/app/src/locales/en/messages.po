@@ -207,8 +207,8 @@ msgstr "{0} tok/s"
 
 #. placeholder {0}: work.name
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-msgid "{0}, Archived"
-msgstr "{0}, Archived"
+#~ msgid "{0}, Archived"
+#~ msgstr "{0}, Archived"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
@@ -481,6 +481,10 @@ msgstr "All Work"
 msgid "Alt text"
 msgstr "Alt text"
 
+#: src/client/query/work-update-failure.ts
+msgid "Another Work already has this name. Choose a different name."
+msgstr "Another Work already has this name. Choose a different name."
+
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr "Another Work now has this name. Rename that Work, then restore this one."
@@ -519,8 +523,8 @@ msgid "Archived"
 msgstr "Archived"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-msgid "Archived Work"
-msgstr "Archived Work"
+#~ msgid "Archived Work"
+#~ msgstr "Archived Work"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -3757,15 +3761,18 @@ msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in 
 msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
-#: src/features/project/work/WorkMetadata.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
+
+#: src/client/query/work-update-failure.ts
+msgid "This Work is archived. Unarchive it to edit."
+msgstr "This Work is archived. Unarchive it to edit."
 
 #: src/features/project/EditorWorkRecovery.tsx
 msgid "This Work is unavailable."
 msgstr "This Work is unavailable."
 
-#: src/features/project/work/WorkMetadata.tsx
+#: src/client/query/work-update-failure.ts
 msgid "This Work no longer exists."
 msgstr "This Work no longer exists."
 
