@@ -33,10 +33,12 @@ translate those to `title` and `description` in `ProjectDto`.
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
-| `createWork(input)` | Creates an explicit Work and durably enqueues affected thread Work context in the same transaction. |
+| `createWork(input)` | Creates an explicit Work. No thread is bound to it yet, so it enqueues no Work context refresh. |
 | `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
-| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
+| `setWorkArchived(workId, archived)` | Archive lifecycle only (`archivedAt`); never touches the AI-owned `status` text. Locks the row, refuses a deleted or missing Work with `WorkLifecycleUnavailableError`, and calls `workChanged(workId)` after a real change. |
+| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops. Delete enqueues no Work context (its chats are deleted with it); restore calls `workChanged(workId)` after a real change in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
+| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping: 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's writer copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
 
 ## Invariants
 
