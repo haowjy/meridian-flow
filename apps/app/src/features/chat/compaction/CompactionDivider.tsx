@@ -35,20 +35,6 @@ export type CompactionDividerProps = {
   onStop?: (turnId: string) => void;
 };
 
-/**
- * Client-owned copy where the server's would mislead: `context_too_large` on a
- * compaction means the conversation's retained part does not fit, not that the
- * writer's message is too long.
- */
-export function compactionFailureCopy(
-  reason: string | null,
-  serverCopy: string | null,
-): string | null {
-  if (reason === "context_too_large")
-    return t`Even compacted, this conversation is too large for its model.`;
-  return serverCopy ?? t`This conversation couldn't be compacted.`;
-}
-
 type StateLabel = {
   /** The divider's state in words; also the section's accessible name. */
   full: string;
@@ -79,7 +65,7 @@ function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: bool
 }
 
 export function CompactionDivider({ turn, phase, stopping, onStop }: CompactionDividerProps) {
-  const view = dividerView({ turn, failureCopyFor: compactionFailureCopy });
+  const view = dividerView(turn);
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const sectionRef = useRef<HTMLElement>(null);

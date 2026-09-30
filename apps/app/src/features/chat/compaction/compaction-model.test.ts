@@ -1,6 +1,11 @@
 /** Divider states, answered commands, and R4's hidden overflow shell. */
 import type { Turn } from "@meridian/contracts/protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray) => strings[0],
+}));
+
 import {
   answeredControlIds,
   dividerView,
@@ -35,12 +40,7 @@ function compaction(
   } as unknown as Turn;
 }
 
-const failureCopyFor = (reason: string | null, server: string | null) =>
-  reason === "context_too_large" ? "client copy" : server;
-
-function view(turn: Turn) {
-  return dividerView({ turn, failureCopyFor });
-}
+const view = dividerView;
 
 describe("readCompactionFacts", () => {
   it("reads the summary block, tokens, trigger, and the command it ran", () => {
@@ -94,7 +94,7 @@ describe("dividerView", () => {
     expect(view(grown).tokens).toBeNull();
   });
 
-  it("failed manual: says why, with client copy where the server's would blame the writer", () => {
+  it("failed manual: shows the server's generic copy, or a generic line when it has none", () => {
     expect(
       view(
         compaction({
@@ -112,11 +112,11 @@ describe("dividerView", () => {
       view(
         compaction({
           status: "error",
-          error: "This message is too long for this chat's model.",
+          error: null,
           metadata: { trigger: "manual", reason: "context_too_large", phase: "initial_prepare" },
         }),
       ).failureCopy,
-    ).toBe("client copy");
+    ).toBe("This conversation couldn't be compacted.");
   });
 
   it("failed auto stays quiet (R3): the failed reply carries the error", () => {

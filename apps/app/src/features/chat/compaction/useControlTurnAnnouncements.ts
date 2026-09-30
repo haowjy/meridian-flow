@@ -14,12 +14,10 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
 import { isHandoffSeed } from "../derivation/handoff-seed";
-import { compactionFailureCopy } from "./CompactionDivider";
-import { readCompactionFacts } from "./compaction-model";
+import { compactionFailureCopy, readCompactionFacts } from "./compaction-model";
 
 function announcementFor(turn: Turn): string | null {
   if (turn.role === "compaction") {
-    const facts = readCompactionFacts(turn);
     switch (turn.status) {
       case "pending":
       case "streaming":
@@ -29,9 +27,7 @@ function announcementFor(turn: Turn): string | null {
       case "cancelled":
         return t`Compaction stopped`;
       case "error":
-        return facts.trigger === "manual"
-          ? compactionFailureCopy(facts.failureReason, turn.error)
-          : null;
+        return readCompactionFacts(turn).trigger === "manual" ? compactionFailureCopy(turn) : null;
       default:
         return null;
     }

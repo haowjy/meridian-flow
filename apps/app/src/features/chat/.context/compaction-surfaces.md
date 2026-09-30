@@ -42,9 +42,9 @@ autocompaction's failed reply comes after its divider, so it stays current.
 
 Pending (the lease phase, Stop through the existing cancel route on C),
 complete (summary disclosure; token counts only when the context shrank),
-failed, cancelled. A manual failure says why on the divider, with
-`turn.error` as copy except `context_too_large`, whose server copy blames the
-writer's message; the client owns that sentence. There is no "nothing to
+failed, cancelled. A manual failure speaks on the divider with the server's
+generic `turn.error`, or "This conversation couldn't be compacted." when it is
+null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's
 failure stays quiet (R3): the failed reply under the newest message carries it.
 
