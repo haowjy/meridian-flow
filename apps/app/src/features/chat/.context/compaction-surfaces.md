@@ -94,8 +94,9 @@ state.
 `useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
-repeat as the original) and Withdraw beside it. A queued command is a dashed rule, "Compaction
-queued" with Withdraw, and its instructions verbatim under it, at once. Queued
+repeat as the original) and Withdraw beside it. A queued command is a dashed
+rule, "Compaction queued" with Withdraw, and its instructions verbatim under
+it, at once. Queued
 commands render at the transcript tail, after every queued message whatever
 order they were sent in, oldest first; they take no transcript position until
 they run. Queued rows have no Stop.
