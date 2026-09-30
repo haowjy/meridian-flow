@@ -45,7 +45,11 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 409, message: error.message });
     }
     if (error instanceof WorkLifecycleUnavailableError) {
-      throw createError({ statusCode: 409, message: error.message });
+      // Archived is a refusal of an existing Work; missing or deleted means it is gone.
+      throw createError({
+        statusCode: error.state === "archived" ? 409 : 404,
+        message: error.message,
+      });
     }
     throw error;
   });

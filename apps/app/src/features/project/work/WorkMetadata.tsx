@@ -7,11 +7,24 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
 
 type HeldIntent = { run: () => void; cancel: () => void };
+
+/**
+ * What the writer reads when a goal save fails. Only a refusal the writer can
+ * act on gets its own line; a network drop or anything else is a plain retry.
+ */
+function goalSaveFailure(cause: unknown): string {
+  const status =
+    cause instanceof HttpResponseError || isMeridianApiError(cause) ? cause.status : undefined;
+  if (status === 409) return t`This Work is archived.`;
+  if (status === 404 || status === 410) return t`This Work no longer exists.`;
+  return t`Couldn’t save the goal. Try again.`;
+}
 
 export function useWorkMetadataController(
   work: Work,
@@ -71,7 +84,7 @@ export function useWorkMetadataController(
       focusDisplay();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`Save failed`);
+      setError(goalSaveFailure(cause));
       return false;
     } finally {
       setSaving(false);

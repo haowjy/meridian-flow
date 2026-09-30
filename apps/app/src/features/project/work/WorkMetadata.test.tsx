@@ -3,6 +3,7 @@
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useWorkMetadataController, WorkGoal } from "./WorkMetadata";
 
@@ -152,6 +153,33 @@ describe("WorkMetadata", () => {
       );
       expect(document.querySelector("output")?.textContent).toBe("left");
       expect(document.querySelector("textarea")).toBeNull();
+    });
+  });
+
+  it.each([
+    [new TypeError("Failed to fetch"), "Couldn’t save the goal. Try again."],
+    [
+      new HttpResponseError("Work @arc is archived; it is read-only", 409, null),
+      "This Work is archived.",
+    ],
+    [new HttpResponseError("Work not found", 404, null), "This Work no longer exists."],
+  ])("shows writer copy, not the raw error, when a goal save fails (%s)", async (cause, copy) => {
+    const saveWork = vi.fn(async (): Promise<Work> => {
+      throw cause;
+    });
+    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
+      const button = (label: string) =>
+        [...document.querySelectorAll("button")].find((b) => b.textContent === label) ?? null;
+      await click(button("Edit goal"));
+      const field = document.querySelector("textarea");
+      if (!field) throw new Error("goal field missing");
+      await act(async () => setValue(field, "A changed goal"));
+      await click(button("Save"));
+      const alert = document.querySelector('[role="alert"]');
+      expect(alert?.textContent).toBe(copy);
+      expect(document.body.textContent).not.toContain(cause.message);
+      // The draft stays so the writer can retry.
+      expect(document.querySelector("textarea")?.value).toBe("A changed goal");
     });
   });
 

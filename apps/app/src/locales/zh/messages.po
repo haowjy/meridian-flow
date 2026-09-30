@@ -1188,6 +1188,10 @@ msgstr ""
 msgid "Couldn't save the Editor tab layout. Reload may not restore your tabs."
 msgstr ""
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Couldn’t save the goal. Try again."
+msgstr ""
+
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
@@ -3048,8 +3052,8 @@ msgid "Save changes"
 msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Save failed"
-msgstr ""
+#~ msgid "Save failed"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save goal changes?"
@@ -3753,11 +3757,16 @@ msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in 
 msgstr ""
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
+#: src/features/project/work/WorkMetadata.tsx
 msgid "This Work is archived."
 msgstr ""
 
 #: src/features/project/EditorWorkRecovery.tsx
 msgid "This Work is unavailable."
+msgstr ""
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "This Work no longer exists."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
