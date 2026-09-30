@@ -10,8 +10,8 @@ export function workReceiptLine(receipt: WorkReceipt): string {
     }
     case "update": {
       const values = { name: receipt.workName };
-      if (receipt.before?.archivedAt !== receipt.after?.archivedAt) {
-        return receipt.after?.archivedAt !== null
+      if (receipt.before?.archived !== receipt.after?.archived) {
+        return receipt.after?.archived
           ? i18n._("workReceipt.archived", values, { message: "Archived Work {name}" })
           : i18n._("workReceipt.unarchived", values, { message: "Unarchived Work {name}" });
       }
