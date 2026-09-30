@@ -118,7 +118,7 @@ export function useCreateProject(userId: string, accountSignal: AbortSignal) {
       client.setQueryData(projectQueryKeys.detail(id), pendingProject(id, title, userId));
       void router.navigate({
         to: "/p/$projectId/$",
-        params: { projectId: id, _splat: "works" },
+        params: { projectId: id, _splat: "chats" },
         // Created from the /projects/new dialog: Back returns to the library.
         replace: true,
       });

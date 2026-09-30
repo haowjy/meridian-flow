@@ -63,7 +63,7 @@ beforeEach(() => {
 });
 
 describe("project creation", () => {
-  it("navigates to the generated destination before persistence settles", async () => {
+  it("navigates to the new project's chats before persistence settles", async () => {
     mocks.createProject.mockReturnValue(new Promise(() => undefined));
     await withReactRoot(
       <QueryClientProvider client={new QueryClient()}>
@@ -75,7 +75,7 @@ describe("project creation", () => {
           projectId = create({ title: "  Fast project " });
         });
         expect(mocks.navigate).toHaveBeenCalledWith(
-          expect.objectContaining({ params: expect.objectContaining({ projectId }) }),
+          expect.objectContaining({ params: { projectId, _splat: "chats" } }),
         );
         expect(mocks.navigate.mock.invocationCallOrder[0]).toBeLessThan(
           mocks.createProject.mock.invocationCallOrder[0] ?? 0,
