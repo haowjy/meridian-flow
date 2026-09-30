@@ -1,8 +1,12 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { formatPgError, pingDatabaseForUrl, readAppliedMigrationHashes } from "./dev-db";
+import { formatPgError, pingDatabaseForUrl, readAppliedMigrations } from "./dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./dev-env";
-import { describeMigrationDrift, readExpectedMigrationHashes } from "./migration-state";
+import {
+  formatDatabaseHistoryRefusal,
+  planDatabaseMigrations,
+  readMigrationHistory,
+} from "./migration-history";
 
 /** Start the local postgres:16 container and wait until healthy. */
 export function ensureDevInfraUp(repoRoot: string): void {
@@ -73,23 +77,35 @@ async function assertMigrationsCurrent(
 ): Promise<void> {
   if (!db.migrationsDir) return;
 
-  const expected = readExpectedMigrationHashes(path.join(repoRoot, db.migrationsDir));
-  let applied: string[] | null;
+  const history = readMigrationHistory(path.join(repoRoot, db.migrationsDir));
+  let applied: Awaited<ReturnType<typeof readAppliedMigrations>>;
   try {
-    applied = await readAppliedMigrationHashes(dbUrl);
+    applied = await readAppliedMigrations(dbUrl);
   } catch {
     // Diagnostic only — never let a drift probe failure block dev startup.
     return;
   }
 
-  const drift = describeMigrationDrift({
-    label: db.label,
-    expected,
-    applied,
-    catchUpHint: db.catchUpHint ?? db.migrateScript,
-    resetHint: db.resetHint ?? "pnpm db:reset",
-  });
-  if (drift) {
-    throw new DevInfraNotReadyError(`dev infra check failed — ${drift}`);
+  if (history.issues.length > 0) {
+    throw new DevInfraNotReadyError(
+      `dev infra check failed — migration files are inconsistent:\n${history.issues.map((issue) => `  - ${issue}`).join("\n")}`,
+    );
+  }
+  const plan = planDatabaseMigrations(history, applied ?? []);
+  if (plan.issues.length > 0) {
+    const databaseName = decodeURIComponent(new URL(dbUrl).pathname.replace(/^\//, ""));
+    throw new DevInfraNotReadyError(
+      `dev infra check failed — ${formatDatabaseHistoryRefusal({
+        databaseName,
+        issues: plan.issues,
+        resetCommand: db.resetHint ?? "pnpm db:reset",
+      })}`,
+    );
+  }
+  if (plan.pending.length > 0) {
+    throw new DevInfraNotReadyError(
+      `dev infra check failed — ${db.label}: live database is behind repo migrations ` +
+        `(${plan.pending.length} pending migration(s)) — run \`${db.catchUpHint ?? db.migrateScript}\``,
+    );
   }
 }

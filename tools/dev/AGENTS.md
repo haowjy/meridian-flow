@@ -16,6 +16,8 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
 - Worktree cleanup (`pnpm dev:prune-worktrees`)
 - Migration SQL linting (`migration-lint.ts`, CI/pre-commit gate policy)
+- Frozen-history and ordering checks for repository and applied database migrations
+  (`check-migration-history.ts`, `lib/migration-history.ts`)
 - `pnpm bootstrap` and dev-data seeding
 - `./mf` (`cli/`): the agent-facing dev CLI that wraps this worktree's app API
 
@@ -32,6 +34,11 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
+- **The migration runner owns applied history.** Every schema-migration path goes
+  through `runMigrations`; it matches both hash and journal timestamp before it
+  applies anything and refuses divergent or out-of-order history. Only reset a
+  database owned by the current dev checkout. Shared and deployed database
+  history requires human repair, never a reset.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.

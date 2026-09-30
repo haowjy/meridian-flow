@@ -9,7 +9,7 @@ on:
   # Push CI on the durable trunk verifies the post-merge result. Add a staging
   # branch here when one exists; don't encode temporary integration branches.
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_call:
 
 # Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
@@ -59,6 +59,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meridian/database exec drizzle-kit check
+      - name: Guard frozen migration history (pull request)
+        if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'staging')
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE"
+          pnpm db:migration-history -- --base "origin/$BASE"
+      - name: Guard frozen migration history (push)
+        if: github.event_name == 'push' || github.event_name == 'workflow_call'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration history guard: no prior revision is available."
+          else
+            pnpm db:migration-history -- --base "$BEFORE"
+          fi
       # PRs: lint only migrations this branch introduces. Warnings block merges
       # to main/staging (production-bound); feature-branch PRs block errors only.
       - name: Migration lint (pull request)
