@@ -171,10 +171,13 @@ export async function listReadableThreads({
       ];
     };
     const rendered = render(target, 0);
-    return [
+    const outputLines = [
       ...(hasPath ? lines.slice(0, 1) : []),
       ...rendered,
       ...(hasPath ? lines.slice(1) : lines),
-    ].join("\n");
+    ];
+    if (![...path, ...nodes.map(({ thread }) => thread)].some(({ id }) => id === caller.id))
+      outputLines[0] += ` (you are ${caller.ref})`;
+    return outputLines.join("\n");
   });
 }

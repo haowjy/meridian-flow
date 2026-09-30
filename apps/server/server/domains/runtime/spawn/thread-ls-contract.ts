@@ -212,6 +212,14 @@ export function defineThreadLsContract(
       expect(await f.read(f.root, { depth: 3 })).toContain(deep.ref);
       expect(await f.read(c1)).toContain(`${f.root.ref} › ${b1.ref} › ${c1.ref} (you)`);
     });
+    it("identifies the caller when it is outside the rendered path and rows", async () => {
+      const f = await fixture();
+      const child = await f.child();
+      const fork = await f.fork();
+      const output = await f.read(fork, { ref: child.ref });
+      expect(output).toContain(`${f.root.ref} › ${child.ref} (you are ${fork.ref})`);
+      expect(output).not.toContain(`${fork.ref} (you)`);
+    });
     it("60 children page newest 50 then the rest", async () => {
       const f = await fixture();
       for (let i = 0; i < 60; i++) await f.child(f.root, `child-${i}`);
