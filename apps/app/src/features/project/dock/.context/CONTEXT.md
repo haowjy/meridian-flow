@@ -188,7 +188,8 @@ provide that evidence. QA/probe branches must come from real chat flows where
 the agent wrote to a Work draft.
 
 This has repeatedly surfaced in draft-review probes. See
-[KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
+[KB: Runtime Probes](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/conventions/verification/runtime-probes.md)
+on labeling synthetic fixtures.
 
 ## Rationale
 

@@ -53,7 +53,7 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
 Contrast is part of the palette contract: standard ink measures about 12.6:1 on
 the flat shelf and 10.7:1 on its pressed step; muted and hint tiers measure 6.5:1.
-See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
+See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
 
