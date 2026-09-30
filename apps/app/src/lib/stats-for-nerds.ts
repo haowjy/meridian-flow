@@ -6,9 +6,10 @@
  * not account data. Off by default. The value is held in memory once read, so
  * the toggle still works for the session when storage is unavailable.
  */
+import { createPreferenceSubscribers } from "./preference-subscribers";
+
 export const STATS_FOR_NERDS_STORAGE_KEY = "meridian:stats-for-nerds";
 
-const listeners = new Set<() => void>();
 let current: boolean | null = null;
 
 function readStored(): boolean {
@@ -25,9 +26,10 @@ export function resolveStatsForNerds(): boolean {
   return current;
 }
 
-function notify(): void {
-  for (const listener of listeners) listener();
-}
+// Another tab changed it: follow along.
+const subscribers = createPreferenceSubscribers(STATS_FOR_NERDS_STORAGE_KEY, () => {
+  current = readStored();
+});
 
 export function changeStatsForNerds(enabled: boolean): void {
   current = enabled;
@@ -37,22 +39,7 @@ export function changeStatsForNerds(enabled: boolean): void {
   } catch {
     // localStorage unavailable: the in-memory value still holds for the session.
   }
-  notify();
+  subscribers.notify();
 }
 
-export function subscribeStatsForNerds(listener: () => void): () => void {
-  listeners.add(listener);
-
-  // Another tab changed it: follow along.
-  function onStorage(event: StorageEvent): void {
-    if (event.key !== STATS_FOR_NERDS_STORAGE_KEY) return;
-    current = readStored();
-    notify();
-  }
-
-  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(listener);
-    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
-  };
-}
+export const subscribeStatsForNerds = subscribers.subscribe;

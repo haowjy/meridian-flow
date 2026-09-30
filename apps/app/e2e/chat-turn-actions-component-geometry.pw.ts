@@ -168,6 +168,20 @@ test("a divider speaks at one text size, on one line, at every width", async ({
   }
 });
 
+test("a divider's summary toggle is named once, for its words and what it opens", async ({
+  page,
+}) => {
+  await mount(page);
+  const toggle = page
+    .locator("#divider-auto")
+    .getByRole("button", { name: "Conversation compacted automatically, summary", exact: true });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  // The section around it is not a second landmark with the same words.
+  await expect(page.getByRole("region", { name: /compacted/ })).toHaveCount(0);
+  // A divider with no summary is still named by its state.
+  await expect(page.getByRole("region", { name: "Compacting conversation" })).toHaveCount(1);
+});
+
 test("a finished divider's info sits right of Fork and opens the reply's stats popover", async ({
   page,
 }) => {
@@ -341,5 +355,38 @@ test("keyboard focus opens a tooltip, and a button's own popover hides it", asyn
   await page.mouse.down();
   await page.mouse.up();
   await expect(page.getByRole("dialog").filter({ hasText: "Output tokens" })).toBeVisible();
+  await expect(openTooltips(page)).toHaveCount(0);
+});
+
+test("an explanatory tooltip stays open while the pointer moves onto it", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "fine-pointer", "hover contract");
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await mount(page);
+  const chip = page.locator("#identity-chips").getByRole("button", { name: "Choose a home" });
+  await chip.scrollIntoViewIfNeeded();
+  const box = await chip.boundingBox();
+  if (!box) throw new Error("No home chip");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+  await expect(openTooltips(page)).toContainText(["lives in your Scratch"]);
+  const tooltip = await openTooltipBox(page);
+
+  // Off the chip, across the gap, and onto the words: still open.
+  await page.mouse.move(tooltip.x + tooltip.width / 2, tooltip.y + tooltip.height / 2, {
+    steps: 12,
+  });
+  await expect(openTooltips(page)).toContainText(["lives in your Scratch"]);
+  const hit = await page.evaluate(
+    ({ x, y }) =>
+      document.elementFromPoint(x, y)?.closest('[data-slot="tooltip-content"]') !== null,
+    { x: tooltip.x + tooltip.width / 2, y: tooltip.y + tooltip.height / 2 },
+  );
+  expect(hit).toBe(true);
+
+  // Away from both, it closes.
+  await page.mouse.move(tooltip.x + tooltip.width + 200, tooltip.y + tooltip.height / 2, {
+    steps: 4,
+  });
   await expect(openTooltips(page)).toHaveCount(0);
 });

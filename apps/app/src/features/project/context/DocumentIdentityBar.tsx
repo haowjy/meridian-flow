@@ -1,20 +1,17 @@
 /** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
-import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { FolderDown, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeIcon, schemeLabel } from "./context-schemes";
+import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
-import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
+import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import {
   type IdentityCommitOwnership,
@@ -191,69 +188,6 @@ function IdentityChipSlot({
       {deviceOnly ? <DeviceOnlyChip /> : null}
       {show ? <HomeChip provisional={location.provisional} onClick={onChooseHome} /> : null}
     </>
-  );
-}
-
-const chipClass = cn(
-  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
-  IDENTITY_BAR_BOX_CLASS,
-);
-
-/** The permanent re-home affordance (D4), whose label graduates with the
- *  document: jade "Choose a home" while provisional (an invitation), quiet
- *  outline "Rename" once homed (a tool — rename is the common case; folder
- *  browsing in the same field keeps move discoverable). Same geometry in both states. */
-function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          key={provisional ? "invite" : "quiet"}
-          type="button"
-          onClick={onClick}
-          className={cn(
-            "focus-ring",
-            chipClass,
-            provisional
-              ? "border-primary/30 bg-primary/10 text-jade-text"
-              : "border-border bg-transparent text-ink-subtle",
-          )}
-        >
-          <FolderDown aria-hidden className="size-3" />
-          <span className="@max-md:hidden">
-            {provisional ? <Trans>Choose a home</Trans> : <Trans>Rename</Trans>}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-60">
-        {provisional ? (
-          <Trans>
-            This draft is untitled and lives in your Scratch. Click to name it or move it where it
-            belongs.
-          </Trans>
-        ) : (
-          <Trans>Rename this document or move it somewhere else in your project.</Trans>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function DeviceOnlyChip() {
-  const label = t`Only on this device`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          className={cn(chipClass, "border-warning-border bg-warning-bg text-warning-foreground")}
-        >
-          <TriangleAlert aria-hidden className="size-3" />
-          <span className="@max-md:hidden">{label}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
-    </Tooltip>
   );
 }
 
