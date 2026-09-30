@@ -645,13 +645,6 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
-    async listPendingPlaceholdersForThread(threadId) {
-      return orderTurnsByPosition(
-        [...turns.values()].filter(
-          (turn) => turn.threadId === threadId && isPendingPlaceholder(turn),
-        ),
-      );
-    },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...turns.values()]

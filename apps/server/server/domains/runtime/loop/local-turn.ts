@@ -78,6 +78,18 @@ export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
   throw new Error(`Not a current execution turn: ${turn.role}`);
 }
 
+/** Read the reservation-time trigger before compaction outcome metadata exists. */
+export function readCompactionTrigger(metadata: Turn["metadata"]): "auto" | "manual" {
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    metadata.trigger === "manual"
+  )
+    return "manual";
+  return "auto";
+}
+
 /** Both run-start and split reservation use the boundary's decision unchanged. */
 export function reservationTurn(
   input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata"> & {
