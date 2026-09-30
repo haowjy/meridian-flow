@@ -182,27 +182,6 @@ WHERE n.metadata->>'kind' = 'subagent_update'
   );
 --> statement-breakpoint
 
--- A derived conversation can own a cutoff at a settled notice. Retain that
--- history identity and its text even when its old report metadata cannot be
--- repaired; deleting it would strand provenance and cross-thread turn parents.
-UPDATE turns n
-SET metadata = jsonb_build_object('kind', 'system_update', 'section', 'saved_subagent_report')
-FROM invalid_subagent_update_turns invalid
-WHERE n.id = invalid.id
-  AND (
-    EXISTS (SELECT 1 FROM threads derived WHERE derived.origin_turn_id = n.id)
-    OR EXISTS (
-      SELECT 1 FROM turns child
-      WHERE child.parent_turn_id = n.id AND child.thread_id <> n.thread_id
-    )
-  );
---> statement-breakpoint
-
-DELETE FROM invalid_subagent_update_turns invalid
-USING turns n
-WHERE n.id = invalid.id AND n.metadata->>'kind' = 'system_update';
---> statement-breakpoint
-
 -- Walk through adjacent invalid notices so surviving turns never point at a
 -- deleted ancestor, even if several consecutive notices could not be repaired.
 CREATE TEMP TABLE invalid_subagent_update_reparents ON COMMIT DROP AS
