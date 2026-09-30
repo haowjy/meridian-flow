@@ -10,7 +10,11 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Tool } from "../gateway/index.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
-import { resolveAgentThreadTurnContext, SUBAGENT_GUIDANCE } from "./agent-thread-context.js";
+import {
+  type AgentThreadTurnContext,
+  resolveAgentThreadTurnContext,
+  SUBAGENT_GUIDANCE,
+} from "./agent-thread-context.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { createSkillToolRegistrations } from "./skill-tool.js";
@@ -136,10 +140,42 @@ function spawnDescription(tools: Tool[]): string {
   return spawn.description;
 }
 
+const WORK_CONTEXT = '<work_context>\ncurrent: continuity: "Continuity pass"\n</work_context>';
+
+function resolvedSystemPrompt(
+  context: AgentThreadTurnContext,
+  namedSubagents: Array<{ name: string }>,
+): string {
+  return assembleComposedSystemPrompt({
+    basePrompt: context.agentBody,
+    appendPrompt: context.appendPrompt,
+    workContext: WORK_CONTEXT,
+    namedSubagents: namedSubagents.map(({ name }) => ({
+      slug: name,
+      name,
+      description: "Checks continuity.",
+    })),
+    subagentGuidance: context.subagentGuidance,
+  });
+}
+
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("keeps generic runtime prompt and every advertised tool on user vocabulary", async () => {
-    const context = await boundContext({ tools: WRITER_MAP });
-    expect(assembleComposedSystemPrompt({})).not.toMatch(/writer/i);
+  it.each([
+    { kind: "primary" as const, namedTargets: [] },
+    {
+      kind: "subagent" as const,
+      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
+    },
+  ])("keeps the resolved $kind prompt and tools on user vocabulary", async (metadata) => {
+    const context = await boundContext({ tools: WRITER_MAP, ...metadata });
+    const systemPrompt = resolvedSystemPrompt(context, metadata.namedTargets);
+    expect(systemPrompt).toContain(WORK_CONTEXT);
+    if (metadata.kind === "subagent") {
+      expect(systemPrompt).toContain("Named subagents\n\ncritic");
+      expect(systemPrompt).toContain(SUBAGENT_GUIDANCE);
+      expect(hasTool(context.tools, "return_result")).toBe(true);
+    }
+    expect(systemPrompt).not.toMatch(/writer/i);
     expect(JSON.stringify(context.tools)).not.toMatch(/writer/i);
   });
 
