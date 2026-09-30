@@ -1,7 +1,12 @@
-/** Work-specific searchable catalog panel shared by both composer surfaces. */
+/**
+ * Work-specific searchable catalog panel shared by both composer surfaces.
+ * It lists only Works a chat can be bound to: an archived Work refuses new
+ * bindings, so it is not offered (a chat already in one still shows it as
+ * its current Work on the trigger).
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { Check, LoaderCircle, Search } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -36,9 +41,8 @@ export type WorkPickerOperation = {
 
 type WorkPickerRows = {
   query: string;
-  ordered: Work[];
-  active: Work[];
-  archived: Work[];
+  /** Works the chat can be bound to that match the query. */
+  works: Work[];
   enabled: boolean;
   enabledIds: string[];
 };
@@ -56,22 +60,19 @@ export function deriveWorkPickerViewModel(
   pending: boolean,
 ): WorkPickerViewModel {
   const needle = query.trim().toLocaleLowerCase();
-  const filtered =
+  const works =
     catalog.status === "ready"
-      ? catalog.works.filter((work) =>
-          `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+      ? catalog.works.filter(
+          (work) =>
+            !isWorkArchived(work) &&
+            `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
         )
       : [];
-  const active = filtered.filter(({ archivedAt }) => archivedAt === null);
-  const archived = filtered.filter(({ archivedAt }) => archivedAt !== null);
-  const ordered = [...active, ...archived];
   const rows = {
     query,
-    ordered,
-    active,
-    archived,
+    works,
     enabled: catalog.status === "ready" && !pending,
-    enabledIds: catalog.status === "ready" && !pending ? ordered.map(({ id }) => id) : [],
+    enabledIds: catalog.status === "ready" && !pending ? works.map(({ id }) => id) : [],
   };
   if (catalog.status === "ready")
     return { ...rows, status: "ready", refreshing: catalog.refreshing };
@@ -206,30 +207,17 @@ export function WorkPickerPanel({
             <Trans>No Work yet.</Trans>
           </PickerState>
         ) : null}
-        {view.active.length ? (
+        {view.works.length ? (
           <WorkSection
             label={t`Active Work`}
-            works={view.active}
+            works={view.works}
             operation={operation}
             enabled={view.enabled}
             onChoose={onChoose}
             focusRefs={focusRefs}
-            firstWorkId={view.ordered[0]?.id}
           />
         ) : null}
-        {view.archived.length ? (
-          <WorkSection
-            label={t`Archived Work`}
-            works={view.archived}
-            operation={operation}
-            enabled={view.enabled}
-            onChoose={onChoose}
-            focusRefs={focusRefs}
-            firstWorkId={view.ordered[0]?.id}
-            archived
-          />
-        ) : null}
-        {view.status === "ready" && view.query.trim() !== "" && !view.ordered.length ? (
+        {view.status === "ready" && view.query.trim() !== "" && !view.works.length ? (
           <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
             <Trans>No Work matches your search.</Trans>
           </p>
@@ -253,21 +241,17 @@ function WorkSection({
   operation,
   enabled,
   onChoose,
-  archived = false,
   focusRefs,
-  firstWorkId,
 }: {
   label: string;
   works: Work[];
   operation: WorkPickerOperation;
   enabled: boolean;
   onChoose: (work: Work) => void;
-  archived?: boolean;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
   };
-  firstWorkId?: string;
 }) {
   return (
     <section aria-label={label}>
@@ -293,7 +277,7 @@ function WorkSection({
                 ref={
                   current
                     ? focusRefs?.selected
-                    : work.id === firstWorkId
+                    : work.id === works[0]?.id
                       ? focusRefs?.first
                       : undefined
                 }
@@ -313,9 +297,7 @@ function WorkSection({
                 )}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {archived ? t`${work.name}, Archived` : work.name}
-                  </span>
+                  <span className="block truncate text-sm font-medium">{work.name}</span>
                   {changing ? (
                     <span className="block truncate text-xs text-muted-foreground">
                       <Trans>Changing work</Trans>

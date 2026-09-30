@@ -90,24 +90,17 @@ describe("WorkPickerPanel", () => {
     );
   });
 
-  it("chooses an archived Work without confirmation", async () => {
-    const choose = vi.fn();
+  it("does not offer an archived Work, which a chat cannot be bound to", async () => {
     await withReactRoot(
       <WorkPickerPanel
         view={view({ status: "ready", works: [archived], refreshing: false }, "Second")}
         operation={operation}
         onQueryChange={() => {}}
-        onChoose={choose}
+        onChoose={() => {}}
       />,
       () => {
-        expect(document.querySelector('input[type="search"]')?.getAttribute("placeholder")).toBe(
-          "Search Work",
-        );
-        expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Archived Work");
-        Array.from(document.querySelectorAll("button"))
-          .find((node) => node.textContent?.includes("Second arc"))
-          ?.click();
-        expect(choose).toHaveBeenCalledWith(archived);
+        expect(document.querySelector("[data-work-choice]")).toBeNull();
+        expect(document.body.textContent).toContain("No Work matches your search.");
       },
     );
   });
@@ -145,10 +138,14 @@ describe("WorkPickerPanel", () => {
     );
   });
 
-  it("preserves archived and changing state in accessible help", async () => {
+  it("preserves changing state in accessible help", async () => {
     await withReactRoot(
       <WorkPickerPanel
-        view={view({ status: "ready", works: [archived], refreshing: false }, "", true)}
+        view={view(
+          { status: "ready", works: [{ ...archived, archivedAt: null }], refreshing: false },
+          "",
+          true,
+        )}
         operation={{ currentWorkId: "a", targetId: "b", pending: true, failure: null }}
         onQueryChange={() => {}}
         onChoose={() => {}}
@@ -157,7 +154,6 @@ describe("WorkPickerPanel", () => {
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
         const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
         expect(accessibleHelp?.textContent).toContain("Goal: Climb");
-        expect(row?.textContent).toContain("Archived");
         expect(row?.textContent).toContain("Changing work");
       },
     );
