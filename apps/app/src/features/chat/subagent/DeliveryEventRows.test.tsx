@@ -1,20 +1,9 @@
 // @vitest-environment jsdom
 
-import type { ReactNode } from "react";
-import { vi } from "vitest";
-
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type DeliveryEvent, DeliveryEventRows } from "./DeliveryEventRows";
 import { renderChatSurface } from "./renderChatSurface";
 

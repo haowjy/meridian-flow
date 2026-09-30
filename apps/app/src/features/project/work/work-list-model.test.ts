@@ -46,7 +46,7 @@ describe("workListEntries", () => {
         works: [
           work("arc"),
           work("coda", { archivedAt: "2026-09-02T00:00:00.000Z" }),
-          work("draft"),
+          work("draft", { archivedAt: "2026-09-02T00:00:00.000Z" }),
         ],
         deleted: [
           deleted("gone-2"),
@@ -63,6 +63,7 @@ describe("workListEntries", () => {
       new Map([
         ["arc", failure("arc", "archive")],
         ["gone-1", failure("gone-1", "restore")],
+        ["draft", failure("draft", "delete")],
       ]),
       NOW,
     );
@@ -72,11 +73,11 @@ describe("workListEntries", () => {
       ["deleted-gone-2", "undo", null],
       ["deleted-gone-1", "undo", "restore"],
       ["arc", "idle", "archive"],
-      ["draft", "restoring", null],
     ]);
     expect(shape(entries.archived)).toEqual([
       ["deleted-gone-archived", "undo", null],
       ["coda", "idle", null],
+      ["draft", "restoring", null],
     ]);
     // Works offered for Undo stay out of the Deleted tab.
     expect(entries.deleted).toEqual([]);
@@ -94,33 +95,17 @@ describe("workListEntries", () => {
     expect(shape(entries.deleted)).toEqual([["recent", "idle", "restore"]]);
     expect(entries.active).toEqual([]);
   });
-
-  it("gives a restoring Work no failure row", () => {
-    const entries = workListEntries(
-      projection({ works: [work("arc")], restoring: new Set(["arc"]) }),
-      [],
-      new Map([["arc", failure("arc", "delete")]]),
-      NOW,
-    );
-    expect(shape(entries.active)).toEqual([["arc", "restoring", null]]);
-  });
 });
 
 describe("daysUntilPurge", () => {
   const DAY = 24 * 60 * 60 * 1000;
   const at = (ms: number) => new Date(ms).toISOString();
 
-  it("shows the full retention for a Work deleted just now", () => {
+  it("clamps to the retention period and rounds a started day down", () => {
     expect(daysUntilPurge(at(NOW), NOW)).toBe(30);
     expect(daysUntilPurge(at(NOW - 1), NOW)).toBe(30);
-  });
-
-  it("never shows more than the retention when the server clock runs ahead", () => {
     expect(daysUntilPurge(at(NOW + 1), NOW)).toBe(30);
     expect(daysUntilPurge(at(NOW + 2 * DAY), NOW)).toBe(30);
-  });
-
-  it("counts a started day as a day, down to within a day, then zero", () => {
     expect(daysUntilPurge(at(NOW - DAY), NOW)).toBe(29);
     expect(daysUntilPurge(at(NOW - DAY - 1), NOW)).toBe(29);
     expect(daysUntilPurge(at(NOW - 29 * DAY - 1), NOW)).toBe(1);

@@ -9,13 +9,6 @@ import {
   WorkPickerPanel,
 } from "./WorkPickerPanel";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 const operation = { currentWorkId: "a", targetId: null, pending: false, failure: null } as const;
 const archived = {
   id: "b",

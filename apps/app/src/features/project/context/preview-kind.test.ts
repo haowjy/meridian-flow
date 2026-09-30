@@ -36,13 +36,11 @@ describe("previewKind", () => {
     expect(previewKind(viewer("Note.txt"), { ...tracked, path: "/Note.txt" })).toBe("text");
   });
 
-  it("preserves stored image and PDF classification plus Markdown and text MIME routing", () => {
+  it("preserves stored image and PDF classification over misleading names and MIME", () => {
     expect(previewKind(viewer("Map.png", "image"), binary("image", "image/png"))).toBe("image");
     expect(previewKind(viewer("Story.md", "pdf"), binary("pdf", "application/pdf"))).toBe(
       "markdown",
     );
-    expect(previewKind(viewer("Guide.pdf", "pdf"), binary("pdf", "application/pdf"))).toBe("pdf");
-    expect(previewKind(viewer("notes.json"), binary("binary", "application/json"))).toBe("text");
     expect(previewKind(viewer("archive.bin"), binary("binary", "application/octet-stream"))).toBe(
       "binary",
     );

@@ -1,22 +1,13 @@
 // @vitest-environment jsdom
 /** Real write-mode adapter integration for production page focus transitions. */
 import type { Work } from "@meridian/contracts/works";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
 import { useSelectedWorkWriteModeToolbarControl } from "./SelectedWorkWriteModeControl";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
-    (value === 1 ? one : other).replace("#", String(value)),
-}));
 let groups: unknown = null;
 let mutateAsync = vi.fn();
 const mutate = vi.fn();

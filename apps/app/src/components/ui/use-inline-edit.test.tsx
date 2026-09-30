@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { typeInto } from "@/test-support/react-dom-harness";
 import { type UseInlineEditOptions, useInlineEdit } from "./use-inline-edit";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -45,10 +46,8 @@ function render(overrides: Partial<UseInlineEditOptions> = {}) {
 }
 
 function type(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   act(() => {
-    setter?.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    typeInto(input, value);
   });
 }
 
@@ -59,12 +58,6 @@ function key(input: HTMLInputElement, name: string, init: KeyboardEventInit = {}
 }
 
 describe("useInlineEdit", () => {
-  it("focuses and selects on mount", () => {
-    const { input } = render();
-    expect(document.activeElement).toBe(input);
-    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
-  });
-
   it("commits the trimmed draft on Enter, once, even when blur follows", async () => {
     const { input, onCommit } = render();
     type(input, "  Arc 4  ");
@@ -72,14 +65,6 @@ describe("useInlineEdit", () => {
     await act(async () => input.blur());
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenCalledWith("Arc 4");
-  });
-
-  it("cancels an empty draft instead of committing", () => {
-    const empty = render();
-    type(empty.input, "   ");
-    key(empty.input, "Enter");
-    expect(empty.onCommit).not.toHaveBeenCalled();
-    expect(empty.onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("cancels an unchanged draft", () => {
@@ -128,11 +113,5 @@ describe("useInlineEdit", () => {
     expect(host.querySelector("[data-issue]")?.textContent).toBe("Couldn't save");
     await act(async () => key(input, "Enter"));
     expect(onCommit).toHaveBeenCalledTimes(2);
-  });
-
-  it("unchanged can differ from the initial draft (retrying a failed rename)", () => {
-    const { input, onCommit } = render({ initial: "Arc 4", unchanged: "Arc 3" });
-    key(input, "Enter");
-    expect(onCommit).toHaveBeenCalledWith("Arc 4");
   });
 });

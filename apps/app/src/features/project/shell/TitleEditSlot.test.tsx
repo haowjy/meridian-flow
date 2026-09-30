@@ -6,6 +6,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { typeInto } from "@/test-support/react-dom-harness";
 import { TitleEditSlot } from "./TitleEditSlot";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -27,10 +28,8 @@ const field = () => host.querySelector("input");
 
 function type(value: string) {
   const input = field() as HTMLInputElement;
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   act(() => {
-    setter?.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    typeInto(input, value);
   });
 }
 
@@ -110,9 +109,16 @@ it("reopens a refused rename with the writer's text, and Enter retries it", asyn
 
 it("keeps a newer rename when an older one is refused, and reopens only for the newer one", async () => {
   const { rename, refuse } = deferredRenames();
-  act(() => root.render(<Slot rename={rename} />));
-  await renameTo("A");
-  await renameTo("B");
+  act(() =>
+    root.render(
+      <>
+        <Slot rename={rename}>Tab</Slot>
+        <Slot rename={rename}>Heading</Slot>
+      </>,
+    ),
+  );
+  await renameTo("A", host.querySelectorAll("button")[0]);
+  await renameTo("B", host.querySelectorAll("button")[1]);
 
   await refuse("A");
   expect(field()).toBeNull();
@@ -121,28 +127,6 @@ it("keeps a newer rename when an older one is refused, and reopens only for the 
   await refuse("B");
   expect(field()?.value).toBe("B");
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
-});
-
-it("lets a rename from another slot of the same title supersede this one", async () => {
-  const { rename, refuse } = deferredRenames();
-  act(() =>
-    root.render(
-      <>
-        <Slot titleKey="work:2" rename={rename}>
-          Tab
-        </Slot>
-        <Slot titleKey="work:2" rename={rename}>
-          Heading
-        </Slot>
-      </>,
-    ),
-  );
-  const [tab, heading] = host.querySelectorAll("button");
-  await renameTo("A", tab);
-  await renameTo("B", heading);
-
-  await refuse("A");
-  expect(field()).toBeNull();
 });
 
 it("shows a refusal without taking focus from where the writer moved on", async () => {

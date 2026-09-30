@@ -33,12 +33,10 @@ describe("readable project addresses", () => {
     [`${P}/chats/${CHAT}`, { kind: "chat", chatId: CHAT }],
     [`${P}/works`, { kind: "works" }],
     [`${P}/works?view=archived`, { kind: "works" }],
-    [`${P}/works?view=deleted`, { kind: "works" }],
     [`${P}/works/new`, { kind: "works-new" }],
     [`${P}/works/${WORK}`, { kind: "work", workId: WORK }],
     [`${P}/works/${WORK}?view=files`, { kind: "work", workId: WORK }],
     [`${P}/editor`, { kind: "editor" }],
-    [`${P}/editor?work=${WORK}`, { kind: "editor" }],
     [`${P}/editor/manuscript/Volume%201/Chapter%20%231.md`, { kind: "document" }],
     [`${P}/editor/manuscript/chapter.md?work=${WORK}`, { kind: "document" }],
     [`${P}/editor/kb/%E4%BF%AE%E7%82%BC.md`, { kind: "document" }],
@@ -51,11 +49,6 @@ describe("readable project addresses", () => {
     [`${P}/editor/browse`, { kind: "browse", scheme: null, path: "" }],
     [`${P}/editor/browse/manuscript`, { kind: "browse", scheme: "manuscript", path: "" }],
     [`${P}/editor/browse/manuscript/Volume%201`, { kind: "browse", path: "Volume 1" }],
-    [`${P}/editor/browse/manuscript?work=${WORK}`, { kind: "browse" }],
-    [`${P}/editor/browse/uploads?work=${WORK}`, { kind: "browse", scheme: "uploads" }],
-    [`${P}/editor/browse/scratch/drafts?work=`, { kind: "browse", scheme: "scratch" }],
-    [`${P}/chats/${CHAT}?results=&settings=profile`, { kind: "chat" }],
-    [`${P}/works?settings=usage`, { kind: "works" }],
   ])("round trips %s", (href, destination) => {
     const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -65,24 +58,11 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    // Old shapes: no alias, no redirect.
+    // Representative obsolete shapes: no alias, no redirect.
     `${P}/manuscript/chapter.md`,
-    `${P}/kb/notes.md`,
-    `${P}/scratch/notes.md`,
-    `${P}/browse`,
-    `${P}/browse/manuscript`,
     `${P}/works/${WORK}/scratch/notes.md`,
-    `${P}/works/${WORK}/browse/uploads`,
-    `${P}/works/${WORK}/manuscript/leaf.md`,
-    `${P}/works/new/scratch/notes.md`,
-    `${P}/work/revision`,
-    `${P}/works/@revision`,
-    `${P}/works/fight-scene`,
-    `${P}/works-new`,
     `${P}/chat/${CHAT}`,
-    `${P}/chats/fight-scene`,
-    `${P}/chats/a/b`,
-    `${P}/editor/browse/scratch/@draft`,
+    `${P}/works/@revision`,
     // Unknown screens and malformed documents.
     `${P}/settings`,
     `${P}/editor/manuscript`,

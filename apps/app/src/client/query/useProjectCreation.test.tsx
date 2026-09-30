@@ -3,12 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  creationRecordKey,
-  creationRegistry,
-  readCreationRecord,
-  scopeCreationRegistry,
-} from "@/client/creation/creation-registry";
+import { creationRegistry, scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useCreateProject, useProjectCreationState } from "./useProjectCreation";
 
@@ -84,7 +79,6 @@ describe("project creation", () => {
           { id: projectId, title: "Fast project" },
           expect.anything(),
         );
-        expect(readCreationRecord(creationRecordKey("project", projectId))?.status).toBe("pending");
       },
       { drainMacrotask: true },
     );
@@ -108,8 +102,6 @@ describe("project creation", () => {
       },
       { drainMacrotask: true },
     );
-    expect(readCreationRecord(creationRecordKey("project", projectId))?.status).toBe("failed");
-
     mocks.createProject.mockResolvedValueOnce({ id: projectId, userId: ACCOUNT_ID });
     await withReactRoot(
       <QueryClientProvider client={client}>

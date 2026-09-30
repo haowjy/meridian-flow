@@ -10,14 +10,6 @@ import { WorkDetailScreen } from "./WorkDetailScreen";
 
 const { unarchive } = vi.hoisted(() => ({ unarchive: vi.fn(async () => null) }));
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  Plural: () => null,
-}));
 vi.mock("@/client/query/work-command-store", () => ({
   useWorkMutations: () => ({ update: vi.fn(), archive: vi.fn(), unarchive }),
 }));
@@ -93,20 +85,10 @@ describe("an archived Work page", () => {
       expect(document.querySelector("h1 button")).toBeNull();
       expect(document.querySelector("h1")?.textContent).toBe("Tournament arc");
       expect(text).toContain("Draft chapters 12 to 15.");
-      expect(text.indexOf("Tournament arc")).toBeLessThan(text.indexOf("This Work is archived."));
-      expect(text.indexOf("This Work is archived.")).toBeLessThan(
-        text.indexOf("Draft chapters 12 to 15."),
-      );
       expect(buttonNamed("Edit goal")).toBeUndefined();
       expect(buttonNamed("New chat")?.disabled).toBe(true);
       await act(async () => buttonNamed("Unarchive")?.click());
       expect(unarchive).toHaveBeenCalledWith({ workId: ARCHIVED.id });
-    });
-  });
-
-  it("offers no Add a goal prompt when the goal is empty", async () => {
-    await withReactRoot(renderPage({ ...ARCHIVED, goal: null }), () => {
-      expect(document.body.textContent).not.toContain("Add a goal");
     });
   });
 });

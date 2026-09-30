@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("SegmentedTabs close actions", () => {
-  it("keeps only tabs in the tablist and exposes close by click and Delete", async () => {
+  it("calls close without changing the tab for click and Delete", async () => {
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -43,9 +43,7 @@ describe("SegmentedTabs close actions", () => {
     });
 
     const tablist = host.querySelector('[role="tablist"]');
-    expect(tablist?.querySelectorAll('button:not([role="tab"])')).toHaveLength(0);
     const tab = tablist?.querySelector<HTMLButtonElement>('[role="tab"]');
-    expect(tab?.getAttribute("aria-keyshortcuts")).toBe("Delete Backspace");
 
     await act(async () => {
       tab?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));

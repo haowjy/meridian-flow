@@ -24,7 +24,7 @@ const renameFailure = (cause: unknown) =>
   workUpdateFailure(cause, t`Couldn’t rename this Work. Try again.`);
 
 /** Renames the Work; rejects when the server refused it. */
-function useWorkRename(projectId: string, work: Work) {
+export function useWorkRename(projectId: string, work: Work) {
   const { update } = useWorkMutations(projectId);
   return async (name: string) => {
     const error = await update({ workId: work.id, data: { name } });

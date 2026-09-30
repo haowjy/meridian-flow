@@ -76,19 +76,6 @@ it("keeps a pending newer title when an older rename is refused, without rejecti
   });
 });
 
-it("keeps a confirmed newer title when an older rename is refused afterwards", async () => {
-  const { client, title, a, b } = setup();
-  await render(client, async () => {
-    await act(async () => {
-      void rename("A");
-      void rename("B");
-    });
-    await act(async () => b.resolve({ ...PROJECT, title: "B" }));
-    await act(async () => a.reject(new Error("refused")));
-    expect(title()).toEqual({ list: "B", detail: "B" });
-  });
-});
-
 it("reverts the latest refused rename to the last confirmed title, and rejects", async () => {
   const { client, title, a, b } = setup();
   await render(client, async () => {

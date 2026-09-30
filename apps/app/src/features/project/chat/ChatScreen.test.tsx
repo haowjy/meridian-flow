@@ -5,14 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ChatScreen } from "./ChatScreen";
 
-vi.mock("@lingui/core/macro", () => {
-  const join = (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, "");
-  return { t: join, msg: join };
-});
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [] }),
 }));

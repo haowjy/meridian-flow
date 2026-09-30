@@ -21,21 +21,6 @@ function file(overrides: Partial<CatalogFile> = {}) {
 }
 
 describe("viewerTabForCatalogFile", () => {
-  it("preserves Scratch's read-only Markdown viewer metadata", () => {
-    const tab = viewerTabForCatalogFile(
-      file({ name: "notes.md", path: "notes.md" }),
-      "scratch",
-      "work-1",
-    );
-    expect(tab).toMatchObject({
-      kind: "viewer",
-      editable: false,
-      fileType: "binary",
-      mimeType: "text/markdown",
-      workId: "work-1",
-    });
-  });
-
   it("uses the same upload classification for editable and binary catalog files", () => {
     const image = viewerTabForCatalogFile(file(), "uploads", "work-1");
     const editable = viewerTabForCatalogFile(

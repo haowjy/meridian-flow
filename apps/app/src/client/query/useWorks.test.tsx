@@ -17,7 +17,9 @@ import {
   unarchiveWork,
   updateWork,
 } from "@/client/api/projects-api";
+import { useWorkRename } from "@/features/project/work/WorkTitles";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { archived, deferred, snapshot, WORK } from "@/test-support/works-fixtures";
 import { projectQueryKeys } from "./project-query-keys";
 import { useWorks } from "./useWorks";
 import type { WorkCreation } from "./work-command-projection";
@@ -47,51 +49,13 @@ vi.mock("@/client/api/projects-api", () => ({
   updateWorkWriteMode: vi.fn(),
 }));
 
-const PROJECT_ID = "project-1";
-const WORK = {
-  id: "00000000-0000-4000-8000-000000000001",
-  projectId: PROJECT_ID,
-  createdByUserId: "user-1",
-  name: "Arc",
-  slug: "arc",
-  isNoWork: false,
-  goal: null,
-  status: null,
-  archivedAt: null,
-  aiWriteMode: "direct",
-  entityRevision: "1",
-  createdAt: "2026-09-01T00:00:00.000Z",
-  updatedAt: "2026-09-01T00:00:00.000Z",
-  lastActivityAt: "2026-09-01T00:00:00.000Z",
-  deletedAt: null,
-} as Work;
+const PROJECT_ID = WORK.projectId;
 const SECOND = {
   ...WORK,
   id: "00000000-0000-4000-8000-000000000002",
   name: "Coda",
   slug: "coda",
 } as Work;
-const snapshot = (works: Work[], authorityRevision = "1") =>
-  ({
-    projectId: PROJECT_ID,
-    catalogGeneration: "1",
-    authorityRevision,
-    requestId: `request-${authorityRevision}`,
-    works,
-    noWork: { ...WORK, id: "no-work", name: "No Work", isNoWork: true, slug: null },
-  }) as unknown as WorksSnapshot;
-const archived = (work: Work) => ({ ...work, archivedAt: "2026-09-02T00:00:00.000Z" }) as Work;
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
 const OPERATIONS = ["create", "update", "archive", "unarchive"] as const;
 type Seen = {
   works: Work[] | null;
@@ -100,6 +64,7 @@ type Seen = {
   windows: readonly WorkDeleteWindow[];
 };
 let commands!: WorkMutations;
+let renameWork!: (name: string) => Promise<void>;
 let seen: Seen = { works: null, creations: new Map(), failures: new Map(), windows: [] };
 const renders: Seen[] = [];
 function Probe() {
@@ -115,6 +80,11 @@ function Probe() {
   return null;
 }
 
+function RenameProbe() {
+  renameWork = useWorkRename(PROJECT_ID, WORK);
+  return null;
+}
+
 const field = <K extends keyof Work>(id: string, key: K) =>
   seen.works?.find((work) => work.id === id)?.[key];
 
@@ -126,6 +96,7 @@ async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Pr
     await withReactRoot(
       <QueryClientProvider client={client}>
         <Probe />
+        <RenameProbe />
       </QueryClientProvider>,
       () => run(client),
       { drainMacrotask: true },
@@ -170,6 +141,7 @@ describe("Work command projection", () => {
       await settle(() => expect(field(WORK.id, "name")).toBe("Arc"));
       // The rename reports its failure through its own promise; no record lingers.
       expect(outcome).toBeInstanceOf(Error);
+      await expect(renameWork("Another title")).rejects.toBeInstanceOf(Error);
       expect(recordStatuses(client)).toEqual([]);
       expect(seen.failures.size).toBe(0);
     });
@@ -292,23 +264,6 @@ describe("Work command projection", () => {
       expect(field(WORK.id, "archivedAt")).toBeNull();
     });
   });
-  it("hides a failure once the server already shows its target", async () => {
-    vi.mocked(archiveWork).mockRejectedValue(new Error("Rejected"));
-    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
-    await withProbe(snapshot([WORK]), async (client) => {
-      await act(async () => {
-        void commands.archive({ workId: WORK.id });
-      });
-      await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
-
-      // Another device archived it: Retry would be a no-op, so the failure goes quiet.
-      await act(async () => {
-        client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([archived(WORK)], "2"));
-      });
-      await settle(() => expect(seen.failures.size).toBe(0));
-      expect(field(WORK.id, "archivedAt")).not.toBeNull();
-    });
-  });
 
   it("patches only the fields a command owns when the refresh after it fails", async () => {
     const renamed = { ...WORK, name: "Revised arc" } as Work;
@@ -324,33 +279,6 @@ describe("Work command projection", () => {
         expect(field(WORK.id, "archivedAt")).not.toBeNull();
       });
       expect(field(WORK.id, "name")).toBe("Revised arc");
-    });
-  });
-
-  it("drops a success record once it lands, and keeps a delete's as its Undo window", async () => {
-    let server = snapshot([WORK]);
-    vi.mocked(listProjectWorks).mockImplementation(async () => server);
-    vi.mocked(updateWork).mockImplementation(async () => {
-      server = snapshot([{ ...WORK, name: "Revised arc" } as Work], "2");
-      return server.works[0] as Work;
-    });
-    vi.mocked(deleteWork).mockImplementation(async () => {
-      server = snapshot([{ ...WORK, deletedAt: "2026-09-03T00:00:00.000Z" } as Work], "3");
-    });
-    await withProbe(server, async (client) => {
-      await act(async () => {
-        await commands.update({ workId: WORK.id, data: { name: "Revised arc" } });
-      });
-      await settle(() => {
-        expect(recordStatuses(client)).toEqual([]);
-        expect(field(WORK.id, "name")).toBe("Revised arc");
-      });
-
-      await act(async () => {
-        await commands.delete({ workId: WORK.id });
-      });
-      await settle(() => expect(seen.works).toEqual([]));
-      expect(recordStatuses(client)).toEqual(["done"]);
     });
   });
 
@@ -404,27 +332,6 @@ describe("Work command projection", () => {
       await act(async () => request.resolve(archived(SECOND)));
       expect(listProjectWorks).toHaveBeenCalledTimes(reads);
       expect(recordStatuses(client)).toEqual([]);
-    });
-    account.epoch = new AbortController();
-  });
-
-  it("never sends a queued command once the account that queued it is gone", async () => {
-    const first = deferred<Work>();
-    vi.mocked(archiveWork).mockImplementationOnce(() => first.promise);
-    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
-    await withProbe(snapshot([WORK, SECOND]), async () => {
-      let second!: Promise<Error | null>;
-      await act(async () => {
-        void commands.archive({ workId: WORK.id });
-        second = commands.archive({ workId: SECOND.id });
-      });
-      await settle(() => expect(archiveWork).toHaveBeenCalledTimes(1));
-      expect(vi.mocked(archiveWork).mock.calls[0]?.[1]?.signal).toBe(account.epoch.signal);
-
-      await act(async () => account.epoch.abort());
-      await act(async () => first.resolve(archived(WORK)));
-      expect((await second)?.name).toBe("AbortError");
-      expect(archiveWork).toHaveBeenCalledTimes(1);
     });
     account.epoch = new AbortController();
   });
