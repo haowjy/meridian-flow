@@ -737,6 +737,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
 it("keeps the existing conditional open-request guidance for an assistant-row handoff cutoff", async () => {
   const rig = setup({ warm: true });
   rig.input.instruction = "handoff";
+  rig.input.incomingAgentName = "Editor";
   rig.input.projection.turns[0].role = "assistant";
   const requestInHand = rig.input.requestInHand;
   if (!requestInHand) throw new Error("Expected a source request");
