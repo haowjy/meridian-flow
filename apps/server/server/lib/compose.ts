@@ -208,6 +208,7 @@ import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
@@ -1014,7 +1015,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
-      const timeoutMs = 10_000;
+      const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
       if (!drained)
         emitEvent(ports.eventSink, {

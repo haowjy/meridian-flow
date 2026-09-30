@@ -4,6 +4,7 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
+import { RECOVERY_LANE_STOP_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export interface RecoveryLane {
   name: string;
@@ -67,7 +68,7 @@ export function startRecoveryScheduler(lanes: readonly RecoveryLane[], eventSink
                 payload: {},
               });
             resolve();
-          }, 5_000);
+          }, RECOVERY_LANE_STOP_DEADLINE_MS);
         }),
       ]);
       clearTimeout(deadline);
