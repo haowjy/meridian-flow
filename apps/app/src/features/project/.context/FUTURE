@@ -46,8 +46,3 @@
   search (`work/WorkChatsTab.tsx`, `work/WorkFilesTab.tsx` own it as component
   state). Keeping it means putting the Work chat search in the project address,
   as the chat index does with `q`.
-- Work goal vs description split: one `goal` field today serves both
-  identification (other Works' summaries to the model, Work list) and
-  direction (current Work's chats); see
-  apps/server/server/domains/runtime/loop/work-context.ts. If it strains,
-  split into a short description plus goal/instructions, like Claude Projects.
