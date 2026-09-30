@@ -345,7 +345,7 @@ async function releaseFixedBackendPorts(
   if (result.status === "discoveryError") {
     throw new Error(
       result.errors
-        .map(({ port, error }) => `port ${port} is still held but could not be inspected: ${error}`)
+        .map(({ port, error }) => `port ${port} is busy and could not be released: ${error}`)
         .join("; "),
     );
   }

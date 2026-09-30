@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Fix: `pnpm dev --restart` failed with "port … is still held but could not be inspected" when an open connection happened to use a backend port as its source port. Backend ports now come from 20000-27999, below Linux's ephemeral range, and a port busy with no listener says so.
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
 - Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
