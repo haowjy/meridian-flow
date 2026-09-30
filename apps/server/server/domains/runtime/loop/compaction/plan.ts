@@ -24,7 +24,6 @@ export interface PlanCompactionInput {
   fitLimitTokens: number;
   tailBudgetBaseTokens: number;
   pinnedRequestTurnIds?: ReadonlySet<string>;
-  summaryReserveTokens: number;
   fixedOverheadTokens: number;
   tokenizer: TokenizerFamily;
   tailBudgetFraction?: number;
@@ -388,7 +387,6 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     (sum, turn, index) => sum + (pinnedIds.has(turn.id) ? (costs[index]?.full ?? 0) : 0),
     0,
   );
-  const summaryReserveTokens = Math.max(0, input.summaryReserveTokens);
   const fixedOverheadTokens = Math.max(0, input.fixedOverheadTokens);
   const triggerTokens = Math.max(0, input.fitLimitTokens);
   const tailBudgetTokens = Math.max(
@@ -396,7 +394,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     Math.floor(
       Math.min(
         input.tailBudgetBaseTokens * (input.tailBudgetFraction ?? DEFAULT_COMPACTION_TAIL_FRACTION),
-        triggerTokens - summaryReserveTokens - fixedOverheadTokens - pinnedCost,
+        triggerTokens - fixedOverheadTokens - pinnedCost,
       ),
     ),
   );
@@ -404,7 +402,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   if (!input.minimalTail && pinnedRequests.length === 0) {
     return noCompactionPlan({
       pinnedRequests,
-      minimalTailTokens: summaryReserveTokens + fixedOverheadTokens,
+      minimalTailTokens: fixedOverheadTokens,
       tailBudgetTokens,
     });
   }
@@ -420,7 +418,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     activeCompactionCut(classifiedTurns),
   );
   if (candidates.length === 0) {
-    const minimalTailTokens = summaryReserveTokens + fixedOverheadTokens + pinnedCost;
+    const minimalTailTokens = fixedOverheadTokens + pinnedCost;
     return noCompactionPlan({
       pinnedRequests,
       minimalTailTokens,
@@ -451,7 +449,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   });
   const costsById = new Map(turns.map((turn, index) => [turn.id, costs[index]]));
   const minimumRetainedTokens = retainedSlicesCost(minimumTail, costsById);
-  const minimalTailTokens = summaryReserveTokens + fixedOverheadTokens + minimumRetainedTokens;
+  const minimalTailTokens = fixedOverheadTokens + minimumRetainedTokens;
 
   // Walk from the minimum safe suffix toward older candidates; suffix costs are precomputed once.
   let selectedIndex = minimumIndex;
@@ -461,7 +459,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     if (
       earlierCost === undefined ||
       earlierCost > tailBudgetTokens ||
-      summaryReserveTokens + fixedOverheadTokens + pinnedCost + earlierCost >= triggerTokens
+      fixedOverheadTokens + pinnedCost + earlierCost >= triggerTokens
     )
       break;
     selectedIndex = earlierIndex;

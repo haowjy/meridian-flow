@@ -709,7 +709,7 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+        config: { model: "gpt-4.1-mini" },
       });
       const realSummarizer = rig.deps.summarizer;
       const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
@@ -852,7 +852,7 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+        config: { model: "gpt-4.1-mini" },
       });
       const inputs: Parameters<typeof real.summarize>[0][] = [];
       rig.deps.summarizer = {
@@ -946,7 +946,7 @@ else
           .prefixCacheStateFor,
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: "disabled-cheap-model", maxOutputTokens: 100 },
+        config: { model: "disabled-cheap-model" },
       });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
@@ -1044,7 +1044,7 @@ else
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: model.id, maxOutputTokens: 100 },
+        config: { model: model.id },
       });
 
       let previousTurnId = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.id;

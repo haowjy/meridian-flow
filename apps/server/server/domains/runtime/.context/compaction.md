@@ -35,9 +35,11 @@ Compaction is two delivery transitions around an unlocked
 1. **Reservation commit.** The boundary's own preparation commit reserves
    pending C instead of an assistant turn. Both reservation sites build the
    turn with `reservationTurn`, including the decision's trigger. An
-   impossible automatic tail (the summary reserve, pinned requests, and minimal
+   impossible automatic tail (pinned requests and the minimal
    suffix already reach the fit limit) reserves no C and fails as a preparation
-   failure.
+   failure. Planning reserves no separate summary output budget: the automatic
+   trigger already provides headroom, and successor preparation performs the
+   authoritative fit check after the summary exists.
 2. **Summary.** `compaction-phase.ts` runs the summarizer, then prepares a
    live rebake over a provisional completed C before preparing late
    arrivals. `composeLivePromptBake` serves initial bakes and rebakes alike.
@@ -117,9 +119,8 @@ header because only the summary renders there.
 
 | Models | Default trigger tokens |
 |---|---:|
-| Sonnet 4 (direct and OpenRouter) | 165,254 |
+| Sonnet 4 (direct and OpenRouter), Haiku 4.5 | 122,400 |
 | Sonnet 4.6, GPT-4.1, GPT-4.1 mini, Gemini 2.5 Flash, DeepSeek V4 Flash | 400,000 |
-| Haiku 4.5 | 122,400 |
 | Claude 3.5 Haiku | 172,627 |
 | GPT-4o (direct and OpenRouter), GPT-4o mini | 100,454 |
 

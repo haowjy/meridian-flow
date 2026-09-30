@@ -107,7 +107,6 @@ export function decideCompaction(input: {
   pinnedRequestTurnIds?: ReadonlySet<string>;
   controlMessageId?: string;
   instructions?: string;
-  summaryReserveTokens: number;
   baseline: { inputTokens: number; messageCount: number } | null;
   tokenizer: TokenizerFamily;
 }): CompactionDecision {
@@ -124,7 +123,6 @@ export function decideCompaction(input: {
         ? Math.min(input.thresholdTokens ?? fitLimitTokens, tokensBefore)
         : fitLimitTokens,
     pinnedRequestTurnIds: input.pinnedRequestTurnIds,
-    summaryReserveTokens: input.summaryReserveTokens,
     fixedOverheadTokens: estimateRequestTokens({
       tokenizer: input.tokenizer,
       request: {

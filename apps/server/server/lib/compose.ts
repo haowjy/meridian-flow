@@ -289,7 +289,7 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 export type ProductionAppPorts = {
   db: Database;
   gateway: Gateway;
-  summarizerConfig: { model: string; maxOutputTokens: number };
+  summarizerConfig: { model: string };
   threadRepos: InternalThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
@@ -552,10 +552,7 @@ export async function createProductionAppPorts(input: {
     runClaim,
     statusReader,
     gateway,
-    summarizerConfig: {
-      model: summarizerModel,
-      maxOutputTokens: 4096,
-    },
+    summarizerConfig: { model: summarizerModel },
     threadRepos,
     journalReader,
     journalWriter,

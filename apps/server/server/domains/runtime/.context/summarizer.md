@@ -39,8 +39,8 @@ model when none is configured. A request-preparation failure is a final failure
 before the call, not a reason to try rolling.
 
 **Branch** sends the request in hand plus one appended system-origin
-instruction, with the output cap lowered to the summary reserve plus the
-thinking budget. It never raises the cap or changes other fields: tools,
+instruction. It keeps the source request's fields unchanged, including an
+explicit output limit or its absence. It does not change other fields: tools,
 `tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled.
 The response row records the source model's cache prediction, including a cold
 prediction. For a handoff, the appended instruction names the incoming Agent
@@ -78,11 +78,14 @@ omits opaque reasoning and thinking, and labels prior context. Before any cold
 call, all turns are measured. Oversized turns replace re-readable tool bodies
 with a URI and short excerpt, then split at block boundaries if needed; an
 oversized indivisible block fails before any cold call. Rolling segments carry
-the running summary forward and reserve its provider-token output cap
-independently of the CJK request estimator, then recheck each assembled
-request against the usable window. Prompts preserve exact story terminology,
+the running summary forward. The request sets no output limit: OpenAI-compatible
+adapters leave the provider default in place, while Anthropic supplies its
+required registry maximum. Segment budgeting leaves input room for a maximum
+length running summary independently of the CJK request estimator, then
+rechecks each assembled request against the usable window. Prompts preserve exact story terminology,
 quoted writer wording, and per-document done and pending edits; they forbid
-invented facts.
+invented facts and ask the model to be concise without imposing a second token
+limit.
 
 Output-limit failure uses the provider finish reason, not an input-token
 estimate; the successor fit check still measures the full assembled request.

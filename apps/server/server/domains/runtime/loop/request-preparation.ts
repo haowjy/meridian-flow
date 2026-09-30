@@ -138,10 +138,11 @@ async function prepareBaseRequest(
   if (!compactionNeeded) {
     compaction = { kind: "generate" };
   } else {
-    const tokenizer = assembled.resolvedModel?.tokenizer;
-    if (!tokenizer) {
+    const threadModel = assembled.resolvedModel;
+    if (!threadModel?.tokenizer) {
       throw new Error("Cannot estimate compaction without the resolved thread model tokenizer");
     }
+    const tokenizer = threadModel.tokenizer;
     compaction = decideCompaction({
       request: assembled.generateRequest,
       activeHistory: assembled.activeHistory,
@@ -158,7 +159,6 @@ async function prepareBaseRequest(
       controlMessageId: input.controlMessageId,
       instructions: input.instructions,
       pinnedRequestTurnIds: input.pinnedRequestTurnIds,
-      summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
       baseline,
       tokenizer,
     });

@@ -661,7 +661,7 @@ else
         },
         modelRequestDebug: runtime.deps.modelRequestDebug,
         toolRegistry: runtime.deps.toolRegistry,
-        config: { model: model.id, maxOutputTokens: 1_000 },
+        config: { model: model.id },
       });
       const brief = await generateHandoffBrief(
         { ...runtime.deps, summarizer },

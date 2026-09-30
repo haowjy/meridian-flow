@@ -14,6 +14,16 @@ function registeredModel(id: string) {
   return model;
 }
 
+describe("model output limits", () => {
+  it.each([
+    ["claude-sonnet-4-20250514", 64_000],
+    ["anthropic/claude-sonnet-4", 64_000],
+    ["deepseek-v4-flash", 65_536],
+  ] as const)("uses the provider maximum for %s", (model, expected) => {
+    expect(registeredModel(model).maxOutputTokens).toBe(expected);
+  });
+});
+
 describe("model prompt-cache descriptors", () => {
   it("declares cache kind and TTL per model", () => {
     expect(registeredModel("claude-sonnet-4-20250514").promptCache).toEqual({
