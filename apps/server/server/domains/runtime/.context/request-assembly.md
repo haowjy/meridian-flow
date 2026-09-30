@@ -16,7 +16,7 @@ breaks.** Rationale lives in the KB:
 | `loop/composed-system-prompt.ts` | Assembles the first system prompt in a fixed layer order (below). |
 | `loop/begin-prompt-epoch.ts` | `beginPromptEpoch`, the one rebake operation. |
 | `loop/context-builder.ts` | Builds `Message[]` + `Tool[]` from the bake's system bytes and every persisted turn, including durable notices, skill bodies, and subagent updates. |
-| `loop/system-instructions/` | Model-facing prompt assets independent of any Agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions own mechanics. |
+| `loop/system-instructions/` | Model-facing prompt assets independent of any Agent body. `document-dialect.ts` is the short "Meridian Markdown" card (links, HTML tables, `<Layout>`, images): only what the model cannot already know. `runtime-uris.ts` is a short list of context URI schemes. Tool descriptions stay brief; per-command guidance lives in each command variant's schema `.describe()`. |
 | `loop/prefix-cache-state.ts` | Predicted cache warmth (below). |
 | `loop/prompt-cache-marks.ts` | Provider-neutral cache breakpoints (below). |
 
