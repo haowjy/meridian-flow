@@ -119,6 +119,20 @@ describe("thread_report tool contract", () => {
     expect(registration?.definition).toMatchObject({
       inputSchema: { properties: { ref: { type: "string" }, run: { type: "integer" } } },
     });
+    expect(registration?.definition.description).toContain("Does not wait");
+  });
+});
+
+describe("spawn tool guidance", () => {
+  const spawn = createSpawnToolRegistrations().find(
+    (entry) => entry.definition.name === "spawn",
+  )?.definition;
+
+  it("keeps the behavior-critical turn and naming rules", () => {
+    expect(spawn?.description).toContain("end your turn");
+    expect(spawn?.description).toContain("Don't message a child just to wait");
+    expect(JSON.stringify(spawn?.inputSchema)).toContain("2 to 5 words");
+    expect(JSON.stringify(spawn?.inputSchema)).toContain("not copied in");
   });
 });
 
@@ -137,11 +151,7 @@ describe("return_result tool contract", () => {
     expect(properties?.artifacts).toEqual({
       type: "array",
       description: "Meridian document URIs produced by this child.",
-      items: {
-        type: "string",
-        description:
-          "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
-      },
+      items: { type: "string" },
     });
     await registration.execution.handler(
       {

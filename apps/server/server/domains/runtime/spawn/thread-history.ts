@@ -22,14 +22,18 @@ import {
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
 export const ThreadHistoryInputSchema = z
   .object({
-    ref: z.string().optional(),
+    ref: z
+      .string()
+      .describe("Conversation ref such as c3 or p12; omit for this conversation.")
+      .optional(),
     order: z.enum(["newest_first", "oldest_first"]).default("newest_first"),
     cursor: z.string().optional(),
     limit: z.number().int().min(1).max(200).default(40),
     include: z
       .array(z.enum(["thinking", "tool_args", "tool_results", "system_messages", "system_prompt"]))
+      .describe("Item kinds hidden by default.")
       .optional(),
-    expand: z.string().optional(),
+    expand: z.string().describe("Item handle such as 12.3, shown in full.").optional(),
   })
   .strict();
 export type ThreadHistoryInput = z.input<typeof ThreadHistoryInputSchema>;

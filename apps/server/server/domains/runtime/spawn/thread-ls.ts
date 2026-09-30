@@ -7,8 +7,11 @@ import { resolveReadableThread, threadReadError } from "./resolve-readable-threa
 
 export const ThreadLsInputSchema = z
   .object({
-    ref: z.string().optional(),
-    depth: z.number().int().min(1).max(3).default(1),
+    ref: z
+      .string()
+      .describe("Conversation ref such as c3 or p12; omit for this conversation.")
+      .optional(),
+    depth: z.number().int().min(1).max(3).describe("Levels of children.").default(1),
     cursor: z.string().optional(),
   })
   .strict();
