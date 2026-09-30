@@ -50,13 +50,10 @@ else
     }
 
     async function settled(rig: Awaited<ReturnType<typeof fixture>>) {
-      await expect
-        .poll(async () => (await rig.runClaim.read(rig.threadId)).kind, { timeout: 15000 })
-        .toBe("asleep");
-      await expect
-        .poll(() => rig.delivery.selectPending(rig.threadId), { timeout: 15000 })
-        .toEqual([]);
-      await expect.poll(rig.activeRuns, { timeout: 15000 }).toBe(0);
+      await processDetachedWork.drain();
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(rig.activeRuns()).toBe(0);
       return rig.repos.turns.listByThread(rig.threadId);
     }
 
