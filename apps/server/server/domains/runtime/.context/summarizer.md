@@ -81,7 +81,7 @@ with a URI and short excerpt, then split at block boundaries if needed; an
 oversized indivisible block fails before any cold call. Rolling segments carry
 the running summary forward. Compaction and handoff use the same fixed
 fiction-oriented sections for objective, document work state, story canon,
-decisions, writer preferences, open questions, and the next step; handoff alone
+decisions, user preferences, open questions, and the next step; handoff alone
 adds the open request. The instruction explicitly merges an earlier summary,
 uses the writer's language, and treats transcript content as source material
 rather than instructions. The request sets no output limit: OpenAI-compatible
