@@ -39,12 +39,18 @@ keyed on exactly those, and reads none of them through a ref. The index object
 keeps its identity while its revision and completeness hold, so the index
 stands in for the revision.
 
+The effect's cleanup unregisters in a microtask. React runs the cleanup and the
+next registration in one commit, and an immediate unregister would leave no live
+generation for a pending click to be carried into (see below). Deferred, it
+finds the newer registration and does nothing; on unmount it still runs.
+
 | Contract | Why |
 |---|---|
 | A scope change re-registers the resolver | `registerResolver` forgets every answer and every failure in one step, so no later request can be served from the previous scope. The alternative was a scope key inside the cache, which is a second invalidation concept for one rule. |
 | A catalog change is a scope change | `[[Old Name]]` is spelled the same after a rename, and the answer it already has is a door onto the wrong document. `revision` is the index's identity for the documents it walked, so create, rename, delete, and move all re-ask; nothing else in the app holds a line that invalidates this cache. |
 | Nothing here remounts the editor | Work is runtime scope (`features/editor/editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
 | A base URI arriving IS a scope change | A relative link asked before the tree settles throws and lands in the resolution store's `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it, and the store's publish makes the decoration plugin ask the same links again. |
+| A click survives a registration | A `resolve()` waiter whose generation retires is asked again in the new one, so a rename or a catalog refetch during a follow opens the right document instead of reporting "could not be checked". Questions only the decorations asked are dropped; the next scan asks them again. |
 | A resolved link paints plain for a frame after a switch | Answers are gone before the new ones land, which is the honest state: in the new Work nobody has asked yet. The base normally settles from cache before the document renders, so this is a deliberate Work switch and not opening a document. |
 
 The cost of the catalog contract is that one rename re-asks every internal link
@@ -66,7 +72,23 @@ the batch endpoint in [`FUTURE`](FUTURE).
 | the request failed | "That link could not be checked", with Try again |
 | still in flight past 250ms | "Opening the link", with Cancel (which closes the dialog; the follow keeps going) |
 
-An aborted follow never reports and never opens. `gesture` comes from the
+An aborted follow never reports and never opens. An abort only stops a follow
+before it opens: `LinkDestination` takes no signal, so once the procedure decides
+to open, the navigation completes. That is what makes an unmount abort safe in
+the Editor, where a follow in the current pane replaces the editor that asked.
+
+What aborts a follow (`useLinkFollower`):
+
+- a newer `current` follow aborts the previous `current` one, because the pane
+  can only go one place;
+- a `new-tab` follow is never aborted by a newer follow and aborts nothing;
+- a project or Work change, unmount, and `cancel()` abort everything in flight.
+
+A follower with no scope does nothing on `follow`: no resolver is registered, and
+asking anyway would report a failure about a question nobody could ask. The
+Editor's Cancel button does not call `cancel()` yet; it only closes the dialog.
+
+`gesture` comes from the
 click: `current` or `new-tab` (middle click, Ctrl/Cmd+click). The Editor maps
 `new-tab` to a background tab on its strip. There is no browser-tab disposition:
 the pane holds a live collaborative session, and a second window costs the
@@ -87,13 +109,18 @@ app already caches, so opening the `[[` menu costs no request. It answers three
 questions from one set: what `[[…]]` can name, what a relative link in the
 holder is relative to, and whether a link can be answered locally.
 
-It holds the manuscript, kb, and user catalogs; Unfiled only when `workId` is
-null; and the selected Work's Scratch and Uploads when `workId` is set. With a
-null Work no Scratch or Uploads catalog is requested, so the index is never
-`complete` and every link asks the server. The server's wikilink candidate set
-is wider (Unfiled under any Work, and the No Work row's Scratch and Uploads), so
-the local answer only speaks when the index is complete, and a URI naming
-another Work's Scratch always asks the server.
+That set is the resolver's candidate set for names and contextual URIs.
+`linkableCatalogScopes` mirrors the server's wikilink rule
+(`apps/server/server/domains/context/document-link-resolution.ts`): the project
+catalog (manuscript, kb, and Unfiled, whatever the Work), the user catalog, and
+the current Work's Scratch and Uploads, where a null Work means the No Work row
+from `useWorks`. Until that row is known, Scratch and Uploads are unasked and the
+index is not `complete`, so every link asks the server. Once complete, a single
+local match is the server's answer, and several are ambiguous.
+
+A Work-qualified URI outside the selected Work (`scratch://@other-work/…`) is
+outside the index: it has zero local matches and always asks the server, which
+resolves the slug itself.
 
 The manuscript comes first, so a title both trees carry keeps the chapter above
 the note (ranking ties hold the order they arrive in). A scratch row says

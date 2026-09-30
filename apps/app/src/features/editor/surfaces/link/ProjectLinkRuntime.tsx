@@ -44,12 +44,11 @@ export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   return useCallback(
-    (document, gesture, signal) =>
+    (document, gesture) =>
       openDocument({
         documentId: document.documentId,
         workId,
         disposition: gesture === "new-tab" ? "background" : "current",
-        signal,
       }),
     [openDocument, workId],
   );
