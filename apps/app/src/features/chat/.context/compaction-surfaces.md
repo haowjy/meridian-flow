@@ -107,9 +107,12 @@ the last) and, once any in-flight enqueue settles, always calls the server,
 even for a row whose enqueue looked failed: only the response may have been
 lost, and a command the client hid must not run unseen. The server answers
 `withdrawn`, `already_started` once a divider carries the command's id, or 404
-when it never had the command, which counts as withdrawn. On
+when it does not have the command. A confirmed answer (`withdrawn` or
+`already_started`) keeps the id hidden against stale inbox frames. On
 `already_started` the row still goes and the pending divider carries the
-state; the announcer says "This compaction already started." A failed
+state; the announcer says "This compaction already started." A 404 only drops
+the local send: the enqueue may still have been committing, so if the inbox
+lists the id later the row shows again, queued, with Withdraw. A failed
 withdrawal brings the row back with "Couldn't withdraw. Try again." A command
 a divider already names (`controlMessageId`) is no longer queued.
 

@@ -6,7 +6,8 @@
  * revalidate so the new state reaches the transcript. Withdraw removes the row
  * at once and, once any in-flight enqueue settles, always asks the server: an
  * enqueue that looked failed may still have landed. A 404 means the server
- * never had it, which is withdrawn too. Also stops a running compaction
+ * did not have it yet: the local send goes, and the row shows again if the
+ * inbox lists it later. Also stops a running compaction
  * divider through the turn cancel route. Announces each state change the
  * writer caused.
  */
@@ -122,8 +123,11 @@ export function useThreadControls(input: {
           if (outcome === "already_started") announce(controlAlreadyStartedCopy());
           revalidate();
         } catch (error) {
-          // The server never had it: its enqueue never landed.
-          if (httpErrorStatus(error) === 404) return settle();
+          // Not there yet: the send goes, but an enqueue still committing can
+          // list it later, and then the row shows again.
+          if (httpErrorStatus(error) === 404) {
+            return dispatch({ type: "withdraw_not_found", id: queued.id });
+          }
           dispatch({ type: "withdraw_failed", id: queued.id });
           announceError(t`Couldn't withdraw. Try again.`);
         }
