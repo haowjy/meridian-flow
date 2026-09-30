@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
@@ -134,14 +134,22 @@ export type WorkMetadataController = ReturnType<typeof useWorkMetadataController
 // Typography lives on the wrapper so the resting button and the editing field
 // both inherit it; the field then sets no font of its own.
 const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
-const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
+// Quiet text actions that sit under the goal and read as part of it.
+const goalAction =
+  "focus-ring min-h-6 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11";
+
+/** Blank-line runs become paragraph breaks, so a clamp never ends on a blank line. */
+function goalParagraphs(goal: string): string[] {
+  return goal.trim().split(/\n\s*\n/);
+}
 
 /**
- * The Work goal: body text clamped to three lines. Clicking a clamped goal
- * shows all of it; Show less folds it again. Edit (or clicking an empty goal)
- * edits in place: the field takes the text's exact position and size. Save and
- * Cancel sit below; blur never saves. A read-only goal is the text alone, and
- * an empty one shows nothing.
+ * The Work goal: body text clamped to three lines. Show more (or clicking a
+ * clamped goal) shows all of it; Show less folds it again. Edit (or clicking
+ * an empty goal) edits in place: the field takes the text's exact position and
+ * size. Save and Cancel sit below; blur never saves. The goal's actions sit
+ * directly under the text; a read-only goal has no Edit, and an empty one
+ * shows nothing.
  */
 export function WorkGoal({
   work,
@@ -154,6 +162,7 @@ export function WorkGoal({
 }) {
   const editing = c.editing && !readOnly;
   const display = useRef<HTMLDivElement | null>(null);
+  const goalId = useId();
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
@@ -180,6 +189,7 @@ export function WorkGoal({
   };
   // Nothing to show or edit: no empty box to space the header around.
   if (readOnly && !work.goal) return null;
+  const hasActions = overflows || !readOnly;
   return (
     <div className="min-w-0 text-body text-foreground">
       <p className="sr-only" aria-live="polite">
@@ -205,49 +215,47 @@ export function WorkGoal({
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: as above. */}
           <div
             ref={display}
+            id={goalId}
             onClick={() => {
               if (clamped && !window.getSelection()?.toString()) setExpanded(true);
             }}
             className={cn(
-              bodyText,
-              "overflow-hidden",
-              !expanded && clampHeight,
-              clamped &&
-                "cursor-pointer [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]",
+              "max-w-3xl break-words [&>p+p]:mt-3",
+              !expanded && "line-clamp-3",
+              clamped && "cursor-pointer",
             )}
           >
-            {work.goal}
+            {goalParagraphs(work.goal).map((paragraph, index) => (
+              <p key={index} className="whitespace-pre-wrap">
+                {paragraph}
+              </p>
+            ))}
           </div>
-          <div className="mt-1 flex max-w-3xl items-center gap-3">
-            {clamped ? (
-              <button
-                type="button"
-                className="sr-only focus-visible:not-sr-only focus-visible:text-button focus-visible:text-sm"
-                onClick={() => setExpanded(true)}
-              >
-                <Trans>Show more</Trans>
-              </button>
-            ) : null}
-            {overflows && expanded ? (
-              <button
-                type="button"
-                className="text-button min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
-                onClick={() => setExpanded(false)}
-              >
-                <Trans>Show less</Trans>
-              </button>
-            ) : null}
-            {readOnly ? null : (
-              <button
-                type="button"
-                ref={bindEditFocus}
-                onClick={c.activate}
-                className="focus-ring ml-auto min-h-6 rounded-sm text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11"
-              >
-                <Trans>Edit</Trans>
-              </button>
-            )}
-          </div>
+          {hasActions ? (
+            <div className="mt-1 flex items-center gap-4">
+              {overflows ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={goalId}
+                  className={goalAction}
+                  onClick={() => setExpanded((open) => !open)}
+                >
+                  {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
+                </button>
+              ) : null}
+              {readOnly ? null : (
+                <button
+                  type="button"
+                  ref={bindEditFocus}
+                  onClick={c.activate}
+                  className={goalAction}
+                >
+                  <Trans>Edit</Trans>
+                </button>
+              )}
+            </div>
+          ) : null}
         </>
       )}
     </div>

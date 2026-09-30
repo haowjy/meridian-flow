@@ -148,33 +148,66 @@ describe("WorkMetadata", () => {
     });
   });
 
-  it("exposes the clamp toggle only for measured overflow", async () => {
-    const native = window.ResizeObserver;
-    window.ResizeObserver = class {
-      constructor(private callback: ResizeObserverCallback) {}
-      observe(target: Element) {
-        Object.defineProperty(target, "scrollHeight", { configurable: true, value: 120 });
-        Object.defineProperty(target, "clientHeight", { configurable: true, value: 72 });
-        this.callback([], this as unknown as ResizeObserver);
-      }
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
-    try {
+  it("puts one Show more toggle before Edit when the goal is clamped", async () => {
+    await withClampedGoal(async () => {
       await withReactRoot(
         <Harness saveWork={vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }))} />,
         async () => {
-          expect(document.body.textContent).toContain("Show more");
-          await click(
-            [...document.querySelectorAll("button")].find(
-              (button) => button.textContent === "Show more",
-            ) ?? null,
-          );
-          expect(document.body.textContent).toContain("Show less");
+          const labels = () => [...document.querySelectorAll("button")].map((b) => b.textContent);
+          expect(labels()).toEqual(["Show more", "Edit"]);
+          const toggle = document.querySelector("button");
+          expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+          await click(toggle);
+          // The same button flips, so keyboard focus stays put.
+          expect(toggle?.textContent).toBe("Show less");
+          expect(toggle?.getAttribute("aria-expanded")).toBe("true");
         },
       );
-    } finally {
-      window.ResizeObserver = native;
-    }
+    });
+  });
+
+  it("renders blank-line runs as paragraphs, not blank lines", async () => {
+    await withReactRoot(
+      <WorkGoalHarness work={{ ...WORK, goal: "One.\n\n\n\nTwo\nlines." }} />,
+      async () => {
+        expect([...document.querySelectorAll("p:not(.sr-only)")].map((p) => p.textContent)).toEqual(
+          ["One.", "Two\nlines."],
+        );
+      },
+    );
+  });
+
+  it("shows only Edit for an unclamped goal and nothing for a read-only one", async () => {
+    await withReactRoot(<WorkGoalHarness work={{ ...WORK, goal: "wef" }} />, async () => {
+      expect([...document.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Edit"]);
+    });
+    await withReactRoot(<WorkGoalHarness work={{ ...WORK, goal: "wef" }} readOnly />, async () => {
+      expect(document.querySelectorAll("button")).toHaveLength(0);
+      expect(document.body.textContent).toContain("wef");
+    });
   });
 });
+
+function WorkGoalHarness({ work, readOnly }: { work: Work; readOnly?: boolean }) {
+  const controller = useWorkMetadataController(work, async () => undefined);
+  return <WorkGoal work={work} controller={controller} readOnly={readOnly} />;
+}
+
+async function withClampedGoal(run: () => Promise<void>) {
+  const native = window.ResizeObserver;
+  window.ResizeObserver = class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      Object.defineProperty(target, "scrollHeight", { configurable: true, value: 120 });
+      Object.defineProperty(target, "clientHeight", { configurable: true, value: 72 });
+      this.callback([], this as unknown as ResizeObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  try {
+    await run();
+  } finally {
+    window.ResizeObserver = native;
+  }
+}
