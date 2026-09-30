@@ -470,8 +470,6 @@ export interface TurnRepository {
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Pending placeholder turns eligible for thread-scoped orphan repair. */
-  listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;
   /** Keyset page of pending placeholders eligible for orphan repair. */
   listPendingPlaceholders(
     limit: number,

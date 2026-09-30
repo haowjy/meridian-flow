@@ -253,19 +253,6 @@ export function createDrizzleTurnRepository(
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },
-    async listPendingPlaceholdersForThread(threadId) {
-      const rows = await currentDrizzleDb(db)
-        .select()
-        .from(schema.turns)
-        .where(
-          and(
-            eq(schema.turns.threadId, threadId),
-            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
-          ),
-        )
-        .orderBy(asc(schema.turns.position));
-      return rows.map(mapTurn);
-    },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       const rows = await currentDrizzleDb(db)

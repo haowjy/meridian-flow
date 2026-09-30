@@ -212,7 +212,7 @@ else
       const statusReader = (
         await import("../adapters/drizzle-handoff-status-reader.js")
       ).createDrizzleHandoffStatusReader(db, runClaim);
-      expect(await repos.turns.listPendingPlaceholdersForThread(destination.id)).toContainEqual(
+      expect(await repos.turns.listUnsettledForThread(destination.id)).toContainEqual(
         expect.objectContaining({ id: seed.id, role: "system", status: "pending" }),
       );
       expect(await statusReader.read(destination.id)).toMatchObject({
@@ -271,7 +271,7 @@ else
       await Promise.all(postCommit.splice(0).map((task) => task()));
 
       expect(await repos.turns.findById(seed.id)).toMatchObject({ status: "complete" });
-      expect(await repos.turns.listPendingPlaceholdersForThread(destination.id)).toEqual([]);
+      expect(await repos.turns.listUnsettledForThread(destination.id)).toEqual([]);
       expect(await repos.blocks.listByTurn(seed.id)).toHaveLength(1);
       expect(await statusReader.read(destination.id)).toEqual({ kind: "asleep" });
       expect(await runClaim.holder(destination.id)).toBeNull();

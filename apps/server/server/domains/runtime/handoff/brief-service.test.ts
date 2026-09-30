@@ -122,9 +122,9 @@ describe("handoff brief service", () => {
     expect(await state.rig.repos.turns.findById(state.seed.id)).toMatchObject({
       status: "pending",
     });
-    expect(
-      await state.rig.repos.turns.listPendingPlaceholdersForThread(state.destination.id),
-    ).toEqual([expect.objectContaining({ id: state.seed.id, role: "system", status: "pending" })]);
+    expect(await state.rig.repos.turns.listUnsettledForThread(state.destination.id)).toEqual([
+      expect.objectContaining({ id: state.seed.id, role: "system", status: "pending" }),
+    ]);
     expect(wakes).toEqual([state.destination.id]);
   });
 
