@@ -72,7 +72,6 @@ export function CopyTextButton({
       type="button"
       {...buttonProps}
       aria-label={copied && copiedLabel ? copiedLabel : buttonProps["aria-label"]}
-      title={copied && copiedLabel ? copiedLabel : buttonProps.title}
       onClick={(event) => {
         onClick?.(event);
         if (!event.defaultPrevented) void handleCopy();

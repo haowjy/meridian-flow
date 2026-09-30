@@ -36,7 +36,7 @@ export function ChatIndexChip({ active, onClick }: { active: boolean; onClick?: 
           <MessagesSquare className="size-3.5" aria-hidden />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
+      <TooltipContent side="bottom">
         <Trans>All chats</Trans>
       </TooltipContent>
     </Tooltip>

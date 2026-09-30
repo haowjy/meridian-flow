@@ -225,7 +225,7 @@ function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () 
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4} className="max-w-60">
+      <TooltipContent side="bottom" className="max-w-60">
         {provisional ? (
           <Trans>
             This draft is untitled and lives in your Scratch. Click to name it or move it where it
@@ -252,9 +252,7 @@ function DeviceOnlyChip() {
           <span className="@max-md:hidden">{label}</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
+      <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
   );
 }

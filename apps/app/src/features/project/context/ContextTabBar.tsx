@@ -81,7 +81,7 @@ export function ContextTabBar({
               <History className="size-3.5" aria-hidden />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
+          <TooltipContent side="bottom">
             <Trans>Recently opened</Trans>
           </TooltipContent>
         </Tooltip>
@@ -136,7 +136,7 @@ export function ContextTabBar({
               <Plus className="size-3.5" aria-hidden />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
+          <TooltipContent side="bottom">
             <Trans>New tab</Trans>
           </TooltipContent>
         </Tooltip>

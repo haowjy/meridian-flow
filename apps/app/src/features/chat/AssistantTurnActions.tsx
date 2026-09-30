@@ -5,7 +5,7 @@ import { Bug, Check, Copy, Info } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -15,9 +15,8 @@ import {
 } from "@/features/debug/use-debug-enabled";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
 import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
+import { TURN_ACTION_TOOLTIP_SIDE } from "./turn-action-tooltip";
 import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
-
-const actionClass = "size-6 text-muted-foreground";
 
 function StatRow({
   label,
@@ -212,7 +211,6 @@ export function AssistantTurnActions({
             html={() => assistantTurnCopyHtml(markdown)}
             variant="quiet"
             size="icon-xs"
-            className={actionClass}
             aria-label={copyLabel}
             copiedLabel={copiedLabel}
             copiedContent={<Check aria-hidden />}
@@ -222,26 +220,22 @@ export function AssistantTurnActions({
             <Copy aria-hidden />
           </CopyTextButton>
         </TooltipTrigger>
-        <TooltipContent>{copied ? copiedLabel : copyLabel}</TooltipContent>
+        <TooltipContent side={TURN_ACTION_TOOLTIP_SIDE}>
+          {copied ? copiedLabel : copyLabel}
+        </TooltipContent>
       </Tooltip>
       <DeriveTurnActions turnId={turn.id} />
       {stats.callCount > 0 ? (
         <Popover>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="quiet"
-                  size="icon-xs"
-                  className={actionClass}
-                  aria-label={i18n._(t`Turn information`)}
-                >
-                  <Info aria-hidden />
-                </Button>
-              </PopoverTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{i18n._(t`Turn information`)}</TooltipContent>
-          </Tooltip>
+          <PopoverTrigger asChild>
+            <IconButton
+              type="button"
+              tooltip={i18n._(t`Turn information`)}
+              tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
+            >
+              <Info aria-hidden />
+            </IconButton>
+          </PopoverTrigger>
           <PopoverContent align="start" className="text-tier-chat chat-card w-64">
             <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
               {sections.map(({ title, rows }, index) => (
@@ -254,27 +248,20 @@ export function AssistantTurnActions({
         </Popover>
       ) : null}
       {DEBUG_FEATURE_ALLOWED && enabled ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              className={actionClass}
-              aria-label="Inspect model calls"
-              onClick={() =>
-                openLlmCalls(
-                  responseParts.length > 1
-                    ? { threadId, turnIds: responseParts.map((part) => part.id) }
-                    : { threadId, turnId: turn.id },
-                )
-              }
-            >
-              <Bug aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Inspect model calls</TooltipContent>
-        </Tooltip>
+        <IconButton
+          type="button"
+          tooltip="Inspect model calls"
+          tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
+          onClick={() =>
+            openLlmCalls(
+              responseParts.length > 1
+                ? { threadId, turnIds: responseParts.map((part) => part.id) }
+                : { threadId, turnId: turn.id },
+            )
+          }
+        >
+          <Bug aria-hidden />
+        </IconButton>
       ) : null}
     </div>
   );
