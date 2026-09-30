@@ -722,11 +722,14 @@ describe("frozen prompt provider requests", () => {
       content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
       expectedRevisionId: rig.original.selection.definitionRevisionId,
     });
+    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     for (let index = 0; index < 2; index += 1) {
       const { thread: fork } = await forkThreadAgent(rig.derive, {
         id: crypto.randomUUID(),
         threadId: rig.thread.id,
         userId: rig.thread.userId,
+        originTurnId: sourceCutoff.id,
       });
       expect(fork.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
       expect(fork.agentDefinitionRevisionId).toBe(rig.original.selection.definitionRevisionId);
@@ -755,7 +758,7 @@ describe("frozen prompt provider requests", () => {
     }
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
-      originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+      originTurnId: sourceCutoff.id,
       threadId: rig.thread.id,
       userId: rig.thread.userId,
       agentSelection: rig.original.selection,
@@ -774,9 +777,11 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
+    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
-      originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+      originTurnId: sourceCutoff.id,
       threadId: rig.thread.id,
       userId: rig.thread.userId,
       agentSelection: nextAgent.selection,
@@ -820,6 +825,7 @@ describe("frozen prompt provider requests", () => {
         id: crypto.randomUUID(),
         threadId: child.id,
         userId: child.userId,
+        originTurnId: parentTurn.id,
       }),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
     await expect(
@@ -833,18 +839,19 @@ describe("frozen prompt provider requests", () => {
     ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 
-  it("leaves a default fork unfrozen when its parent has not made a request", async () => {
+  it("leaves a fork unfrozen when its parent has not made a request", async () => {
     const rig = await fixture();
-    await rig.repos.turns.create({
+    const cutoff = await rig.repos.turns.create({
       threadId: rig.thread.id,
-      role: "user",
-      origin: "writer",
+      role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     const { thread: fork } = await forkThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
+      originTurnId: cutoff.id,
     });
     expect(fork.initialPromptBakeId).toBeNull();
     await rig.run(fork.id);

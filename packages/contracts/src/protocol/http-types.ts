@@ -366,7 +366,7 @@ export const forkThreadRequestSchema = z
   .object({
     /** Client-minted id makes a navigate-first fork retryable. */
     id: z.string(),
-    originTurnId: z.string().nullable().optional(),
+    originTurnId: z.uuid(),
   })
   .strict();
 
