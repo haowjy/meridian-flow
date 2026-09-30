@@ -61,8 +61,6 @@ jobs:
       - run: pnpm --filter @meridian/database exec drizzle-kit check
       - name: Guard frozen migration history (pull request)
         if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'staging')
-        env:
-          BASE: ${{ github.base_ref }}
         run: |
           pnpm db:migration-history -- --base HEAD^1
       - name: Guard frozen migration history (non-PR)

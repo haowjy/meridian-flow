@@ -10,7 +10,7 @@ import {
   readMigrationHistory,
 } from "./migration-history";
 
-const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
+export const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 
 interface ErrorDetails {
   cause?: unknown;
