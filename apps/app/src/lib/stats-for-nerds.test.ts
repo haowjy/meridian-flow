@@ -32,13 +32,13 @@ describe("stats for nerds", () => {
     unsubscribe();
   });
 
-  it("follows a change made in another tab", () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeStatsForNerds(listener);
+  it("follows a change made in another tab, telling each subscriber once", () => {
+    const listeners = [vi.fn(), vi.fn(), vi.fn()];
+    const unsubscribes = listeners.map(subscribeStatsForNerds);
     localStorage.setItem(STATS_FOR_NERDS_STORAGE_KEY, "1");
     window.dispatchEvent(new StorageEvent("storage", { key: STATS_FOR_NERDS_STORAGE_KEY }));
     expect(resolveStatsForNerds()).toBe(true);
-    expect(listener).toHaveBeenCalledOnce();
-    unsubscribe();
+    for (const listener of listeners) expect(listener).toHaveBeenCalledOnce();
+    for (const unsubscribe of unsubscribes) unsubscribe();
   });
 });
