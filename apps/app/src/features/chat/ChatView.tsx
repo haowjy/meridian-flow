@@ -9,7 +9,8 @@
  *
  * Pending AI changes live in the composer-attached `DraftDock` (a single,
  * work-scoped strip that shares the composer's border box), never in the
- * transcript.
+ * transcript. A host's `composerStrip` (the archived-Work notice) sits on the
+ * composer's top edge above it; the composer itself always stays live.
  *
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection cannot drift.
@@ -92,8 +93,8 @@ export type ChatViewProps = {
    */
   historySettled: boolean;
   activateProjection: (after?: string) => boolean;
-  /** Replaces the composer and its draft strip when the chat takes no new turns. */
-  composerNotice?: ReactNode;
+  /** A notice framed onto the composer's top edge; the composer stays usable under it. */
+  composerStrip?: ReactNode;
 };
 
 export function ChatView({
@@ -106,7 +107,7 @@ export function ChatView({
   snapshotThreadUsage = null,
   historySettled,
   activateProjection,
-  composerNotice,
+  composerStrip,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
@@ -354,45 +355,51 @@ export function ChatView({
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
         footer={
-          composerNotice ?? (
-            <div data-debug-composer={threadId}>
-              {/* The dock strip sits BEHIND (below) the composer — narrower via
+          <div data-debug-composer={threadId}>
+            {composerStrip ? (
+              // The composer's own border and radius, open at the bottom: the
+              // composer's top border is the strip's lower edge, so the two
+              // read as one unit. Inset like the draft dock below it.
+              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                {composerStrip}
+              </div>
+            ) : null}
+            {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
-              <DraftDock dock={dock} />
-              <Composer
-                onOpenReference={(reference) => {
-                  void openReferenceDocument({
-                    documentId: reference.documentId,
-                    disposition: "current",
-                  });
-                }}
-                ref={composerRef}
-                variant="pinned"
-                streaming={isStreaming}
-                referenceCatalog={referenceCatalog}
-                availableSkills={availableSkills.skills}
-                uploadPort={uploadIntakePort}
-                uploadScope={
-                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-                }
-                onSubmit={handleSubmit}
-                onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-                onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
-                onStop={handleStop}
-                toolbarLeft={
-                  activeWork ? (
-                    <ChatComposerToolbar
-                      projectId={projectId}
-                      threadId={threadId}
-                      work={activeWork}
-                      agentName={composerAgentName}
-                    />
-                  ) : undefined
-                }
-              />
-            </div>
-          )
+            <DraftDock dock={dock} />
+            <Composer
+              onOpenReference={(reference) => {
+                void openReferenceDocument({
+                  documentId: reference.documentId,
+                  disposition: "current",
+                });
+              }}
+              ref={composerRef}
+              variant="pinned"
+              streaming={isStreaming}
+              referenceCatalog={referenceCatalog}
+              availableSkills={availableSkills.skills}
+              uploadPort={uploadIntakePort}
+              uploadScope={
+                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+              }
+              onSubmit={handleSubmit}
+              onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
+              onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
+              onStop={handleStop}
+              toolbarLeft={
+                activeWork ? (
+                  <ChatComposerToolbar
+                    projectId={projectId}
+                    threadId={threadId}
+                    work={activeWork}
+                    agentName={composerAgentName}
+                  />
+                ) : undefined
+              }
+            />
+          </div>
         }
       >
         <SubagentDisclosureProvider>

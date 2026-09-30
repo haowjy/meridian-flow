@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A chat in an archived Work shows its transcript with the archived notice in the composer's place. */
+/** A chat in an archived Work keeps its composer, with the archived notice above it. */
 import type { Work } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -39,10 +39,13 @@ vi.mock("@/features/chat/CreationComposer", () => ({ CreationComposer: () => nul
 vi.mock("./ProjectChatContextNavigationProvider", () => ({
   ProjectChatContextNavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
-// The transcript and composer are ChatView's; this seam is which of the two footers it gets.
+// The transcript and composer are ChatView's; this seam is the strip it frames above the composer.
 vi.mock("@/features/chat/ChatView", () => ({
-  ChatView: ({ composerNotice }: { composerNotice?: React.ReactNode }) => (
-    <footer>{composerNotice ?? <textarea aria-label="Message" />}</footer>
+  ChatView: ({ composerStrip }: { composerStrip?: React.ReactNode }) => (
+    <footer>
+      {composerStrip}
+      <textarea aria-label="Message" />
+    </footer>
   ),
 }));
 vi.mock("@/client/query/work-command-store", () => ({
@@ -67,20 +70,14 @@ function renderChat(work: Work) {
 }
 
 describe("ChatScreen", () => {
-  it("replaces the composer with the archived notice when the chat's Work is archived", async () => {
+  it("shows the archived notice above a live composer when the chat's Work is archived", async () => {
     await withReactRoot(renderChat({ ...WORK, archivedAt: "2026-09-02T00:00:00.000Z" }), () => {
-      expect(document.querySelector("textarea")).toBeNull();
-      expect(document.querySelector("footer")?.textContent).toContain("This Work is archived.");
+      const footer = document.querySelector("footer");
+      expect(footer?.firstElementChild?.textContent).toContain("This Work is archived.");
+      expect(footer?.lastElementChild?.tagName).toBe("TEXTAREA");
       expect(
         [...document.querySelectorAll("button")].some((b) => b.textContent === "Unarchive"),
       ).toBe(true);
-    });
-  });
-
-  it("keeps the composer while the chat's Work is active", async () => {
-    await withReactRoot(renderChat(WORK), () => {
-      expect(document.querySelector("textarea")).not.toBeNull();
-      expect(document.body.textContent).not.toContain("archived");
     });
   });
 });
