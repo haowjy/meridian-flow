@@ -31,6 +31,21 @@ export interface Work {
   deletedAt: string | null;
 }
 
+/** Where a Work stands in its lifecycle. Deleted wins over archived. */
+export type WorkLifecycleState = "active" | "archived" | "deleted";
+
+export function workLifecycleState(
+  work: Pick<Work, "archivedAt" | "deletedAt">,
+): WorkLifecycleState {
+  if (work.deletedAt !== null) return "deleted";
+  return work.archivedAt !== null ? "archived" : "active";
+}
+
+/** The one archived test. An archived Work's own content is read-only; its chats still accept messages. */
+export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
+  return work.archivedAt !== null;
+}
+
 export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
 export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; slug: WorkSlug };
 export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; slug: null };
