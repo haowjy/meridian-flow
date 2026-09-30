@@ -242,10 +242,7 @@ function StartWork({ projectId }: { projectId: string }) {
         <Trans>Start a Work</Trans>
       </h2>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-        <Trans>
-          A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI
-          what you’re after.
-        </Trans>
+        <Trans>A Work groups the chats and drafts for one piece of writing.</Trans>
       </p>
       <div className="mt-5">
         <NewWorkButton projectId={projectId} variant="outline" />

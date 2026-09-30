@@ -219,8 +219,12 @@ msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
+msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+#~ msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
+#~ msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -333,8 +337,12 @@ msgid "A table keeps at least one row."
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
-msgid "A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI what you’re after."
+msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
+
+#: src/features/project/work/WorkCollection.tsx
+#~ msgid "A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI what you’re after."
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -1367,12 +1375,16 @@ msgid "workReceipt.deleted"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
+msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deletes for good within a day"
-msgstr ""
+#~ msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
+#~ msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+#~ msgid "Deletes for good within a day"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -1979,6 +1991,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Left"
+msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Less than a day left"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts

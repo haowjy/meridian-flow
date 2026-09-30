@@ -22,9 +22,7 @@ export function DeletedWorkList({
   if (!entries.length)
     return (
       <p className="px-2 py-2 text-sm text-muted-foreground">
-        <Trans>
-          Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good.
-        </Trans>
+        <Trans>Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days.</Trans>
       </p>
     );
   return (
@@ -56,10 +54,10 @@ function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onResto
         </span>
         <span className="block truncate text-xs text-ink-subtle">
           {days <= 1
-            ? t`Deletes for good within a day`
+            ? t`Less than a day left`
             : plural(days, {
-                one: "Deletes for good in # day",
-                other: "Deletes for good in # days",
+                one: "# day left",
+                other: "# days left",
               })}
         </span>
       </div>
