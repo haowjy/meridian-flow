@@ -273,8 +273,10 @@ export function ProjectView(props: ProjectViewProps) {
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
     : null;
   const chatWorkId = chatWork?.id ?? null;
-  const editorScope = resolveEditorWorkScope(props.editorRouteWork ?? props.routeWork);
+  const editorRouteWork = props.editorRouteWork ?? props.routeWork;
+  const editorScope = resolveEditorWorkScope(editorRouteWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
+  const editorWork = editorRouteWork.status === "present" ? editorRouteWork.work : null;
   useLayoutEffect(() => {
     props.onDisplayedSelection?.({ editorWorkId });
   }, [props.onDisplayedSelection, editorWorkId]);
@@ -319,6 +321,7 @@ export function ProjectView(props: ProjectViewProps) {
     availableWorks: works ?? [],
     editorScope,
     editorWorkId,
+    editorWork,
     retryEditorWork: worksQuery.refetch,
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
@@ -362,6 +365,8 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   availableWorks: readonly Work[];
   editorScope: EditorWorkScope;
   editorWorkId: string | null;
+  /** The Editor's Work, when the route names one the project has. */
+  editorWork: Work | null;
   retryEditorWork: () => void;
   contextLive: boolean;
 };
@@ -544,6 +549,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ReviewScopedProjectProps,
     | "editorReview"
     | "editorWorkId"
+    | "editorWork"
     | "activeContextScheme"
     | "activeContextPath"
     | "activeLocalDocumentId"
@@ -665,6 +671,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               <ContextViewerSurfaceController
                 projectId={props.projectId}
                 editorWorkId={mountedEditor.editorWorkId}
+                editorWork={mountedEditor.editorWork}
                 activeContextScheme={mountedEditor.activeContextScheme}
                 activeContextPath={mountedEditor.activeContextPath}
                 localDocumentId={mountedEditor.activeLocalDocumentId}

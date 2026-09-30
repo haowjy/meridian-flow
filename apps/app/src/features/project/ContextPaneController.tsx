@@ -2,6 +2,7 @@
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  type Work,
 } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -36,6 +37,8 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
   editorWorkId: string | null;
+  /** The Editor's Work; its archived state makes its files read-only. */
+  editorWork: Work | null;
   localDocumentId?: string;
   addressOwnsDocumentAdmission?: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
@@ -61,6 +64,7 @@ export type ContextViewerSurfaceControllerProps = {
 export function ContextViewerSurfaceController({
   projectId,
   editorWorkId,
+  editorWork,
   localDocumentId,
   addressOwnsDocumentAdmission = false,
   activeContextScheme,
@@ -448,6 +452,7 @@ export function ContextViewerSurfaceController({
       layoutSaveFailed={layoutSaveFailed}
       projectId={projectId}
       editorWorkId={routeWorkId}
+      editorWork={editorWork}
       tabs={visibleTabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}
