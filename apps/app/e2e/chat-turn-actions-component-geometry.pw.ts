@@ -128,6 +128,74 @@ test("a tooltip opens from anywhere on its button and swaps at once between neig
   await expect(openTooltips(page)).toHaveText(["Hand off from here"]);
 });
 
+type Box = { x: number; y: number; width: number; height: number };
+
+async function openTooltipBox(page: Page): Promise<Box> {
+  const tooltip = page.locator('[data-slot="tooltip-content"]:not([data-state="closed"])');
+  await expect(tooltip).toHaveCount(1);
+  // Wait out the enter animation (fade and zoom) so the box is the settled one.
+  await tooltip.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished)),
+  );
+  const box = await tooltip.boundingBox();
+  if (!box) throw new Error("No open tooltip box");
+  return box;
+}
+
+const overlaps = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test("a turn action's tooltip opens below its button, clear of the message it acts on", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "fine-pointer", "hover contract");
+  await mount(page);
+  const cases = [
+    { scope: "#short", message: "#short .user-message-bubble", names: ["Hand off from here"] },
+    { scope: "#long", message: "#long .user-message-bubble", names: ["Hand off from here"] },
+    {
+      scope: "#reply",
+      message: "#reply p",
+      names: ["Copy", "Fork from here", "Hand off from here", "Turn information"],
+    },
+  ];
+  for (const width of [1100, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const { scope, message, names } of cases) {
+      await page.locator(message).hover();
+      for (const name of names) {
+        const where = `${name} in ${scope} at ${width}px`;
+        await hoverCorner(page, name, scope);
+        await expect(openTooltips(page), where).toHaveText([name]);
+        const tooltip = await openTooltipBox(page);
+        const button = await page
+          .locator(scope)
+          .getByRole("button", { name, exact: true })
+          .boundingBox();
+        const covered = await page.locator(message).boundingBox();
+        if (!button || !covered) throw new Error(`Missing geometry for ${where}`);
+        // Below, with a visible gap, and never over the message above.
+        expect(tooltip.y, where).toBeGreaterThanOrEqual(button.y + button.height + 2);
+        expect(overlaps(tooltip, covered), where).toBe(false);
+      }
+    }
+  }
+
+  // Near the viewport bottom there is no room below: collision handling flips it up.
+  await page.setViewportSize({ width: 1100, height: 900 });
+  const copy = page.locator("#reply").getByRole("button", { name: "Copy", exact: true });
+  const resting = await copy.boundingBox();
+  if (!resting) throw new Error("No Copy button");
+  await page.setViewportSize({ width: 1100, height: Math.ceil(resting.y + resting.height + 8) });
+  await page.mouse.move(10, 10);
+  await hoverCorner(page, "Copy");
+  const flipped = await openTooltipBox(page);
+  const button = await copy.boundingBox();
+  if (!button) throw new Error("No Copy button");
+  expect(flipped.y + flipped.height).toBeLessThanOrEqual(button.y);
+  expect(flipped.y).toBeGreaterThanOrEqual(0);
+});
+
 test("keyboard focus opens a tooltip, and a button's own popover hides it", async ({
   page,
 }, testInfo) => {

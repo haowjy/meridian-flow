@@ -15,6 +15,7 @@ import {
 } from "@/features/debug/use-debug-enabled";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
 import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
+import { TURN_ACTION_TOOLTIP_SIDE } from "./turn-action-tooltip";
 import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
 
 function StatRow({
@@ -219,13 +220,19 @@ export function AssistantTurnActions({
             <Copy aria-hidden />
           </CopyTextButton>
         </TooltipTrigger>
-        <TooltipContent>{copied ? copiedLabel : copyLabel}</TooltipContent>
+        <TooltipContent side={TURN_ACTION_TOOLTIP_SIDE}>
+          {copied ? copiedLabel : copyLabel}
+        </TooltipContent>
       </Tooltip>
       <DeriveTurnActions turnId={turn.id} />
       {stats.callCount > 0 ? (
         <Popover>
           <PopoverTrigger asChild>
-            <IconButton type="button" tooltip={i18n._(t`Turn information`)}>
+            <IconButton
+              type="button"
+              tooltip={i18n._(t`Turn information`)}
+              tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
+            >
               <Info aria-hidden />
             </IconButton>
           </PopoverTrigger>
@@ -244,6 +251,7 @@ export function AssistantTurnActions({
         <IconButton
           type="button"
           tooltip="Inspect model calls"
+          tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
           onClick={() =>
             openLlmCalls(
               responseParts.length > 1

@@ -20,6 +20,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
 import type { CreationAgent } from "@/features/agents/creation-agent";
+import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
 export type TurnDerivation = {
   projectId: string;
@@ -82,7 +83,12 @@ export function ForkTurnAction({ turnId }: { turnId: string }) {
   const derivation = useTurnDerivation();
   if (!derivation) return null;
   return (
-    <IconButton type="button" tooltip={t`Fork from here`} onClick={() => derivation.fork(turnId)}>
+    <IconButton
+      type="button"
+      tooltip={t`Fork from here`}
+      tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
+      onClick={() => derivation.fork(turnId)}
+    >
       <GitFork aria-hidden />
     </IconButton>
   );
@@ -135,7 +141,7 @@ function HandoffPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <IconButton type="button" tooltip={label}>
+        <IconButton type="button" tooltip={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
           <Forward aria-hidden />
         </IconButton>
       </PopoverTrigger>

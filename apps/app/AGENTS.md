@@ -18,7 +18,8 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   behavior that a shared primitive cannot express.
 - An icon-only button names itself with `IconButton`'s `tooltip`; a popover or
   menu trigger wraps the `IconButton`. Tooltips are labels only: their content
-  is never hovered or clicked.
+  is never hovered or clicked, and never covers what its trigger acts on (a
+  turn's action row opens its tooltips below, `TURN_ACTION_TOOLTIP_SIDE`).
 - Preserve TipTap/Yjs document-session boundaries; do not invent a second editor sync path.
 - **Local-first invariant**: state a writer authors or arranges renders from
   device-local persistence first — the network only improves it, and
