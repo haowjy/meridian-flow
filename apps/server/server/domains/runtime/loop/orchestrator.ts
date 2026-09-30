@@ -114,7 +114,6 @@ import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
-  CompactionFailureError,
   CompactionPreparationError,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
@@ -576,11 +575,6 @@ async function runDrainTurn(
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-      if (control?.body.kind === "compact" && selection.failedControlIds?.has(control.id))
-        preparationError = new CompactionFailureError({
-          reason: "compaction_failed",
-          phase: "delivery",
-        });
       if (!preparationError) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);

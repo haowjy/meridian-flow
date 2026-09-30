@@ -124,7 +124,6 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
-    failedControlIds?: ReadonlySet<string>,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
@@ -133,7 +132,6 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start" | "boundary",
-    failedControlIds: ReadonlySet<string> = new Set(),
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
@@ -159,9 +157,7 @@ export function createDeliveryAdapter(
       activeLeafTurnId: thread.activeLeafTurnId,
     };
     const selection: DeliverySelection | DeliveryBoundarySelection =
-      at === "run_start"
-        ? { ...selectionFields, next: nextWork, failedControlIds }
-        : selectionFields;
+      at === "run_start" ? { ...selectionFields, next: nextWork } : selectionFields;
     return { selection, pendingBatch, work };
   }
   async function selectionStillCurrent(
@@ -185,8 +181,7 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: (failedControlIds: ReadonlySet<string>) => Promise<SelectedDelivery<TSelection>>;
-    retryControlId?: (selection: TSelection) => string | null;
+    select: () => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -200,23 +195,14 @@ export function createDeliveryAdapter(
       prepared: TPrepared,
     ) => Promise<TResult>;
   }): Promise<TResult> {
-    let committingControlId: string | undefined;
-    let failedControlIds: ReadonlySet<string> = new Set();
-    try {
-      return await attemptPreparation();
-    } catch (error) {
-      if (input.signal?.aborted || !committingControlId) throw error;
-      // Retire a command whose start transaction failed. Its fresh preparation
-      // commits a failed C rather than leaving the command at the queue head.
-      failedControlIds = new Set([committingControlId]);
-      return attemptPreparation();
-    }
+    return attemptPreparation();
+
     async function attemptPreparation(): Promise<TResult> {
       for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
         const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
         if (lockedPreparation) {
           return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select(failedControlIds);
+            const selected = await input.select();
             input.signal?.throwIfAborted();
             const prepared = await input.prepare(selected.selection, selected.work);
             input.signal?.throwIfAborted();
@@ -225,7 +211,7 @@ export function createDeliveryAdapter(
           });
         }
 
-        const selected = await input.select(failedControlIds);
+        const selected = await input.select();
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -245,9 +231,7 @@ export function createDeliveryAdapter(
       selected: SelectedDelivery<TSelection>,
       prepared: TPrepared,
     ): Promise<TResult> {
-      committingControlId = input.retryControlId?.(selected.selection) ?? undefined;
       const result = await input.commit(selected.selection, selected.work, prepared);
-      committingControlId = undefined;
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
       }
@@ -703,10 +687,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: (failedControlIds) =>
-          selectForPreparation(lease.threadId, "run_start", failedControlIds),
-        retryControlId: (selection) =>
-          selection.next.kind === "control" ? selection.next.control.id : null,
+        select: () => selectForPreparation(lease.threadId, "run_start"),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)

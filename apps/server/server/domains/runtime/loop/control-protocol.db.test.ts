@@ -918,7 +918,7 @@ else
       expect(turns.at(-1)?.position).toBeGreaterThan(turns.at(-2)?.position ?? -1);
     });
 
-    it("answers waiting messages before retiring a compact whose start commit fails", async () => {
+    it("answers a waiting message even when the following compact fails to start", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -944,7 +944,10 @@ else
 
       gateway.release(1);
       await execution;
-      const turns = await settled(rig);
+      await processDetachedWork.drain();
+      await expect.poll(rig.activeRuns, { timeout: 5_000 }).toBe(0);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
       const compact = turns.find(
         (turn) =>
           turn.role === "compaction" &&
@@ -952,17 +955,16 @@ else
       );
 
       expect(transitionCalls).toBeGreaterThanOrEqual(2);
-      expect(compact).toMatchObject({
-        status: "error",
-        metadata: { reason: "compaction_failed", phase: "delivery" },
-      });
+      expect(compact).toBeUndefined();
       expect(turns.some((turn) => turn.id === waiting.userTurnId && turn.role === "user")).toBe(
         true,
       );
       expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
       const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
-      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(reply).toBeDefined();
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([
+        expect.objectContaining({ id: control.id, intent: "control" }),
+      ]);
     });
 
     it("runs queued controls one per run and in their queue order", async () => {
@@ -988,36 +990,6 @@ else
       expect(rig.summarizer.calls[1].projection.blocks[0]?.textContent).toContain(
         "Earlier context.",
       );
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("retires a compact whose start transition fails without retrying the command", async () => {
-      const rig = await manualFixture();
-      const control = await compactControl(rig);
-      const transition = rig.repos.runTurnStartTransition.bind(rig.repos);
-      let failed = false;
-      rig.repos.runTurnStartTransition = async (threadId, expectedLeafTurnId, operation) => {
-        if (!failed) {
-          failed = true;
-          throw new Error("transient start commit failure");
-        }
-        return transition(threadId, expectedLeafTurnId, operation);
-      };
-      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      await run.execute();
-      const turns = await settled(rig);
-      const compaction = turns.find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
-      );
-
-      expect(failed).toBe(true);
-      expect(compaction).toMatchObject({
-        role: "compaction",
-        status: "error",
-        metadata: { reason: "compaction_failed", phase: "delivery" },
-      });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
