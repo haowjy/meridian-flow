@@ -10,13 +10,10 @@ import {
 
 export function deriveConversationErrorStatus(error: unknown): number | null {
   if (error instanceof DerivedSourceNotFoundError) return 404;
-  if (
-    error instanceof AgentSelectionError ||
-    error instanceof SubagentDerivationError ||
-    error instanceof ForkCutoffError
-  ) {
+  if (error instanceof AgentSelectionError || error instanceof SubagentDerivationError) {
     return 400;
   }
+  if (error instanceof ForkCutoffError) return error.code === "unsettled_history" ? 409 : 400;
   if (error instanceof DerivedThreadConflictError || error instanceof HandoffInProgressError)
     return 409;
   return null;

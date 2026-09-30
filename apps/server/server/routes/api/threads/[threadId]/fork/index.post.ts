@@ -5,7 +5,7 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { forkThreadAgent, type ThreadAgentSwapDeps } from "../../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { deriveConversationErrorStatus } from "../../../../../lib/derive-conversation-route-errors.js";
-import { parseNullableRequestId, requireRequestId } from "../../../../../lib/request-id.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
         id: requireRequestId(body.id, "id"),
         threadId,
         userId: user.userId,
-        originTurnId: parseNullableRequestId(body.originTurnId, "originTurnId"),
+        originTurnId: body.originTurnId,
       },
     );
     event.res.status = result.created ? 201 : 200;

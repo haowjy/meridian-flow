@@ -121,8 +121,8 @@ else
       };
       const firstTurn = await repos.turns.create({
         threadId: source.id,
-        role: "user",
-        origin: "writer",
+        role: "assistant",
+        origin: "assistant",
         status: "complete",
         createdAt: "2026-01-01T00:00:00.000Z",
       });
@@ -141,7 +141,7 @@ else
     async function createFork(
       source: { id: string; userId: string },
       deps: Parameters<typeof forkThreadAgent>[0],
-      input: { id?: string; originTurnId?: string | null } = {},
+      input: { id?: string; originTurnId: string },
     ) {
       return forkThreadAgent(deps, {
         id: input.id ?? crypto.randomUUID(),
@@ -158,6 +158,7 @@ else
           id: crypto.randomUUID(),
           threadId: crypto.randomUUID(),
           userId: ids.userId,
+          originTurnId: crypto.randomUUID(),
         }),
       ).rejects.toBeInstanceOf(DerivedSourceNotFoundError);
       await expect(
@@ -165,6 +166,7 @@ else
           id: crypto.randomUUID(),
           threadId: fixture.source.id,
           userId: crypto.randomUUID(),
+          originTurnId: fixture.firstTurn.id,
         }),
       ).rejects.toBeInstanceOf(DerivedSourceNotFoundError);
     });
@@ -258,7 +260,9 @@ else
         )?.included,
       ).toBe(true);
 
-      const forkOfFork = await createFork(afterCompaction.thread, fixture.deps);
+      const forkOfFork = await createFork(afterCompaction.thread, fixture.deps, {
+        originTurnId: compaction.id,
+      });
       expect(
         (await repos.imageInclusions.listByThread(forkOfFork.thread.id))
           .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
@@ -309,8 +313,8 @@ else
       );
       const otherTurn = await repos.turns.create({
         threadId: otherSource.id,
-        role: "user",
-        origin: "writer",
+        role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
       await expect(
@@ -351,8 +355,8 @@ else
       );
       const otherTurn = await repos.turns.create({
         threadId: otherSource.id,
-        role: "user",
-        origin: "writer",
+        role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
 
@@ -510,7 +514,7 @@ else
       await expect(load(inheritedFork.thread)).resolves.toEqual(await load(directFork.thread));
     });
 
-    it("normalizes a mid-run selection to the last settled effective turn", async () => {
+    it("refuses a streaming selection", async () => {
       const fixture = await setupSource();
       const runningTurn = await repos.turns.create({
         threadId: fixture.source.id,
@@ -521,13 +525,15 @@ else
         createdAt: "2026-01-01T00:00:01.000Z",
       });
 
-      const { thread: fork } = await createFork(fixture.source, fixture.deps, {
-        originTurnId: runningTurn.id,
+      await expect(
+        createFork(fixture.source, fixture.deps, { originTurnId: runningTurn.id }),
+      ).rejects.toMatchObject({
+        name: "ForkCutoffError",
+        code: "unsettled_history",
       });
-      expect(fork.originTurnId).toBe(fixture.firstTurn.id);
     });
 
-    it("stops before a streaming reply and does not inherit a queued writer turn after it", async () => {
+    it("refuses a queued writer turn after a streaming reply", async () => {
       const fixture = await setupSource();
       const assistant = await repos.turns.create({
         threadId: fixture.source.id,
@@ -546,28 +552,70 @@ else
         createdAt: "2026-01-01T00:00:02.000Z",
       });
 
-      const { thread: fork } = await createFork(fixture.source, fixture.deps, {
-        originTurnId: queuedWriter.id,
+      await expect(
+        createFork(fixture.source, fixture.deps, { originTurnId: queuedWriter.id }),
+      ).rejects.toMatchObject({
+        name: "ForkCutoffError",
+        code: "unsettled_history",
       });
+    });
 
-      expect(fork.originTurnId).toBe(fixture.firstTurn.id);
+    it("refuses turn roles that do not offer the requested action", async () => {
+      const fixture = await setupSource();
+      const writer = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+        prevTurnId: fixture.firstTurn.id,
+      });
+      await expect(
+        createFork(fixture.source, fixture.deps, { originTurnId: writer.id }),
+      ).rejects.toMatchObject({ code: "turn_not_actionable" });
+
+      const compaction = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "compaction",
+        origin: "system",
+        status: "complete",
+        compactionModel: "gpt-4.1-mini",
+        prevTurnId: writer.id,
+      });
+      await expect(
+        handoffThreadAgent(
+          {
+            ...fixture.deps,
+            handoffBriefs: {
+              async hold() {
+                return {
+                  async release() {},
+                  onLost() {
+                    return () => undefined;
+                  },
+                };
+              },
+              launchAfterCommit() {},
+            },
+          },
+          {
+            id: crypto.randomUUID(),
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: compaction.id,
+            agentSelection: fixture.agent.selection,
+          },
+        ),
+      ).rejects.toMatchObject({ code: "turn_not_actionable" });
     });
 
     it("keeps a delivered writer row as the handoff cutoff while the source reply streams", async () => {
       const fixture = await setupSource();
-      const assistant = await repos.turns.create({
-        threadId: fixture.source.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-        prevTurnId: fixture.firstTurn.id,
-      });
       const selected = await repos.turns.create({
         threadId: fixture.source.id,
         role: "user",
         origin: "writer",
         status: "complete",
-        prevTurnId: assistant.id,
+        prevTurnId: fixture.firstTurn.id,
       });
       const selectedText = "What should happen at the jade gate?";
       await repos.blocks.create({
@@ -577,6 +625,13 @@ else
         content: selectedText,
         textContent: selectedText,
         status: "complete",
+      });
+      const assistant = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+        prevTurnId: selected.id,
       });
       const launchRequests: Array<{ threadId: string; seedTurnId: string }> = [];
       const { thread: handoff } = await handoffThreadAgent(
@@ -860,13 +915,15 @@ else
       expect(fork.originTurnId).toBe(settledTurn.id);
     });
 
-    it("rejects a source with no settled turns", async () => {
+    it("rejects a selection whose prefix has no settled turns", async () => {
       const fixture = await setupSource();
       await repos.turns.updateStatus(fixture.firstTurn.id, { status: "streaming" });
 
-      await expect(createFork(fixture.source, fixture.deps)).rejects.toMatchObject({
+      await expect(
+        createFork(fixture.source, fixture.deps, { originTurnId: fixture.firstTurn.id }),
+      ).rejects.toMatchObject({
         name: "ForkCutoffError",
-        code: "no_settled_turn",
+        code: "unsettled_history",
       });
     });
 
