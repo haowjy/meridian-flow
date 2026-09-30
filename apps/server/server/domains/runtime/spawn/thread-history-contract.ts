@@ -230,11 +230,41 @@ export function defineThreadHistoryContract(
       expect(output(await f.read())).not.toContain("handoff-brief");
       const text = output(await f.read({ include: ["system_messages"] }));
       expect(text).toContain(`[${seed.position}.0] system: fork_or_handoff_seed`);
-      expect(text).toContain('"kind":"handoff-brief"');
+      expect(text).toContain("<system_update>");
+      expect(text).not.toContain('"kind":"handoff-brief"');
+      expect(text).not.toContain(f.thread.id);
       expect(text).toContain(
         status === "complete" ? "The gate is open." : "No brief is available.",
       );
       if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
+    });
+
+    it("renders a thread-reference component as its model text without internal ids", async () => {
+      const f = await fixture();
+      const seed = await f.turn("user", {
+        kind: "inbox_message",
+        inboxMessageId: "seed",
+        agentRequestKind: "child_seed",
+      });
+      const threadId = crypto.randomUUID();
+      const modelText =
+        '<thread_reference ref="c1">\nRead it with thread_history({"ref":"c1"}).\n</thread_reference>';
+      await f.block(seed, "custom", {
+        kind: "thread-reference",
+        props: {
+          ref: "c1",
+          text: modelText,
+          title: "Source",
+          threadId,
+          agentName: "General",
+          lastActivityAt: "2026-09-30T12:00:00.000Z",
+        },
+      });
+
+      const text = output(await f.read({ order: "oldest_first" }));
+      expect(text).toContain(modelText);
+      expect(text).not.toContain(threadId);
+      expect(text).not.toContain('"kind":"thread-reference"');
     });
 
     it("keeps a failed reply labelled assistant with its error after a later writer turn", async () => {

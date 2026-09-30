@@ -1,4 +1,5 @@
 /** Model-only history item projection. Copies are elided before any size trimming. */
+import type { ComponentBlockContent } from "@meridian/contracts/components";
 import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
@@ -6,6 +7,7 @@ import {
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
+import { componentModelText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
 
@@ -155,8 +157,13 @@ export function renderHistoryItem(input: {
           : kind.kind === "assistant_response"
             ? "assistant"
             : systemLabel;
+    const modelText =
+      block.blockType === "custom"
+        ? componentModelText(block.content as ComponentBlockContent)
+        : null;
     const reference = referenceOccurrenceContent(block);
-    if (reference) {
+    if (modelText) body = modelText;
+    else if (reference) {
       body = `${reference.text}${reference.read ? `\n${stringify((elideReferenceRead(reference, "history") as JsonObject).read)}` : ""}`;
     } else if (block.blockType === "image")
       body = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
