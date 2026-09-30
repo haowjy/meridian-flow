@@ -174,7 +174,6 @@ async function render(props: {
         historySettled
         tailFollowRevision={0}
         ariaLabel="Chat"
-        phase="compacting"
         onRespondToInterrupt={() => undefined}
         {...props}
       />,
@@ -265,10 +264,10 @@ describe("TurnList inherited rows", () => {
     expect(seen.assistants.get("a1")?.isLatestAssistant).toBe(false);
   });
 
-  it("renders an inherited divider read-only: no Stop or phase", async () => {
+  it("renders an inherited divider read-only: no Stop", async () => {
     await render({ turns: [], inherited, controls: controls() });
     const divider = seen.dividers.get("c");
-    expect(divider).toMatchObject({ phase: null, stopping: false, onStop: undefined });
+    expect(divider).toMatchObject({ stopping: false, onStop: undefined });
   });
 
   it("renders inherited replies as their owner's, with no interrupt answers", async () => {

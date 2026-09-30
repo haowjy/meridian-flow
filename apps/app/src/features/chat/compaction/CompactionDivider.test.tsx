@@ -78,7 +78,7 @@ async function render(
     root.render(
       <TooltipProvider>
         <TurnDerivationProvider value={derivation}>
-          <CompactionDivider phase={null} stopping={false} {...props} />
+          <CompactionDivider stopping={false} {...props} />
         </TurnDerivationProvider>
       </TooltipProvider>,
     ),
@@ -102,9 +102,9 @@ const state = () =>
   host.querySelector("[data-compaction-divider]")?.getAttribute("data-compaction-state");
 
 describe("CompactionDivider", () => {
-  it("pending: names the phase and stops C through the cancel route", async () => {
+  it("pending: says Compacting and stops C through the cancel route", async () => {
     const onStop = vi.fn();
-    await render({ turn: divider({ status: "pending", blocks: [] }), phase: "compacting", onStop });
+    await render({ turn: divider({ status: "pending", blocks: [] }), onStop });
     expect(state()).toBe("pending");
     expect(host.textContent).toContain("Compacting conversation");
     await act(async () => button("Stop compaction")?.click());
@@ -115,7 +115,6 @@ describe("CompactionDivider", () => {
     const onStop = vi.fn();
     await render({
       turn: divider({ status: "pending", blocks: [] }),
-      phase: "compacting",
       stopping: true,
       onStop,
     });
@@ -204,7 +203,7 @@ describe("CompactionDivider", () => {
 
   it("keeps keyboard focus in the divider when its Stop leaves", async () => {
     const onStop = vi.fn();
-    await render({ turn: divider({ status: "pending" }), phase: "compacting", onStop });
+    await render({ turn: divider({ status: "pending" }), onStop });
     button("Stop compaction")?.focus();
     expect(document.activeElement).toBe(button("Stop compaction"));
     await render({ turn: divider(), onStop });

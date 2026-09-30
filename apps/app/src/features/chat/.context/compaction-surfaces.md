@@ -40,7 +40,9 @@ autocompaction's failed reply comes after its divider, so it stays current.
 
 ## Divider states
 
-Pending (the lease phase, Stop through the existing cancel route on C),
+Pending ("Compacting", or "Stopping" once Stop is pressed; a waiting
+`/compact` is a queued row, never a divider; Stop through the existing cancel
+route on C),
 complete (summary disclosure; token counts only when the context shrank),
 failed, cancelled. A manual failure speaks on the divider with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
