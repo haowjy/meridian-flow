@@ -74,6 +74,22 @@ describe("thread report wire contract", () => {
       null,
     );
   });
+
+  it("parses the compact model tool result", () => {
+    const result = parseThreadReportResult({
+      ref: "p4",
+      run: 1,
+      outcome: "succeeded",
+      summary: "The outline is ready.",
+    });
+    expect(toReportContentValue(result)).toEqual({
+      summary: "The outline is ready.",
+      artifacts: [],
+      partial: false,
+      outcome: "succeeded",
+      reason: null,
+    });
+  });
 });
 
 it("parses a structured report authorization error without presenting it as a saved report", () => {

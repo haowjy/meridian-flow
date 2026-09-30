@@ -81,4 +81,18 @@ describe("model tool schemas", () => {
       ]
     `);
   });
+
+  it("removes Zod metadata that adds no model constraint", () => {
+    const handler = async () => "";
+    const schemas = createCoreToolRegistrations({
+      write: handler,
+      work: handler,
+      ls: handler,
+      search: handler,
+      ask_user: handler,
+    } as CoreToolHandlers).map(({ definition }) => JSON.stringify(definition.inputSchema));
+
+    expect(schemas.every((schema) => !schema.includes('"$schema"'))).toBe(true);
+    expect(schemas.every((schema) => !schema.includes(String(Number.MAX_SAFE_INTEGER)))).toBe(true);
+  });
 });

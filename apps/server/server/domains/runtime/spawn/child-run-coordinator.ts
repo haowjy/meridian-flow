@@ -124,7 +124,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     if (input.from !== undefined) {
       const resolved = await resolveReadableThread({
         caller: input.parentThread,
-        ref: input.from === "current" ? (input.parentThread.ref ?? undefined) : input.from,
+        ref: input.from,
         threads: deps.repos.threads,
       });
       if (!resolved.ok) return { status: "error", error: resolved.error };

@@ -18,7 +18,7 @@ export async function resolveReadableThread(input: {
   ref?: string;
   threads: Pick<ThreadRepository, "findLiveByProjectRef">;
 }): Promise<ReadableThreadOutcome> {
-  const ref = input.ref ?? input.caller.ref;
+  const ref = input.ref === undefined || input.ref === "current" ? input.caller.ref : input.ref;
   if (!ref || !parseThreadRef(ref)) return threadReadError("thread_not_found", "Thread not found");
   const target = await input.threads.findLiveByProjectRef(input.caller.projectId, ref);
   if (

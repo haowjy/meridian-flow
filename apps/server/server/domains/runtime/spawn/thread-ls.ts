@@ -7,8 +7,11 @@ import { resolveReadableThread, threadReadError } from "./resolve-readable-threa
 
 export const ThreadLsInputSchema = z
   .object({
-    ref: z.string().optional(),
-    depth: z.number().int().min(1).max(3).default(1),
+    ref: z
+      .string()
+      .describe("Conversation ref such as c3 or p12; omit for this conversation.")
+      .optional(),
+    depth: z.number().int().min(1).max(3).describe("Levels of children.").default(1),
     cursor: z.string().optional(),
   })
   .strict();
@@ -79,11 +82,18 @@ export async function listReadableThreads({
       path.unshift(parent);
       node = parent;
     }
-    const label = (thread: Thread) => `${thread.ref}${thread.deletedAt ? " (in trash)" : ""}`;
-    const edge = (thread: Thread) => (thread.kind === "subagent" ? "spawn" : thread.originType);
-    const lines = [
-      `${path.length === 17 && (node.parentThreadId || node.originTurnId) ? "… › " : ""}${path.map((row, i) => `${i ? `${edge(row)} ` : ""}${label(row)}`).join(" › ")}   (you are ${caller.ref})`,
-    ];
+    const label = (thread: Thread) =>
+      `${thread.ref}${thread.id === caller.id ? " (you)" : ""}${thread.deletedAt ? " (in trash)" : ""}`;
+    const edge = (thread: Thread) =>
+      thread.kind === "primary" && (thread.originType === "fork" || thread.originType === "handoff")
+        ? thread.originType
+        : null;
+    const hasPath = path.length > 1;
+    const lines = hasPath
+      ? [
+          `${path.length === 17 && (node.parentThreadId || node.originTurnId) ? "… › " : ""}${path.map((row, i) => `${i && edge(row) ? `${edge(row)} ` : ""}${label(row)}`).join(" › ")}`,
+        ]
+      : [];
     const nodes: Array<{ thread: Thread; level: number; upThreadId?: ThreadId }> = [
       { thread: target, level: 0 },
     ];
@@ -146,8 +156,17 @@ export async function listReadableThreads({
     const status = await statusReader.readMany(nodes.map((n) => n.thread.id));
     const render = (thread: Thread, level: number): string[] => {
       const snippet = lastAsked.get(thread.id as ThreadId);
+      const awake = status.has(thread.id);
       return [
-        `${"  ".repeat(level)}${thread.ref}  ${status.has(thread.id) ? "awake" : "asleep"}  ${thread.spawnStatus ?? ""}  ${thread.title ?? ""}${level ? `  ${edge(thread)}` : ""}`,
+        `${"  ".repeat(level)}${[
+          label(thread),
+          ...(awake ? ["awake"] : []),
+          ...(thread.spawnStatus && (thread.spawnStatus !== "running" || awake)
+            ? [thread.spawnStatus]
+            : []),
+          ...(thread.title ? [thread.title] : []),
+          ...(edge(thread) ? [edge(thread)] : []),
+        ].join("  ")}`,
         ...(snippet ? [`${"  ".repeat(level)}     last asked: ${formatLastAsked(snippet)}`] : []),
         ...nodes
           .filter((node) => node.upThreadId === thread.id)
@@ -155,6 +174,13 @@ export async function listReadableThreads({
       ];
     };
     const rendered = render(target, 0);
-    return [lines[0], ...rendered, ...lines.slice(1)].join("\n");
+    const outputLines = [
+      ...(hasPath ? lines.slice(0, 1) : []),
+      ...rendered,
+      ...(hasPath ? lines.slice(1) : lines),
+    ];
+    if (![...path, ...nodes.map(({ thread }) => thread)].some(({ id }) => id === caller.id))
+      outputLines[0] += ` (you are ${caller.ref})`;
+    return outputLines.join("\n");
   });
 }

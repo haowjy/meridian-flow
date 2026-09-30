@@ -1,4 +1,6 @@
 /** Bounded, segmented model history over the shared effective-transcript reader. */
+
+import { createHash } from "node:crypto";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -22,17 +24,87 @@ import {
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
 export const ThreadHistoryInputSchema = z
   .object({
-    ref: z.string().optional(),
+    ref: z
+      .string()
+      .describe("Conversation ref such as c3 or p12; omit for this conversation.")
+      .optional(),
     order: z.enum(["newest_first", "oldest_first"]).default("newest_first"),
     cursor: z.string().optional(),
     limit: z.number().int().min(1).max(200).default(40),
     include: z
       .array(z.enum(["thinking", "tool_args", "tool_results", "system_messages", "system_prompt"]))
+      .describe("Item kinds hidden by default.")
       .optional(),
-    expand: z.string().optional(),
+    expand: z.string().describe("Item handle such as 12.3, shown in full.").optional(),
   })
   .strict();
 export type ThreadHistoryInput = z.input<typeof ThreadHistoryInputSchema>;
+
+type CursorKey = { position: number; sequence: number };
+const cursorKeyText = (key: CursorKey) =>
+  `${key.position}${key.sequence === -1 ? "" : `.${key.sequence}`}`;
+const cursorTag = (threadId: string, body: string) =>
+  createHash("sha256").update(`${threadId}:${body}`).digest("hex").slice(0, 8);
+
+function internalHistoryCursor(
+  cursor: string,
+  target: Thread,
+  order: "newest_first" | "oldest_first",
+): string | { ok: false; error: ReturnType<typeof threadReadError>["error"] } {
+  const match = /^(c\d+|p\d+):([no])(\d+)(?:\.(\d+))?@(\d+)(?:\.(\d+))?~([a-f0-9]{8})$/u.exec(
+    cursor,
+  );
+  if (!match) return threadReadError("invalid_cursor", "Invalid history cursor");
+  if (match[1] !== target.ref)
+    return threadReadError("invalid_cursor", "Cursor belongs to another conversation");
+  const cursorOrder = match[2] === "n" ? "newest_first" : "oldest_first";
+  if (cursorOrder !== order)
+    return threadReadError("invalid_cursor", "Cursor belongs to another history order");
+  const body = cursor.slice(0, cursor.lastIndexOf("~"));
+  if (match[7] !== cursorTag(target.id, body))
+    return threadReadError("invalid_cursor", "Cursor anchor does not match");
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      t: target.id,
+      o: order,
+      u: "item",
+      r: "effective",
+      a: [Number(match[5]), match[6] === undefined ? -1 : Number(match[6])],
+      k: [Number(match[3]), match[4] === undefined ? -1 : Number(match[4])],
+    }),
+  ).toString("base64url");
+}
+
+function modelHistoryCursor(cursor: string, ref: string): string {
+  const value = JSON.parse(Buffer.from(cursor, "base64url").toString()) as {
+    o: "newest_first" | "oldest_first";
+    a: [number, number];
+    k: [number, number];
+  };
+  const body = `${ref}:${value.o === "newest_first" ? "n" : "o"}${cursorKeyText({ position: value.k[0], sequence: value.k[1] })}@${cursorKeyText({ position: value.a[0], sequence: value.a[1] })}`;
+  const threadId = (JSON.parse(Buffer.from(cursor, "base64url").toString()) as { t: string }).t;
+  return `${body}~${cursorTag(threadId, body)}`;
+}
+
+function renderDatedItems(
+  items: readonly HistoryItem[],
+  state: { previousDate?: string; previousTime?: string },
+): string[] {
+  return items.flatMap((item) => {
+    const match = /^(.*) {2}(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(\n|$)/u.exec(item.text);
+    if (!match) return [item.text];
+    const [, prefix, date, time, ending] = match;
+    const lines = date === state.previousDate ? [] : [date as string];
+    const showTime = date !== state.previousDate || time !== state.previousTime;
+    state.previousDate = date;
+    state.previousTime = time;
+    lines.push(
+      `${prefix}${showTime ? `  ${time}` : ""}${ending}${item.text.slice(match[0].length)}`,
+    );
+    return lines;
+  });
+}
 
 function cap(text: string, budget: number, tokenizer: TokenizerFamily, suffix: string): string {
   const tokens = (value: string) =>
@@ -113,7 +185,11 @@ export async function readThreadHistory({
     const live: HistoryItem[] = [];
     let heading = "";
     let used = 0;
-    let next = input.cursor;
+    const requestedCursor = input.cursor
+      ? internalHistoryCursor(input.cursor, target, order)
+      : undefined;
+    if (requestedCursor && typeof requestedCursor !== "string") return requestedCursor;
+    let next = requestedCursor;
     let stopped = false;
     let scanned = 0;
     try {
@@ -201,13 +277,23 @@ export async function readThreadHistory({
     const range = items.length
       ? `  ${key(items[0] as HistoryItem)} to ${key(items.at(-1) as HistoryItem)}`
       : "";
+    const dateState: { previousDate?: string; previousTime?: string } = {};
+    const nextCall = next
+      ? {
+          ref: target.ref,
+          ...(order !== "newest_first" ? { order } : {}),
+          cursor: modelHistoryCursor(next, target.ref as string),
+          ...((input.limit ?? 40) !== 40 ? { limit: input.limit } : {}),
+          ...(input.include !== undefined ? { include: input.include } : {}),
+        }
+      : undefined;
     const output = [
       heading.replace("\n", `${range}\n`),
-      ...items.map((item) => item.text),
+      ...renderDatedItems(items, dateState),
       ...(live.length
-        ? ["in progress (not part of this cursor):", ...live.map((item) => item.text)]
+        ? ["in progress (not part of this cursor):", ...renderDatedItems(live, dateState)]
         : []),
-      ...(next ? [`next_cursor: ${next}`] : []),
+      ...(nextCall ? [`next: thread_history(${JSON.stringify(nextCall)})`] : []),
     ].join("\n\n");
     return { output, metadata: { documentRevisions } };
   });

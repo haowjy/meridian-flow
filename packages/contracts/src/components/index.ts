@@ -213,7 +213,7 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
   properties: {
     question: {
       type: "string",
-      description: "The question for the writer.",
+      description: "The question for the user.",
     },
     kind: {
       type: "string",
@@ -240,7 +240,7 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
     requiresHuman: {
       type: "boolean",
       default: false,
-      description: "Never resolve on timeout; wait for the writer.",
+      description: "Never resolve on timeout; wait for the user.",
     },
     timeoutMs: {
       type: "integer",

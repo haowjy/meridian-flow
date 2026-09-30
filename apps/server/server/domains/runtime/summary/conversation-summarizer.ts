@@ -289,7 +289,7 @@ export function createConversationSummarizer(
           );
           const retainedScope =
             input.instruction === "compaction" && input.retainedMessages?.length
-              ? "\nCompaction scope: the following passages are kept verbatim after your summary, NOT replaced by it. All preservation rules above apply ONLY to the material being replaced. Do not restate the retained passages. Exclude facts, document URIs, requests, and tool activity introduced only there, even from the Work state or Next step sections. Do not use retained replies to claim that a replaced request was completed. The summary must end at the compaction cut, not at the end of the conversation.\nRetained passages in conversation order (role and quoted opening; a passage may start within a message):\n" +
+              ? "\nCompaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section, and do not use their replies to mark a replaced request done. End the summary at the cut.\nRetained passages in order (role and opening; a passage may start mid-message):\n" +
                 input.retainedMessages
                   .map((message) => {
                     const opening = message.content

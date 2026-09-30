@@ -7,7 +7,7 @@ import type { TokenizerFamily } from "../gateway/index.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
-import { threadHistoryPreview } from "./history-previews.js";
+import { threadHistoryPreview, threadLsHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
@@ -24,11 +24,11 @@ export function createInspectionToolRegistrations(deps: {
         type: "function",
         name: "thread_ls",
         description:
-          "List connected conversations in your lineage. Each row shows what the conversation was last asked. Defaults to this thread, with its path to the root and one level of children. depth can be 1 to 3. Use the returned cursor for older children.",
+          "List connected conversations: the path from the root to ref, and ref's children.",
         inputSchema: modelToolSchema(ThreadLsInputSchema),
       },
       sequential: true,
-      historyPreview: threadHistoryPreview,
+      historyPreview: threadLsHistoryPreview,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -52,8 +52,7 @@ export function createInspectionToolRegistrations(deps: {
       definition: {
         type: "function",
         name: "thread_history",
-        description:
-          "Read a connected conversation, including your own earlier history. Defaults to the newest 40 visible items. Pages stop at prompt epochs and are always chronological. include opts in to thinking, tool_args, tool_results, system_messages, or system_prompt. expand reads a position.sequence handle (or position for a turn header). Document copies are pointers; write inputs are dated edit records, not current documents.",
+        description: "Read the history of this or a connected conversation.",
         inputSchema: modelToolSchema(ThreadHistoryInputSchema),
       },
       sequential: true,

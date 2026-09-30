@@ -13,7 +13,11 @@ import {
 } from "../tools/document-text.js";
 import { writeHistoryPreview } from "../tools/history-previews.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
-import { readThreadHistory } from "./thread-history.js";
+import {
+  readThreadHistory,
+  type ThreadHistoryInput,
+  ThreadHistoryInputSchema,
+} from "./thread-history.js";
 
 export function defineThreadHistoryContract(
   createHarness: () => Promise<{
@@ -107,7 +111,13 @@ export function defineThreadHistoryContract(
     return result.output;
   }
   function cursor(text: string) {
-    return text.match(/next_cursor: (\S+)/)?.[1];
+    const call = text.match(/next: thread_history\(([^\n]+)\)/)?.[1];
+    return call ? JSON.parse(call).cursor : undefined;
+  }
+  function nextCall(text: string): ThreadHistoryInput {
+    const call = text.match(/next: thread_history\(([^\n]+)\)/)?.[1];
+    if (!call) throw new Error("History output has no next call");
+    return ThreadHistoryInputSchema.parse(JSON.parse(call));
   }
 
   describe("thread_history", () => {
@@ -233,9 +243,7 @@ export function defineThreadHistoryContract(
       expect(text).toContain("<system_update>");
       expect(text).not.toContain('"kind":"handoff-brief"');
       expect(text).not.toContain(f.thread.id);
-      expect(text).toContain(
-        status === "complete" ? "The gate is open." : "No brief is available.",
-      );
+      expect(text).toContain(status === "complete" ? "The gate is open." : "with no brief.");
       if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
     });
 
@@ -342,6 +350,17 @@ export function defineThreadHistoryContract(
       expect(text).toMatch(/tool_call ls \{\}[^\n]*$/);
       expect(text).not.toMatch(/tool_call ls[^\n]*\n\n\n/);
     });
+    it("prints the date on change and suppresses repeated item times", async () => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.block(t, "text", "first");
+      await f.block(t, "text", "second");
+      const text = output(await f.read({ order: "oldest_first" }));
+      const date = t.createdAt.slice(0, 10);
+      const time = t.createdAt.slice(11, 16);
+      expect(text.match(new RegExp(date, "g"))).toHaveLength(1);
+      expect(text.match(new RegExp(time, "g"))).toHaveLength(1);
+    });
     it("100 hidden tool results do not burn the visible item limit", async () => {
       const f = await fixture();
       const t = await f.turn();
@@ -351,6 +370,54 @@ export function defineThreadHistoryContract(
       expect(first).not.toContain("hidden-");
       const second = output(await f.read({ order: "oldest_first", cursor: cursor(first) }));
       expect(second.match(/tool_call ls/g)).toHaveLength(40);
+    });
+    it.each([
+      "oldest_first",
+      "newest_first",
+    ] as const)("prints a complete next call that continues %s verbatim", async (order) => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.block(t, "text", "first");
+      await f.block(t, "text", "second");
+      const firstPage = output(
+        await f.read({ order, limit: 1, include: ["tool_args", "system_messages"] }),
+      );
+      const call = nextCall(firstPage);
+      const next = call.cursor as string;
+      expect(call).toEqual({
+        ref: f.thread.ref,
+        order,
+        cursor: next,
+        limit: 1,
+        include: ["tool_args", "system_messages"],
+      });
+      expect(next).toMatch(
+        new RegExp(
+          `^c\\d+:${order === "oldest_first" ? "o" : "n"}\\d+(?:\\.\\d+)?@\\d+(?:\\.\\d+)?~[a-f0-9]{8}$`,
+          "u",
+        ),
+      );
+      const secondPage = output(await f.read(call));
+      expect(secondPage).toContain(order === "oldest_first" ? "second" : "first");
+      expect(secondPage).not.toContain(
+        order === "oldest_first" ? "] assistant\nfirst" : "] assistant\nsecond",
+      );
+      for (const [candidate, message] of [
+        [next.replace(/^c\d+/u, "p99"), "another conversation"],
+        [
+          next.replace(
+            order === "oldest_first" ? ":o" : ":n",
+            order === "oldest_first" ? ":n" : ":o",
+          ),
+          "another history order",
+        ],
+        [next.replace(/@(\d+)/u, (_, anchor) => `@${Number(anchor) + 999}`), "anchor"],
+      ] as const) {
+        expect(await f.read({ order, cursor: candidate })).toMatchObject({
+          ok: false,
+          error: { code: "invalid_cursor", message: expect.stringContaining(message) },
+        });
+      }
     });
     it.each([
       "oldest_first",
@@ -423,6 +490,10 @@ export function defineThreadHistoryContract(
       } else {
         expect(text).not.toContain("EDIT SENTINEL");
         expect(result).toMatchObject({ metadata: { documentRevisions: [] } });
+      }
+      if (input.include?.includes("tool_results")) {
+        expect(text).toContain('"omitted":"read it for current text"');
+        expect(text).not.toContain('"matches"');
       }
       for (const pair of [read, edit, search, diff]) {
         const expanded = output(await f.read({ expand: `${t.position}.${pair.result.sequence}` }));

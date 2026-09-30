@@ -54,14 +54,12 @@ function compactionMetadata(turn: Turn): CompactionPlanMetadata {
 function summaryTurn(
   compaction: Turn,
   summary: string,
-  threadRef: string,
   historyReadable: boolean,
 ): { turn: Turn; block: Block } {
   const turnId = `${compaction.id}:summary`;
   const textContent = [
     "<system_update>",
-    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below.${historyReadable ? " They remain readable with thread_history." : ""}`,
-    "Continue from this summary and the messages after it; do not redo finished work.",
+    `Summary of this conversation's earlier turns${historyReadable ? " (still readable with thread_history)" : ""}. Continue from it without redoing finished work.`,
     "",
     summary,
     "</system_update>",
@@ -174,7 +172,7 @@ function projectActiveHistory(
   const afterCompaction = turns.filter((turn) => turn.position > compaction.position);
   const historyReadable =
     compactionBake?.id === compaction.promptBakeId && bakeHasHistoryTool(compactionBake);
-  const synthetic = summaryTurn(compaction, props.summary, threadRef, historyReadable);
+  const synthetic = summaryTurn(compaction, props.summary, historyReadable);
   const projectedTurns = [synthetic.turn, ...tail.map(({ turn }) => turn), ...afterCompaction].map(
     (turn, position) => ({ ...turn, position }),
   );

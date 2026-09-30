@@ -914,14 +914,13 @@ describe("projectActiveHistoryWithBakes", () => {
     });
     expect(updated.blocks[0]?.textContent).toBe(
       `<system_update>
-Conversation summary. Earlier turns of this conversation (c1) were compacted into the summary below. They remain readable with thread_history.
-Continue from this summary and the messages after it; do not redo finished work.
+Summary of this conversation's earlier turns (still readable with thread_history). Continue from it without redoing finished work.
 
 The heroine exposed the forged record.
 </system_update>`,
     );
     expect(
-      updated.blocks[0]?.textContent?.replace(" They remain readable with thread_history.", ""),
+      updated.blocks[0]?.textContent?.replace(" (still readable with thread_history)", ""),
     ).toBe(old.blocks[0]?.textContent);
     const mismatched = await projectActiveHistoryWithBakes([r, a, c], blocks, "c1", {
       findById: async () =>
@@ -1008,7 +1007,7 @@ The heroine exposed the forged record.
     const summaryAndPin = context.messages[1]?.content
       .flatMap((part) => (part.type === "text" ? [part.text] : []))
       .join("\n");
-    expect(summaryAndPin).toContain("(p4)");
+    expect(summaryAndPin).toContain("Summary of this conversation's earlier turns");
     expect(
       context.messages.some((message) =>
         message.content.some(

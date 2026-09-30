@@ -9,8 +9,15 @@ import type { AgentRevision } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Tool } from "../gateway/index.js";
-import { resolveAgentThreadTurnContext, SUBAGENT_GUIDANCE } from "./agent-thread-context.js";
+import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
+import {
+  type AgentThreadTurnContext,
+  resolveAgentThreadTurnContext,
+  SUBAGENT_GUIDANCE,
+} from "./agent-thread-context.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
+import { createInspectionToolRegistrations } from "./inspection-tools.js";
+import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
@@ -59,12 +66,25 @@ async function boundContext(metadata: {
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const repos = createInMemoryRepositories({ projects });
   const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-  const registry = createToolRegistry({
-    registrations: [
-      ...createCoreToolRegistrations(stubHandlers()),
-      ...createSpawnToolRegistrations(),
-    ],
-  });
+  const registry = createToolRegistry();
+  for (const registration of [
+    ...createCoreToolRegistrations(stubHandlers()),
+    ...createInspectionToolRegistrations({
+      repos,
+      statusReader: {
+        read: async () => ({ kind: "asleep" }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+      },
+      registry,
+      tokenizer: async () => "anthropic",
+    }),
+    ...createSpawnToolRegistrations(),
+    ...createSkillToolRegistrations({
+      loadBody: async (_threadId, slug) => ({ slug, body: "" }),
+    }),
+  ])
+    registry.register(registration);
   const revision =
     metadata.revision === undefined
       ? {
@@ -120,7 +140,45 @@ function spawnDescription(tools: Tool[]): string {
   return spawn.description;
 }
 
+const WORK_CONTEXT = '<work_context>\ncurrent: continuity: "Continuity pass"\n</work_context>';
+
+function resolvedSystemPrompt(
+  context: AgentThreadTurnContext,
+  namedSubagents: Array<{ name: string }>,
+): string {
+  return assembleComposedSystemPrompt({
+    basePrompt: context.agentBody,
+    appendPrompt: context.appendPrompt,
+    workContext: WORK_CONTEXT,
+    namedSubagents: namedSubagents.map(({ name }) => ({
+      slug: name,
+      name,
+      description: "Checks continuity.",
+    })),
+    subagentGuidance: context.subagentGuidance,
+  });
+}
+
 describe("resolveAgentThreadTurnContext tool policy", () => {
+  it.each([
+    { kind: "primary" as const, namedTargets: [] },
+    {
+      kind: "subagent" as const,
+      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
+    },
+  ])("keeps the resolved $kind prompt and tools on user vocabulary", async (metadata) => {
+    const context = await boundContext({ tools: WRITER_MAP, ...metadata });
+    const systemPrompt = resolvedSystemPrompt(context, metadata.namedTargets);
+    expect(systemPrompt).toContain(WORK_CONTEXT);
+    if (metadata.kind === "subagent") {
+      expect(systemPrompt).toContain("Named subagents\n\ncritic");
+      expect(systemPrompt).toContain(SUBAGENT_GUIDANCE);
+      expect(hasTool(context.tools, "return_result")).toBe(true);
+    }
+    expect(systemPrompt).not.toMatch(/writer/i);
+    expect(JSON.stringify(context.tools)).not.toMatch(/writer/i);
+  });
+
   it("advertises read as a write command and requires the command discriminator", () => {
     const registrations = createCoreToolRegistrations(stubHandlers());
     expect(registrations.map((registration) => registration.definition.name)).not.toContain("read");
@@ -169,9 +227,9 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
       tools: WRITER_MAP,
       namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
     });
-    expect(spawnDescription(empty.tools)).toContain("do not spawn unless the user asks");
-    expect(spawnDescription(rostered.tools)).not.toContain("do not spawn unless the user asks");
-    expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
+    expect(spawnDescription(empty.tools)).toContain("spawn only when the user asks");
+    expect(spawnDescription(rostered.tools)).not.toContain("spawn only when the user asks");
+    expect(spawnDescription(rostered.tools)).toContain("Prefer a named subagent");
     expect(spawnDescription(rostered.tools)).not.toContain("Named subagents: critic.");
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
   });

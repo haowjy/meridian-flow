@@ -330,7 +330,9 @@ else
       const before = rig.summarizer.calls[0].requestInHand!;
       expect(first.messages[0]).toEqual(before.messages[0]);
       expect(first.messages[1]).not.toEqual(before.messages[1]);
-      expect(JSON.stringify(first.messages[1])).toContain("Conversation summary");
+      expect(JSON.stringify(first.messages[1])).toContain(
+        "Summary of this conversation's earlier turns",
+      );
       const bytes = promptBytes(first);
       for (const text of [
         "STALE-READ TEXT",
