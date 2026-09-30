@@ -642,8 +642,8 @@ msgstr "Can't undo"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/creation/CreationDialog.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -844,7 +844,7 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -1258,7 +1258,7 @@ msgstr "Create a Work"
 msgid "Create file or folder"
 msgstr "Create file or folder"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr "Create it now and the link starts working. Nothing about the link changes."
 
@@ -1267,7 +1267,7 @@ msgstr "Create it now and the link starts working. Nothing about the link change
 msgid "Create project"
 msgstr "Create project"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Create the document"
 msgstr "Create the document"
 
@@ -1297,7 +1297,7 @@ msgstr "Creating a Work…"
 msgid "Creating project…"
 msgstr "Creating project…"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr "Creating…"
@@ -2135,7 +2135,7 @@ msgstr "Loading…"
 msgid "Log out"
 msgstr "Log out"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Looking for the document this link names."
 msgstr "Looking for the document this link names."
 
@@ -2369,7 +2369,7 @@ msgstr "No column has been resized yet."
 msgid "No context files yet."
 msgstr "No context files yet."
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
 msgstr "No document answers to this name. A document can be created for it once the name works as a filename."
 
@@ -2464,7 +2464,7 @@ msgstr "Not Found"
 msgid "Not reported"
 msgstr "Not reported"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Nothing carries that name yet"
 msgstr "Nothing carries that name yet"
 
@@ -2616,7 +2616,7 @@ msgstr "Opening checkout…"
 msgid "Opening document…"
 msgstr "Opening document…"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
 msgstr "Opening the link"
 
@@ -3440,7 +3440,7 @@ msgid "That image did not upload."
 msgstr "That image did not upload."
 
 #: src/features/chat/ChatView.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
 msgstr "That link could not be checked"
 
@@ -3490,7 +3490,7 @@ msgstr "The browser blocked the clipboard. Check this site's permissions."
 msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
 
@@ -3514,7 +3514,7 @@ msgstr "The header row stays first."
 msgid "The location changed. Try again."
 msgstr "The location changed. Try again."
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
 
@@ -3806,7 +3806,7 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr "Try again"
 

@@ -25,11 +25,15 @@ export const CHECKING_DELAY_MS = 250;
 
 export type LinkDocumentRef = { documentId: string; workId?: string | null };
 
-/** Where a found document goes. The calling surface's policy, never this module's. */
+/**
+ * Where a found document goes. The calling surface's policy, never this
+ * module's. A follow passes its signal; opening a document the writer just
+ * created has no follow left to abandon.
+ */
 export type LinkDestination = (
   document: LinkDocumentRef,
   gesture: LinkFollowDisposition,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ) => Promise<unknown>;
 
 /** Where an outcome worth interrupting the writer about is said. */

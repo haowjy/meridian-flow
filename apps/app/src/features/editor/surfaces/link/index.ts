@@ -5,14 +5,13 @@
  * Every surface here mounts through `EDITOR_CHROME_SURFACES` and reads the stores
  * in `core/editor/links/` (or the `[[` trigger's own menu store). The one
  * component a host mounts directly is `ProjectLinkRuntime`, which renders
- * nothing: it is the app's ports, not a surface.
+ * nothing: it is the Editor's adapter over `features/links`, not a surface.
  */
 
 export { AtReferenceMenu } from "./AtReferenceMenu";
 export { FollowOutcomeDialog } from "./FollowOutcomeDialog";
 export { LinkSurfaces } from "./LinkSurfaces";
-export { ProjectLinkRuntime, ProjectLinkRuntimeWithIndex } from "./ProjectLinkRuntime";
-export { type LinkableDocumentIndex, useLinkableDocuments } from "./useLinkableDocuments";
+export { ProjectLinkRuntime } from "./ProjectLinkRuntime";
 export { useLinkResolution } from "./useLinkResolution";
 export { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 export { WikilinkMenu } from "./WikilinkMenu";

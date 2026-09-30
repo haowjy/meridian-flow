@@ -1,4 +1,3 @@
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 /**
  * Every document a link in this scope can reach, from the trees the app already
  * has.
@@ -28,11 +27,10 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 
 import { useMemo, useRef } from "react";
 
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import type { WikilinkDocument } from "@/core/completion";
 import { schemeLabel } from "@/features/project/context/context-schemes";
-
-import type { EditorScope } from "../../editor-scope";
 
 export type LinkableDocument = WikilinkDocument & {
   /**
@@ -60,7 +58,13 @@ export type LinkableDocumentIndex = {
 
 const LINKABLE_SCHEMES = ["manuscript", "kb", "unfiled", "user", "scratch", "uploads"] as const;
 
-export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
+export function useLinkableDocuments({
+  projectId,
+  workId,
+}: {
+  projectId: string | null;
+  workId: string | null;
+}): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
   const {
     manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
