@@ -18,6 +18,7 @@
  * view switch the same way it survives a collapsed dock, so it is hidden and
  * `inert` rather than unmounted. Changes overlays it, so nothing reflows.
  */
+
 import { type ReactNode, useEffect } from "react";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -26,10 +27,12 @@ import { cn } from "@/lib/utils";
 
 import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
+import { DockFileView } from "./DockFileView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
 import { useDockView, withoutEmptyChanges } from "./dock-view-store";
 
 export type DockShellProps = {
+  projectId: string;
   placement: "center" | "dock";
   screen: ScreenKey;
   /** Renders the dock's header from the current view-switch state; called only in `dock` placement. */
@@ -37,15 +40,27 @@ export type DockShellProps = {
   children: ReactNode | ((showPrimary: boolean) => ReactNode);
 };
 
-export function DockShell({ placement, screen, renderHeader, children }: DockShellProps) {
+export function DockShell({
+  projectId,
+  placement,
+  screen,
+  renderHeader,
+  children,
+}: DockShellProps) {
   const dockView = useDockView(screen);
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView } = dockView;
+  const { setView, file } = dockView;
   const inDock = placement === "dock";
-  const showPrimary = !inDock || view === primaryView;
-  const showChanges = inDock && view === "changes";
+  const overlay = !inDock
+    ? null
+    : view === "file" && screen === "work" && file
+      ? "file"
+      : view === "changes"
+        ? "changes"
+        : null;
+  const showPrimary = overlay === null;
 
   useEffect(() => {
     if (!hasChanges && dockView.view === "changes") {
@@ -55,7 +70,13 @@ export function DockShell({ placement, screen, renderHeader, children }: DockShe
 
   return (
     <>
-      {inDock ? renderHeader({ view, views, onSelectView: setView }) : null}
+      {inDock
+        ? renderHeader({
+            view,
+            views,
+            onSelectView: setView,
+          })
+        : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           className={cn(
@@ -67,7 +88,12 @@ export function DockShell({ placement, screen, renderHeader, children }: DockShe
         >
           {typeof children === "function" ? children(showPrimary) : children}
         </div>
-        {showChanges ? <DockChangesView className="absolute inset-0" /> : null}
+        {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
+        {overlay === "file" && file ? (
+          <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+            <DockFileView projectId={projectId} file={file} />
+          </div>
+        ) : null}
       </div>
     </>
   );

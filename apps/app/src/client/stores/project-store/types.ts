@@ -16,5 +16,6 @@ export type ProjectStoreState = {
 
 /** Mutations — use `useProjectActions()` only. Do not call from selectors. */
 export type ProjectStoreActions = {
+  /** Insert a server-confirmed project or reconcile its existing list row. */
   ensureProject(project: Project): void;
 };

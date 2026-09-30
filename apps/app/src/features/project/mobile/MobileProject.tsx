@@ -23,6 +23,8 @@ import {
   useDockReveal,
 } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
+import { useWorkChrome } from "../work/useWorkChrome";
+import { useWorkDeletion, type WorkDeletion } from "../work/useWorkDeletion";
 import { WorkScreen } from "../work/WorkScreen";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { folderAncestry, pathLeafName } from "./context-location";
@@ -48,11 +50,11 @@ export function MobileProject(props: MobileProjectProps) {
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = () => {
-    setDockView(props.activeScreen, "chat");
+  const openChatSheet = (view: "chat" | "file" = "chat") => {
+    setDockView(props.activeScreen, view);
     setChatOpen(true);
   };
-  useDockReveal(openChatSheet);
+  useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -69,6 +71,16 @@ export function MobileProject(props: MobileProjectProps) {
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
   const crumbs = contextBreadcrumbSegments(props);
+  const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
+  const work = useWorkChrome(
+    props.projectId,
+    props.routeWork,
+    props.rememberedWork,
+    props.routeCommands,
+    workDeletion,
+    "quiet",
+  );
+  const onWorkDetail = props.activeScreen === "work" && !work.onCollection && Boolean(work.title);
 
   return (
     <div
@@ -83,29 +95,39 @@ export function MobileProject(props: MobileProjectProps) {
         breadcrumb={
           props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
             <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
+          ) : onWorkDetail ? (
+            <MobileBreadcrumb
+              segments={[
+                { label: t`Work`, onSelect: work.openCollection, keep: true },
+                { label: work.name ?? "", current: work.title },
+              ]}
+            />
           ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
+        notice={!props.resultsOpen && onWorkDetail ? work.notice : undefined}
         chatAction={
           props.activeScreen !== "chat" ? (
-            <PhoneIconButton aria-label={t`Open chat`} onClick={openChatSheet}>
+            <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
               <MessageSquare className="size-5" aria-hidden />
             </PhoneIconButton>
           ) : undefined
         }
         actions={
-          props.contextLive
-            ? trailingAction(props, (kind) => {
-                if (!props.activeContextScheme) return;
-                setCreating({
-                  scheme: props.activeContextScheme,
-                  kind,
-                  parentPath: props.activeContextFolder ?? "",
-                  workId: props.editorWorkId,
-                });
-              })
-            : undefined
+          onWorkDetail
+            ? work.actions
+            : props.contextLive
+              ? trailingAction(props, (kind) => {
+                  if (!props.activeContextScheme) return;
+                  setCreating({
+                    scheme: props.activeContextScheme,
+                    kind,
+                    parentPath: props.activeContextFolder ?? "",
+                    workId: props.editorWorkId,
+                  });
+                })
+              : undefined
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -119,7 +141,7 @@ export function MobileProject(props: MobileProjectProps) {
               : undefined)
           }
         >
-          {renderActiveView(props, creating, () => setCreating(null), localTab)}
+          {renderActiveView(props, workDeletion, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
       <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
@@ -201,6 +223,7 @@ function trailingAction(
 
 function renderActiveView(
   props: MobileProjectProps,
+  workDeletion: WorkDeletion,
   creating: TreeCreationRequest | null,
   onCreateDone: () => void,
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
@@ -216,6 +239,7 @@ function renderActiveView(
           projectId={props.projectId}
           routeWork={props.routeWork}
           routeCommands={props.routeCommands}
+          deletion={workDeletion}
         />
       );
     case "chat":

@@ -33,8 +33,10 @@ instead of mechanically rewriting copied code one reference at a time.
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
 
-Startup also owns recovery polling for durable delivery outboxes. Work-context
-obligations receive a non-blocking post-commit wake for low-latency idle-thread
+Startup also owns recovery polling for durable delivery outboxes. A Work-context
+refresh is queued only for threads whose primary `thread_works` membership points
+at the changed Work; the rendered block describes that current Work only. These
+notices receive a non-blocking post-commit wake for low-latency idle-thread
 delivery and a one-second startup/poll sweep for crash and cross-process
 recovery; delivery failure is logged and never changes the committed Work
 mutation result.

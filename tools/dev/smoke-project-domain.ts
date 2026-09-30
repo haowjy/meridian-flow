@@ -91,7 +91,6 @@ async function main(): Promise<void> {
 
     const workRepository = createDrizzleWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: workProjectionMutation,
     });
     const repos = {

@@ -69,6 +69,9 @@ export const threads = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
@@ -89,6 +92,9 @@ export const threads = pgTable(
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    index("threads_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     foreignKey({
       columns: [table.projectId, table.rootThreadId],
       foreignColumns: [table.projectId, table.id],

@@ -23,9 +23,11 @@ test.beforeAll(async () => {
         "@tanstack/react-router",
         "@/client/query/useWorkDrafts",
         "@/client/query/useContextCatalog",
-        "@/client/query/useWorkThreads",
+        "@/client/query/useProjectChatFeed",
         "@/client/query/useProjectChatUserState",
         "@/client/query/useWorks",
+        "@/client/query/work-commands",
+        "@/client/query/work-command-selectors",
         "@/client/stores",
       ].map((find) => ({ find, replacement: mocks })),
     },
@@ -62,8 +64,7 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
           name: `Long breakable Work identity ${unbroken}`,
           slug: "long",
           goal: unbroken,
-          description: `Description ${unbroken}`,
-          status: "active",
+          status: null,
           archivedAt: null,
           deletedAt: null,
           aiWriteMode: "draft",
@@ -121,11 +122,16 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
   expect(width.client).toBe(390);
   expect(width.scroll).toBe(width.client);
   await expect(page.getByRole("button", { name: "All Work" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Manage Work" })).toBeVisible();
-  const targets = await page
-    .locator("button")
-    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
-  expect(targets.every((height) => height >= 44)).toBe(true);
+  await expect(page.getByRole("button", { name: "Work actions" })).toBeVisible();
+  const adequateHitAreas = await page.locator("button").evaluateAll((nodes) =>
+    nodes.every((node) => {
+      const bounds = node.getBoundingClientRect();
+      const after = getComputedStyle(node, "::after");
+      const inset = after.content !== "none" && after.content !== "normal" ? 12 : 0;
+      return bounds.height + inset >= 44 && bounds.width + inset >= 44;
+    }),
+  );
+  expect(adequateHitAreas).toBe(true);
   const bounds = await page.locator("article button, article h1, article li").evaluateAll((nodes) =>
     nodes.map((node) => ({
       left: node.getBoundingClientRect().left,
@@ -137,13 +143,13 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
   await page.getByRole("heading", { level: 1 }).click();
   await expect(page.locator('input[value^="Long breakable"]')).toBeVisible();
   expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("textbox", { name: "Work name" }).press("Escape");
   await page.getByRole("button", { name: unbroken, exact: true }).click();
   await expect(page.locator("textarea")).toBeVisible();
   expect(await scroll.evaluate((node) => node.scrollWidth)).toBe(390);
 });
 
-test("virtual range pins focused and open-menu rows across a loaded page boundary", async ({
+test("virtual range pins focused and open-menu rows in a long Work chat list", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "fine-pointer", "desktop virtual focus contract");
@@ -158,8 +164,7 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
       name: "Paged Work",
       slug: "paged-work",
       goal: null,
-      description: null,
-      status: "active" as const,
+      status: null,
       archivedAt: null,
       deletedAt: null,
       aiWriteMode: "draft" as const,
@@ -184,14 +189,13 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
       drafts: [],
       scratch: [],
       uploads: [],
-      threads: chats(0),
-      nextThreads: chats(50),
+      threads: [...chats(0), ...chats(50)],
     };
   });
   await page.addStyleTag({ content: compiledCss });
   await page.addScriptTag({ content: compiledJs, type: "module" });
   const scroll = page.locator(".app-scroll");
-  await page.getByRole("heading", { name: "Associated chats" }).scrollIntoViewIfNeeded();
+  await page.locator('[data-project-chat-row="thread-0"]').scrollIntoViewIfNeeded();
   const firstTrigger = page.getByRole("button", { name: "Actions for Chat 0" });
   await firstTrigger.focus();
   await scroll.evaluate((node) => {
@@ -199,9 +203,9 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
   });
   await expect(firstTrigger).toBeFocused();
 
-  await page.getByRole("button", { name: "Load more chats" }).click();
-  await expect(page.getByRole("button", { name: "Load more chats" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Actions for Chat 49" }).click();
+  const lastVisibleRow = page.locator("[data-project-chat-row]").last();
+  await lastVisibleRow.hover();
+  await lastVisibleRow.getByRole("button", { name: /^Actions for/ }).click();
   await expect(page.getByRole("menuitem", { name: "Add to favorites" })).toBeVisible();
   await scroll.evaluate((node) => {
     node.scrollTop = node.scrollHeight;
@@ -209,7 +213,7 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
   await expect
     .poll(() => page.getByRole("menu").evaluate((menu) => menu.contains(document.activeElement)))
     .toBe(true);
-  await expect(page.locator('[data-project-chat-row="thread-49"]')).toHaveCount(1);
+  await expect(lastVisibleRow).toBeVisible();
   expect(await page.locator("[data-project-chat-row]").count()).toBeLessThan(40);
 });
 
@@ -232,8 +236,7 @@ for (const associationCount of [100, 500, 2_500]) {
         name: "Large Work",
         slug: "large-work",
         goal: null,
-        description: null,
-        status: "active" as const,
+        status: null,
         archivedAt: null,
         deletedAt: null,
         aiWriteMode: "draft" as const,
@@ -263,8 +266,8 @@ for (const associationCount of [100, 500, 2_500]) {
     await page.addScriptTag({ content: compiledJs, type: "module" });
     const scroll = page.locator(".app-scroll");
     expect(await scroll.count()).toBe(1);
-    expect(await scroll.evaluate((node) => node.getBoundingClientRect().top)).toBeGreaterThan(0);
-    await page.getByRole("heading", { name: "Associated chats" }).scrollIntoViewIfNeeded();
+    expect(await scroll.evaluate((node) => node.getBoundingClientRect().top)).toBe(0);
+    await page.locator('[data-project-chat-row="thread-0"]').scrollIntoViewIfNeeded();
     await expect(page.locator("[data-project-chat-row]").first()).toBeVisible();
     const renderedRows = await page.locator("[data-project-chat-row]").count();
     expect(renderedRows).toBeLessThan(40);

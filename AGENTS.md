@@ -17,7 +17,7 @@ Scrivener-scale power without its complexity.
 **Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
 inform, and undo recovers. Never add approval gates, refusal vetoes, or
 "safety" friction to AI writes; that gates the writer's instruction. See the
-[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/trust-the-llm-mission.md).
+[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
 
@@ -70,7 +70,7 @@ hidden constraints, surprising invariants, and workarounds.
 
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
-[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
+[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
 **Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 

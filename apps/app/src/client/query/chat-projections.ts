@@ -1,8 +1,7 @@
 /**
  * chat-projections — the one place that knows every cache holding a
  * denormalized chat row: the project thread list (`ThreadListItem[]`), every
- * `chatFeed` page, and every `workThreads` page (the last two share
- * `InfiniteData<ProjectChatFeedPage>`).
+ * `chatFeed` page (including filtered Work feeds).
  *
  * A mutation patches one chat row through `patchChatRow`; every cache that
  * carries that row updates atomically inside one `notifyManager.batch`, so a
@@ -133,17 +132,11 @@ export function patchChatRow(
       const projectChatItem = update.projectChatItem;
       if (projectId) {
         patchFeedQueries(client, projectQueryKeys.chatFeed(projectId), threadId, projectChatItem);
-        patchFeedQueries(
-          client,
-          projectQueryKeys.workThreads(projectId),
-          threadId,
-          projectChatItem,
-        );
       } else {
         for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
           const [, id, scope] = query.queryKey;
           if (typeof id !== "string") continue;
-          if (scope === "chat-feed" || scope === "work-threads") {
+          if (scope === "chat-feed") {
             client.setQueryData<ChatFeedData>(query.queryKey, (current) =>
               patchFeedData(current, threadId, projectChatItem),
             );
@@ -178,7 +171,6 @@ export function snapshotChatRow(
     client.getQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId)) ?? null;
   const feeds = [
     ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) }),
-    ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.workThreads(projectId) }),
   ]
     .filter(
       (entry): entry is [readonly unknown[], ChatFeedData] =>

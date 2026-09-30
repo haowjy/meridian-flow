@@ -12,7 +12,7 @@ import {
   userRecentDocuments,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, lt, ne, not, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, not, or, type SQL, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -38,8 +38,7 @@ const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
  * written out at each site rather than shared: this one filters by document id
  * for one user, address resolves one (project, scheme, path), and availability
  * has to say which fact failed, which needs the distinct reason. The one fact
- * they could disagree about cannot drift: the schema constrains works.status to
- * active | archived, so "not archived" and "active" are the same test.
+ * they could disagree about cannot drift: archive lifecycle is represented by archived_at, matching deleted_at.
  */
 function visibleIdentity(userId: UserId): SQL {
   const predicate = and(
@@ -49,7 +48,7 @@ function visibleIdentity(userId: UserId): SQL {
     isNull(documents.deletedAt),
     isNull(contextSources.deletedAt),
     isNull(projects.deletedAt),
-    or(isNull(works.id), and(isNull(works.deletedAt), ne(works.status, "archived"))),
+    or(isNull(works.id), and(isNull(works.deletedAt), isNull(works.archivedAt))),
   );
   if (!predicate) throw new Error("Recent document visibility predicate is empty");
   return predicate;

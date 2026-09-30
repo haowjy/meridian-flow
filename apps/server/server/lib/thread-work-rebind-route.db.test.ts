@@ -48,7 +48,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const notices = createDrizzleNoticePort(db);

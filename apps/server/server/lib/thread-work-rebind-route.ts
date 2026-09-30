@@ -2,7 +2,11 @@
 
 import { meridianError, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
-import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
+import {
+  type RebindThreadWorkRequest,
+  type RebindThreadWorkResponse,
+  workLifecycleState,
+} from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { NoticePort } from "../domains/notices/index.js";
 import type {
@@ -66,7 +70,11 @@ export async function handleRebindThreadWorkRequest(
     workId = noWork.id;
   } else {
     const target = await deps.works.findById(input.body.workId);
-    if (!target || target.deletedAt || target.projectId !== thread.projectId) {
+    if (
+      !target ||
+      workLifecycleState(target) === "deleted" ||
+      target.projectId !== thread.projectId
+    ) {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
     }
     workId = input.body.workId;

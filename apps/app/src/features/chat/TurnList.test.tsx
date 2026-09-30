@@ -3,12 +3,6 @@
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     shouldAdjustScrollPositionOnItemSizeChange: undefined,

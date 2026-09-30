@@ -3,6 +3,7 @@ import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
   type DocumentAddressResult,
   isProjectContextTreeScheme,
+  isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
@@ -11,7 +12,7 @@ import { useContextTabsActions } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
-import { type ProjectAddress, projectAddressHref } from "./project-address";
+import { type ProjectAddress, projectAddressHref, workIdSelection } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -29,7 +30,6 @@ export function ProjectAddressDocument({
   result,
   localFile,
   workId,
-  workSlug,
   navigation,
   onAdmission,
 }: {
@@ -40,7 +40,6 @@ export function ProjectAddressDocument({
   result: DocumentAddressResult | undefined;
   localFile?: CatalogFile;
   workId: string | null;
-  workSlug: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
@@ -89,14 +88,12 @@ export function ProjectAddressDocument({
           kind: "document",
           scheme: uri.value.scheme,
           path: document.path.join("/"),
-          workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
         },
-        work:
-          scope.kind === "work"
-            ? { kind: "absent" }
-            : workSlug
-              ? { kind: "slug", slug: workSlug }
-              : { kind: "none" },
+        work: workIdSelection(
+          scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
+            ? scope.workId
+            : workId,
+        ),
       };
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);
@@ -113,16 +110,6 @@ export function ProjectAddressDocument({
       if (!controller.signal.aborted && navigation.isCurrent(ticket)) publish("error");
     });
     return () => controller.abort();
-  }, [
-    projectId,
-    href,
-    entryKey,
-    admissionFingerprint,
-    workId,
-    workSlug,
-    navigation,
-    openTab,
-    onAdmission,
-  ]);
+  }, [projectId, href, entryKey, admissionFingerprint, workId, navigation, openTab, onAdmission]);
   return null;
 }

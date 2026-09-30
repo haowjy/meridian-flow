@@ -30,12 +30,12 @@ translate those to `title` and `description` in `ProjectDto`.
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
-| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
+| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
 | `createWork(input)` | Creates an explicit Work and durably enqueues affected thread Work context in the same transaction. |
 | `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
-| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
+| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
 ## Invariants
@@ -73,10 +73,24 @@ translate those to `title` and `description` in `ProjectDto`.
   not change a slug; UUID-shaped names keep their valid UUID-shaped slug. Soft
   deletion releases active name uniqueness but reserves the slug. Lookup direction is
   exact: ID resolution never falls back to slug resolution or vice versa.
-- Work deletion refuses live thread memberships, unreviewed drafts, and live
-  files or folders in Work-owned context sources. Empty provisioned sources do
-  not block deletion. Work-owned context mutations and deletion serialize on the
-  Work lifecycle row lock; the draft predicate is evaluated inside the deleting
-  transaction after that lock. Reviewable branch-journal creation and redo use
-  the same lifecycle boundary. Restore refuses rather than clobbering a
-  reclaimed active name.
+- Work deletion never blocks on children. Under the Work lifecycle lock and in
+  one transaction, it soft-deletes each primary chat and its live descendant
+  threads, plus live Work context sources/documents/folders, closes active Work
+  draft branches, and marks each child with `deletedByWorkId`. That marker is
+  the exact restore set; separately
+  trashed children remain trashed. Existing child read paths hide the cascade
+  using their normal soft-delete/active-branch predicates. A trashed thread
+  cannot be restored independently while its Work remains deleted.
+- Restore clears only children marked by that Work deletion and is available
+  until `workPurgeAt(deletedAt)` (30 days). Later restore returns HTTP 410 with
+  `{ data: { code: "work_restore_expired" } }`, even if the hourly purge has
+  not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
+  it commits expired Work and owned-row deletion before best-effort upload/result
+  blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+- Membership changes follow thread-before-Work locking. Delete and purge use
+  `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
+  the Work, then recheck the full set; a newly joined chat retries rather than
+  escaping deletion. Restore locks the threads carrying that Work's deletion
+  marker and clears exactly that set. Work context mutations and reviewable branch-journal creation
+  still serialize on the Work lifecycle row lock. Restore refuses rather than
+  clobbering a reclaimed active name.

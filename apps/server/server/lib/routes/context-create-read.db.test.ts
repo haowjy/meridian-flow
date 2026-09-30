@@ -330,6 +330,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
       ).resolves.toBe(PROJECT_ID);
 
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+      await expect(port.read(`scratch://@${authority.workSlug}/notes.md`)).resolves.toMatchObject({
+        ok: true,
+        value: { content: "scratch content\n", documentId: created.documentId },
+      });
+      await expect(
+        port.write(`scratch://@${authority.workSlug}/notes.md`, "blocked"),
+      ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
+      await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, WORK_ID));
+
       await expect(
         port.delete(`scratch://@${authority.workSlug}/notes.md`, {
           expected: { kind: "file", documentId: created.documentId },
@@ -347,6 +360,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID as never,
       });
       expect(membershipAfterDelete.members).not.toContain(created.documentId);
+    });
+
+    it("lists an archived Work with no scratch source as empty without provisioning", async () => {
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Empty archived Work",
+        slug: "empty-archived-work",
+        archivedAt: new Date(),
+      });
+      const { contextPorts } = createFixture({ load: false });
+      const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(
+        PROJECT_ID,
+        WORK_ID,
+      );
+      if (!authority?.workSlug) throw new Error("missing Work authority");
+      const port = contextPorts.forWork(
+        authority,
+        PROJECT_ID,
+        USER_ID,
+        new Map([[authority.workSlug, authority]]),
+      );
+
+      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toEqual({
+        ok: true,
+        value: [],
+      });
+      await expect(
+        db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, WORK_ID)),
+      ).resolves.toEqual([]);
     });
 
     it("only backfills observer-less scratch documents during explicit reconciliation", async () => {

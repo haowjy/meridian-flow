@@ -10,7 +10,6 @@ import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";
 
 vi.mock("@/client/stores", () => ({ useIsThreadPendingCreation: () => false }));
-vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => () => undefined,
   useProjectDocumentNavigationProjectId: () => null,

@@ -13,6 +13,8 @@ export {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
   previewReviewOverlayClose,
@@ -25,6 +27,7 @@ export {
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  viewerTabForCatalogFile,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
@@ -39,7 +42,6 @@ export {
 export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
-  useIsProjectPendingCreation,
   useIsThreadPendingCreation,
   useThreadActions,
   useThreadStore,

@@ -2,7 +2,8 @@
  * Project-level coordination state (Zustand vanilla store + React context).
  *
  * Project list rows live in React Query. The store owns the account clock and
- * inserts confirmed new projects into that list ({@link ProjectStoreActions.ensureProject}).
+ * inserts server-confirmed projects into that list
+ * ({@link ProjectStoreActions.ensureProject}).
  */
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";

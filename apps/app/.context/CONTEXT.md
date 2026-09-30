@@ -103,7 +103,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
   locked No Work row as primary.
-  Direct `/p/*` and `/chat/*` authenticated routes mount the project
+  Direct `/p/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
@@ -181,9 +181,10 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-`/projects/new` mints a UUID, starts creation, and navigates to `/p/<uuid>`
-before persistence settles. That destination owns pending, failure, and
-same-identity Retry; ordinary owner-gated reads still authorize its shell. See
+`/projects/new` mints a UUID, writes its creation record, and navigates to
+`/p/<uuid>/works` before the POST settles. That destination renders the shell
+from the record at once and owns pending, failure, same-identity Retry, and
+Discard; once confirmed, ordinary owner-gated reads authorize its shell. See
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md#project-entry-and-route-lifetime).
 
 New-chat Send journals its intent, mints local turns, selects its current chat
@@ -294,13 +295,13 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Account entry
 
 Authenticated `/` renders the project library from the project-list query,
-never the last-active project. Each cover links directly to `/p/<project-uuid>`;
+never the last-active project. Each cover links directly to `/p/<project-uuid>/chats`;
 its selectable title and edit recency below are not links. The account-home API
 and last-active-project preference are removed; selection comes from the library,
 not a remembered destination.
 
-`/projects/new` is a separate creation destination. Its title form submits
-straight into the new project's Chat index (see Client-led creation patterns).
+`/projects/new` is the library with the New project `CreationDialog` over it.
+Create enters the new project at once (see Client-led creation patterns).
 No account-level composer or project-less quick-chat entry is exposed; every chat is created and opened from
 its owning project workspace. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
@@ -317,21 +318,28 @@ There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
 `screen`/`thread`/`scheme`/`folder`/`path` query grammar. Chat details stay
 inside the owning project's address space.
 
-Path destinations are the Chat index (`/p/<project>`) and chat detail
-(`/p/<project>/chat/<chat-UUID>`), Work collection/detail
-(`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
-document paths. A Work-scoped context path carries its Work slug in the path;
-project-scoped context can use the explicit `work` query selector. The only
-project-address query keys are `work`, `settings`, and `results`.
-Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
-input; duplicate recognized keys and malformed encodings are invalid rather
-than normalized into another destination. Case and trailing-slash canonical
-replacement use the address serializer. Settings remains the layout-owned
-overlay; Results remains auxiliary state.
+The path names the screen and what is open on it; the query holds context and
+overlays. The first segment after `/p/<project>` is always a screen: `chats`,
+`works`, or `editor` (the bare project URL replaces itself with `/chats`). Chats,
+Works and projects are addressed by UUID; a new Work keeps its UUID address
+from creation on. `@` and Work slugs never appear in browser URLs: writers read
+`@` as a document reference, and slugs remain the model's address space for
+context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
+creation dialog, distinct from every UUID-addressed Work. Documents and folders
+live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
+and for Scratch and Uploads it is required because the Work is the file's
+identity. The recognized query keys are `work`, `settings`, `results`, and
+`view`. Selectors distinguish omitted, explicit no-Work (empty), a Work ID, and
+malformed input; duplicate recognized keys and malformed encodings are invalid
+rather than normalized into another destination. Older shapes have no alias and
+render the unavailable state. Case and trailing-slash canonical replacement use
+the address serializer. Settings remains the layout-owned overlay; Results
+remains auxiliary state. The full grammar is in
+[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. Project identity and Work
-slugs resolve through successful owner/project catalogs. Chat UUIDs resolve by
+`createProjectNavigation` owns history admission. Project and Work identities
+resolve through successful owner/project catalogs. Chat UUIDs resolve by
 snapshot identity, including subagents absent from the primary list. An unavailable or
 malformed explicit target parks/disables its requested host; it never falls
 through to a remembered or catalog-default target. Main-destination navigation
@@ -349,8 +357,8 @@ fences the prior account lifetime immediately. A cross-project pending or error
 replaces the old project subtree with an inert boundary, while a same-project
 child failure parks only the requested host.
 
-The dedicated Work screen presents Active Work first and keeps Archived Work in
-a default-collapsed disclosure. Work management has no project-wide selection
+The dedicated Work screen shows one list at a time under Active, Archived and
+Deleted tabs. Work management has no project-wide selection
 state and never resolves, repairs, or changes a chat binding. The catalog is
 catalog-only and omits No Work. Omitted or null root creation binds locked
 No Work; the catalog never does. The Chat index and Work each own one

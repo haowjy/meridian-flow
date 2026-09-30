@@ -16,7 +16,7 @@ const WRITE_MUTATE = [
   "undo",
 ] as const satisfies readonly WriteCommandName[];
 const WORK_NAV = ["list", "show", "switch"] as const;
-const WORK_MUTATE = ["create", "delete", "update"] as const;
+const WORK_MUTATE = ["archive", "create", "delete", "unarchive", "update"] as const;
 // ask_user is not granted while disabled (#601), even when an agent allows it.
 const ALL_FLOW_TOOLS = [
   "ls",

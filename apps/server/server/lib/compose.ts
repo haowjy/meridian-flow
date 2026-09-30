@@ -86,6 +86,7 @@ import {
   createDrizzleProjectWorkAuthorityResolver,
   createDrizzleProjectWorkRepository,
   createDrizzleUserRepository,
+  createDrizzleWorkPurger,
   createWorkProjectionMutation,
   type ProjectBootstrapRepository,
   type ProjectRepository,
@@ -137,6 +138,7 @@ import {
   type RunStarter,
   type RunTurnPort,
   readPendingInbox,
+  requireWritableThread,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -190,6 +192,7 @@ import {
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
+import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -237,6 +240,7 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  stopThreadRun(threadId: ThreadId): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer;
   /** Startup/interval recovery for threads with a pending message and no live run. */
@@ -244,6 +248,7 @@ export type AppServices = {
     scanWakes(): Promise<number>;
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
+    purgeWorks(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -500,8 +505,6 @@ export async function createProductionAppPorts(input: {
   workRepo = createDrizzleProjectWorkRepository({
     db,
     projectionMutation: workProjectionMutation,
-    hasUnreviewedDraft: async (workId) =>
-      ((await documentSync.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -595,6 +598,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
+  const stopThreadRun = async (threadId: ThreadId) => {
+    const turnId = await ports.runClaim.readRunningTurnId(threadId);
+    if (turnId) await runner.cancel(threadId, turnId);
+  };
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -619,6 +626,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     drafts: ports.documentSync,
     workContextNotices,
+    stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
@@ -674,6 +682,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     eventSink: ports.eventSink,
   });
+  const workPurger = createDrizzleWorkPurger({
+    db: ports.db,
+    objectStore: ports.objectStore,
+    eventSink: ports.eventSink,
+  });
   const orphanRepair = createOrphanReportRepair({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -698,6 +711,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
+    purgeWorks: () => workPurger.sweep(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -718,6 +732,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     turns: ports.threadRepos.turns,
     delivery,
     records: admissionRecords,
+    requireWritableThread: (threadId) =>
+      requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
@@ -873,6 +889,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
+    stopThreadRun,
     runStarter,
     delivery,
     recovery,
@@ -947,6 +964,9 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async publishReports() {
+      return 0;
+    },
+    async purgeWorks() {
       return 0;
     },
   };
@@ -1145,9 +1165,6 @@ export function createInMemoryAppServices(): AppServices {
       async unarchive() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async hasUnreviewedDraft() {
-        return false;
-      },
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1232,9 +1249,6 @@ export function createInMemoryAppServices(): AppServices {
       async unarchive() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async hasUnreviewedDraft() {
-        return false;
-      },
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1289,6 +1303,7 @@ export function createInMemoryAppServices(): AppServices {
         return "not_found" as const;
       },
     },
+    async stopThreadRun() {},
     runStarter,
     delivery,
     recovery,

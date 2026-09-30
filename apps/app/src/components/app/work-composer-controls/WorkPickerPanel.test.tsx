@@ -9,15 +9,14 @@ import {
   WorkPickerPanel,
 } from "./WorkPickerPanel";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 const operation = { currentWorkId: "a", targetId: null, pending: false, failure: null } as const;
-const archived = { id: "b", name: "Second arc", goal: "Climb", status: "archived" } as Work;
+const archived = {
+  id: "b",
+  name: "Second arc",
+  goal: "Climb",
+  status: null,
+  archivedAt: "2026-09-02T00:00:00.000Z",
+} as Work;
 const view = (catalog: WorkCatalogView, query = "", pending = false) =>
   deriveWorkPickerViewModel(catalog, query, pending);
 
@@ -84,30 +83,29 @@ describe("WorkPickerPanel", () => {
     );
   });
 
-  it("chooses an archived Work without confirmation", async () => {
-    const choose = vi.fn();
+  it("does not offer an archived Work, which a chat cannot be bound to", async () => {
     await withReactRoot(
       <WorkPickerPanel
         view={view({ status: "ready", works: [archived], refreshing: false }, "Second")}
         operation={operation}
         onQueryChange={() => {}}
-        onChoose={choose}
+        onChoose={() => {}}
       />,
       () => {
-        expect(document.querySelector('input[type="search"]')?.getAttribute("placeholder")).toBe(
-          "Search Work",
-        );
-        expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Archived Work");
-        Array.from(document.querySelectorAll("button"))
-          .find((node) => node.textContent?.includes("Second arc"))
-          ?.click();
-        expect(choose).toHaveBeenCalledWith(archived);
+        expect(document.querySelector("[data-work-choice]")).toBeNull();
+        expect(document.body.textContent).toContain("No Work matches your search.");
       },
     );
   });
 
   it("keeps the current name and goal accessible without a routine third line", async () => {
-    const current = { id: "a", name: "Opening arc", goal: "Ascend", status: "active" } as Work;
+    const current = {
+      id: "a",
+      name: "Opening arc",
+      goal: "Ascend",
+      status: null,
+      archivedAt: null,
+    } as Work;
     await withReactRoot(
       <WorkPickerPanel
         view={view({ status: "ready", works: [current], refreshing: false })}
@@ -125,27 +123,30 @@ describe("WorkPickerPanel", () => {
         expect(search?.parentElement?.className).toContain("mx-[var(--chat-space-block)]");
         expect(row?.getAttribute("aria-current")).toBe("true");
         expect(row?.hasAttribute("aria-label")).toBe(false);
-        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
         expect(row?.textContent).toContain("Ascend");
-        expect(description?.textContent).toContain("Current Work for this chat");
+        expect(accessibleHelp?.textContent).toContain("Current Work for this chat");
         expect(row?.textContent).not.toContain("Current for this chat");
       },
     );
   });
 
-  it("preserves archived and changing state in accessible descriptions", async () => {
+  it("preserves changing state in accessible help", async () => {
     await withReactRoot(
       <WorkPickerPanel
-        view={view({ status: "ready", works: [archived], refreshing: false }, "", true)}
+        view={view(
+          { status: "ready", works: [{ ...archived, archivedAt: null }], refreshing: false },
+          "",
+          true,
+        )}
         operation={{ currentWorkId: "a", targetId: "b", pending: true, failure: null }}
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,
       () => {
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
-        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
-        expect(description?.textContent).toContain("Goal: Climb");
-        expect(row?.textContent).toContain("Archived");
+        const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        expect(accessibleHelp?.textContent).toContain("Goal: Climb");
         expect(row?.textContent).toContain("Changing work");
       },
     );

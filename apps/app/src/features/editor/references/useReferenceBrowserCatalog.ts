@@ -10,6 +10,7 @@ import {
   contextCatalogQueryOptions,
   projectResourceCatalogView,
 } from "@/client/query/useContextCatalog";
+import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
@@ -24,6 +25,7 @@ export function useReferenceBrowserCatalog(
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId ?? "");
+  const projectPending = useIsProjectPendingCreation(projectId);
   const scopes = useMemo(
     () =>
       projectId
@@ -36,13 +38,13 @@ export function useReferenceBrowserCatalog(
     [projectId, workId],
   );
   useEffect(() => {
-    if (!queryClient || !projectId || !resources) return;
+    if (!queryClient || !projectId || !resources || projectPending) return;
     for (const scope of scopes)
       void queryClient.prefetchQuery(contextCatalogQueryOptions(resources, projectId, scope));
-  }, [projectId, queryClient, resources, scopes]);
+  }, [projectId, projectPending, queryClient, resources, scopes]);
   return useMemo(
     () =>
-      projectId && queryClient && resources
+      projectId && queryClient && resources && !projectPending
         ? (() => {
             let snapshot = projection.snapshot;
             let projectionError = projection.error;
@@ -115,6 +117,15 @@ export function useReferenceBrowserCatalog(
             };
           })()
         : null,
-    [label, projectId, projection.error, projection.snapshot, queryClient, resources, scopes],
+    [
+      label,
+      projectId,
+      projectPending,
+      projection.error,
+      projection.snapshot,
+      queryClient,
+      resources,
+      scopes,
+    ],
   );
 }

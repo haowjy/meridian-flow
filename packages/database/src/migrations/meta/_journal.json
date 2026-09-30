@@ -71,6 +71,34 @@
       "when": 1790486750643,
       "tag": "0009_repair_saved_subagent_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790532168122,
+      "tag": "0010_drop_work_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790564727510,
+      "tag": "0011_work_delete_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790705111971,
+      "tag": "0012_bumpy_kang",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790738668896,
+      "tag": "0013_flashy_gamma_corps",
+      "breakpoints": true
     }
   ]
 }

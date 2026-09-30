@@ -1,7 +1,10 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
+import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
+import type { WorksView, WorkView } from "./project-address";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
@@ -14,6 +17,8 @@ export type ProjectSearch = {
   filter?: "favorites";
   /** The chat index's settled search text; owned by `features/project/chat-index`. */
   q?: string;
+  /** Work detail view (chats default) or Work list tab (active default). */
+  view?: "files" | "archived" | "deleted";
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
@@ -25,14 +30,47 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
     left.results === right.results &&
     left.work === right.work &&
     left.filter === right.filter &&
-    left.q === right.q
+    left.q === right.q &&
+    left.view === right.view
   );
 }
 
+/**
+ * The Work a route addresses. `unresolved` has no id when the address named
+ * no Work it could parse.
+ */
 export type RouteWorkResolution =
-  | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; slug: string }
+  | { status: "new" }
+  | {
+      status: "unresolved";
+      reason: "loading" | "error" | "unavailable";
+      workId: ParsedRequestId | null;
+    }
+  | {
+      status: "creating";
+      workId: ParsedRequestId;
+      name: string;
+      goal: string | null;
+      phase: "pending" | "failed";
+    }
   | { status: "none" }
-  | { status: "present"; workId: ParsedRequestId; work: Work };
+  | { status: "present"; workId: ParsedRequestId; work: AddressableWork };
+
+/** The id of the Work a route addresses, whether it is present, being created, or unresolved. */
+export function routeWorkId(routeWork: RouteWorkResolution): ParsedRequestId | null {
+  return "workId" in routeWork ? routeWork.workId : null;
+}
+
+/**
+ * What keeps a route's Work from showing its content yet. A Work being created
+ * is still loading; one whose create failed never arrives, so it is an error.
+ */
+export function routeWorkIssue(
+  routeWork: RouteWorkResolution,
+): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
+  if (routeWork.status === "unresolved") return routeWork.reason;
+  if (routeWork.status === "creating") return routeWork.phase === "failed" ? "error" : "loading";
+}
 
 export type NavigationOptions = { replace: boolean };
 
@@ -112,6 +150,10 @@ export type WorkContextTarget = {
 export type ProjectRouteCommands = {
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
   workHref: (target: WorkDetailTarget) => string;
+  workView: WorkView;
+  setWorkView: (view: WorkView) => Promise<void>;
+  worksView: WorksView;
+  setWorksView: (view: WorksView) => Promise<void>;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
   /** Editor destination with no document and no local history pointer. */

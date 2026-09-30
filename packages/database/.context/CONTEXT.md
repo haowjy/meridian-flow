@@ -176,9 +176,12 @@ baseline hash without preventing future additive migrations.
 (`src/schema/works.ts` re-exports it). `visibility` and `persistence` were
 speculative columns that no code read. They are dropped. If multi-writer
 sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
-those shapes. Works are archived (visibility) or soft-deleted with a 30-day
-window; nothing is discarded on a timer. No Work is a locked Work, not a
-sharing preference.
+those shapes. Works are archived (visibility) or soft-deleted with a
+30-day restore window; expired Works are permanently purged by the hourly
+`work-purge` recovery job. `deleted_by_work_id` markers on owned rows identify
+the exact set restored during that window. Their FKs are `ON DELETE SET NULL`,
+so deleting a Work never deletes through a stale marker; the purge deletes
+marked rows explicitly. No Work is a locked Work, not a sharing preference.
 
 ## Focused DB test resets and semantic reads
 

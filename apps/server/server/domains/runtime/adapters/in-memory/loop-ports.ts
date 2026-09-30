@@ -20,7 +20,7 @@ export function createInMemoryInbox(): DeliveryStore {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
-    async workNoticeTargets() {
+    async workNoticeTargets(_workId) {
       throw new Error("Work notice audience is not configured");
     },
     async canMaterializeWork() {

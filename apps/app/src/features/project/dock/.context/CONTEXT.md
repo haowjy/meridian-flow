@@ -29,15 +29,27 @@ contract the project shell relies on.
 
 ### `resolveDockView` pure fallback
 
-`resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView`
+`resolveDockView(screen: ScreenKey, stored: DockView | undefined, hasFile: boolean)`
 is a pure function:
 
 - If `stored` is a valid view for the screen's set, it is the active view.
 - Otherwise, the screen's `default` is used (the occupant's native view).
+- The Work file segment is inserted while a transient Work file is available.
 - The screen's view set and primary view are always returned alongside.
 
 This is deliberately separated from the React hook (`useDockView`) so the
 fallback logic is unit-testable. The hook only adds the Zustand binding.
+
+On Work, `workFile` is a separate transient `{ workId, tab, active }` slot in
+the same session-only store. While populated, `file` joins the Chat/Changes
+segments. Opening a file activates its view without changing the writer's
+explicit Chat/Changes choice; selecting either of those parks the file view,
+and selecting File again reactivates it. Closing the slot returns to the last
+explicit view (or Chat by default). Chat remains mounted and inert underneath
+the viewer. `ProjectView` owns route reconciliation and calls `enterWork` or
+`leaveWork` to clear a stale slot on Work change, the Work collection, or any
+other destination. Pending creation routes use their client Work identity too.
+No file view is persisted across reloads.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
@@ -110,7 +122,8 @@ flowchart LR
     Grid[SlotGrid] -->|dock grid-area| DockShell
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
-    DockShell -->|dock: view=changes| Changes[DockChangesView]
+DockShell -->|dock: view=changes| Changes[DockChangesView]
+DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per Discard class]
@@ -175,7 +188,8 @@ provide that evidence. QA/probe branches must come from real chat flows where
 the agent wrote to a Work draft.
 
 This has repeatedly surfaced in draft-review probes. See
-[KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md).
+[KB: Runtime Probes](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/conventions/verification/runtime-probes.md)
+on labeling synthetic fixtures.
 
 ## Rationale
 

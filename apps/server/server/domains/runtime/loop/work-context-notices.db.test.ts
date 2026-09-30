@@ -2,7 +2,12 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleProjectWorkRepository, updateWork } from "../../projects/index.js";
+import {
+  createDrizzleProjectWorkRepository,
+  deleteWorkTransition,
+  setWorkArchived,
+  updateWorkTransition,
+} from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import { createDrizzleEventJournalWriter } from "../../threads/index.js";
@@ -27,7 +32,6 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const workContext = createWorkContextReader({
@@ -59,7 +63,7 @@ else
       await resetThreadWorkRaceFixture(db);
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
       await repos.threadWorks.addMembership(ids.threadId, ids.workId, true);
       await db
@@ -73,7 +77,7 @@ else
       const before = await works.findById(ids.workId);
       await expect(
         repos.transaction(async () => {
-          await updateWork({ works, workContextNotices: delivery() }, ids.workId, {
+          await updateWorkTransition({ works, workContextNotices: delivery() }, ids.workId, {
             goal: "lost goal",
           });
           expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
@@ -94,8 +98,12 @@ else
 
     it("coalesces immutable mutation rows into latest-state history without waking or rebaking", async () => {
       const notices = delivery();
-      await updateWork({ works, workContextNotices: notices }, ids.workId, { goal: "first" });
-      await updateWork({ works, workContextNotices: notices }, ids.workId, { goal: "latest" });
+      await updateWorkTransition({ works, workContextNotices: notices }, ids.workId, {
+        goal: "first",
+      });
+      await updateWorkTransition({ works, workContextNotices: notices }, ids.workId, {
+        goal: "latest",
+      });
       await rebind(ids.targetWorkId);
       const pending = await notices.selectPending(ids.threadId);
       expect(pending).toHaveLength(3);
@@ -114,7 +122,8 @@ else
       const [update] = await updates();
       if (!update) throw new Error("Missing update");
       const blocks = await repos.blocks.listByTurn(update.id);
-      expect(blocks[0]?.textContent).toContain("latest");
+      expect(blocks[0]?.textContent).toContain('current: rebound-target: "Rebound target"');
+      expect(blocks[0]?.textContent).not.toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);
       expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
@@ -122,6 +131,101 @@ else
       );
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
+    });
+
+    it("refreshes only threads whose primary Work changed", async () => {
+      const otherThreadId = "00000000-0000-4000-8000-000000000479" as typeof ids.threadId;
+      await db.insert(schema.threads).values({
+        id: otherThreadId,
+        projectId: ids.projectId,
+        createdByUserId: ids.userId,
+        title: "Other Work thread",
+        kind: "primary",
+        status: "idle",
+      });
+      await repos.threadWorks.addMembership(otherThreadId, ids.targetWorkId, true);
+
+      await updateWorkTransition({ works, workContextNotices: delivery() }, ids.workId, {
+        goal: "Only Race target changed",
+      });
+
+      await expect(delivery().selectPending(ids.threadId)).resolves.toHaveLength(1);
+      await expect(delivery().selectPending(otherThreadId)).resolves.toEqual([]);
+    });
+
+    it("publishes archive and unarchive context refreshes", async () => {
+      const notices = delivery();
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true);
+      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
+      await notices.materializeIdle(ids.threadId);
+      const archived = await updates();
+      const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
+      expect(archivedBlocks[0]?.textContent).toContain("archived: this Work is read-only");
+
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
+      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
+    });
+
+    it("does not enqueue a refresh when deletion hides the Work's threads", async () => {
+      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.workId);
+
+      expect((await repos.threads.findById(ids.threadId))?.deletedAt).not.toBeNull();
+      await expect(delivery().selectPending(ids.threadId)).resolves.toEqual([]);
+    });
+
+    it("does not count deleting another Work as activity", async () => {
+      const baseline = new Date("2025-01-01T00:00:00.000Z");
+      await db
+        .update(schema.works)
+        .set({ updatedAt: baseline })
+        .where(eq(schema.works.id, ids.workId));
+      await db
+        .update(schema.threads)
+        .set({ createdAt: baseline, updatedAt: baseline, lastActivityAt: baseline })
+        .where(eq(schema.threads.id, ids.threadId));
+      await db
+        .update(schema.projects)
+        .set({ updatedAt: baseline, lastActivityAt: baseline })
+        .where(eq(schema.projects.id, ids.projectId));
+
+      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.targetWorkId);
+      await delivery().sweepWorkNotices();
+
+      const [work] = await db
+        .select({ updatedAt: schema.works.updatedAt })
+        .from(schema.works)
+        .where(eq(schema.works.id, ids.workId));
+      const [thread] = await db
+        .select({
+          activeLeafTurnId: schema.threads.activeLeafTurnId,
+          updatedAt: schema.threads.updatedAt,
+        })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, ids.threadId));
+      const [project] = await db
+        .select({
+          updatedAt: schema.projects.updatedAt,
+          lastActivityAt: schema.projects.lastActivityAt,
+        })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, ids.projectId));
+      const [feedItem] = await repos.chatFeed.queryPage({
+        projectId: ids.projectId,
+        userId: ids.userId,
+        after: null,
+        limit: 10,
+        favorite: false,
+        search: null,
+        workId: null,
+      });
+      const systemUpdates = await updates();
+
+      expect(systemUpdates).toHaveLength(0);
+      expect(thread?.activeLeafTurnId).toBeNull();
+      expect(work?.updatedAt).toEqual(baseline);
+      expect(thread?.updatedAt).toEqual(baseline);
+      expect(feedItem?.lastActivityAt).toBe("2025-01-01T00:00:00.000000Z");
+      expect(project).toEqual({ updatedAt: baseline, lastActivityAt: baseline });
     });
 
     it("replays after a turn/event failure with exactly one committed update and ack", async () => {
@@ -165,7 +269,7 @@ else
           .update(schema.threads)
           .set(hidden === "deleted" ? { deletedAt: new Date() } : { status: "archived" })
           .where(eq(schema.threads.id, ids.threadId));
-      await delivery().projectChanged(ids.projectId);
+      await delivery().workChanged(ids.workId);
       await delivery().sweepWorkNotices();
       expect(await updates()).toHaveLength(0);
       expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
@@ -394,14 +498,14 @@ else
       const rendering = new Promise<void>((resolve) => {
         render = resolve;
       });
-      const mutation = updateWork(
+      const mutation = updateWorkTransition(
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               held();
               await rendering;
-              await notices.projectChanged(projectId);
+              await notices.workChanged(workId);
             },
           },
         },

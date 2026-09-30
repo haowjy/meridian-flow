@@ -182,9 +182,9 @@ it scrolls the current chat into view without taking focus from search.
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +
   re-armable 180ms guard + near-bottom-wins ordering)
-→ [KB: chat scroll follow-state decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat-scroll-follow-state.md)
+→ [KB: chat scroll follow-state decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-editable-branch.md)
+→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md)
 → [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher

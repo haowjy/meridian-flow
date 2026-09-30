@@ -55,7 +55,11 @@ export type AdapterFault =
   | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string }
-  | { code: "context_unavailable" }
+  | {
+      code: "context_unavailable";
+      reason: "work_archived" | "work_deleted" | "work_missing";
+      workSlug: string | null;
+    }
   | { code: "io_error"; message: string };
 
 /** A listing entry as produced by an adapter: `uri` is a scheme-relative path. */
