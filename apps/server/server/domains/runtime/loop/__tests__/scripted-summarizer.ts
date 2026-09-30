@@ -20,7 +20,6 @@ export function scriptedSummarizer(
 ): ConversationSummarizer & { calls: Parameters<ConversationSummarizer["summarize"]>[0][] } {
   const calls: Parameters<ConversationSummarizer["summarize"]>[0][] = [];
   return {
-    maxOutputTokens: 100,
     calls,
     async summarize(input: Parameters<ConversationSummarizer["summarize"]>[0]) {
       calls.push(input);

@@ -16,7 +16,6 @@ export type SummaryOutcome = {
   | { kind: "cancelled" }
 );
 export interface ConversationSummarizer {
-  readonly maxOutputTokens: number;
   /** Never throws after a paid call: every attempted call returns its response row,
    * on success or failure. A throw is an adapter bug. cancelled is legal only
    * when the supplied signal is aborted; provider timeouts are failed.

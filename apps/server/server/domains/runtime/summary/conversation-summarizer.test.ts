@@ -31,6 +31,7 @@ const cheapModel = {
   provider: "cheap-provider",
   tokenizer: "deepseek" as const,
   contextWindow: 3400,
+  maxOutputTokens: 300,
 };
 function reply(text = "Kept facts", changes: Partial<GenerateResult> = {}): GenerateResult {
   return {
@@ -88,7 +89,7 @@ function setup(
     agentRevisions: createTestAgentBinding(threadModel.id, "", () => ["thread"]),
     modelRequestDebug,
     toolRegistry: createToolRegistry(),
-    config: { model: cheapModel.id, maxOutputTokens: 300 },
+    config: { model: cheapModel.id },
   });
   const input: Parameters<typeof service.summarize>[0] = {
     owner: { threadId: "thread", turnId: "summary" },
@@ -129,6 +130,16 @@ describe("conversation summarizer", () => {
     expect(rig.eventSink.events).toContainEqual(
       expect.objectContaining({ name: "model_request_debug.capture_failed" }),
     );
+  });
+
+  it("leaves the rolling request output limit to the adapter", async () => {
+    const rig = setup();
+
+    await expect(rig.service.summarize(rig.input)).resolves.toMatchObject({
+      kind: "complete",
+      summarizer: { path: "rolling" },
+    });
+    expect(rig.requests[0]).not.toHaveProperty("maxTokens");
   });
 
   it.each([
@@ -207,7 +218,7 @@ describe("conversation summarizer", () => {
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(sent.maxTokens).toBe(300);
+    expect(sent.maxTokens).toBe(500);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining('user: "Task"') },
     ]);
@@ -396,11 +407,11 @@ describe("conversation summarizer", () => {
   });
 
   it.each([
-    [undefined, undefined, 300],
-    [200, undefined, 200],
-    [5000, { type: "enabled", budget_tokens: 1024 }, 1324],
-    [1000, { type: "enabled", budget_tokens: 900 }, 1000],
-  ] as const)("caps warm output only when lower (%s, %s)", async (maxTokens, thinking, expected) => {
+    [undefined, undefined],
+    [200, undefined],
+    [5000, { type: "enabled", budget_tokens: 1024 }],
+    [1000, { type: "enabled", budget_tokens: 900 }],
+  ] as const)("keeps the branch request output limit (%s, %s)", async (maxTokens, thinking) => {
     const rig = setup({ warm: true });
     const request: GenerateRequest = {
       model: threadModel.id,
@@ -411,7 +422,7 @@ describe("conversation summarizer", () => {
     rig.input.requestInHand = request;
     await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(sent).toEqual({ ...request, maxTokens: expected, messages: sent.messages });
+    expect(sent).toEqual({ ...request, messages: sent.messages });
     expect(sent.messages).toHaveLength(1);
     const prompt = JSON.stringify(sent.messages);
     for (const phrase of [
@@ -503,7 +514,7 @@ describe("conversation summarizer", () => {
     rig.requests.forEach((request, index) => {
       expect(
         estimateRequestTokens({ request, baseline: null, tokenizer: cheapModel.tokenizer }),
-      ).toBeLessThan(cheapModel.contextWindow - 300);
+      ).toBeLessThan(cheapModel.contextWindow - cheapModel.maxOutputTokens);
       if (index)
         expect(JSON.stringify(request)).toContain(
           `Prior context (running summary):\\nSummary ${index}`,

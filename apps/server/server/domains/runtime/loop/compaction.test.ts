@@ -471,69 +471,6 @@ describe("estimateRequestTokens", () => {
     expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_RATES.deepseek);
   });
 
-  it("manual compaction ignores the former summary-output floor", () => {
-    const turns = [
-      turn("old", 1, "user"),
-      turn("answer", 2, "assistant"),
-      turn("pin", 3, "user"),
-      turn("latest", 4, "assistant"),
-    ];
-    const blocks = turns.map((turn, i) =>
-      block(`b${i}`, turn.id, 0, "text", null, i === 0 ? "old facts ".repeat(2000) : "short"),
-    );
-    // A prior projection can make a large raw history cheap (for example stale read elision).
-    const activeHistory = { turns, blocks: blocks.map((b) => ({ ...b, textContent: "short" })) };
-    const common = {
-      request: { messages: [requestMessage("raw request ".repeat(3000))] },
-      turns,
-      blocks,
-      activeHistory,
-      thresholdTokens: 100000,
-      baseline: null,
-      tokenizer: "deepseek" as const,
-      forcedDecision: {
-        kind: "compact" as const,
-        trigger: "manual" as const,
-        fitLimitTokens: 100000,
-      },
-    };
-    const first = decideCompaction({ ...common, summaryReserveTokens: 1 });
-    if (first.kind !== "compact" || first.plan.outcome !== "planned")
-      throw new Error("Missing plan");
-    const cut = projectCompactedHistory(activeHistory, first.plan);
-    const floor = cut.turns.reduce(
-      (sum, turn) =>
-        sum +
-        estimateTurnTokens(
-          turn,
-          cut.blocks.filter((b) => b.turnId === turn.id),
-          "deepseek",
-        ),
-      0,
-    );
-    expect(floor).toBeGreaterThan(0);
-    expect(decideCompaction({ ...common, summaryReserveTokens: floor })).not.toHaveProperty(
-      "refusal",
-    );
-    expect(decideCompaction({ ...common, summaryReserveTokens: floor + 1 })).not.toHaveProperty(
-      "refusal",
-    );
-    expect(
-      decideCompaction({
-        ...common,
-        summaryReserveTokens: floor + 1,
-        forcedDecision: { ...common.forcedDecision, trigger: "auto" },
-      }),
-    ).toMatchObject({ kind: "compact", trigger: "auto" });
-    expect(
-      decideCompaction({
-        ...common,
-        summaryReserveTokens: floor + 1,
-        forcedDecision: { ...common.forcedDecision, trigger: "auto" },
-      }),
-    ).not.toHaveProperty("refusal");
-  });
-
   it("makes Claude and DeepSeek trigger different decisions for the same Chinese read", () => {
     const request = { messages: [requestMessage("中".repeat(200))] };
     const common = {
@@ -542,7 +479,6 @@ describe("estimateRequestTokens", () => {
       turns: [],
       blocks: [],
       thresholdTokens: 400,
-      summaryReserveTokens: 100,
       baseline: null,
     };
 
@@ -569,7 +505,6 @@ describe("planCompaction", () => {
       ],
       fitLimitTokens: 100,
       tailBudgetBaseTokens: 100,
-      summaryReserveTokens: 5,
       fixedOverheadTokens: 0,
       tokenizer: "anthropic",
       estimateTurnTokens: estimate,
@@ -606,7 +541,6 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 100,
       tailBudgetBaseTokens: 100,
-      summaryReserveTokens: 10,
       fixedOverheadTokens: 0,
       tokenizer: "anthropic",
       estimateTurnTokens: estimate,
@@ -635,7 +569,6 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 100,
       tailBudgetBaseTokens: 100,
-      summaryReserveTokens: 5,
       fixedOverheadTokens: 0,
       tokenizer: "anthropic",
       tailBudgetFraction: 0.4,
@@ -662,8 +595,7 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 30,
       tailBudgetBaseTokens: 30,
-      summaryReserveTokens: 5,
-      fixedOverheadTokens: 15,
+      fixedOverheadTokens: 20,
       tokenizer: "anthropic",
       estimateTurnTokens: estimate,
     });
@@ -730,7 +662,6 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 20_000,
       tailBudgetBaseTokens: 20_000,
-      summaryReserveTokens: 2_000,
       fixedOverheadTokens: 500,
       tokenizer: "anthropic",
     });
@@ -782,7 +713,6 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 1_000_000,
       tailBudgetBaseTokens: 1_000_000,
-      summaryReserveTokens: 1_000,
       fixedOverheadTokens: 5_000,
       tokenizer: "anthropic",
     });
@@ -847,13 +777,11 @@ describe("planCompaction", () => {
 
     const triggerTokens = 80_000;
     const fixedOverheadTokens = 2_000;
-    const summaryReserveTokens = 1_500;
     const plan = planCompaction({
       turns,
       blocks,
       fitLimitTokens: triggerTokens,
       tailBudgetBaseTokens: triggerTokens,
-      summaryReserveTokens,
       fixedOverheadTokens,
       tokenizer: "anthropic",
     });
@@ -881,9 +809,7 @@ describe("planCompaction", () => {
       baseline: null,
       tokenizer: "anthropic",
     });
-    expect(projectedEstimate + fixedOverheadTokens + summaryReserveTokens).toBeLessThanOrEqual(
-      triggerTokens,
-    );
+    expect(projectedEstimate + fixedOverheadTokens).toBeLessThanOrEqual(triggerTokens);
   });
 
   it("returns no compaction rather than a persistable plan when there is no pinned request", () => {
@@ -893,7 +819,6 @@ describe("planCompaction", () => {
       blocks: [],
       fitLimitTokens: 100,
       tailBudgetBaseTokens: 100,
-      summaryReserveTokens: 10,
       fixedOverheadTokens: 10,
       tokenizer: "anthropic",
     });
@@ -914,7 +839,6 @@ describe("planCompaction", () => {
         activeHistory: { turns: [], blocks: [] },
         thresholdTokens: 100,
         forcedDecision: { kind: "compact", trigger: "manual", fitLimitTokens: 100 },
-        summaryReserveTokens: 10,
         baseline: null,
         tokenizer: "anthropic",
       }),
@@ -940,7 +864,6 @@ describe("planCompaction", () => {
       blocks,
       fitLimitTokens: 10_000,
       tailBudgetBaseTokens: 10_000,
-      summaryReserveTokens: 100,
       fixedOverheadTokens: 100,
       tokenizer: "anthropic",
     });
