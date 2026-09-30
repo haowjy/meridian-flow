@@ -148,8 +148,8 @@ export function defineThreadHistoryContract(
     it("labels writer, steer, agent request, spawn prompt, assistant, thinking, completion, seed and failed C", async () => {
       const f = await fixture();
       const cases: [Turn["role"], Turn["origin"], JsonObject | null, string][] = [
-        ["user", "writer", null, "writer"],
-        ["user", "writer", { delivery: "steer" }, "writer, steer"],
+        ["user", "writer", null, "user"],
+        ["user", "writer", { delivery: "steer" }, "user, steer"],
         ["user", "system", { kind: "inbox_message", inboxMessageId: "m" }, "agent"],
         [
           "user",
@@ -196,7 +196,7 @@ export function defineThreadHistoryContract(
       const response = await f.turn();
       await f.block(response, "reasoning", { text: "thinking-secret" });
       const defaults = output(await f.read({ order: "oldest_first" }));
-      expect(defaults).toContain("writer");
+      expect(defaults).toContain("user");
       expect(defaults).toContain("agent");
       expect(defaults).not.toContain("thinking-secret");
       const all = output(

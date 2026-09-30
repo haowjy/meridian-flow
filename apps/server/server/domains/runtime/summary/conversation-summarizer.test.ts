@@ -12,6 +12,7 @@ import type {
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
+import { renderHistoryItem } from "../spawn/history-item.js";
 import { createToolRegistry } from "../tools/index.js";
 import { createConversationSummarizer } from "./conversation-summarizer.js";
 
@@ -54,6 +55,12 @@ function projection(texts: string[]) {
         ({ turnId: `t${i}`, blockType: "text", sequence: 0, textContent: text }) as Block,
     ),
   };
+}
+
+function onlyText(request: GenerateRequest, messageIndex: number, partIndex = 0): string {
+  const part = request.messages[messageIndex]?.content[partIndex];
+  if (part?.type !== "text") throw new Error("Expected prompt text");
+  return part.text;
 }
 function setup(
   options: {
@@ -106,6 +113,44 @@ function setup(
 }
 
 describe("conversation summarizer", () => {
+  it("calls the human user in compaction, handoff and thread history model text", async () => {
+    const compaction = setup();
+    await compaction.service.summarize(compaction.input);
+
+    const handoff = setup();
+    handoff.input.instruction = "handoff";
+    handoff.input.incomingAgentName = "Editor";
+    await handoff.service.summarize(handoff.input);
+
+    const history = renderHistoryItem({
+      turn: {
+        id: "turn",
+        role: "user",
+        origin: "writer",
+        status: "complete",
+        position: 18,
+        createdAt: "2026-01-02T03:04:05.000Z",
+      } as Turn,
+      block: {
+        turnId: "turn",
+        blockType: "text",
+        sequence: 0,
+        textContent: "Continue the chapter.",
+      } as Block,
+      include: new Set(),
+      registry: createToolRegistry(),
+      toolPairs: new Map(),
+    });
+
+    const modelText = [
+      onlyText(compaction.requests[0], compaction.requests[0].messages.length - 1),
+      onlyText(handoff.requests[0], handoff.requests[0].messages.length - 1),
+      history?.text ?? "",
+    ].join("\n");
+    expect(modelText).not.toMatch(/writer/i);
+    expect(history?.text).toContain("[18.0] user");
+  });
+
   it.each([
     false,
     true,
@@ -232,12 +277,13 @@ describe("conversation summarizer", () => {
     );
 
     expect(sent).toMatchSnapshot("warm compaction request bytes");
+    expect(onlyText(sent, sent.messages.length - 1)).toMatchSnapshot("compaction branch prompt");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
       before,
     );
     expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
     expect(sent.messages.at(-1)?.content).toMatchObject([
-      { type: "text", text: expect.stringContaining("style directions") },
+      { type: "text", text: expect.stringContaining("Style directions") },
     ]);
     expect(result).toMatchObject({
       kind: "complete",
@@ -251,6 +297,14 @@ describe("conversation summarizer", () => {
         },
       ],
     });
+  });
+
+  it("pins the rolling compaction prompt", async () => {
+    const rig = setup();
+
+    await rig.service.summarize(rig.input);
+
+    expect(onlyText(rig.requests[0], 0)).toMatchSnapshot("compaction rolling prompt");
   });
 
   it.each([
@@ -686,6 +740,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     source: { threadId: "thread", throughTurnId: "cutoff" },
     instruction: "handoff",
     incomingAgentName: "Editor",
+    changedDocuments: ["manuscript://chapter-12.md"],
     requestInHand: sourceRequest,
   });
   const request = rig.requests[0];
@@ -694,7 +749,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(request.messages).toHaveLength(sourceRequest.messages.length + 1);
   expect(JSON.stringify(request.messages.at(-1))).toContain("Editor");
   expect(JSON.stringify(request.messages.at(-1))).toContain(
-    "The writer message immediately before this system update is unanswered and is the open request to report; do not answer it.",
+    "The user message immediately before this system update is unanswered and is the open request to report; do not answer it.",
   );
   expect(JSON.stringify(request.messages.at(-1))).toContain("<system_update>\\n");
   expect(JSON.stringify(request.messages.at(-1))).toContain("\\n</system_update>");
@@ -703,6 +758,9 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     JSON.stringify(sourceRequest.messages),
   );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
+  expect(onlyText(request, request.messages.length - 1)).toMatchSnapshot(
+    "handoff writer-row cutoff prompt with changed documents",
+  );
   expect(request.correlation).toMatchObject({
     threadId: "destination",
     turnId: "seed",
@@ -718,6 +776,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
 it("keeps the existing conditional open-request guidance for an assistant-row handoff cutoff", async () => {
   const rig = setup({ warm: true });
   rig.input.instruction = "handoff";
+  rig.input.incomingAgentName = "Editor";
   rig.input.projection.turns[0].role = "assistant";
   const requestInHand = rig.input.requestInHand;
   if (!requestInHand) throw new Error("Expected a source request");
@@ -731,10 +790,13 @@ it("keeps the existing conditional open-request guidance for an assistant-row ha
     .map((part) => part.text)
     .join("\n");
   expect(text).toContain(
-    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+    "If the conversation ends with a user message you have not answered, report it as the open request; do not answer it.",
   );
   expect(text).not.toContain("immediately before this system update");
   expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
+  expect(onlyText(rig.requests[0], rig.requests[0].messages.length - 1)).toMatchSnapshot(
+    "handoff otherwise prompt",
+  );
 });
 
 it("does not call a system-origin user row the writer's open request", async () => {
@@ -746,7 +808,7 @@ it("does not call a system-origin user row the writer's open request", async () 
 
   const text = JSON.stringify(rig.requests[0].messages.at(-1));
   expect(text).toContain(
-    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+    "If the conversation ends with a user message you have not answered, report it as the open request; do not answer it.",
   );
   expect(text).not.toContain("immediately before this system update");
 });

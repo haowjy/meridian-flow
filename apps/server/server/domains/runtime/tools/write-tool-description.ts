@@ -25,7 +25,7 @@ export function writeToolDescription(
     ...allowed.map((command) => COMMAND_GUIDANCE[command]),
     ...(allowed.some((command) => TARGETED_COMMANDS.has(command))
       ? [
-          "`in` accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details.",
+          "`in` accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label user-facing prose with hashes unless the user explicitly asks for edit-protocol details.",
         ]
       : []),
     "Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix.",

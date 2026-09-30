@@ -88,7 +88,7 @@ export function renderHistoryItem(input: {
       : turn.role === "assistant"
         ? "assistant"
         : kind.kind === "writer_request"
-          ? "writer"
+          ? "user"
           : "agent";
     body = `${turn.status}${turn.error ? `: ${turn.error}` : ""}${failureReason ? `\nfailure reason: ${failureReason}` : ""}`;
   } else if (block.blockType === "tool_use" || block.blockType === "tool_result") {
@@ -151,7 +151,7 @@ export function renderHistoryItem(input: {
     label = cardKind
       ? systemLabel
       : kind.kind === "writer_request"
-        ? `writer${kind.delivery === "steer" ? ", steer" : ""}`
+        ? `user${kind.delivery === "steer" ? ", steer" : ""}`
         : kind.kind === "agent_request"
           ? `agent${kind.source === "child_seed" ? ", spawn prompt" : ""}`
           : kind.kind === "assistant_response"

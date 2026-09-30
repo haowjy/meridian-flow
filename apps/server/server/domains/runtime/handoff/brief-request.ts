@@ -8,6 +8,7 @@ import {
 } from "../../threads/index.js";
 import type { GenerateRequest } from "../gateway/index.js";
 import { projectActiveHistoryWithBakes } from "../loop/compaction/index.js";
+import { changedDocumentUris } from "../loop/compaction-revisions.js";
 import type { OrchestratorDeps } from "../loop/orchestrator.js";
 import { prepareRequestContext } from "../loop/request-preparation.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
@@ -28,6 +29,12 @@ export async function generateHandoffBrief(
   const source = await deps.repos.threads.findByIdIncludingDeleted(metadata.sourceThreadId);
   if (!source) throw new Error("Handoff source is missing");
   const context = await loadThreadConversationContext(deps.repos, source, metadata.cutoffTurnId);
+  const projection = await projectActiveHistoryWithBakes(
+    context.turns,
+    context.blocks,
+    source.ref,
+    deps.repos.promptBakes,
+  );
   let requestInHand: GenerateRequest;
   try {
     const prepared = await prepareRequestContext({
@@ -60,23 +67,27 @@ export async function generateHandoffBrief(
       failure: { reason: "handoff_brief_failed", phase: "source_prepare" },
     };
   }
+  const changedDocuments = await changedDocumentUris({
+    threadId: source.id,
+    projection,
+    policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
+    revisions: deps.documentRevisions,
+    // Reads a settled cutoff of another thread; no staged response text can be in this projection.
+    assertNoResponseScope() {},
+  });
   const outcome = await deps.summarizer.summarize({
     owner: { threadId: destination.id, turnId: seed.id },
     source: { threadId: source.id, throughTurnId: metadata.cutoffTurnId },
     instruction: "handoff",
     incomingAgentName: destination.agentName ?? "the selected Agent",
+    changedDocuments,
     requestInHand,
     knownTooLarge: previousAttemptRejectedAsTooLarge(
       await deps.repos.turns.listByThread(destination.id),
       seed.id,
       "handoff_seed",
     ),
-    projection: await projectActiveHistoryWithBakes(
-      context.turns,
-      context.blocks,
-      source.ref,
-      deps.repos.promptBakes,
-    ),
+    projection,
     signal,
   });
   if (outcome.kind === "complete" || outcome.kind === "cancelled") return { outcome };

@@ -82,9 +82,7 @@ export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult
     lines.push("After:", change.after ?? "[no content]");
     for (const merged of change.mergedOver) {
       lines.push(
-        merged.writerAuthored
-          ? "Merged over writer-authored content:"
-          : "Merged over agent content:",
+        merged.writerAuthored ? "Merged over user-authored content:" : "Merged over agent content:",
         merged.body,
       );
     }
@@ -113,7 +111,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
     );
   }
   if (input.lateSweep) {
-    metaLines.push("concurrent writer content swept during commit; re-read required");
+    metaLines.push("concurrent user content swept during commit; re-read required");
     for (const { hash, body } of input.lateSweep.capturedDeletedBodies ?? []) {
       metaLines.push(`swept: ${hash}|${body}`);
     }

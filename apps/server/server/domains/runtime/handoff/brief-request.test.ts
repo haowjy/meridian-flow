@@ -6,6 +6,8 @@ import type { ModelInfo, Tool } from "../gateway/index.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "../loop/__tests__/scripted-summarizer.js";
 import { createInertGateway } from "../loop/__tests__/test-gateway.js";
+import { writeDocumentText } from "../tools/document-text.js";
+import { createToolRegistry } from "../tools/index.js";
 import { generateHandoffBrief } from "./brief-request.js";
 
 const model: ModelInfo = {
@@ -35,6 +37,7 @@ async function prepareBrief(input: {
   userCutoff: boolean;
   previousTooLarge?: boolean;
   sourcePreparationFails?: boolean;
+  revisionLookupFails?: boolean;
 }) {
   let sourceId = "";
   const summarizer = scriptedSummarizer();
@@ -42,9 +45,26 @@ async function prepareBrief(input: {
     ...createInertGateway(model.id),
     listModels: () => [model],
   };
+  const toolRegistry = createToolRegistry({
+    registrations: [
+      {
+        source: "core",
+        definition: { type: "function", name: "write", description: "Write", inputSchema: {} },
+        execution: { type: "server", handler: async () => ({}) },
+        documentText: writeDocumentText,
+      },
+    ],
+  });
   const rig = createRuntimeHarness({
     gateway,
     summarizer,
+    toolRegistry,
+    documentRevisions: {
+      async current({ documentIds }) {
+        if (input.revisionLookupFails) throw new Error("Revision lookup unavailable");
+        return new Map(documentIds.map((id) => [id, "revision-2"]));
+      },
+    },
     boundThreads: () => [sourceId],
   });
   const source = await rig.repos.threads.create({ userId: "writer", projectId: "project" });
@@ -70,11 +90,49 @@ async function prepareBrief(input: {
     textContent: "Earlier scene request.",
     status: "complete",
   });
-  let cutoff = first;
+  const documentRead = await rig.repos.turns.create({
+    threadId: source.id,
+    prevTurnId: first.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "complete",
+  });
+  await rig.repos.blocks.create({
+    turnId: documentRead.id,
+    blockType: "tool_use",
+    sequence: 0,
+    content: {
+      toolCallId: "chapter-read",
+      toolName: "write",
+      input: { command: "read", path: "manuscript://chapter-12.md" },
+    },
+    status: "complete",
+  });
+  await rig.repos.blocks.create({
+    turnId: documentRead.id,
+    blockType: "tool_result",
+    sequence: 1,
+    content: {
+      toolCallId: "chapter-read",
+      output: "Earlier chapter text.",
+      isError: false,
+      metadata: {
+        documentRevisions: [
+          {
+            documentId: "11111111-1111-4111-8111-111111111111",
+            uri: "manuscript://chapter-12.md",
+            revision: "revision-1",
+          },
+        ],
+      },
+    },
+    status: "complete",
+  });
+  let cutoff = documentRead;
   if (!input.userCutoff) {
     const answer = await rig.repos.turns.create({
       threadId: source.id,
-      prevTurnId: first.id,
+      prevTurnId: documentRead.id,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -92,7 +150,7 @@ async function prepareBrief(input: {
   if (input.userCutoff) {
     cutoff = await rig.repos.turns.create({
       threadId: source.id,
-      prevTurnId: first.id,
+      prevTurnId: documentRead.id,
       role: "user",
       origin: "writer",
       status: "complete",
@@ -188,6 +246,7 @@ it.each([
   expect(call).toMatchObject({
     instruction: "handoff",
     source: { threadId: source.id },
+    changedDocuments: ["manuscript://chapter-12.md"],
   });
   expect(request?.model).toBe(model.id);
   expect(request?.tools).toEqual([bakedTool]);
@@ -205,6 +264,18 @@ it("marks a retry after a too-large brief rejection as known too large", async (
   const { result, calls } = await prepareBrief({ userCutoff: false, previousTooLarge: true });
   expect(result.outcome.kind).toBe("complete");
   expect(calls[0]).toMatchObject({ knownTooLarge: true });
+});
+
+it("reports a read document as changed when its current revision cannot be read", async () => {
+  const { result, calls } = await prepareBrief({
+    userCutoff: false,
+    revisionLookupFails: true,
+  });
+
+  expect(result.outcome.kind).toBe("complete");
+  expect(calls[0]).toMatchObject({
+    changedDocuments: ["manuscript://chapter-12.md"],
+  });
 });
 
 it("records no summary path when source preparation fails before a call", async () => {

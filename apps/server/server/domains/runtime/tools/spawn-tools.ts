@@ -24,7 +24,7 @@ import type {
 
 const SPAWN_DESCRIPTION =
   "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks. After starting background work, end your turn to wait; its completion message will wake you. Read the latest result with thread_report using the returned pN ref. Do not message the child to wait or promise completion in this response.";
-const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
+const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the user asks.`;
 
 export type SpawnToolArgs = {
   agent?: string;
@@ -197,7 +197,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             description: {
               type: "string",
               description:
-                "The writer sees this as the subagent's name in chat and in its thread title, so always set it. Use 2 to 5 words naming the task or its deliverable in the writer's terms, such as \"Chapter 12 continuity check\" or \"Lantern festival research\". Make parallel subagents distinguishable. Don't use a sentence, the agent's name, or a pN handle.",
+                "The user sees this as the subagent's name in chat and in its thread title, so always set it. Use 2 to 5 words naming the task or its deliverable in the user's terms, such as \"Chapter 12 continuity check\" or \"Lantern festival research\". Make parallel subagents distinguishable. Don't use a sentence, the agent's name, or a pN handle.",
             },
             mode: {
               type: "string",

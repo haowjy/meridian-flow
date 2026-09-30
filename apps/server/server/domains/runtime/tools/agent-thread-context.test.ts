@@ -171,8 +171,8 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
       tools: WRITER_MAP,
       namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
     });
-    expect(spawnDescription(empty.tools)).toContain("do not spawn unless the writer asks");
-    expect(spawnDescription(rostered.tools)).not.toContain("do not spawn unless the writer asks");
+    expect(spawnDescription(empty.tools)).toContain("do not spawn unless the user asks");
+    expect(spawnDescription(rostered.tools)).not.toContain("do not spawn unless the user asks");
     expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
     expect(spawnDescription(rostered.tools)).not.toContain("Named subagents: critic.");
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
