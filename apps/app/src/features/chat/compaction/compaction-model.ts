@@ -17,6 +17,8 @@ export type CompactionFacts = {
   /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
   instructions: string | null;
   summary: string | null;
+  /** The model that wrote the summary: the summary block's, else the turn's. */
+  model: string | null;
   tokensBefore: number | null;
   tokensAfter: number | null;
 };
@@ -60,6 +62,7 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
     controlId: controlMessageId,
     instructions: instructionsText(metadata?.instructions),
     summary: text(props?.summary),
+    model: text(props?.model) ?? text(turn.model),
     tokensBefore: count(props?.tokensBefore),
     tokensAfter: count(props?.tokensAfter),
   };
@@ -96,7 +99,8 @@ export type DividerView = {
   /** What the writer asked the summary to do (`/compact <instructions>`). */
   instructions: string | null;
   summary: string | null;
-  /** Shown only when the compaction actually made the context smaller. */
+  /** Stats for nerds: the summary's model and the context size either side. */
+  model: string | null;
   tokens: { before: number; after: number } | null;
   /** Writer copy for a failure the writer must hear about; null keeps R3's quiet divider. */
   failureCopy: string | null;
@@ -119,9 +123,7 @@ export function dividerView(turn: Turn): DividerView {
           ? "cancelled"
           : "complete";
   const tokens =
-    facts.tokensBefore !== null &&
-    facts.tokensAfter !== null &&
-    facts.tokensAfter < facts.tokensBefore
+    facts.tokensBefore !== null && facts.tokensAfter !== null
       ? { before: facts.tokensBefore, after: facts.tokensAfter }
       : null;
   // R3: an autocompaction's failure is carried by the failed reply under the
@@ -133,6 +135,7 @@ export function dividerView(turn: Turn): DividerView {
     trigger: facts.trigger,
     instructions: facts.instructions,
     summary: facts.summary,
+    model: facts.model,
     tokens,
     failureCopy,
   };

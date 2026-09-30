@@ -49,7 +49,9 @@ flavor is rendered only inside the click handler through a module-level
 unified pipeline that strips presentation properties on the HAST tree (never
 by regex on serialized HTML, which corrupts code text). Stripping `className`
 leaves copied KaTeX unstyled by design. Report payloads stay in a fenced JSON
-block in both clipboard formats. The information popover summarizes
+block in both clipboard formats. Info is `TurnInfoButton`, the one stats
+popover for every turn: a compaction divider's Info uses it too (see
+[compaction surfaces](compaction-surfaces.md)). The reply's popover summarizes
 the whole writer-facing reply: all assistant parts joined by
 `continuesResponse`, excluding any writer steer turns. Input/output tokens are
 summed across those parts, cache hit is summed
@@ -60,7 +62,11 @@ measured. Never derive speed from `latencyMs - timeToFirstTokenMs`; the server
 nulls `generationMs` when backpressure made the measurement unreliable.
 Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
 for zero input. No row ever reads "Unavailable". No Info button is rendered
-until a turn has model responses.
+until a turn has model responses. Info on every turn (replies and compaction
+dividers) shows only while the writer's "Stats for nerds" preference is on
+(Settings, Preferences, This device; off by default). It is device-local like
+theme and text size: `lib/stats-for-nerds.ts` in localStorage, read through
+`useStatsForNerds`. Debug is separate and keeps its own gate.
 Debug is gated by the shared debug store. Opening from a finished reply's action
 row scopes LLM Calls to every assistant part in that reply; the pill always
 opens unscoped, and the viewer's Show all control clears an active scope.

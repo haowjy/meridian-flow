@@ -43,22 +43,33 @@ autocompaction's failed reply comes after its divider, so it stays current.
 Pending ("Compacting", or "Stopping" once Stop is pressed; a waiting
 `/compact` is a queued row, never a divider; Stop through the existing cancel
 route on C),
-complete (summary disclosure; token counts only when the context shrank),
-failed, cancelled. A manual failure speaks on the divider with the server's
+complete (the icon and state label are one button, named by the full label,
+that opens and closes the summary; there is no separate Summary control; the
+summary is the model's text alone, with no token sentence), failed, cancelled. Only a complete
+divider is a toggle: pending, stopped and failed ones have no summary. A manual failure speaks on the divider with the server's
 generic `turn.error`, or "This conversation couldn't be compacted." when it is
 null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's
 failure stays quiet (R3): the failed reply under the newest message carries it.
 
 A divider records the compaction and its summary. Nothing on it reverses the
-compaction. A compaction is a turn: a complete divider's action is Fork (the
+compaction. A compaction is a turn: a complete divider's actions are Fork (the
 same `ForkTurnAction` and navigate-first fork as a reply; the fork starts from
-the compacted history). It has no Copy and no Hand off. Fork reveals on hover
-or focus like a reply's actions and stays visible on touch. The writer's
+the compacted history) and, right of it, Info. Info is the reply's
+`TurnInfoButton` ("Compaction information"): the summary model (the summary
+block's `model`, else the turn's) and the context's tokens before and after,
+whichever were recorded, even when the context grew; no Info when neither was,
+or while "Stats for nerds" is off (see
+[turn rhythm and actions](turn-rhythm-and-actions.md)).
+It has no Copy and no Hand off. The actions reveal on hover or focus like a
+reply's, stay shown while Info's popover is open, and stay visible on touch. The writer's
 `/compact <instructions>` show verbatim under the line (`metadata.instructions`,
 read defensively), in every state.
 
-The divider is one line at every width. Its section is a container: below
+The divider is one line at every width, at one text size: the state label,
+Stop, Withdraw, Retry, any status words in the row (queued rows too), and the
+instructions and failure copy under the line all use the small action size
+(`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last; the section's accessible name keeps the full label.
 

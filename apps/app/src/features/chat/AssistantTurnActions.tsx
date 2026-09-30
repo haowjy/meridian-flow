@@ -1,70 +1,22 @@
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
-import { Bug, Check, Copy, Info } from "lucide-react";
-import type { ReactNode } from "react";
+import { Bug, Check, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { IconButton } from "@/components/ui/icon-button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DEBUG_FEATURE_ALLOWED,
   openLlmCalls,
   useDebugEnabled,
 } from "@/features/debug/use-debug-enabled";
+import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
 import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
+import { TurnInfoButton, TurnInfoRow } from "./TurnInfoButton";
 import { TURN_ACTION_TOOLTIP_SIDE } from "./turn-action-tooltip";
 import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
-
-function StatRow({
-  label,
-  value,
-  mono = false,
-  valueClassName,
-  title,
-}: {
-  label: string;
-  value: ReactNode;
-  mono?: boolean;
-  valueClassName?: string;
-  title?: string;
-}) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={`text-right ${mono ? "font-mono" : ""} ${valueClassName ?? ""}`} title={title}>
-        {value}
-      </dd>
-    </>
-  );
-}
-
-function StatSection({
-  title,
-  children,
-  separated,
-}: {
-  title: string;
-  children: ReactNode;
-  separated: boolean;
-}) {
-  return (
-    <>
-      <dt
-        className={`col-span-2 font-medium text-foreground ${
-          separated
-            ? "mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)]"
-            : ""
-        }`}
-      >
-        {title}
-      </dt>
-      {children}
-    </>
-  );
-}
 
 function formatPercent(locale: string, percent: number): string {
   return new Intl.NumberFormat(locale, {
@@ -113,6 +65,7 @@ export function AssistantTurnActions({
 }) {
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
+  const statsForNerds = useStatsForNerds();
   const [copied, setCopied] = useState(false);
   const stats = useMemo(() => turnStats(responseParts), [responseParts]);
   const threadHitPercent = threadUsage
@@ -125,7 +78,7 @@ export function AssistantTurnActions({
       rows: (
         <>
           {threadUsage ? (
-            <StatRow
+            <TurnInfoRow
               label={i18n._(t`Cache hit`)}
               value={cacheHitValue(
                 threadHitPercent,
@@ -137,7 +90,11 @@ export function AssistantTurnActions({
             />
           ) : null}
           {threadCacheReported ? (
-            <StatRow label={i18n._(t`Cache resets`)} value={threadUsage?.cacheResets ?? 0} mono />
+            <TurnInfoRow
+              label={i18n._(t`Cache resets`)}
+              value={threadUsage?.cacheResets ?? 0}
+              mono
+            />
           ) : null}
         </>
       ),
@@ -146,25 +103,25 @@ export function AssistantTurnActions({
       title: i18n._(t`Turn`),
       rows: (
         <>
-          <StatRow
+          <TurnInfoRow
             label={i18n._(t`Model`)}
             value={stats.models.length ? stats.models.join(", ") : i18n._(t`Unknown`)}
             valueClassName="max-w-36 truncate font-medium"
             title={stats.models.join(", ") || undefined}
           />
-          <StatRow
+          <TurnInfoRow
             label={i18n._(t`Calls`)}
             value={i18n._(plural(stats.callCount, { one: "# call", other: "# calls" }))}
           />
           {stats.outputTokensPerSecond == null ? null : (
-            <StatRow
+            <TurnInfoRow
               label={i18n._(t`Output speed`)}
               value={i18n._(t`${compactCount(stats.outputTokensPerSecond)} tok/s`)}
               mono
             />
           )}
           {stats.ttftMs == null ? null : (
-            <StatRow
+            <TurnInfoRow
               label={i18n._(t`Time to first token`)}
               value={
                 stats.ttftMs < 100
@@ -174,11 +131,19 @@ export function AssistantTurnActions({
               mono
             />
           )}
-          <StatRow label={i18n._(t`Input tokens`)} value={compactCount(stats.inputTokens)} mono />
-          <StatRow label={i18n._(t`Output tokens`)} value={compactCount(stats.outputTokens)} mono />
+          <TurnInfoRow
+            label={i18n._(t`Input tokens`)}
+            value={compactCount(stats.inputTokens)}
+            mono
+          />
+          <TurnInfoRow
+            label={i18n._(t`Output tokens`)}
+            value={compactCount(stats.outputTokens)}
+            mono
+          />
           {stats.callCount > 0 &&
           (stats.cacheReportedCalls === 0 || stats.cacheHitPercent != null) ? (
-            <StatRow
+            <TurnInfoRow
               label={i18n._(t`Cache hit`)}
               value={cacheHitValue(
                 stats.cacheHitPercent,
@@ -190,7 +155,7 @@ export function AssistantTurnActions({
             />
           ) : null}
           {stats.cacheResets > 0 ? (
-            <StatRow label={i18n._(t`Cache resets`)} value={stats.cacheResets} mono />
+            <TurnInfoRow label={i18n._(t`Cache resets`)} value={stats.cacheResets} mono />
           ) : null}
         </>
       ),
@@ -225,27 +190,8 @@ export function AssistantTurnActions({
         </TooltipContent>
       </Tooltip>
       <DeriveTurnActions turnId={turn.id} />
-      {stats.callCount > 0 ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <IconButton
-              type="button"
-              tooltip={i18n._(t`Turn information`)}
-              tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
-            >
-              <Info aria-hidden />
-            </IconButton>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="text-tier-chat chat-card w-64">
-            <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
-              {sections.map(({ title, rows }, index) => (
-                <StatSection key={title} title={title} separated={index > 0}>
-                  {rows}
-                </StatSection>
-              ))}
-            </dl>
-          </PopoverContent>
-        </Popover>
+      {statsForNerds && stats.callCount > 0 ? (
+        <TurnInfoButton label={i18n._(t`Turn information`)} sections={sections} />
       ) : null}
       {DEBUG_FEATURE_ALLOWED && enabled ? (
         <IconButton

@@ -18,7 +18,7 @@ export function CompactionInstructions({
       className={cn(
         // size-3.5 icon plus the row's gap: the quote starts under the words.
         "ml-[calc(0.875rem+var(--chat-space-block))] min-w-0 border-l-2 border-border-subtle pl-[var(--chat-space-block)]",
-        "whitespace-pre-wrap break-words text-caption text-ink-muted",
+        "whitespace-pre-wrap break-words text-meta text-ink-muted",
         className,
       )}
     >

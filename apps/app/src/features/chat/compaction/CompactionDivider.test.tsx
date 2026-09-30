@@ -17,6 +17,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { changeStatsForNerds } from "@/lib/stats-for-nerds";
 import { type TurnDerivation, TurnDerivationProvider } from "../derivation/DeriveTurnActions";
 import { CompactionDivider, type CompactionDividerProps } from "./CompactionDivider";
 import { QueuedControlRows } from "./QueuedControlRows";
@@ -46,6 +47,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = "";
+  changeStatsForNerds(false);
 });
 
 function divider(overrides: Record<string, unknown> = {}): Turn {
@@ -62,7 +64,12 @@ function divider(overrides: Record<string, unknown> = {}): Turn {
         sequence: 0,
         content: {
           kind: "compaction",
-          props: { summary: "The keeper counts ships.", tokensBefore: 90, tokensAfter: 20 },
+          props: {
+            summary: "The keeper counts ships.",
+            model: "summary-model",
+            tokensBefore: 14617,
+            tokensAfter: 8080,
+          },
         },
       },
     ],
@@ -125,36 +132,98 @@ describe("CompactionDivider", () => {
     expect(onStop).not.toHaveBeenCalled();
   });
 
-  it("complete: the summary sits behind a disclosure wired to its panel", async () => {
-    await render({ turn: divider() });
-    const toggle = button("Summary");
+  it("complete: the state label is the toggle for the summary, wired to its panel", async () => {
+    await render({ turn: divider({ metadata: { trigger: "auto" } }) });
+    const toggle = button("Conversation compacted automatically");
     const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(toggle?.getAttribute("aria-controls")).toBe(panel?.id);
+    // The icon is inside the same button: clicking either opens the summary.
+    expect(toggle?.querySelector("svg")).not.toBeNull();
     expect(panel?.hidden).toBe(true);
     await act(async () => toggle?.click());
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(panel?.hidden).toBe(false);
     expect(panel?.textContent).toContain("The keeper counts ships.");
+    await act(async () => toggle?.click());
+    expect(panel?.hidden).toBe(true);
   });
 
-  it("complete: the summary disclosure is its only control", async () => {
+  it("complete: there is no separate Summary control", async () => {
     await render({ turn: divider(), onStop: vi.fn() });
+    expect(button("Summary")).toBeUndefined();
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Summary"]);
+    expect(names).toEqual(["Conversation compacted"]);
   });
 
-  it("complete: a compaction is a turn whose only action is Fork", async () => {
+  it("complete: the summary says nothing about token counts", async () => {
+    await render({ turn: divider() });
+    await act(async () => button("Conversation compacted")?.click());
+    const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
+    expect(panel?.textContent).toBe("The keeper counts ships.");
+    expect(panel?.textContent).not.toMatch(/token|14,617|8,080/);
+  });
+
+  it("complete: with Stats for nerds off, there is no info button", async () => {
+    await render({ turn: divider() }, derivation());
+    expect(button("Compaction information")).toBeUndefined();
+  });
+
+  it("complete: with Stats for nerds on, its info button, right of Fork, shows the context sizes and model", async () => {
+    changeStatsForNerds(true);
+    await render({ turn: divider() }, derivation());
+    const actions = host.querySelector("[data-compaction-actions]");
+    const names = [...(actions?.querySelectorAll("button") ?? [])].map(
+      (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
+    );
+    expect(names).toEqual(["Fork from here", "Compaction information"]);
+    await act(async () => button("Compaction information")?.click());
+    const popover = document.querySelector("[data-slot='popover-content']");
+    expect(popover?.textContent).toContain("Model");
+    expect(popover?.textContent).toContain("summary-model");
+    expect(popover?.textContent).toMatch(/Tokens before14,617/);
+    expect(popover?.textContent).toMatch(/Tokens after8,080/);
+  });
+
+  it("complete: no info button when the divider recorded no stats", async () => {
+    changeStatsForNerds(true);
+    await render({
+      turn: divider({
+        blocks: [
+          {
+            id: "b",
+            blockType: "custom",
+            sequence: 0,
+            content: { kind: "compaction", props: { summary: "S" } },
+          },
+        ],
+      }),
+    });
+    expect(button("Compaction information")).toBeUndefined();
+  });
+
+  it("complete: a compaction is a turn whose only derive action is Fork", async () => {
     const actions = derivation();
     await render({ turn: divider() }, actions);
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Summary", "Fork from here"]);
+    expect(names).toEqual(["Conversation compacted", "Fork from here"]);
     await act(async () => button("Fork from here")?.click());
     expect(actions.fork).toHaveBeenCalledWith("c");
+  });
+
+  it("pending, stopped and failed dividers are not toggles", async () => {
+    await render({ turn: divider({ status: "pending", blocks: [] }), onStop: vi.fn() });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    await render({ turn: divider({ status: "cancelled", blocks: [] }) });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    expect(host.querySelectorAll("button")).toHaveLength(0);
+    await render({ turn: divider({ status: "error", blocks: [] }) });
+    expect(host.querySelector("[aria-expanded]")).toBeNull();
+    expect(host.querySelectorAll("button")).toHaveLength(0);
   });
 
   it("offers Fork only once the compaction finished", async () => {
@@ -195,19 +264,21 @@ describe("CompactionDivider", () => {
     await render({ turn: divider({ metadata: { trigger: "auto" } }) });
     const section = host.querySelector("[data-compaction-divider]");
     expect(section?.getAttribute("aria-label")).toBe("Conversation compacted automatically");
-    const labels = [...(section?.querySelectorAll("span.truncate > span") ?? [])].map(
+    const labels = [...(section?.querySelectorAll("[data-compaction-label] > span") ?? [])].map(
       (node) => node.textContent,
     );
     expect(labels).toEqual(["Conversation compacted automatically", "Compacted"]);
   });
 
   it("keeps keyboard focus in the divider when its Stop leaves", async () => {
+    changeStatsForNerds(true);
     const onStop = vi.fn();
     await render({ turn: divider({ status: "pending" }), onStop });
     button("Stop compaction")?.focus();
     expect(document.activeElement).toBe(button("Stop compaction"));
     await render({ turn: divider(), onStop });
-    expect(document.activeElement).toBe(button("Summary"));
+    // Focus lands on the state words that replaced Stop, not a trailing action.
+    expect(document.activeElement).toBe(button("Conversation compacted"));
   });
 
   it("failed manual: says why on the divider", async () => {

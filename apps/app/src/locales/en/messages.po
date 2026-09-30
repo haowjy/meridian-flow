@@ -1137,6 +1137,14 @@ msgstr "Compacting"
 msgid "Compacting conversation"
 msgstr "Compacting conversation"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction"
+msgstr "Compaction"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction information"
+msgstr "Compaction information"
+
 #: src/features/chat/compaction/control-copy.ts
 msgid "Compaction queued"
 msgstr "Compaction queued"
@@ -2595,6 +2603,7 @@ msgid "missing kind"
 msgstr "missing kind"
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "Model"
 
@@ -3804,6 +3813,10 @@ msgstr "Show less"
 msgid "Show the whole brief"
 msgstr "Show the whole brief"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Shows token counts and the model on each reply and compaction"
+msgstr "Shows token counts and the model on each reply and compaction"
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr "Sign in as dev user"
@@ -3884,6 +3897,10 @@ msgstr "Start writing…"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "stat block"
 msgstr "stat block"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Stats for nerds"
+msgstr "Stats for nerds"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "status"
@@ -3996,8 +4013,8 @@ msgid "Summarize earlier messages so the model has room to keep going"
 msgstr "Summarize earlier messages so the model has room to keep going"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Summary"
-msgstr "Summary"
+#~ msgid "Summary"
+#~ msgstr "Summary"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
@@ -4195,8 +4212,8 @@ msgstr "The location changed. Try again."
 #. placeholder {0}: formatTokens(view.tokens.before)
 #. placeholder {1}: formatTokens(view.tokens.after)
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "The model's context went from {0} to {1} tokens."
-msgstr "The model's context went from {0} to {1} tokens."
+#~ msgid "The model's context went from {0} to {1} tokens."
+#~ msgstr "The model's context went from {0} to {1} tokens."
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -4565,6 +4582,14 @@ msgstr "Today"
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Toggle folder {0}"
 msgstr "Toggle folder {0}"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens after"
+msgstr "Tokens after"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens before"
+msgstr "Tokens before"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."

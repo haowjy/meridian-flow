@@ -78,7 +78,7 @@ function QueuedControlRow({
           ) : (
             <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
           )}
-          <span className={cn("text-caption", failed ? "text-destructive" : "text-ink-muted")}>
+          <span className={cn("text-meta", failed ? "text-destructive" : "text-ink-muted")}>
             {controlStatusCopy(status)}
           </span>
         </span>
@@ -105,7 +105,7 @@ function QueuedControlRow({
           </Button>
         ) : null}
         {status === "withdraw_failed" ? (
-          <span className="text-caption text-destructive">{t`Couldn't withdraw. Try again.`}</span>
+          <span className="text-meta text-destructive">{t`Couldn't withdraw. Try again.`}</span>
         ) : null}
         <span aria-hidden className="min-w-6 flex-1 border-t border-dashed border-border" />
       </div>

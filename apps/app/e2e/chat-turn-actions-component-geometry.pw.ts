@@ -91,6 +91,116 @@ test("a writer message's actions sit directly below its bubble, on its right edg
   }
 });
 
+/** Every divider state, and the queued rows that become one. */
+const DIVIDER_ROWS = [
+  "#divider-auto",
+  "#divider-manual",
+  "#divider-pending",
+  "#divider-stopped",
+  "#divider-failed",
+  "#queued-controls li",
+];
+
+test("a divider speaks at one text size, on one line, at every width", async ({
+  page,
+}, testInfo) => {
+  const widths = testInfo.project.name === "fine-pointer" ? [1100, 390] : [390];
+  await mount(page);
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const selector of DIVIDER_ROWS) {
+      const rows = page.locator(selector);
+      for (let index = 0; index < (await rows.count()); index += 1) {
+        const where = `${selector}[${index}] at ${width}px`;
+        const row = await rows.nth(index).evaluate((item) => {
+          // The row is the first line: state words, controls, and the rule.
+          const line = item.querySelector(":scope > div, :scope > section > div");
+          if (!line) throw new Error("No divider line");
+          const texts = [...line.querySelectorAll("span, button")]
+            .filter((node) =>
+              [...node.childNodes].some(
+                (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim(),
+              ),
+            )
+            .filter((node) => (node as HTMLElement).offsetParent !== null)
+            .map((node) => ({
+              text: node.textContent,
+              size: getComputedStyle(node).fontSize,
+              top: node.getBoundingClientRect().top,
+              bottom: node.getBoundingClientRect().bottom,
+            }));
+          return { texts, height: line.getBoundingClientRect().height };
+        });
+        expect(row.texts.length, where).toBeGreaterThan(0);
+        const sizes = new Set(row.texts.map((text) => text.size));
+        expect([...sizes], where).toHaveLength(1);
+        // One line: every piece of text shares the row's single band.
+        const top = Math.min(...row.texts.map((text) => text.top));
+        const bottom = Math.max(...row.texts.map((text) => text.bottom));
+        expect(bottom - top, where).toBeLessThanOrEqual(24);
+        expect(row.height, where).toBeLessThanOrEqual(28);
+      }
+    }
+  }
+  // The row's words match its small actions: Stop sets the size.
+  const [label, stop] = await Promise.all([
+    page
+      .locator("#divider-pending [data-compaction-label]")
+      .evaluate((n) => getComputedStyle(n).fontSize),
+    page
+      .locator("#divider-pending")
+      .getByRole("button", { name: "Stop compaction" })
+      .evaluate((n) => getComputedStyle(n).fontSize),
+  ]);
+  expect(label).toBe(stop);
+  // What sits under the line (instructions, failure copy) matches the words above it.
+  for (const selector of [
+    "#divider-manual [data-compaction-instructions]",
+    "#divider-pending [data-compaction-instructions]",
+    "#queued-controls [data-compaction-instructions]",
+    "#divider-failed p.text-destructive",
+  ]) {
+    const size = await page
+      .locator(selector)
+      .first()
+      .evaluate((n) => getComputedStyle(n).fontSize);
+    expect(size, selector).toBe(stop);
+  }
+});
+
+test("a finished divider's info sits right of Fork and opens the reply's stats popover", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await mount(page);
+  const divider = page.locator("#divider-auto");
+  await divider.hover();
+  const fork = await divider.getByRole("button", { name: "Fork from here" }).boundingBox();
+  const info = divider.getByRole("button", { name: "Compaction information" });
+  const infoBox = await info.boundingBox();
+  if (!fork || !infoBox) throw new Error("Missing divider actions");
+  expect(infoBox.x).toBeGreaterThanOrEqual(fork.x + fork.width);
+  expect(Math.abs(infoBox.y + infoBox.height / 2 - (fork.y + fork.height / 2))).toBeLessThanOrEqual(
+    1,
+  );
+  await info.click();
+  const popover = page.getByRole("dialog").filter({ hasText: "Tokens before" });
+  await expect(popover).toContainText("14,617");
+  await expect(popover).toContainText("8,080");
+  await expect(popover).toContainText("mock-summary");
+  // The same popover as a reply's Turn information: same width and card.
+  const replyInfo = page.locator("#reply").getByRole("button", { name: "Turn information" });
+  const dividerClass = await page
+    .locator("[data-slot='popover-content'][data-state='open']")
+    .getAttribute("class");
+  await page.keyboard.press("Escape");
+  await replyInfo.click();
+  const replyClass = await page
+    .locator("[data-slot='popover-content'][data-state='open']")
+    .getAttribute("class");
+  expect(dividerClass).toBe(replyClass);
+});
+
 /** The open tooltips, not ones fading out, by their accessible text. */
 const openTooltips = (page: Page) =>
   page.locator('[data-slot="tooltip-content"]:not([data-state="closed"]) [role="tooltip"]');
@@ -158,10 +268,18 @@ test("a turn action's tooltip opens below its button, clear of the message it ac
       message: "#reply p",
       names: ["Copy", "Fork from here", "Hand off from here", "Turn information"],
     },
+    {
+      scope: "#divider-auto",
+      message: "#divider-auto [data-compaction-label]",
+      names: ["Fork from here", "Compaction information"],
+    },
   ];
   for (const width of [1100, 390]) {
     await page.setViewportSize({ width, height: 900 });
     for (const { scope, message, names } of cases) {
+      // Leave the last button so its tooltip closes before the next row.
+      await page.mouse.move(0, 0);
+      await expect(openTooltips(page)).toHaveCount(0);
       await page.locator(message).hover();
       for (const name of names) {
         const where = `${name} in ${scope} at ${width}px`;
