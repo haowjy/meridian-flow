@@ -1137,6 +1137,14 @@ msgstr ""
 msgid "Compacting conversation"
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction information"
+msgstr ""
+
 #: src/features/chat/compaction/control-copy.ts
 msgid "Compaction queued"
 msgstr ""
@@ -2595,6 +2603,7 @@ msgid "missing kind"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "模型"
 
@@ -3800,6 +3809,10 @@ msgstr ""
 msgid "Show the whole brief"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Shows token counts and the model on each reply and compaction"
+msgstr ""
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr ""
@@ -3879,6 +3892,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "stat block"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Stats for nerds"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3992,8 +4009,8 @@ msgid "Summarize earlier messages so the model has room to keep going"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Summary"
-msgstr ""
+#~ msgid "Summary"
+#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
@@ -4191,8 +4208,8 @@ msgstr ""
 #. placeholder {0}: formatTokens(view.tokens.before)
 #. placeholder {1}: formatTokens(view.tokens.after)
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "The model's context went from {0} to {1} tokens."
-msgstr ""
+#~ msgid "The model's context went from {0} to {1} tokens."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -4560,6 +4577,14 @@ msgstr "今天"
 #. placeholder {0}: dir.name
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Toggle folder {0}"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens after"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens before"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx

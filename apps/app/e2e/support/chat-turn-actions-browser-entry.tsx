@@ -15,6 +15,7 @@ import {
   TurnDerivationProvider,
 } from "../../src/features/chat/derivation/DeriveTurnActions";
 import { UserTurn } from "../../src/features/chat/UserTurn";
+import { changeStatsForNerds } from "../../src/lib/stats-for-nerds";
 import "../../src/styles/globals.css";
 
 const writerTurn = (id: string, text: string) =>
@@ -108,6 +109,9 @@ const derivation: TurnDerivation = {
 const long =
   "Lin Feng reaches the outer gate of the sect at dusk, carrying the broken jade token and the " +
   "letter his master never finished, and the disciples on the wall watch him climb every step.";
+
+// The fixture measures every action, Info included.
+changeStatsForNerds(true);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing browser fixture root");

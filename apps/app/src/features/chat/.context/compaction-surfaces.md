@@ -58,7 +58,9 @@ same `ForkTurnAction` and navigate-first fork as a reply; the fork starts from
 the compacted history) and, right of it, Info. Info is the reply's
 `TurnInfoButton` ("Compaction information"): the summary model (the summary
 block's `model`, else the turn's) and the context's tokens before and after,
-whichever were recorded, even when the context grew; no Info when neither was.
+whichever were recorded, even when the context grew; no Info when neither was,
+or while "Stats for nerds" is off (see
+[turn rhythm and actions](turn-rhythm-and-actions.md)).
 It has no Copy and no Hand off. The actions reveal on hover or focus like a
 reply's, stay shown while Info's popover is open, and stay visible on touch. The writer's
 `/compact <instructions>` show verbatim under the line (`metadata.instructions`,

@@ -11,6 +11,7 @@ import {
   openLlmCalls,
   useDebugEnabled,
 } from "@/features/debug/use-debug-enabled";
+import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
 import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "./TurnInfoButton";
@@ -64,6 +65,7 @@ export function AssistantTurnActions({
 }) {
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
+  const statsForNerds = useStatsForNerds();
   const [copied, setCopied] = useState(false);
   const stats = useMemo(() => turnStats(responseParts), [responseParts]);
   const threadHitPercent = threadUsage
@@ -188,7 +190,7 @@ export function AssistantTurnActions({
         </TooltipContent>
       </Tooltip>
       <DeriveTurnActions turnId={turn.id} />
-      {stats.callCount > 0 ? (
+      {statsForNerds && stats.callCount > 0 ? (
         <TurnInfoButton label={i18n._(t`Turn information`)} sections={sections} />
       ) : null}
       {DEBUG_FEATURE_ALLOWED && enabled ? (

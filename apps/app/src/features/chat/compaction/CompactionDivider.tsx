@@ -20,6 +20,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { CircleAlert, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
@@ -163,10 +164,11 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   );
 }
 
-/** The divider's stats, in the same popover a reply's Turn information opens. */
+/** With Stats for nerds on: the divider's stats, in the same popover a reply's Turn information opens. */
 function CompactionInfo({ view }: { view: DividerView }) {
+  const statsForNerds = useStatsForNerds();
   const { model, tokens } = view;
-  if (!model && !tokens) return null;
+  if (!statsForNerds || (!model && !tokens)) return null;
   return (
     <TurnInfoButton
       label={t`Compaction information`}

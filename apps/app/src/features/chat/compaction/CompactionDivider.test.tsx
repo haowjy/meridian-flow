@@ -17,6 +17,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { changeStatsForNerds } from "@/lib/stats-for-nerds";
 import { type TurnDerivation, TurnDerivationProvider } from "../derivation/DeriveTurnActions";
 import { CompactionDivider, type CompactionDividerProps } from "./CompactionDivider";
 import { QueuedControlRows } from "./QueuedControlRows";
@@ -46,6 +47,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = "";
+  changeStatsForNerds(false);
 });
 
 function divider(overrides: Record<string, unknown> = {}): Turn {
@@ -153,7 +155,7 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted", "Compaction information"]);
+    expect(names).toEqual(["Conversation compacted"]);
   });
 
   it("complete: the summary says nothing about token counts", async () => {
@@ -164,7 +166,13 @@ describe("CompactionDivider", () => {
     expect(panel?.textContent).not.toMatch(/token|14,617|8,080/);
   });
 
-  it("complete: its info button, right of Fork, shows the context sizes and model", async () => {
+  it("complete: with Stats for nerds off, there is no info button", async () => {
+    await render({ turn: divider() }, derivation());
+    expect(button("Compaction information")).toBeUndefined();
+  });
+
+  it("complete: with Stats for nerds on, its info button, right of Fork, shows the context sizes and model", async () => {
+    changeStatsForNerds(true);
     await render({ turn: divider() }, derivation());
     const actions = host.querySelector("[data-compaction-actions]");
     const names = [...(actions?.querySelectorAll("button") ?? [])].map(
@@ -180,6 +188,7 @@ describe("CompactionDivider", () => {
   });
 
   it("complete: no info button when the divider recorded no stats", async () => {
+    changeStatsForNerds(true);
     await render({
       turn: divider({
         blocks: [
@@ -201,7 +210,7 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted", "Fork from here", "Compaction information"]);
+    expect(names).toEqual(["Conversation compacted", "Fork from here"]);
     await act(async () => button("Fork from here")?.click());
     expect(actions.fork).toHaveBeenCalledWith("c");
   });
@@ -262,6 +271,7 @@ describe("CompactionDivider", () => {
   });
 
   it("keeps keyboard focus in the divider when its Stop leaves", async () => {
+    changeStatsForNerds(true);
     const onStop = vi.fn();
     await render({ turn: divider({ status: "pending" }), onStop });
     button("Stop compaction")?.focus();

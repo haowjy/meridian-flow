@@ -62,7 +62,11 @@ measured. Never derive speed from `latencyMs - timeToFirstTokenMs`; the server
 nulls `generationMs` when backpressure made the measurement unreliable.
 Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
 for zero input. No row ever reads "Unavailable". No Info button is rendered
-until a turn has model responses.
+until a turn has model responses. Info on every turn (replies and compaction
+dividers) shows only while the writer's "Stats for nerds" preference is on
+(Settings, Preferences, This device; off by default). It is device-local like
+theme and text size: `lib/stats-for-nerds.ts` in localStorage, read through
+`useStatsForNerds`. Debug is separate and keeps its own gate.
 Debug is gated by the shared debug store. Opening from a finished reply's action
 row scopes LLM Calls to every assistant part in that reply; the pill always
 opens unscoped, and the viewer's Show all control clears an active scope.
