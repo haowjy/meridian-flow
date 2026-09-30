@@ -40,11 +40,13 @@ autocompaction's failed reply comes after its divider, so it stays current.
 
 ## Divider states
 
-Pending (the lease phase, Stop through the existing cancel route on C),
+Pending ("Compacting", or "Stopping" once Stop is pressed; a waiting
+`/compact` is a queued row, never a divider; Stop through the existing cancel
+route on C),
 complete (summary disclosure; token counts only when the context shrank),
-failed, cancelled. A manual failure says why on the divider, with
-`turn.error` as copy except `context_too_large`, whose server copy blames the
-writer's message; the client owns that sentence. There is no "nothing to
+failed, cancelled. A manual failure speaks on the divider with the server's
+generic `turn.error`, or "This conversation couldn't be compacted." when it is
+null; the client owns no reason-specific copy (A10). There is no "nothing to
 compact" state: a manual `/compact` always compacts (A12). An autocompaction's
 failure stays quiet (R3): the failed reply under the newest message carries it.
 
@@ -98,15 +100,18 @@ commands render at the transcript tail, after every queued message whatever
 order they were sent in, oldest first; they take no transcript position until
 they run. Queued rows have no Stop.
 
+The local state is two small pieces: sends the inbox has not listed yet
+(dropped once it lists the id, since the server owns it then) and withdrawals.
 Withdraw removes the row at once (focus stays in the transcript when it was
-the last). The server answers `withdrawn`, or `already_started` once a divider
-carries the command's id: then the row says "This compaction already started."
-until the divider that names it arrives (or the leaf moves). A
-failed withdrawal brings the row back with "Couldn't withdraw. Try again."
-Withdrawing a command whose enqueue then failed finishes locally with no
-request, and a 404 on an id the inbox never listed counts as withdrawn: in
-both the server never took the command. A
-command a divider already names (`controlMessageId`) is no longer queued.
+the last) and, once any in-flight enqueue settles, always calls the server,
+even for a row whose enqueue looked failed: only the response may have been
+lost, and a command the client hid must not run unseen. The server answers
+`withdrawn`, `already_started` once a divider carries the command's id, or 404
+when it never had the command, which counts as withdrawn. On
+`already_started` the row still goes and the pending divider carries the
+state; the announcer says "This compaction already started." A failed
+withdrawal brings the row back with "Couldn't withdraw. Try again." A command
+a divider already names (`controlMessageId`) is no longer queued.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each

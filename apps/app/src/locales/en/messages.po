@@ -1938,8 +1938,8 @@ msgstr "epigraph"
 #~ msgstr "Errored."
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Even compacted, this conversation is too large for its model."
-msgstr "Even compacted, this conversation is too large for its model."
+#~ msgid "Even compacted, this conversation is too large for its model."
+#~ msgstr "Even compacted, this conversation is too large for its model."
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -4362,7 +4362,7 @@ msgstr "This column is already at the edge."
 msgid "This compaction already started."
 msgstr "This compaction already started."
 
-#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/compaction-model.ts
 msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
 
@@ -4789,8 +4789,8 @@ msgstr "Wait for this response to finish, then try again."
 #~ msgstr "Waiting on {0}"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Waiting to compact"
-msgstr "Waiting to compact"
+#~ msgid "Waiting to compact"
+#~ msgstr "Waiting to compact"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4966,7 +4966,6 @@ msgstr "you answered"
 #~ msgstr "You can retry when the reply finishes."
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/ErrorBlock.tsx
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
 

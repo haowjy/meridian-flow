@@ -5,8 +5,7 @@
  * the transcript tail, after every queued message, as a dashed rule: the
  * divider it will become, not yet drawn. The writer's instructions show under
  * it verbatim, at once. Withdraw is right after the
- * words and removes the row at once. A command that already started says so
- * here until its divider shows. There is no Stop on a queued row. The rows
+ * words and removes the row at once. There is no Stop on a queued row. The rows
  * carry no live region: `useThreadControls` announces each change through the
  * global polite announcer, which also reaches a row scrolled out of the
  * virtualized list.
@@ -65,7 +64,6 @@ function QueuedControlRow({
   const { status } = control;
   const failed = status === "failed";
   const canWithdraw = status === "queued" || status === "withdraw_failed";
-  const settled = status === "already_started";
   const instructions = control.control.instructions?.trim() ? control.control.instructions : null;
   return (
     <li
@@ -80,12 +78,7 @@ function QueuedControlRow({
           ) : (
             <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
           )}
-          <span
-            className={cn(
-              "text-caption",
-              failed ? "text-destructive" : settled ? "text-ink-subtle" : "text-ink-muted",
-            )}
-          >
+          <span className={cn("text-caption", failed ? "text-destructive" : "text-ink-muted")}>
             {controlStatusCopy(status)}
           </span>
         </span>
@@ -114,13 +107,7 @@ function QueuedControlRow({
         {status === "withdraw_failed" ? (
           <span className="text-caption text-destructive">{t`Couldn't withdraw. Try again.`}</span>
         ) : null}
-        <span
-          aria-hidden
-          className={cn(
-            "min-w-6 flex-1 border-t border-dashed",
-            settled ? "border-border-subtle" : "border-border",
-          )}
-        />
+        <span aria-hidden className="min-w-6 flex-1 border-t border-dashed border-border" />
       </div>
       {instructions ? <CompactionInstructions instructions={instructions} /> : null}
     </li>

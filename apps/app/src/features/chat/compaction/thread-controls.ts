@@ -2,12 +2,15 @@
  * Optimistic writer commands: the local half of `/compact`, merged with the
  * server's pending inbox.
  *
- * The writer sees a queued command the moment they ask for it. The server
- * inbox is the authority once it knows the id; until then the local entry
- * stands in, and a failed enqueue stays on the item with Retry (same id, so
- * the server treats a retry as a no-op). Withdraw removes the item at once;
- * a failed withdrawal brings it back. A command that already started says so
- * on its row until the transcript shows the turn it runs as.
+ * Two pieces of local state, each small:
+ * - `sends`: commands this tab asked for that the server inbox has not listed
+ *   yet. The writer sees one the moment they ask; a failed enqueue stays on
+ *   the item with Retry (same id, so the server treats a retry as a no-op).
+ *   Once the inbox lists the id the server owns it, and the send is dropped.
+ * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
+ *   always asks the server. A failed withdrawal brings the row back. A
+ *   command that already started leaves the queue too; its compaction divider
+ *   carries the state.
  *
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
@@ -16,23 +19,25 @@ import type {
   ControlBody,
   PendingInboxItem,
   ThreadPendingInbox,
-  WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 
-export type WithdrawOutcome = WithdrawThreadControlResponse["outcome"];
-
-export type LocalControl = {
+export type LocalSend = {
   id: string;
   control: ControlBody;
   request: "sending" | "sent" | "failed" | "finished";
-  /** The server inbox has listed this id at least once. */
-  seen: boolean;
-  withdrawal: null | "withdrawing" | "failed" | WithdrawOutcome;
-  /** Transcript leaf when the withdrawal settled; `already_started` shows until it moves. */
-  settledAtLeaf: string | null;
 };
 
-export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed" | "already_started";
+/** `settled`: the server answered, either withdrawn or already started. */
+export type Withdrawal = "withdrawing" | "failed" | "settled";
+
+export type LocalControls = {
+  sends: readonly LocalSend[];
+  withdrawals: ReadonlyMap<string, Withdrawal>;
+};
+
+export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
+
+export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed";
 
 export type QueuedControl = {
   id: string;
@@ -45,137 +50,92 @@ export type ControlAction =
   | { type: "retry"; id: string }
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
   | { type: "enqueue_failed"; id: string }
-  | { type: "withdraw"; id: string; control?: ControlBody }
-  | { type: "withdrawn"; id: string; outcome: WithdrawOutcome; leafTurnId: string | null }
+  | { type: "withdraw"; id: string }
+  | { type: "withdrawn"; id: string }
   | { type: "withdraw_failed"; id: string }
-  | { type: "observe"; pendingIds: ReadonlySet<string> };
+  /** The server inbox lists these ids: it owns them from now on. */
+  | { type: "listed"; pendingIds: ReadonlySet<string> };
 
-export function controlsReducer(
-  state: readonly LocalControl[],
-  action: ControlAction,
-): readonly LocalControl[] {
-  const patch = (id: string, change: Partial<LocalControl>) =>
-    state.map((entry) => (entry.id === id ? { ...entry, ...change } : entry));
+export function controlsReducer(state: LocalControls, action: ControlAction): LocalControls {
+  const patchSend = (id: string, request: LocalSend["request"]) => ({
+    ...state,
+    sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
+  });
+  const withdrawal = (id: string, next: Withdrawal) => ({
+    ...state,
+    withdrawals: new Map(state.withdrawals).set(id, next),
+  });
   switch (action.type) {
     case "enqueue":
-      if (state.some((entry) => entry.id === action.id)) return state;
-      return [
+      if (state.sends.some((entry) => entry.id === action.id)) return state;
+      return {
         ...state,
-        {
-          id: action.id,
-          control: action.control,
-          request: "sending",
-          seen: false,
-          withdrawal: null,
-          settledAtLeaf: null,
-        },
-      ];
+        sends: [...state.sends, { id: action.id, control: action.control, request: "sending" }],
+      };
     case "retry":
-      return patch(action.id, { request: "sending" });
+      return patchSend(action.id, "sending");
     case "enqueued":
       // No pending row: it already ran (turn id) or was withdrawn earlier.
-      return patch(action.id, { request: action.pending ? "sent" : "finished" });
+      return patchSend(action.id, action.pending ? "sent" : "finished");
     case "enqueue_failed":
-      return patch(action.id, { request: "failed" });
+      return patchSend(action.id, "failed");
     case "withdraw":
-      if (!state.some((entry) => entry.id === action.id)) {
-        if (!action.control) return state;
-        // A server-only row (queued before this mount) gets a local shadow.
-        return [
-          ...state,
-          {
-            id: action.id,
-            control: action.control,
-            request: "sent",
-            seen: true,
-            withdrawal: "withdrawing",
-            settledAtLeaf: null,
-          },
-        ];
-      }
-      return patch(action.id, { withdrawal: "withdrawing" });
+      return withdrawal(action.id, "withdrawing");
     case "withdrawn":
-      return patch(action.id, { withdrawal: action.outcome, settledAtLeaf: action.leafTurnId });
+      return withdrawal(action.id, "settled");
     case "withdraw_failed":
-      return patch(action.id, { withdrawal: "failed" });
-    case "observe": {
-      let changed = false;
-      const next = state.map((entry) => {
-        if (entry.seen || !action.pendingIds.has(entry.id)) return entry;
-        changed = true;
-        return { ...entry, seen: true };
-      });
-      return changed ? next : state;
+      return withdrawal(action.id, "failed");
+    case "listed": {
+      const sends = state.sends.filter((entry) => !action.pendingIds.has(entry.id));
+      return sends.length === state.sends.length ? state : { ...state, sends };
     }
   }
 }
 
 /**
  * The commands the writer should see: server rows first (in inbox order),
- * then local ones the server has not listed yet or has just settled.
+ * then local ones the server has not listed yet.
  */
 export function mergeQueuedControls(input: {
-  local: readonly LocalControl[];
+  local: LocalControls;
   pending: ThreadPendingInbox;
   /** Commands a compaction divider already names. */
   executedControlIds: ReadonlySet<string>;
-  leafTurnId: string | null;
 }): QueuedControl[] {
-  const { local, pending, executedControlIds, leafTurnId } = input;
-  const localById = new Map(local.map((entry) => [entry.id, entry]));
+  const { local, pending, executedControlIds } = input;
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
   for (const item of pending.items) {
     if (item.intent !== "control" || !item.control) continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
-    const status = listedStatus(localById.get(item.id)?.withdrawal ?? null);
-    if (status) result.push({ id: item.id, control: item.control, status });
+    const withdrawal = local.withdrawals.get(item.id);
+    if (!withdrawal) result.push({ id: item.id, control: item.control, status: "queued" });
+    else if (withdrawal === "failed") {
+      result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
+    }
   }
-  for (const entry of local) {
-    if (listed.has(entry.id)) continue;
-    const status = localStatus(entry, executedControlIds, leafTurnId);
-    if (status) result.push({ id: entry.id, control: entry.control, status });
+  for (const entry of local.sends) {
+    const withdrawal = local.withdrawals.get(entry.id);
+    if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
+    const status = requestStatus(entry, executedControlIds);
+    if (!status) continue;
+    result.push({
+      id: entry.id,
+      control: entry.control,
+      status: withdrawal && status === "queued" ? "withdraw_failed" : status,
+    });
   }
   return result;
 }
 
-function listedStatus(withdrawal: LocalControl["withdrawal"]): QueuedControlStatus | null {
-  switch (withdrawal) {
-    case null:
-      return "queued";
-    case "failed":
-      return "withdraw_failed";
-    case "already_started":
-      return "already_started";
-    case "withdrawing":
-    case "withdrawn":
-      return null;
-  }
-}
-
-function localStatus(
-  entry: LocalControl,
-  executed: ReadonlySet<string>,
-  leafTurnId: string | null,
-): QueuedControlStatus | null {
-  if (entry.withdrawal === "withdrawing" || entry.withdrawal === "withdrawn") return null;
-  if (entry.withdrawal === "already_started") {
-    // The divider it ran as tells the rest of the story.
-    if (executed.has(entry.id) || entry.settledAtLeaf !== leafTurnId) return null;
-    return "already_started";
-  }
-  const status = requestStatus(entry, executed);
-  return status === "queued" && entry.withdrawal === "failed" ? "withdraw_failed" : status;
-}
-
 function requestStatus(
-  entry: LocalControl,
+  entry: LocalSend,
   executed: ReadonlySet<string>,
 ): QueuedControlStatus | null {
   if (entry.request === "sending") return "queued";
   if (entry.request === "failed") return "failed";
-  if (entry.request === "finished" || entry.seen || executed.has(entry.id)) return null;
+  if (entry.request === "finished" || executed.has(entry.id)) return null;
   // Accepted, and the inbox echo has not arrived yet.
   return "queued";
 }

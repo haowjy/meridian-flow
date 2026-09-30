@@ -2,7 +2,6 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import type { ThreadPhase } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
@@ -57,10 +56,8 @@ export type TurnListProps = {
   brief?: HandoffBrief | null;
   /** Retry on the latest failed reply, and the new replies it stands in for. */
   replyRetry?: ReplyRetry | null;
-  /** Something holds this chat (a reply, a compaction, a brief): Retry waits. */
+  /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
   busy?: boolean;
-  /** The live lease phase while the thread is awake. */
-  phase?: ThreadPhase | null;
   /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
   inherited?: InheritedView | null;
   /** The fork's inherited read failed: its history is missing, so say so where it would start. */
@@ -110,7 +107,6 @@ export function TurnList({
   brief = null,
   replyRetry = null,
   busy = false,
-  phase = null,
   inherited = null,
   onRetryInherited = null,
   threadUsage = null,
@@ -224,7 +220,6 @@ export function TurnList({
         return (
           <CompactionDivider
             turn={turn}
-            phase={local ? phase : null}
             stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
             onStop={local ? controls?.stop : undefined}
           />
@@ -284,7 +279,6 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              waiting: busy,
               refused: replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }
@@ -315,7 +309,6 @@ export function TurnList({
       enterFollow,
       replyRetry,
       controls,
-      phase,
       failedSendRetry,
       lastAssistantIdx,
       navigateToChange,

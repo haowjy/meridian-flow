@@ -5,6 +5,7 @@
  * was summarized. Metadata is read defensively: the server's codecs own the
  * shape, the client only picks the fields the writer sees.
  */
+import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 
 export type CompactionTrigger = "auto" | "manual";
@@ -13,8 +14,6 @@ export type CompactionFacts = {
   trigger: CompactionTrigger;
   /** The writer command this divider ran (`controlMessageId`); null for an automatic one. */
   controlId: string | null;
-  /** Typed failure reason on an errored divider; null otherwise. */
-  failureReason: string | null;
   /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
   instructions: string | null;
   summary: string | null;
@@ -59,7 +58,6 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   return {
     trigger,
     controlId: controlMessageId,
-    failureReason: turn.status === "error" ? text(metadata?.reason) : null,
     instructions: instructionsText(metadata?.instructions),
     summary: text(props?.summary),
     tokensBefore: count(props?.tokensBefore),
@@ -104,16 +102,13 @@ export type DividerView = {
   failureCopy: string | null;
 };
 
-/**
- * One divider's view state. `failureCopyFor` supplies client-owned copy for
- * reasons whose server copy would mislead (`compactionFailureCopy` in
- * `CompactionDivider.tsx`).
- */
-export function dividerView(input: {
-  turn: Turn;
-  failureCopyFor: (reason: string | null, serverCopy: string | null) => string | null;
-}): DividerView {
-  const { turn } = input;
+/** A failed compaction in the writer's words: the server's generic copy owns it. */
+export function compactionFailureCopy(turn: Turn): string {
+  return turn.error ?? t`This conversation couldn't be compacted.`;
+}
+
+/** One divider's view state. */
+export function dividerView(turn: Turn): DividerView {
   const facts = readCompactionFacts(turn);
   const state: DividerState =
     turn.status === "pending" || turn.status === "streaming"
@@ -132,9 +127,7 @@ export function dividerView(input: {
   // R3: an autocompaction's failure is carried by the failed reply under the
   // writer's newest message. A manual one has no reply to carry it.
   const failureCopy =
-    state === "failed" && facts.trigger === "manual"
-      ? input.failureCopyFor(facts.failureReason, turn.error)
-      : null;
+    state === "failed" && facts.trigger === "manual" ? compactionFailureCopy(turn) : null;
   return {
     state,
     trigger: facts.trigger,

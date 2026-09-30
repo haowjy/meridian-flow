@@ -16,7 +16,6 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import type { ThreadPhase } from "@meridian/contracts/threads";
 import { ChevronRight, CircleAlert, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -29,25 +28,9 @@ import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type CompactionDividerProps = {
   turn: Turn;
-  /** The thread's live lease phase, when it is awake. */
-  phase: ThreadPhase | null;
   stopping: boolean;
   onStop?: (turnId: string) => void;
 };
-
-/**
- * Client-owned copy where the server's would mislead: `context_too_large` on a
- * compaction means the conversation's retained part does not fit, not that the
- * writer's message is too long.
- */
-export function compactionFailureCopy(
-  reason: string | null,
-  serverCopy: string | null,
-): string | null {
-  if (reason === "context_too_large")
-    return t`Even compacted, this conversation is too large for its model.`;
-  return serverCopy ?? t`This conversation couldn't be compacted.`;
-}
 
 type StateLabel = {
   /** The divider's state in words; also the section's accessible name. */
@@ -56,14 +39,13 @@ type StateLabel = {
   short: string;
 };
 
-function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: boolean): StateLabel {
+function stateLabel(view: DividerView, stopping: boolean): StateLabel {
   const same = (label: string) => ({ full: label, short: label });
   switch (view.state) {
     case "pending":
+      // A waiting `/compact` is a queued row, so a pending divider is compacting.
       if (stopping) return { full: t`Stopping compaction`, short: t`Stopping` };
-      return phase === "compacting" || phase === null
-        ? { full: t`Compacting conversation`, short: t`Compacting` }
-        : same(t`Waiting to compact`);
+      return { full: t`Compacting conversation`, short: t`Compacting` };
     case "complete":
       // Narrow, the trigger yields to the controls; the section's name keeps it.
       return view.trigger === "manual"
@@ -78,13 +60,13 @@ function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: bool
   }
 }
 
-export function CompactionDivider({ turn, phase, stopping, onStop }: CompactionDividerProps) {
-  const view = dividerView({ turn, failureCopyFor: compactionFailureCopy });
+export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerProps) {
+  const view = dividerView(turn);
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
-  const label = stateLabel(view, phase, stopping);
+  const label = stateLabel(view, stopping);
   const loud = view.state === "failed" && view.failureCopy !== null;
 
   return (

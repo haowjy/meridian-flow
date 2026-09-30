@@ -10,7 +10,6 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 const announcer = vi.hoisted(() => ({ announce: vi.fn() }));
 vi.mock("@/client/stores", () => announcer);
-vi.mock("./CompactionDivider", () => ({ compactionFailureCopy: () => "failed" }));
 
 import { useControlTurnAnnouncements } from "./useControlTurnAnnouncements";
 

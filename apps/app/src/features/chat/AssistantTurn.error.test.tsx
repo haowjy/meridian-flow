@@ -74,7 +74,7 @@ describe("AssistantTurn failure", () => {
   });
 
   it("offers Retry on a failed reply only while it ends the transcript", () => {
-    const retry = { onRetry: () => undefined, waiting: false, refused: false, requestLost: false };
+    const retry = { onRetry: () => undefined, refused: false, requestLost: false };
     const current = renderToStaticMarkup(
       <AssistantTurn turn={failedTurn} endsTranscript replyRetry={retry} />,
     );
@@ -99,7 +99,6 @@ describe("AssistantTurn failure", () => {
         endsTranscript
         replyRetry={{
           onRetry: () => undefined,
-          waiting: false,
           refused: false,
           requestLost: false,
         }}
@@ -116,7 +115,7 @@ describe("AssistantTurn failure", () => {
         turn={failedTurn}
         endsTranscript
         standIn
-        replyRetry={{ onRetry: () => undefined, waiting: false, refused: false, requestLost: true }}
+        replyRetry={{ onRetry: () => undefined, refused: false, requestLost: true }}
       />,
     );
     expect(html).toContain("Couldn&#x27;t start the retry. Try again.");

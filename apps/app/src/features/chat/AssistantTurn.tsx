@@ -85,8 +85,6 @@ export type AssistantTurnProps = {
 export type ReplyRetryView = {
   /** Present only while this failed reply is the latest turn. */
   onRetry?: () => void;
-  /** Something holds the chat: Retry waits. */
-  waiting: boolean;
   /** The server refused this reply's last Retry. */
   refused: boolean;
   /** This is a Retry's stand-in whose request never answered. */
@@ -201,7 +199,6 @@ function AssistantTurnComponent({
             isLatest={endsTranscript}
             kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
             onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
-            retryWaiting={!failedSendRetry && (replyRetry?.waiting ?? false)}
             retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}

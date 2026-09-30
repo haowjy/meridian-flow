@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once. */
+/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once on both sides. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -37,12 +37,11 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { pending?: ThreadPendingInbox; leaf?: string }) {
+function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
     answeredControlIds: NONE,
-    leafTurnId: props.leaf ?? "leaf-1",
   });
   return null;
 }
@@ -138,59 +137,60 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([]);
   });
 
-  it("withdraws locally when the in-flight enqueue fails: no request, no failure", async () => {
+  it("withdraws on the server when the enqueue response was lost but the server has the row", async () => {
+    // The request reached the server; only its response was lost.
+    api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn" });
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
+    const serverRow: ThreadPendingInbox = {
+      items: [
+        {
+          id,
+          seq: 1,
+          intent: "control",
+          control: { kind: "compact" },
+          provenance: { kind: "writer", actorId: "w" },
+          deliveryState: "awaiting_run",
+          summary: "Compact conversation",
+          enqueuedAt: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+    };
+    const [failed] = latest.queued;
+    if (!failed) throw new Error("expected a failed control");
+    await act(async () => latest.withdraw(failed));
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
+    expect(latest.queued).toEqual([]);
+    // A lagging inbox frame still lists it, then the server drops it.
+    await act(async () => root.render(<Probe pending={serverRow} />));
+    expect(latest.queued).toEqual([]);
+    await act(async () => root.render(<Probe />));
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announceError).not.toHaveBeenCalledWith("Couldn't withdraw. Try again.");
+  });
+
+  it("withdraws on the server once a failed in-flight enqueue settles, and 404 is withdrawn", async () => {
     const enqueued = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValue(enqueued.promise);
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    let id = "";
     await act(async () => {
-      latest.enqueue({ kind: "compact" });
+      id = latest.enqueue({ kind: "compact" });
     });
     const [queued] = latest.queued;
     if (!queued) throw new Error("expected a queued control");
     await act(async () => latest.withdraw(queued));
-    await act(async () => enqueued.reject(new TypeError("Failed to fetch")));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
-    expect(latest.queued).toEqual([]);
-    expect(announcements.announceError).not.toHaveBeenCalled();
-  });
-
-  it("counts a 404 on an id the inbox never listed as withdrawn", async () => {
-    api.enqueueThreadControl.mockImplementation(
-      async (_thread: string, { id }: { id: string }) => ({
-        id,
-        pending: null,
-        turnId: null,
-      }),
-    );
-    api.withdrawThreadControl.mockRejectedValue(
-      new HttpResponseError("control_not_found", 404, null),
-    );
-    await act(async () => {
-      latest.enqueue({ kind: "compact" });
-    });
-    const queued = {
-      id: "",
-      control: { kind: "compact" },
-      status: "queued",
-    } as const;
-    const id = api.enqueueThreadControl.mock.calls[0]?.[1].id as string;
-    await act(async () => latest.withdraw({ ...queued, id }));
+    await act(async () => enqueued.reject(new TypeError("Failed to fetch")));
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);
     expect(announcements.announceError).not.toHaveBeenCalled();
-  });
-
-  it("still fails a 404 on a command the inbox listed", async () => {
-    api.withdrawThreadControl.mockRejectedValue(
-      new HttpResponseError("control_not_found", 404, null),
-    );
-    await act(async () =>
-      latest.withdraw({
-        id: "k",
-        control: { kind: "compact" },
-        status: "queued",
-      }),
-    );
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
   it("brings the row back when the withdrawal fails", async () => {
@@ -286,7 +286,7 @@ describe("useThreadControls", () => {
     expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the compaction.");
   });
 
-  it("says a command already started when Withdraw comes too late", async () => {
+  it("drops the row and says so when Withdraw comes after the compaction started", async () => {
     api.withdrawThreadControl.mockResolvedValue({ outcome: "already_started" });
     await act(async () =>
       latest.withdraw({
@@ -296,8 +296,6 @@ describe("useThreadControls", () => {
       }),
     );
     expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
-    expect(latest.queued).toEqual([
-      { id: "k", control: { kind: "compact" }, status: "already_started" },
-    ]);
+    expect(latest.queued).toEqual([]);
   });
 });

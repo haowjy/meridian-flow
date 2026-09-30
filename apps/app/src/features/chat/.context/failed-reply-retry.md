@@ -8,15 +8,15 @@ reply itself.
 
 | Failed reply | Row |
 |---|---|
-| Latest turn, chat idle | Tinted block: "This response failed." with **Retry** beside it |
-| Latest turn, chat busy | Retry stays in place, `aria-disabled`, described by "You can retry when this chat is free." |
+| Latest turn | Tinted block: "This response failed." with **Retry** beside it |
 | Not the latest turn | The quiet line "This response failed.", with no action |
 | Its Retry was refused | Adds the muted note "Couldn't retry.", current or in history |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
-divider counts as a row. Busy is the same signal the brief card's Retry uses:
-the live status is awake, or the composer has a run. The server's 409 covers
-the race. A failed first send (`failedSendRetry`) keeps its own "Couldn't
+divider counts as a row. The client does not gate Retry on the chat being
+busy: a failed reply is followed at once by whatever runs next, which takes
+its Retry away, and the server refuses a Retry that races a run (409), which
+shows the refused note below. A failed first send (`failedSendRetry`) keeps its own "Couldn't
 send." Retry, and an inherited failed reply stays read-only.
 
 Every failed reply reads the same, whatever ended it: a reply cut off by a
