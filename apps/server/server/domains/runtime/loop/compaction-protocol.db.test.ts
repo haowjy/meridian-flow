@@ -1561,7 +1561,7 @@ else
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
-    it("replays a compaction-first Retry id and drops its promise when Stop ends the run", async () => {
+    it("refuses a same-id Retry while its compaction-first run is busy", async () => {
       let secondStarted!: () => void;
       const compactionStarted = new Promise<void>((resolve) => {
         secondStarted = resolve;
@@ -1594,11 +1594,13 @@ else
         replyTurnId: replyTurnId as never,
       });
       await compactionStarted;
-      const replay = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failedReply.id as never,
-        replyTurnId: replyTurnId as never,
-      });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failedReply.id as never,
+          replyTurnId: replyTurnId as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       const compactionId = rig.orchestrator.getRunningTurnId(rig.threadId);
       if (!compactionId) throw new Error("Retry compaction was not running");
       expect(await rig.orchestrator.cancel(rig.threadId, compactionId)).toBe("cancelled");
@@ -1606,10 +1608,6 @@ else
 
       expect(retry).toMatchObject({
         created: true,
-        turn: { id: replyTurnId, prevTurnId: compactionId },
-      });
-      expect(replay).toMatchObject({
-        created: false,
         turn: { id: replyTurnId, prevTurnId: compactionId },
       });
       expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();

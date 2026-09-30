@@ -25,7 +25,6 @@ type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
   startedAt: Date;
-  promisedSuccessor?: { turnId: TurnId; failedTurnId: TurnId };
   child?: RunTurnInput["child"];
   completion: Promise<void>;
 };
@@ -264,29 +263,6 @@ export function createRunSessions(deps: {
         return { created: false as const, turn: existing };
       }
 
-      const active = running.get(input.threadId);
-      if (active?.promisedSuccessor?.turnId === input.replyTurnId) {
-        const [failedTurn, currentTurn] = await Promise.all([
-          deps.repos.turns.findById(active.promisedSuccessor.failedTurnId),
-          active.currentTurn ? deps.repos.turns.findById(active.currentTurn.id) : null,
-        ]);
-        if (!failedTurn) throw new ReplyRetryUnavailableError(input.threadId);
-        return {
-          created: false as const,
-          turn: createLocalTurn({
-            id: input.replyTurnId,
-            threadId: input.threadId,
-            prevTurnId: currentTurn?.role === "compaction" ? currentTurn.id : failedTurn.id,
-            position:
-              (currentTurn?.role === "compaction" ? currentTurn.position : failedTurn.position) + 1,
-            role: "assistant",
-            origin: "assistant",
-            status: "pending",
-            writeMode: failedTurn.writeMode ?? undefined,
-          }),
-        };
-      }
-
       const [failedTurn, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
         deps.repos.turns.getLatestByThread(input.threadId),
@@ -311,12 +287,6 @@ export function createRunSessions(deps: {
           replyTurnId: input.replyTurnId,
           expectedLeafTurnId: input.failedTurnId,
         });
-        const session = running.get(input.threadId);
-        if (session)
-          session.promisedSuccessor = {
-            turnId: input.replyTurnId,
-            failedTurnId: input.failedTurnId,
-          };
         const persisted = await deps.repos.turns.findById(input.replyTurnId);
         const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
         const turn =
