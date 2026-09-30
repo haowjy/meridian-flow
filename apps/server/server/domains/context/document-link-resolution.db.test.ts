@@ -73,6 +73,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const [scheme, workId, qualifier] of [
         ["manuscript", null, ""],
         ["kb", null, ""],
+        ["unfiled", null, ""],
         ["user", null, ""],
         ["scratch", b, "@work-b/"],
         ["uploads", b, "@work-b/"],
