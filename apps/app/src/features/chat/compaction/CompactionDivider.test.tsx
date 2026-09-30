@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    String.raw({ raw: strings }, ...values),
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -134,7 +135,7 @@ describe("CompactionDivider", () => {
 
   it("complete: the state label is the toggle for the summary, wired to its panel", async () => {
     await render({ turn: divider({ metadata: { trigger: "auto" } }) });
-    const toggle = button("Conversation compacted automatically");
+    const toggle = button("Conversation compacted automatically, summary");
     const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(toggle?.getAttribute("aria-controls")).toBe(panel?.id);
@@ -155,12 +156,12 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted"]);
+    expect(names).toEqual(["Conversation compacted, summary"]);
   });
 
   it("complete: the summary says nothing about token counts", async () => {
     await render({ turn: divider() });
-    await act(async () => button("Conversation compacted")?.click());
+    await act(async () => button("Conversation compacted, summary")?.click());
     const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
     expect(panel?.textContent).toBe("The keeper counts ships.");
     expect(panel?.textContent).not.toMatch(/token|14,617|8,080/);
@@ -210,7 +211,7 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted", "Fork from here"]);
+    expect(names).toEqual(["Conversation compacted, summary", "Fork from here"]);
     await act(async () => button("Fork from here")?.click());
     expect(actions.fork).toHaveBeenCalledWith("c");
   });
@@ -260,10 +261,24 @@ describe("CompactionDivider", () => {
     expect(host.querySelector("[data-compaction-instructions]")).toBeNull();
   });
 
-  it("names the section in full and keeps a short label for a narrow column", async () => {
+  it("names the summary toggle for its words and what it reveals, once", async () => {
     await render({ turn: divider({ metadata: { trigger: "auto" } }) });
     const section = host.querySelector("[data-compaction-divider]");
-    expect(section?.getAttribute("aria-label")).toBe("Conversation compacted automatically");
+    // The toggle's name starts with its visible words (label in name) and says
+    // it opens the summary; the section is not named too, so it is read once.
+    expect(button("Conversation compacted automatically, summary")).toBeDefined();
+    expect(section?.hasAttribute("aria-label")).toBe(false);
+  });
+
+  it("names a divider without a summary by its state", async () => {
+    await render({ turn: divider({ status: "pending", blocks: [] }), onStop: vi.fn() });
+    const section = host.querySelector("[data-compaction-divider]");
+    expect(section?.getAttribute("aria-label")).toBe("Compacting conversation");
+  });
+
+  it("keeps a short label for a narrow column", async () => {
+    await render({ turn: divider({ metadata: { trigger: "auto" } }) });
+    const section = host.querySelector("[data-compaction-divider]");
     const labels = [...(section?.querySelectorAll("[data-compaction-label] > span") ?? [])].map(
       (node) => node.textContent,
     );
@@ -278,7 +293,7 @@ describe("CompactionDivider", () => {
     expect(document.activeElement).toBe(button("Stop compaction"));
     await render({ turn: divider(), onStop });
     // Focus lands on the state words that replaced Stop, not a trailing action.
-    expect(document.activeElement).toBe(button("Conversation compacted"));
+    expect(document.activeElement).toBe(button("Conversation compacted, summary"));
   });
 
   it("failed manual: says why on the divider", async () => {

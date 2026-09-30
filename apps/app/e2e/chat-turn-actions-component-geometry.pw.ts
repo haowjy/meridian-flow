@@ -168,6 +168,20 @@ test("a divider speaks at one text size, on one line, at every width", async ({
   }
 });
 
+test("a divider's summary toggle is named once, for its words and what it opens", async ({
+  page,
+}) => {
+  await mount(page);
+  const toggle = page
+    .locator("#divider-auto")
+    .getByRole("button", { name: "Conversation compacted automatically, summary", exact: true });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  // The section around it is not a second landmark with the same words.
+  await expect(page.getByRole("region", { name: /compacted/ })).toHaveCount(0);
+  // A divider with no summary is still named by its state.
+  await expect(page.getByRole("region", { name: "Compacting conversation" })).toHaveCount(1);
+});
+
 test("a finished divider's info sits right of Fork and opens the reply's stats popover", async ({
   page,
 }) => {

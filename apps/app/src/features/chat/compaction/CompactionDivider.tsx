@@ -36,7 +36,7 @@ export type CompactionDividerProps = {
 };
 
 type StateLabel = {
-  /** The divider's state in words; also the section's accessible name. */
+  /** The divider's state in words; also the divider's accessible name. */
   full: string;
   /** What a narrow chat column shows, so the divider stays on one line. */
   short: string;
@@ -71,6 +71,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, stopping);
   const loud = view.state === "failed" && view.failureCopy !== null;
+  const { full } = label;
 
   return (
     <section
@@ -80,7 +81,9 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
       data-compaction-divider
       data-compaction-state={view.state}
       data-compaction-trigger={view.trigger}
-      aria-label={label.full}
+      // With a summary, the toggle carries the state words (and what it
+      // reveals); naming the section too would read them twice.
+      aria-label={view.summary ? undefined : full}
       className="@container/divider flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       {/* One line at every width: a narrow column shows the short label, and
@@ -94,7 +97,8 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
             aria-controls={panelId}
-            aria-label={label.full}
+            // The visible words, then what the button reveals.
+            aria-label={t`${full}, summary`}
             // Stop's replacement: focus lands here when a finished run removes it.
             data-focus-landing
             // Negative margin: the hover wash grows outward, so the icon keeps
