@@ -143,9 +143,9 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes
-after the remaining chain runs. Cull the fixture once the migration is
-superseded and frozen: pre-launch schema freedom means old migration history is
-not a live contract.
+after the remaining chain runs. The upgrade fixture may be culled once its
+migration is superseded. The migration file itself stays frozen once merged,
+as required by [`../AGENTS.md`](../AGENTS.md).
 
 The journal starts at `0000_baseline`; future schema changes append migrations.
 Existing databases that ran the pre-relaunch chain must be reset with
