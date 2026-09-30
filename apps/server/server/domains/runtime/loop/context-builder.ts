@@ -1,6 +1,7 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -13,7 +14,6 @@ import { assistant, system, text, toolResult } from "../gateway/helpers/messages
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
-import { modelReferenceOccurrenceContent } from "./reference-context.js";
 
 export interface BuildContextInput {
   thread: Thread;
@@ -281,7 +281,7 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
         if (modelText) parts.push(text(`\n\n${modelText}`));
       }
     }
-    const reference = modelReferenceOccurrenceContent(block);
+    const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;
     const key = `${reference.documentId}\0${reference.uri}`;
     if (included.has(key)) continue;

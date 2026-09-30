@@ -220,10 +220,32 @@ describe("document text elisions", () => {
       documentId: "00000000-0000-4000-8000-000000000001",
       uri: evidence.uri,
       text: "Chapter",
+      read: {
+        revision: "y1:old",
+      },
     });
     expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
-    expect(JSON.stringify(elisions)).not.toContain("y1:");
-    expect(JSON.stringify(elisions)).not.toContain('"revision"');
+    const recorded = collectRecordedDocuments(
+      [
+        {
+          turn: { id: "turn" } as Turn,
+          blocks: [
+            {
+              ...blocks[0],
+              content: elisions[0]?.content ?? null,
+            },
+          ],
+        },
+      ],
+      policies,
+    );
+    expect(recorded.get("ref1")).toEqual([
+      {
+        documentId: reference.documentId,
+        uri: reference.uri,
+        revision: "y1:old",
+      },
+    ]);
   });
 });
 

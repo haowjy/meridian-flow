@@ -7,7 +7,7 @@ import {
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
-import { componentModelText } from "../loop/component-model-text.js";
+import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
 
@@ -159,12 +159,15 @@ export function renderHistoryItem(input: {
             : systemLabel;
     const modelText =
       block.blockType === "custom"
-        ? componentModelText(block.content as ComponentBlockContent)
+        ? componentHistoryText(block.content as ComponentBlockContent)
         : null;
     const reference = referenceOccurrenceContent(block);
     if (modelText) body = modelText;
     else if (reference) {
-      body = `${reference.text}${reference.read ? `\n${stringify((elideReferenceRead(reference, "history") as JsonObject).read)}` : ""}`;
+      const elidedRead = reference.read
+        ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
+        : null;
+      body = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
     } else if (block.blockType === "image")
       body = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
     else body = block.textContent ?? stringify(block.content);

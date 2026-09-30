@@ -371,7 +371,10 @@ it("keeps document revision metadata out of model request bytes", () => {
         frozenSystemPrompt: "Frozen system.",
       }).messages,
     );
-  expect(bytes("y1:read-revision")).toBe(bytes());
+  const withEvidence = bytes("y1:read-revision");
+  expect(withEvidence).toBe(bytes());
+  expect(withEvidence).not.toContain("y1:");
+  expect(withEvidence).not.toContain('"revision"');
   expect(bytes("y1:another-revision")).toBe(bytes());
   expect(bytes()).toContain("Current chapter.");
 });

@@ -523,6 +523,44 @@ export function defineThreadHistoryContract(
         "system: helper-result",
       );
     });
+    it("labels component cards without serializing their internal props", async () => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.block(t, "custom", {
+        kind: "helper-result",
+        props: {
+          agentSlug: "critic",
+          agentName: "Critic",
+          parentTurnId: "secret-parent-id",
+          toolCallId: "secret-call-id",
+          deliveryMode: "direct",
+          childThreadId: "secret-child-id",
+          execution: "secret-execution-id",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          terminalAt: "2026-01-01T00:01:00.000Z",
+          outcome: "succeeded",
+        },
+      });
+      await f.block(t, "custom", {
+        kind: "helper-result",
+        props: {
+          agentSlug: "scout",
+          agentName: "Scout",
+          parentTurnId: "secret-running-parent-id",
+          toolCallId: "secret-running-call-id",
+          deliveryMode: "background_notification",
+          childThreadId: "secret-running-child-id",
+          execution: null,
+          startedAt: "2026-01-01T00:02:00.000Z",
+          terminalAt: null,
+        },
+      });
+      const text = output(await f.read({ include: ["system_messages"] }));
+      expect(text).toContain('Subagent "Critic" finished (succeeded).');
+      expect(text).toContain('Subagent "Scout" is running.');
+      expect(text).not.toContain("secret-");
+      expect(text).not.toContain('"props"');
+    });
     it("returns structured cursor/item errors", async () => {
       const f = await fixture();
       expect(await f.read({ cursor: "bad" })).toMatchObject({
