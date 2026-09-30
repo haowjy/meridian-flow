@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   type ControlAction,
   controlsReducer,
-  type LocalControl,
+  type LocalControls,
   mergeQueuedControls,
+  NO_LOCAL_CONTROLS,
 } from "./thread-controls";
 
 const COMPACT = { kind: "compact" } as const;
 
-function run(actions: ControlAction[], start: readonly LocalControl[] = []) {
+function run(actions: ControlAction[], start: LocalControls = NO_LOCAL_CONTROLS) {
   return actions.reduce(controlsReducer, start);
 }
 
@@ -34,7 +35,7 @@ function inboxItem(
 const EMPTY: ThreadPendingInbox = { items: [] };
 
 function merge(
-  local: readonly LocalControl[],
+  local: LocalControls,
   pending: ThreadPendingInbox = EMPTY,
   options: { executed?: string[]; leaf?: string | null } = {},
 ) {
@@ -57,16 +58,17 @@ describe("optimistic enqueue", () => {
       { type: "enqueue", id: "k", control: COMPACT },
       { type: "enqueue", id: "k", control: COMPACT },
     ]);
-    expect(local).toHaveLength(1);
+    expect(local.sends).toHaveLength(1);
   });
 
-  it("keeps an accepted control queued until the inbox echo, then yields to the server row", () => {
+  it("keeps an accepted control queued until the inbox lists it, then drops it for the server row", () => {
     const accepted = run([
       { type: "enqueue", id: "k", control: COMPACT },
       { type: "enqueued", id: "k", pending: inboxItem("k"), turnId: null },
     ]);
     expect(merge(accepted)).toEqual([{ id: "k", status: "queued" }]);
-    const echoed = run([{ type: "observe", pendingIds: new Set(["k"]) }], accepted);
+    const echoed = run([{ type: "listed", pendingIds: new Set(["k"]) }], accepted);
+    expect(echoed.sends).toEqual([]);
     expect(merge(echoed, { items: [inboxItem("k")] })).toEqual([{ id: "k", status: "queued" }]);
     // Consumed by the run: gone from the inbox, and the local entry is done.
     expect(merge(echoed)).toEqual([]);
@@ -96,7 +98,7 @@ describe("optimistic enqueue", () => {
     expect(merge(failed)).toEqual([{ id: "k", status: "failed" }]);
     const retried = run([{ type: "retry", id: "k" }], failed);
     expect(merge(retried)).toEqual([{ id: "k", status: "queued" }]);
-    expect(retried[0]?.id).toBe("k");
+    expect(retried.sends[0]?.id).toBe("k");
   });
 });
 
@@ -104,7 +106,7 @@ describe("withdrawal", () => {
   const listed = run([
     { type: "enqueue", id: "k", control: COMPACT },
     { type: "enqueued", id: "k", pending: inboxItem("k"), turnId: null },
-    { type: "observe", pendingIds: new Set(["k"]) },
+    { type: "listed", pendingIds: new Set(["k"]) },
   ]);
 
   it("removes the row at once, before the server answers", () => {
@@ -116,7 +118,13 @@ describe("withdrawal", () => {
     const withdrawn = run(
       [
         { type: "withdraw", id: "k" },
-        { type: "withdrawn", id: "k", outcome: "withdrawn", leafTurnId: "leaf-1" },
+        {
+          type: "withdrawn",
+          id: "k",
+          control: COMPACT,
+          outcome: "withdrawn",
+          leafTurnId: "leaf-1",
+        },
       ],
       listed,
     );
@@ -128,7 +136,13 @@ describe("withdrawal", () => {
     const started = run(
       [
         { type: "withdraw", id: "k" },
-        { type: "withdrawn", id: "k", outcome: "already_started", leafTurnId: "leaf-1" },
+        {
+          type: "withdrawn",
+          id: "k",
+          control: COMPACT,
+          outcome: "already_started",
+          leafTurnId: "leaf-1",
+        },
       ],
       listed,
     );
@@ -137,8 +151,8 @@ describe("withdrawal", () => {
     expect(merge(started, EMPTY, { leaf: "leaf-2" })).toEqual([]);
   });
 
-  it("shadows a server-only row so its withdrawal still lands", () => {
-    const local = run([{ type: "withdraw", id: "server", control: COMPACT }]);
+  it("hides a server-only row while its withdrawal is out", () => {
+    const local = run([{ type: "withdraw", id: "server" }]);
     expect(merge(local, { items: [inboxItem("server")] })).toEqual([]);
     const failed = run([{ type: "withdraw_failed", id: "server" }], local);
     expect(merge(failed, { items: [inboxItem("server")] })).toEqual([
@@ -160,13 +174,34 @@ describe("withdrawal", () => {
     // It ran meanwhile: gone from the inbox, so nothing is left to withdraw.
     expect(merge(failed)).toEqual([]);
   });
+  it("hides a failed enqueue the writer withdrew, even when a later frame lists it", () => {
+    const withdrawn = run([
+      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue_failed", id: "k" },
+      { type: "withdraw", id: "k" },
+      { type: "withdrawn", id: "k", control: COMPACT, outcome: "withdrawn", leafTurnId: "leaf-1" },
+    ]);
+    expect(merge(withdrawn)).toEqual([]);
+    const listed = run([{ type: "listed", pendingIds: new Set(["k"]) }], withdrawn);
+    expect(merge(listed, { items: [inboxItem("k")] })).toEqual([]);
+  });
+
+  it("keeps a failed enqueue's row, retryable, after its withdrawal fails", () => {
+    const failed = run([
+      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue_failed", id: "k" },
+      { type: "withdraw", id: "k" },
+      { type: "withdraw_failed", id: "k" },
+    ]);
+    expect(merge(failed)).toEqual([{ id: "k", status: "failed" }]);
+  });
 });
 
 describe("server inbox rows", () => {
   it("lists control rows in inbox order and ignores writer messages", () => {
     const message: PendingInboxItem = { ...inboxItem("m"), intent: "message", control: undefined };
     expect(
-      merge([], {
+      merge(NO_LOCAL_CONTROLS, {
         items: [inboxItem("a"), message, inboxItem("b")],
       }),
     ).toEqual([
@@ -180,7 +215,7 @@ describe("queue order", () => {
   it("lists commands oldest first, skipping messages, with their instructions", () => {
     const message = { ...inboxItem("m1", undefined, 2), intent: "message" } as const;
     const queued = mergeQueuedControls({
-      local: [],
+      local: NO_LOCAL_CONTROLS,
       pending: {
         items: [
           inboxItem("c1", { kind: "compact", instructions: "Keep the names" }, 1),
