@@ -198,9 +198,10 @@ describe("branch-push durable projection", () => {
     });
 
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      "is archived; it is read-only until unarchived",
-    );
+    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toMatchObject({
+      name: "WorkLifecycleUnavailableError",
+      state: "archived",
+    });
     await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({
       status: "pushed",

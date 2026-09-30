@@ -254,7 +254,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
-        await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        await expect(draft).rejects.toMatchObject({
+          name: "WorkLifecycleUnavailableError",
+          state: "deleted",
+        });
         await expect(
           draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
         ).resolves.toBe(0);
