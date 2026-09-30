@@ -120,7 +120,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("refuses archived metadata updates until the Work is unarchived", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "Read only" });
-      const deps = { works, workContextNotices: { async projectChanged() {} } };
+      const deps = { works, workContextNotices: { async workChanged() {} } };
       await works.archive(work.id);
 
       await expect(
@@ -137,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const deps = {
         works,
         projects,
-        workContextNotices: { async projectChanged() {} },
+        workContextNotices: { async workChanged() {} },
       };
       const codeFrom = async (operation: Promise<unknown>) => {
         try {
@@ -229,7 +229,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await updateHasLock;
       const commandUpdate = updateWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} } },
+        { works, workContextNotices: { async workChanged() {} } },
         work.id,
         { name: "C" },
       );
@@ -257,10 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await works.softDelete(work.id);
       });
       await deleteHasLock;
-      const commandDelete = deleteWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} }, stopThreadRun: async () => {} },
-        work.id,
-      );
+      const commandDelete = deleteWorkTransition({ works, stopThreadRun: async () => {} }, work.id);
       await waitForLock("transactionid");
       releaseDelete();
       await concurrentDelete;
@@ -275,6 +272,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Work restore observer",
       });
       const work = await works.create({ projectId: PROJECT_ID, name: "Restorable" });
+      await threadRepos.threadWorks.addMembership(THREAD_ID, work.id, true);
       await works.softDelete(work.id);
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -291,9 +289,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               firstEnqueues += 1;
-              await createTestDrizzleDelivery(db).projectChanged(projectId);
+              await createTestDrizzleDelivery(db).workChanged(workId);
               entered();
               await gate;
             },
@@ -306,9 +304,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               secondEnqueues += 1;
-              await createTestDrizzleDelivery(db).projectChanged(projectId);
+              await createTestDrizzleDelivery(db).workChanged(workId);
             },
           },
         },
@@ -336,7 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Semantic state",
         goal: "Finish it",
       });
-      const deps = { works, workContextNotices: { async projectChanged() {} } };
+      const deps = { works, workContextNotices: { async workChanged() {} } };
       await control.unsafe(`
         CREATE SEQUENCE test_work_update_count;
         CREATE FUNCTION test_count_work_update() RETURNS trigger

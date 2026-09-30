@@ -29,7 +29,7 @@ type WorkReceiptReversalDeps = {
   turns: Pick<TurnRepository, "findById">;
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
-  workContextNotices: Pick<WorkContextNotices, "projectChanged">;
+  workContextNotices: Pick<WorkContextNotices, "workChanged">;
   stopThreadRun: (threadId: ThreadId) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
@@ -80,7 +80,6 @@ export async function reverseWorkReceipts(
     return await runWorkLifecycleCommand(
       { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
       async () => {
-        const changedProjects = new Set<string>();
         await lockReceiptState(deps, ordered);
         const plan = await planReceipts(deps, ordered, context.thread, input.direction);
         const applied: WorkReceiptReversal[] = [];
@@ -102,7 +101,6 @@ export async function reverseWorkReceipts(
           for (const threadId of appliedStep.threadIds) {
             deletedThreadIds.add(threadId);
           }
-          if (!appliedStep.contextNotified) changedProjects.add(context.thread.projectId);
           applied.push(
             result(
               step.receipt,
@@ -112,11 +110,6 @@ export async function reverseWorkReceipts(
             ),
           );
         }
-        await Promise.all(
-          [...changedProjects].map((projectId) =>
-            deps.workContextNotices.projectChanged(projectId),
-          ),
-        );
         return { value: applied, threadIdsToStop: [...deletedThreadIds] };
       },
     );
@@ -270,31 +263,32 @@ async function applyStep(
   deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
   receipt: WorkMutationReceipt,
   direction: Direction,
-): Promise<{ threadIds: ThreadId[]; contextNotified: boolean }> {
+): Promise<{ threadIds: ThreadId[] }> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
       return {
         threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
-        contextNotified: false,
       };
     } else {
       await deps.works.restore(receipt.workId);
+      await deps.workContextNotices.workChanged(receipt.workId);
     }
   } else if (receipt.operation === "update") {
     const state = direction === "undo" ? receipt.before : receipt.after;
     if (!state) throw new Error("Receipt state is incomplete");
     await applyState(deps, receipt.workId, state);
-    return { threadIds: [], contextNotified: true };
+    return { threadIds: [] };
   } else if (receipt.operation === "delete") {
-    if (direction === "undo") await deps.works.restore(receipt.workId);
-    else {
+    if (direction === "undo") {
+      await deps.works.restore(receipt.workId);
+      await deps.workContextNotices.workChanged(receipt.workId);
+    } else {
       return {
         threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
-        contextNotified: false,
       };
     }
   }
-  return { threadIds: [], contextNotified: false };
+  return { threadIds: [] };
 }
 
 async function applyState(

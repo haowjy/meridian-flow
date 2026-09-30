@@ -103,7 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const deletion = deleteWorkTransition(
           {
             works,
-            workContextNotices: { projectChanged: async () => {} },
             stopThreadRun: async () => {},
           },
           WORK_ID,
@@ -294,7 +293,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const deletion = deleteWorkTransition(
           {
             works,
-            workContextNotices: { projectChanged: async () => {} },
             stopThreadRun: async () => {},
           },
           TARGET_WORK_ID,

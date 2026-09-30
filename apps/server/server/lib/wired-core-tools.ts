@@ -96,7 +96,7 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
-  workContextNotices: Pick<WorkContextNotices, "projectChanged" | "threadChanged">;
+  workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   stopThreadRun(threadId: ThreadId): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
@@ -797,10 +797,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "create") {
           const work = await createWork(
-            {
-              works: deps.works,
-              workContextNotices: deps.workContextNotices,
-            },
+            { works: deps.works },
             {
               projectId: thread.projectId,
               createdByUserId: thread.userId,
@@ -945,7 +942,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const transition = await deleteWorkTransition(
             {
               works: deps.works,
-              workContextNotices: deps.workContextNotices,
               stopThreadRun: deps.stopThreadRun,
             },
             selected.id,

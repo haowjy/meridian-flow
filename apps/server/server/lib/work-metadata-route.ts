@@ -16,7 +16,7 @@ export async function updateWorkMetadataForWriter(
   deps: {
     works: WorkRepository;
     projects: ProjectRepository;
-    workContextNotices: Pick<WorkContextNotices, "projectChanged">;
+    workContextNotices: Pick<WorkContextNotices, "workChanged">;
   },
   input: { workId: WorkId; userId: UserId; name?: string; goal?: string },
 ): Promise<Work> {

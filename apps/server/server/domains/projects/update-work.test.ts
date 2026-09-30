@@ -48,7 +48,7 @@ describe("updateWork", () => {
     expect(normalizeWorkUpdateInput({ name })).toEqual({ name: normalized });
   });
 
-  it("emits one project refresh for a compound metadata and status command", async () => {
+  it("emits one Work refresh for a compound metadata and status command", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const changed: string[] = [];
@@ -57,8 +57,8 @@ describe("updateWork", () => {
       {
         works,
         workContextNotices: {
-          async projectChanged(projectId) {
-            changed.push(projectId);
+          async workChanged(workId) {
+            changed.push(workId);
           },
         },
       },
@@ -66,7 +66,7 @@ describe("updateWork", () => {
       { name: "Revised", goal: "Finish it", status: "Drafting" },
     );
 
-    expect(changed).toEqual([PROJECT_ID]);
+    expect(changed).toEqual([existing.id]);
   });
 
   it("refreshes Work context when the goal changes", async () => {
@@ -78,7 +78,7 @@ describe("updateWork", () => {
       {
         works,
         workContextNotices: {
-          async projectChanged() {
+          async workChanged() {
             refreshes += 1;
           },
         },
@@ -98,10 +98,10 @@ describe("updateWork", () => {
       goal: "Finish it",
     });
     const update = vi.spyOn(works, "update");
-    const projectChanged = vi.fn(async () => {});
+    const workChanged = vi.fn(async () => {});
 
     const transition = await updateWorkTransition(
-      { works, workContextNotices: { projectChanged } },
+      { works, workContextNotices: { workChanged } },
       existing.id,
       {
         name: " Draft ",
@@ -112,7 +112,7 @@ describe("updateWork", () => {
 
     expect(transition).toEqual({ before: existing, after: existing, changed: false });
     expect(update).not.toHaveBeenCalled();
-    expect(projectChanged).not.toHaveBeenCalled();
+    expect(workChanged).not.toHaveBeenCalled();
   });
 
   it("treats omitted optional fields as preserved and explicit nulls as clearing", async () => {
@@ -125,7 +125,7 @@ describe("updateWork", () => {
     const update = vi.spyOn(works, "update");
 
     const omitted = await updateWorkTransition(
-      { works, workContextNotices: { async projectChanged() {} } },
+      { works, workContextNotices: { async workChanged() {} } },
       existing.id,
       { name: "Draft" },
     );
@@ -133,7 +133,7 @@ describe("updateWork", () => {
     expect(update).not.toHaveBeenCalled();
 
     const cleared = await updateWorkTransition(
-      { works, workContextNotices: { async projectChanged() {} } },
+      { works, workContextNotices: { async workChanged() {} } },
       existing.id,
       { goal: null },
     );
@@ -149,7 +149,7 @@ describe("updateWork", () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const update = vi.spyOn(works, "update");
-    const deps = { works, workContextNotices: { async projectChanged() {} } };
+    const deps = { works, workContextNotices: { async workChanged() {} } };
 
     await expect(
       updateWorkTransition(deps, existing.id, {
@@ -171,7 +171,7 @@ describe("updateWork", () => {
   it("refuses archived metadata edits until an explicit unarchive", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
-    const deps = { works, workContextNotices: { async projectChanged() {} } };
+    const deps = { works, workContextNotices: { async workChanged() {} } };
     await setWorkArchived(deps, existing.id, true);
 
     await expect(
@@ -194,14 +194,10 @@ describe("updateWork", () => {
     };
 
     await expect(
-      updateWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} } },
-        existing.id,
-        {
-          name: "Revised",
-          status: "Drafting",
-        },
-      ),
+      updateWorkTransition({ works, workContextNotices: { async workChanged() {} } }, existing.id, {
+        name: "Revised",
+        status: "Drafting",
+      }),
     ).rejects.toThrow("update interrupted");
     await expect(works.findById(existing.id)).resolves.toMatchObject({
       name: "Draft",

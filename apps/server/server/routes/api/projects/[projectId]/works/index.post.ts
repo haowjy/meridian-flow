@@ -21,10 +21,7 @@ export default defineEventHandler(async (event) => {
   }
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const work = await createWork(
-    {
-      works: app.workRepo,
-      workContextNotices: app.workContextNotices,
-    },
+    { works: app.workRepo },
     {
       id: parseOptionalRequestId(body.id, "id"),
       projectId,

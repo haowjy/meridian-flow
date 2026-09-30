@@ -92,7 +92,6 @@ export {
 export {
   createWorkContextReader,
   renderWorkContext,
-  WORK_CONTEXT_ACTIVE_LIMIT,
   type WorkContextReader,
 } from "./loop/work-context.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";

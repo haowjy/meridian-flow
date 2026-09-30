@@ -122,7 +122,8 @@ else
       const [update] = await updates();
       if (!update) throw new Error("Missing update");
       const blocks = await repos.blocks.listByTurn(update.id);
-      expect(blocks[0]?.textContent).toContain("latest");
+      expect(blocks[0]?.textContent).toContain('current: rebound-target: "Rebound target"');
+      expect(blocks[0]?.textContent).not.toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);
       expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
@@ -130,6 +131,26 @@ else
       );
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
+    });
+
+    it("refreshes only threads whose primary Work changed", async () => {
+      const otherThreadId = "00000000-0000-4000-8000-000000000479" as typeof ids.threadId;
+      await db.insert(schema.threads).values({
+        id: otherThreadId,
+        projectId: ids.projectId,
+        createdByUserId: ids.userId,
+        title: "Other Work thread",
+        kind: "primary",
+        status: "idle",
+      });
+      await repos.threadWorks.addMembership(otherThreadId, ids.targetWorkId, true);
+
+      await updateWorkTransition({ works, workContextNotices: delivery() }, ids.workId, {
+        goal: "Only Race target changed",
+      });
+
+      await expect(delivery().selectPending(ids.threadId)).resolves.toHaveLength(1);
+      await expect(delivery().selectPending(otherThreadId)).resolves.toEqual([]);
     });
 
     it("publishes archive and unarchive context refreshes", async () => {
@@ -145,7 +166,14 @@ else
       await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
     });
 
-    it("does not count a deleted Work's system-update sweep as activity in another Work", async () => {
+    it("does not enqueue a refresh when deletion hides the Work's threads", async () => {
+      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.workId);
+
+      expect((await repos.threads.findById(ids.threadId))?.deletedAt).not.toBeNull();
+      await expect(delivery().selectPending(ids.threadId)).resolves.toEqual([]);
+    });
+
+    it("does not count deleting another Work as activity", async () => {
       const baseline = new Date("2025-01-01T00:00:00.000Z");
       await db
         .update(schema.works)
@@ -160,10 +188,7 @@ else
         .set({ updatedAt: baseline, lastActivityAt: baseline })
         .where(eq(schema.projects.id, ids.projectId));
 
-      await deleteWorkTransition(
-        { works, workContextNotices: delivery(), stopThreadRun: async () => {} },
-        ids.targetWorkId,
-      );
+      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.targetWorkId);
       await delivery().sweepWorkNotices();
 
       const [work] = await db
@@ -195,8 +220,8 @@ else
       });
       const systemUpdates = await updates();
 
-      expect(systemUpdates).toHaveLength(1);
-      expect(thread?.activeLeafTurnId).toBe(systemUpdates[0]?.id);
+      expect(systemUpdates).toHaveLength(0);
+      expect(thread?.activeLeafTurnId).toBeNull();
       expect(work?.updatedAt).toEqual(baseline);
       expect(thread?.updatedAt).toEqual(baseline);
       expect(feedItem?.lastActivityAt).toBe("2025-01-01T00:00:00.000000Z");
@@ -244,7 +269,7 @@ else
           .update(schema.threads)
           .set(hidden === "deleted" ? { deletedAt: new Date() } : { status: "archived" })
           .where(eq(schema.threads.id, ids.threadId));
-      await delivery().projectChanged(ids.projectId);
+      await delivery().workChanged(ids.workId);
       await delivery().sweepWorkNotices();
       expect(await updates()).toHaveLength(0);
       expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
@@ -477,10 +502,10 @@ else
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               held();
               await rendering;
-              await notices.projectChanged(projectId);
+              await notices.workChanged(workId);
             },
           },
         },

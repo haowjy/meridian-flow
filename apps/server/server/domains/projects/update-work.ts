@@ -56,7 +56,7 @@ export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateW
 export async function updateWorkTransition(
   deps: {
     works: WorkRepository;
-    workContextNotices: Pick<WorkContextNotices, "projectChanged">;
+    workContextNotices: Pick<WorkContextNotices, "workChanged">;
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
@@ -94,7 +94,7 @@ export async function updateWorkTransition(
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
-    if (result.contextChanged) await deps.workContextNotices.projectChanged(work.projectId);
+    if (result.contextChanged) await deps.workContextNotices.workChanged(work.id);
     return result;
   });
   return { before: result.before, after: result.after, changed: result.changed };
@@ -104,7 +104,7 @@ export async function updateWorkTransition(
 export async function setWorkArchived(
   deps: {
     works: WorkRepository;
-    workContextNotices: Pick<WorkContextNotices, "projectChanged">;
+    workContextNotices: Pick<WorkContextNotices, "workChanged">;
   },
   workId: WorkId,
   archived: boolean,
@@ -118,7 +118,7 @@ export async function setWorkArchived(
     }
     const after = archived ? await deps.works.archive(workId) : await deps.works.unarchive(workId);
     const result = { before, after, changed: before.archivedAt !== after.archivedAt };
-    if (result.changed) await deps.workContextNotices.projectChanged(after.projectId);
+    if (result.changed) await deps.workContextNotices.workChanged(after.id);
     return result;
   });
 }

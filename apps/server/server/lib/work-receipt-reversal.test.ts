@@ -30,7 +30,7 @@ function harness(receipts: WorkReceipt[]) {
             kind: "primary",
           }) as never,
       },
-      workContextNotices: { projectChanged: vi.fn(async () => {}) },
+      workContextNotices: { workChanged: vi.fn(async () => {}) },
       transaction: works.transaction,
       stopThreadRun: vi.fn(async () => {}),
       blocks: {
@@ -148,7 +148,7 @@ describe("Work receipt reversal", () => {
           transactionActive = false;
         }
       });
-    h.deps.workContextNotices.projectChanged.mockImplementation(async () => {
+    h.deps.workContextNotices.workChanged.mockImplementation(async () => {
       expect(transactionActive).toBe(true);
     });
 
@@ -216,7 +216,7 @@ describe("Work receipt reversal", () => {
       name: "Original",
       deletedAt: null,
     });
-    expect(h.deps.workContextNotices.projectChanged).toHaveBeenCalledOnce();
+    expect(h.deps.workContextNotices.workChanged).toHaveBeenCalledOnce();
   });
 
   it("deletes a created Work even while it remains the conversation binding", async () => {
@@ -247,7 +247,7 @@ describe("Work receipt reversal", () => {
     await expect(h.works.findById(created.id)).resolves.toMatchObject({
       deletedAt: expect.any(String),
     });
-    expect(h.deps.workContextNotices.projectChanged).toHaveBeenCalledOnce();
+    expect(h.deps.workContextNotices.workChanged).not.toHaveBeenCalled();
   });
 
   it("never exposes a switch-only turn through Undo or Redo", async () => {

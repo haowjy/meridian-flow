@@ -135,7 +135,6 @@ describe("cancel billing", () => {
     await deleteWorkTransition(
       {
         works,
-        workContextNotices: { async projectChanged() {} },
         async stopThreadRun(threadId) {
           const runningTurnId = await rig.runClaim.readRunningTurnId(threadId);
           if (runningTurnId) await rig.runner.cancel(threadId, runningTurnId);

@@ -16,7 +16,6 @@ export default defineEventHandler(async (event) => {
   await deleteWorkTransition(
     {
       works: app.workRepo,
-      workContextNotices: app.workContextNotices,
       stopThreadRun: app.stopThreadRun,
     },
     work.id,
