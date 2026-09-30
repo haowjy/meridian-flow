@@ -1,0 +1,61 @@
+/**
+ * Optimistic Work deletion with Undo, owned above the Work screen so the pane
+ * chrome (the band's `…` menu) and the collection share one delete state.
+ *
+ * Each delete is its own command record: its Undo window comes from that
+ * record, so several deletes each keep their own, and closing a window
+ * reaches every surface. A refused delete is the Work's command failure.
+ */
+import type { Work } from "@meridian/contracts/works";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
+import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
+import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-command-store";
+import {
+  type ProjectRouteCommands,
+  type RouteWorkResolution,
+  routeWorkId,
+} from "../routing/project-route";
+
+export type WorkDeletion = {
+  /** Open Undo windows, oldest delete first. */
+  windows: readonly WorkDeleteWindow[];
+  /** `detail` also leaves the Work page for the collection. */
+  remove: (work: Work, from: "detail" | "list") => void;
+  undo: (workId: string) => void;
+  dismiss: (workId: string) => void;
+};
+
+export function useWorkDeletion(
+  projectId: string,
+  routeWork: RouteWorkResolution,
+  routeCommands: ProjectRouteCommands,
+): WorkDeletion {
+  const client = useQueryClient();
+  const { delete: deleteCommand, restore } = useWorkMutations(projectId);
+  const windows = useWorkDeleteWindows(projectId);
+  const close = useCallback(
+    (workId: string) => closeWorkDeleteWindow(client, projectId, workId),
+    [client, projectId],
+  );
+
+  // Opening another Work or starting a new one ends the Undo windows.
+  const windowsRef = useRef(windows);
+  windowsRef.current = windows;
+  const openWorkId = routeWorkId(routeWork);
+  const ending = routeWork.status === "new" || routeWork.status === "present";
+  useEffect(() => {
+    if (!ending) return;
+    for (const open of windowsRef.current) if (open.workId !== openWorkId) close(open.workId);
+  }, [ending, openWorkId, close]);
+
+  const remove = useCallback(
+    (work: Work, from: "detail" | "list") => {
+      if (from === "detail") void routeCommands.closeWork({ replace: true });
+      void deleteCommand({ workId: work.id });
+    },
+    [deleteCommand, routeCommands],
+  );
+  const undo = useCallback((workId: string) => void restore({ workId }), [restore]);
+  return { windows, remove, undo, dismiss: close };
+}

@@ -1,30 +1,19 @@
 // @vitest-environment jsdom
 /** Real write-mode adapter integration for production page focus transitions. */
 import type { Work } from "@meridian/contracts/works";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
 import { useSelectedWorkWriteModeToolbarControl } from "./SelectedWorkWriteModeControl";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
-    (value === 1 ? one : other).replace("#", String(value)),
-}));
 let groups: unknown = null;
 let mutateAsync = vi.fn();
 const mutate = vi.fn();
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ groups, drafts: null, status: groups === null ? "loading" : "ready" }),
   activeWorkDraftGroups: () => groups ?? [],
-}));
-vi.mock("@/client/query/useWorks", () => ({
   useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
 }));
 vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({
@@ -37,7 +26,7 @@ const work = {
   id: "work",
   projectId: "project",
   name: "Book",
-  status: "active",
+  status: null,
   aiWriteMode: "draft",
 } as Work;
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -98,7 +87,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
           {
             draftId: "draft",
             documentId: "doc",
-            status: "active",
+            status: null,
             updatedAt: "2026-08-09T00:00:00.000Z",
           },
         ],

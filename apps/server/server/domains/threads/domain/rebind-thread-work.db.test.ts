@@ -24,7 +24,6 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const ids = THREAD_WORK_RACE;
@@ -41,7 +40,7 @@ else
       ).id;
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
     });
     afterAll(() => db.close());
@@ -62,7 +61,7 @@ else
       await rebind(ids.workId);
       await db
         .update(schema.works)
-        .set({ status: "archived", archivedAt: new Date() })
+        .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, ids.workId));
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
         after: { workId: ids.noWorkId, name: "No Work", slug: null },
@@ -200,12 +199,14 @@ else
 
       await rebind(ids.targetWorkId);
       for (const workId of [ids.workId, ids.targetWorkId]) {
-        const feed = await repos.workChatFeed.queryPage({
+        const feed = await repos.chatFeed.queryPage({
           projectId: ids.projectId,
           workId,
           userId: ids.userId,
           after: null,
           limit: 2,
+          favorite: false,
+          search: null,
         });
         expect(feed).toHaveLength(1);
         expect(feed[0]).toMatchObject({

@@ -166,8 +166,8 @@ export async function patchJson<T>(
   return deserializeTransport<T>(payload as T);
 }
 
-export async function deleteRequest(url: string): Promise<void> {
-  const response = await fetch(url, { method: "DELETE" });
+export async function deleteRequest(url: string, init?: { signal?: AbortSignal }): Promise<void> {
+  const response = await fetch(url, { method: "DELETE", signal: init?.signal });
   if (response.status === 204) return;
 
   const payload = await readResponsePayload(response);

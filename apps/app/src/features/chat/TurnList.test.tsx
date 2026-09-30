@@ -3,12 +3,6 @@
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => children,
-}));
 const rendered = vi.hoisted(() => ({
   // `failedSend` records whether the turn got `failedSendRetry`, which alone picks send copy and
   // Retry over generation copy (AssistantTurn.error.test.tsx covers the rendered copy).

@@ -2,6 +2,7 @@ import { chromium, type Page } from "@playwright/test";
 import { resolveAppUrl } from "./portless";
 
 const APP_URL = resolveAppUrl();
+const PROJECT_ID = process.env.PROJECT_ID;
 const THREAD_ID = process.env.THREAD_ID;
 
 type Check = { name: string; pass: boolean; detail: string };
@@ -12,8 +13,8 @@ async function login(page: Page): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (!THREAD_ID) {
-    throw new Error("THREAD_ID is required for ProcessDisclosure verification");
+  if (!PROJECT_ID || !THREAD_ID) {
+    throw new Error("PROJECT_ID and THREAD_ID are required for ProcessDisclosure verification");
   }
 
   const checks: Check[] = [];
@@ -23,7 +24,10 @@ async function main(): Promise<void> {
 
   try {
     await login(page);
-    await page.goto(`${APP_URL}/chat/${THREAD_ID}`, { waitUntil: "networkidle", timeout: 60_000 });
+    await page.goto(`${APP_URL}/p/${PROJECT_ID}/chats/${THREAD_ID}`, {
+      waitUntil: "networkidle",
+      timeout: 60_000,
+    });
 
     const thinkingButtons = page.getByRole("button", { name: /^Thinking$/i });
     const thinkingCount = await thinkingButtons.count();

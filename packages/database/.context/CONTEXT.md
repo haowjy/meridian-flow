@@ -10,7 +10,14 @@ transaction propagation live in `apps/server`.
 The M4 integration corrected `0009_repair_saved_subagent_contracts` in place to
 retain fork cutoffs and cross-thread parents. A scoped dev database that applied
 the original needs `pnpm db:reset` from its own checkout; migration replay cannot
-restore deleted cutoffs. Never hand-patch the journal or reset a shared database.
+restore deleted cutoffs. Never hand-patch an applied database’s migration ledger
+or reset a shared database.
+
+After the Work screen merge, main owns 0010–0013. M4’s migrations are
+`0014_threads_origin_turn_fk` through `0024_married_khan`; their SQL bodies
+are unchanged, with cumulative snapshots and increasing journal timestamps
+rebased after main. A worktree that applied M4’s old 0010–0020 chain also
+requires a scoped reset.
 
 ## Contracts
 
@@ -171,7 +178,12 @@ Legacy user imports belong in a separate ETL, not universal schema migrations.
 
 ### Merging parallel migration lanes
 
-When two branches each add a migration at the same ordinal, **regenerate the
+The M4 merge is a maintainer-directed exception: its handwritten multi-migration
+lane was renumbered byte-identically after verifying no overlapping constraint
+or enum rewrites, rebuilding cumulative snapshots, and advancing every journal
+timestamp. Previously applied M4 worktree databases require a scoped reset.
+
+For ordinary generated migrations, when two branches add at the same ordinal, **regenerate the
 incoming branch's migration from the merged schema; never renumber, rename, or
 hand-edit it.** Never touch a migration already present on the target branch
 (or on `main`).
@@ -204,9 +216,12 @@ and the installed baseline hash without preventing future additive migrations.
 (`src/schema/works.ts` re-exports it). `visibility` and `persistence` were
 speculative columns that no code read. They are dropped. If multi-writer
 sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
-those shapes. Works are archived (visibility) or soft-deleted with a 30-day
-window; nothing is discarded on a timer. No Work is a locked Work, not a
-sharing preference.
+those shapes. Works are archived (visibility) or soft-deleted with a
+30-day restore window; expired Works are permanently purged by the hourly
+`work-purge` recovery job. `deleted_by_work_id` markers on owned rows identify
+the exact set restored during that window. Their FKs are `ON DELETE SET NULL`,
+so deleting a Work never deletes through a stale marker; the purge deletes
+marked rows explicitly. No Work is a locked Work, not a sharing preference.
 
 ## Focused DB test resets and semantic reads
 

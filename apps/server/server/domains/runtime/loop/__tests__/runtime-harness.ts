@@ -221,6 +221,7 @@ export function createRuntimeHarness(
     shutdown,
   });
   const producer = createWriterTurnProducer({
+    async requireWritableThread() {},
     persistence: { repos, eventWriter },
     hub: { headSeq: deps.headSeq },
     runner: { getRunningTurn: (id) => orchestrator().getRunningTurn(id) },

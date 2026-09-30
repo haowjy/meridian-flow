@@ -30,7 +30,7 @@ export async function resolveThreadContext(
   const thread = await deps.threads.findById(threadId);
   if (!thread) return null;
 
-  const projectWorks = await deps.works.listByProject(thread.projectId);
+  const projectWorks = await deps.works.listByProject(thread.projectId, { lifecycle: "all" });
   const primaryMembership = await deps.threadWorks.findPrimary(thread.id);
   const authorities = await Promise.all(
     projectWorks.map((work) => deps.workAuthorityResolver.byId(thread.projectId, work.id)),
@@ -103,7 +103,7 @@ export async function contextPortForProjectRecovery(input: {
   userId: string;
   requestedWorkId?: string | null;
 }): Promise<ContextPort> {
-  const works = await input.deps.works.listByProject(input.projectId);
+  const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
   const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   const primaryWorkId = input.requestedWorkId ?? null;
   const primaryAuthority = primaryWorkId
@@ -142,7 +142,9 @@ export async function contextPortForProjectAuthorities(input: {
   if (resolved.some(([, authority]) => !authority)) return null;
   const primaryAuthority = resolved.find(([workId]) => workId === input.primaryWorkId)?.[1];
   if (!primaryAuthority) return null;
-  const works = input.projectWorks ?? (await input.deps.works.listByProject(input.projectId));
+  const works =
+    input.projectWorks ??
+    (await input.deps.works.listByProject(input.projectId, { lifecycle: "all" }));
   const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   return input.deps.contextPorts.forWork(
     primaryAuthority,

@@ -100,7 +100,7 @@ else
           isNoWork: true,
           slug: null,
           name: "No Work",
-          status: "active",
+          status: null,
         }),
       ]);
       const noWorkId = workRows[0]?.id;

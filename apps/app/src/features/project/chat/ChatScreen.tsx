@@ -3,10 +3,12 @@
  * (center, dock, phone), or the empty New chat when there is none. It never
  * owns thread routing itself; it reads `useChatNavigation()` for the commands
  * a chat surface needs (opening the parent of a subagent, focusing a freshly
- * requested New chat composer).
+ * requested New chat composer). A chat whose Work is archived keeps its live
+ * composer, with the archived notice as a strip on the composer's top edge.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { useThreadActions } from "@/client/stores";
@@ -29,6 +31,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
+import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
 
@@ -50,7 +53,8 @@ export function ChatScreen({
   onOpenContextTarget,
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
-  const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
+  const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
+    useChatNavigation();
   const derivationDeps = useDerivationDeps();
   // A fork or handoff reloaded mid-creation re-issues its request first.
   const resumingDerivation = useDerivationResume(threadId, derivationDeps);
@@ -65,6 +69,7 @@ export function ChatScreen({
           <CreationComposer
             projectId={projectId}
             newChatFocusRequestId={newChatFocusRequestId}
+            newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}
           />
         }
@@ -190,6 +195,11 @@ function ChatScreenLoaded({
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
             activateProjection={activateProjection}
+            composerStrip={
+              activeWork && isWorkArchived(activeWork) ? (
+                <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
+              ) : undefined
+            }
             key={`${projectId}:${threadId}`}
           />
         </ProjectChatContextNavigationProvider>

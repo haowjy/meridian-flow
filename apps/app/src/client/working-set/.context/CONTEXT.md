@@ -18,8 +18,8 @@ driver surface is intentionally absent.
 ## Hydration contract
 
 `ProjectRouteBootstrap` hydrates the working set once per mounted project, in a
-layout commit before `ReadableProjectRoute` mounts; same-project loader echoes do
-not re-adopt.
+layout commit before `ReadableProjectRoute` mounts, and once more when a project
+being created receives its route data; same-project loader echoes do not re-adopt.
 The reducer uses server revision lineage: unavailable stays local and cannot
 push, absent keeps local, matching pending lineage keeps local, and every other
 row adopts server. The account sync toggle guards the operation.

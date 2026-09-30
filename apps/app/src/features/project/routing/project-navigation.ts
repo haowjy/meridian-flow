@@ -1,4 +1,6 @@
 /** One history policy for project destinations, secondary choices, and delayed address repair. */
+
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import {
   type ProjectAddress,
   parseProjectAddress,
@@ -22,7 +24,7 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  workSlug: string | null;
+  workId: ParsedRequestId | null;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
 };
@@ -130,12 +132,13 @@ export function createProjectNavigation(
     if (parsed.kind !== "valid") return;
     const current = parsed.address;
     const shown = displayed();
+    const workId = shown.workId;
     const frozen: ProjectAddress = {
       ...current,
       work:
         current.work.kind === "absent"
-          ? shown.workSlug
-            ? { kind: "slug", slug: shown.workSlug }
+          ? workId
+            ? { kind: "id", id: workId }
             : { kind: "none" }
           : current.work,
     };
@@ -254,10 +257,11 @@ export function createProjectNavigation(
       const result = await transition(address, options);
       if (result.kind === "failed") throw result.error;
     },
-    repairQuerySelections(
+    /** Rewrites the current entry in place: canonical path (bare project → `/chats`) and invalid `?work=`. */
+    repairAddress(
       ticket: ProjectNavigationTicket,
       catalogs: {
-        work: AddressCatalog<{ slug: string | null }>;
+        work: AddressCatalog<{ id: string }>;
       },
     ): void {
       if (!isCurrent(ticket)) return;
@@ -265,9 +269,10 @@ export function createProjectNavigation(
       const parsed = parsedEntry(entry);
       if (parsed.kind !== "valid") return;
       const next = guardProjectQuerySelections(parsed.address, catalogs);
-      if (next === parsed.address) return;
-      // Only invalid secondary selections change. Do not queue a destination
-      // blocker that could later compete with the writer's pending navigation.
+      const pathOf = (href: string) => href.split(/[?#]/, 1)[0];
+      if (next === parsed.address && pathOf(parsed.href) === pathOf(entry.href)) return;
+      // The destination does not change. Do not queue a destination blocker
+      // that could later compete with the writer's pending navigation.
       revision += 1;
       port.replaceEntry(projectAddressHref(next), projectAddressState(next, entry.state));
     },

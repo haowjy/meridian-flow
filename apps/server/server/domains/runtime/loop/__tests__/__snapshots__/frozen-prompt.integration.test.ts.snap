@@ -12,55 +12,25 @@ exports[`frozen prompt provider requests > pins complete requests for a plain th
 
 <work_context>
 current: none (direct writes)
-active (most recent first; max 20):
-  none
 </work_context>
 
-# Meridian document language
+# Meridian Markdown
 
-Write manuscript documents as GFM Markdown. Prefer prose and ordinary GFM forms.
+Documents are Markdown with a few Meridian forms. You will see them when you read a document; write them the same way.
+- \`[[Chapter 213]]\` links another document, and \`[[Chapter 213|Arrival]]\` shows different text. The target may be a context URI.
+- Tables are HTML \`<table>\`, with block content in each cell (\`<td><p>…</p></td>\`). Pipe tables are accepted and converted.
+- \`<Layout align="center">\` or \`align="right"\`, closed by \`</Layout>\`, aligns one paragraph, heading or table. On a table, \`widths="120,,80"\` sets column widths in pixels; an empty slot stays automatic.
+- Images use project-relative asset paths: \`![Realm map](assets/realm-map.png)\`, or \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\` for a fixed width.
 
-Meridian adds these wire rules:
-- Link to another document as \`[[Chapter 213]]\`. Use \`[[Chapter 213|Arrival]]\` for separate display text. The text after the pipe is literal prose; only the destination before it is resolved. A scoped Context URI may be the destination. Escape destination backslashes, brackets, and pipes with a backslash, as in \`[[Gate\\|Map.png|Walkthrough]]\`.
-- Put block code in a language-tagged fence such as \`\`\`\` \`\`\`typescript \`\`\`\`. Use \`\`\`\` \`\`\`mermaid \`\`\`\` for a diagram.
-- Write every table as raw HTML \`<table>\`. Put block children inside each \`<td>\` or \`<th>\`: \`<p>\`, \`<h1>\` through \`<h6>\`, \`<ul>\`, \`<ol>\`, \`<blockquote>\`, \`<pre><code class="language-...">\`, \`<hr />\`, or a nested \`<table>\`. Use \`&#10;\` for a literal newline and \`<br />\` for a hard break. GFM pipe tables are understood on input but never echoed.
-- Use this table form:
+# Context URIs
 
-\`\`\`html
-<table>
-  <thead>
-    <tr>
-      <th>
-        <p>Skill</p>
-      </th>
-      <th>
-        <p>Details</p>
-      </th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <p>Iron Body</p>
-      </td>
-      <td>
-        <ul data-tight="false">
-          <li>
-            <p>Rank 7</p>
-          </li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>
-\`\`\`
-- Wrap exactly one paragraph, heading, or table in \`<Layout align="center">\` or \`<Layout align="right">\`, closed by \`</Layout>\`, for block alignment. On a table only, add \`widths="120,,80"\` to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.
-- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`![Realm map](assets/realm-map.png)\`. Do not emit internal \`asset:\` identifiers or signed URLs.
-- A picture is shown at its own size unless it carries a display width. To give it one, use raw HTML \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\`, where the width is whole pixels. Keep Markdown image syntax for every picture that has no width.
-
-Specialized diagram and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.
-
-Context file URI rules: bare file paths resolve as \`manuscript://\` -- the user's manuscript documents. \`kb://\` is the project knowledge base (durable reference: characters, places, canon). \`unfiled://\` holds project-owned autosaved documents not yet filed into a manuscript or reference location. They can be read, edited and moved like other project documents; naming alone does not file them. \`scratch://\` holds working files for this Work -- plans, notes, intermediate material; never the manuscript. \`scratch://@<slug>/...\` addresses another Work in this project. File and folder names cannot begin with \`@\` in any scheme or at any depth. Switch Works and an unqualified \`scratch://\` path resolves in a different scratch space. Anything meant to outlive this Work belongs in \`kb://\` or the manuscript. \`uploads://\` holds files the user attached to this Work (same scoping). \`user://\` is the user's personal files. To read a document, call \`write\` with both \`command: "read"\` and \`path\`; for example \`write({command: "read", path: "manuscript://chapter.md"})\`. Use \`ls\` and \`search\` for discovery. The \`diff\` command is only for this turn's folded edit result and requires a Work in draft write mode, not document reading.",
+- A bare path means \`manuscript://\`, the user's manuscript.
+- \`kb://\` is the project knowledge base: characters, places, canon.
+- \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
+- \`scratch://\` is this Work's working files (plans, notes), never the manuscript. \`scratch://@<slug>/…\` is another Work's. Switching Works changes what an unqualified \`scratch://\` path means, so anything meant to outlast the Work belongs in \`kb://\` or the manuscript.
+- \`uploads://\` holds files the user attached to this Work, scoped like \`scratch://\`.
+- \`user://\` is the user's personal files.
+- File and folder names cannot start with \`@\`.",
             "type": "text",
           },
         ],
@@ -110,55 +80,25 @@ Context file URI rules: bare file paths resolve as \`manuscript://\` -- the user
 
 <work_context>
 current: none (direct writes)
-active (most recent first; max 20):
-  none
 </work_context>
 
-# Meridian document language
+# Meridian Markdown
 
-Write manuscript documents as GFM Markdown. Prefer prose and ordinary GFM forms.
+Documents are Markdown with a few Meridian forms. You will see them when you read a document; write them the same way.
+- \`[[Chapter 213]]\` links another document, and \`[[Chapter 213|Arrival]]\` shows different text. The target may be a context URI.
+- Tables are HTML \`<table>\`, with block content in each cell (\`<td><p>…</p></td>\`). Pipe tables are accepted and converted.
+- \`<Layout align="center">\` or \`align="right"\`, closed by \`</Layout>\`, aligns one paragraph, heading or table. On a table, \`widths="120,,80"\` sets column widths in pixels; an empty slot stays automatic.
+- Images use project-relative asset paths: \`![Realm map](assets/realm-map.png)\`, or \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\` for a fixed width.
 
-Meridian adds these wire rules:
-- Link to another document as \`[[Chapter 213]]\`. Use \`[[Chapter 213|Arrival]]\` for separate display text. The text after the pipe is literal prose; only the destination before it is resolved. A scoped Context URI may be the destination. Escape destination backslashes, brackets, and pipes with a backslash, as in \`[[Gate\\|Map.png|Walkthrough]]\`.
-- Put block code in a language-tagged fence such as \`\`\`\` \`\`\`typescript \`\`\`\`. Use \`\`\`\` \`\`\`mermaid \`\`\`\` for a diagram.
-- Write every table as raw HTML \`<table>\`. Put block children inside each \`<td>\` or \`<th>\`: \`<p>\`, \`<h1>\` through \`<h6>\`, \`<ul>\`, \`<ol>\`, \`<blockquote>\`, \`<pre><code class="language-...">\`, \`<hr />\`, or a nested \`<table>\`. Use \`&#10;\` for a literal newline and \`<br />\` for a hard break. GFM pipe tables are understood on input but never echoed.
-- Use this table form:
+# Context URIs
 
-\`\`\`html
-<table>
-  <thead>
-    <tr>
-      <th>
-        <p>Skill</p>
-      </th>
-      <th>
-        <p>Details</p>
-      </th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <p>Iron Body</p>
-      </td>
-      <td>
-        <ul data-tight="false">
-          <li>
-            <p>Rank 7</p>
-          </li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>
-\`\`\`
-- Wrap exactly one paragraph, heading, or table in \`<Layout align="center">\` or \`<Layout align="right">\`, closed by \`</Layout>\`, for block alignment. On a table only, add \`widths="120,,80"\` to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.
-- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`![Realm map](assets/realm-map.png)\`. Do not emit internal \`asset:\` identifiers or signed URLs.
-- A picture is shown at its own size unless it carries a display width. To give it one, use raw HTML \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\`, where the width is whole pixels. Keep Markdown image syntax for every picture that has no width.
-
-Specialized diagram and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.
-
-Context file URI rules: bare file paths resolve as \`manuscript://\` -- the user's manuscript documents. \`kb://\` is the project knowledge base (durable reference: characters, places, canon). \`unfiled://\` holds project-owned autosaved documents not yet filed into a manuscript or reference location. They can be read, edited and moved like other project documents; naming alone does not file them. \`scratch://\` holds working files for this Work -- plans, notes, intermediate material; never the manuscript. \`scratch://@<slug>/...\` addresses another Work in this project. File and folder names cannot begin with \`@\` in any scheme or at any depth. Switch Works and an unqualified \`scratch://\` path resolves in a different scratch space. Anything meant to outlive this Work belongs in \`kb://\` or the manuscript. \`uploads://\` holds files the user attached to this Work (same scoping). \`user://\` is the user's personal files. To read a document, call \`write\` with both \`command: "read"\` and \`path\`; for example \`write({command: "read", path: "manuscript://chapter.md"})\`. Use \`ls\` and \`search\` for discovery. The \`diff\` command is only for this turn's folded edit result and requires a Work in draft write mode, not document reading.",
+- A bare path means \`manuscript://\`, the user's manuscript.
+- \`kb://\` is the project knowledge base: characters, places, canon.
+- \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
+- \`scratch://\` is this Work's working files (plans, notes), never the manuscript. \`scratch://@<slug>/…\` is another Work's. Switching Works changes what an unqualified \`scratch://\` path means, so anything meant to outlast the Work belongs in \`kb://\` or the manuscript.
+- \`uploads://\` holds files the user attached to this Work, scoped like \`scratch://\`.
+- \`user://\` is the user's personal files.
+- File and folder names cannot start with \`@\`.",
             "type": "text",
           },
         ],
@@ -199,8 +139,6 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "text": "<system_update>
 <work_context>
 current: none (direct writes)
-active (most recent first; max 20):
-  none
 </work_context>
 </system_update>",
             "type": "text",
@@ -247,55 +185,25 @@ active (most recent first; max 20):
 
 <work_context>
 current: none (direct writes)
-active (most recent first; max 20):
-  none
 </work_context>
 
-# Meridian document language
+# Meridian Markdown
 
-Write manuscript documents as GFM Markdown. Prefer prose and ordinary GFM forms.
+Documents are Markdown with a few Meridian forms. You will see them when you read a document; write them the same way.
+- \`[[Chapter 213]]\` links another document, and \`[[Chapter 213|Arrival]]\` shows different text. The target may be a context URI.
+- Tables are HTML \`<table>\`, with block content in each cell (\`<td><p>…</p></td>\`). Pipe tables are accepted and converted.
+- \`<Layout align="center">\` or \`align="right"\`, closed by \`</Layout>\`, aligns one paragraph, heading or table. On a table, \`widths="120,,80"\` sets column widths in pixels; an empty slot stays automatic.
+- Images use project-relative asset paths: \`![Realm map](assets/realm-map.png)\`, or \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\` for a fixed width.
 
-Meridian adds these wire rules:
-- Link to another document as \`[[Chapter 213]]\`. Use \`[[Chapter 213|Arrival]]\` for separate display text. The text after the pipe is literal prose; only the destination before it is resolved. A scoped Context URI may be the destination. Escape destination backslashes, brackets, and pipes with a backslash, as in \`[[Gate\\|Map.png|Walkthrough]]\`.
-- Put block code in a language-tagged fence such as \`\`\`\` \`\`\`typescript \`\`\`\`. Use \`\`\`\` \`\`\`mermaid \`\`\`\` for a diagram.
-- Write every table as raw HTML \`<table>\`. Put block children inside each \`<td>\` or \`<th>\`: \`<p>\`, \`<h1>\` through \`<h6>\`, \`<ul>\`, \`<ol>\`, \`<blockquote>\`, \`<pre><code class="language-...">\`, \`<hr />\`, or a nested \`<table>\`. Use \`&#10;\` for a literal newline and \`<br />\` for a hard break. GFM pipe tables are understood on input but never echoed.
-- Use this table form:
+# Context URIs
 
-\`\`\`html
-<table>
-  <thead>
-    <tr>
-      <th>
-        <p>Skill</p>
-      </th>
-      <th>
-        <p>Details</p>
-      </th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <p>Iron Body</p>
-      </td>
-      <td>
-        <ul data-tight="false">
-          <li>
-            <p>Rank 7</p>
-          </li>
-        </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>
-\`\`\`
-- Wrap exactly one paragraph, heading, or table in \`<Layout align="center">\` or \`<Layout align="right">\`, closed by \`</Layout>\`, for block alignment. On a table only, add \`widths="120,,80"\` to the opening \`Layout\`; widths are positive pixels, and an empty slot leaves that column automatic.
-- Images use ordinary Markdown image syntax and an existing project-relative asset path, as in \`![Realm map](assets/realm-map.png)\`. Do not emit internal \`asset:\` identifiers or signed URLs.
-- A picture is shown at its own size unless it carries a display width. To give it one, use raw HTML \`<img src="assets/realm-map.png" alt="Realm map" width="240" />\`, where the width is whole pixels. Keep Markdown image syntax for every picture that has no width.
-
-Specialized diagram and link references are a deeper tier. When the harness offers one, load it before uncommon formatting; this core card remains authoritative for wire spelling.
-
-Context file URI rules: bare file paths resolve as \`manuscript://\` -- the user's manuscript documents. \`kb://\` is the project knowledge base (durable reference: characters, places, canon). \`unfiled://\` holds project-owned autosaved documents not yet filed into a manuscript or reference location. They can be read, edited and moved like other project documents; naming alone does not file them. \`scratch://\` holds working files for this Work -- plans, notes, intermediate material; never the manuscript. \`scratch://@<slug>/...\` addresses another Work in this project. File and folder names cannot begin with \`@\` in any scheme or at any depth. Switch Works and an unqualified \`scratch://\` path resolves in a different scratch space. Anything meant to outlive this Work belongs in \`kb://\` or the manuscript. \`uploads://\` holds files the user attached to this Work (same scoping). \`user://\` is the user's personal files. To read a document, call \`write\` with both \`command: "read"\` and \`path\`; for example \`write({command: "read", path: "manuscript://chapter.md"})\`. Use \`ls\` and \`search\` for discovery. The \`diff\` command is only for this turn's folded edit result and requires a Work in draft write mode, not document reading.",
+- A bare path means \`manuscript://\`, the user's manuscript.
+- \`kb://\` is the project knowledge base: characters, places, canon.
+- \`unfiled://\` holds project documents not yet filed anywhere; renaming one does not file it.
+- \`scratch://\` is this Work's working files (plans, notes), never the manuscript. \`scratch://@<slug>/…\` is another Work's. Switching Works changes what an unqualified \`scratch://\` path means, so anything meant to outlast the Work belongs in \`kb://\` or the manuscript.
+- \`uploads://\` holds files the user attached to this Work, scoped like \`scratch://\`.
+- \`user://\` is the user's personal files.
+- File and folder names cannot start with \`@\`.",
             "type": "text",
           },
         ],
@@ -336,8 +244,6 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "text": "<system_update>
 <work_context>
 current: none (direct writes)
-active (most recent first; max 20):
-  none
 </work_context>
 </system_update>",
             "type": "text",

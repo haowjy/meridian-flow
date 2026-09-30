@@ -48,7 +48,6 @@ import type {
 } from "./types";
 
 type PendingCreationState = {
-  projectIds: Record<string, true>;
   threadIds: Record<string, true>;
 };
 
@@ -253,7 +252,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
-        pendingCreation: { projectIds: {}, threadIds: {} },
+        pendingCreation: { threadIds: {} },
         interruptResponses: {},
         interruptResponseCounter: 0,
         streamingThreadId: null,
@@ -658,24 +657,19 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return pending;
         },
 
-        markPendingCreation({ projectId, threadId }) {
+        markPendingCreation({ threadId }) {
           set((state) => ({
             pendingCreation: {
-              projectIds: projectId
-                ? { ...state.pendingCreation.projectIds, [projectId]: true }
-                : state.pendingCreation.projectIds,
               threadIds: { ...state.pendingCreation.threadIds, [threadId]: true },
             },
           }));
         },
 
-        clearPendingCreation({ projectId, threadId }) {
+        clearPendingCreation({ threadId }) {
           set((state) => {
-            const projectIds = { ...state.pendingCreation.projectIds };
             const threadIds = { ...state.pendingCreation.threadIds };
-            if (projectId) delete projectIds[projectId];
             if (threadId) delete threadIds[threadId];
-            return { pendingCreation: { projectIds, threadIds } };
+            return { pendingCreation: { threadIds } };
           });
         },
 
@@ -875,13 +869,6 @@ export function useThreadStore<T>(selector: (state: ThreadStoreSlice) => T): T {
 
 export function useThreadActions(): ThreadStoreActions {
   return useStore(useThreadStoreApi(), useShallow(selectThreadActions));
-}
-
-/** True when an optimistic project create is in flight (pre-server confirmation). */
-export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
-  return useThreadStore((s) =>
-    projectId ? Boolean(s.pendingCreation.projectIds[projectId]) : false,
-  );
 }
 
 /** True when an optimistic thread create is in flight (pre-server confirmation). */

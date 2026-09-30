@@ -1,7 +1,7 @@
-/** Postgres coverage for Work handles, restore conflicts, and durable-content deletion guards. */
+/** Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts. */
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
@@ -23,20 +23,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../lib/interrupt-boundary.js");
+    const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
+    const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
     const { createDrizzleProjectContextAvailability } = await import(
       "../context/adapters/project-context-availability.js"
     );
     const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../threads/adapters/drizzle/repositories.js"
+    );
     const {
       createDrizzleProjectWorkRepository,
       createDrizzleProjectWorkAuthorityResolver,
       deleteWorkTransition,
       restoreWork,
       updateWorkTransition,
-      WorkDeleteBlockedError,
       WorkRestoreConflictError,
+      WorkRestoreExpiredError,
+      WorkLifecycleUnavailableError,
       createWorkProjectionMutation,
+      createDrizzleWorkPurger,
     } = await import("./index.js");
+    const { createInMemoryObjectStore } = await import("../storage/index.js");
+    const { createInMemoryEventSink } = await import("../observability/index.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -52,10 +62,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation,
     });
+    const threadRepos = createDrizzleRepositoriesForTest(db);
     const authorities = createDrizzleProjectWorkAuthorityResolver(db);
+    const projects = createProjectRepositoryForTest({ db });
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [schema.users]);
@@ -92,16 +103,80 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await works.archive(work.id);
       await works.softDelete(work.id);
       expect(await works.findById(work.id)).toMatchObject({
-        status: "archived",
+        archivedAt: expect.any(String),
         deletedAt: expect.any(String),
       });
       await works.restore(work.id);
-      expect(await works.findById(work.id)).toMatchObject({ status: "archived", deletedAt: null });
+      expect(await works.findById(work.id)).toMatchObject({
+        archivedAt: expect.any(String),
+        deletedAt: null,
+      });
       await expect(authorities.byId(PROJECT_ID, work.id)).resolves.toMatchObject({
         workId: work.id,
       });
       await works.unarchive(work.id);
-      expect(await works.findById(work.id)).toMatchObject({ status: "active", deletedAt: null });
+      expect(await works.findById(work.id)).toMatchObject({ archivedAt: null, deletedAt: null });
+    });
+
+    it("refuses archived metadata updates until the Work is unarchived", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "Read only" });
+      const deps = { works, workContextNotices: { async workChanged() {} } };
+      await works.archive(work.id);
+
+      await expect(
+        updateWorkTransition(deps, work.id, { goal: "Should not change" }),
+      ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
+      await works.unarchive(work.id);
+      await expect(
+        updateWorkTransition(deps, work.id, { goal: "Writable again" }),
+      ).resolves.toMatchObject({ after: { goal: "Writable again", archivedAt: null } });
+    });
+
+    it("returns coded PATCH refusals for archived and deleted Works", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "PATCH lifecycle" });
+      const deps = {
+        works,
+        projects,
+        workContextNotices: { async workChanged() {} },
+      };
+      const codeFrom = async (operation: Promise<unknown>) => {
+        try {
+          await operation;
+          throw new Error("Expected Work metadata refusal");
+        } catch (error) {
+          const data = (error as { data?: Record<string, unknown> }).data;
+          const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY] as
+            | { error?: { code?: string } }
+            | undefined;
+          return {
+            status: (error as { statusCode?: number }).statusCode,
+            code: envelope?.error?.code,
+          };
+        }
+      };
+
+      await works.archive(work.id);
+      await expect(
+        codeFrom(
+          updateWorkMetadataForWriter(deps, {
+            workId: work.id,
+            userId: USER_ID,
+            goal: "Blocked",
+          }),
+        ),
+      ).resolves.toEqual({ status: 409, code: "work_archived" });
+
+      await works.unarchive(work.id);
+      await works.softDelete(work.id);
+      await expect(
+        codeFrom(
+          updateWorkMetadataForWriter(deps, {
+            workId: work.id,
+            userId: USER_ID,
+            goal: "Gone",
+          }),
+        ),
+      ).resolves.toEqual({ status: 404, code: "work_not_found" });
     });
 
     it("generates deduplicated handles and keeps them through rename", async () => {
@@ -154,7 +229,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await updateHasLock;
       const commandUpdate = updateWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} } },
+        { works, workContextNotices: { async workChanged() {} } },
         work.id,
         { name: "C" },
       );
@@ -182,10 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await works.softDelete(work.id);
       });
       await deleteHasLock;
-      const commandDelete = deleteWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} } },
-        work.id,
-      );
+      const commandDelete = deleteWorkTransition({ works, stopThreadRun: async () => {} }, work.id);
       await waitForLock("transactionid");
       releaseDelete();
       await concurrentDelete;
@@ -201,6 +273,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Work restore observer",
       });
       const work = await works.create({ projectId: PROJECT_ID, name: "Restorable" });
+      await threadRepos.threadWorks.addMembership(THREAD_ID, work.id, true);
       await works.softDelete(work.id);
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -217,9 +290,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               firstEnqueues += 1;
-              await createTestDrizzleDelivery(db).projectChanged(projectId);
+              await createTestDrizzleDelivery(db).workChanged(workId);
               entered();
               await gate;
             },
@@ -232,9 +305,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           works,
           workContextNotices: {
-            async projectChanged(projectId) {
+            async workChanged(workId) {
               secondEnqueues += 1;
-              await createTestDrizzleDelivery(db).projectChanged(projectId);
+              await createTestDrizzleDelivery(db).workChanged(workId);
             },
           },
         },
@@ -261,9 +334,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         name: "Semantic state",
         goal: "Finish it",
-        description: "Private notes",
       });
-      const deps = { works, workContextNotices: { async projectChanged() {} } };
+      const deps = { works, workContextNotices: { async workChanged() {} } };
       await control.unsafe(`
         CREATE SEQUENCE test_work_update_count;
         CREATE FUNCTION test_count_work_update() RETURNS trigger
@@ -289,15 +361,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const identical = await updateWorkTransition(deps, work.id, {
           name: " Semantic state ",
           goal: "Finish it",
-          description: "Private notes",
-          status: "active",
+          status: null,
         });
         expect(identical).toEqual({ before: work, after: work, changed: false });
         await expect(updateCount()).resolves.toBe(0);
 
         await expect(updateWorkTransition(deps, work.id, {})).resolves.toMatchObject({
           changed: false,
-          after: { goal: "Finish it", description: "Private notes" },
+          after: { goal: "Finish it" },
         });
         await expect(updateCount()).resolves.toBe(0);
 
@@ -316,10 +387,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         await locked;
         const concurrent = [
-          updateWorkTransition(deps, work.id, { name: "Semantic state", status: "active" }),
+          updateWorkTransition(deps, work.id, { name: "Semantic state", status: null }),
           updateWorkTransition(deps, work.id, {
             goal: "Finish it",
-            description: "Private notes",
           }),
         ];
         await waitForLock("transactionid");
@@ -331,49 +401,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
         await expect(updateCount()).resolves.toBe(0);
 
-        const cleared = await updateWorkTransition(deps, work.id, {
-          goal: null,
-          description: null,
-        });
+        const cleared = await updateWorkTransition(deps, work.id, { goal: null });
         expect(cleared).toMatchObject({
-          before: { goal: "Finish it", description: "Private notes" },
-          after: { goal: null, description: null },
+          before: { goal: "Finish it" },
+          after: { goal: null },
           changed: true,
         });
         await expect(updateCount()).resolves.toBe(1);
 
-        const archived = await updateWorkTransition(deps, work.id, { status: "archived" });
-        expect(archived).toMatchObject({ after: { status: "archived" }, changed: true });
+        const statusSet = await updateWorkTransition(deps, work.id, { status: "Drafting" });
+        expect(statusSet).toMatchObject({
+          after: { status: "Drafting", archivedAt: null },
+          changed: true,
+        });
         await expect(updateCount()).resolves.toBe(2);
         await expect(
-          updateWorkTransition(deps, work.id, { status: "archived" }),
+          updateWorkTransition(deps, work.id, { status: "Drafting" }),
         ).resolves.toMatchObject({ changed: false });
         await expect(updateCount()).resolves.toBe(2);
 
-        const unarchived = await updateWorkTransition(deps, work.id, { status: "active" });
-        expect(unarchived).toMatchObject({
-          before: { status: "archived" },
-          after: { status: "active", archivedAt: null },
+        const statusCleared = await updateWorkTransition(deps, work.id, { status: null });
+        expect(statusCleared).toMatchObject({
+          before: { status: "Drafting" },
+          after: { status: null, archivedAt: null },
           changed: true,
         });
         await expect(updateCount()).resolves.toBe(3);
 
-        const beforeRealChange = unarchived.after;
+        const beforeRealChange = statusCleared.after;
         const realChange = await updateWorkTransition(deps, work.id, {
           name: "Revised semantic state",
           goal: "New goal",
-          description: "New notes",
         });
         expect(realChange).toMatchObject({
           before: {
             name: beforeRealChange.name,
             goal: beforeRealChange.goal,
-            description: beforeRealChange.description,
           },
           after: {
             name: "Revised semantic state",
             goal: "New goal",
-            description: "New notes",
           },
           changed: true,
         });
@@ -392,7 +459,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reserves deleted Work slugs but refuses a reclaimed name", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
-      await expect(works.restore(available.id)).resolves.toMatchObject({ deletedAt: null });
+      await expect(works.restore(available.id)).resolves.toMatchObject({
+        after: { deletedAt: null },
+        changed: true,
+      });
 
       const nameOwner = await works.create({ projectId: PROJECT_ID, name: "Reclaimed" });
       await works.softDelete(nameOwner.id);
@@ -406,10 +476,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await works.create({ projectId: PROJECT_ID, name: "Same slug?" })).slug).toBe(
         "same-slug-2",
       );
-      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({ slug: "same-slug" });
+      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({
+        after: { slug: "same-slug" },
+        changed: true,
+      });
     });
 
-    it("allows empty provisioned context sources but blocks live files", async () => {
+    it("deletes content and restores only rows hidden by the Work deletion", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await db.insert(schema.contextSources).values({
         workId: empty.id,
@@ -417,7 +490,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "scratch",
         scope: "work",
       });
-      await expect(works.softDelete(empty.id)).resolves.toBeUndefined();
+      await expect(works.softDelete(empty.id)).resolves.toMatchObject({
+        after: { deletedAt: expect.any(String) },
+      });
 
       const withFile = await works.create({ projectId: PROJECT_ID, name: "With file" });
       const [source] = await db
@@ -425,38 +500,720 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ workId: withFile.id, name: "Uploads", slug: "uploads", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
-      await db.insert(schema.documents).values({
-        contextSourceId: source.id,
-        name: "reference",
-      });
       await db
-        .update(schema.contextSources)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.contextSources.id, source.id));
-
-      await expect(works.softDelete(withFile.id)).rejects.toEqual(
-        new WorkDeleteBlockedError("documents"),
-      );
-    });
-
-    it("blocks live folders but ignores soft-deleted context content", async () => {
-      const work = await works.create({ projectId: PROJECT_ID, name: "Folders" });
-      const [source] = await db
-        .insert(schema.contextSources)
-        .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
+        .insert(schema.documents)
+        .values({
+          contextSourceId: source.id,
+          name: "reference",
+        })
         .returning();
-      if (!source) throw new Error("Expected context source");
+      const [alreadyDeletedDocument] = await db
+        .insert(schema.documents)
+        .values({
+          contextSourceId: source.id,
+          name: "separately-deleted",
+          deletedAt: new Date("2025-01-01T00:00:00.000Z"),
+        })
+        .returning();
       const [folder] = await db
         .insert(schema.folders)
         .values({ contextSourceId: source.id, name: "Notes" })
         .returning();
-      if (!folder) throw new Error("Expected folder");
+      const [alreadyDeletedFolder] = await db
+        .insert(schema.folders)
+        .values({
+          contextSourceId: source.id,
+          name: "separately-deleted",
+          deletedAt: new Date("2025-01-01T00:00:00.000Z"),
+        })
+        .returning();
+      if (!folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
+        throw new Error("Expected context children");
+      }
 
-      await expect(works.softDelete(work.id)).rejects.toEqual(
-        new WorkDeleteBlockedError("folders"),
+      const deletion = await works.softDelete(withFile.id);
+      expect(deletion.after?.deletedAt).toBeTruthy();
+      await expect(
+        db
+          .select()
+          .from(schema.documents)
+          .where(eq(schema.documents.id, alreadyDeletedDocument.id)),
+      ).resolves.toMatchObject([
+        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
+      ]);
+      await expect(works.restore(withFile.id)).resolves.toMatchObject({
+        after: { deletedAt: null },
+        changed: true,
+      });
+      await expect(
+        db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
+      ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
+      await expect(
+        db
+          .select()
+          .from(schema.documents)
+          .where(eq(schema.documents.id, alreadyDeletedDocument.id)),
+      ).resolves.toMatchObject([
+        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
+      ]);
+      await expect(
+        db.select().from(schema.folders).where(eq(schema.folders.id, folder.id)),
+      ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
+      await expect(
+        db.select().from(schema.folders).where(eq(schema.folders.id, alreadyDeletedFolder.id)),
+      ).resolves.toMatchObject([
+        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
+      ]);
+    });
+
+    it("hides Work chats, drafts, and context from their read surfaces, then restores them", async () => {
+      await works.ensureNoWork(PROJECT_ID);
+      const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
+      const [source] = await db
+        .insert(schema.contextSources)
+        .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
+        .returning();
+      if (!source) throw new Error("Expected Work context source");
+      const [document] = await db
+        .insert(schema.documents)
+        .values({ contextSourceId: source.id, name: "outline" })
+        .returning();
+      if (!document) throw new Error("Expected Work document");
+      await db.insert(schema.documentBranches).values({
+        id: "work-delete-draft",
+        documentId: document.id,
+        kind: "work_draft",
+        workId: work.id,
+        state: Buffer.from([]),
+        stateVector: Buffer.from([]),
+      });
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      const resultId = "00000000-0000-4000-8000-000000000849";
+      await db.insert(schema.threads).values({
+        id: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Bound chat",
+      });
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        position: 1,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      await db.insert(schema.threadWorks).values({
+        threadId: THREAD_ID,
+        workId: work.id,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
+      const { createDrizzleResultRepository } = await import(
+        "../context/promotion/adapters/drizzle-result-repository.js"
       );
-      await db.update(schema.folders).set({ deletedAt: new Date() });
-      await expect(works.softDelete(work.id)).resolves.toBeUndefined();
+      const resultRepository = createDrizzleResultRepository(db);
+      await expect(
+        resultRepository.createOrConverge({
+          id: resultId,
+          projectId: PROJECT_ID,
+          sourcePath: "reports/final.txt",
+          resultsUri: "results://@hidden-work/threads/root/reports/final.txt",
+          storageUrl: "memory://work-result",
+          mimeType: "text/plain",
+          sizeBytes: 4,
+          provenance: {
+            rootThreadId: THREAD_ID as never,
+            threadId: THREAD_ID as never,
+            turnId: resultTurnId as never,
+            toolCallId: "call-work-result",
+          },
+        }),
+      ).resolves.toMatchObject({ kind: "committed" });
+      const childThreadId = "00000000-0000-4000-8000-000000000845";
+      await db.insert(schema.threads).values({
+        id: childThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Bound chat subagent",
+        kind: "subagent",
+        parentThreadId: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        originTurnId: resultTurnId,
+        originType: "spawn",
+        spawnStatus: "succeeded",
+        spawnDepth: 1,
+      });
+      const separatelyDeletedThreadId = "00000000-0000-4000-8000-000000000844";
+      await db.insert(schema.threads).values({
+        id: separatelyDeletedThreadId,
+        rootThreadId: separatelyDeletedThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Previously trashed chat",
+      });
+      await db.insert(schema.threadWorks).values({
+        threadId: separatelyDeletedThreadId,
+        workId: work.id,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
+      await threadRepos.threads.setTrashState(separatelyDeletedThreadId as never, "deleted");
+
+      const feedInput = {
+        projectId: PROJECT_ID as never,
+        userId: USER_ID as never,
+        after: null,
+        limit: 20,
+        favorite: false,
+        workId: null,
+        search: null,
+      };
+      const scope = { kind: "work", projectId: PROJECT_ID, workId: work.id } as const;
+      await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toMatchObject({
+        id: THREAD_ID,
+      });
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toMatchObject({
+        id: childThreadId,
+      });
+      await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(1);
+      await expect(
+        threadRepos.threads.listRecentByWork(PROJECT_ID as never, work.id, 10),
+      ).resolves.toHaveLength(1);
+      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toHaveLength(1);
+      expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
+        document.id,
+      );
+
+      const deletion = await works.softDelete(work.id);
+      expect(new Set(deletion.threadIds)).toEqual(new Set([THREAD_ID, childThreadId]));
+      await expect(
+        resultRepository.createOrConverge({
+          id: "00000000-0000-4000-8000-000000000850",
+          projectId: PROJECT_ID,
+          sourcePath: "reports/late.txt",
+          resultsUri: "results://@hidden-work/threads/root/reports/late.txt",
+          storageUrl: "memory://late-work-result",
+          mimeType: "text/plain",
+          sizeBytes: 4,
+          provenance: {
+            rootThreadId: THREAD_ID as never,
+            threadId: THREAD_ID as never,
+            turnId: resultTurnId as never,
+            toolCallId: "call-late-work-result",
+          },
+        }),
+      ).resolves.toMatchObject({ kind: "definitely_not_committed" });
+      await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toBeNull();
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toBeNull();
+      await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toEqual([]);
+      await expect(
+        threadRepos.threads.listRecentByWork(PROJECT_ID as never, work.id, 10),
+      ).resolves.toEqual([]);
+      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toEqual([]);
+      expect((await catalog.snapshot(scope)).entries).toEqual([]);
+      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      const threadTrashDeps = {
+        repos: threadRepos,
+        projects: {
+          async findById() {
+            return { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as never;
+          },
+        },
+        workContextNotices: {
+          async threadChanged() {},
+          async materializeIdle() {
+            return "delivered" as const;
+          },
+        },
+        workAuthorityResolver: authorities,
+        works,
+      };
+      for (const threadId of [THREAD_ID, childThreadId, separatelyDeletedThreadId]) {
+        await expect(
+          restoreOwnedThreadFromTrash(threadTrashDeps, threadId, USER_ID as never),
+        ).rejects.toMatchObject({ statusCode: 404 });
+      }
+      await expect(
+        db
+          .select({ id: schema.threads.id, deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          { id: THREAD_ID, deletedByWorkId: work.id },
+          { id: childThreadId, deletedByWorkId: work.id },
+        ]),
+      );
+      await expect(
+        db
+          .select()
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, "work-delete-draft")),
+      ).resolves.toMatchObject([{ status: "closed", deletedByWorkId: work.id }]);
+
+      await works.restore(work.id);
+      await expect(
+        db
+          .select({ deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
+      ).resolves.toEqual([{ deletedByWorkId: null }, { deletedByWorkId: null }]);
+      await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toMatchObject({
+        id: THREAD_ID,
+      });
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toMatchObject({
+        id: childThreadId,
+      });
+      await expect(
+        threadRepos.threads.findById(separatelyDeletedThreadId as never),
+      ).resolves.toBeNull();
+      await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(1);
+      await expect(
+        db
+          .select()
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, "work-delete-draft")),
+      ).resolves.toMatchObject([{ status: "active", deletedByWorkId: null }]);
+      expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
+        document.id,
+      );
+      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toHaveLength(1);
+    });
+
+    it("refuses restoring a deleted Work after its retention deadline", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "Expired Work" });
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
+        .where(eq(schema.works.id, work.id));
+      await expect(works.restore(work.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
+    });
+
+    it("refuses restoring a marked child after its root moves to another Work", async () => {
+      const noWork = await works.ensureNoWork(PROJECT_ID as never);
+      const deletedWork = await works.create({ projectId: PROJECT_ID, name: "Deleted Work" });
+      const liveWork = await works.create({ projectId: PROJECT_ID, name: "Live Work" });
+      const childThreadId = "00000000-0000-4000-8000-000000000845";
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.threads).values({
+        id: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Rebound root",
+      });
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        position: 1,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      await db.insert(schema.threads).values({
+        id: childThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Child left behind",
+        kind: "subagent",
+        parentThreadId: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        originTurnId: resultTurnId,
+        originType: "spawn",
+        spawnStatus: "succeeded",
+        spawnDepth: 1,
+      });
+      await db.insert(schema.threadWorks).values([
+        {
+          threadId: THREAD_ID,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+        {
+          threadId: childThreadId,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+      ]);
+      await threadRepos.threadWorks.rebindPrimary(THREAD_ID as never, liveWork.id);
+      await works.softDelete(deletedWork.id);
+
+      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      await expect(
+        restoreOwnedThreadFromTrash(
+          {
+            repos: threadRepos,
+            projects: {
+              async findById() {
+                return { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as never;
+              },
+            },
+            workContextNotices: {
+              async threadChanged() {},
+              async materializeIdle() {
+                return "delivered" as const;
+              },
+            },
+            workAuthorityResolver: authorities,
+            works,
+          },
+          childThreadId as never,
+          USER_ID as never,
+        ),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        threadRepos.threadWorks.findPrimary(childThreadId as never),
+      ).resolves.toMatchObject({ workId: deletedWork.id });
+      await expect(
+        db
+          .select({ deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, childThreadId as never)),
+      ).resolves.toEqual([{ deletedByWorkId: deletedWork.id }]);
+
+      await works.restore(deletedWork.id);
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toMatchObject({
+        id: childThreadId,
+        workId: deletedWork.id,
+      });
+      expect(noWork.id).not.toBe(deletedWork.id);
+    });
+
+    it("retains a source needed by another Work without blocking unrelated expired Works", async () => {
+      const sourceWork = await works.create({ projectId: PROJECT_ID, name: "Source" });
+      const destinationWork = await works.create({ projectId: PROJECT_ID, name: "Destination" });
+      const unrelatedWork = await works.create({ projectId: PROJECT_ID, name: "Unrelated" });
+      const source = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+      const turn = await threadRepos.turns.create({
+        threadId: source.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await threadRepos.threadWorks.addMembership(source.id, sourceWork.id, true);
+      const derivedId = crypto.randomUUID();
+      await db.insert(schema.threads).values({
+        id: derivedId,
+        rootThreadId: source.id,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        originType: "fork",
+        originTurnId: turn.id,
+      });
+      await threadRepos.threadWorks.addMembership(derivedId, sourceWork.id, true);
+      await threadRepos.threadWorks.rebindPrimary(derivedId, destinationWork.id);
+      await works.softDelete(sourceWork.id);
+      await works.softDelete(unrelatedWork.id);
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
+        .where(inArray(schema.works.id, [sourceWork.id, unrelatedWork.id]));
+      // Fill the oldest page with retained sources; the later unrelated Work must still purge.
+      for (let index = 1; index < 100; index += 1) {
+        const blocked = await works.create({ projectId: PROJECT_ID, name: `Retained ${index}` });
+        const root = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+        await threadRepos.threadWorks.addMembership(root.id, blocked.id, true);
+        const forkId = crypto.randomUUID();
+        const cutoff = await threadRepos.turns.create({
+          threadId: root.id,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.threads).values({
+          id: forkId,
+          rootThreadId: root.id,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          originType: "fork",
+          originTurnId: cutoff.id,
+        });
+        await threadRepos.threadWorks.addMembership(forkId, destinationWork.id, true);
+        await works.softDelete(blocked.id);
+        await db
+          .update(schema.works)
+          .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+          .where(eq(schema.works.id, blocked.id));
+      }
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+        .where(eq(schema.works.id, sourceWork.id));
+      const purger = createDrizzleWorkPurger({
+        db,
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createInMemoryEventSink(),
+      });
+      await expect(purger.sweep()).resolves.toBe(1);
+      await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
+      await expect(works.findById(sourceWork.id)).resolves.toMatchObject({
+        deletedAt: expect.any(String),
+      });
+      await expect(threadRepos.threads.findById(derivedId)).resolves.toMatchObject({
+        deletedAt: null,
+      });
+      await expect(threadRepos.turns.findById(turn.id)).resolves.not.toBeNull();
+    });
+
+    it("commits an expired Work purge before best-effort blob deletion", async () => {
+      const backingStore = createInMemoryObjectStore();
+      const work = await works.create({ projectId: PROJECT_ID, name: "Purge me" });
+      let deleteObservedCommittedPurge = false;
+      const objectStore = {
+        put: backingStore.put.bind(backingStore),
+        get: backingStore.get.bind(backingStore),
+        list: backingStore.list.bind(backingStore),
+        getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
+        async delete() {
+          deleteObservedCommittedPurge = (await works.findById(work.id)) === null;
+          return {
+            ok: false as const,
+            error: { code: "io_error" as const, message: "retry during orphan sweep" },
+          };
+        },
+      };
+      const eventSink = createInMemoryEventSink();
+      const purger = createDrizzleWorkPurger({ db, objectStore, eventSink });
+      const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
+      const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
+      await db.insert(schema.threads).values({
+        id: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Purged Work chat",
+      });
+      await db.insert(schema.threadWorks).values({
+        threadId: THREAD_ID,
+        workId: work.id,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        position: 1,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      const bakeId = crypto.randomUUID();
+      await db.insert(schema.promptBakes).values({
+        id: bakeId,
+        ownerThreadId: THREAD_ID,
+        composedSystemPrompt: "Frozen purge probe",
+        bakedSkillSlugs: [],
+        bakedTools: [],
+        contentHash: "purge-probe",
+      });
+      await db
+        .update(schema.threads)
+        .set({ initialPromptBakeId: bakeId })
+        .where(eq(schema.threads.id, THREAD_ID));
+      const derivedIds = [crypto.randomUUID(), crypto.randomUUID()];
+      for (const [index, originType] of ["fork", "handoff"].entries()) {
+        const derivedId = derivedIds[index];
+        await db.insert(schema.threads).values({
+          id: derivedId,
+          rootThreadId: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          originType,
+          originTurnId: resultTurnId,
+          initialPromptBakeId: bakeId,
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: derivedId,
+          workId: work.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        await db.insert(schema.turns).values({
+          threadId: derivedId,
+          position: 1,
+          role: "system",
+          origin: "system",
+          status: "complete",
+        });
+      }
+      const compactionId = crypto.randomUUID();
+      await db.insert(schema.turns).values({
+        id: compactionId,
+        threadId: THREAD_ID,
+        position: 2,
+        parentTurnId: resultTurnId,
+        role: "compaction",
+        origin: "system",
+        status: "complete",
+        compactionModel: "mock",
+        promptBakeId: bakeId,
+      });
+      const blockId = crypto.randomUUID();
+      await db.insert(schema.turnBlocks).values({
+        id: blockId,
+        turnId: resultTurnId,
+        sequence: 0,
+        blockType: "image",
+        status: "complete",
+        content: {
+          type: "image_reference",
+          documentId: crypto.randomUUID(),
+          uri: "uploads://reference.png",
+        },
+      });
+      await db.insert(schema.threadImageInclusions).values({
+        threadId: THREAD_ID,
+        blockId,
+        decisionTurnId: compactionId,
+        included: true,
+      });
+      const childThreadId = "00000000-0000-4000-8000-000000000846";
+      await db.insert(schema.threads).values({
+        id: childThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Purged Work subagent",
+        kind: "subagent",
+        parentThreadId: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        originTurnId: resultTurnId,
+        originType: "spawn",
+        spawnStatus: "succeeded",
+        spawnDepth: 1,
+      });
+      await db.insert(schema.threads).values({
+        id: expiredTrashThreadId,
+        rootThreadId: expiredTrashThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Already trashed chat",
+      });
+      await db.insert(schema.threadWorks).values({
+        threadId: expiredTrashThreadId,
+        workId: work.id,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
+      await threadRepos.threads.setTrashState(expiredTrashThreadId as never, "deleted");
+      const [source] = await db
+        .insert(schema.contextSources)
+        .values({ workId: work.id, name: "Uploads", slug: "uploads", scope: "work" })
+        .returning();
+      if (!source) throw new Error("Expected Work Uploads source");
+      const [document] = await db
+        .insert(schema.documents)
+        .values({
+          contextSourceId: source.id,
+          name: "reference",
+          extension: "png",
+          fileType: "png",
+        })
+        .returning();
+      if (!document) throw new Error("Expected uploaded document");
+      await db.insert(schema.documentBranches).values({
+        id: "purged-work-draft",
+        documentId: document.id,
+        kind: "work_draft",
+        workId: work.id,
+        state: Buffer.from([]),
+        stateVector: Buffer.from([]),
+      });
+      await db.insert(schema.projectResults).values({
+        id: "00000000-0000-4000-8000-000000000849",
+        projectId: PROJECT_ID,
+        sourcePath: "reports/purge.txt",
+        resultsUri: `results://@${work.slug}/threads/root/reports/purge.txt`,
+        storageUrl: "memory://purged-result",
+        mimeType: "text/plain",
+        sizeBytes: 4,
+        rootThreadId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: resultTurnId,
+      });
+      const objectKey = `uploads/${PROJECT_ID}/${document.id}`;
+      const stored = await objectStore.put(objectKey, new Uint8Array([7]), "image/png");
+      if (!stored.ok) throw new Error(stored.error.message);
+      await db.insert(schema.uploadIntakes).values({
+        projectId: PROJECT_ID,
+        intakeId: "purge-intake",
+        actorUserId: USER_ID,
+        workId: work.id,
+        contextSourceId: source.id,
+        documentId: document.id,
+        fingerprint: "fingerprint",
+        byteDigest: "a".repeat(64),
+        filename: "reference.png",
+        mimeType: "image/png",
+        finalPath: "reference.png",
+        objectKey,
+        fileType: "png",
+        canonicalUri: `uploads://@${work.slug}/reference.png`,
+        locationRevision: crypto.randomUUID(),
+        state: "finalized",
+        storageUrl: stored.value.storageUrl,
+      });
+      await works.softDelete(work.id);
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
+        .where(eq(schema.works.id, work.id));
+
+      await expect(purger.sweep()).resolves.toBe(1);
+      await expect(works.findById(work.id)).resolves.toBeNull();
+      await expect(works.findById(other.id)).resolves.toMatchObject({ deletedAt: null });
+      await expect(
+        db
+          .select({ id: schema.threads.id })
+          .from(schema.threads)
+          .where(
+            inArray(schema.threads.id, [
+              THREAD_ID as never,
+              childThreadId as never,
+              expiredTrashThreadId as never,
+            ]),
+          ),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.uploadIntakes).where(eq(schema.uploadIntakes.workId, work.id)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(eq(schema.projectResults.projectId, PROJECT_ID)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, "purged-work-draft")),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.promptBakes).where(eq(schema.promptBakes.id, bakeId)),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.turns).where(eq(schema.turns.threadId, THREAD_ID)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.threadImageInclusions)
+          .where(eq(schema.threadImageInclusions.threadId, THREAD_ID)),
+      ).resolves.toEqual([]);
+      expect(deleteObservedCommittedPurge).toBe(true);
+      await expect(objectStore.get(objectKey)).resolves.toMatchObject({ ok: true });
+      expect(eventSink.events).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          source: "projects.work-purge",
+          name: "object_delete.failed",
+        }),
+      );
     });
 
     it("serializes Work content creation before deletion", async () => {
@@ -501,11 +1258,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await creation;
         const result = await deletion;
 
-        expect(result.status).toBe("rejected");
-        if (result.status === "rejected") {
-          expect(result.reason).toEqual(new WorkDeleteBlockedError("documents"));
-        }
-        await expect(works.findById(work.id)).resolves.toMatchObject({ deletedAt: null });
+        expect(result.status).toBe("fulfilled");
+        await expect(works.findById(work.id)).resolves.toMatchObject({
+          deletedAt: expect.any(String),
+        });
       } finally {
         if (barrierHeld) await control`SELECT pg_advisory_unlock(${insertBarrier})`;
         await control.unsafe(`

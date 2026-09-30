@@ -38,13 +38,6 @@ const harness = vi.hoisted(() => ({
   trace: [] as string[],
   snapshotRequest: vi.fn((_args?: unknown) => new Promise(() => undefined)),
 }));
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-  msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/core/transport/dev-transport", () => ({
   buildThreadsWsUrl: () => "ws://test/api/threads/ws",
 }));

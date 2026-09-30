@@ -112,8 +112,8 @@ export type ThreadStoreActions = {
   ): boolean;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
-  markPendingCreation(args: { projectId?: string; threadId: string }): void;
-  clearPendingCreation(args: { projectId?: string; threadId?: string }): void;
+  markPendingCreation(args: { threadId: string }): void;
+  clearPendingCreation(args: { threadId: string }): void;
 
   /** Read the tracked settlement for one tuple, if any (overlap guard). */
   interruptResponseFor(identity: InterruptResponseIdentity): InterruptResponseEntry | undefined;

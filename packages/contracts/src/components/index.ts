@@ -213,13 +213,12 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
   properties: {
     question: {
       type: "string",
-      description: "The question to present to the user.",
+      description: "The question for the writer.",
     },
     kind: {
       type: "string",
       enum: ASK_USER_KIND_VALUES,
-      description:
-        "choice: present discrete options the user selects from. free-text: present a text input field.",
+      description: "choice shows options to pick from; free-text shows a text field.",
     },
     options: {
       type: "array",
@@ -232,25 +231,21 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
         required: ["value", "label"],
         additionalProperties: false,
       },
-      description:
-        "Options for 'choice' kind. Each has a value returned on selection and a label displayed to the user. Required when kind is 'choice'.",
+      description: "Required for choice. value is returned; label is shown.",
     },
     recommended: {
       type: ["string", "null"],
-      description:
-        "Recommended value used as the safe default if auto-resume fires. Null means there is no safe default.",
+      description: "Value used if the question times out; null if none is safe.",
     },
     requiresHuman: {
       type: "boolean",
       default: false,
-      description:
-        "Set true when the decision requires human judgment and must not be auto-resolved on timeout.",
+      description: "Never resolve on timeout; wait for the writer.",
     },
     timeoutMs: {
       type: "integer",
       minimum: 1,
-      description:
-        "Optional interrupt timeout in milliseconds. When omitted, the project/default interrupt timeout is used.",
+      description: "Timeout in milliseconds; defaults to the project's.",
     },
   },
   required: ["question", "kind"],

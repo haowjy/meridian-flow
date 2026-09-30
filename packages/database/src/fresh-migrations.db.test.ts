@@ -157,13 +157,18 @@ if (!enabled || !databaseUrl) {
           const [work] =
             await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
             VALUES (${project.id}, ${user.id}, 'No Work', true)
-            RETURNING id, slug, status, ai_write_mode`;
-          expect(work).toMatchObject({ slug: null, status: "active", ai_write_mode: "direct" });
+            RETURNING id, slug, status, archived_at, ai_write_mode`;
+          expect(work).toMatchObject({
+            slug: null,
+            status: null,
+            archived_at: null,
+            ai_write_mode: "direct",
+          });
           await expect(
             tx.savepoint(
-              (save) => save`UPDATE works SET status = 'archived' WHERE id = ${work.id}`,
+              (save) => save`UPDATE works SET archived_at = now() WHERE id = ${work.id}`,
             ),
-          ).rejects.toMatchObject({ constraint_name: "works_no_work_active" });
+          ).rejects.toMatchObject({ constraint_name: "works_no_work_not_archived" });
           await expect(
             tx.savepoint((save) => save`UPDATE works SET slug = 'named' WHERE id = ${work.id}`),
           ).rejects.toMatchObject({ constraint_name: "works_no_work_slug" });

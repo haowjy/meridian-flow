@@ -72,6 +72,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const [scheme, workId, qualifier] of [
         ["manuscript", null, ""],
         ["kb", null, ""],
+        ["unfiled", null, ""],
         ["user", null, ""],
         ["scratch", b, "@work-b/"],
         ["uploads", b, "@work-b/"],
@@ -88,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       }
     });
-    it("does not search another Work's titles and observes deleted authority", async () => {
+    it("does not search another Work's titles and resolves archived but not deleted authority", async () => {
       const r = resolver();
       const local = await add("scratch", "Gate", a);
       await add("scratch", "Gate", b);
@@ -108,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           target: { kind: "wikilink", name: "Gate" },
         }),
       ).toBeNull();
-      await database.current.update(works).set({ status: "archived" }).where(eq(works.id, b));
+      await database.current.update(works).set({ archivedAt: new Date() }).where(eq(works.id, b));
       expect(
         await r.resolve({
           projectId: p,
@@ -116,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId: a,
           target: { kind: "scheme", uri: "scratch://@work-b/Gate.md" },
         }),
-      ).toBeNull();
+      ).toMatchObject({ scheme: "scratch", path: "Gate.md" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
       expect(
         await r.resolve({

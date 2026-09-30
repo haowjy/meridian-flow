@@ -39,6 +39,10 @@ messages and controls remain in the durable inbox; brief release rereads the
 queue and starts any runnable work. A pending S is a working indicator in
 `thread.status` (`awake/generating`, `runningTurnId: null`), not a live lease.
 
+New fork/handoff destinations cannot join an archived Work. The shared membership
+lock refuses creation with HTTP 400 and rolls back the destination; an already
+created chat can still run summaries, briefs, and compaction while archived.
+
 ## Seed data and actions
 
 S has `metadata.kind = derivation_seed`, `derivation = handoff`,

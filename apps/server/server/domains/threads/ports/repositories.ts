@@ -277,7 +277,7 @@ export interface ThreadRepository {
   lockByIdIncludingDeleted(
     id: ThreadId,
     additionalWorkIds?: readonly WorkId[],
-  ): Promise<Thread | null>;
+  ): Promise<(Thread & { deletedByWorkId: WorkId | null }) | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
@@ -312,8 +312,8 @@ export interface ThreadRepository {
   // reversible intent that needs wiring here:
   //   - archive(id)/unarchive(id) — set/clear status:"archived" (or fold into
   //     updateStatus) so a chat can be filed away and brought back.
-  //   - exclude status:"archived" from listByProject / Work feeds by default, and
-  //     add a listing path for the "Archived" view to read them back.
+  //   - add a listing path for the "Archived" view; listByProject and the chat
+  //     feed already omit archived chats by default.
   /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
 }
@@ -361,17 +361,6 @@ export interface ProjectChatCursorKey {
   threadId: ThreadId;
 }
 
-export interface WorkChatFeedRepository {
-  /** Same row shape and stored-activity sort as ProjectChatFeedRepository. */
-  queryPage(input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    userId: UserId;
-    after: ProjectChatCursorKey | null;
-    limit: number;
-  }): Promise<ProjectChatItem[]>;
-}
-
 export interface ProjectChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
@@ -379,6 +368,7 @@ export interface ProjectChatFeedRepository {
     after: ProjectChatCursorKey | null;
     limit: number;
     favorite: boolean;
+    workId: WorkId | null;
     /** Case-insensitive title substring; null lists every chat. */
     search: string | null;
   }): Promise<ProjectChatItem[]>;
@@ -573,7 +563,6 @@ export interface TurnDocumentTouchRepository {
 export type ThreadRepositories = {
   threads: ThreadRepository;
   chatFeed: ProjectChatFeedRepository;
-  workChatFeed: WorkChatFeedRepository;
   threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;

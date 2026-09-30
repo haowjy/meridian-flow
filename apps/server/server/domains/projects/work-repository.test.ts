@@ -1,7 +1,7 @@
 /** WorkRepository lifecycle and D17 deletion contract at the domain port boundary. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { WorkDeleteBlockedError, WorkLockedError } from "./ports/work-repository.js";
+import { WorkLockedError, WorkRestoreExpiredError } from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
 
@@ -21,28 +21,18 @@ describe("WorkRepository", () => {
     expect(await repo.findById(first.id)).toEqual(deleted);
   });
 
-  it("rejects soft-delete while a non-deleted thread membership exists", async () => {
-    const repo = createInMemoryWorkRepository({ hasLiveThreads: () => true });
-    const created = await repo.create({ projectId: PROJECT_ID, name: "Bound" });
-
-    await expect(repo.softDelete(created.id)).rejects.toEqual(
-      new WorkDeleteBlockedError("threads"),
-    );
-    await expect(repo.findById(created.id)).resolves.toMatchObject({ deletedAt: null });
-  });
-
-  it("rejects soft-delete while an unreviewed Work draft exists", async () => {
-    let hasUnreviewedDraft = true;
-    const repo = createInMemoryWorkRepository({
-      hasUnreviewedDrafts: () => hasUnreviewedDraft,
-    });
-    const created = await repo.create({ projectId: PROJECT_ID, name: "Review pending" });
-
-    await expect(repo.softDelete(created.id)).rejects.toEqual(new WorkDeleteBlockedError("drafts"));
-    await expect(repo.findById(created.id)).resolves.toMatchObject({ deletedAt: null });
-
-    hasUnreviewedDraft = false;
-    await expect(repo.softDelete(created.id)).resolves.toBeUndefined();
+  it("refuses restore once the retention window has ended", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2025-01-01T00:00:00.000Z"));
+      const repo = createInMemoryWorkRepository();
+      const created = await repo.create({ projectId: PROJECT_ID, name: "Expired" });
+      await repo.softDelete(created.id);
+      vi.setSystemTime(new Date("2025-01-31T00:00:00.000Z"));
+      await expect(repo.restore(created.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -23,7 +23,8 @@ Key rules:
   `configureWorkingSetSync`; the loader prop seeds it only before the first
   local revision, so a stale loader echo cannot re-enable or disable sync.
 - Hydration adoption runs once per mounted project identity in the project
-  route bootstrap's layout commit, before `ReadableProjectRoute` mounts. Never
+  route bootstrap's layout commit, before `ReadableProjectRoute` mounts (and
+  once more when a project being created receives its route data). Never
   adopt during render or repeat adoption for same-project loader echoes.
 - Build routes with `buildWorkingSetRoute`: every server route requires its
   stable document ID, and Work-capable schemes require explicit real-Work or

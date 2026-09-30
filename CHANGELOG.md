@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+- Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
+- Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
+- Development: M4 migrations follow the Work screen migrations as 0014–0024; reset previously migrated M4 worktree databases with `pnpm db:reset`.
+
 - Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
 - Catalog runtime control, compaction, handoff, and history probes.
@@ -154,7 +158,7 @@
 - Include summary requests in the model-request debug capture.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.
-- Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.
+- Development: reset worktree databases that already applied the earlier unreleased 0018 (`cold_lifeguard`, formerly 0014) with `pnpm db:reset`.
 - Bill summary responses on success, failure and cancellation, once per paid call.
 - Include compaction-call costs in child reports and the shared tree budget; estimate CJK text with required tokenizer-family rates (Anthropic 3.0, measured `o200k` 1.1, Gemini 1.2, DeepSeek 0.8), and probe CJK, image, and file estimates against live provider usage.
 - Cache TTL starts at the provider attempt, not response persistence.
@@ -168,6 +172,30 @@
 
 - Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
 - Derive prefix-cache warmth from durable bakes, completed compaction and typed image boundaries; record each request prediction on its response row, and share one runtime cache-state service across consumers.
+- Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
+- Work description clamps to three lines; click it to show more, Edit to change it in place.
+- Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
+- Work reopens the last Work opened on this device.
+- Work Chats tab lists that Work's chats from the project chat feed (archived chats hidden). Files tab groups Drafts, Scratch and Uploads with new notes, uploads, rename and delete in place; an opened file shows in the dock.
+- Editing text in place never moves or resizes it. One protocol everywhere: Enter or blur saves, Escape or an empty name cancels, failures stay open with their message. Chat titles rename inside their tab.
+- Confirm/dismiss button pairs sit right-aligned, Cancel first.
+- Deleting a Work never blocks: its chats, drafts, Scratch and Uploads go with it. The Deleted tab lists it for 30 days with Restore, which brings everything back; after that it is purged.
+- Work list shows Active, Archived and Deleted as tabs, one list at a time. The tab lives in the URL (`?view=archived|deleted`), so Back returns to it; Archive and Unarchive move focus to the destination tab.
+- Project URLs name the screen first: `/chats`, `/chats/<id>`, `/works`, `/works/<id>`, `/editor`, `/editor/<scheme>/<path>` and `/editor/browse/…`. The Work is `?work=<id>` (required for Scratch and Uploads, empty for No Work). The bare project URL opens `/chats`. Older URLs show "This destination is unavailable." on desktop as on the phone. A new Work keeps its URL from creation on. Slugs and `@` stay out of browser URLs.
+- Fix: the invalid-character name warning showed a raw "{0}".
+- Archive and Unarchive move a Work to its new tab at once. If the server refuses, the Work returns with an error to retry or dismiss.
+- Fix: restoring an archived Work showed it under Active before it settled under Archived.
+- Fix: a failed Archive stayed silent when another Archive followed it; the Work list and the Work band now show the same failure, and a Work's changes can no longer flicker back while a server read catches up.
+- Fix: an archived Work waiting to be undeleted showed under Archived beside its Undo row.
+- Phone: a failed Archive gets its own line under the top bar instead of squeezing the title.
+- Fix: a finished upload no longer drops out of a Work's Uploads for a moment before the file appears; its row stays until the list has the file.
+- Chat titles rename like Work and project titles: the field closes at once, and a refused rename reopens it with your text and the error under it (no separate Retry row).
+- Fix: deleting a second Work while the first was still deleting lost the first one's Undo row and its failure. Each deleted Work now keeps its own Undo row in the tab it left, and a failed delete or Undo stays on that Work.
+- Fix: a newly created Work briefly vanished from the Work list, the Work picker and the sidebar just after the server confirmed it. A Work being created shows in its list at once and stays there.
+- A refused Restore can be dismissed.
+- Fix: a Work deleted just now could read "Deletes for good in 31 days". The countdown never exceeds the 30-day retention.
+- `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
+
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
 - Show only "Queued" under a writer message the model has not read yet.
 - Keep "needs your answer" on a chat when the writer sends while a question is parked.
@@ -191,7 +219,7 @@
 - Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
-- Open new project destinations immediately; persist and retry there within the originating account epoch, while overlapping entry reads, warming code without duplicate loads, and initializing route caches once outside React render.
+- Opening a project is faster: its identity and shell reads run together, library hover or focus and the open New project dialog warm workspace code without loading project data, and route caches seed outside React render.
 
 - Resolve images sent while a reply streams. Share history image limits and keep saved image identities.
 

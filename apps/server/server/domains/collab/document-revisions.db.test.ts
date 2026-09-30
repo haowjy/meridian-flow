@@ -75,7 +75,6 @@ async function fixture(mode: "direct" | "draft") {
     documents: effective,
     works: createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
     threadWorks: createDrizzleThreadWorksRepository(db),
@@ -151,6 +150,20 @@ describe("document revisions (postgres and collab)", () => {
       expect(before.revision).not.toBe(revision);
     });
   }
+
+  it.each([
+    null,
+    new Date("2026-09-01T00:00:00Z"),
+  ])("keeps revision evidence with status text archived and archivedAt %s", async (archivedAt) => {
+    const f = await fixture("draft");
+    const before = await f.current();
+    expect(before).toMatch(/^y1:/);
+    await db
+      .update(schema.works)
+      .set({ status: "archived", archivedAt })
+      .where(eq(schema.works.id, WORK_ID));
+    expect(await f.current()).toBe(before);
+  });
 
   it("a pure writer deletion in the Hocuspocus room invalidates a live read", async () => {
     const f = await fixture("direct");

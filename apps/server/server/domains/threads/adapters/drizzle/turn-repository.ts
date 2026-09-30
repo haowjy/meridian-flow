@@ -18,6 +18,7 @@ import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.
 import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
+import { turnCountsAsActivity } from "../../domain/turn-activity-policy.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   CreateTurnInput,
@@ -204,40 +205,43 @@ export function createDrizzleTurnRepository(
           return existing;
         }
         const now = new Date();
+        const countsAsActivity = turnCountsAsActivity(input.origin);
         await activeDb
           .update(schema.threads)
           .set({
             activeLeafTurnId: row.id,
-            updatedAt: now,
+            ...(countsAsActivity ? { updatedAt: now } : {}),
           })
           .where(eq(schema.threads.id, row.threadId));
-        const [thread] = await activeDb
-          .select({
-            projectId: schema.threads.projectId,
-            workId: schema.threadWorks.workId,
-          })
-          .from(schema.threads)
-          .leftJoin(
-            schema.threadWorks,
-            and(
-              eq(schema.threadWorks.threadId, schema.threads.id),
-              eq(schema.threadWorks.isPrimary, true),
-            ),
-          )
-          .where(eq(schema.threads.id, row.threadId))
-          .limit(1);
-        if (thread?.workId) {
-          if (workActivity) await workActivity.touchWorks([thread.workId], now);
-          else {
+        if (countsAsActivity) {
+          const [thread] = await activeDb
+            .select({
+              projectId: schema.threads.projectId,
+              workId: schema.threadWorks.workId,
+            })
+            .from(schema.threads)
+            .leftJoin(
+              schema.threadWorks,
+              and(
+                eq(schema.threadWorks.threadId, schema.threads.id),
+                eq(schema.threadWorks.isPrimary, true),
+              ),
+            )
+            .where(eq(schema.threads.id, row.threadId))
+            .limit(1);
+          if (thread?.workId) {
+            if (workActivity) await workActivity.touchWorks([thread.workId], now);
+            else {
+              await activeDb
+                .update(schema.works)
+                .set({ updatedAt: now })
+                .where(eq(schema.works.id, thread.workId));
+            }
             await activeDb
-              .update(schema.works)
-              .set({ updatedAt: now })
-              .where(eq(schema.works.id, thread.workId));
+              .update(schema.projects)
+              .set({ updatedAt: now, lastActivityAt: now })
+              .where(eq(schema.projects.id, thread.projectId));
           }
-          await activeDb
-            .update(schema.projects)
-            .set({ updatedAt: now, lastActivityAt: now })
-            .where(eq(schema.projects.id, thread.projectId));
         }
         return mapTurn(row);
       });

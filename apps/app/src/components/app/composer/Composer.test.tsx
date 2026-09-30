@@ -7,14 +7,6 @@ import { Composer, type ComposerSubmitEnvelope, type ComposerSubmitOutcome } fro
 import type { ComposerChatCommand } from "./command";
 import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-  msg: (strings: TemplateStringsArray, ...values: unknown[]) => {
-    const message = strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
-    return { id: message, message };
-  },
-}));
 vi.mock("@lingui/react", () => ({
   useLingui: () => ({ i18n: { _: (descriptor: { message: string }) => descriptor.message } }),
 }));

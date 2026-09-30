@@ -1,21 +1,11 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import {
-  type AiWriteMode,
-  decodeWorkSlug,
-  type Work,
-  type WorkStatus,
-} from "@meridian/contracts/works";
+import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
-  contextSources,
-  documents,
-  folders,
   projects,
-  threads,
-  threadWorks,
   works,
 } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -24,20 +14,25 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
+import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
+import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
   UpdateWorkInput,
   WorkRepository,
+  WorkRestoration,
 } from "../../ports/work-repository.js";
 import {
-  WorkDeleteBlockedError,
+  WorkDeleteRetryError,
   WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
+import { hideWorkOwnedRows, unhideWorkOwnedRows } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
@@ -65,8 +60,7 @@ function mapWork(row: WorkRow): Work {
     slug,
     isNoWork: row.isNoWork,
     goal: row.goal,
-    description: row.description,
-    status: row.status as WorkStatus,
+    status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     aiWriteMode: row.aiWriteMode as AiWriteMode,
     entityRevision: String(row.entityRevision),
@@ -78,13 +72,13 @@ function mapWork(row: WorkRow): Work {
 }
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
-  /** Canonical collab-domain predicate for reviewable Work draft content. */
-  hasUnreviewedDraft(workId: WorkId): Promise<boolean>;
   projectionMutation: WorkProjectionMutation;
+  now?: () => Date;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
-  const { db, hasUnreviewedDraft } = deps;
+  const { db } = deps;
   const projectionMutation = deps.projectionMutation;
+  const now = deps.now ?? (() => new Date());
 
   async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
     await currentDrizzleDb(db).execute(
@@ -109,7 +103,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
   async function requireUnlocked(id: WorkId): Promise<Work> {
     const existing = await findWorkById(id);
-    if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
+    if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
+    if (existing.deletedAt) {
+      throw new WorkLifecycleUnavailableError(id, "deleted", existing.slug);
+    }
     if (existing.isNoWork) throw new WorkLockedError();
     return existing;
   }
@@ -169,7 +166,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
                 existingSlugs.map(({ slug }) => slug),
               ),
               goal: input.goal,
-              description: input.description,
             })
             .returning();
         } catch (cause) {
@@ -222,7 +218,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             name: NO_WORK_NAME,
             slug: null,
             isNoWork: true,
-            status: "active",
             aiWriteMode: "direct",
           })
           .returning();
@@ -234,7 +229,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const where = and(
         eq(works.projectId, projectId),
         opts?.includeDeleted ? undefined : isNull(works.deletedAt),
-        opts?.status ? eq(works.status, opts.status) : undefined,
+        (opts?.lifecycle ?? "active") === "all"
+          ? undefined
+          : opts?.lifecycle === "archived"
+            ? sql`${works.archivedAt} IS NOT NULL`
+            : isNull(works.archivedAt),
         opts?.includeNoWork ? undefined : eq(works.isNoWork, false),
       );
       const rows = await currentDrizzleDb(db)
@@ -272,11 +271,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const patch: Partial<typeof works.$inferInsert> = {};
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
-      if (input.description !== undefined) patch.description = input.description;
-      if (input.status !== undefined) {
-        patch.status = input.status;
-        patch.archivedAt = input.status === "archived" ? new Date() : null;
-      }
+      if (input.status !== undefined) patch.status = input.status;
       try {
         return await updateWork(id, patch);
       } catch (cause) {
@@ -288,89 +283,73 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async archive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
-      if (existing.status === "archived") return existing;
-      return updateWork(id, { status: "archived", archivedAt: new Date() });
+      if (existing.archivedAt !== null) return existing;
+      return updateWork(id, { archivedAt: new Date() });
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
-      if (existing.status === "active") return existing;
-      return updateWork(id, { status: "active", archivedAt: null });
+      if (existing.archivedAt === null) return existing;
+      return updateWork(id, { archivedAt: null });
     },
-    async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
-      if (!isUuid(id)) return false;
-      return hasUnreviewedDraft(id);
-    },
-    async softDelete(id: WorkId): Promise<void> {
-      const existing = await findWorkById(id);
-      if (!existing || existing.deletedAt) return;
-      if (existing.isNoWork) throw new WorkLockedError();
-
-      await runInDrizzleTransaction(db, async () => {
+    async softDelete(id: WorkId) {
+      return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        const lifecycle = await lockWorkLifecycle(db, id);
-        if (lifecycle === "missing" || lifecycle === "deleted") return;
-        if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
+        const lockedTree = await lockWorkThreadTree(db, id);
+        const before = await findWorkById(id);
+        if (lockedTree.lifecycle === "missing" || lockedTree.lifecycle === "deleted" || !before) {
+          return { before, after: before, threadIds: [] };
+        }
+        if (before.isNoWork) throw new WorkLockedError();
+        if (lockedTree.changed) throw new WorkDeleteRetryError();
 
-        const [membership] = await activeDb
-          .select({ threadId: threadWorks.threadId })
-          .from(threadWorks)
-          .innerJoin(threads, eq(threadWorks.threadId, threads.id))
-          .where(and(eq(threadWorks.workId, id), isNull(threads.deletedAt)))
-          .limit(1);
-        if (membership) throw new WorkDeleteBlockedError("threads");
-
-        const [document] = await activeDb
-          .select({ id: documents.id })
-          .from(contextSources)
-          .innerJoin(documents, eq(documents.contextSourceId, contextSources.id))
-          .where(
-            and(
-              eq(contextSources.workId, id),
-              isNull(documents.deletedAt),
-              eq(documents.kind, "content"),
-            ),
-          )
-          .limit(1);
-        if (document) throw new WorkDeleteBlockedError("documents");
-
-        const [folder] = await activeDb
-          .select({ id: folders.id })
-          .from(contextSources)
-          .innerJoin(folders, eq(folders.contextSourceId, contextSources.id))
-          .where(and(eq(contextSources.workId, id), isNull(folders.deletedAt)))
-          .limit(1);
-        if (folder) throw new WorkDeleteBlockedError("folders");
-
+        const deletedAt = now();
+        const deletedThreadIds = await hideWorkOwnedRows(db, {
+          workId: id,
+          threadIds: lockedTree.threadIds,
+          liveThreadIds: lockedTree.liveThreadIds,
+          at: deletedAt,
+        });
         await activeDb
           .update(works)
           .set({
-            deletedAt: new Date(),
+            deletedAt,
             entityRevision: sql`${works.entityRevision} + 1`,
-            updatedAt: new Date(),
+            updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
         await projectionMutation.publishWorks([id]);
+        const after = await findWorkById(id);
+        return { before, after, threadIds: deletedThreadIds };
       });
     },
-    async restore(id: WorkId): Promise<Work> {
-      const existing = await findWorkById(id);
-      if (!existing) throw new Error(`Work not found: ${id}`);
-      if (!existing.deletedAt) return existing;
+    async restore(id: WorkId): Promise<WorkRestoration> {
       try {
         return await runInDrizzleTransaction(db, async () => {
-          await lockWorkLifecycle(db, id);
+          const lockedTree = await lockWorkThreadTree(db, id, { includeMarked: true });
+          const existing = await findWorkById(id);
+          if (!existing) throw new Error(`Work not found: ${id}`);
+          if (decideWorkRestore(existing, now()) === "unchanged") {
+            return { before: existing, after: existing, changed: false };
+          }
+          const restoredAt = now();
           const [row] = await currentDrizzleDb(db)
             .update(works)
             .set({
               deletedAt: null,
               entityRevision: sql`${works.entityRevision} + 1`,
-              updatedAt: new Date(),
+              updatedAt: restoredAt,
             })
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
+          await unhideWorkOwnedRows(db, {
+            workId: id,
+            threadIds: lockedTree.threadIds,
+            liveThreadIds: lockedTree.liveThreadIds,
+            at: restoredAt,
+          });
           await projectionMutation.publishWorks([row.id]);
-          return mapWork(row);
+          return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {
         const constraint = workUniqueConstraint(cause);

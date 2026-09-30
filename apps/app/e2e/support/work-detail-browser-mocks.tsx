@@ -1,10 +1,10 @@
 /** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { useState } from "react";
-import type { WorkCommand, WorkMutations } from "../../src/client/query/useWorks";
+import type { Work } from "@meridian/contracts/works";
+import type { WorkMutations } from "../../src/client/query/work-commands";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
   parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
+export const msg = t;
 export function Trans({ children }: { children: React.ReactNode }) {
   return children;
 }
@@ -33,19 +33,15 @@ export const useContextCatalogView = (_projectId: string, scheme: "scratch" | "u
   isError: false,
   refetch: () => undefined,
 });
-export const useWorkThreads = () => {
-  const [threads, setThreads] = useState(state().threads);
-  const [hasNextPage, setHasNextPage] = useState(Boolean(state().nextThreads?.length));
+export const useProjectChatFeed = () => {
+  const threads = state().threads;
   return {
-    threads,
+    items: threads,
+    data: { pages: [{ items: threads, nextCursor: null }] },
+    isPending: false,
     isError: false,
-    isFetchingNextPage: false,
-    nextPageIdentity: hasNextPage ? "next-page" : null,
-    fetchNextPageFor: () => {
-      setThreads((current) => [...current, ...(state().nextThreads ?? [])]);
-      setHasNextPage(false);
-    },
-    setFavorite: async () => true,
+    isPlaceholderData: false,
+    hasNextPage: false,
     refetch: () => undefined,
   };
 };
@@ -57,28 +53,31 @@ export const useAnnouncement = () => ({
   announce: () => undefined,
   announceError: () => undefined,
 });
-function browserWorkCommand<TResult, TVariables>(
-  run: (variables: TVariables) => Promise<TResult>,
-): WorkCommand<TResult, TVariables> {
-  return {
-    mutate: () => undefined,
-    mutateAsync: run,
-    isPending: false,
-    error: null,
-  };
-}
-
+export const announceError = () => undefined;
+export const useIsThreadPendingCreation = () => false;
+export const useThreadActions = () => ({});
+export const commitContextAvailability = () => undefined;
+export const commitDraftApplyMetadata = () => undefined;
+export const commitPlannedContextRemoval = () => undefined;
+export const commitReviewOverlayClose = () => undefined;
+export const getContextTabs = () => [];
+export const previewReviewOverlayClose = () => ({ status: "unchanged" });
+export const useContextTabsActions = () => ({});
+export const accessibleResourceCatalogView = () => null;
+export const contextCatalogScope = () => null;
+export const projectCatalogFile = () => null;
+export const projectCatalogView = () => null;
+const settled = async () => null;
 export const useWorkMutations = (): WorkMutations => ({
-  create: browserWorkCommand<Work, CreateWorkRequest>(async () => state().work),
-  update: browserWorkCommand<Work, { workId: string; data: UpdateWorkRequest }>(
-    async () => state().work,
-  ),
-  archive: browserWorkCommand<Work, string>(async () => state().work),
-  unarchive: browserWorkCommand<Work, string>(async () => state().work),
-  delete: browserWorkCommand<void, string>(async () => undefined),
-  restore: browserWorkCommand<Work, string>(async () => state().work),
-  isPending: false,
+  create: settled,
+  update: settled,
+  archive: settled,
+  unarchive: settled,
+  delete: settled,
+  restore: settled,
 });
+export const useWorkCommandFailures = () => new Map();
+export const useRestoringWorkIds = () => new Set<string>();
 export const useWorks = () => ({
   works: [state().work],
   isError: false,

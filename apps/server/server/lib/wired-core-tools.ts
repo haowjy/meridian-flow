@@ -28,6 +28,7 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   ThreadExecutionContext,
@@ -35,6 +36,7 @@ import type {
   WorkReceipt,
   WorkReceiptState,
 } from "@meridian/contracts/works";
+import { workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -56,11 +58,13 @@ import {
 import {
   createWork,
   deleteWorkTransition,
+  setWorkArchived,
   updateWorkTransition,
   type WorkContextNotices,
-  WorkDeleteBlockedError,
+  WorkLifecycleUnavailableError,
   WorkNameRequiredError,
   type WorkRepository,
+  WorkStatusInvalidError,
 } from "../domains/projects/index.js";
 import {
   createCoreToolRegistrations,
@@ -93,7 +97,8 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
-  workContextNotices: Pick<WorkContextNotices, "projectChanged" | "threadChanged">;
+  workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
+  stopThreadRun(threadId: ThreadId): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -121,8 +126,8 @@ type ModelWork = Pick<
   | "slug"
   | "name"
   | "goal"
-  | "description"
   | "status"
+  | "archivedAt"
   | "aiWriteMode"
   | "createdAt"
   | "updatedAt"
@@ -220,7 +225,7 @@ async function resolveExecutionContext(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || workLifecycleState(work) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
   return threadExecutionContext(work);
@@ -233,7 +238,7 @@ async function resolveExecutionContextOrThrow(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || workLifecycleState(work) === "deleted") {
     throw new Error("The current Work is unavailable during response finalization");
   }
   return threadExecutionContext(work);
@@ -244,8 +249,8 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -256,8 +261,8 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -374,8 +379,8 @@ function receiptState(work: Work): WorkReceiptState {
   return {
     name: work.name,
     goal: work.goal,
-    description: work.description,
     status: work.status,
+    archived: work.archivedAt !== null,
   };
 }
 
@@ -384,7 +389,7 @@ async function workBySlug(
   projectId: string,
   slug: string,
 ): Promise<Awaited<ReturnType<WorkRepository["findById"]>> | ToolErrorOutput> {
-  const works = await deps.works.listByProject(projectId);
+  const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
   const work = works.find((candidate) => candidate.slug === slug) ?? null;
   if (work) return work;
   const validWorkSlugs = works.map((candidate) => candidate.slug);
@@ -460,8 +465,21 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 }
 
 function contextErrorMessage(error: ContextError): string {
+  if (error.code === "context_unavailable") {
+    return workLifecycleMessage(error.reason, error.workSlug);
+  }
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
+}
+
+function workLifecycleMessage(
+  reason: "work_archived" | "work_deleted" | "work_missing",
+  workSlug: string | null,
+): string {
+  const identity = workSlug ? `@${workSlug}` : "the requested Work";
+  return reason === "work_archived"
+    ? `Work ${identity} is archived and read-only. Use the work unarchive command before changing its content.`
+    : `Work ${identity} is unavailable.`;
 }
 
 async function deleteCreatedTrackedDocument(input: {
@@ -797,23 +815,19 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       try {
         if (command.command === "list") {
           const works = await deps.works.listByProject(thread.projectId, {
-            status: command.status ?? "active",
+            lifecycle: command.archived ? "archived" : "active",
           });
           return works.map(modelWork);
         }
 
         if (command.command === "create") {
           const work = await createWork(
-            {
-              works: deps.works,
-              workContextNotices: deps.workContextNotices,
-            },
+            { works: deps.works },
             {
               projectId: thread.projectId,
               createdByUserId: thread.userId,
               name: command.name,
               goal: command.goal,
-              description: command.description,
             },
           );
           return {
@@ -867,8 +881,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               slug: rebound.after.slug,
               name: rebound.after.name,
               goal: rebound.after.goal,
-              description: rebound.after.description,
               status: rebound.after.status,
+              archived: rebound.after.archived,
               aiWriteMode: rebound.after.aiWriteMode,
             },
             metadata: {
@@ -901,12 +915,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const transition = await updateWorkTransition(
             { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
-            {
-              name: command.name,
-              goal: command.goal,
-              description: command.description,
-              status: command.status,
-            },
+            { name: command.name, goal: command.goal, status: command.status },
           );
           const { before, after: updated, changed } = transition;
           return {
@@ -928,9 +937,38 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           };
         }
 
+        if (command.command === "archive" || command.command === "unarchive") {
+          const transition = await setWorkArchived(
+            { works: deps.works, workContextNotices: deps.workContextNotices },
+            selected.id,
+            command.command === "archive",
+          );
+          const { before, after, changed } = transition;
+          return {
+            output: modelWork(after),
+            metadata: {
+              workReceipt: {
+                operation: "update",
+                category: "mutate",
+                changed,
+                workId: after.id,
+                workName: after.name,
+                before: receiptState(before),
+                after: receiptState(after),
+                inverse: changed
+                  ? { command: "update", workId: before.id, state: receiptState(before) }
+                  : null,
+              } satisfies WorkReceipt,
+            },
+          };
+        }
+
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, workContextNotices: deps.workContextNotices },
+            {
+              works: deps.works,
+              stopThreadRun: deps.stopThreadRun,
+            },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -959,14 +997,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             ...(error.workId ? { workId: error.workId } : {}),
           });
         }
+        if (error instanceof WorkStatusInvalidError) {
+          return toolError({ code: "invalid_work_status", message: error.message });
+        }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
         }
-        if (error instanceof WorkDeleteBlockedError) {
+        if (error instanceof WorkLifecycleUnavailableError) {
+          const reason = `work_${error.state}` as const;
           return toolError({
-            code: "work_delete_blocked",
-            message: error.message,
-            blockingContentKind: error.reason,
+            code: error.state === "archived" ? "work_archived" : "work_not_found",
+            message: workLifecycleMessage(
+              reason,
+              "work" in command ? command.work : (error.workSlug ?? null),
+            ),
           });
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });

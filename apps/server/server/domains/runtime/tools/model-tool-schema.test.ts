@@ -65,7 +65,9 @@ describe("model tool schemas", () => {
             "$.oneOf[2]: command, name",
             "$.oneOf[3]: work, command",
             "$.oneOf[4]: work, command",
-            "$.oneOf[5]: command",
+            "$.oneOf[5]: work, command",
+            "$.oneOf[6]: work, command",
+            "$.oneOf[7]: command",
           ],
         },
         {

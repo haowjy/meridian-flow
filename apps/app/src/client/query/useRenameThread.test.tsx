@@ -1,21 +1,24 @@
 // @vitest-environment jsdom
 /**
- * Account-fence contract for the thread-rename hook. The rename command file
+ * Hook contract for the thread rename. The rename command file
  * (`thread-rename-command.test.ts`) owns projection, the stale-list fence,
- * superseded settlement, and abort; this file only proves that a completion
- * landing after an A→B→A account replacement does not confirm into the new
- * lifetime.
+ * superseded settlement, and abort; this file proves which outcomes reject the
+ * returned `rename` (so the title field reopens) and that a completion landing
+ * after an A→B→A account replacement does not confirm into the new lifetime.
  */
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { HttpResponseError } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
-import { type ThreadRenameView, useRenameThread } from "./useRenameThread";
+import { useRenameThread } from "./useRenameThread";
+
+type Rename = ReturnType<typeof useRenameThread>;
 
 const mocks = vi.hoisted(() => ({ renameThread: vi.fn(), listProjectThreads: vi.fn() }));
 
@@ -56,14 +59,14 @@ function Probe({
   expose,
   onConfirmed,
 }: {
-  expose: (view: ThreadRenameView) => void;
-  onConfirmed: (title: string) => void;
+  expose: (rename: Rename) => void;
+  onConfirmed?: (title: string) => void;
 }) {
-  const view = useRenameThread(PROJECT_ID, THREAD_ID, onConfirmed);
+  const rename = useRenameThread(PROJECT_ID, THREAD_ID, onConfirmed);
   useEffect(() => {
-    expose(view);
-  }, [expose, view]);
-  return <span data-role="status">{view.pending ? "pending" : "idle"}</span>;
+    expose(rename);
+  }, [expose, rename]);
+  return null;
 }
 
 afterEach(() => {
@@ -79,13 +82,54 @@ function client(): QueryClient {
   return queryClient;
 }
 
+async function settleRefused(error: Error, queryClient: QueryClient) {
+  let rename: Rename | undefined;
+  mocks.renameThread.mockRejectedValue(error);
+  let result: PromiseSettledResult<void> | undefined;
+  let title: string | null | undefined;
+  await withReactRoot(
+    <QueryClientProvider client={queryClient}>
+      <AccountFeatureTestProvider accountId="account-a">
+        <Probe expose={(next) => (rename = next)} />
+      </AccountFeatureTestProvider>
+    </QueryClientProvider>,
+    async () => {
+      await act(async () => {
+        [result] = await Promise.allSettled([rename?.("Renamed") ?? Promise.resolve()]);
+      });
+      // Read before unmount: leaving the account lifetime discards the record.
+      title = titleOf(queryClient);
+    },
+  );
+  return { result, title };
+}
+
+describe("useRenameThread", () => {
+  it("rejects when the server refuses the title, after reverting it", async () => {
+    const refusal = new HttpResponseError("Bad title", 422, null);
+    const { result, title } = await settleRefused(refusal, client());
+    expect(result).toEqual({ status: "rejected", reason: refusal });
+    expect(title).toBe("Original");
+  });
+
+  it("resolves an unknown outcome and keeps the title while it reconciles", async () => {
+    mocks.listProjectThreads.mockReturnValue(new Promise(() => {}));
+    const { result, title } = await settleRefused(
+      new HttpResponseError("Unavailable", 503, null),
+      client(),
+    );
+    expect(result?.status).toBe("fulfilled");
+    expect(title).toBe("Renamed");
+  });
+});
+
 describe("useRenameThread account fence", () => {
   it("rejects a late completion after an A→B→A account replacement", async () => {
     const queryClient = client();
     const late = deferred<{ threadId: string; title: string; updatedAt: string }>();
     mocks.renameThread.mockReturnValue(late.promise);
     const onConfirmed = vi.fn();
-    let view: ThreadRenameView | undefined;
+    let rename: Rename | undefined;
     let setAccount: ((accountId: string) => void) | undefined;
 
     function Harness() {
@@ -94,14 +138,16 @@ describe("useRenameThread account fence", () => {
       return (
         <QueryClientProvider client={queryClient}>
           <AccountFeatureTestProvider accountId={accountId}>
-            <Probe expose={(next) => (view = next)} onConfirmed={onConfirmed} />
+            <Probe expose={(next) => (rename = next)} onConfirmed={onConfirmed} />
           </AccountFeatureTestProvider>
         </QueryClientProvider>
       );
     }
 
     await withReactRoot(<Harness />, async () => {
-      await act(async () => view?.submit("Renamed"));
+      await act(async () => {
+        void rename?.("Renamed");
+      });
       expect(titleOf(queryClient)).toBe("Renamed");
 
       // A→B→A replaces the account lifetime; the old epoch aborts.

@@ -38,7 +38,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const workRepository = () =>
       createDrizzleWorkRepository({
         db,
-        hasUnreviewedDraft: async () => false,
         projectionMutation,
       });
 

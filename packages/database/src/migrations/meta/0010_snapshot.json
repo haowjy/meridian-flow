@@ -1,5 +1,5 @@
 {
-  "id": "71a3dc33-2861-4e0c-ad2d-5b09c815554a",
+  "id": "c14519d9-62a2-4328-907f-01e5cd3fcee4",
   "prevId": "bc1c2551-63b6-4b38-b154-345c0ef7743c",
   "version": "7",
   "dialect": "postgresql",
@@ -1717,7 +1717,7 @@
         },
         "thread_execution_reports_publication_valid": {
           "name": "thread_execution_reports_publication_valid",
-          "value": "\"thread_execution_reports\".\"publication\" IN ('none','pending','published')"
+          "value": "\"thread_execution_reports\".\"publication\" IN ('none','pending','published','skipped')"
         },
         "thread_execution_reports_terminal_coherent": {
           "name": "thread_execution_reports_terminal_coherent",
@@ -1725,11 +1725,7 @@
         },
         "thread_execution_reports_publication_timestamp_coherent": {
           "name": "thread_execution_reports_publication_timestamp_coherent",
-          "value": "(\"thread_execution_reports\".\"publication\" IN ('none','pending') AND \"thread_execution_reports\".\"published_at\" IS NULL) OR (\"thread_execution_reports\".\"publication\" = 'published' AND \"thread_execution_reports\".\"published_at\" IS NOT NULL)"
-        },
-        "thread_execution_reports_pending_has_caller": {
-          "name": "thread_execution_reports_pending_has_caller",
-          "value": "\"thread_execution_reports\".\"publication\" <> 'pending' OR \"thread_execution_reports\".\"caller_thread_id\" IS NOT NULL"
+          "value": "(\"thread_execution_reports\".\"publication\" IN ('none','pending') AND \"thread_execution_reports\".\"published_at\" IS NULL) OR (\"thread_execution_reports\".\"publication\" IN ('published','skipped') AND \"thread_execution_reports\".\"published_at\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -2503,19 +2499,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "threads_origin_turn_id_turns_id_fk": {
-          "name": "threads_origin_turn_id_turns_id_fk",
-          "tableFrom": "threads",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "origin_turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4806,12 +4789,6 @@
         },
         "goal": {
           "name": "goal",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
           "type": "text",
           "primaryKey": false,
           "notNull": false

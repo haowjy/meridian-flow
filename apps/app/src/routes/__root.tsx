@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
+import { IOS_FOCUS_ZOOM_BOOT_SCRIPT } from "@/lib/ios-focus-zoom";
 import { TEXT_SIZE_BOOT_SCRIPT } from "@/lib/text-size";
 import { UI_THEME_BOOT_SCRIPT } from "@/lib/ui-theme";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
@@ -85,6 +86,7 @@ function RootDocument({ children, lang }: Readonly<{ children: ReactNode; lang: 
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>
       <body className="paper-grain">
         {children}

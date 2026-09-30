@@ -64,6 +64,8 @@ export function createWriterTurnProducer(deps: {
   delivery: DeliveryProducer;
   inbox: Pick<InboxReader, "selectPending">;
   records: AdmissionPersistencePort;
+  /** Runs inside the turn-start transaction before any writer content is persisted. */
+  requireWritableThread(threadId: ThreadId): Promise<void>;
   consumeUploads(documentIds: readonly string[]): Promise<void>;
   attachDocument(
     threadId: string,
@@ -112,6 +114,7 @@ export function createWriterTurnProducer(deps: {
           userTurnMetadata: writerSendMetadata(turnMetadata, assistantTurnId ? "steer" : "send"),
           delivery: deps.delivery,
           inbox: deps.inbox,
+          beforePersist: () => deps.requireWritableThread(threadId),
           draft: {
             id: userTurnId,
             threadId,

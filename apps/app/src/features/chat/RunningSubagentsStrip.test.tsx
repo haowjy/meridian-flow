@@ -4,20 +4,12 @@
  * expandable live rows and a door into each child. Empty
  * subtree renders nothing.
  */
-import type { ReactNode } from "react";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
 
 import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";

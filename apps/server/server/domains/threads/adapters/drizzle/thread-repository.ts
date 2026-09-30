@@ -319,7 +319,10 @@ export function createDrizzleThreadRepository(
         .from(schema.threadWorks)
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
-      return mapThread({ ...row, workId: membership?.workId ?? null });
+      return {
+        ...mapThread({ ...row, workId: membership?.workId ?? null }),
+        deletedByWorkId: row.deletedByWorkId,
+      };
     },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
@@ -547,7 +550,11 @@ export function createDrizzleThreadRepository(
       const deletedAt = target === "deleted" ? new Date() : null;
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
-        .set({ deletedAt, updatedAt: new Date() })
+        .set({
+          deletedAt,
+          deletedByWorkId: target === "visible" ? null : undefined,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(schema.threads.id, id),

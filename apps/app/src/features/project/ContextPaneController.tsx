@@ -1,12 +1,10 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
+  isEditorTab,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -36,6 +34,8 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
   editorWorkId: string | null;
+  /** The Editor's Work; its archived state makes its files read-only. */
+  editorWork: Work | null;
   localDocumentId?: string;
   addressOwnsDocumentAdmission?: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
@@ -61,6 +61,7 @@ export type ContextViewerSurfaceControllerProps = {
 export function ContextViewerSurfaceController({
   projectId,
   editorWorkId,
+  editorWork,
   localDocumentId,
   addressOwnsDocumentAdmission = false,
   activeContextScheme,
@@ -86,10 +87,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = tabs.filter((tab) => {
-    if (tab.kind === "new") return true;
-    return !isWorkScopedProjectContextScheme(tab.scheme);
-  });
+  const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
   const locator =
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
@@ -448,6 +446,7 @@ export function ContextViewerSurfaceController({
       layoutSaveFailed={layoutSaveFailed}
       projectId={projectId}
       editorWorkId={routeWorkId}
+      editorWork={editorWork}
       tabs={visibleTabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}

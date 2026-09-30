@@ -23,8 +23,8 @@ export function createDocumentRevisions(deps: {
       const primary = await deps.threadWorks.findPrimary(threadId);
       const work = primary ? await deps.works.findById(primary.workId) : null;
       const revisions = new Map<string, string | null>();
-      const valid =
-        thread && !thread.deletedAt && work && !work.deletedAt && work.status !== "archived";
+      // Archive restricts writes, not the revision reads used by summaries and compaction.
+      const valid = thread && !thread.deletedAt && work && !work.deletedAt;
       const draftThreadId =
         work && threadExecutionContext(work).draftOwner !== null ? threadId : null;
       let membership: Set<string> | undefined;

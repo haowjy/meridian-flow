@@ -27,11 +27,13 @@ export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
 } from "./admission/drizzle-admission-records.js";
+export { requireWritableThread } from "./admission/require-writable-thread.js";
 export {
   AdmissionConflictError,
   createUserTurnAdmission,
   InvalidAdmissionError,
   MAX_USER_MESSAGE_TEXT,
+  ThreadWorkUnavailableAdmissionError,
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
@@ -143,7 +145,6 @@ export {
 export {
   createWorkContextReader,
   renderWorkContext,
-  WORK_CONTEXT_ACTIVE_LIMIT,
   type WorkContextReader,
 } from "./loop/work-context.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";

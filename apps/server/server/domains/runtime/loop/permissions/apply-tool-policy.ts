@@ -1,7 +1,6 @@
 /** Applies EffectiveToolPolicy to advertisement and the name+command permission gate. */
 
 import type { Tool } from "../../gateway/index.js";
-import { writeToolDescription } from "../../tools/write-tool-description.js";
 import {
   commandSetForTool,
   type EffectiveToolPolicy,
@@ -64,11 +63,7 @@ export function advertiseTools(baseTools: Tool[] | undefined, policy: EffectiveT
       if (tool.type !== "function") return tool;
       const commands = commandSetForTool(policy, tool.name);
       if (!commands) return tool;
-      return {
-        ...tool,
-        ...(tool.name === "write" ? { description: writeToolDescription(commands) } : {}),
-        inputSchema: narrowCommandSchema(tool.inputSchema, commands),
-      };
+      return { ...tool, inputSchema: narrowCommandSchema(tool.inputSchema, commands) };
     });
 }
 

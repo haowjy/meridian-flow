@@ -48,6 +48,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           limit: 10,
           favorite: false,
           search: null,
+          workId: null,
         })
       )[0]?.lastActivityAt;
     }
@@ -98,6 +99,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           limit: 10,
           favorite: false,
           search: null,
+          workId: null,
         })
       )[0];
       const [thread] = await db
@@ -288,6 +290,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         limit: 1,
         favorite: false,
         search: null,
+        workId: null,
       });
       const cursor = firstPage[0];
       if (!cursor) throw new Error("Expected first cursor page to contain a chat");
@@ -298,6 +301,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         limit: 1,
         favorite: false,
         search: null,
+        workId: null,
       });
       expect(firstPage.map((item) => item.id)).toEqual([second]);
       expect(nextPage.map((item) => item.id)).toEqual([THREAD]);

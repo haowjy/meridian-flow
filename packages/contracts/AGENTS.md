@@ -42,6 +42,7 @@ runtime shapes, and observability records.
   request schema, runtime `pending-inbox.ts`, and the database inbox body
   check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
   queued item from the tray or fails its enqueue.
+- Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
 - Blocks describe the writer transcript. Model-only document-text elisions belong

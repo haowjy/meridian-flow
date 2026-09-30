@@ -117,6 +117,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         limit: 10,
         favorite: false,
         search: null,
+        workId: null,
       });
       expect(feed[0]?.agentName).toBe("Subagent");
     });
@@ -137,6 +138,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             limit: 10,
             favorite: false,
             search,
+            workId: null,
           })
         ).map((item) => item.title);
       expect(await titles("sect")).toEqual(["50% Sect trials"]);

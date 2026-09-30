@@ -78,6 +78,9 @@ export const threads = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
@@ -101,6 +104,9 @@ export const threads = pgTable(
     index("threads_lineage_derivations")
       .on(table.rootThreadId)
       .where(sql`${table.originType} IN ('fork', 'handoff')`),
+    index("threads_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     foreignKey({
       columns: [table.projectId, table.rootThreadId],
       foreignColumns: [table.projectId, table.id],

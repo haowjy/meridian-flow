@@ -1,6 +1,6 @@
 {
-  "id": "d0867cf8-48d4-42b3-8207-1ab6f750f715",
-  "prevId": "f650a224-feb8-4496-b430-87bb4320f06f",
+  "id": "d62352c5-b4ea-4f82-b473-f5ef432198ce",
+  "prevId": "eaa80082-c8e3-499b-adbf-c68cf29562fe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1319,7 +1319,7 @@
         },
         "model_responses_predicted_cache_reason_valid": {
           "name": "model_responses_predicted_cache_reason_valid",
-          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
+          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
         }
       },
       "isRLSEnabled": false
@@ -2067,7 +2067,7 @@
       "checkConstraints": {
         "thread_inbox_messages_intent_valid": {
           "name": "thread_inbox_messages_intent_valid",
-          "value": "\"thread_inbox_messages\".\"intent\" IN ('message','notice','control')"
+          "value": "\"thread_inbox_messages\".\"intent\" IN ('message','notice')"
         },
         "thread_inbox_messages_provenance_valid": {
           "name": "thread_inbox_messages_provenance_valid",
@@ -2075,7 +2075,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(\"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh')) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -2556,6 +2556,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2668,6 +2674,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "threads_deleted_by_work_idx": {
+          "name": "threads_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"threads\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2736,6 +2758,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "threads_deleted_by_work_id_works_id_fk": {
+          "name": "threads_deleted_by_work_id_works_id_fk",
+          "tableFrom": "threads",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -2882,6 +2917,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "pruned": {
+          "name": "pruned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "execution_side": {
           "name": "execution_side",
@@ -3198,22 +3240,6 @@
           ],
           "isUnique": false,
           "where": "\"turns\".\"parent_turn_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "turns_pending_placeholders": {
-          "name": "turns_pending_placeholders",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"turns\".\"status\" = 'pending' AND \"turns\".\"role\" IN ('compaction')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3898,9 +3924,31 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "context_sources_deleted_by_work_idx": {
+          "name": "context_sources_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"context_sources\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "context_sources_project_slug": {
           "name": "context_sources_project_slug",
           "columns": [
@@ -3993,6 +4041,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "context_sources_deleted_by_work_id_works_id_fk": {
+          "name": "context_sources_deleted_by_work_id_works_id_fk",
+          "tableFrom": "context_sources",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -4248,9 +4309,31 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "documents_deleted_by_work_idx": {
+          "name": "documents_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"documents\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "documents_context_folder_active": {
           "name": "documents_context_folder_active",
           "columns": [
@@ -4438,6 +4521,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "documents_deleted_by_work_id_works_id_fk": {
+          "name": "documents_deleted_by_work_id_works_id_fk",
+          "tableFrom": "documents",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4520,9 +4616,31 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "folders_deleted_by_work_idx": {
+          "name": "folders_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"folders\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "folders_context_parent_active": {
           "name": "folders_context_parent_active",
           "columns": [
@@ -4608,6 +4726,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "folders_deleted_by_work_id_works_id_fk": {
+          "name": "folders_deleted_by_work_id_works_id_fk",
+          "tableFrom": "folders",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -5068,18 +5199,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
+          "notNull": false
         },
         "archived_at": {
           "name": "archived_at",
@@ -5271,17 +5395,17 @@
           "name": "works_no_work_slug",
           "value": "(\"works\".\"is_no_work\" AND \"works\".\"slug\" IS NULL) OR (NOT \"works\".\"is_no_work\" AND \"works\".\"slug\" IS NOT NULL)"
         },
-        "works_no_work_active": {
-          "name": "works_no_work_active",
-          "value": "NOT \"works\".\"is_no_work\" OR \"works\".\"status\" = 'active'"
+        "works_no_work_not_archived": {
+          "name": "works_no_work_not_archived",
+          "value": "NOT \"works\".\"is_no_work\" OR \"works\".\"archived_at\" IS NULL"
         },
         "works_slug_valid": {
           "name": "works_slug_valid",
           "value": "\"works\".\"slug\" IS NULL OR \"works\".\"slug\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"
         },
-        "works_status_valid": {
-          "name": "works_status_valid",
-          "value": "\"works\".\"status\" IN ('active', 'archived')"
+        "works_status_length": {
+          "name": "works_status_length",
+          "value": "\"works\".\"status\" IS NULL OR char_length(\"works\".\"status\") <= 32"
         },
         "works_ai_write_mode_valid": {
           "name": "works_ai_write_mode_valid",
@@ -6067,6 +6191,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "tool_call_id": {
           "name": "tool_call_id",
           "type": "text",
@@ -6123,6 +6253,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "project_results_deleted_by_work_idx": {
+          "name": "project_results_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"project_results\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6176,6 +6322,19 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "project_results_deleted_by_work_id_works_id_fk": {
+          "name": "project_results_deleted_by_work_id_works_id_fk",
+          "tableFrom": "project_results",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -7998,6 +8157,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "deleted_by_work_id": {
+          "name": "deleted_by_work_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "thread_id": {
           "name": "thread_id",
           "type": "uuid",
@@ -8116,6 +8281,22 @@
           "method": "btree",
           "with": {}
         },
+        "document_branches_deleted_by_work_idx": {
+          "name": "document_branches_deleted_by_work_idx",
+          "columns": [
+            {
+              "expression": "deleted_by_work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_branches\".\"deleted_by_work_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "document_branches_active_thread_peer": {
           "name": "document_branches_active_thread_peer",
           "columns": [
@@ -8177,6 +8358,19 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "document_branches_deleted_by_work_id_works_id_fk": {
+          "name": "document_branches_deleted_by_work_id_works_id_fk",
+          "tableFrom": "document_branches",
+          "tableTo": "works",
+          "columnsFrom": [
+            "deleted_by_work_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "document_branches_thread_id_threads_id_fk": {

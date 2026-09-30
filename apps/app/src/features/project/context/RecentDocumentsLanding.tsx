@@ -23,6 +23,7 @@ import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
+import { RowIcon } from "../RuledList";
 import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
@@ -191,15 +192,12 @@ function RecentDocumentRow({
 }
 
 function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: number }) {
-  const Icon = fileKindIcon(item.name);
   const age = relativeTime(item.openedAt, now);
   const parentPath =
     item.address.kind === "document" ? item.address.path.replace(/\/[^/]+$/, "") : "";
   return (
     <>
-      <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center text-ink-subtle">
-        <Icon className="size-4" aria-hidden />
-      </span>
+      <RowIcon icon={fileKindIcon(item.name)} className="mt-0.5" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{item.name}</span>
         {parentPath ? (
@@ -270,7 +268,6 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       kind: "document",
       scheme: item.address.scheme,
       path,
-      workSlug: null,
     },
 
     work: { kind: "absent" },

@@ -24,8 +24,9 @@ destination one level at a time (scheme → folder → file), driven by `?scheme
 Shared across both shells:
 - **File suggestions** (`file-suggestions/`): reusable client-side flattening,
   ranking, cached multi-scheme query composition, and keyboard-accessible list.
-- **Inline name forms** (`useInlineNameForm`): shared state machine; create and
-  rename are thin adapters over it. Extend the core, don't fork.
+- **Inline name forms**: create and rename are thin adapters over
+  `useInlineEdit` (`components/ui/use-inline-edit.ts`), the app's one in-place
+  edit protocol, and render through `EntryNameField`. Extend the core, don't fork.
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
   (right-click context menu + hover kebab) rendered from one ordered action
   specification. Add an action once; both primitive-specific renderers inherit it.
@@ -64,8 +65,9 @@ Shared across both shells:
   `ContextTreeRows.tsx` (direct-child desktop rows), `MobileContextBrowser.tsx`
   (phone Files destination)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
-- **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
-  `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
+- **Inline forms**: `use-create-entry-form.ts`, `use-rename-entry-form.ts`,
+  `EntryNameField.tsx`, `context-entry-name.ts` (validation); the core is
+  `components/ui/use-inline-edit.ts`
 - **Tab/route**: `ContextTabBar.tsx`, `context-tab-identity.ts`,
   `context-tab-from-file.ts`, `context-tab-from-draft.ts`; the browser-level
   removal coordinator owns live removal, route identity, and continuity, while

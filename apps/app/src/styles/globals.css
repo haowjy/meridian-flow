@@ -751,6 +751,32 @@
 }
 
 /** Project pane header title — Home, Chat, Settings, thread switcher label. */
+/* Inline edit: a field that takes the exact place, font and size of the text
+   it edits. Its surface and focus hairline are painted with box-shadow bleed,
+   which never affects layout, so no text moves or resizes when editing starts.
+   `inline-edit-trigger` gives the resting text the same bleed as a hover hint. */
+@utility inline-edit-field {
+  border-radius: var(--radius-sm);
+  background-color: var(--inline-edit-surface, var(--color-card));
+  box-shadow:
+    0 0 0 var(--inline-edit-bleed, 4px) var(--inline-edit-surface, var(--color-card)),
+    0 0 0 calc(var(--inline-edit-bleed, 4px) + 1px) var(--color-border-focus);
+}
+
+@utility inline-edit-trigger {
+  border-radius: var(--radius-sm);
+  cursor: text;
+  transition:
+    background-color var(--default-transition-duration),
+    box-shadow var(--default-transition-duration);
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--color-dropdown-hover);
+      box-shadow: 0 0 0 var(--inline-edit-bleed, 4px) var(--color-dropdown-hover);
+    }
+  }
+}
+
 @utility pane-title {
   @apply text-sm font-medium text-foreground;
 }

@@ -1,5 +1,5 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
-import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
@@ -41,7 +41,7 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
   findMessage(id: string): Promise<InboxMessage | null>;
-  workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
+  workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
@@ -656,9 +656,9 @@ export function createDeliveryAdapter(
       hasCompletedReply: hasCompletedReplyInLineage,
     }),
     threadChanged,
-    async projectChanged(projectId) {
+    async workChanged(workId) {
       const mutationId = crypto.randomUUID();
-      for (const threadId of await inbox.workNoticeTargets(projectId))
+      for (const threadId of await inbox.workNoticeTargets(workId))
         await threadChanged(threadId, mutationId);
     },
     materializeIdle,

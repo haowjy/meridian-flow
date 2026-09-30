@@ -23,6 +23,8 @@ export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: ContextTab;
+  /** The document can't be renamed or moved (its Work is archived). */
+  readOnly?: boolean;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -35,6 +37,7 @@ export function DocumentIdentityBar({
   projectId,
   editorWorkId,
   tab,
+  readOnly = false,
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
@@ -68,7 +71,7 @@ export function DocumentIdentityBar({
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = location.scheme !== "uploads";
+  const showChip = !readOnly && location.scheme !== "uploads";
 
   return (
     <div className="@container shrink-0">
@@ -84,7 +87,7 @@ export function DocumentIdentityBar({
           IDENTITY_BAR_BAND_CLASS,
         )}
       >
-        {fieldOpen ? (
+        {fieldOpen && !readOnly ? (
           <IdentityPlacementField
             projectId={projectId}
             editorWorkId={editorWorkId}

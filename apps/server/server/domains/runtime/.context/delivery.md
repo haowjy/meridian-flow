@@ -35,6 +35,10 @@ still rely on the sweep.
 
 ## Writer admission
 
+The bound Work must exist, but archiving does not freeze its chats: sends,
+retries, and interrupt answers remain admissible. The admission fence runs
+under the thread lock before writer-turn persistence.
+
 `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue; response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
 
 A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
@@ -122,7 +126,12 @@ point. No notice source skips this split.
 
 ### Work context
 
-Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model.
+Renders only the bound Work: name, archive state, free-text status, and a goal
+bounded to 2,000 characters with paragraph breaks preserved. Other Works are
+discovered through `work list`, not embedded in context. Updates notify only
+threads primarily bound to the changed Work; creation and deletion enqueue no
+refresh. Mutations enqueue immutable system-provenance refresh notices in the
+business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model.
 
 A frozen prompt is never rebuilt for Work changes. Business mutations enqueue
 immutable `work_context_refresh` inbox notices, including for hidden targets.
@@ -141,8 +150,6 @@ tools do not append history; the next request boundary does.
 ### Worked examples
 
 What the model receives for five common deliveries, so "durable
-`system_update` turn" and "merged into one message" stay concrete:
-
 `system_update` turn" and "merged into one message" stay concrete:
 
 1. **Writer steer mid-run, after a tool call.** The writer sends "also tighten
@@ -173,9 +180,9 @@ What the model receives for five common deliveries, so "durable
    ```
    <system_update>
    <work_context>
-   current: drafting: "Drafting" (goal: land the reveal in ch. 12)
-   active (most recent first; max 5):
-     none
+   current: drafting: "Drafting"
+     goal: |
+       Land the reveal in ch. 12.
    </work_context>
    </system_update>
    ```

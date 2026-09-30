@@ -28,7 +28,6 @@ import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repo
 import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
 import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
-import { createDrizzleWorkChatFeedRepository } from "./work-chat-feed-repository.js";
 
 export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
 
@@ -40,7 +39,6 @@ function composeDrizzleRepositories(
   return {
     threads: createDrizzleThreadRepository(db, { statusReader }),
     chatFeed: createDrizzleProjectChatFeedRepository(db),
-    workChatFeed: createDrizzleWorkChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),
     turns: createDrizzleTurnRepository(db, workActivity),

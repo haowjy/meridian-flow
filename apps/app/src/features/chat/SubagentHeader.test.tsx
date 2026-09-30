@@ -1,15 +1,7 @@
 // @vitest-environment jsdom
 /** The subagent popover rows are child-thread navigation doors. */
-import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
 vi.mock("./conversation-reveal", () => ({ requestConversationReveal: vi.fn() }));
 
 import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";

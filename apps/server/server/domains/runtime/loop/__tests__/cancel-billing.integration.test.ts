@@ -2,6 +2,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
+import { createInMemoryWorkRepository } from "../../../projects/adapters/work-repository/in-memory.js";
+import { deleteWorkTransition } from "../../../projects/index.js";
 import {
   createMockOpenAICompatibleServer,
   type MockOpenAIServer,
@@ -101,6 +103,49 @@ describe("cancel billing", () => {
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     expect(await rig.awaitCancelled(turnId as NonNullable<typeof turnId>)).toMatchObject({
+      status: "cancelled",
+    });
+  });
+
+  it("cancels an active chat run after its Work is deleted", async () => {
+    const rig = await runtimeScenario({ gateway: createMockGateway(mock) });
+    const memoryWorks = createInMemoryWorkRepository();
+    const work = await memoryWorks.create({
+      projectId: rig.project.id as never,
+      name: "Active run",
+    });
+    const softDelete = memoryWorks.softDelete.bind(memoryWorks);
+    const works = {
+      ...memoryWorks,
+      async softDelete(workId: Parameters<typeof memoryWorks.softDelete>[0]) {
+        return { ...(await softDelete(workId)), threadIds: [rig.thread.id as never] };
+      },
+    };
+
+    await rig.inbox.enqueue({
+      threadId: rig.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: rig.userId },
+      body: { kind: "text", text: "delete while running" },
+      idempotencyKey: "work-delete-active-run",
+    });
+    await rig.startDrain(rig.thread.id);
+    await rig.gatewaySignal.promise;
+    const turnId = await rig.runClaim.readRunningTurnId(rig.thread.id);
+    expect(turnId).not.toBeNull();
+
+    await deleteWorkTransition(
+      {
+        works,
+        async stopThreadRun(threadId) {
+          const runningTurnId = await rig.runClaim.readRunningTurnId(threadId);
+          if (runningTurnId) await rig.runner.cancel(threadId, runningTurnId);
+        },
+      },
+      work.id,
+    );
+
+    await expect(rig.awaitCancelled(turnId as NonNullable<typeof turnId>)).resolves.toMatchObject({
       status: "cancelled",
     });
   });

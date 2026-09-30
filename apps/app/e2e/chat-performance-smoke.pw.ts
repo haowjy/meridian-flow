@@ -28,7 +28,9 @@ test("large chat keeps settled history virtualized", async ({ page }) => {
       titlePrefix: "Chat performance smoke",
     });
     await seedChatTurns(db, fixture, TURN_COUNT);
-    await page.goto(`/chat/${fixture.threadId}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByRole("heading", { name: fixture.title })).toBeVisible();
 
     const virtualList = page.locator("[data-chat-virtual-list]");

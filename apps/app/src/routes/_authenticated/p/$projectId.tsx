@@ -1,22 +1,28 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-import {
-  isProjectCreationPending,
-  projectCreationFailed,
-  retryProjectCreation,
-} from "@/client/project-creation";
+import type { ReactNode } from "react";
 import { loadProjectEntry } from "@/client/query/project-route-data";
+import {
+  readPendingProjectCreation,
+  useProjectCreationState,
+} from "@/client/query/useProjectCreation";
+import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
 import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { ProjectCreationNotice } from "@/features/project/ProjectCreationNotice";
 import { ProjectRouteBootstrap } from "@/features/project/routing/ProjectRouteBootstrap";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  loader: ({ params }) => loadProjectEntry(params.projectId),
+  // A creation this tab started owns the destination until it confirms: the
+  // shell renders from the creation record while the POST is in flight.
+  loader: async ({ params }) =>
+    readPendingProjectCreation(params.projectId)
+      ? { projectId: params.projectId, project: null, data: null }
+      : { projectId: params.projectId, ...(await loadProjectEntry(params.projectId)) },
   pendingMs: 0,
   pendingMinMs: 0,
   pendingComponent: PendingProject,
@@ -25,56 +31,26 @@ export const Route = createFileRoute("/_authenticated/p/$projectId")({
 });
 
 function PendingProject() {
-  const { projectId } = Route.useParams();
-  const { user } = AuthenticatedRoute.useLoaderData();
   return (
     <main
       className="grid h-full place-items-center bg-background text-muted-foreground"
       role="status"
     >
-      {isProjectCreationPending(projectId, user.userId) ? (
-        <Trans>Creating project…</Trans>
-      ) : (
-        <Trans>Loading project…</Trans>
-      )}
+      <Trans>Loading project…</Trans>
     </main>
   );
 }
 
 function ProjectLoadError() {
   const router = useRouter();
-  const { projectId } = Route.useParams();
-  const { user } = AuthenticatedRoute.useLoaderData();
-  const accountEpoch = useAccountEpochSignal();
-  const creationFailed = projectCreationFailed(projectId, user.userId);
-  const [retrying, setRetrying] = useState(false);
-  const retry = async () => {
-    if (!creationFailed) {
-      await router.invalidate();
-      return;
-    }
-    setRetrying(true);
-    try {
-      await retryProjectCreation(projectId, user.userId, accountEpoch);
-      await router.invalidate();
-    } catch {
-      // The creation attempt retains its failure so this destination can retry again.
-    } finally {
-      setRetrying(false);
-    }
-  };
   return (
     <main className="grid h-full place-items-center bg-background text-foreground">
       <div className="flex flex-col items-center gap-3" role="alert">
         <p>
-          {creationFailed ? (
-            <Trans>This project couldn’t be created.</Trans>
-          ) : (
-            <Trans>This project couldn’t load. It may be unavailable.</Trans>
-          )}
+          <Trans>This project couldn’t load. It may be unavailable.</Trans>
         </p>
-        <Button variant="outline" disabled={retrying} onClick={() => void retry()}>
-          {retrying ? <Trans>Creating project…</Trans> : <Trans>Retry</Trans>}
+        <Button variant="outline" onClick={() => void router.invalidate()}>
+          <Trans>Retry</Trans>
         </Button>
       </div>
     </main>
@@ -82,17 +58,30 @@ function ProjectLoadError() {
 }
 
 function ProjectRoute() {
-  const { project, data } = Route.useLoaderData();
+  const loaderData = Route.useLoaderData();
+  const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
+  const accountSignal = useAccountEpochSignal();
+  const creation = useProjectCreationState(projectId, accountSignal);
+  const project = useProject(projectId, loaderData.project ?? creation.project);
+  // A project being created has no route data yet; the creation stands in.
+  if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;
+
   return (
-    <ProjectIdentityBoundary projectId={project.id}>
-      <ProjectRouteBootstrap
-        key={project.id}
-        project={project}
-        data={data}
-        user={user}
-        pending={<PendingProject />}
-      />
+    <ProjectIdentityBoundary projectId={projectId}>
+      <div className="flex h-full min-h-0 flex-col">
+        <ProjectCreationNotice creation={creation} />
+        <div className="min-h-0 flex-1">
+          {/* Project-scoped state (navigation, admission, seeding) never carries across projects. */}
+          <ProjectRouteBootstrap
+            key={project.id}
+            project={project}
+            data={loaderData.data}
+            user={user}
+            pending={<PendingProject />}
+          />
+        </div>
+      </div>
     </ProjectIdentityBoundary>
   );
 }

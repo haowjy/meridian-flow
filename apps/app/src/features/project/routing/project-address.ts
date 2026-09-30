@@ -1,89 +1,121 @@
-/** Browser project addresses use stable project UUIDs; child destinations remain readable. */
+/**
+ * Browser project addresses. After `/p/<projectId>` the path names the screen and what
+ * is open on it; the query holds context and overlays.
+ */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  type WorkAuthorityScheme,
 } from "@meridian/contracts/protocol";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type AddressSelection =
   | { kind: "absent" }
   | { kind: "none" }
-  | { kind: "slug"; slug: string }
+  | { kind: "id"; id: ParsedRequestId }
   | { kind: "malformed"; value: string };
 
 export type ProjectDestination =
-  | { kind: "chat-index" | "works" | "editor" }
+  | { kind: "chat-index" | "works" | "works-new" | "editor" }
   | { kind: "chat"; chatId: string }
-  | { kind: "work"; workSlug: string }
-  | {
-      kind: "browse";
-      scheme: ProjectContextTreeScheme | null;
-      path: string;
-      workSlug: string | null;
-    }
-  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string; workSlug: string | null };
+  | { kind: "work"; workId: ParsedRequestId }
+  | { kind: "browse"; scheme: ProjectContextTreeScheme | null; path: string }
+  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string };
 
 export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
+  /**
+   * The Editor's Work. For Scratch and Uploads it is the resource's identity:
+   * `none` is No Work and `absent` is not an address.
+   */
   work: AddressSelection;
+  /** Work detail's chats view is the default and is omitted from the address. */
+  workView?: "files";
+  /** The Work list's Active tab is the default and is omitted from the address. */
+  worksView?: "archived" | "deleted";
   settings?: SettingsSection;
   results: boolean;
 };
+export type WorkView = "chats" | "files";
+export type WorksView = "active" | "archived" | "deleted";
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "settings", "results"]);
-const HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function handle(value: string | undefined): string | null {
-  const normalized = value?.toLowerCase();
-  return normalized && HANDLE.test(normalized) ? normalized : null;
-}
 
 function uuid(value: string | undefined): string | null {
   const normalized = value?.toLowerCase();
   return normalized && UUID.test(normalized) ? normalized : null;
 }
 
-function selection(value: string | null): AddressSelection {
-  if (value === null) return ABSENT;
-  if (value === "") return { kind: "none" };
-  const slug = handle(value);
-  return slug ? { kind: "slug", slug } : { kind: "malformed", value };
+/** A nullable Work id as a selection: no id selects no Work. */
+export function workIdSelection(workId: string | null): AddressSelection {
+  if (workId === null) return { kind: "none" };
+  const id = parseRequestId(workId);
+  return id ? { kind: "id", id } : { kind: "malformed", value: workId };
 }
 
+/** The `?work=` query value: absent, empty for no Work, or a Work id. */
+function selection(value: string | null): AddressSelection {
+  return value === null ? ABSENT : workIdSelection(value || null);
+}
+
+/** Scratch and Uploads belong to a Work; every other scheme is the project's. */
+export function isWorkScopedScheme(
+  scheme: ProjectContextTreeScheme | null,
+): scheme is WorkAuthorityScheme {
+  return scheme !== null && isWorkScopedProjectContextScheme(scheme);
+}
+
+/** Whether `?work=` names the resource itself rather than an editing context. */
+export function workIsIdentity(destination: ProjectDestination): boolean {
+  return (
+    (destination.kind === "document" || destination.kind === "browse") &&
+    isWorkScopedScheme(destination.scheme)
+  );
+}
+
+/** A folder to browse; its Work, if any, is the address's `work`. */
+export function browseDestination(
+  scheme: ProjectContextTreeScheme | null,
+  path: string,
+): ProjectDestination {
+  return { kind: "browse", scheme, path: path.replace(/^\/+/, "") };
+}
+
+/** The path names the screen, then what is open on it. */
 function parseDestination(parts: string[]): ProjectDestination | null {
-  if (parts.length === 0) return { kind: "chat-index" };
-  if (parts.length === 1) {
-    if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
-    if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
-  }
-  if (parts.length === 2 && parts[0] === "chat") {
-    const chatId = uuid(parts[1]);
+  const [screen, ...rest] = parts;
+  if (screen === undefined) return { kind: "chat-index" };
+  if (screen === "chats") {
+    if (rest.length === 0) return { kind: "chat-index" };
+    const chatId = rest.length === 1 ? uuid(rest[0]) : null;
     return chatId ? { kind: "chat", chatId } : null;
   }
-  let workSlug: string | null = null;
-  if (parts[0] === "work") {
-    workSlug = handle(parts[1]);
-    if (!workSlug) return null;
-    if (parts.length === 2) return { kind: "work", workSlug };
-    parts = parts.slice(2);
+  if (screen === "works") {
+    if (rest.length === 0) return { kind: "works" };
+    if (rest.length !== 1) return null;
+    if (rest[0] === "new") return { kind: "works-new" };
+    const workId = parseRequestId(rest[0]);
+    return workId ? { kind: "work", workId } : null;
   }
-  const browse = parts[0] === "browse";
-  if (browse) parts = parts.slice(1);
-  const scheme = parts[0];
+  if (screen !== "editor") return null;
+  if (rest.length === 0) return { kind: "editor" };
+  const browse = rest[0] === "browse";
+  const [scheme, ...segments] = browse ? rest.slice(1) : rest;
+  if (browse && scheme === undefined) return { kind: "browse", scheme: null, path: "" };
   if (!isProjectContextTreeScheme(scheme)) return null;
-  if (workSlug && !isWorkScopedProjectContextScheme(scheme)) return null;
-  const path = parts.slice(1).join("/");
+  const path = segments.join("/");
   const validated = validateContextEntryPath(path, { allowRoot: browse });
   // Browser addresses must not silently trim a different filename into existence.
   if (!validated.ok || validated.value !== path) return null;
-  return { kind: browse ? "browse" : "document", scheme, workSlug, path };
+  return { kind: browse ? "browse" : "document", scheme, path };
 }
 
 /** Called with the router's original search string, before its default parser collapses duplicates. */
@@ -117,27 +149,21 @@ export function parseProjectAddress(
     destination.kind === "document" ||
     destination.kind === "browse" ||
     destination.kind === "editor";
-  let work = editor ? selection(query.get("work")) : ABSENT;
-  if (
-    (destination.kind === "document" || destination.kind === "browse") &&
-    destination.scheme &&
-    isWorkScopedProjectContextScheme(destination.scheme)
-  ) {
-    if (
-      work.kind !== "absent" &&
-      !(
-        (work.kind === "none" && destination.workSlug === null) ||
-        (work.kind === "slug" && work.slug === destination.workSlug)
-      )
-    )
-      return { kind: "invalid", reason: "conflicting-work" };
-    work = ABSENT;
-  }
+  const work = editor ? selection(query.get("work")) : ABSENT;
+  if (workIsIdentity(destination) && work.kind !== "id" && work.kind !== "none")
+    return { kind: "invalid", reason: "work" };
   const settings = query.get("settings");
+  const workView =
+    destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
+  const view = query.get("view");
+  const worksView =
+    destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
+    ...(workView ? { workView } : {}),
+    ...(worksView ? { worksView } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
@@ -157,46 +183,53 @@ export function parseProjectAddress(
   return { kind: "valid", address, href };
 }
 
-function writeSelection(query: URLSearchParams, key: string, value: AddressSelection): void {
-  if (value.kind === "slug") query.set(key, value.slug);
-  else if (value.kind === "malformed") query.set(key, value.value);
+function writeWork(query: URLSearchParams, address: ProjectAddress): void {
+  const work = address.work;
+  if (work.kind === "id") query.set("work", work.id);
+  else if (work.kind === "malformed") query.set("work", work.value);
+  // An Editor context of no Work is pinned by history state; a resource of No Work is `?work=`.
+  else if (work.kind === "none" && workIsIdentity(address.destination)) query.set("work", "");
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
-  const parts = ["p", address.projectId];
+  const parts = ["p", address.projectId].map(encodeURIComponent);
+  const push = (...segments: string[]) => parts.push(...segments.map(encodeURIComponent));
   const d = address.destination;
   switch (d.kind) {
     case "chat-index":
+      push("chats");
       break;
     case "chat":
-      parts.push("chat", d.chatId);
+      push("chats", d.chatId);
       break;
     case "work":
-      parts.push("work", d.workSlug);
+      push("works", d.workId);
       break;
     case "works":
     case "editor":
-      parts.push(d.kind);
+      push(d.kind);
+      break;
+    case "works-new":
+      push("works", "new");
       break;
     case "browse":
     case "document":
-      if (d.workSlug) parts.push("work", d.workSlug);
-      if (d.kind === "browse") parts.push("browse");
-      if (d.scheme) parts.push(d.scheme);
-      if (d.path) parts.push(...d.path.split("/"));
+      push("editor");
+      if (d.kind === "browse") push("browse");
+      if (d.scheme) push(d.scheme);
+      if (d.path) push(...d.path.split("/"));
       break;
   }
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
-  const pathOwnsWork =
-    (d.kind === "document" || d.kind === "browse") &&
-    d.scheme !== null &&
-    isWorkScopedProjectContextScheme(d.scheme);
-  if (context && !pathOwnsWork) writeSelection(query, "work", address.work);
+  if (context) writeWork(query, address);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
+  if (d.kind === "work" && address.workView === "files") query.set("view", "files");
+  if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
-  return `/${parts.map(encodeURIComponent).join("/")}${search ? `?${search}` : ""}`;
+  const path = parts.join("/");
+  return `/${path}${search ? `?${search}` : ""}`;
 }
 
 /** Entry-local no-selection intent; actual selections remain in the public address. */
