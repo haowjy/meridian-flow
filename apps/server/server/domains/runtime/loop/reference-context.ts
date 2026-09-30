@@ -66,7 +66,7 @@ export function elideReferenceRead(
   return {
     ...reference,
     read: {
-      ...reference.read!,
+      ...reference.read,
       result:
         treatment === "history" ? historyReadStub(reference.uri) : staleReadStub(reference.uri),
     },

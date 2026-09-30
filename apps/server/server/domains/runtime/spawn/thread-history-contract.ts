@@ -230,11 +230,41 @@ export function defineThreadHistoryContract(
       expect(output(await f.read())).not.toContain("handoff-brief");
       const text = output(await f.read({ include: ["system_messages"] }));
       expect(text).toContain(`[${seed.position}.0] system: fork_or_handoff_seed`);
-      expect(text).toContain('"kind":"handoff-brief"');
+      expect(text).toContain("<system_update>");
+      expect(text).not.toContain('"kind":"handoff-brief"');
+      expect(text).not.toContain(f.thread.id);
       expect(text).toContain(
         status === "complete" ? "The gate is open." : "No brief is available.",
       );
       if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
+    });
+
+    it("renders a thread-reference component as its model text without internal ids", async () => {
+      const f = await fixture();
+      const seed = await f.turn("user", {
+        kind: "inbox_message",
+        inboxMessageId: "seed",
+        agentRequestKind: "child_seed",
+      });
+      const threadId = crypto.randomUUID();
+      const modelText =
+        '<thread_reference ref="c1">\nRead it with thread_history({"ref":"c1"}).\n</thread_reference>';
+      await f.block(seed, "custom", {
+        kind: "thread-reference",
+        props: {
+          ref: "c1",
+          text: modelText,
+          title: "Source",
+          threadId,
+          agentName: "General",
+          lastActivityAt: "2026-09-30T12:00:00.000Z",
+        },
+      });
+
+      const text = output(await f.read({ order: "oldest_first" }));
+      expect(text).toContain(modelText);
+      expect(text).not.toContain(threadId);
+      expect(text).not.toContain('"kind":"thread-reference"');
     });
 
     it("keeps a failed reply labelled assistant with its error after a later writer turn", async () => {
@@ -254,7 +284,7 @@ export function defineThreadHistoryContract(
       expect(text).toContain("Move on.");
     });
 
-    it("segment headers identify Agent and bake, system_prompt appears once on each segment page", async () => {
+    it("segment headers identify the Agent and boundary without exposing bake hashes", async () => {
       const f = await fixture();
       const t = await f.turn();
       await f.block(t, "text", "before");
@@ -285,7 +315,9 @@ export function defineThreadHistoryContract(
       await f.block(later, "text", "after");
       const one = output(await f.read({ order: "oldest_first", include: ["system_prompt"] }));
       expect(one).toContain("Agent:");
-      expect(one).toContain("initial-");
+      expect(one).toContain("segment 0 of 2: initial prompt");
+      expect(one).not.toContain("bake");
+      expect(one).not.toContain("initial-hash");
       expect(one.match(/INITIAL PROMPT/g)).toHaveLength(1);
       expect(one).not.toContain("after");
       const two = output(
@@ -296,10 +328,19 @@ export function defineThreadHistoryContract(
         }),
       );
       expect(two).toContain("compaction");
-      expect(two).toContain("new-hash");
+      expect(two).not.toContain("bake");
+      expect(two).not.toContain("new-hash");
       expect(two.match(/NEW PROMPT/g)).toHaveLength(1);
       expect(two).toContain("summary");
       expect(two).toContain("instructions: Emphasize the broken oath.");
+    });
+    it("does not print an empty body for tool calls whose arguments are omitted", async () => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.tool(t, "ls", {}, "hidden");
+      const text = output(await f.read({ order: "oldest_first" }));
+      expect(text).toMatch(/tool_call ls \{\}[^\n]*$/);
+      expect(text).not.toMatch(/tool_call ls[^\n]*\n\n\n/);
     });
     it("100 hidden tool results do not burn the visible item limit", async () => {
       const f = await fixture();
@@ -366,11 +407,13 @@ export function defineThreadHistoryContract(
         documentId: "11111111-1111-4111-8111-111111111111",
         uri: "manuscript://chapter.md",
         text: "@chapter",
-        read: { result: "COPY SENTINEL", revision: "v1" },
+        read: { result: "COPY SENTINEL", revision: "y1:reference-revision" },
       } as JsonObject);
       const result = await f.read(input);
       const text = output(result);
       expect(text).not.toContain("COPY SENTINEL");
+      expect(text).not.toContain("y1:");
+      expect(text).not.toContain('"revision"');
       if (input.include?.includes("tool_args")) {
         expect(text).toContain("EDIT SENTINEL");
         expect(text).toContain("edit record from");
@@ -479,6 +522,44 @@ export function defineThreadHistoryContract(
       expect(output(await f.read({ include: ["system_messages"] }))).toContain(
         "system: helper-result",
       );
+    });
+    it("labels component cards without serializing their internal props", async () => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.block(t, "custom", {
+        kind: "helper-result",
+        props: {
+          agentSlug: "critic",
+          agentName: "Critic",
+          parentTurnId: "secret-parent-id",
+          toolCallId: "secret-call-id",
+          deliveryMode: "direct",
+          childThreadId: "secret-child-id",
+          execution: "secret-execution-id",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          terminalAt: "2026-01-01T00:01:00.000Z",
+          outcome: "succeeded",
+        },
+      });
+      await f.block(t, "custom", {
+        kind: "helper-result",
+        props: {
+          agentSlug: "scout",
+          agentName: "Scout",
+          parentTurnId: "secret-running-parent-id",
+          toolCallId: "secret-running-call-id",
+          deliveryMode: "background_notification",
+          childThreadId: "secret-running-child-id",
+          execution: null,
+          startedAt: "2026-01-01T00:02:00.000Z",
+          terminalAt: null,
+        },
+      });
+      const text = output(await f.read({ include: ["system_messages"] }));
+      expect(text).toContain('Subagent "Critic" finished (succeeded).');
+      expect(text).toContain('Subagent "Scout" is running.');
+      expect(text).not.toContain("secret-");
+      expect(text).not.toContain('"props"');
     });
     it("returns structured cursor/item errors", async () => {
       const f = await fixture();
