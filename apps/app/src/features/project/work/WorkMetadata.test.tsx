@@ -3,7 +3,7 @@
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { HttpResponseError } from "@/client/api/http-client";
+import { MeridianApiError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useWorkMetadataController, WorkGoal } from "./WorkMetadata";
 
@@ -73,6 +73,12 @@ function LeaveGuardHarness({ saveWork }: { saveWork: (data: UpdateWorkRequest) =
       </button>
       <output>{controller.held ? "decision" : result}</output>
     </>
+  );
+}
+function refusal(code: string, status: number) {
+  return new MeridianApiError(
+    { code, message: `raw ${code}`, retryable: false, source: "system" },
+    status,
   );
 }
 function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -187,11 +193,8 @@ describe("WorkMetadata", () => {
 
   it.each([
     [new TypeError("Failed to fetch"), "Couldn’t save the goal. Try again."],
-    [
-      new HttpResponseError("Work @arc is archived; it is read-only", 409, null),
-      "This Work is archived.",
-    ],
-    [new HttpResponseError("Work not found", 404, null), "This Work no longer exists."],
+    [refusal("work_archived", 409), "This Work is archived. Unarchive it to edit."],
+    [refusal("work_not_found", 404), "This Work no longer exists."],
   ])("shows writer copy, not the raw error, when a goal save fails (%s)", async (cause, copy) => {
     const saveWork = vi.fn(async (): Promise<Work> => {
       throw cause;

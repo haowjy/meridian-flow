@@ -34,8 +34,8 @@ export function TitleEditSlot({
   titleKey: string;
   /** The field's accessible name. */
   label: string;
-  /** Shown under the reopened field when the rename was refused. */
-  failure: string;
+  /** Shown under the reopened field when the rename was refused, from its cause. */
+  failure: (cause: unknown) => string;
   /** Rejects when the rename was refused. */
   rename: (title: string) => Promise<unknown>;
   maxLength?: number;
@@ -56,12 +56,12 @@ export function TitleEditSlot({
     unchanged: string;
     focus: boolean;
   } | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const failureId = useId();
   const close = () => {
     setEditing(null);
-    setFailed(false);
+    setRefusal(null);
     // Back to the title, unless the writer already moved focus elsewhere.
     requestAnimationFrame(() => {
       const active = document.activeElement;
@@ -82,17 +82,17 @@ export function TitleEditSlot({
         label={label}
         maxLength={maxLength}
         className={fieldClassName}
-        describedBy={failed ? failureId : undefined}
-        invalid={failed}
+        describedBy={refusal ? failureId : undefined}
+        invalid={refusal !== null}
         focusOnMount={editing.focus}
         onCommit={(next) => {
           const commit = ++renames;
           latestRename.set(titleKey, commit);
           close();
           rename(next)
-            .catch(() => {
+            .catch((cause: unknown) => {
               if (latestRename.get(titleKey) !== commit) return;
-              setFailed(true);
+              setRefusal(failure(cause));
               // An edit the writer already reopened keeps its draft.
               setEditing(
                 (current) =>
@@ -105,7 +105,7 @@ export function TitleEditSlot({
         }}
         onCancel={close}
       />
-      {failed ? (
+      {refusal ? (
         <p
           id={failureId}
           role="alert"
@@ -114,7 +114,7 @@ export function TitleEditSlot({
             failureClassName,
           )}
         >
-          {failure}
+          {refusal}
         </p>
       ) : null}
     </>

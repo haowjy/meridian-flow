@@ -29,7 +29,7 @@ export function InlineProjectTitle({
       <TitleEditSlot
         titleKey={`project:${projectId}`}
         label={t`Project title`}
-        failure={t`Project title could not be saved. Try again.`}
+        failure={() => t`Project title could not be saved. Try again.`}
         rename={onSave}
         fieldClassName={cn("flex min-w-0 flex-1 items-center", inputClassName)}
         failureClassName="right-0 left-0"

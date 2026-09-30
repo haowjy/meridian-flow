@@ -50,7 +50,12 @@ function Slot({
   children?: ReactNode;
 }) {
   return (
-    <TitleEditSlot titleKey={titleKey} label="Rename" failure="Couldn’t rename." rename={rename}>
+    <TitleEditSlot
+      titleKey={titleKey}
+      label="Rename"
+      failure={() => "Couldn’t rename."}
+      rename={rename}
+    >
       {({ start, triggerRef }) => (
         <button ref={triggerRef} type="button" onClick={() => start("Arc 3")}>
           {children}

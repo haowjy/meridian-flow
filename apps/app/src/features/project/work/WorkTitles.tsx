@@ -11,6 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useWorkMutations } from "@/client/query/work-command-store";
+import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
 import { titleChipClass } from "../shell/title-chip";
@@ -18,6 +19,9 @@ import { titleChipClass } from "../shell/title-chip";
 // The heading shrinks beside the status; it clips nothing itself, so a refused
 // rename's message can hang below it. The text inside truncates instead.
 const headingClass = "relative flex min-w-0 text-xl font-semibold tracking-tight";
+
+const renameFailure = (cause: unknown) =>
+  workUpdateFailure(cause, t`Couldn’t rename this Work. Try again.`);
 
 /** Renames the Work; rejects when the server refused it. */
 function useWorkRename(projectId: string, work: Work) {
@@ -44,7 +48,7 @@ export function WorkTitleTab({
       <TitleEditSlot
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
-        failure={t`Couldn’t rename this Work. Try again.`}
+        failure={renameFailure}
         rename={rename}
       >
         {({ start, triggerRef }) => (
@@ -75,7 +79,7 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
       <TitleEditSlot
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
-        failure={t`Couldn’t rename this Work. Try again.`}
+        failure={renameFailure}
         rename={rename}
         fieldClassName="flex min-w-0"
       >

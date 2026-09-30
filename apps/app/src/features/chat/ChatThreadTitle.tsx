@@ -60,7 +60,7 @@ function ExistingThreadTitle({
     <TitleEditSlot
       titleKey={`chat:${threadId}`}
       label={t`Rename chat`}
-      failure={t`Couldn’t rename this chat. Try again.`}
+      failure={() => t`Couldn’t rename this chat. Try again.`}
       rename={rename}
       maxLength={THREAD_TITLE_MAX_LENGTH}
       // The chip itself, with the switcher label's inset, so the words stay put.
