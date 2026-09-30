@@ -101,7 +101,7 @@ const DIVIDER_ROWS = [
   "#queued-controls li",
 ];
 
-test("a divider row speaks at one text size, on one line, at every width", async ({
+test("a divider speaks at one text size, on one line, at every width", async ({
   page,
 }, testInfo) => {
   const widths = testInfo.project.name === "fine-pointer" ? [1100, 390] : [390];
@@ -153,6 +153,19 @@ test("a divider row speaks at one text size, on one line, at every width", async
       .evaluate((n) => getComputedStyle(n).fontSize),
   ]);
   expect(label).toBe(stop);
+  // What sits under the line (instructions, failure copy) matches the words above it.
+  for (const selector of [
+    "#divider-manual [data-compaction-instructions]",
+    "#divider-pending [data-compaction-instructions]",
+    "#queued-controls [data-compaction-instructions]",
+    "#divider-failed p.text-destructive",
+  ]) {
+    const size = await page
+      .locator(selector)
+      .first()
+      .evaluate((n) => getComputedStyle(n).fontSize);
+    expect(size, selector).toBe(stop);
+  }
 });
 
 test("a finished divider's info sits right of Fork and opens the reply's stats popover", async ({

@@ -146,9 +146,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
       {view.instructions ? <CompactionInstructions instructions={view.instructions} /> : null}
 
-      {view.failureCopy ? (
-        <p className="text-caption text-destructive">{view.failureCopy}</p>
-      ) : null}
+      {view.failureCopy ? <p className="text-meta text-destructive">{view.failureCopy}</p> : null}
 
       {view.summary ? (
         <div

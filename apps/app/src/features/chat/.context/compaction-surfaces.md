@@ -67,9 +67,9 @@ reply's, stay shown while Info's popover is open, and stay visible on touch. The
 read defensively), in every state.
 
 The divider is one line at every width, at one text size: the state label,
-Stop, Withdraw, Retry and any status words in the row (queued rows too) use
-the small action size (`text-meta`). The instructions and failure copy under
-the line are body text, not row text, and stay `text-caption`. Its section is a container: below
+Stop, Withdraw, Retry, any status words in the row (queued rows too), and the
+instructions and failure copy under the line all use the small action size
+(`text-meta`). Only the opened summary reads at chat body size. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last; the section's accessible name keeps the full label.
 
