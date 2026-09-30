@@ -101,6 +101,10 @@ describe("Work title rename", () => {
           <TitleHarness />
         </QueryClientProvider>,
         async () => {
+          // A truncated heading still shows and names the whole title.
+          const heading = document.querySelector("h1");
+          expect(heading?.textContent).toBe("Arc");
+          expect(heading?.querySelector("button")?.title).toBe("Arc");
           await act(async () => {
             document.querySelector<HTMLButtonElement>('[aria-label="Rename Work: Arc"]')?.click();
           });

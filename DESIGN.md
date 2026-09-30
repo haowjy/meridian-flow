@@ -114,7 +114,9 @@ Core shell expectations:
   iOS focus zoom is suppressed globally (`lib/ios-focus-zoom`), so fields keep the
   text's size on phones too.
 - Confirm/dismiss pairs sit at the right edge, dismiss first: Cancel, then the
-  primary action (Save, Create, Delete).
+  primary action (Save, Create, Delete). Inline edits anchored to text (the Work
+  goal) instead left-align Cancel then Save directly under the field, so the
+  dismiss lands where the edit trigger was.
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.
 - Show model/thread/process depth only when it helps the writer understand or recover from a situation.
 

@@ -1530,13 +1530,16 @@ msgid "Earlier"
 msgstr "Earlier"
 
 #: src/features/chat/UserTurn.tsx
-#: src/features/project/work/WorkMetadata.tsx
 msgid "Edit"
 msgstr "Edit"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Edit display text"
 msgstr "Edit display text"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Edit goal"
+msgstr "Edit goal"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
@@ -2860,7 +2863,6 @@ msgstr "Removed"
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
-#: src/features/project/work/WorkTitles.tsx
 msgid "Rename"
 msgstr "Rename"
 

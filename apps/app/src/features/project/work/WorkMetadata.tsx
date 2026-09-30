@@ -145,10 +145,11 @@ function goalParagraphs(goal: string): string[] {
 
 /**
  * The Work goal: body text clamped to three lines. Show more (or clicking a
- * clamped goal) shows all of it; Show less folds it again. Edit (or clicking
- * an empty goal) edits in place: the field takes the text's exact position and
- * size. Save and Cancel sit below; blur never saves. The goal's actions sit
- * directly under the text; a read-only goal has no Edit, and an empty one
+ * clamped goal) shows all of it; Show less folds it again. Edit goal (or
+ * clicking an empty goal) edits in place: the field takes the text's exact
+ * position and size. Cancel then Save sit left-aligned under the field, so
+ * Cancel lands where Edit goal was; blur never saves. The goal's actions sit
+ * directly under the text; a read-only goal has no Edit goal, and an empty one
  * shows nothing.
  */
 export function WorkGoal({
@@ -258,7 +259,7 @@ export function WorkGoal({
                   onClick={c.activate}
                   className={goalAction}
                 >
-                  <Trans>Edit</Trans>
+                  <Trans>Edit goal</Trans>
                 </button>
               )}
             </div>
@@ -299,7 +300,7 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
           {c.error}
         </p>
       ) : null}
-      <div className="mt-3 flex max-w-3xl justify-end gap-2">
+      <div className="mt-3 flex items-center gap-2">
         <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
           <Trans>Cancel</Trans>
         </Button>

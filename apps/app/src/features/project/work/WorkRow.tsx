@@ -45,7 +45,7 @@ export function WorkRow({
         </span>
         <span aria-hidden className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
-          <WorkStatusLabel status={work.status} className="max-w-[60%]" />
+          <WorkStatusLabel status={work.status} />
         </span>
         {work.goal ? (
           <span aria-hidden className="block truncate text-xs text-muted-foreground">

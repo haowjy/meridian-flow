@@ -4,6 +4,8 @@
  * place through `TitleEditSlot`, without moving the text: a rename shows at
  * once, and a refused one reopens the title that was edited. A Work with no
  * server identity yet, or an archived one, shows the same titles as plain text.
+ * Both are one line: a long name truncates, with the full name on hover and as
+ * the accessible name; the rename field scrolls within that line.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -12,7 +14,9 @@ import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
 import { titleChipClass } from "../shell/title-chip";
 
-const headingClass = "min-w-0 text-xl font-semibold tracking-tight [overflow-wrap:anywhere]";
+// The heading shrinks beside the status; it clips nothing itself, so a refused
+// rename's message can hang below it. The text inside truncates instead.
+const headingClass = "relative flex min-w-0 text-xl font-semibold tracking-tight";
 
 /** Renames the Work; rejects when the server refused it. */
 function useWorkRename(projectId: string, work: Work) {
@@ -64,7 +68,7 @@ export function WorkTitleTab({
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
   const rename = useWorkRename(projectId, work);
   return (
-    <h1 className={cn(headingClass, "relative")}>
+    <h1 className={headingClass}>
       <TitleEditSlot
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
@@ -73,14 +77,14 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         fieldClassName="flex min-w-0"
       >
         {({ start, triggerRef }) => (
-          // The heading's accessible name stays the Work's name; the tooltip
-          // says what clicking it does.
+          // The heading's accessible name stays the Work's name, and the
+          // tooltip shows it whole when it truncates.
           <button
             ref={triggerRef}
             type="button"
-            title={t`Rename`}
+            title={work.name}
             onClick={() => start(work.name)}
-            className="inline-edit-trigger focus-ring text-left"
+            className="inline-edit-trigger focus-ring min-w-0 truncate text-left"
           >
             {work.name}
           </button>
@@ -103,5 +107,11 @@ export function PlainWorkTitleTab({ name, variant }: { name: string; variant: "t
 
 /** A Work's heading, not editable: still being created, or archived. */
 export function PlainWorkHeading({ name }: { name: string }) {
-  return <h1 className={headingClass}>{name}</h1>;
+  return (
+    <h1 className={headingClass}>
+      <span title={name} className="min-w-0 truncate">
+        {name}
+      </span>
+    </h1>
+  );
 }

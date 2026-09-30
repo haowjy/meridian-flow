@@ -37,12 +37,13 @@ export type WorkDetailScreenProps = {
 };
 
 /**
- * The Work page's own header block under the band: its title, any notice about
- * the Work right under it, its goal (or a pending Work's state), then one
- * sticky toolbar row.
+ * The Work page's own header block under the band: its title on one line with
+ * the AI's status after it, any notice about the Work right under it, its goal
+ * (or a pending Work's state), then one sticky toolbar row.
  */
 export function WorkScreenHeader({
   title,
+  status,
   notice,
   details,
   view,
@@ -51,6 +52,8 @@ export function WorkScreenHeader({
   pending = false,
 }: {
   title: React.ReactNode;
+  /** The AI's status; absent while the Work is being created. */
+  status?: string | null;
   notice?: React.ReactNode;
   details?: React.ReactNode;
   view: "chats" | "files";
@@ -61,7 +64,11 @@ export function WorkScreenHeader({
   return (
     <>
       <header className="flex min-w-0 flex-col gap-1.5">
-        {title}
+        {/* The title truncates to leave the status its (capped) width. */}
+        <div className="flex min-w-0 items-center gap-3">
+          {title}
+          <WorkStatusLabel status={status} size="heading" />
+        </div>
         {/* A bordered box needs more air than the title-to-goal line gap. */}
         {notice ? <div className="mt-1.5 min-w-0 not-last:mb-1.5">{notice}</div> : null}
         {details}
@@ -102,16 +109,13 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
           title={
-            // A long name keeps its full width; the status wraps under it.
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              {readOnly ? (
-                <PlainWorkHeading name={work.name} />
-              ) : (
-                <WorkHeading projectId={projectId} work={work} />
-              )}
-              <WorkStatusLabel status={work.status} size="heading" />
-            </div>
+            readOnly ? (
+              <PlainWorkHeading name={work.name} />
+            ) : (
+              <WorkHeading projectId={projectId} work={work} />
+            )
           }
+          status={work.status}
           notice={
             readOnly ? (
               <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />

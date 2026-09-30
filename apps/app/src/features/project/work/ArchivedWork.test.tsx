@@ -115,7 +115,7 @@ describe("an archived Work page", () => {
       expect(text.indexOf("This Work is archived.")).toBeLessThan(
         text.indexOf("Draft chapters 12 to 15."),
       );
-      expect(buttonNamed("Edit")).toBeUndefined();
+      expect(buttonNamed("Edit goal")).toBeUndefined();
       expect(buttonNamed("New chat")?.disabled).toBe(true);
       await act(async () => buttonNamed("Unarchive")?.click());
       expect(unarchive).toHaveBeenCalledWith({ workId: ARCHIVED.id });

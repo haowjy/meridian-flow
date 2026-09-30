@@ -82,8 +82,9 @@ describe("WorkMetadata", () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
-        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
-          null,
+        [...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Edit goal",
+        ) ?? null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       expect(textarea).not.toBeNull();
@@ -101,15 +102,20 @@ describe("WorkMetadata", () => {
     });
   });
 
-  it("saves the edited goal with Save", async () => {
+  it("offers Cancel then Save under the field and saves the edited goal with Save", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
-        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
-          null,
+        [...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Edit goal",
+        ) ?? null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       if (!textarea) throw new Error("Goal editor did not open");
+      // Cancel comes first, so it lands where Edit goal was.
+      expect(
+        [...(textarea.parentElement?.querySelectorAll("button") ?? [])].map((b) => b.textContent),
+      ).toEqual(["Cancel", "Save"]);
       await act(async () => {
         setValue(textarea, "  A changed goal  ");
       });
@@ -126,8 +132,9 @@ describe("WorkMetadata", () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
       await click(
-        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
-          null,
+        [...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Edit goal",
+        ) ?? null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       if (!textarea) throw new Error("Goal editor did not open");
@@ -148,13 +155,13 @@ describe("WorkMetadata", () => {
     });
   });
 
-  it("puts one Show more toggle before Edit when the goal is clamped", async () => {
+  it("puts one Show more toggle before Edit goal when the goal is clamped", async () => {
     await withClampedGoal(async () => {
       await withReactRoot(
         <Harness saveWork={vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }))} />,
         async () => {
           const labels = () => [...document.querySelectorAll("button")].map((b) => b.textContent);
-          expect(labels()).toEqual(["Show more", "Edit"]);
+          expect(labels()).toEqual(["Show more", "Edit goal"]);
           const toggle = document.querySelector("button");
           expect(toggle?.getAttribute("aria-expanded")).toBe("false");
           await click(toggle);
@@ -174,13 +181,13 @@ describe("WorkMetadata", () => {
           const button = (label: string) =>
             [...document.querySelectorAll("button")].find((b) => b.textContent === label) ?? null;
           await click(button("Show more"));
-          await click(button("Edit"));
+          await click(button("Edit goal"));
           const field = document.querySelector("textarea");
           if (!field) throw new Error("goal field missing");
           await act(async () => setValue(field, "Short."));
           await click(button("Save"));
           expect([...document.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
-            "Edit",
+            "Edit goal",
           ]);
         },
       );
@@ -198,9 +205,11 @@ describe("WorkMetadata", () => {
     );
   });
 
-  it("shows only Edit for an unclamped goal and nothing for a read-only one", async () => {
+  it("shows only Edit goal for an unclamped goal and nothing for a read-only one", async () => {
     await withReactRoot(<WorkGoalHarness work={{ ...WORK, goal: "wef" }} />, async () => {
-      expect([...document.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Edit"]);
+      expect([...document.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+        "Edit goal",
+      ]);
     });
     await withReactRoot(<WorkGoalHarness work={{ ...WORK, goal: "wef" }} readOnly />, async () => {
       expect(document.querySelectorAll("button")).toHaveLength(0);
