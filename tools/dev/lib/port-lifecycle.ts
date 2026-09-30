@@ -11,6 +11,8 @@ import net from "node:net";
 const LOOPBACK_HOST = "127.0.0.1";
 const TERMINATE_TIMEOUT_MS = 1_000;
 const FORCE_TIMEOUT_MS = 1_000;
+const NO_LISTENER =
+  "no process is listening on it, so an open connection is probably using it as its source port; wait for that connection to close, then retry";
 
 export interface PortHolder {
   readonly pid: number;
@@ -62,6 +64,10 @@ export function discoverPortHolders(port: number): PortHolderDiscovery {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) return { ok: false, error: result.error.message };
+  // lsof exits 1 with no output when nothing matches the LISTEN filter.
+  if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) {
+    return { ok: false, error: NO_LISTENER };
+  }
   if (result.status !== 0) {
     return {
       ok: false,
@@ -80,7 +86,7 @@ export function discoverPortHolders(port: number): PortHolderDiscovery {
     }
   }
   if (holders.length === 0) {
-    return { ok: false, error: "lsof found no inspectable listener" };
+    return { ok: false, error: NO_LISTENER };
   }
   return {
     ok: true,
