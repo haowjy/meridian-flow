@@ -11,7 +11,6 @@ import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
-import { isWorkReadOnly } from "./archived-work";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
@@ -61,11 +60,7 @@ export function useWorkChrome(
         />
       ) : null,
     title: work ? (
-      isWorkReadOnly(work) ? (
-        <PlainWorkTitleTab key={work.id} name={work.name} variant={variant} />
-      ) : (
-        <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
-      )
+      <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
     ) : pendingName ? (
       <PlainWorkTitleTab name={pendingName} variant={variant} />
     ) : remembered && variant === "tab" ? (

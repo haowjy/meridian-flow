@@ -6,7 +6,7 @@
  * (`work-command-projection`) reads records against the server snapshot.
  */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
 
 import {
   archiveWork,
@@ -110,7 +110,7 @@ const workCommands = {
     request: ({ workId }, { signal }) => archiveWork(workId, { signal }),
     project: (work, _, { at }) => patch(work, { archivedAt: at }),
     commit: (work, _, { archivedAt }) => patch(work, { archivedAt }),
-    reached: (work) => work?.archivedAt !== null,
+    reached: (work) => !!work && isWorkArchived(work),
     serial: true,
     keepsFailure: true,
   },
@@ -118,7 +118,7 @@ const workCommands = {
     request: ({ workId }, { signal }) => unarchiveWork(workId, { signal }),
     project: (work) => patch(work, { archivedAt: null }),
     commit: (work, _, { archivedAt }) => patch(work, { archivedAt }),
-    reached: (work) => work?.archivedAt === null,
+    reached: (work) => !!work && !isWorkArchived(work),
     serial: true,
     keepsFailure: true,
   },

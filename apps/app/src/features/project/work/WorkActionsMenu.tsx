@@ -1,7 +1,7 @@
 /** The one Work `…` menu, shared by the Work page header and Work list rows. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -17,7 +17,7 @@ export function WorkActionsMenu({
   onDelete: () => void;
   triggerClassName?: string;
 }) {
-  const archived = work.archivedAt !== null;
+  const archived = isWorkArchived(work);
   return (
     <OverflowMenu
       label={t`Actions for ${work.name}`}

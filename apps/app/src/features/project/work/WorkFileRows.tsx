@@ -1,6 +1,6 @@
 /**
  * The Work Files tab's Scratch rows: a folder, a file (renamed in place, or
- * only opened while its Work is read-only), and a new note still on its way.
+ * only opened when its Work is not editable), and a new note still on its way.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -41,31 +41,33 @@ export function FolderRow({
   );
 }
 
+/** Rename and Delete, offered only while the file's Work is editable. */
+export type ScratchFileEdit = {
+  renaming: boolean;
+  onRename: (path: string | null) => void;
+  onDelete: () => void;
+};
+
 export function ScratchFileRow({
   projectId,
   workId,
   file,
   siblingNames,
-  readOnly,
-  renaming,
-  onRename,
-  onDelete,
+  edit,
 }: {
   projectId: string;
   workId: string;
   file: CatalogFile;
   siblingNames: readonly string[];
-  readOnly: boolean;
-  renaming: boolean;
-  onRename: (path: string | null) => void;
-  onDelete?: () => void;
+  /** Absent: the row only opens, with no menu, kebab or rename. */
+  edit?: ScratchFileEdit;
 }) {
   const openFile = useOpenFileInDock(workId);
   const docked = useDockViewStore(
     (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
   );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
-  if (renaming && !readOnly)
+  if (edit?.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
         <RowIcon icon={fileKindIcon(file)} />
@@ -74,14 +76,10 @@ export function ScratchFileRow({
           workId={workId}
           file={file}
           siblingNames={siblingNames}
-          onDone={() => onRename(null)}
+          onDone={() => edit.onRename(null)}
         />
       </div>
     );
-  const onAction = (action: EntryAction) => {
-    if (action === "rename") onRename(file.path);
-    if (action === "delete") onDelete?.();
-  };
   const open = () => openFile(viewerTabForCatalogFile(file, "scratch", workId));
   const row = (
     <div
@@ -89,7 +87,7 @@ export function ScratchFileRow({
     >
       <button
         type="button"
-        className={cn(workFileRowClass, !readOnly && "pr-10")}
+        className={cn(workFileRowClass, edit && "pr-10")}
         aria-current={docked || undefined}
         onClick={open}
       >
@@ -101,35 +99,47 @@ export function ScratchFileRow({
           ) : null}
         </span>
       </button>
-      {readOnly ? null : (
+      {edit ? (
         <div className="absolute right-1">
           <EntryKebabButton
             allowCreate={false}
-            allowDelete={Boolean(onDelete)}
-            onAction={onAction}
+            allowDelete
+            onAction={(action) => onEditAction(edit, file, action)}
             align="end"
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
-  // Rename and Delete are the whole menu, so a read-only row has none.
-  if (readOnly) return row;
+  // Rename and Delete are the whole menu, so a row that only opens has none.
+  if (!edit) return row;
   return (
-    <ContextEntryMenu allowCreate={false} allowDelete={Boolean(onDelete)} onAction={onAction}>
+    <ContextEntryMenu
+      allowCreate={false}
+      allowDelete
+      onAction={(action) => onEditAction(edit, file, action)}
+    >
       {row}
     </ContextEntryMenu>
   );
 }
 
-/** A new note on its way into Scratch: pending, or refused with Retry and Dismiss. */
+function onEditAction(edit: ScratchFileEdit, file: CatalogFile, action: EntryAction) {
+  if (action === "rename") edit.onRename(file.path);
+  if (action === "delete") edit.onDelete();
+}
+
+/**
+ * A new note on its way into Scratch: pending, or refused with Dismiss and,
+ * while its Work is still editable, Retry.
+ */
 export function NoteAttemptRow({
   attempt,
   onRetry,
   onDismiss,
 }: {
   attempt: NoteAttempt;
-  onRetry: () => void;
+  onRetry?: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -147,9 +157,11 @@ export function NoteAttemptRow({
           <span role="alert" className="shrink-0 text-xs text-destructive">
             <Trans>Couldn’t create note</Trans>
           </span>
-          <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
-            <Trans>Retry</Trans>
-          </button>
+          {onRetry ? (
+            <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
+              <Trans>Retry</Trans>
+            </button>
+          ) : null}
           <button type="button" className="text-button shrink-0 text-xs" onClick={onDismiss}>
             <Trans>Dismiss</Trans>
           </button>

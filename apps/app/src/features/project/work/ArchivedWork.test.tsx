@@ -3,12 +3,10 @@
 import type { Work } from "@meridian/contracts/works";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkDetailScreen } from "./WorkDetailScreen";
-import { ScratchFileRow } from "./WorkFileRows";
 
 const { unarchive } = vi.hoisted(() => ({ unarchive: vi.fn(async () => null) }));
 
@@ -51,8 +49,6 @@ vi.mock("../routing/chat-navigation", () => ({
 }));
 vi.mock("../chat-index/ChatIndex", () => ({ NextPage: () => null }));
 vi.mock("../chat-index/ChatIndexList", () => ({ ChatIndexList: () => null }));
-vi.mock("../dock/use-open-file-in-dock", () => ({ useOpenFileInDock: () => vi.fn() }));
-vi.mock("../dock/dock-view-store", () => ({ useDockViewStore: () => false }));
 
 const ARCHIVED = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -71,20 +67,6 @@ const ARCHIVED = {
   lastActivityAt: "2026-09-02T00:00:00.000Z",
   deletedAt: null,
 } as unknown as AddressableWork;
-
-const NOTE = {
-  kind: "file",
-  entryId: "entry-1",
-  parentId: "root",
-  documentId: "doc-1",
-  name: "beats.md",
-  path: "/beats.md",
-  uri: "scratch://@tournament-arc/beats.md",
-  provisionalName: false,
-  editable: true,
-  filetype: "markdown",
-  schemaType: "document",
-} as unknown as CatalogFile;
 
 const buttons = () => [...document.querySelectorAll("button")];
 const buttonNamed = (label: string) =>
@@ -125,37 +107,6 @@ describe("an archived Work page", () => {
   it("offers no Add a goal prompt when the goal is empty", async () => {
     await withReactRoot(renderPage({ ...ARCHIVED, goal: null }), () => {
       expect(document.body.textContent).not.toContain("Add a goal");
-    });
-  });
-});
-
-describe("a Work file row", () => {
-  const row = (readOnly: boolean) => (
-    <ScratchFileRow
-      projectId="project-1"
-      workId={ARCHIVED.id}
-      file={NOTE}
-      siblingNames={[]}
-      readOnly={readOnly}
-      renaming={readOnly}
-      onRename={vi.fn()}
-      onDelete={vi.fn()}
-    />
-  );
-
-  it("offers only opening while its Work is read-only", async () => {
-    await withReactRoot(row(true), () => {
-      expect(buttonNamed("beats.md")).toBeDefined();
-      expect(buttonNamed("Actions")).toBeUndefined();
-      expect(document.querySelector("input")).toBeNull();
-      // No right-click menu either: the row is not a context-menu trigger.
-      expect(document.querySelector("[data-state]")).toBeNull();
-    });
-  });
-
-  it("keeps Rename and Delete while its Work is active", async () => {
-    await withReactRoot(row(false), () => {
-      expect(buttonNamed("Actions")).toBeDefined();
     });
   });
 });

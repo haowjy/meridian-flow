@@ -2,11 +2,13 @@
  * Work Files tab: drafts to review and scratch notes as one grouped list in
  * the same row grammar as the Chats tab and the Editor's recents.
  * `useWorkFiles` owns the tab's state so the page toolbar can host its actions;
- * a new note on its way in is `useWorkNoteIntake`'s. A read-only Work keeps
- * New note in place but disabled, and offers rows only to open.
+ * a new note on its way in is `useWorkNoteIntake`'s. An archived Work is not
+ * `editable`: New note stays in place but disabled, rows only open, and a
+ * refused note offers no Retry.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { FilePlus } from "lucide-react";
 import { useState } from "react";
 import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
@@ -40,6 +42,8 @@ export function useWorkFiles(projectId: string, work: AddressableWork) {
     if (name) setRenaming(`/${name}`);
   };
   return {
+    /** Whether the writer may add, rename or delete this Work's files. */
+    editable: !isWorkArchived(work),
     scratch,
     intake,
     renaming,
@@ -51,11 +55,11 @@ export function useWorkFiles(projectId: string, work: AddressableWork) {
 export type WorkFiles = ReturnType<typeof useWorkFiles>;
 
 /** The Files tab's toolbar action: the jade New note. */
-export function WorkFilesActions({ files, readOnly }: { files: WorkFiles; readOnly: boolean }) {
+export function WorkFilesActions({ files }: { files: WorkFiles }) {
   return (
     <Button
       size="sm"
-      disabled={readOnly || files.intake.note?.state === "pending" || !files.scratch.catalog}
+      disabled={!files.editable || files.intake.note?.state === "pending" || !files.scratch.catalog}
       onClick={files.createNote}
       aria-label={t`New note`}
       className="[@media(pointer:coarse)]:min-h-11"
@@ -71,14 +75,12 @@ export function WorkFilesActions({ files, readOnly }: { files: WorkFiles; readOn
 export function WorkFilesView({
   projectId,
   work,
-  readOnly,
   commands,
   search,
   files,
 }: {
   projectId: string;
   work: AddressableWork;
-  readOnly: boolean;
   commands: ProjectRouteCommands;
   search: string;
   files: WorkFiles;
@@ -128,16 +130,20 @@ export function WorkFilesView({
             workId={work.id}
             file={node}
             siblingNames={catalogSiblingNames(scratch.catalog, node)}
-            readOnly={readOnly}
-            renaming={files.renaming === node.path}
-            onRename={files.setRenaming}
-            onDelete={() =>
-              scratchDelete.requestDelete({
-                kind: "file",
-                name: node.name,
-                path: node.path,
-                documentId: node.documentId,
-              })
+            edit={
+              files.editable
+                ? {
+                    renaming: files.renaming === node.path,
+                    onRename: files.setRenaming,
+                    onDelete: () =>
+                      scratchDelete.requestDelete({
+                        kind: "file",
+                        name: node.name,
+                        path: node.path,
+                        documentId: node.documentId,
+                      }),
+                  }
+                : undefined
             }
           />
         ),
@@ -150,7 +156,7 @@ export function WorkFilesView({
             node: (
               <NoteAttemptRow
                 attempt={intake.note}
-                onRetry={files.retryNote}
+                onRetry={files.editable ? files.retryNote : undefined}
                 onDismiss={intake.dismissNote}
               />
             ),

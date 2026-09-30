@@ -27,10 +27,15 @@ import {
   type WorkRowFailure,
 } from "./WorkCommandFailureRow";
 import { WorkRow } from "./WorkRow";
-import { type WorkListEntry, workListEntries } from "./work-list-model";
+import {
+  type ArchiveTab,
+  archiveTab,
+  type WorkListEntry,
+  workListEntries,
+} from "./work-list-model";
 
 /** The tab an Archive or Unarchive, or its retry, moves the Work to. */
-const archiveTarget = (operation: "archive" | "unarchive"): "active" | "archived" =>
+const archiveTarget = (operation: "archive" | "unarchive"): ArchiveTab =>
   operation === "archive" ? "archived" : "active";
 
 export function WorkCollection({
@@ -135,7 +140,7 @@ export function WorkCollection({
                   onToggleArchive={() =>
                     archiveFocus.follow(
                       work.id,
-                      work.archivedAt !== null ? "active" : "archived",
+                      archiveTab(work) === "archived" ? "active" : "archived",
                       toggleArchive(work),
                     )
                   }

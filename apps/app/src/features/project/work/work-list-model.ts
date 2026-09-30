@@ -5,6 +5,7 @@
  */
 import {
   DAY_MS,
+  isWorkArchived,
   WORK_DELETE_RETENTION_DAYS,
   type Work,
   workPurgeAt,
@@ -14,6 +15,12 @@ import type { WorkCreation, WorkDraft } from "@/client/query/work-command-projec
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import type { WorksView } from "../routing/project-address";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
+
+/** The list tab a Work the server has sits in until it is deleted. */
+export type ArchiveTab = Exclude<WorksView, "deleted">;
+
+export const archiveTab = (work: Pick<Work, "archivedAt">): ArchiveTab =>
+  isWorkArchived(work) ? "archived" : "active";
 
 /**
  * `creating` and `notCreated`: the server has no such Work yet, so the row
@@ -48,20 +55,20 @@ export function workListEntries(
   windows: readonly WorkDeleteWindow[],
   failures: ReadonlyMap<string, WorkRowFailure>,
   now: number,
-): Record<Exclude<WorksView, "deleted">, WorkListEntry[]> & { deleted: ListedWorkEntry[] } {
+): Record<ArchiveTab, WorkListEntry[]> & { deleted: ListedWorkEntry[] } {
   const listed = (work: AddressableWork): ListedWorkEntry =>
     projected.restoring.has(work.id)
       ? { key: work.id, work, state: "restoring" }
       : { key: work.id, work, state: "idle", failure: failures.get(work.id) };
-  const undoRows = (archived: boolean) =>
+  const undoRows = (view: ArchiveTab) =>
     [...windows].reverse().flatMap((open): WorkListEntry[] => {
       const work = projected.deleted.find((entry) => entry.id === open.workId);
-      if (!work || (work.archivedAt !== null) !== archived) return [];
+      if (!work || archiveTab(work) !== view) return [];
       return [{ key: `deleted-${work.id}`, work, state: "undo", failure: failures.get(work.id) }];
     });
-  const tab = (archived: boolean) => [
-    ...undoRows(archived),
-    ...projected.works.filter((work) => (work.archivedAt !== null) === archived).map(listed),
+  const tab = (view: ArchiveTab) => [
+    ...undoRows(view),
+    ...projected.works.filter((work) => archiveTab(work) === view).map(listed),
   ];
   const creating = [...projected.creations.values()].map(
     ({ work, phase }): WorkListEntry => ({
@@ -72,8 +79,8 @@ export function workListEntries(
   );
   const undoable = new Set(windows.map((open) => open.workId));
   return {
-    active: [...creating, ...tab(false)],
-    archived: tab(true),
+    active: [...creating, ...tab("active")],
+    archived: tab("archived"),
     deleted: restorableWorks(projected.deleted, now, undoable).map((work) => ({
       key: work.id,
       work,

@@ -10,12 +10,10 @@ import { WorkToolbarTools } from "./WorkToolbarSlot";
 export function WorkFilesTab({
   projectId,
   work,
-  readOnly,
   commands,
 }: {
   projectId: string;
   work: AddressableWork;
-  readOnly: boolean;
   commands: ProjectRouteCommands;
 }) {
   // Filtering is local to loaded rows, so it follows every keystroke.
@@ -25,12 +23,11 @@ export function WorkFilesTab({
     <>
       <WorkToolbarTools>
         <SearchField label={t`Search files`} value={search} onChange={setSearch} />
-        <WorkFilesActions files={files} readOnly={readOnly} />
+        <WorkFilesActions files={files} />
       </WorkToolbarTools>
       <WorkFilesView
         projectId={projectId}
         work={work}
-        readOnly={readOnly}
         commands={commands}
         search={search}
         files={files}

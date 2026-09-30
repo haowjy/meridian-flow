@@ -2,13 +2,14 @@
  * A Work's two titles: the active tab in the pane band (navigation chrome) and
  * the page heading (the page's own identity). Both rename the same Work in
  * place through `TitleEditSlot`, without moving the text: a rename shows at
- * once, and a refused one reopens the title that was edited. A Work with no
- * server identity yet, or an archived one, shows the same titles as plain text.
+ * once, and a refused one reopens the title that was edited. An archived Work
+ * shows the same titles as plain text, as does a Work with no server identity
+ * yet (its name only, through the `Plain*` titles).
  * Both are one line: a long name truncates, with the full name on hover and as
  * the accessible name; the rename field scrolls within that line.
  */
 import { t } from "@lingui/core/macro";
-import type { Work } from "@meridian/contracts/works";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useWorkMutations } from "@/client/query/work-command-store";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
@@ -37,6 +38,7 @@ export function WorkTitleTab({
   variant: "tab" | "quiet";
 }) {
   const rename = useWorkRename(projectId, work);
+  if (isWorkArchived(work)) return <PlainWorkTitleTab name={work.name} variant={variant} />;
   return (
     <div className={cn(titleChipClass(variant), "relative")}>
       <TitleEditSlot
@@ -67,6 +69,7 @@ export function WorkTitleTab({
 /** The Work page's heading, renamed in place like the tab above it. */
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
   const rename = useWorkRename(projectId, work);
+  if (isWorkArchived(work)) return <PlainWorkHeading name={work.name} />;
   return (
     <h1 className={headingClass}>
       <TitleEditSlot
@@ -94,7 +97,10 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
   );
 }
 
-/** A Work's name in the tab, not editable: still being created, or archived. */
+/**
+ * A Work's name in the tab as plain text. Outside this module, only for a Work
+ * still being created, which has a name but nothing to rename yet.
+ */
 export function PlainWorkTitleTab({ name, variant }: { name: string; variant: "tab" | "quiet" }) {
   return (
     <div className={titleChipClass(variant)}>
@@ -105,7 +111,7 @@ export function PlainWorkTitleTab({ name, variant }: { name: string; variant: "t
   );
 }
 
-/** A Work's heading, not editable: still being created, or archived. */
+/** A Work's heading as plain text; outside this module, only for a Work still being created. */
 export function PlainWorkHeading({ name }: { name: string }) {
   return (
     <h1 className={headingClass}>

@@ -1,13 +1,15 @@
 /**
  * The Work page's Chats tab: this Work's chats, searched as the chat index is,
- * and New chat (disabled in place while the Work is read-only).
+ * and New chat (disabled in place while the Work is archived, which takes no
+ * new chats).
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { MessageSquarePlus } from "lucide-react";
 import { type RefObject, useCallback, useMemo, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
+import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -21,17 +23,15 @@ import { WorkToolbarTools } from "./WorkToolbarSlot";
 
 export function WorkChatsTab({
   projectId,
-  workId,
-  readOnly,
+  work,
   scrollOwner,
 }: {
   projectId: string;
-  workId: ParsedRequestId;
-  readOnly: boolean;
+  work: AddressableWork;
   scrollOwner: RefObject<HTMLDivElement | null>;
 }) {
   const [search, setSearch] = useState<string | null>(null);
-  const feed = useProjectChatFeed(projectId, false, search, workId);
+  const feed = useProjectChatFeed(projectId, false, search, work.id);
   const now = useMinuteClock();
   const { openChat, openNewChat } = useChatNavigation();
   const { onFavorite, onDelete, deleteFailure, retryDelete, deleteDialog } =
@@ -50,8 +50,8 @@ export function WorkChatsTab({
         <SettledSearchField label={t`Search chats`} value={search} onSettle={setSearch} />
         <Button
           size="sm"
-          disabled={readOnly}
-          onClick={() => void openNewChat(workId)}
+          disabled={isWorkArchived(work)}
+          onClick={() => void openNewChat(work.id)}
           aria-label={t`New chat`}
           className="[@media(pointer:coarse)]:min-h-11"
         >

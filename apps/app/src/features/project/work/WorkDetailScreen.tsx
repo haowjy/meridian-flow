@@ -7,6 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkMutations } from "@/client/query/work-command-store";
@@ -22,12 +23,11 @@ import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
-import { isWorkReadOnly } from "./archived-work";
 import { WorkChatsTab } from "./WorkChatsTab";
 import { WorkFilesTab } from "./WorkFilesTab";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
 import { WorkStatusLabel } from "./WorkStatusLabel";
-import { PlainWorkHeading, WorkHeading } from "./WorkTitles";
+import { WorkHeading } from "./WorkTitles";
 import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
 export type WorkDetailScreenProps = {
@@ -95,7 +95,6 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     const error = await mutations.update({ workId: work.id, data });
     if (error) throw error;
   });
-  const readOnly = isWorkReadOnly(work);
   const scrollOwner = useRef<HTMLDivElement>(null);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   useProjectLeaveGuard({
@@ -107,16 +106,10 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          title={
-            readOnly ? (
-              <PlainWorkHeading name={work.name} />
-            ) : (
-              <WorkHeading projectId={projectId} work={work} />
-            )
-          }
+          title={<WorkHeading projectId={projectId} work={work} />}
           status={work.status}
           notice={
-            readOnly ? (
+            isWorkArchived(work) ? (
               <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
             ) : null
           }
@@ -127,19 +120,9 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
         />
         <WorkToolbarSlotProvider value={toolbarSlot}>
           {routeCommands.workView === "chats" ? (
-            <WorkChatsTab
-              projectId={projectId}
-              workId={work.id}
-              readOnly={readOnly}
-              scrollOwner={scrollOwner}
-            />
+            <WorkChatsTab projectId={projectId} work={work} scrollOwner={scrollOwner} />
           ) : (
-            <WorkFilesTab
-              projectId={projectId}
-              work={work}
-              readOnly={readOnly}
-              commands={routeCommands}
-            />
+            <WorkFilesTab projectId={projectId} work={work} commands={routeCommands} />
           )}
         </WorkToolbarSlotProvider>
         <DirtyDecision controller={controller} />
