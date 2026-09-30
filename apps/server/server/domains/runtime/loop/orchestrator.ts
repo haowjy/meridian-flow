@@ -85,6 +85,7 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
+  CompactionMetadataCodec,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -1580,7 +1581,6 @@ async function executeLoop({
   let endTurnRequested = false;
   let terminalControl = false;
   let continuingTask = false;
-  let activeCompactionRequired = true;
   let iteration = 0;
   // One emergency retry per reply, even across tool iterations and compaction splits.
   let retriedContextOverflow = false;
@@ -1747,7 +1747,6 @@ async function executeLoop({
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
-    activeCompactionRequired = decision.trigger === "auto";
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
@@ -2330,7 +2329,7 @@ async function executeLoop({
           correlation: { threadId: input.threadId, turnId: currentTurn.id },
           payload: unknownToEventPayload(err),
         });
-        const optional = !activeCompactionRequired;
+        const optional = CompactionMetadataCodec.parse(currentTurn.metadata).trigger === "manual";
         let failed: Awaited<ReturnType<typeof failCompactionSuccessor>>;
         try {
           failed = await failCompactionSuccessor({
