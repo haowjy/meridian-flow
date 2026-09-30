@@ -115,9 +115,11 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 
 Commit often, one self-contained change at a time.
 
-A human merges into `main` or `staging` unless explicitly instructing the agent
-to merge. Merges between working branches need no gate. Docs-only `AGENTS.md`,
-`.context/`, and KB changes may commit directly to `main`.
+A human merges product changes into `main` or `staging` unless explicitly
+instructing the agent to merge. Merges between working branches need no gate.
+Documentation-only changes commit directly to `main`; never open a PR only for
+documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
+docs repository.
 
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its
