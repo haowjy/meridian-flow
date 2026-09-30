@@ -1442,7 +1442,23 @@ else
       );
       expect(c).toMatchObject({
         status: "error",
+        error: "This conversation couldn't be compacted. Try again.",
         metadata: { reason: "context_too_large", phase: "initial_prepare" },
+      });
+      const journal = await db
+        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      expect(journal).toContainEqual({
+        eventType: "turn.error",
+        payload: expect.objectContaining({
+          error: expect.objectContaining({
+            message: "This message is too long for this chat's model.",
+            details: expect.objectContaining({
+              reason: "context_too_large",
+              phase: "initial_prepare",
+            }),
+          }),
+        }),
       });
       expect(rig.summarizer.calls).toHaveLength(0);
     });

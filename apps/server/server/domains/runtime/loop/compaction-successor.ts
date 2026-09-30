@@ -14,6 +14,7 @@ import {
   type CompactionDecision,
   CompactionFailureError,
   type CompactionFailureOutcome,
+  compactionFailureDiagnosticMessage,
   compactionFailureFrom,
   compactionFailureMeridianError,
   summaryCompactionFailure,
@@ -307,7 +308,10 @@ export async function completeCompactionCurrent(input: {
         {
           type: "turn.error",
           turn: failed,
-          error: compactionFailureMeridianError(outcome, failed.error),
+          error: compactionFailureMeridianError(
+            outcome,
+            compactionFailureDiagnosticMessage(outcome.reason),
+          ),
         },
       ],
     }));

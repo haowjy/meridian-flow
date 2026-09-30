@@ -630,7 +630,7 @@ describe("inbox drain", () => {
       uri: "uploads://@/temporary-failure.png",
     };
     let resolutions = 0;
-    const { thread, requests, orchestrator, repos, send, inbox } = await setup({
+    const { thread, requests, orchestrator, repos, send, inbox, journal } = await setup({
       imageAssets: {
         async resolve() {
           resolutions += 1;
@@ -649,7 +649,7 @@ describe("inbox drain", () => {
       status: "error",
       turn: {
         status: "error",
-        error: "An image in this message couldn't be loaded. Try again.",
+        error: "This response failed.",
       },
     });
     expect(await repos.turns.findById(first.executionTurnId)).toMatchObject({
@@ -664,6 +664,17 @@ describe("inbox drain", () => {
       ),
     ).toHaveLength(0);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
+    expect(
+      journal
+        .getEvents(thread.id)
+        .map(({ event }) => event)
+        .find((event) => event.type === "turn.error" && event.turn.id === first.executionTurnId),
+    ).toMatchObject({
+      error: {
+        message: "temporary object-store timeout",
+        details: { reason: "image_resolution_failed" },
+      },
+    });
 
     const retry = await orchestrator.prepare({ threadId: thread.id, userText: "try again" });
     await retry.execute();
@@ -721,7 +732,7 @@ describe("inbox drain", () => {
       status: "error",
       turn: {
         status: "error",
-        error: "An image in this message couldn't be loaded. Try again.",
+        error: "This response failed.",
       },
     });
 
@@ -737,7 +748,7 @@ describe("inbox drain", () => {
     expect(newestAssistant).toMatchObject({
       status: "error",
       finishReason: "error",
-      error: "An image in this message couldn't be loaded. Try again.",
+      error: "This response failed.",
     });
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
@@ -871,7 +882,7 @@ describe("inbox drain", () => {
         status: "error",
         turn: {
           status: "error",
-          error: "An image in this message couldn't be loaded. Try again.",
+          error: "This response failed.",
         },
       });
     } else if (boundary === "direct start") {
@@ -888,7 +899,7 @@ describe("inbox drain", () => {
         status: "error",
         turn: {
           status: "error",
-          error: "An image in this message couldn't be loaded. Try again.",
+          error: "This response failed.",
         },
       });
       const reply = await rig.repos.turns.findById(run.executionTurnId);
@@ -899,7 +910,7 @@ describe("inbox drain", () => {
         status: "error",
         turn: {
           status: "error",
-          error: "An image in this message couldn't be loaded. Try again.",
+          error: "This response failed.",
         },
       });
       const turns = await rig.repos.turns.listByThread(rig.thread.id);
