@@ -66,66 +66,45 @@ describe("permissionGateFromToolPolicy", () => {
 });
 
 describe("write tool policy advertisement", () => {
-  it("projects read-only instructions and schema without mutating the registration", () => {
+  // Per-command guidance lives on each command's schema branch, so narrowing the
+  // schema is what keeps a read-only agent from seeing mutation guidance.
+  it("narrows the read-only schema and its guidance without mutating the registration", () => {
     const { base, advertised } = advertisedWrite(projectToolPolicy({ tools: CRITIC_MAP }));
-    expect(advertised.description).toContain('Read with `{ "command": "read", "path": "..." }`');
-    expect(advertised.description).toContain("requires a Work in draft write mode");
-    expect(advertised.description).not.toContain("overwrite=true");
-    expect(advertised.description).not.toContain("before/after take block hashes");
-    expect(advertised.description).not.toContain("undo and redo");
-    expect(JSON.stringify(advertised.inputSchema)).toContain('"read"');
-    expect(JSON.stringify(advertised.inputSchema)).toContain('"diff"');
-    expect(JSON.stringify(advertised.inputSchema)).not.toContain('"create"');
-    expect(base.description).toContain("overwrite=true");
-    expect(JSON.stringify(base.inputSchema)).toContain('"create"');
+    const schema = JSON.stringify(advertised.inputSchema);
+    expect(schema).toContain("Read a document");
+    expect(schema).toContain("Needs a Work in draft write mode");
+    expect(schema).not.toContain('"create"');
+    expect(schema).not.toContain("entire content");
+    expect(schema).not.toContain("Undo this thread");
+    expect(advertised.description).toBe(base.description);
+    expect(JSON.stringify(base.inputSchema)).toContain("entire content");
   });
 
-  it("keeps mutation guidance aligned to permitted commands", () => {
+  it("keeps only the permitted commands' guidance", () => {
     const editPolicy = projectToolPolicy({ tools: { edit: "allow" } });
-    const { advertised: editor } = advertisedWrite(editPolicy);
-    expect(editor.description).toContain("overwrite=true");
-    expect(editor.description).toContain("before/after take block hashes");
-    expect(editor.description).toContain("undo reverses");
-    expect(editor.description).toContain("redo reapplies");
-    expect(JSON.stringify(editor.inputSchema)).toContain('"create"');
+    const editor = JSON.stringify(advertisedWrite(editPolicy).advertised.inputSchema);
+    expect(editor).toContain("entire content");
+    expect(editor).toContain("Undo this thread");
 
     const subset = { ...editPolicy, writeCommands: new Set(["read", "replace"] as const) };
-    const { advertised } = advertisedWrite(subset);
-    expect(advertised.description).toContain("replace edits content");
-    expect(advertised.description).not.toContain("overwrite=true");
-    expect(advertised.description).not.toContain("undo and redo");
-    expect(JSON.stringify(advertised.inputSchema)).toContain('"replace"');
-    expect(JSON.stringify(advertised.inputSchema)).not.toContain('"create"');
+    const schema = JSON.stringify(advertisedWrite(subset).advertised.inputSchema);
+    expect(schema).toContain("Exact text to replace");
+    expect(schema).not.toContain("entire content");
+    expect(schema).not.toContain("Undo this thread");
   });
 
-  it("preserves other tool definitions and independent write advertisements", () => {
-    const registrations = createCoreToolRegistrations(handlers);
-    const baseTools = registrations.map(({ definition }) => definition);
-    const baseWrite = baseTools.find((tool) => tool.type === "function" && tool.name === "write");
-    const baseLs = baseTools.find((tool) => tool.type === "function" && tool.name === "ls");
-    if (baseWrite?.type !== "function" || baseLs?.type !== "function") {
-      throw new Error("core registrations are missing expected function tools");
-    }
-
+  it("leaves other tools and the base registration untouched", () => {
+    const baseTools = createCoreToolRegistrations(handlers).map(({ definition }) => definition);
     const critic = advertiseTools(baseTools, projectToolPolicy({ tools: CRITIC_MAP }));
-    const editor = advertiseTools(baseTools, projectToolPolicy({ tools: { edit: "allow" } }));
-    const criticWrite = critic.find((tool) => tool.type === "function" && tool.name === "write");
-    const editorWrite = editor.find((tool) => tool.type === "function" && tool.name === "write");
-    const criticLs = critic.find((tool) => tool.type === "function" && tool.name === "ls");
-    if (
-      criticWrite?.type !== "function" ||
-      editorWrite?.type !== "function" ||
-      criticLs?.type !== "function"
-    ) {
-      throw new Error("advertisement omitted an expected tool");
-    }
-
-    expect(criticWrite.description).not.toContain("overwrite=true");
-    expect(editorWrite.description).toContain("overwrite=true");
-    expect(baseWrite.description).toContain("overwrite=true");
-    expect(baseWrite.inputSchema).not.toEqual(criticWrite.inputSchema);
-    expect(criticLs.description).toBe(baseLs.description);
-    expect(criticLs.inputSchema).toEqual(baseLs.inputSchema);
-    expect(criticWrite.inputSchema).not.toBe(editorWrite.inputSchema);
+    const find = (tools: typeof critic, name: string) => {
+      const tool = tools.find(
+        (candidate) => candidate.type === "function" && candidate.name === name,
+      );
+      if (tool?.type !== "function") throw new Error(`missing ${name}`);
+      return tool;
+    };
+    expect(find(critic, "ls")).toEqual(find(baseTools, "ls"));
+    expect(find(critic, "write").inputSchema).not.toEqual(find(baseTools, "write").inputSchema);
+    expect(JSON.stringify(find(baseTools, "write").inputSchema)).toContain('"create"');
   });
 });

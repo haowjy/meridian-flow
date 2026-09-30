@@ -22,20 +22,25 @@ import {
 } from "@meridian/contracts/works";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
-import { writeToolDescription } from "./write-tool-description.js";
 
-const WorkSelectorSchema = z.object({ work: z.string().min(1) });
+const WorkSelectorSchema = z.object({ work: z.string().min(1).describe("Work slug.") });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
-  z.object({ command: z.literal("list"), archived: z.boolean().optional() }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("show") }).strict(),
+  z
+    .object({ command: z.literal("list"), archived: z.boolean().optional() })
+    .strict()
+    .describe("List Works: active, or archived when archived is true."),
+  WorkSelectorSchema.extend({ command: z.literal("show") })
+    .strict()
+    .describe("Show one Work."),
   z
     .object({
       command: z.literal("create"),
       name: z.string().min(1),
       goal: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Create a Work."),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
     name: z.string().optional(),
@@ -51,17 +56,29 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
           });
         }
       })
-      .optional(),
-  }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("archive") }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("unarchive") }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),
+      .optional()
+      .describe(
+        "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current; null clears it.",
+      ),
+  })
+    .strict()
+    .describe("Change a Work's name, goal or status."),
+  WorkSelectorSchema.extend({ command: z.literal("archive") })
+    .strict()
+    .describe("Archive a Work. Its files and goal become read-only; its chats continue."),
+  WorkSelectorSchema.extend({ command: z.literal("unarchive") })
+    .strict()
+    .describe("Unarchive a Work so it can be changed again."),
+  WorkSelectorSchema.extend({ command: z.literal("delete") })
+    .strict()
+    .describe("Delete a Work with its chats and files; restorable for 30 days."),
   z
     .object({
       command: z.literal("switch"),
-      target: z.string().min(1).nullable().optional(),
+      target: z.string().min(1).nullable().optional().describe("Work slug; omit for No Work."),
     })
-    .strict(),
+    .strict()
+    .describe("Move this conversation to another Work."),
 ]);
 
 export type WorkCommand = z.infer<typeof WorkCommandSchema>;
@@ -159,7 +176,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "write",
-        description: writeToolDescription(),
+        description:
+          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the writer.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
@@ -172,8 +190,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "work",
-        description:
-          "Inspect or change project Works and this conversation's Work binding. status: where this Work stands, in one to three words (ideally one), e.g. Drafting, Revising, Blocked, Done. Set it when you start work in a Work that has none, and update it whenever that changes. Empty string or null clears status. Archived Works are read-only: use archive and unarchive commands for lifecycle changes. list shows active Works by default; set archived true to list archived Works.",
+        description: "Manage the project's Works and which Work this conversation is in.",
         inputSchema: workToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.work },
@@ -185,15 +202,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ls",
-        description:
-          'List files and directories under a path or URI. Use bare ls() to inspect mounted roots before reading specific documents with write({command: "read", path: "..."}).',
+        description: "List files and folders.",
         inputSchema: {
           type: "object",
           properties: {
             path: {
               type: "string",
-              description:
-                "Optional directory path or URI to list. Omit for the mount table. Supported schemes include scratch:// for work-item scratch files.",
+              description: "Folder path or context URI; omit to list the roots.",
             },
           },
           required: [],
@@ -208,19 +223,17 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "search",
-        description:
-          'Literal-text search across visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before reading them with write({command: "read", path: "..."}).',
+        description: "Search document text across all context files.",
         inputSchema: {
           type: "object",
           properties: {
             pattern: {
               type: "string",
-              description: "Literal text pattern to search for.",
+              description: "Literal text, not a regex.",
             },
             scope: {
               type: "string",
-              description:
-                "Optional URI prefix scope. Use kb:// to search the knowledge base, or a subtree like kb://protocols to search one folder. When omitted, searches all visible context schemes.",
+              description: "URI prefix to search under, e.g. kb:// or kb://protocols.",
             },
           },
           required: ["pattern"],
@@ -235,8 +248,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ask_user",
-        description:
-          "Pause execution and present a question to the user. Execution suspends until the user responds or the interrupt times out. The user's answer is returned as the tool result.",
+        description: "Ask the writer a question and wait for the answer.",
         inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
       },
       execution: { type: "server", handler: handlers.ask_user },
