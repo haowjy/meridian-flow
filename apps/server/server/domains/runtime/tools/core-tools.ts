@@ -18,6 +18,7 @@ import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import { searchDocumentText, writeDocumentText } from "./document-text.js";
 import { writeHistoryPreview } from "./history-previews.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { writeToolDescription } from "./write-tool-description.js";
 
@@ -73,11 +74,11 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
 }
 
 function workToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WorkCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WorkCommandSchema));
 }
 
 function formatWriteExecutionError(error: ToolExecutionError) {

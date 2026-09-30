@@ -2,13 +2,13 @@
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
 import { threadHistoryPreview } from "./history-previews.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
 export function createInspectionToolRegistrations(deps: {
@@ -25,7 +25,7 @@ export function createInspectionToolRegistrations(deps: {
         name: "thread_ls",
         description:
           "List connected conversations in your lineage. Defaults to this thread, with its path to the root and one level of children. depth can be 1 to 3. Use the returned cursor for older children.",
-        inputSchema: z.toJSONSchema(ThreadLsInputSchema),
+        inputSchema: modelToolSchema(ThreadLsInputSchema),
       },
       sequential: true,
       historyPreview: threadHistoryPreview,
@@ -54,7 +54,7 @@ export function createInspectionToolRegistrations(deps: {
         name: "thread_history",
         description:
           "Read a connected conversation, including your own earlier history. Defaults to the newest 40 visible items. Pages stop at prompt epochs and are always chronological. include opts in to thinking, tool_args, tool_results, system_messages, or system_prompt. expand reads a position.sequence handle (or position for a turn header). Document copies are pointers; write inputs are dated edit records, not current documents.",
-        inputSchema: z.toJSONSchema(ThreadHistoryInputSchema),
+        inputSchema: modelToolSchema(ThreadHistoryInputSchema),
       },
       sequential: true,
       historyPreview: threadHistoryPreview,
