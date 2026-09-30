@@ -13,7 +13,11 @@ import {
 } from "../tools/document-text.js";
 import { writeHistoryPreview } from "../tools/history-previews.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
-import { readThreadHistory } from "./thread-history.js";
+import {
+  readThreadHistory,
+  type ThreadHistoryInput,
+  ThreadHistoryInputSchema,
+} from "./thread-history.js";
 
 export function defineThreadHistoryContract(
   createHarness: () => Promise<{
@@ -109,6 +113,11 @@ export function defineThreadHistoryContract(
   function cursor(text: string) {
     const call = text.match(/next: thread_history\(([^\n]+)\)/)?.[1];
     return call ? JSON.parse(call).cursor : undefined;
+  }
+  function nextCall(text: string): ThreadHistoryInput {
+    const call = text.match(/next: thread_history\(([^\n]+)\)/)?.[1];
+    if (!call) throw new Error("History output has no next call");
+    return ThreadHistoryInputSchema.parse(JSON.parse(call));
   }
 
   describe("thread_history", () => {
@@ -362,21 +371,49 @@ export function defineThreadHistoryContract(
       const second = output(await f.read({ order: "oldest_first", cursor: cursor(first) }));
       expect(second.match(/tool_call ls/g)).toHaveLength(40);
     });
-    it("prints a short cursor as the complete next call and binds it to ref, order and anchor", async () => {
+    it.each([
+      "oldest_first",
+      "newest_first",
+    ] as const)("prints a complete next call that continues %s verbatim", async (order) => {
       const f = await fixture();
       const t = await f.turn();
       await f.block(t, "text", "first");
       await f.block(t, "text", "second");
-      const first = output(await f.read({ order: "oldest_first", limit: 1 }));
-      const next = cursor(first) as string;
-      expect(first).toContain(`next: thread_history({"ref":"${f.thread.ref}","cursor":"${next}"})`);
-      expect(next).toMatch(/^c\d+:o\d+(?:\.\d+)?@\d+(?:\.\d+)?~[a-f0-9]{8}$/u);
+      const firstPage = output(
+        await f.read({ order, limit: 1, include: ["tool_args", "system_messages"] }),
+      );
+      const call = nextCall(firstPage);
+      const next = call.cursor as string;
+      expect(call).toEqual({
+        ref: f.thread.ref,
+        order,
+        cursor: next,
+        limit: 1,
+        include: ["tool_args", "system_messages"],
+      });
+      expect(next).toMatch(
+        new RegExp(
+          `^c\\d+:${order === "oldest_first" ? "o" : "n"}\\d+(?:\\.\\d+)?@\\d+(?:\\.\\d+)?~[a-f0-9]{8}$`,
+          "u",
+        ),
+      );
+      const secondPage = output(await f.read(call));
+      expect(secondPage).toContain(order === "oldest_first" ? "second" : "first");
+      expect(secondPage).not.toContain(
+        order === "oldest_first" ? "] assistant\nfirst" : "] assistant\nsecond",
+      );
       for (const [candidate, message] of [
         [next.replace(/^c\d+/u, "p99"), "another conversation"],
-        [next.replace(":o", ":n"), "another history order"],
+        [
+          next.replace(
+            order === "oldest_first" ? ":o" : ":n",
+            order === "oldest_first" ? ":n" : ":o",
+          ),
+          "another history order",
+        ],
         [next.replace(/@(\d+)/u, (_, anchor) => `@${Number(anchor) + 999}`), "anchor"],
       ] as const) {
-        expect(await f.read({ order: "oldest_first", cursor: candidate })).toMatchObject({
+        expect(await f.read({ order, cursor: candidate })).toMatchObject({
           ok: false,
           error: { code: "invalid_cursor", message: expect.stringContaining(message) },
         });

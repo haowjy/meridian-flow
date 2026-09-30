@@ -278,17 +278,22 @@ export async function readThreadHistory({
       ? `  ${key(items[0] as HistoryItem)} to ${key(items.at(-1) as HistoryItem)}`
       : "";
     const dateState: { previousDate?: string; previousTime?: string } = {};
+    const nextCall = next
+      ? {
+          ref: target.ref,
+          ...(order !== "newest_first" ? { order } : {}),
+          cursor: modelHistoryCursor(next, target.ref as string),
+          ...((input.limit ?? 40) !== 40 ? { limit: input.limit } : {}),
+          ...(input.include !== undefined ? { include: input.include } : {}),
+        }
+      : undefined;
     const output = [
       heading.replace("\n", `${range}\n`),
       ...renderDatedItems(items, dateState),
       ...(live.length
         ? ["in progress (not part of this cursor):", ...renderDatedItems(live, dateState)]
         : []),
-      ...(next
-        ? [
-            `next: thread_history(${JSON.stringify({ ref: target.ref, cursor: modelHistoryCursor(next, target.ref as string) })})`,
-          ]
-        : []),
+      ...(nextCall ? [`next: thread_history(${JSON.stringify(nextCall)})`] : []),
     ].join("\n\n");
     return { output, metadata: { documentRevisions } };
   });
