@@ -2,22 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   catalogSiblingNames,
   compareTreePlaces,
-  filterWorkFileGroups,
   type TreePlace,
   workFileSearch,
 } from "./work-files-model";
 
-describe("Work Files grouping and search", () => {
-  it("preserves resource groups and filters their names case-insensitively", () => {
-    const groups = {
-      scratch: [{ name: "Outline.md" }, { name: "Arc notes.md" }],
-      uploads: [{ name: "Arc map.pdf" }],
-    };
-    expect(filterWorkFileGroups(groups, workFileSearch(" ARC "))).toEqual({
-      scratch: [{ name: "Arc notes.md" }],
-      uploads: [{ name: "Arc map.pdf" }],
-    });
-    expect(filterWorkFileGroups(groups, workFileSearch(" "))).toEqual(groups);
+describe("workFileSearch", () => {
+  it("matches names case-insensitively, and a blank search matches everything", () => {
+    const names = ["Outline.md", "Arc notes.md"];
+    expect(names.filter(workFileSearch(" ARC "))).toEqual(["Arc notes.md"]);
+    expect(names.filter(workFileSearch(" "))).toEqual(names);
   });
 });
 
@@ -57,7 +50,7 @@ describe("compareTreePlaces", () => {
     ).toEqual(["/drafts", "/notes", "/notes/a.md", "/notes/b.md", "/arc.md", "/zebra.md"]);
   });
 
-  it("puts a file still uploading where it will land, not after every listed file", () => {
+  it("puts a note still being created where it will land, not after every listed file", () => {
     expect(
       order([
         { path: "/a.md", folder: false },

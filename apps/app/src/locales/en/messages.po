@@ -1022,7 +1022,7 @@ msgstr "Couldn’t confirm this preference saved."
 msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Couldn’t create note"
 msgstr "Couldn’t create note"
 
@@ -1225,10 +1225,6 @@ msgstr "Couldn't undo"
 msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Couldn’t upload"
-msgstr "Couldn’t upload"
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
 msgstr "Couldn't write"
@@ -1294,7 +1290,7 @@ msgid "Creating project…"
 msgstr "Creating project…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr "Creating…"
 
@@ -1518,10 +1514,6 @@ msgstr "Drafts are waiting"
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
 msgstr "Drafts to review"
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Drop files here or choose from your device"
-msgstr "Drop files here or choose from your device"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -2434,10 +2426,6 @@ msgstr "No scratch notes match “{search}”."
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "No uploads match “{search}”."
-msgstr "No uploads match “{search}”."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -3927,17 +3915,9 @@ msgstr "Updating a Work…"
 msgid "upload"
 msgstr "upload"
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Upload"
-msgstr "Upload"
-
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Upload files"
-msgstr "Upload files"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
@@ -3957,19 +3937,10 @@ msgstr "Uploading {0}…"
 msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Uploading…"
-msgstr "Uploading…"
-
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/dock/dock-view-store.ts
-#: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads"
 msgstr "Uploads"
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Uploads couldn’t load"
-msgstr "Uploads couldn’t load"
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx

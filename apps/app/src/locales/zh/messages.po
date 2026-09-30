@@ -1022,7 +1022,7 @@ msgstr ""
 msgid "Couldn't create a Work"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Couldn’t create note"
 msgstr ""
 
@@ -1225,10 +1225,6 @@ msgstr ""
 msgid "Couldn't update that Work"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Couldn’t upload"
-msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
 msgstr ""
@@ -1294,7 +1290,7 @@ msgid "Creating project…"
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr ""
 
@@ -1517,10 +1513,6 @@ msgstr ""
 
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
-msgstr ""
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Drop files here or choose from your device"
 msgstr ""
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
@@ -2433,10 +2425,6 @@ msgstr ""
 
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes yet."
-msgstr ""
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "No uploads match “{search}”."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -3927,16 +3915,8 @@ msgstr ""
 msgid "upload"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Upload"
-msgstr ""
-
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
-msgstr ""
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Upload files"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3957,18 +3937,9 @@ msgstr ""
 msgid "Uploading elsewhere…"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Uploading…"
-msgstr ""
-
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/dock/dock-view-store.ts
-#: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads"
-msgstr ""
-
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Uploads couldn’t load"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx

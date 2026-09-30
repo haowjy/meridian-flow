@@ -1,11 +1,10 @@
 /**
- * The Work Files tab's rows: a folder, a catalog file (renamed in place, or
- * only opened while its Work is read-only), and a file still on its way.
+ * The Work Files tab's Scratch rows: a folder, a file (renamed in place, or
+ * only opened while its Work is read-only), and a new note still on its way.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
-import type { ReactNode } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -20,9 +19,7 @@ import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
 import { RowIcon } from "../RuledList";
-import type { FileAttempt } from "./use-work-file-intake";
-
-export type WorkFileScheme = "scratch" | "uploads";
+import type { NoteAttempt } from "./use-work-note-intake";
 
 export const workFileRowClass =
   "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover";
@@ -44,10 +41,9 @@ export function FolderRow({
   );
 }
 
-export function CatalogFileRow({
+export function ScratchFileRow({
   projectId,
   workId,
-  scheme,
   file,
   siblingNames,
   readOnly,
@@ -57,7 +53,6 @@ export function CatalogFileRow({
 }: {
   projectId: string;
   workId: string;
-  scheme: WorkFileScheme;
   file: CatalogFile;
   siblingNames: readonly string[];
   readOnly: boolean;
@@ -77,7 +72,6 @@ export function CatalogFileRow({
         <InlineRename
           projectId={projectId}
           workId={workId}
-          scheme={scheme}
           file={file}
           siblingNames={siblingNames}
           onDone={() => onRename(null)}
@@ -88,7 +82,7 @@ export function CatalogFileRow({
     if (action === "rename") onRename(file.path);
     if (action === "delete") onDelete?.();
   };
-  const open = () => openFile(viewerTabForCatalogFile(file, scheme, workId));
+  const open = () => openFile(viewerTabForCatalogFile(file, "scratch", workId));
   const row = (
     <div
       className={cn("group relative flex min-w-0 items-center", docked && "rounded-md bg-muted")}
@@ -128,18 +122,14 @@ export function CatalogFileRow({
   );
 }
 
-/** A file on its way into the catalog: pending, or refused with Retry and Dismiss. */
-export function FileAttemptRow({
+/** A new note on its way into Scratch: pending, or refused with Retry and Dismiss. */
+export function NoteAttemptRow({
   attempt,
-  pendingLabel,
-  failureLabel,
   onRetry,
   onDismiss,
 }: {
-  attempt: FileAttempt;
-  pendingLabel: ReactNode;
-  failureLabel: ReactNode;
-  onRetry?: () => void;
+  attempt: NoteAttempt;
+  onRetry: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -150,18 +140,16 @@ export function FileAttemptRow({
       </span>
       {attempt.state === "pending" ? (
         <span role="status" className="shrink-0 text-xs text-ink-subtle">
-          {pendingLabel}
+          <Trans>Creating…</Trans>
         </span>
       ) : (
         <>
           <span role="alert" className="shrink-0 text-xs text-destructive">
-            {failureLabel}
+            <Trans>Couldn’t create note</Trans>
           </span>
-          {onRetry ? (
-            <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
-              <Trans>Retry</Trans>
-            </button>
-          ) : null}
+          <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
+            <Trans>Retry</Trans>
+          </button>
           <button type="button" className="text-button shrink-0 text-xs" onClick={onDismiss}>
             <Trans>Dismiss</Trans>
           </button>
@@ -174,14 +162,12 @@ export function FileAttemptRow({
 function InlineRename({
   projectId,
   workId,
-  scheme,
   file,
   siblingNames,
   onDone,
 }: {
   projectId: string;
   workId: string;
-  scheme: WorkFileScheme;
   file: CatalogFile;
   siblingNames: readonly string[];
   onDone: () => void;
@@ -190,7 +176,7 @@ function InlineRename({
     projectId,
     entryId: file.entryId,
     workId,
-    scheme,
+    scheme: "scratch",
     path: file.path,
     currentName: file.name,
     siblingNames,

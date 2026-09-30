@@ -1,4 +1,4 @@
-/** The Work page's Files tab: its search, Upload and New note, over the grouped files. */
+/** The Work page's Files tab: its search and New note, over Drafts and Scratch. */
 import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";

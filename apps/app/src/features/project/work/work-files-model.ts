@@ -1,8 +1,4 @@
-export type WorkFileGroups<Scratch, Upload> = {
-  scratch: readonly Scratch[];
-  uploads: readonly Upload[];
-};
-
+/** The Work Files tab's pure rules: name search, rename siblings, and tree order. */
 export type WorkFileSearch = (name: string) => boolean;
 
 export function workFileSearch(search: string): WorkFileSearch {
@@ -15,21 +11,6 @@ export function catalogSiblingNames(
   file: { parentId: string },
 ): string[] {
   return catalog?.children(file.parentId).map((sibling) => sibling.name) ?? [];
-}
-
-export function filterWorkFileGroups<
-  Scratch extends { name: string },
-  Upload extends { name: string },
->(
-  groups: WorkFileGroups<Scratch, Upload>,
-  matches: WorkFileSearch,
-): WorkFileGroups<Scratch, Upload> {
-  const filter = <T extends { name: string }>(items: readonly T[]) =>
-    items.filter((item) => matches(item.name));
-  return {
-    scratch: filter(groups.scratch),
-    uploads: filter(groups.uploads),
-  };
 }
 
 /** A row's place in the file tree: its path, and whether it is a folder. */

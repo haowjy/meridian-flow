@@ -8,7 +8,7 @@ import type { AddressableWork } from "@/client/query/useWorks";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkDetailScreen } from "./WorkDetailScreen";
-import { CatalogFileRow } from "./WorkFileRows";
+import { ScratchFileRow } from "./WorkFileRows";
 
 const { unarchive } = vi.hoisted(() => ({ unarchive: vi.fn(async () => null) }));
 
@@ -127,10 +127,9 @@ describe("an archived Work page", () => {
 
 describe("a Work file row", () => {
   const row = (readOnly: boolean) => (
-    <CatalogFileRow
+    <ScratchFileRow
       projectId="project-1"
       workId={ARCHIVED.id}
-      scheme="scratch"
       file={NOTE}
       siblingNames={[]}
       readOnly={readOnly}

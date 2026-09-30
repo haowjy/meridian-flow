@@ -100,12 +100,12 @@ tab's entries, so `WorkCollection` only maps entries to rows. Work lists, the
 Deleted tab, the Files groups and the recency lists share one row grammar
 (`RuledList`, `RowIcon`, `GroupLabel`).
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
-Uploads, and associated chats. `WorkDetailScreen` keeps the titles, the
+and associated chats. `WorkDetailScreen` keeps the titles, the
 goal and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
 own their search, actions and queries, and render their tools into the toolbar
-through `WorkToolbarTools`, so switching tabs never remounts the switch. Files
-on their way into a Work (uploads, sent side by side, and new notes) are
-`useWorkFileIntake`'s, kept per Work so a refusal outlives a tab switch. Associated chats use bounded cursor pages and the
+through `WorkToolbarTools`, so switching tabs never remounts the switch. A new
+note on its way into a Work is `useWorkNoteIntake`'s, kept per Work so a
+refusal outlives a tab switch. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
@@ -161,11 +161,13 @@ session-only `workFile` state carries `{ workId, tab }`; opening a second file
 replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
 the viewer, and the contained dock switch can return to Chat or close the file.
 `viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
-Scratch and Uploads. Files search uses one name matcher across drafts,
-Scratch, and Uploads; rename collisions use direct catalog siblings, and a
-failed New note remains as a retryable, dismissible attempt row. Scratch and
-Uploads list in the sidebar tree's order (`compareTreePlaces`), attempts sorted
-by the path they will land at, so a landing file keeps its row.
+Scratch and Uploads. The Files tab shows Drafts and Scratch only; Work Uploads
+have no Files tab surface (composer attachments still land there, see
+[TODO](TODO)). Files search uses one name matcher across drafts and Scratch;
+rename collisions use direct catalog siblings, and a failed New note remains as
+a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
+(`compareTreePlaces`), a new note sorted by the path it will land at, so a
+landing note keeps its row.
 `ProjectView` clears the slot when its Work changes or the Work destination
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens
