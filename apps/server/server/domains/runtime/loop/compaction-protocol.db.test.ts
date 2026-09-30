@@ -1557,6 +1557,13 @@ else
         status: "complete",
         prevTurnId: compactions[1]?.id,
       });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failedReply.id as never,
+          replyTurnId: replyTurnId as never,
+        }),
+      ).resolves.toMatchObject({ created: false, turn: { id: replyTurnId } });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
