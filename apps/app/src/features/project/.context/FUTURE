@@ -28,9 +28,6 @@
   role="tablist"/"tab" markup (dock/DockHeader.tsx). Decide whether tabs
   semantics (views of one surface) or a radiogroup/toggle-group better
   matches the interaction, and align keyboard behavior with the choice.
-- Invalid explicit `?thread=` id: useResolvedChatThread trusts the route id
-  without existence-checking it (chat/chat-thread-resolution.ts); behavior
-  for a stale/foreign id is undocumented — decide and document.
 - Bounded live sessions for restored desks (#217 follow-on, research-backed):
   the persisted desk (context-tabs-store/editor-workspace-state.ts) restores
   every open tab, and the document-session registry keeps a live
