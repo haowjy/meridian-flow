@@ -1,6 +1,6 @@
 # domains/runtime
 
-The agentic execution engine. It takes a writer's message (or a subagent
+The agentic execution engine. It takes a user's message (or a subagent
 report, a Work change, a queued control), streams the thread through an LLM
 with tool use, persists every side effect through the threads repositories,
 and emits `OrchestratorEvent`s that the threads domain fans out to clients.
