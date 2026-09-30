@@ -111,6 +111,10 @@ describe("an archived Work page", () => {
       expect(document.querySelector("h1 button")).toBeNull();
       expect(document.querySelector("h1")?.textContent).toBe("Tournament arc");
       expect(text).toContain("Draft chapters 12 to 15.");
+      expect(text.indexOf("Tournament arc")).toBeLessThan(text.indexOf("This Work is archived."));
+      expect(text.indexOf("This Work is archived.")).toBeLessThan(
+        text.indexOf("Draft chapters 12 to 15."),
+      );
       expect(buttonNamed("Edit")).toBeUndefined();
       expect(buttonNamed("New chat")?.disabled).toBe(true);
       await act(async () => buttonNamed("Unarchive")?.click());

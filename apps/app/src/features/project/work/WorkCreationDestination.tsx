@@ -24,9 +24,9 @@ export function WorkCreationDestination({
     <div className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          intro={
+          title={<PlainWorkHeading name={name} />}
+          details={
             <>
-              <PlainWorkHeading name={name} />
               <p
                 className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
                 role="status"

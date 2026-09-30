@@ -1,8 +1,8 @@
 /**
- * The Work page: its titles and goal over one sticky toolbar, then
+ * The Work page: its title and goal over one sticky toolbar, then
  * the Chats or Files tab, each owning its own search, actions and queries.
- * An archived Work is view-only: one notice with Unarchive, primary actions
- * disabled in place, and no inline edits offered.
+ * An archived Work is view-only: one notice with Unarchive under the title,
+ * primary actions disabled in place, and no inline edits offered.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -35,19 +35,22 @@ export type WorkDetailScreenProps = {
 };
 
 /**
- * The Work page's own header block under the band: its titles and goal (or a
- * pending Work's state), any notice about the Work, then one sticky toolbar row.
+ * The Work page's own header block under the band: its title, any notice about
+ * the Work right under it, its goal (or a pending Work's state), then one
+ * sticky toolbar row.
  */
 export function WorkScreenHeader({
-  intro,
+  title,
   notice,
+  details,
   view,
   onViewChange,
   tools,
   pending = false,
 }: {
-  intro?: React.ReactNode;
+  title: React.ReactNode;
   notice?: React.ReactNode;
+  details?: React.ReactNode;
   view: "chats" | "files";
   onViewChange: (view: "chats" | "files") => void;
   tools: React.ReactNode;
@@ -55,8 +58,12 @@ export function WorkScreenHeader({
 }) {
   return (
     <>
-      {intro ? <header className="flex min-w-0 flex-col gap-1.5">{intro}</header> : null}
-      {notice}
+      <header className="flex min-w-0 flex-col gap-1.5">
+        {title}
+        {/* A bordered box needs more air than the title-to-goal line gap. */}
+        {notice ? <div className="mt-1.5 min-w-0 not-last:mb-1.5">{notice}</div> : null}
+        {details}
+      </header>
       <div className="sticky top-0 z-10 -my-2 flex min-w-0 items-center gap-2 bg-background py-2 sm:gap-3">
         <SegmentedTabs
           label={t`Work view`}
@@ -92,21 +99,19 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          intro={
-            <>
-              {readOnly ? (
-                <PlainWorkHeading name={work.name} />
-              ) : (
-                <WorkHeading projectId={projectId} work={work} />
-              )}
-              <WorkGoal work={work} controller={controller} readOnly={readOnly} />
-            </>
+          title={
+            readOnly ? (
+              <PlainWorkHeading name={work.name} />
+            ) : (
+              <WorkHeading projectId={projectId} work={work} />
+            )
           }
           notice={
             readOnly ? (
               <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
             ) : null
           }
+          details={<WorkGoal work={work} controller={controller} readOnly={readOnly} />}
           view={routeCommands.workView}
           onViewChange={(view) => void routeCommands.setWorkView(view)}
           tools={<div ref={setToolbarSlot} className="contents" />}

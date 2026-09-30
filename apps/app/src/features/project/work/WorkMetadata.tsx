@@ -178,6 +178,8 @@ export function WorkGoal({
   const bindEditFocus = (node: HTMLButtonElement | null) => {
     c.displayRef.current = node;
   };
+  // Nothing to show or edit: no empty box to space the header around.
+  if (readOnly && !work.goal) return null;
   return (
     <div className="min-w-0 text-body text-foreground">
       <p className="sr-only" aria-live="polite">
@@ -186,19 +188,17 @@ export function WorkGoal({
       {editing ? (
         <GoalEditor controller={c} />
       ) : !work.goal ? (
-        readOnly ? null : (
-          <button
-            type="button"
-            ref={bindEditFocus}
-            onClick={c.activate}
-            className={cn(
-              bodyText,
-              "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
-            )}
-          >
-            {t`Add a goal for this Work`}
-          </button>
-        )
+        <button
+          type="button"
+          ref={bindEditFocus}
+          onClick={c.activate}
+          className={cn(
+            bodyText,
+            "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
+          )}
+        >
+          {t`Add a goal for this Work`}
+        </button>
       ) : (
         <>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}
