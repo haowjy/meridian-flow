@@ -54,7 +54,9 @@ pointer, and calls into it.
   against the generation that asked it, never against whatever is waiting under
   that href now. The app registers again when the scope or the project's
   document catalog changes, so there is no `refresh`-shaped verb to call and no
-  reason for a mutation site to reach in here.
+  reason for a mutation site to reach in here. A question a click waits on
+  (`resolve()`) is carried into the next generation and asked again; one only
+  the decorations asked is dropped with its generation.
 - **No resolution is ever stored.** The state rides a decoration, not a schema
   attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
   attributes and no peer receives an answer that was true in someone else's
