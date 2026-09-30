@@ -42,10 +42,13 @@ expansion read (threads domain); there is no second fork walker. Tool pairs
 load once per raw page, keyed by turn and tool-call ID, including partners
 outside the page. `history-item.ts` filters and elides document copies before
 token trimming, using each tool's `history` treatment
-([document text](document-text.md)). Pages cap scan work at 2,000 raw items
-and carry the settled anchor forward when trimming. Opt-in prompts
+([document text](document-text.md)). Component blocks with model text use that
+same projection in history; their internal props are never serialized in its
+place. Pages cap scan work at 2,000 raw items and carry the settled anchor
+forward when trimming. Opt-in prompts
 (`include: ["system_prompt"]`) appear only when a cursor opens a segment; a
-segment header otherwise names the Agent and bake.
+segment header otherwise names the Agent and prompt boundary. Internal bake
+hashes are not model-facing.
 
 ## `thread_report`
 

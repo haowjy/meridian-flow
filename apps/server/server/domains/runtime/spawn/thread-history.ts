@@ -81,7 +81,7 @@ export async function readThreadHistory({
       const through = segment.compactedThrough
         ? await repos.turns.findById(segment.compactedThrough.turnId)
         : null;
-      return `${target.ref} (Agent: ${owner?.agentName ?? "default"})  ${order.replace("_", " ")}\nsegment ${segment.index}${segmentCount ? ` of ${segmentCount}` : ""}: ${segment.openedBy ? `${segment.openedBy.kind} at ${opened?.position}` : "initial prompt"}${through ? ` (summarized through ${through.position})` : ""}, bake ${bake?.contentHash.slice(0, 8) ?? "none"}${opensSegment && include.has("system_prompt") && bake ? `\nsystem_prompt:\n${cap(bake.composedSystemPrompt, 4000, tokenizer, "\n[prompt truncated]")}` : ""}`;
+      return `${target.ref} (Agent: ${owner?.agentName ?? "default"})  ${order.replace("_", " ")}\nsegment ${segment.index}${segmentCount ? ` of ${segmentCount}` : ""}: ${segment.openedBy ? `${segment.openedBy.kind} at ${opened?.position}` : "initial prompt"}${through ? ` (summarized through ${through.position})` : ""}${opensSegment && include.has("system_prompt") && bake ? `\nsystem_prompt:\n${cap(bake.composedSystemPrompt, 4000, tokenizer, "\n[prompt truncated]")}` : ""}`;
     }
     if (input.expand) {
       const match = /^([1-9]\d*)(?:\.(\d+))?$/.exec(input.expand);

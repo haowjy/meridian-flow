@@ -176,6 +176,6 @@ export function renderHistoryItem(input: {
     position: turn.position,
     sequence,
     documents,
-    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}\n${body}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
+    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}${body ? `\n${body}` : ""}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
   };
 }

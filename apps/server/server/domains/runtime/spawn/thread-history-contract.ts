@@ -284,7 +284,7 @@ export function defineThreadHistoryContract(
       expect(text).toContain("Move on.");
     });
 
-    it("segment headers identify Agent and bake, system_prompt appears once on each segment page", async () => {
+    it("segment headers identify the Agent and boundary without exposing bake hashes", async () => {
       const f = await fixture();
       const t = await f.turn();
       await f.block(t, "text", "before");
@@ -315,7 +315,9 @@ export function defineThreadHistoryContract(
       await f.block(later, "text", "after");
       const one = output(await f.read({ order: "oldest_first", include: ["system_prompt"] }));
       expect(one).toContain("Agent:");
-      expect(one).toContain("initial-");
+      expect(one).toContain("segment 0 of 2: initial prompt");
+      expect(one).not.toContain("bake");
+      expect(one).not.toContain("initial-hash");
       expect(one.match(/INITIAL PROMPT/g)).toHaveLength(1);
       expect(one).not.toContain("after");
       const two = output(
@@ -326,10 +328,19 @@ export function defineThreadHistoryContract(
         }),
       );
       expect(two).toContain("compaction");
-      expect(two).toContain("new-hash");
+      expect(two).not.toContain("bake");
+      expect(two).not.toContain("new-hash");
       expect(two.match(/NEW PROMPT/g)).toHaveLength(1);
       expect(two).toContain("summary");
       expect(two).toContain("instructions: Emphasize the broken oath.");
+    });
+    it("does not print an empty body for tool calls whose arguments are omitted", async () => {
+      const f = await fixture();
+      const t = await f.turn();
+      await f.tool(t, "ls", {}, "hidden");
+      const text = output(await f.read({ order: "oldest_first" }));
+      expect(text).toMatch(/tool_call ls \{\}[^\n]*$/);
+      expect(text).not.toMatch(/tool_call ls[^\n]*\n\n\n/);
     });
     it("100 hidden tool results do not burn the visible item limit", async () => {
       const f = await fixture();
