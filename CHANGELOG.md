@@ -9,7 +9,15 @@
 
 - Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
 - Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
+- Compaction turns and conversation seeds no longer count as chat, Work, or project activity.
+- Purge M4's thread-owned event journals and turns with an expired Work's chats.
 - Development: M4 migrations follow the Work screen migrations as 0014–0024; reset previously migrated M4 worktree databases with `pnpm db:reset`.
+
+- Shorten model-facing tool definitions and context cards, strip redundant `$schema` metadata, and keep advertised tools on `user` vocabulary.
+- Accept `current` for every conversation reference.
+- Compact `thread_history` dates and cursors; print the complete `next:` call with the inputs needed to continue the page.
+- Format `thread_ls` as compact lineage and conversation rows, marking only live runs awake.
+- Return compact model-facing `thread_report` results without internal IDs and redundant fields.
 
 - Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
