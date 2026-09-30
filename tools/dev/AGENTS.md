@@ -36,9 +36,10 @@ Local-dev-only utilities. Never imported by the application runtime.
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
 - **The migration runner owns applied history.** Every schema-migration path goes
   through `runMigrations`; it matches both hash and journal timestamp before it
-  applies anything and refuses divergent or out-of-order history. Only reset a
-  database owned by the current dev checkout. Shared and deployed database
-  history requires human repair, never a reset.
+  applies anything, serializes concurrent runners with a transaction-scoped
+  advisory lock, and refuses structurally invalid, divergent, or out-of-order
+  history. Only reset a database owned by the current dev checkout. Shared and
+  deployed database history requires human repair, never a reset.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.

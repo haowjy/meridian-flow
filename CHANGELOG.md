@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-- Refuse edited, divergent, or out-of-order migration history in CI and before database migration.
+- Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.

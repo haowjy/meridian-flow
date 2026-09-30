@@ -23,8 +23,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Migrations merged to `main` or `staging` are frozen: never edit, remove,
   renumber, or retimestamp them. After merging the base branch, regenerate this
   branch's unmerged migrations so they append after the base tip. CI enforces
-  this with `pnpm db:migration-history`; `db:migrate` refuses divergent applied
-  history rather than skipping it.
+  this with `pnpm db:migration-history`; journal indexes must be contiguous,
+  timestamps strictly increasing, and tags and timestamps unique. `db:migrate`
+  refuses divergent applied history rather than skipping it.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Reset
   only the current checkout's own dev database, never another developer's,

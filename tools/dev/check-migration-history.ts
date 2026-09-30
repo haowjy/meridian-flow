@@ -55,10 +55,11 @@ function main(): void {
   const baseTip = base.entries.at(-1)?.tag ?? "the base branch's last migration";
   console.error(`db:migration-history: refused changes against ${baseRef}`);
   for (const issue of issues) {
-    console.error(
-      `  - ${issue}. Restore merged migrations unchanged, then merge the base branch and regenerate this branch's migrations with \`pnpm db:generate\` so they come after ${baseTip}.`,
-    );
+    console.error(`  - ${issue}`);
   }
+  console.error(
+    `Fix: Restore merged migrations unchanged, then merge the base branch and regenerate this branch's migrations with \`pnpm db:generate\` so they come after ${baseTip}.`,
+  );
   process.exitCode = 1;
 }
 

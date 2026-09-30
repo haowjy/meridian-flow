@@ -4,6 +4,7 @@ import {
   type AppliedMigration,
   buildMigrationHistory,
   compareRepositoryMigrationHistory,
+  formatDatabaseHistoryRefusal,
   type MigrationHistory,
   planDatabaseMigrations,
 } from "./migration-history";
@@ -38,7 +39,7 @@ function history(entries: EntryInput[], extraFiles: Record<string, string> = {})
 
 function applied(
   entry: MigrationHistory["entries"][number],
-  createdAt = entry.when,
+  createdAt: number | null = entry.when,
 ): AppliedMigration {
   return { hash: entry.hash, createdAt };
 }
@@ -65,7 +66,9 @@ describe("compareRepositoryMigrationHistory", () => {
       history(baseEntries),
       history([{ ...baseEntries[0], sql: "SELECT 99;" }, baseEntries[1]]),
     );
-    expect(issues).toContain("base migration 0000_first.sql was edited");
+    expect(
+      issues.some((issue) => issue.includes("0000_first.sql") && issue.includes("edited")),
+    ).toBe(true);
   });
 
   it("rejects a removed base entry and file", () => {
@@ -93,8 +96,36 @@ describe("compareRepositoryMigrationHistory", () => {
       history(baseEntries),
       history([...baseEntries, { idx: 4, tag: "0004_old", when: 150, sql: "SELECT 4;" }]),
     );
-    expect(issues).toContain("new journal entry 0004_old has idx 4; expected 2");
-    expect(issues.some((issue) => issue.includes("must be newer than 200"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("0004_old") && issue.includes("expected 2"))).toBe(
+      true,
+    );
+    expect(
+      issues.some((issue) => issue.includes("0004_old") && issue.includes("newer than 200")),
+    ).toBe(true);
+  });
+
+  it("rejects reordered entries", () => {
+    const issues = compareRepositoryMigrationHistory(
+      history(baseEntries),
+      history([baseEntries[1], baseEntries[0]]),
+    );
+    expect(issues.some((issue) => issue.includes("head history is inconsistent"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("changed tag"))).toBe(true);
+  });
+
+  it("rejects duplicate timestamps and tags", () => {
+    const duplicateWhen = history([
+      baseEntries[0],
+      { ...baseEntries[1], when: baseEntries[0].when },
+    ]);
+    expect(duplicateWhen.issues.some((issue) => issue.includes("when 100 is duplicated"))).toBe(
+      true,
+    );
+
+    const duplicateTag = history([baseEntries[0], { ...baseEntries[1], tag: baseEntries[0].tag }]);
+    expect(
+      duplicateTag.issues.some((issue) => issue.includes("tag 0000_first is duplicated")),
+    ).toBe(true);
   });
 
   it("rejects stray and missing SQL files", () => {
@@ -148,6 +179,21 @@ describe("planDatabaseMigrations", () => {
     );
   });
 
+  it("classifies a known hash moved onto another entry's timestamp as retimestamped", () => {
+    const plan = planDatabaseMigrations(expected, [applied(first, second.when)]);
+    expect(
+      plan.issues.some((issue) => issue.kind === "retimestamped" && issue.entry === first),
+    ).toBe(true);
+    expect(plan.issues.some((issue) => issue.kind === "edited")).toBe(false);
+  });
+
+  it("classifies a null applied timestamp separately", () => {
+    const plan = planDatabaseMigrations(expected, [applied(first, null)]);
+    expect(
+      plan.issues.some((issue) => issue.kind === "missing-timestamp" && issue.entry === first),
+    ).toBe(true);
+  });
+
   it("classifies the M4 renumbering shape and its older pending entries", () => {
     const plan = planDatabaseMigrations(expected, [applied(first, 400), applied(second, 500)]);
     expect(plan.issues.filter((issue) => issue.kind === "retimestamped")).toHaveLength(2);
@@ -161,5 +207,33 @@ describe("planDatabaseMigrations", () => {
     expect(
       plan.issues.some((issue) => issue.kind === "out-of-order" && issue.entry === first),
     ).toBe(true);
+  });
+});
+
+describe("formatDatabaseHistoryRefusal", () => {
+  const migration = history([{ idx: 0, tag: "0000_first", when: 100, sql: "SELECT 1;" }])
+    .entries[0];
+  const issues = [{ kind: "edited" as const, entry: migration, applied: applied(migration) }];
+
+  it("uses the caller prefix and local reset command", () => {
+    const message = formatDatabaseHistoryRefusal({
+      databaseName: "local",
+      issues,
+      prefix: "primary database",
+      localDevDatabase: true,
+      resetCommand: "pnpm db:reset",
+    });
+    expect(message).toContain('primary database: refused migration history for database "local"');
+    expect(message).toContain("Run `pnpm db:reset`");
+  });
+
+  it("never recommends reset for a shared database", () => {
+    const message = formatDatabaseHistoryRefusal({
+      databaseName: "shared",
+      issues,
+      localDevDatabase: false,
+    });
+    expect(message).toContain("requires human repair");
+    expect(message).not.toContain("pnpm db:reset");
   });
 });

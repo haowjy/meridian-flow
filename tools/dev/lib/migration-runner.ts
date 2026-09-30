@@ -2,12 +2,15 @@
 import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
+import { isLocalDevPostgres } from "./dev-db";
 import {
-  type AppliedMigration,
   formatDatabaseHistoryRefusal,
   planDatabaseMigrations,
+  readAppliedMigrations,
   readMigrationHistory,
 } from "./migration-history";
+
+const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 
 interface ErrorDetails {
   cause?: unknown;
@@ -77,38 +80,37 @@ export async function runMigrations(input: {
     }
     const migrations = readMigrationFiles({ migrationsFolder: input.migrationsDirectory });
     if (history.entries.length !== migrations.length) {
-      throw new Error("Migration journal does not match the committed migration files");
+      throw new MigrationHistoryError(
+        "db:migrate: refused inconsistent migration files\n  - migration journal does not match the committed migration files",
+      );
     }
     const migrationsByTag = new Map<string, (typeof migrations)[number]>();
     for (const [index, migration] of migrations.entries()) {
       const entry = history.entries[index];
       if (!entry || entry.when !== migration.folderMillis || entry.hash !== migration.hash) {
-        throw new Error(`Migration journal entry ${index} does not match its SQL file`);
+        throw new MigrationHistoryError(
+          `db:migrate: refused inconsistent migration files\n  - migration journal entry ${index} does not match its SQL file`,
+        );
       }
       migrationsByTag.set(entry.tag, migration);
     }
 
-    const [{ migrationsTableExists }] = await client<
-      Array<{ migrationsTableExists: boolean }>
-    >`SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS "migrationsTableExists"`;
-    const applied: AppliedMigration[] = migrationsTableExists
-      ? await client<Array<{ hash: string; createdAt: string | number }>>`
-          SELECT hash, created_at AS "createdAt"
-          FROM drizzle.__drizzle_migrations
-          ORDER BY created_at, id
-        `.then((rows) => rows.map((row) => ({ hash: row.hash, createdAt: Number(row.createdAt) })))
-      : [];
-    const plan = planDatabaseMigrations(history, applied);
-    if (plan.issues.length > 0) {
-      const databaseName = decodeURIComponent(
-        new URL(input.databaseUrl).pathname.replace(/^\//, ""),
-      );
-      throw new MigrationHistoryError(
-        formatDatabaseHistoryRefusal({ databaseName, issues: plan.issues }),
-      );
-    }
-
     await client.begin(async (transaction) => {
+      await transaction`SELECT pg_advisory_xact_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
+      const applied = (await readAppliedMigrations(transaction)) ?? [];
+      const plan = planDatabaseMigrations(history, applied);
+      if (plan.issues.length > 0) {
+        const databaseName = decodeURIComponent(
+          new URL(input.databaseUrl).pathname.replace(/^\//, ""),
+        );
+        throw new MigrationHistoryError(
+          formatDatabaseHistoryRefusal({
+            databaseName,
+            issues: plan.issues,
+            localDevDatabase: isLocalDevPostgres(input.databaseUrl),
+          }),
+        );
+      }
       await transaction`CREATE SCHEMA IF NOT EXISTS drizzle`;
       await transaction`
         CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
@@ -119,7 +121,11 @@ export async function runMigrations(input: {
       `;
       for (const entry of plan.pending) {
         const migration = migrationsByTag.get(entry.tag);
-        if (!migration) throw new Error(`Migration ${entry.tag} has no SQL statements`);
+        if (!migration) {
+          throw new MigrationHistoryError(
+            `db:migrate: refused inconsistent migration files\n  - migration ${entry.tag} is missing from Drizzle's journal`,
+          );
+        }
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
         for (const statement of migration.sql) {
           try {

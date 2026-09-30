@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { formatPgError, pingDatabaseForUrl, readAppliedMigrations } from "./dev-db";
+import {
+  formatPgError,
+  isLocalDevPostgres,
+  pingDatabaseForUrl,
+  readAppliedMigrations,
+} from "./dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./dev-env";
 import {
   formatDatabaseHistoryRefusal,
@@ -98,6 +103,8 @@ async function assertMigrationsCurrent(
       `dev infra check failed — ${formatDatabaseHistoryRefusal({
         databaseName,
         issues: plan.issues,
+        prefix: db.label,
+        localDevDatabase: isLocalDevPostgres(dbUrl),
         resetCommand: db.resetHint ?? "pnpm db:reset",
       })}`,
     );

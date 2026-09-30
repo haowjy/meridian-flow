@@ -6,10 +6,10 @@ on:
   # `ready_for_review` is included so marking a draft ready triggers a run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on the durable trunk verifies the post-merge result. Add a staging
-  # branch here when one exists; don't encode temporary integration branches.
+  # Push CI on main verifies the post-merge result. Staging invokes this workflow
+  # from Deploy Staging, so listing it here would run the full workflow twice.
   push:
-    branches: [main, staging]
+    branches: [main]
   workflow_call:
 
 # Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   quality:
     name: quality
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +39,7 @@ jobs:
 
   migration-checks:
     name: migration-checks
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
@@ -64,16 +64,22 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
         run: |
-          git fetch origin "$BASE"
-          pnpm db:migration-history -- --base "origin/$BASE"
-      - name: Guard frozen migration history (push)
-        if: github.event_name == 'push' || github.event_name == 'workflow_call'
+          pnpm db:migration-history -- --base HEAD^1
+      - name: Guard frozen migration history (non-PR)
+        if: github.event_name != 'pull_request'
         env:
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Skipping migration history guard: this event has no prior revision to compare against; db:migrate's runtime guard still refuses divergent database history."
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             echo "Skipping migration history guard: no prior revision is available."
           else
+            git fetch origin "$BEFORE" || true
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "Migration history guard failed: prior tip $BEFORE is unavailable (force push?); main and staging history must not be rewritten." >&2
+              exit 1
+            fi
             pnpm db:migration-history -- --base "$BEFORE"
           fi
       # PRs: lint only migrations this branch introduces. Warnings block merges
