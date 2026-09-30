@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPendingPlaceholder } from "@meridian/contracts/threads";
+import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { loadThreadConversationContext, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -609,6 +609,15 @@ export function createDeliveryAdapter(
     });
   }
 
+  async function acknowledgeFailedReply(
+    threadId: ThreadId,
+    turn: Turn,
+    messageIds: readonly string[],
+  ) {
+    if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
+      await inbox.ack(threadId, [...messageIds]);
+  }
+
   return {
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
@@ -751,12 +760,7 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause: finalCause,
         });
-        if (
-          completion.turn.role === "assistant" &&
-          (completion.turn.status === "cancelled" || completion.turn.status === "error")
-        ) {
-          await inbox.ack(threadId, receipt?.ids ?? []);
-        }
+        await acknowledgeFailedReply(threadId, completion.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return { kind: "completed" as const, completion };
@@ -777,11 +781,7 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause: finalCause,
         });
-        if (
-          result.turn.role === "assistant" &&
-          (result.turn.status === "cancelled" || result.turn.status === "error")
-        )
-          await inbox.ack(threadId, receipt?.ids ?? []);
+        await acknowledgeFailedReply(threadId, result.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return result;
