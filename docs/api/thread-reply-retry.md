@@ -28,8 +28,9 @@ For an early provider failure with no output, Retry's request is equivalent to
 the original. After partial output or work, that activity remains honest
 history. If preparation must compact first, the compaction uses a fresh turn ID
 and the retried reply uses the client ID, so the optimistic reply reconciles by
-ID. Repeating the same ID after that reply exists returns it with **200** only
-when it follows the requested failed turn directly or through that compaction.
+ID. Repeating the same ID after that reply exists returns it with **200** when
+the ID identifies any assistant reply on the thread; replay does not recheck its relation
+to the requested failed turn.
 While the compaction is still running, a repeated request gets the ordinary
 **409** busy refusal; a new retry returns **201**.
 
