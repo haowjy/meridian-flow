@@ -19,7 +19,10 @@ Messages that arrive while a command runs remain queued for the successor reply.
 
 The start commit consumes the command: C's reservation commit acknowledges
 `/compact`. A crash while a command waits leaves it queued; a crash after
-`/compact` starts repairs C. The command is not replayed.
+`/compact` starts repairs C. A setup or start-commit error before C exists also
+leaves the command queued for Withdraw or the periodic sweep. It cannot block a
+waiting message because run-start selection always takes messages first. The
+command is not replayed after C exists.
 
 Withdrawal acknowledges a command that has not started and returns
 `withdrawn`, including on replay. If a C already records its id,

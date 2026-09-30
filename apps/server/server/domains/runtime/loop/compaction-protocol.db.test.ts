@@ -704,6 +704,7 @@ else
       const rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -846,6 +847,7 @@ else
       rig.setThreshold(undefined);
       const real = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -938,6 +940,7 @@ else
       rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
           .prefixCacheStateFor,
@@ -1036,6 +1039,7 @@ else
       };
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -1557,11 +1561,18 @@ else
         status: "complete",
         prevTurnId: compactions[1]?.id,
       });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failedReply.id as never,
+          replyTurnId: replyTurnId as never,
+        }),
+      ).resolves.toMatchObject({ created: false, turn: { id: replyTurnId } });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
-    it("replays a compaction-first Retry id and drops its promise when Stop ends the run", async () => {
+    it("refuses a same-id Retry while its compaction-first run is busy", async () => {
       let secondStarted!: () => void;
       const compactionStarted = new Promise<void>((resolve) => {
         secondStarted = resolve;
@@ -1594,11 +1605,13 @@ else
         replyTurnId: replyTurnId as never,
       });
       await compactionStarted;
-      const replay = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failedReply.id as never,
-        replyTurnId: replyTurnId as never,
-      });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failedReply.id as never,
+          replyTurnId: replyTurnId as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       const compactionId = rig.orchestrator.getRunningTurnId(rig.threadId);
       if (!compactionId) throw new Error("Retry compaction was not running");
       expect(await rig.orchestrator.cancel(rig.threadId, compactionId)).toBe("cancelled");
@@ -1606,10 +1619,6 @@ else
 
       expect(retry).toMatchObject({
         created: true,
-        turn: { id: replyTurnId, prevTurnId: compactionId },
-      });
-      expect(replay).toMatchObject({
-        created: false,
         turn: { id: replyTurnId, prevTurnId: compactionId },
       });
       expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();

@@ -9,10 +9,9 @@ import {
   type EventQuery,
   type EventSink,
 } from "../domains/observability/index.js";
+import { PROCESS_SHUTDOWN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
-const PROCESS_SHUTDOWN_DEADLINE_MS = 12_000;
-
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
     sink: DeferredEventSink;

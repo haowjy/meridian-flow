@@ -204,15 +204,11 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         const saved = await deps.repos.turns.findById(seedTurnId);
         const thread = await deps.repos.threads.findById(threadId);
         if (!saved || !thread) throw new Error("Handoff seed or destination disappeared");
-        if (saved.status !== "pending") {
-          await settleResponses(thread, outcome.modelResponses);
-          return;
-        }
-        if (abortReason && abortReason !== "stop") {
-          await settleResponses(thread, outcome.modelResponses);
-          return;
-        }
-        if (outcome.kind === "cancelled" && abortReason !== "stop") {
+        if (
+          saved.status !== "pending" ||
+          (abortReason !== undefined && abortReason !== "stop") ||
+          (outcome.kind === "cancelled" && abortReason !== "stop")
+        ) {
           await settleResponses(thread, outcome.modelResponses);
           return;
         }
@@ -230,7 +226,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     claim: HandoffBriefHold;
   }): Promise<void> {
     const controller = new AbortController();
-    if (shutdown.started) controller.abort("shutdown");
     const holder: LiveBrief = { controller, threadId: input.threadId };
     live.set(input.seedTurnId, holder);
     const removeLost = input.claim.onLost(() => controller.abort("lost_claim"));
@@ -413,20 +408,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     if (stopped) {
       live.get(seedTurnId)?.controller.abort("stop");
       publishStatus(threadId);
-      schedulePostCommit(async () => {
-        if (shutdown.started) return;
-        try {
-          await deps.wakeIfRunnable(threadId);
-        } catch (error) {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "runtime.handoff",
-            name: "wake.failed",
-            correlation: { threadId },
-            payload: unknownToEventPayload(error),
-          });
-        }
-      });
     }
     return stopped;
   }
@@ -457,11 +438,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         const thread = await deps.repos.threads.findById(input.threadId);
         if (thread?.originType !== "handoff") throw new HandoffRetryError("not_a_handoff_retry");
         const latest = await deps.repos.turns.findLatestHandoffSeed(input.threadId);
-        if (
-          !latest ||
-          latest.status === "pending" ||
-          !["error", "cancelled"].includes(latest.status)
-        )
+        if (!latest || !["error", "cancelled"].includes(latest.status))
           throw new HandoffRetryError("handoff_retry_unavailable");
         const leafId = thread.activeLeafTurnId as TurnId | null;
         const leaf = leafId ? await deps.repos.turns.findById(leafId) : null;

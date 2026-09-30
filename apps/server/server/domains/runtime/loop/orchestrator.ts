@@ -85,6 +85,7 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
+  CompactionMetadataCodec,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -114,7 +115,6 @@ import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
-  CompactionFailureError,
   CompactionPreparationError,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
@@ -235,6 +235,7 @@ export interface OrchestratorDeps {
   childRunCoordinator: ChildRunCoordinator;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
   /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;
@@ -576,11 +577,6 @@ async function runDrainTurn(
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-      if (control?.body.kind === "compact" && selection.failedControlIds?.has(control.id))
-        preparationError = new CompactionFailureError({
-          reason: "compaction_failed",
-          phase: "delivery",
-        });
       if (!preparationError) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
@@ -1574,8 +1570,8 @@ async function executeLoop({
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
   ];
-  // The reservation already prepared this request. Its first generation is not
-  // another boundary: rows behind a waiting control cannot leapfrog the reply.
+  // The reservation already prepared this request, so its first generation is
+  // not another boundary.
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
     turns: [],
     blocks: [],
@@ -1586,7 +1582,6 @@ async function executeLoop({
   let endTurnRequested = false;
   let terminalControl = false;
   let continuingTask = false;
-  let activeCompactionRequired = true;
   let iteration = 0;
   // One emergency retry per reply, even across tool iterations and compaction splits.
   let retriedContextOverflow = false;
@@ -1753,7 +1748,6 @@ async function executeLoop({
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
-    activeCompactionRequired = decision.trigger === "auto";
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
@@ -2336,7 +2330,7 @@ async function executeLoop({
           correlation: { threadId: input.threadId, turnId: currentTurn.id },
           payload: unknownToEventPayload(err),
         });
-        const optional = !activeCompactionRequired;
+        const optional = CompactionMetadataCodec.parse(currentTurn.metadata).trigger === "manual";
         let failed: Awaited<ReturnType<typeof failCompactionSuccessor>>;
         try {
           failed = await failCompactionSuccessor({

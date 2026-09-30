@@ -19,8 +19,8 @@ refresh notices after a queued command; commands never run beside a tool call
 or at turn close. At run start, every non-command row runs if any message is
 waiting; otherwise the oldest command runs alone. Messages never wait behind a command.
 A notice-only queue does not start a run, but a Work refresh notice already
-waiting in the selected prefix at a reply boundary still closes that reply's
-prefix. The selector returns at most one command per run. Stop only ends the
+waiting in the selected rows at a reply boundary still closes that reply's
+batch. The selector returns at most one command per run. Stop only ends the
 current turn; release then follows the same message-first rule.
 
 After a run releases its claim, `wakeIfRunnable` refreshes pending state and

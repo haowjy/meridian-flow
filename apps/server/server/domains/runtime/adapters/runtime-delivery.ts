@@ -1,9 +1,9 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPendingPlaceholder } from "@meridian/contracts/threads";
+import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { loadThreadConversationContext, SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
@@ -124,7 +124,6 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
-    failedControlIds?: ReadonlySet<string>,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
@@ -133,7 +132,6 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start" | "boundary",
-    failedControlIds: ReadonlySet<string> = new Set(),
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
@@ -159,9 +157,7 @@ export function createDeliveryAdapter(
       activeLeafTurnId: thread.activeLeafTurnId,
     };
     const selection: DeliverySelection | DeliveryBoundarySelection =
-      at === "run_start"
-        ? { ...selectionFields, next: nextWork, failedControlIds }
-        : selectionFields;
+      at === "run_start" ? { ...selectionFields, next: nextWork } : selectionFields;
     return { selection, pendingBatch, work };
   }
   async function selectionStillCurrent(
@@ -185,8 +181,7 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: (failedControlIds: ReadonlySet<string>) => Promise<SelectedDelivery<TSelection>>;
-    retryControlId?: (selection: TSelection) => string | null;
+    select: () => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -200,23 +195,14 @@ export function createDeliveryAdapter(
       prepared: TPrepared,
     ) => Promise<TResult>;
   }): Promise<TResult> {
-    let committingControlId: string | undefined;
-    let failedControlIds: ReadonlySet<string> = new Set();
-    try {
-      return await attemptPreparation();
-    } catch (error) {
-      if (input.signal?.aborted || !committingControlId) throw error;
-      // Retire a command whose start transaction failed. Its fresh preparation
-      // commits a failed C rather than leaving the command at the queue head.
-      failedControlIds = new Set([committingControlId]);
-      return attemptPreparation();
-    }
+    return attemptPreparation();
+
     async function attemptPreparation(): Promise<TResult> {
       for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
         const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
         if (lockedPreparation) {
           return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select(failedControlIds);
+            const selected = await input.select();
             input.signal?.throwIfAborted();
             const prepared = await input.prepare(selected.selection, selected.work);
             input.signal?.throwIfAborted();
@@ -225,7 +211,7 @@ export function createDeliveryAdapter(
           });
         }
 
-        const selected = await input.select(failedControlIds);
+        const selected = await input.select();
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -245,9 +231,7 @@ export function createDeliveryAdapter(
       selected: SelectedDelivery<TSelection>,
       prepared: TPrepared,
     ): Promise<TResult> {
-      committingControlId = input.retryControlId?.(selected.selection) ?? undefined;
       const result = await input.commit(selected.selection, selected.work, prepared);
-      committingControlId = undefined;
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
       }
@@ -625,6 +609,40 @@ export function createDeliveryAdapter(
     });
   }
 
+  async function hasCompletedReplyInLineage(threadId: ThreadId): Promise<boolean> {
+    let thread = await deps.repos.threads.findByIdIncludingDeleted(threadId);
+    let throughPosition = Number.POSITIVE_INFINITY;
+    const visited = new Set<string>();
+    while (thread && !visited.has(thread.id)) {
+      visited.add(thread.id);
+      const localTurns = await deps.repos.turns.listByThread(thread.id as ThreadId);
+      if (
+        localTurns.some(
+          (turn) =>
+            turn.position <= throughPosition &&
+            turn.role === "assistant" &&
+            turn.status === "complete",
+        )
+      )
+        return true;
+      if (thread.originType !== "fork" || !thread.originTurnId) return false;
+      const cutoff = await deps.repos.turns.findById(thread.originTurnId as TurnId);
+      if (!cutoff) return false;
+      thread = await deps.repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
+      throughPosition = cutoff.position;
+    }
+    return false;
+  }
+
+  async function acknowledgeFailedReply(
+    threadId: ThreadId,
+    turn: Turn,
+    messageIds: readonly string[],
+  ) {
+    if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
+      await inbox.ack(threadId, [...messageIds]);
+  }
+
   return {
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
@@ -636,11 +654,7 @@ export function createDeliveryAdapter(
         await inbox.ack(id, [controlId]);
         await appendPending(id);
       },
-      effectiveTurns: async (id) => {
-        const thread = await deps.repos.threads.findByIdIncludingDeleted(id);
-        if (!thread) return [];
-        return (await loadThreadConversationContext(deps.repos, thread)).turns;
-      },
+      hasCompletedReply: hasCompletedReplyInLineage,
     }),
     threadChanged,
     async projectChanged(projectId) {
@@ -703,10 +717,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: (failedControlIds) =>
-          selectForPreparation(lease.threadId, "run_start", failedControlIds),
-        retryControlId: (selection) =>
-          selection.next.kind === "control" ? selection.next.control.id : null,
+        select: () => selectForPreparation(lease.threadId, "run_start"),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
@@ -770,12 +781,7 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause: finalCause,
         });
-        if (
-          completion.turn.role === "assistant" &&
-          (completion.turn.status === "cancelled" || completion.turn.status === "error")
-        ) {
-          await inbox.ack(threadId, receipt?.ids ?? []);
-        }
+        await acknowledgeFailedReply(threadId, completion.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return { kind: "completed" as const, completion };
@@ -796,11 +802,7 @@ export function createDeliveryAdapter(
           turnId: input.turnId,
           cause: finalCause,
         });
-        if (
-          result.turn.role === "assistant" &&
-          (result.turn.status === "cancelled" || result.turn.status === "error")
-        )
-          await inbox.ack(threadId, receipt?.ids ?? []);
+        await acknowledgeFailedReply(threadId, result.turn, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return result;

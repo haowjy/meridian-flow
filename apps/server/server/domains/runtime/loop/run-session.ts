@@ -6,7 +6,6 @@ import { type TurnRepository, TurnStartConflictError } from "../../threads/index
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
-import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
   type PreparedLoop,
@@ -19,13 +18,11 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
-import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
   startedAt: Date;
-  promisedSuccessor?: { turnId: TurnId; failedTurnId: TurnId };
   child?: RunTurnInput["child"];
   completion: Promise<void>;
 };
@@ -47,6 +44,7 @@ export function createRunSessions(deps: {
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
@@ -54,12 +52,6 @@ export function createRunSessions(deps: {
   const shutdown = deps.shutdown;
   const backgroundTasks = deps.backgroundTasks;
   const authority = deps.runClaim;
-  const runStarter = createRunStarter({ startDrain }, deps.eventSink);
-  const wakeIfRunnable = createWakeIfRunnable({
-    delivery: deps.delivery,
-    runStarter,
-    shutdown,
-  });
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -129,7 +121,7 @@ export function createRunSessions(deps: {
         if (claimReleased && wakeAfterRelease) {
           backgroundTasks.track(
             session.completion
-              .then(() => wakeIfRunnable(threadId))
+              .then(() => deps.wakeIfRunnable(threadId))
               .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
             "run cleanup wake",
           );
@@ -259,32 +251,19 @@ export function createRunSessions(deps: {
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
       const existing = await deps.repos.turns.findById(input.replyTurnId);
       if (existing) {
-        if (existing.threadId !== input.threadId || existing.role !== "assistant")
+        const predecessor = existing.prevTurnId
+          ? await deps.repos.turns.findById(existing.prevTurnId)
+          : null;
+        const followsFailedTurn =
+          existing.prevTurnId === input.failedTurnId ||
+          (predecessor?.role === "compaction" && predecessor.prevTurnId === input.failedTurnId);
+        if (
+          existing.threadId !== input.threadId ||
+          existing.role !== "assistant" ||
+          !followsFailedTurn
+        )
           throw new ReplyRetryUnavailableError(input.threadId);
         return { created: false as const, turn: existing };
-      }
-
-      const active = running.get(input.threadId);
-      if (active?.promisedSuccessor?.turnId === input.replyTurnId) {
-        const [failedTurn, currentTurn] = await Promise.all([
-          deps.repos.turns.findById(active.promisedSuccessor.failedTurnId),
-          active.currentTurn ? deps.repos.turns.findById(active.currentTurn.id) : null,
-        ]);
-        if (!failedTurn) throw new ReplyRetryUnavailableError(input.threadId);
-        return {
-          created: false as const,
-          turn: createLocalTurn({
-            id: input.replyTurnId,
-            threadId: input.threadId,
-            prevTurnId: currentTurn?.role === "compaction" ? currentTurn.id : failedTurn.id,
-            position:
-              (currentTurn?.role === "compaction" ? currentTurn.position : failedTurn.position) + 1,
-            role: "assistant",
-            origin: "assistant",
-            status: "pending",
-            writeMode: failedTurn.writeMode ?? undefined,
-          }),
-        };
       }
 
       const [failedTurn, latestTurn, runState] = await Promise.all([
@@ -311,12 +290,6 @@ export function createRunSessions(deps: {
           replyTurnId: input.replyTurnId,
           expectedLeafTurnId: input.failedTurnId,
         });
-        const session = running.get(input.threadId);
-        if (session)
-          session.promisedSuccessor = {
-            turnId: input.replyTurnId,
-            failedTurnId: input.failedTurnId,
-          };
         const persisted = await deps.repos.turns.findById(input.replyTurnId);
         const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
         const turn =

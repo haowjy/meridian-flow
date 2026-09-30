@@ -1,6 +1,7 @@
 /** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
 
 import type { Usage } from "@meridian/contracts/runtime";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 
 import {
@@ -27,6 +28,7 @@ import { transcriptSegments } from "./transcript.js";
 
 export interface ConversationSummarizerDeps {
   gateway: Gateway;
+  eventSink: EventSink;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   prefixCacheStateFor(input: PrefixCacheStateRequest): Promise<PrefixCacheState>;
   modelRequestDebug: ModelRequestDebugStore;
@@ -192,8 +194,14 @@ export function createConversationSummarizer(
                 request: requestWithCorrelation,
                 toolRegistry: deps.toolRegistry,
               });
-            } catch {
-              // Debug-only capture must never change a paid summary call's outcome.
+            } catch (cause) {
+              emitEvent(deps.eventSink, {
+                level: "warn",
+                source: "runtime.summarizer",
+                name: "model_request_debug.capture_failed",
+                correlation: { threadId: input.owner.threadId, turnId: input.owner.turnId },
+                payload: unknownToEventPayload(cause),
+              });
             }
             for await (const event of gateway.stream(requestWithCorrelation)) {
               if (event.type === "start") {

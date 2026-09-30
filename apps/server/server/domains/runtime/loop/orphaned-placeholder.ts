@@ -40,12 +40,13 @@ async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<
 /** Call under the thread lock and the caller's already-held session claim. */
 export async function finalizeOrphanedTurns(
   deps: OrphanRepairDeps,
-  input: { threadId: ThreadId },
+  input: { threadId: ThreadId; roles?: readonly Turn["role"][] },
 ): Promise<SavedExecutionReport[]> {
   const reports: SavedExecutionReport[] = [];
   const unsettled = await deps.repos.turns.listUnsettledForThread(input.threadId);
   const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
   for (const turn of unsettled) {
+    if (input.roles && !input.roles.includes(turn.role)) continue;
     if (isTerminalTurnStatus(turn.status)) continue;
     const placeholder = isPendingPlaceholder(turn);
     if (placeholder && turn.role === "system") {
@@ -68,33 +69,6 @@ export async function finalizeOrphanedTurns(
     });
     if (compaction) await deps.clearOrphanedTurn?.(input.threadId, turn.id);
     else await deps.retireOrphanedReply?.(input.threadId, turn.id);
-    if (completion.report) reports.push(completion.report);
-  }
-  return reports;
-}
-
-/** Repairs only C4 placeholders while the child report lane finds its terminal turn. */
-export async function finalizeOrphanedPlaceholders(
-  deps: OrphanRepairDeps,
-  input: { threadId: ThreadId },
-): Promise<SavedExecutionReport[]> {
-  const reports: SavedExecutionReport[] = [];
-  const placeholders = await deps.repos.turns.listPendingPlaceholdersForThread(input.threadId);
-  for (const placeholder of placeholders) {
-    if (!isPendingPlaceholder(placeholder)) continue;
-    if (placeholder.role !== "compaction") continue;
-    const completion = await finalizeExecution(deps, {
-      threadId: input.threadId,
-      turnId: placeholder.id,
-      reportContent: "empty",
-      cause: {
-        kind: "failed",
-        reason: "orphaned",
-        error: "Run stopped before terminal completion",
-        copy: turnFailedCopy(placeholder),
-      },
-    });
-    await deps.clearOrphanedTurn?.(input.threadId, placeholder.id);
     if (completion.report) reports.push(completion.report);
   }
   return reports;

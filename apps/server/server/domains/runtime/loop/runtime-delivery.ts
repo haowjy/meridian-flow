@@ -61,7 +61,6 @@ export type DeliverySelectionFields = {
 };
 export type DeliverySelection = DeliverySelectionFields & {
   next: InboxWorkSelection;
-  failedControlIds?: ReadonlySet<string>;
 };
 export type DeliveryBoundarySelection = DeliverySelectionFields;
 export type AdoptedBatch<TCurrent = undefined> = {

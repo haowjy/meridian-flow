@@ -14,14 +14,6 @@ export class ThreadControlError extends Error {
   }
 }
 
-export function requireCompletedReplyForCompaction(
-  turns: readonly Pick<Turn, "role" | "status">[],
-): void {
-  if (!turns.some((turn) => turn.role === "assistant" && turn.status === "complete")) {
-    throw new ThreadControlError(409, "compact_requires_completed_reply");
-  }
-}
-
 export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
   findMessage(id: string): Promise<InboxMessage | null>;
@@ -29,12 +21,11 @@ export function createThreadControls(deps: {
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
-  effectiveTurns(threadId: ThreadId): Promise<readonly Turn[]>;
+  hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
   return {
     enqueueControl: (input) =>
       deps.withThreadLock(input.threadId, async () => {
-        requireCompletedReplyForCompaction(await deps.effectiveTurns(input.threadId));
         const existing = await deps.findMessage(input.id);
         if (
           existing &&
@@ -44,6 +35,8 @@ export function createThreadControls(deps: {
             existing.body.instructions !== input.control.instructions)
         )
           throw new ThreadControlError(409, "control_id_conflict");
+        if (!(await deps.hasCompletedReply(input.threadId)))
+          throw new ThreadControlError(409, "compact_requires_completed_reply");
         const row =
           existing ??
           (await deps.enqueue({

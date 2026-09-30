@@ -81,6 +81,34 @@ else
         }),
       );
 
+      const otherThread = await rig.repos.threads.create({
+        id: crypto.randomUUID(),
+        userId: rig.ids.user,
+        projectId: rig.ids.project,
+      });
+      await rig.repos.turns.create({
+        threadId: otherThread.id,
+        prevTurnId: null,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const conflictingId = crypto.randomUUID();
+      await rig.delivery.enqueueControl({
+        threadId: otherThread.id,
+        actorId: rig.ids.user,
+        id: conflictingId,
+        control: { kind: "compact" },
+      });
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id: conflictingId,
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, message: "control_id_conflict" });
+
       await (
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Complete a reply." })
       ).execute();
@@ -112,6 +140,10 @@ else
       });
       rig.bindThread(fork.id);
 
+      const listBlocks = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
+      rig.repos.blocks.listByThread = async () => {
+        throw new Error("compact eligibility must not load blocks");
+      };
       await expect(
         rig.delivery.enqueueControl({
           threadId: fork.id,
@@ -120,11 +152,44 @@ else
           control: { kind: "compact" },
         }),
       ).resolves.toMatchObject({ created: true });
+      rig.repos.blocks.listByThread = listBlocks;
       await (await rig.orchestrator.prepare({ threadId: fork.id, drain: true })).execute();
 
       expect(await rig.repos.turns.listByThread(fork.id)).toContainEqual(
         expect.objectContaining({ role: "compaction", status: "complete" }),
       );
+    });
+
+    it("returns the compact refusal when a fork cutoff is missing", async () => {
+      const rig = await manualFixture();
+      const source = await rig.repos.threads.findById(rig.threadId);
+      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      );
+      if (!source || !answer) throw new Error("Expected source thread and completed reply");
+      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID(),
+        source,
+        workId: source.workId,
+        userId: source.userId,
+        projectId: source.projectId,
+        originType: "fork",
+        originTurnId: answer.id,
+      });
+      const findTurn = rig.repos.turns.findById.bind(rig.repos.turns);
+      rig.repos.turns.findById = async (id) => (id === answer.id ? null : findTurn(id));
+
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: fork.id,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "compact_requires_completed_reply",
+      });
     });
 
     it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
@@ -250,6 +315,13 @@ else
       };
       expect(started.created).toBe(true);
       expect(duplicate).toMatchObject({ created: false, turn: { id: replyTurnId } });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: crypto.randomUUID() as never,
+          replyTurnId: replyTurnId as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(replayed).toMatchObject({
         id: replyTurnId,
         role: "assistant",
@@ -802,10 +874,8 @@ else
         "assistant",
         "compaction",
       ]);
-      expect(tail.map((turn) => turn.position)).toEqual(
-        [...tail]
-          .sort((left, right) => left.position - right.position)
-          .map((turn) => turn.position),
+      expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+        tail.slice(0, -1).map((turn) => turn.id),
       );
       expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
       expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
@@ -839,11 +909,22 @@ else
       expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
         "B after the last boundary",
       );
-      expect(tail.map((turn) => turn.position)).toEqual(
-        [...tail]
-          .sort((left, right) => left.position - right.position)
-          .map((turn) => turn.position),
+      expect(tail.map((turn) => turn.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "user",
+        "assistant",
+        "compaction",
+      ]);
+      expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+        tail.slice(0, -1).map((turn) => turn.id),
       );
+      const reply0 = tail[1];
+      const messageA = tail[2];
+      const messageB = tail[3];
+      expect(messageA?.position).toBeGreaterThan(reply0?.position ?? -1);
+      expect(messageB?.position).toBeGreaterThan(reply0?.position ?? -1);
       const compaction = tail.find((turn) => turn.role === "compaction");
       const answeringReply = [...tail].reverse().find((turn) => turn.role === "assistant");
       expect(compaction?.position).toBeGreaterThan(answeringReply?.position ?? -1);
@@ -918,7 +999,7 @@ else
       expect(turns.at(-1)?.position).toBeGreaterThan(turns.at(-2)?.position ?? -1);
     });
 
-    it("answers waiting messages before retiring a compact whose start commit fails", async () => {
+    it("answers a waiting message even when the following compact fails to start", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -944,7 +1025,10 @@ else
 
       gateway.release(1);
       await execution;
-      const turns = await settled(rig);
+      await processDetachedWork.drain();
+      await expect.poll(rig.activeRuns, { timeout: 5_000 }).toBe(0);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
       const compact = turns.find(
         (turn) =>
           turn.role === "compaction" &&
@@ -952,17 +1036,16 @@ else
       );
 
       expect(transitionCalls).toBeGreaterThanOrEqual(2);
-      expect(compact).toMatchObject({
-        status: "error",
-        metadata: { reason: "compaction_failed", phase: "delivery" },
-      });
+      expect(compact).toBeUndefined();
       expect(turns.some((turn) => turn.id === waiting.userTurnId && turn.role === "user")).toBe(
         true,
       );
       expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
       const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
-      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(reply).toBeDefined();
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([
+        expect.objectContaining({ id: control.id, intent: "control" }),
+      ]);
     });
 
     it("runs queued controls one per run and in their queue order", async () => {
@@ -988,36 +1071,6 @@ else
       expect(rig.summarizer.calls[1].projection.blocks[0]?.textContent).toContain(
         "Earlier context.",
       );
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("retires a compact whose start transition fails without retrying the command", async () => {
-      const rig = await manualFixture();
-      const control = await compactControl(rig);
-      const transition = rig.repos.runTurnStartTransition.bind(rig.repos);
-      let failed = false;
-      rig.repos.runTurnStartTransition = async (threadId, expectedLeafTurnId, operation) => {
-        if (!failed) {
-          failed = true;
-          throw new Error("transient start commit failure");
-        }
-        return transition(threadId, expectedLeafTurnId, operation);
-      };
-      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      await run.execute();
-      const turns = await settled(rig);
-      const compaction = turns.find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
-      );
-
-      expect(failed).toBe(true);
-      expect(compaction).toMatchObject({
-        role: "compaction",
-        status: "error",
-        metadata: { reason: "compaction_failed", phase: "delivery" },
-      });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 

@@ -9,10 +9,7 @@ import {
   turnFailedCopy,
 } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
-import {
-  finalizeOrphanedPlaceholders,
-  finalizeOrphanedTurns,
-} from "../loop/orphaned-placeholder.js";
+import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -44,11 +41,9 @@ export function createOrphanReportRepair(deps: {
         );
         if (!report || report.outcome !== null) return;
 
-        const orphanReports = await finalizeOrphanedPlaceholders(
+        const orphanReports = await finalizeOrphanedTurns(
           { ...deps, publishStatus: deps.publishStatus },
-          {
-            threadId: childThreadId,
-          },
+          { threadId: childThreadId, roles: ["compaction"] },
         );
         for (const report of orphanReports) reportsToPublish.set(report.executionTurnId, report);
         if (orphanReports.some((report) => report.executionTurnId === executionTurnId)) return;
