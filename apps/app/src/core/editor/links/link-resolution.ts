@@ -25,6 +25,12 @@
  * cannot be recalled, so the generation it was asked in is what it settles
  * against. That is the whole invalidation mechanism: there is no second verb
  * that drops answers, and no caller has to know one.
+ *
+ * A click outlives a generation. A question someone is waiting on through
+ * `resolve()` is asked again in the generation that replaced its own, because
+ * the writer asked to go somewhere and a catalog moving underneath them is not
+ * an answer. Questions only the decorations asked are dropped with their
+ * generation; the next scan asks them again.
  */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
@@ -63,7 +69,9 @@ export type LinkResolution = {
   /**
    * The answer, waited for — what a click needs, because the writer is already
    * asking to go there. Null carries the same "nothing to say" meaning, and a
-   * previous failure is retried rather than remembered.
+   * previous failure is retried rather than remembered. A registration landing
+   * while this waits asks the question again in the new generation rather than
+   * answering null; only unregistering (or destroying) the port does that.
    */
   resolve: (href: string) => Promise<LinkResolutionEntry | null>;
   /**
@@ -99,6 +107,10 @@ type Request = {
   readonly generation: Generation;
   readonly promise: Promise<LinkResolutionEntry | null>;
   readonly settle: (entry: LinkResolutionEntry | null) => void;
+  /** Someone is waiting through `resolve()`, so retirement carries it forward. */
+  awaited: boolean;
+  /** Retirement handed the waiter to the next generation; this completion owes it nothing. */
+  handedOff: boolean;
 };
 
 /** Everything true of one registration of the port. */
@@ -142,9 +154,10 @@ export function createLinkResolution(): LinkResolution {
       generation.failed.add(key);
     }
     // An answer about a project state nobody is looking at any more tells the
-    // caller nothing, so it comes back null rather than stale.
+    // caller nothing, so it comes back null rather than stale — unless the
+    // waiter was already carried into the live generation.
     const live = generation === current;
-    request.settle(live ? entry : null);
+    if (!request.handedOff) request.settle(live ? entry : null);
     if (live) publish();
   };
 
@@ -182,7 +195,15 @@ export function createLinkResolution(): LinkResolution {
     const promise = new Promise<LinkResolutionEntry | null>((done) => {
       settleWaiter = done;
     });
-    const request: Request = { key, target, generation, promise, settle: settleWaiter };
+    const request: Request = {
+      key,
+      target,
+      generation,
+      promise,
+      settle: settleWaiter,
+      awaited: false,
+      handedOff: false,
+    };
     generation.asking.set(key, request);
     generation.answers.set(key, PENDING);
     generation.queue.push(request);
@@ -190,15 +211,35 @@ export function createLinkResolution(): LinkResolution {
     return promise;
   };
 
+  /** Ask on behalf of a `resolve()` caller, so retirement knows to carry it. */
+  const askAwaited = (
+    generation: Generation,
+    key: string,
+    target: LinkTarget,
+  ): Promise<LinkResolutionEntry | null> => {
+    const promise = ask(generation, key, target);
+    const request = generation.asking.get(key);
+    if (request) request.awaited = true;
+    return promise;
+  };
+
   /**
    * Nothing this generation was asked can be answered any more. Queued
-   * questions are dropped, and the ones already out are abandoned: whoever was
-   * waiting hears null now rather than a fact about a project state that moved.
-   * Its answers go with the generation itself, which nothing can reach again.
+   * questions are dropped, and the ones already out are abandoned. A waiter
+   * from `resolve()` is asked again in the live generation, if there is one;
+   * every other waiter hears null now rather than a fact about a project state
+   * that moved. Its answers go with the generation itself, which nothing can
+   * reach again.
    */
   const retire = (generation: Generation) => {
     generation.queue.length = 0;
-    for (const request of generation.asking.values()) request.settle(null);
+    const next = current !== generation ? current : null;
+    for (const request of generation.asking.values()) {
+      if (next && request.awaited) {
+        request.handedOff = true;
+        void askAwaited(next, request.key, request.target).then(request.settle);
+      } else request.settle(null);
+    }
     generation.asking.clear();
   };
 
@@ -243,7 +284,7 @@ export function createLinkResolution(): LinkResolution {
       if (known && known.state !== "pending") return known;
       // A click is the writer asking again, so a failure is worth retrying.
       generation.failed.delete(internal.key);
-      return ask(generation, internal.key, internal.target);
+      return askAwaited(generation, internal.key, internal.target);
     },
 
     registerResolver(resolve) {
@@ -271,8 +312,9 @@ export function createLinkResolution(): LinkResolution {
     },
 
     destroy() {
-      if (current) retire(current);
+      const generation = current;
       current = null;
+      if (generation) retire(generation);
       listeners.clear();
     },
   };

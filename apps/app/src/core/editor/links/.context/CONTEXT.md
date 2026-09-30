@@ -158,12 +158,21 @@ not hold:
   below zero, which is no limit at all.
 
 A promise cannot be recalled, so retiring a generation drops its queue and
-answers every waiter null right away; whatever the port still returns lands on
-an object nothing can reach.
+abandons what is in flight; whatever the port still returns lands on an object
+nothing can reach. What happens to the waiter depends on who is waiting:
+
+- A `resolve()` waiter (a click) is asked again in the generation that replaced
+  its own, and settles with that answer. The writer asked to go somewhere, and a
+  catalog moving underneath them is not an answer; mapping retirement to "could
+  not be checked" would also blur a failed request with an unasked one.
+- A `request()` question (the decorations) settles null and is dropped. The new
+  generation publishes, and the decoration scan asks again.
+- Unregistering or destroying the port leaves no generation to carry anything
+  into, so every waiter settles null.
 
 The app registers again whenever the scope or the project's document catalog
 changes (see
-[`features/editor/surfaces/link/.context/CONTEXT.md`](../../../../features/editor/surfaces/link/.context/CONTEXT.md)),
+[`features/links/.context/CONTEXT.md`](../../../../features/links/.context/CONTEXT.md)),
 so a change landing while questions are in flight is the ordinary case here,
 not an exotic one.
 
