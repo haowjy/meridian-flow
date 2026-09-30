@@ -100,7 +100,11 @@ const band = () => document.querySelector('[data-testid="band"]');
 const listAlerts = () =>
   [...document.querySelectorAll('li [role="alert"]')].map((node) => node.textContent);
 
-async function fromMenu(name: string, action: "Archive" | "Delete Work") {
+async function fromMenu(
+  name: string,
+  action: "Archive" | "Delete Work",
+  via: "pointer" | "keyboard" = "pointer",
+) {
   const trigger = document.querySelector(`[aria-label="Actions for ${name}"]`) as HTMLButtonElement;
   await act(async () => {
     const PointerEventConstructor = window.PointerEvent ?? window.MouseEvent;
@@ -117,9 +121,13 @@ async function fromMenu(name: string, action: "Archive" | "Delete Work") {
     (node) => node.textContent === action,
   );
   if (!item) throw new Error(`${action} menu item did not open`);
+  // The menu turns Enter into a click on the item.
+  if (via === "keyboard")
+    item.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
   await act(async () => item.click());
 }
-const archiveFromMenu = (name: string) => fromMenu(name, "Archive");
+const archiveFromMenu = (name: string, via?: "pointer" | "keyboard") =>
+  fromMenu(name, "Archive", via);
 const deleteFromMenu = (name: string) => fromMenu(name, "Delete Work");
 
 /** The visible Undo rows, by their text. */
@@ -158,7 +166,9 @@ describe("Work collection archive", () => {
           await act(() =>
             vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
           );
+          // Focus follows the Work; a pointer Archive paints no keyboard ring.
           expect(document.activeElement).toBe(tab("archived"));
+          expect(tab("archived").hasAttribute("data-focus-quiet")).toBe(true);
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
 
@@ -169,6 +179,9 @@ describe("Work collection archive", () => {
           await act(() =>
             vi.waitFor(() => expect(document.body.textContent).toContain("No archived Work.")),
           );
+          // Refused: focus comes back with the Work, still without a ring.
+          expect(document.activeElement).toBe(tab("active"));
+          expect(tab("active").hasAttribute("data-focus-quiet")).toBe(true);
           await showTab("active");
           expect(rowNames()).toEqual(["Arc"]);
           const alert = document.querySelector('[role="alert"]');
@@ -193,6 +206,40 @@ describe("Work collection archive", () => {
           expect(band()?.textContent).toBe("");
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+
+  it("returns focus with the ring to Active when a keyboard Archive is refused", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const server = snapshot([WORK]);
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), server);
+    vi.mocked(listProjectWorks).mockImplementation(async () => server);
+    const refused = deferred<Work>();
+    vi.mocked(archiveWork).mockImplementationOnce(() => refused.promise);
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness />
+        </QueryClientProvider>,
+        async () => {
+          await archiveFromMenu("Arc", "keyboard");
+          await act(() => vi.waitFor(() => expect(document.activeElement).toBe(tab("archived"))));
+          expect(tab("archived").hasAttribute("data-focus-quiet")).toBe(false);
+
+          await act(async () => {
+            refused.reject(new Error("Conflict"));
+            await refused.promise.catch(() => undefined);
+          });
+          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Arc"])));
+          expect(document.activeElement).toBe(tab("active"));
+          expect(tab("active").hasAttribute("data-focus-quiet")).toBe(false);
         },
         { drainMacrotask: true },
       );
