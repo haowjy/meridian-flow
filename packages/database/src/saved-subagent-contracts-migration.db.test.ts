@@ -1,4 +1,4 @@
-/** Fixtures for repairing the pre-contract saved chat shapes in migration 0009. */
+/** Fixtures for repairing pre-contract saved chat shapes across migrations 0009 and 0014. */
 import { readFile } from "node:fs/promises";
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -17,11 +17,15 @@ if (!enabled || !databaseUrl) {
         new URL("./migrations/0009_repair_saved_subagent_contracts.sql", import.meta.url),
         "utf8",
       );
+      const lineageRepair = await readFile(
+        new URL("./migrations/0014_threads_origin_turn_fk.sql", import.meta.url),
+        "utf8",
+      );
       const target = postgres(databaseUrl, { max: 1 });
       try {
         await target.begin(async (tx) => {
           await tx.unsafe(`
-						CREATE TEMP TABLE threads (id uuid PRIMARY KEY, root_thread_id uuid, origin_turn_id uuid, ref text, spawn_status text, active_leaf_turn_id uuid, conversational_leaf_turn_id uuid) ON COMMIT DROP;
+						CREATE TEMP TABLE threads (id uuid PRIMARY KEY, parent_thread_id uuid, root_thread_id uuid, origin_turn_id uuid, origin_type text, ref text, spawn_status text, spawn_depth integer DEFAULT 0 NOT NULL, active_leaf_turn_id uuid, conversational_leaf_turn_id uuid) ON COMMIT DROP;
 						CREATE TEMP TABLE thread_agent_bindings (thread_id uuid, definition_revision_id uuid) ON COMMIT DROP;
 						CREATE TEMP TABLE agent_definition_revisions (id uuid PRIMARY KEY, slug text, definition jsonb) ON COMMIT DROP;
 						CREATE TEMP TABLE thread_execution_reports (assistant_turn_id uuid, child_thread_id uuid, outcome text, agent_slug text, created_at timestamptz DEFAULT now()) ON COMMIT DROP;
@@ -80,7 +84,7 @@ if (!enabled || !databaseUrl) {
           await tx`INSERT INTO turns (id, thread_id, role, metadata) VALUES
             (${forkCutoff}, ${root}, 'system', ${tx.json({ kind: "subagent_update", handle: "gone" })}),
             (${crossThreadParent}, ${root}, 'system', ${tx.json({ kind: "subagent_update", handle: "gone" })})`;
-          await tx`INSERT INTO threads (id, root_thread_id, origin_turn_id) VALUES (${fork}, ${root}, ${forkCutoff})`;
+          await tx`INSERT INTO threads (id, parent_thread_id, root_thread_id, origin_turn_id, origin_type) VALUES (${fork}, ${root}, ${root}, ${forkCutoff}, 'fork')`;
           await tx`INSERT INTO turns (id, thread_id, parent_turn_id, role) VALUES (${forkTurn}, ${fork}, ${crossThreadParent}, 'user')`;
           await tx`INSERT INTO event_journal (turn_id) VALUES (${forkCutoff}), (${crossThreadParent})`;
 
@@ -172,17 +176,8 @@ if (!enabled || !databaseUrl) {
           ).toMatchObject({ agentName: "Subagent" });
 
           expect(
-            await tx`SELECT id, metadata FROM turns WHERE id IN (${forkCutoff}, ${crossThreadParent}) ORDER BY id`,
-          ).toEqual([
-            {
-              id: forkCutoff,
-              metadata: { kind: "system_update", section: "saved_subagent_report" },
-            },
-            {
-              id: crossThreadParent,
-              metadata: { kind: "system_update", section: "saved_subagent_report" },
-            },
-          ]);
+            await tx`SELECT id FROM turns WHERE id IN (${forkCutoff}, ${crossThreadParent})`,
+          ).toEqual([]);
           expect(await tx`SELECT origin_turn_id FROM threads WHERE id = ${fork}`).toEqual([
             { origin_turn_id: forkCutoff },
           ]);
@@ -191,7 +186,27 @@ if (!enabled || !databaseUrl) {
           ]);
           expect(
             await tx`SELECT turn_id FROM event_journal WHERE turn_id IN (${forkCutoff}, ${crossThreadParent})`,
-          ).toHaveLength(2);
+          ).toEqual([]);
+
+          // 0014 owns the one-time cleanup before adding the provenance FK.
+          for (const statement of lineageRepair.split("--> statement-breakpoint").slice(0, 2)) {
+            if (statement.trim()) await tx.unsafe(statement);
+          }
+          expect(
+            await tx`SELECT parent_thread_id, root_thread_id, origin_turn_id, origin_type, spawn_depth, spawn_status FROM threads WHERE id = ${fork}`,
+          ).toEqual([
+            {
+              parent_thread_id: null,
+              root_thread_id: fork,
+              origin_turn_id: null,
+              origin_type: null,
+              spawn_depth: 0,
+              spawn_status: null,
+            },
+          ]);
+          expect(await tx`SELECT parent_turn_id FROM turns WHERE id = ${forkTurn}`).toEqual([
+            { parent_turn_id: null },
+          ]);
 
           const repaired = await tx<{ id: string; metadata: Record<string, unknown> }[]>`
 						SELECT id, metadata FROM turns WHERE metadata->>'kind' = 'subagent_update' ORDER BY id`;

@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
 - Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
 - Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
 - Compaction turns and conversation seeds no longer count as chat, Work, or project activity.
