@@ -144,7 +144,7 @@ questions the document itself cannot:
 | Consumer | What the Work decides |
 |---|---|
 | `useLinkableDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
-| `ResolveDocumentLinkRequest.workId` | a `work://` shorthand has a Work to be relative to |
+| `ResolveDocumentLinkRequest.workId` | a contextual `scratch://` or `uploads://` link resolves in that Work |
 | `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
 
 `workId` arrives as a prop (the active thread's Work, or the project's default)

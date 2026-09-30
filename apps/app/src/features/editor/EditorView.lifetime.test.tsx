@@ -148,7 +148,8 @@ vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./surfaces/link", () => ({
   ProjectLinkRuntime: () => null,
-  ProjectLinkRuntimeWithIndex: () => null,
+}));
+vi.mock("@/features/links", () => ({
   useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty

@@ -642,8 +642,8 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/creation/CreationDialog.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -844,7 +844,7 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -1258,7 +1258,7 @@ msgstr ""
 msgid "Create file or folder"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr ""
 
@@ -1267,7 +1267,7 @@ msgstr ""
 msgid "Create project"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Create the document"
 msgstr ""
 
@@ -1297,7 +1297,7 @@ msgstr ""
 msgid "Creating project…"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr ""
@@ -2135,7 +2135,7 @@ msgstr ""
 msgid "Log out"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Looking for the document this link names."
 msgstr ""
 
@@ -2369,7 +2369,7 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
 msgstr ""
 
@@ -2464,7 +2464,7 @@ msgstr "未找到"
 msgid "Not reported"
 msgstr "未报告"
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Nothing carries that name yet"
 msgstr ""
 
@@ -2616,7 +2616,7 @@ msgstr ""
 msgid "Opening document…"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
 msgstr ""
 
@@ -3440,7 +3440,7 @@ msgid "That image did not upload."
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
 msgstr ""
 
@@ -3490,7 +3490,7 @@ msgstr ""
 msgid "The change could not be confirmed. Try again."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr ""
 
@@ -3514,7 +3514,7 @@ msgstr ""
 msgid "The location changed. Try again."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
 
@@ -3806,7 +3806,7 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr ""
 
