@@ -92,7 +92,8 @@ describe("document text elisions", () => {
       const elisions = plan(blocks);
       expect(elisions.length).toBe(["create", "insert", "replace"].includes(command) ? 2 : 1);
       for (const e of elisions) {
-        const original = blocks.find((b) => b.id === e.blockId)!;
+        const original = blocks.find((b) => b.id === e.blockId);
+        if (!original) throw new Error(`Missing original block ${e.blockId}`);
         expect(e.content).toMatchObject({
           toolCallId: (original.content as JsonObject).toolCallId,
           toolName: "write",
@@ -204,7 +205,7 @@ describe("document text elisions", () => {
       documentId: "00000000-0000-4000-8000-000000000001",
       uri: evidence.uri,
       text: "Chapter",
-      read: { result: "OLD DOCUMENT", revision: "old" },
+      read: { result: "OLD DOCUMENT", revision: "y1:old" },
     };
     const blocks = [
       block("ref1", "text", reference),
@@ -221,6 +222,8 @@ describe("document text elisions", () => {
       text: "Chapter",
     });
     expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
+    expect(JSON.stringify(elisions)).not.toContain("y1:");
+    expect(JSON.stringify(elisions)).not.toContain('"revision"');
   });
 });
 

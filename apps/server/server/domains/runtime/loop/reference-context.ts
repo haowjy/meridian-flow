@@ -1,4 +1,4 @@
-/** Loads explicit references for a turn the run will send; history replays saved results. */
+/** Loads explicit reference reads and projects them without host-only evidence. */
 
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
@@ -13,6 +13,38 @@ export interface ReferenceReader {
       turnId: string;
     },
   ): Promise<{ result: JsonValue; revision: string | null }>;
+}
+
+export type ModelReferenceOccurrence = ReferenceOccurrence & {
+  read?: { result: JsonValue };
+};
+
+/** Parses a reference for model context while removing host-only revision evidence. */
+export function modelReferenceOccurrenceContent(block: {
+  blockType: unknown;
+  content: unknown;
+}): ModelReferenceOccurrence | null {
+  const persisted = referenceOccurrenceContent(block);
+  if (persisted)
+    return persisted.read ? { ...persisted, read: { result: persisted.read.result } } : persisted;
+
+  const content = block.content;
+  if (!content || typeof content !== "object" || Array.isArray(content)) return null;
+  const read = (content as Record<string, unknown>).read;
+  if (
+    !read ||
+    typeof read !== "object" ||
+    Array.isArray(read) ||
+    Object.keys(read).length !== 1 ||
+    !("result" in read) ||
+    read.result === undefined
+  )
+    return null;
+  const validated = referenceOccurrenceContent({
+    blockType: block.blockType,
+    content: { ...content, read: { result: read.result, revision: null } },
+  });
+  return validated ? { ...validated, read: { result: read.result as JsonValue } } : null;
 }
 
 export async function loadReferenceReads(input: {
@@ -66,7 +98,6 @@ export function elideReferenceRead(
   return {
     ...reference,
     read: {
-      ...reference.read!,
       result:
         treatment === "history" ? historyReadStub(reference.uri) : staleReadStub(reference.uri),
     },
