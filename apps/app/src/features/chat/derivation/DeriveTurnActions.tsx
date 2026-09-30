@@ -16,9 +16,8 @@ import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 
@@ -37,8 +36,6 @@ export const TurnDerivationProvider = TurnDerivationContext.Provider;
 export function useTurnDerivation(): TurnDerivation | null {
   return useContext(TurnDerivationContext);
 }
-
-const actionClass = "size-6 text-muted-foreground";
 
 /**
  * Whether a chat offers Fork and Hand off: only a primary the server already
@@ -84,23 +81,10 @@ export function DeriveTurnActions({ turnId }: { turnId: string }) {
 export function ForkTurnAction({ turnId }: { turnId: string }) {
   const derivation = useTurnDerivation();
   if (!derivation) return null;
-  const forkLabel = t`Fork from here`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          className={actionClass}
-          aria-label={forkLabel}
-          onClick={() => derivation.fork(turnId)}
-        >
-          <GitFork aria-hidden />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{forkLabel}</TooltipContent>
-    </Tooltip>
+    <IconButton type="button" tooltip={t`Fork from here`} onClick={() => derivation.fork(turnId)}>
+      <GitFork aria-hidden />
+    </IconButton>
   );
 }
 
@@ -150,22 +134,11 @@ function HandoffPicker({
   }, [open, ready, agents.length]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              className={actionClass}
-              aria-label={label}
-            >
-              <Forward aria-hidden />
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
+      <PopoverTrigger asChild>
+        <IconButton type="button" tooltip={label}>
+          <Forward aria-hidden />
+        </IconButton>
+      </PopoverTrigger>
       <PopoverContent
         ref={contentRef}
         tabIndex={-1}
