@@ -6,6 +6,8 @@
  * the absence of a DOM attribute so the default browser-sized body stays the
  * default path.
  */
+import { createPreferenceSubscribers } from "./preference-subscribers";
+
 export const TEXT_SIZE_STORAGE_KEY = "meridian:text-size";
 export const TEXT_SIZE_ATTRIBUTE = "data-text-size";
 
@@ -13,8 +15,6 @@ export const TEXT_SIZES = ["sm", "md", "lg"] as const;
 export type TextSize = (typeof TEXT_SIZES)[number];
 
 export const DEFAULT_TEXT_SIZE: TextSize = "md";
-
-const listeners = new Set<() => void>();
 
 export function isTextSize(value: string): value is TextSize {
   return (TEXT_SIZES as readonly string[]).includes(value);
@@ -33,10 +33,6 @@ export function resolveTextSize(): TextSize {
   }
 }
 
-function notifyTextSizeListeners(): void {
-  for (const listener of listeners) listener();
-}
-
 export function applyTextSize(textSize: TextSize): void {
   if (typeof document === "undefined") return;
   if (textSize === DEFAULT_TEXT_SIZE) {
@@ -52,6 +48,11 @@ export function applyStoredTextSize(): TextSize {
   return textSize;
 }
 
+// Another tab changed it: apply theirs here too.
+const subscribers = createPreferenceSubscribers(TEXT_SIZE_STORAGE_KEY, () => {
+  applyStoredTextSize();
+});
+
 export function changeTextSize(textSize: TextSize): void {
   applyTextSize(textSize);
   try {
@@ -59,29 +60,10 @@ export function changeTextSize(textSize: TextSize): void {
   } catch {
     // localStorage unavailable
   }
-  notifyTextSizeListeners();
+  subscribers.notify();
 }
 
-export function subscribeTextSize(listener: () => void): () => void {
-  listeners.add(listener);
-
-  function onStorage(event: StorageEvent): void {
-    if (event.key !== TEXT_SIZE_STORAGE_KEY) return;
-    applyStoredTextSize();
-    notifyTextSizeListeners();
-  }
-
-  if (typeof window !== "undefined") {
-    window.addEventListener("storage", onStorage);
-  }
-
-  return () => {
-    listeners.delete(listener);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("storage", onStorage);
-    }
-  };
-}
+export const subscribeTextSize = subscribers.subscribe;
 
 export const TEXT_SIZE_BOOT_SCRIPT = `(() => { try { const key = ${JSON.stringify(
   TEXT_SIZE_STORAGE_KEY,

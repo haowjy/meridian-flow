@@ -7,12 +7,13 @@ import {
   documentBranches,
   eventJournal,
   projectResults,
+  promptBakes,
   threads,
   turns,
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -69,6 +70,46 @@ export function createDrizzleWorkPurger(deps: {
         return { purged: false, objectKeys: [] };
       }
 
+      if (lockedTree.threadIds.length > 0) {
+        // A rebound fork/handoff still owns its source identity and may share its bake.
+        // Never let the root FK cascade delete another Work's conversation.
+        const [dependent] = await activeDb
+          .select({ id: threads.id })
+          .from(threads)
+          .where(
+            and(
+              notInArray(threads.id, lockedTree.threadIds),
+              or(
+                inArray(threads.rootThreadId, lockedTree.threadIds),
+                inArray(
+                  threads.originTurnId,
+                  activeDb
+                    .select({ id: turns.id })
+                    .from(turns)
+                    .where(inArray(turns.threadId, lockedTree.threadIds)),
+                ),
+                inArray(
+                  threads.initialPromptBakeId,
+                  activeDb
+                    .select({ id: promptBakes.id })
+                    .from(promptBakes)
+                    .where(inArray(promptBakes.ownerThreadId, lockedTree.threadIds)),
+                ),
+              ),
+            ),
+          )
+          .limit(1);
+        if (dependent) {
+          emitEvent(deps.eventSink, {
+            level: "info",
+            source: "projects.work-purge",
+            name: "purge.retained",
+            payload: { workId, dependentThreadId: dependent.id },
+          });
+          return { purged: false, objectKeys: [] };
+        }
+      }
+
       const [uploads, results] = await Promise.all([
         activeDb
           .select({ objectKey: uploadIntakes.objectKey })
@@ -93,6 +134,9 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb
           .delete(eventJournal)
           .where(inArray(eventJournal.threadId, lockedTree.threadIds));
+        // Turns restrict thread deletion; derived threads retain non-nulling source-turn refs.
+        // Defer that one cycle until both sides are gone, without weakening provenance elsewhere.
+        await activeDb.execute(sql`SET CONSTRAINTS threads_origin_turn_id_turns_id_fk DEFERRED`);
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
@@ -109,18 +153,38 @@ export function createDrizzleWorkPurger(deps: {
     async sweep(): Promise<number> {
       const currentTime = now();
       const cutoff = workPurgeCutoff(currentTime);
-      const candidates = await currentDrizzleDb(deps.db)
-        .select({ id: works.id })
-        .from(works)
-        .where(and(isNotNull(works.deletedAt), lte(works.deletedAt, cutoff)))
-        .orderBy(asc(works.deletedAt), asc(works.id))
-        .limit(WORK_PURGE_BATCH_LIMIT);
       let count = 0;
-      for (const candidate of candidates) {
-        const result = await purge(candidate.id, cutoff);
-        if (!result.purged) continue;
-        count += 1;
-        await deleteObjects(result.objectKeys);
+      let after: { id: WorkId; deletedAt: Date } | undefined;
+      // Retained sources must not pin the oldest page and starve later eligible Works.
+      while (count < WORK_PURGE_BATCH_LIMIT) {
+        const candidates = await currentDrizzleDb(deps.db)
+          .select({
+            id: works.id,
+            deletedAt: sql<Date>`${works.deletedAt}`.mapWith(works.deletedAt),
+          })
+          .from(works)
+          .where(
+            and(
+              isNotNull(works.deletedAt),
+              lte(works.deletedAt, cutoff),
+              after
+                ? or(
+                    gt(works.deletedAt, after.deletedAt),
+                    and(eq(works.deletedAt, after.deletedAt), gt(works.id, after.id)),
+                  )
+                : undefined,
+            ),
+          )
+          .orderBy(asc(works.deletedAt), asc(works.id))
+          .limit(WORK_PURGE_BATCH_LIMIT - count);
+        after = candidates.at(-1);
+        if (!after) break;
+        for (const candidate of candidates) {
+          const result = await purge(candidate.id, cutoff);
+          if (!result.purged) continue;
+          count += 1;
+          await deleteObjects(result.objectKeys);
+        }
       }
       return count;
     },

@@ -113,7 +113,6 @@ export async function createThreadForProject(
           userId: args.userId,
           projectId: args.projectId,
           title: args.title ?? null,
-          systemPrompt: null,
         }),
       resolveWork: async (created) => {
         resolvedWorkId = await resolveWorkMembership(

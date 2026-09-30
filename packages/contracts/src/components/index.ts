@@ -32,6 +32,28 @@ export type ComponentBlockContent = {
   interrupt?: ComponentInterrupt;
 };
 
+/** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
+export type ThreadReferenceProps = {
+  threadId: string;
+  ref: string;
+  title: string | null;
+  agentName: string | null;
+  lastActivityAt: string;
+  text: string;
+};
+
+/** Writer-facing handoff card data, frozen when its seed is reserved. */
+export type HandoffBriefProps = {
+  state: "available" | "unavailable";
+  brief: string | null;
+  sourceThreadId: string;
+  sourceRef: string;
+  sourceTitle: string | null;
+  cutoffTurnId: string;
+  model: string | null;
+  modelText: string;
+};
+
 /** Identity and timing shared by every retained child invocation card. */
 type InvocationCardBase = {
   agentSlug: string;
@@ -41,6 +63,9 @@ type InvocationCardBase = {
   deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
   startedAt: string;
   title?: string;
+  fromThreadId?: ThreadId;
+  fromThreadRef?: string;
+  fromThreadTitle?: string | null;
 };
 
 /** Exact parent invocation identity retained on a child run's historical card. */
@@ -77,6 +102,9 @@ const invocationCardBaseSchema = z.strictObject({
   deliveryMode: z.enum(["direct", "background_notification"]),
   startedAt: z.string(),
   title: z.string().optional(),
+  fromThreadId: z.string().optional(),
+  fromThreadRef: z.string().optional(),
+  fromThreadTitle: z.string().nullable().optional(),
 });
 
 export const invocationCardPropsSchema = z.union([
@@ -185,7 +213,7 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
   properties: {
     question: {
       type: "string",
-      description: "The question for the writer.",
+      description: "The question for the user.",
     },
     kind: {
       type: "string",
@@ -212,7 +240,7 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
     requiresHuman: {
       type: "boolean",
       default: false,
-      description: "Never resolve on timeout; wait for the writer.",
+      description: "Never resolve on timeout; wait for the user.",
     },
     timeoutMs: {
       type: "integer",

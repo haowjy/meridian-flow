@@ -71,3 +71,12 @@ A unified generation scheme or tiered invalidation API is the long-term shape.
 
 Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
 resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.
+
+## Live settlement receipt recovery
+
+`domain/response-write-finalizer.ts` commits the live agent-edit journal before
+calling the host result rewrite. If that callback fails, the edit remains
+applied but the staged result can later be falsely repaired as uncommitted.
+Recover the durable settled receipt on retry instead of inferring failure
+from a pending tool-result block. Branch-mode settlement already shares the
+host transaction; keep that distinction explicit.

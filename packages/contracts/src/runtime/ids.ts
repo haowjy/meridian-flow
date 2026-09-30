@@ -8,6 +8,7 @@ export type {
   FolderId,
   ModelResponseId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnBlockId as BlockId,
   TurnBlockId,

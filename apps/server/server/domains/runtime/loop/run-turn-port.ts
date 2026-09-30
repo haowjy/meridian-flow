@@ -6,9 +6,9 @@
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
-import type { JsonValue, Turn } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, JsonValue, Turn } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
-import type { Lease } from "./ports.js";
+import type { CurrentTurn, Lease } from "./ports.js";
 
 interface RunTurnBase {
   threadId: ThreadId;
@@ -21,14 +21,16 @@ interface RunTurnBase {
     agentSlug?: string | null;
     description?: string | null;
   };
-  child?: { parentThreadId: ThreadId; background: boolean };
-  onAssistantTurnChanged?: (turnId: TurnId) => void;
+  child?: { parentThreadId: ThreadId; background: boolean; origin: "spawn" | "message" };
+  onCurrentTurnChanged?: (turn: CurrentTurn) => void;
 }
 
-/** A run born from a new writer message: the setup mints the writer's user turn. */
+/** A run born from a direct writer message: setup persists the user turn before preparation. */
 export interface WriterRunTurnInput extends RunTurnBase {
   userText: string;
   userBlocks?: readonly UserMessageBlock[];
+  /** Runtime-only context appended after user blocks; persistence assigns turn and sequence. */
+  seedBlocks?: BlockUpsertedRow[];
   activatedSkillSlugs?: readonly string[];
   /** Hidden metadata stamped on the user turn; never model-facing here. */
   userTurnMetadata?: JsonValue | null;
@@ -36,11 +38,15 @@ export interface WriterRunTurnInput extends RunTurnBase {
 
 /**
  * A drain-only start (a wake): there is no new writer message. The first
- * drained message becomes the run's first user turn, ahead of the assistant
- * container, and the model sees exactly the drained batch.
+ * drained message becomes the run's first user turn, ahead of the first reserved
+ * turn, and the model sees exactly the drained batch.
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
+  /** Client-minted id for an explicit no-input reply Retry. */
+  replyTurnId?: TurnId;
+  /** Leaf that must still be current after the run claim is acquired. */
+  expectedLeafTurnId?: TurnId;
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;
@@ -65,9 +71,40 @@ export class NoPendingWakeError extends Error {
   }
 }
 
+/** The app is closing; refuse work that has not yet acquired a run session. */
+export class RuntimeShuttingDownError extends Error {
+  readonly code = "runtime_shutting_down";
+
+  constructor(readonly threadId: ThreadId) {
+    super("runtime_shutting_down");
+    this.name = "RuntimeShuttingDownError";
+  }
+}
+
+/** The requested failed reply is no longer eligible for an explicit Retry. */
+export class ReplyRetryUnavailableError extends Error {
+  readonly code = "reply_retry_unavailable";
+
+  constructor(readonly threadId: ThreadId) {
+    super("reply_retry_unavailable");
+    this.name = "ReplyRetryUnavailableError";
+  }
+}
+
+/** A live placeholder's failure transaction did not commit. Orphan repair owns
+ * its terminal state; paid response rows still in memory are lost like a crash,
+ * not separately debited outside the transaction that ends the placeholder.
+ */
+export class UnsettledPlaceholderError extends Error {
+  constructor(cause: unknown) {
+    super("Placeholder failure landing did not commit", { cause });
+    this.name = "UnsettledPlaceholderError";
+  }
+}
+
 export interface PreparedLoop {
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  currentTurn: CurrentTurn;
   execute(): Promise<Turn>;
 }
 
@@ -79,7 +116,7 @@ export type RunOutcome =
 export interface PreparedRun {
   runId: string;
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
   execute(): Promise<RunOutcome>;

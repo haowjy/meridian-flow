@@ -6,15 +6,15 @@ import { useSubagentDisclosure } from "./subagent/DisclosureStore";
 import { SubagentIdentity, SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
 export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
-  const descendants = useSubagentRuns(threadId, { directOnly: true }).filter(
+  const children = useSubagentRuns().filter(
     (run) => run.deliveryMode === "background_notification" && run.status === "running",
   );
   const [expanded, setExpanded] = useSubagentDisclosure(`panel:${threadId}`);
-  if (!descendants.length) return null;
-  const first = descendants[0];
+  if (!children.length) return null;
+  const first = children[0];
   if (!first) return null;
   const aggregate = { ...first, agentName: "Subagent", description: null };
-  const single = descendants.length === 1 ? descendants[0] : undefined;
+  const single = children.length === 1 ? children[0] : undefined;
   return (
     <section
       className="relative z-10 border-b border-border-subtle bg-background"
@@ -39,10 +39,10 @@ export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
                 <SubagentIdentity
                   run={aggregate}
                   showDescription={false}
-                  name={<Trans>{descendants.length} subagents</Trans>}
+                  name={<Trans>{children.length} subagents</Trans>}
                 />
                 <span className="truncate text-xs text-muted-foreground">
-                  <Trans>{descendants.length} running</Trans>
+                  <Trans>{children.length} running</Trans>
                 </span>
               </>
             }
@@ -53,7 +53,7 @@ export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
             className="py-1 text-caption text-ink-muted"
           >
             <ul className="pb-1">
-              {descendants.map((run) => (
+              {children.map((run) => (
                 <li key={run.threadId} className="py-1 text-caption text-ink-muted">
                   <SubagentRow run={run} />
                   <SubagentToolLine run={run} className="pb-1 pl-7" />

@@ -109,6 +109,7 @@ describe("branch-push durable projection", () => {
       fileType: "typescript",
     });
     await db.insert(threads).values({
+      rootThreadId: threadId,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -119,6 +120,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -315,6 +317,7 @@ describe("branch-push durable projection", () => {
       fileType: "markdown",
     });
     await db.insert(threads).values({
+      rootThreadId: threadId,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -325,6 +328,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -508,6 +512,7 @@ describe("branch-push durable projection", () => {
       updatedAt: old,
     });
     await db.insert(threads).values({
+      rootThreadId: threadId,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -525,6 +530,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",

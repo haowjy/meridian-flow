@@ -9,13 +9,14 @@ import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/c
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { readThreadActivity } from "./domain/thread-activity.js";
 import { isThreadActionRequired } from "./domain/visible-conversation-policy.js";
-import { orderTurnsCausally } from "./order-turns.js";
+import { orderTurnsByPosition } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
-  ThreadLiveReaders,
+  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
+  ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
@@ -62,7 +63,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: ThreadEventHub,
-  statusReader: ThreadLiveReaders,
+  statusReader: ThreadStatusReader & ThreadPendingInboxReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   return repos.readSnapshot(async () => {
@@ -88,11 +89,9 @@ export async function buildThreadSnapshot(
     const runningTurnId = await statusReader.readRunningTurnId(threadId);
     const headSeq = await hub.headSeq(threadId);
 
-    const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
+    const turns = orderTurnsByPosition(await repos.turns.listByThread(threadId));
     const blocksByTurn = groupBy(
-      (await repos.blocks.listByThread(threadId))
-        .filter((block) => block.pruned !== true)
-        .map(toClientSafeBlock),
+      (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
       (block) => block.turnId,
     );
     const responsesByTurn = groupBy(

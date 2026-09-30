@@ -10,8 +10,10 @@ import {
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
 import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
+import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
+import { toolFailureResult } from "./tool-executor.js";
 import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -21,12 +23,14 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks. After starting background work, end your turn to wait; its completion message will wake you. Read the latest result with thread_report using the returned pN ref. Do not message the child to wait or promise completion in this response.";
-const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
+  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
+const SPAWN_DESCRIPTION_EMPTY_ROSTER =
+  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
 
 export type SpawnToolArgs = {
   agent?: string;
   prompt: string;
+  from?: string;
   description?: string;
   mode: "foreground" | "background";
   append_system_prompt?: string;
@@ -41,6 +45,7 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       : {};
   return {
     ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
+    ...(rec.from !== undefined && rec.from !== null ? { from: z.string().parse(rec.from) } : {}),
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
@@ -98,8 +103,7 @@ function returnResultInputError(error: ZodError): string {
   return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of Meridian document URI strings.`;
 }
 
-const THREAD_MESSAGE_DESCRIPTION =
-  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back. Use mode=foreground to wait for a subagent in your subtree to finish and return its report. If you started background work, end your turn to wait; its completion message wakes you. Read a finished child result with thread_report using its ref. Do not send a message to the child just to wait for its completion.";
+const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
 export type ThreadMessageMode = "foreground" | "background";
 
@@ -142,16 +146,15 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       definition: {
         type: "function",
         name: "thread_report",
-        description:
-          "Read the latest finished report from a child in your lineage using its pN ref. Optionally pass run (1-based per child) to read an earlier report. This does not wait for an active execution.",
+        description: "Read a subagent's latest finished report. Does not wait for a running one.",
         inputSchema: {
           type: "object",
           properties: {
-            ref: { type: "string", description: "Authorized child thread handle, for example p3." },
+            ref: { type: "string", description: "Subagent ref such as p3." },
             run: {
               type: "integer",
               minimum: 1,
-              description: "Earlier finished run number for this child.",
+              description: "An earlier run, counting from 1.",
             },
           },
           required: ["ref"],
@@ -160,11 +163,25 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) =>
-          ctx.threadReport(parseThreadReportArgs(input)),
+        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
+          const result = await ctx.threadReport(parseThreadReportArgs(input));
+          if ("ok" in result) return toolFailureResult(result);
+          if ("status" in result) return { ref: result.ref, status: result.status };
+          return {
+            ref: result.ref,
+            run: result.run,
+            outcome: result.outcome,
+            summary: result.summary,
+            ...(result.payload !== undefined ? { payload: result.payload } : {}),
+            ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
+            ...(result.reason !== null ? { reason: result.reason } : {}),
+            ...(result.source !== "return_result" ? { source: result.source } : {}),
+          };
+        },
       },
       sequential: true,
       capability: "thread_report",
+      historyPreview: threadHistoryPreview,
       advertise: true,
     },
     {
@@ -178,29 +195,33 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           properties: {
             agent: {
               type: "string",
-              description:
-                "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
+              description: "Roster name; omit for the generic subagent.",
             },
-            prompt: { type: "string", description: "Task prompt for the child agent." },
+            from: {
+              type: "string",
+              description:
+                'Conversation ref, or "current", that the child can read with thread_history; its history is not copied in.',
+            },
+            prompt: { type: "string", description: "The child's task." },
             description: {
               type: "string",
               description:
-                "The writer sees this as the subagent's name in chat and in its thread title, so always set it. Use 2 to 5 words naming the task or its deliverable in the writer's terms, such as \"Chapter 12 continuity check\" or \"Lantern festival research\". Make parallel subagents distinguishable. Don't use a sentence, the agent's name, or a pN handle.",
+                'The name the user sees in chat, 2 to 5 words naming the task, e.g. "Chapter 12 continuity check". Distinct across parallel subagents; not a sentence, agent name or pN handle.',
             },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
-              description: "foreground waits for the child; background returns immediately.",
+              description:
+                "foreground (default) waits for the child's report; background returns at once.",
             },
             append_system_prompt: {
               type: "string",
-              description:
-                "Appends to this child's system prompt for this invocation only; omit to add nothing.",
+              description: "Extra system-prompt text for this run only.",
             },
             overrides: {
               type: "object",
               description:
-                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration. Override model or effort only when this run needs it, such as when the saved model keeps getting this task wrong or the task briefly needs more capability.",
+                "Change this run's model, effort, tools, disallowed-tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
             },
           },
           required: ["prompt"],
@@ -210,19 +231,31 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
+          let args: SpawnToolArgs;
           try {
-            return await ctx.spawn(parseSpawnToolArgs(input));
+            args = parseSpawnToolArgs(input);
           } catch (error) {
+            if (error instanceof ZodError) {
+              return {
+                ok: false,
+                error: meridianErrorFromSystem(
+                  "invalid_from",
+                  'from must be one conversation ref or "current".',
+                ),
+              };
+            }
             if (!(error instanceof InvocationPatchError)) throw error;
             return {
               ok: false,
               error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
             };
           }
+          return ctx.spawn(args);
         },
       },
       sequential: true,
       capability: "spawn",
+      historyPreview: spawnHistoryPreview,
       advertise: true,
     },
     {
@@ -236,15 +269,14 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           properties: {
             ref: {
               type: "string",
-              description:
-                "Thread handle from a spawn/thread_message result, for example p3 or c1.",
+              description: "Thread ref such as p3 or c1.",
             },
-            message: { type: "string", description: "Message to deliver to the thread." },
+            message: { type: "string" },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
               description:
-                "background (default) queues the message and returns immediately with no pushed reply; foreground waits for a subagent in your subtree and returns its report.",
+                "background (default) queues it and returns; foreground waits for a subagent in your subtree and returns its report.",
             },
           },
           required: ["ref", "message"],
@@ -259,6 +291,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "thread_message",
+      historyPreview: threadHistoryPreview,
       advertise: true,
     },
     {
@@ -277,8 +310,6 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               description: "Meridian document URIs produced by this child.",
               items: {
                 type: "string",
-                description:
-                  "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
               },
             },
           },

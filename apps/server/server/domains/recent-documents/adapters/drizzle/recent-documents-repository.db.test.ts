@@ -14,8 +14,10 @@ import {
 } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import {
   RecentDocumentUnavailableError,
   USER_RECENT_DOCUMENTS_CAP,
@@ -59,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("drizzle recent documents repository (postgres)", () => {
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     async function seed() {

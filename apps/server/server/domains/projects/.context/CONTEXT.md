@@ -34,11 +34,11 @@ translate those to `title` and `description` in `ProjectDto`.
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
 | `createWork(input)` | Creates an explicit Work. No thread is bound to it yet, so it enqueues no Work context refresh. |
-| `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
+| `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, refuses an archived or deleted Work, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
 | `setWorkArchived(workId, archived)` | Archive lifecycle only (`archivedAt`); never touches the AI-owned `status` text. Locks the row, refuses a deleted or missing Work with `WorkLifecycleUnavailableError`, and calls `workChanged(workId)` after a real change. |
 | `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops. Delete enqueues no Work context (its chats are deleted with it); restore calls `workChanged(workId)` after a real change in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
-| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping: 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's writer copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
+| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping: 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's user-facing copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
 
 ## Invariants
 
@@ -89,6 +89,15 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+  Purge defers only `threads_origin_turn_id_turns_id_fk` within that transaction,
+  deletes turns before threads, and lets owner cascades remove prompt bakes and
+  image decisions. Provenance deletion stays forbidden outside purge.
+  A fork or handoff rebound to another Work retains its source turns and bake:
+  purge leaves that source Work hidden while the external reference exists,
+  rather than cascading into the other Work's chat. `purge.retained` records the
+  dependency. Keyset paging passes retained sources and still removes up to 100
+  eligible Works per sweep. References can extend storage retention beyond the
+  restore window; they do not extend the 30-day restore deadline.
 - Membership changes follow thread-before-Work locking. Delete and purge use
   `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
   the Work, then recheck the full set; a newly joined chat retries rather than

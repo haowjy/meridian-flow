@@ -4,4 +4,5 @@
  * Barrel: re-exports runtime ID aliases and shared usage accounting DTOs.
  */
 export * from "./ids.js";
+export * from "./summary-outcome.js";
 export * from "./usage.js";

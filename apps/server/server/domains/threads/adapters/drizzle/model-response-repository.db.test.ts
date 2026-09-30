@@ -16,7 +16,7 @@ else
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { projectReadModelEvent } = await import("../../domain/read-model-projector.js");
 
@@ -32,14 +32,17 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(ids.user, "response-timing"));
       await db
         .insert(schema.projects)
         .values({ id: ids.project, userId: ids.user, name: "Timing", slug: "timing" });
-      await db
-        .insert(schema.threads)
-        .values({ id: ids.thread, projectId: ids.project, createdByUserId: ids.user });
+      await db.insert(schema.threads).values({
+        rootThreadId: ids.thread,
+        id: ids.thread,
+        projectId: ids.project,
+        createdByUserId: ids.user,
+      });
       await repos.turns.create({
         id: ids.turn,
         threadId: ids.thread,
@@ -53,6 +56,7 @@ else
     it("persists result timing through model-response projection and thread snapshots", async () => {
       const result = {
         timing: {
+          requestStartedAt: "2026-09-27T12:00:00.000Z",
           latencyMs: 240,
           timeToFirstTokenMs: 80,
           generationMs: 160,
@@ -69,12 +73,16 @@ else
           priceSource: "unknown",
           inputTokens: 12,
           outputTokens: 3,
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
           ...modelResponseTimingFields(result),
         },
       });
 
       await expect(repos.modelResponses.listByTurn(ids.turn)).resolves.toMatchObject([
         {
+          requestStartedAt: "2026-09-27T12:00:00.000Z",
           latencyMs: 240,
           timeToFirstTokenMs: 80,
           generationMs: 160,
@@ -105,6 +113,7 @@ else
       };
       const snapshot = await buildThreadSnapshot(repos, hub, statusReader, ids.thread);
       expect(snapshot.turns[0]?.responses[0]).toMatchObject({
+        requestStartedAt: "2026-09-27T12:00:00.000Z",
         latencyMs: 240,
         timeToFirstTokenMs: 80,
         generationMs: 160,

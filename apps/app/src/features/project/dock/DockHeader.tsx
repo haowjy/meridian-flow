@@ -52,7 +52,6 @@ export function DockHeader({
 }: DockHeaderProps) {
   const activity = useThreadActivity({
     threadId: threadId ?? "",
-    rootThreadId: threadId ?? "",
     seed: null,
   });
   return (
@@ -63,7 +62,7 @@ export function DockHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
         {view === "chat" && threadId ? (
-          <SubagentHeader threadId={threadId} nodes={activity.activity.descendants} />
+          <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
         ) : null}
       </div>
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />

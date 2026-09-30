@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: ".",
   testMatch: [
     "context-entry-actions.pw.ts",
+    "chat-turn-actions-component-geometry.pw.ts",
     "effective-styles.pw.ts",
     "project-chat-row-component-geometry.pw.ts",
     "work-detail-component-geometry.pw.ts",

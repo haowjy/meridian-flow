@@ -36,6 +36,11 @@ export function currentResponseTransactionId(): string | null {
   return responseTransactionStorage.getStore()?.id ?? null;
 }
 
+/** Independent replication must not enlist its durable effects in a caller response. */
+export function runOutsideResponseTransaction<T>(operation: () => T): T {
+  return responseTransactionStorage.exit(operation);
+}
+
 /** Enlists process-local state when a response transaction is active. */
 export function enlistResponseParticipant(participant: ResponseCommitParticipant): boolean {
   const transaction = responseTransactionStorage.getStore();

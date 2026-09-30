@@ -2,9 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
-import { createInMemoryCollabDomain, type MarkdownDocumentStore } from "../../../collab/index.js";
+import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
-import { ContextFS } from "./context-fs.js";
+import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
   InMemoryContextDocumentStore,
@@ -24,7 +24,7 @@ function untitledOptions(documentId: string) {
 function createUntitledFs(input: {
   sourceId?: string;
   backing?: ReturnType<typeof createInMemoryContextDocumentStoreBacking>;
-  documentSync?: MarkdownDocumentStore;
+  documentSync?: ContextFSDeps["documentSync"];
 }) {
   const backing = input.backing ?? createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({
@@ -67,11 +67,13 @@ function createKbFs(documentSync: object = {}) {
 function documentSyncProbe() {
   const ensured: string[] = [];
   const seeded: string[] = [];
-  const documentSync: MarkdownDocumentStore = {
+  const documentSync: ContextFSDeps["documentSync"] = {
+    ...createInMemoryCollabDomain(),
     ensureDocument: async (documentId) => {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
+    readVersionedMarkdown: async () => ({ ok: true, value: { content: "", revision: null } }),
     seedFromMarkdown: async (documentId) => {
       seeded.push(documentId);
       return { ok: true, value: null };
@@ -86,7 +88,7 @@ function documentSyncProbe() {
   return { documentSync, ensured, seeded };
 }
 
-function manuscriptFs(documentSync: MarkdownDocumentStore) {
+function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
@@ -140,7 +142,7 @@ describe("ContextFS createUntitledDocument", () => {
         }
         return collab.ensureDocument(documentId);
       },
-    } satisfies MarkdownDocumentStore;
+    } satisfies ContextFSDeps["documentSync"];
     const { fs, backing } = createUntitledFs({ documentSync });
 
     await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).rejects.toThrow(
@@ -253,12 +255,14 @@ describe("ContextFS createUntitledDocument", () => {
       actorUserId: null,
     }));
     const sync = {
+      ...createInMemoryCollabDomain(),
       ensureDocument: vi.fn(),
       writeDocument,
       readAsMarkdown: vi.fn(),
+      readVersionedMarkdown: vi.fn(),
       seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
       editDocument: vi.fn(),
-    } satisfies MarkdownDocumentStore;
+    } satisfies ContextFSDeps["documentSync"];
     const { fs, store } = createUntitledFs({ documentSync: sync });
 
     const created = await fs.createTrackedDocument("AI Draft.md", "Opening line", {

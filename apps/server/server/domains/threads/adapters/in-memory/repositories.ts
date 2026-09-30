@@ -5,9 +5,16 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
-import { formatThreadRef } from "@meridian/contracts/threads";
+import type { PromptBakeId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  Block,
+  ModelResponse,
+  PromptBake,
+  Thread,
+  Turn,
+  TurnUsage,
+} from "@meridian/contracts/threads";
+import { formatThreadRef, isPendingPlaceholder } from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -17,21 +24,28 @@ import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
+import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
+import { orderTurnsByPosition } from "../../order-turns.js";
 import type {
   BlockRepository,
   CreateBlockInput,
   CreateModelResponseInput,
+  CreatePromptBakeInput,
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
   InternalThreadRepositories,
   ModelResponseRepository,
+  PromptBakeRepository,
   SubagentThreadFactory,
-  ThreadDescendant,
+  ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
+  ThreadImageInclusion,
+  ThreadImageInclusionRepository,
   ThreadRepository,
   ThreadWorksRepository,
+  TranscriptItemRow,
   TurnDocumentTouch,
   TurnDocumentTouchRepository,
   TurnRepository,
@@ -68,6 +82,13 @@ function addOptionalInteger(
   return (current ?? 0) + delta;
 }
 
+function compareTranscriptKeys(
+  left: { position: number; sequence: number },
+  right: { position: number; sequence: number },
+): number {
+  return left.position - right.position || left.sequence - right.sequence;
+}
+
 function emptyTurnUsage(): TurnUsage {
   return {
     inputTokens: 0,
@@ -93,9 +114,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
     ref: null,
-    composedSystemPrompt: null,
-    bakedSkillSlugs: null,
-    bakedTools: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",
@@ -106,14 +125,14 @@ function defaultThread(input: CreateThreadInput): Thread {
     spawnStatus: normalized.spawnStatus,
     totalCostUsd: "0",
     turnCount: 0,
-    historySummary: null,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }
 
-function defaultTurn(input: CreateTurnInput): Turn {
+function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
   const now = input.createdAt ?? toIsoString(new Date());
   return {
     id: input.id ?? crypto.randomUUID(),
@@ -123,6 +142,8 @@ function defaultTurn(input: CreateTurnInput): Turn {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
+    promptBakeId: input.promptBakeId ?? null,
+    compactionModel: input.compactionModel ?? null,
     parentTurnId: input.prevTurnId ?? null,
     finishReason: null,
     model: null,
@@ -176,7 +197,9 @@ export function createInMemoryRepositories(
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
   const blocks = transactionOwner.map<string, Block>();
+  const imageInclusions = transactionOwner.map<string, ThreadImageInclusion>();
   const modelResponses = transactionOwner.map<string, ModelResponse>();
+  const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
   const documentTouches = transactionOwner.map<string, TurnDocumentTouch>();
   const threadWorks = transactionOwner.map<
@@ -204,8 +227,21 @@ export function createInMemoryRepositories(
   }
 
   function projectThread(thread: Thread): Thread {
+    let head = thread.activeLeafTurnId ? turns.get(thread.activeLeafTurnId) : undefined;
+    while (
+      head &&
+      !isVisibleConversationalTurn({
+        role: head.role,
+        metadata: head.metadata ?? null,
+        hasCustomBlock: [...blocks.values()].some(
+          (block) => block.turnId === head?.id && block.blockType === "custom",
+        ),
+      })
+    )
+      head = head.prevTurnId ? turns.get(head.prevTurnId) : undefined;
     return {
       ...thread,
+      lastActivityAt: head?.completedAt ?? head?.createdAt ?? thread.createdAt,
       workId: primaryWorkIdForThread(thread.id as ThreadId),
       ...(options.boundAgent?.(thread.id) ?? {
         agentDefinitionRevisionId: null,
@@ -253,7 +289,10 @@ export function createInMemoryRepositories(
       return insertThread(buildSubagentThreadRow(input));
     },
     async createDerivedPrimary(input) {
-      return insertThread(buildDerivedPrimaryThreadRow(input));
+      const existing = threads.get(input.id);
+      if (existing) return { thread: projectThread(existing), created: false };
+      const thread = await insertThread(buildDerivedPrimaryThreadRow(input));
+      return { thread, created: true };
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const thread = threads.get(id);
@@ -270,6 +309,10 @@ export function createInMemoryRepositories(
       const thread = threads.get(id);
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);
+    },
+    async findByIdIncludingDeleted(id) {
+      const thread = threads.get(id);
+      return thread ? projectThread(thread) : null;
     },
     async findLiveByProjectRef(projectId, ref) {
       const thread = [...threads.values()].find(
@@ -313,33 +356,51 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
-    async listDescendants(threadId) {
-      const descendants: ThreadDescendant[] = [];
-      const seen = new Set<string>([threadId]);
-      let frontier = [threadId as string];
-      while (frontier.length > 0) {
-        const level = [...threads.values()]
-          .filter((thread) => !thread.deletedAt && frontier.includes(thread.parentThreadId ?? ""))
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-        frontier = [];
-        for (const thread of level) {
-          if (seen.has(thread.id)) continue;
-          seen.add(thread.id);
-          descendants.push({
+    async listLineageChildren({ rootThreadId, parentIds, limit, after }) {
+      const nodes = [...threads.values()].flatMap((thread) => {
+        if (thread.deletedAt || thread.rootThreadId !== rootThreadId) return [];
+        const upThreadId =
+          thread.kind === "subagent"
+            ? thread.parentThreadId
+            : thread.originTurnId
+              ? turns.get(thread.originTurnId)?.threadId
+              : null;
+        return upThreadId && parentIds.includes(upThreadId)
+          ? [{ ...projectThread(thread), upThreadId }]
+          : [];
+      });
+      return nodes
+        .filter(
+          (thread) =>
+            !after ||
+            thread.createdAt < after.createdAt ||
+            (thread.createdAt === after.createdAt && thread.id < after.id),
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+        .slice(0, limit)
+        .map((thread) => ({
+          ...thread,
+          siblingCount: nodes.filter((node) => node.upThreadId === thread.upThreadId).length,
+        }));
+    },
+    async listChildren(threadId) {
+      return [...threads.values()]
+        .filter(
+          (thread) =>
+            thread.kind === "subagent" && !thread.deletedAt && thread.parentThreadId === threadId,
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .map(
+          (thread): ThreadChild => ({
             id: thread.id,
             parentThreadId: thread.parentThreadId,
-            rootThreadId: thread.rootThreadId,
-            spawnDepth: thread.spawnDepth,
             ref: thread.ref,
             title: thread.title,
             agentName: projectThread(thread).agentName ?? null,
             spawnStatus: thread.spawnStatus,
             originTurnId: thread.originTurnId ?? null,
-          });
-          frontier.push(thread.id);
-        }
-      }
-      return descendants;
+          }),
+        );
     },
     async listRecentByWork(projectId, workId, limit) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
@@ -380,21 +441,28 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
-    async bakeComposedSystemPrompt(id, input) {
+    async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (thread.bakedSkillSlugs !== null) {
-        return projectThread(thread);
+      if (thread.initialPromptBakeId != null) {
+        const bake = promptBakes.get(thread.initialPromptBakeId);
+        if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
+        return { thread: projectThread(thread), bake };
       }
+      const bake: PromptBake = {
+        ...input,
+        id: crypto.randomUUID() as PromptBakeId,
+        ownerThreadId: id,
+        createdAt: toIsoString(new Date()),
+      };
+      promptBakes.set(bake.id, bake);
       const updated = {
         ...thread,
-        composedSystemPrompt: input.composedSystemPrompt,
-        bakedSkillSlugs: input.bakedSkillSlugs,
-        bakedTools: input.bakedTools,
+        initialPromptBakeId: bake.id,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
-      return projectThread(updated);
+      return { thread: projectThread(updated), bake };
     },
     async recomputeCostFromModelResponses(id) {
       const thread = threads.get(id);
@@ -515,19 +583,34 @@ export function createInMemoryRepositories(
 
   const turnRepo: TurnRepository = {
     async create(input) {
-      const turn = defaultTurn(input);
-      const existing = turns.get(turn.id);
+      const turnDraft = defaultTurn(input);
+      const existing = turns.get(turnDraft.id);
       if (existing) return existing;
       if (
-        !turn.prevTurnId &&
+        !turnDraft.prevTurnId &&
         [...turns.values()].some(
-          (candidate) => candidate.threadId === turn.threadId && !candidate.prevTurnId,
+          (candidate) => candidate.threadId === turnDraft.threadId && !candidate.prevTurnId,
         )
       ) {
-        throw new TurnStartConflictError(turn.threadId, "already_exists");
+        throw new TurnStartConflictError(turnDraft.threadId, "already_exists");
       }
+      const localTurns = [...turns.values()].filter(
+        (candidate) => candidate.threadId === turnDraft.threadId,
+      );
+      const latestPosition = localTurns.reduce(
+        (latest, candidate) => Math.max(latest, candidate.position),
+        0,
+      );
+      const thread = threads.get(turnDraft.threadId);
+      let position = latestPosition + 1;
+      if (localTurns.length === 0 && thread?.originType === "fork") {
+        if (!thread.originTurnId) throw new Error(`Fork thread ${thread.id} has no cutoff turn`);
+        const forkCutoff = turns.get(thread.originTurnId);
+        if (!forkCutoff) throw new Error(`Fork cutoff turn not found: ${thread.originTurnId}`);
+        position = forkCutoff.position + 1;
+      }
+      const turn: Turn = { ...turnDraft, position };
       turns.set(turn.id, turn);
-      const thread = threads.get(turn.threadId);
       if (thread) {
         threads.set(turn.threadId, { ...thread, activeLeafTurnId: turn.id });
       }
@@ -536,10 +619,205 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
+    async findLatestHandoffSeed(threadId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter((turn) => {
+            const metadata = turn.metadata as
+              | import("@meridian/contracts/threads").JsonObject
+              | null;
+            return (
+              turn.threadId === threadId &&
+              turn.role === "system" &&
+              metadata?.kind === "derivation_seed" &&
+              metadata?.derivation === "handoff"
+            );
+          }),
+        ).at(-1) ?? null
+      );
+    },
+    async findByControlId(threadId, controlId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter((turn) => {
+            const metadata = turn.metadata as
+              | import("@meridian/contracts/threads").JsonObject
+              | null;
+            return turn.threadId === threadId && metadata?.controlMessageId === controlId;
+          }),
+        ).at(-1) ?? null
+      );
+    },
     async listByThread(threadId) {
+      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
+    },
+    async listLatestLocalRequesterText(threadIds) {
+      const requested = new Set(threadIds);
+      const latest = new Map<ThreadId, Turn>();
+      for (const turn of turns.values()) {
+        if (!requested.has(turn.threadId as ThreadId) || turn.role !== "user") continue;
+        const thread = threads.get(turn.threadId);
+        const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
+        const requester =
+          thread?.kind === "subagent"
+            ? turn.origin === "system" && metadata?.kind === "inbox_message"
+            : turn.origin === "writer";
+        if (!requester) continue;
+        const previous = latest.get(turn.threadId as ThreadId);
+        if (!previous || turn.position > previous.position) {
+          latest.set(turn.threadId as ThreadId, turn);
+        }
+      }
+      return new Map(
+        [...latest].flatMap(([threadId, turn]) => {
+          const text = [...blocks.values()]
+            .filter(
+              (block) =>
+                block.turnId === turn.id && block.blockType === "text" && block.textContent?.trim(),
+            )
+            .sort((left, right) => left.sequence - right.sequence)
+            .map((block) => block.textContent)
+            .join("\n");
+          return text ? [[threadId, text] as const] : [];
+        }),
+      );
+    },
+    async listPendingPlaceholders(limit, afterTurnId) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...turns.values()]
-        .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        .filter((turn) => isPendingPlaceholder(turn) && (!afterTurnId || turn.id > afterTurnId))
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .slice(0, limit)
+        .map(({ id, threadId: ownerThreadId, role }) => ({
+          id,
+          threadId: ownerThreadId as ThreadId,
+          role,
+        }));
+    },
+    async readTranscriptItems(input) {
+      const items: TranscriptItemRow[] = [];
+      for (const span of input.spans) {
+        const localTurns = [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === span.threadId &&
+            turn.position > span.afterPosition &&
+            (span.throughPosition === null || turn.position <= span.throughPosition),
+        );
+        for (const turn of localTurns) {
+          const ownedBlocks = [...blocks.values()].filter((block) => block.turnId === turn.id);
+          const turnItems: TranscriptItemRow[] =
+            input.unit === "turn"
+              ? [{ turn, block: null, sequence: -1 }]
+              : ownedBlocks.length > 0
+                ? ownedBlocks.map((block) => ({ turn, block, sequence: block.sequence }))
+                : [{ turn, block: null, sequence: -1 }];
+          for (const item of turnItems) {
+            const key = { position: item.turn.position, sequence: item.sequence };
+            if (input.unit === "turn") {
+              if (input.through && key.position > input.through.position) continue;
+              if (
+                input.after &&
+                (input.order === "newest_first"
+                  ? key.position >= input.after.position
+                  : key.position <= input.after.position)
+              )
+                continue;
+            } else {
+              if (input.through && compareTranscriptKeys(key, input.through) > 0) continue;
+              if (input.after) {
+                const comparison = compareTranscriptKeys(key, input.after);
+                if (input.order === "newest_first" ? comparison >= 0 : comparison <= 0) continue;
+              }
+            }
+            items.push(item);
+          }
+        }
+      }
+      items.sort((left, right) => {
+        const comparison = compareTranscriptKeys(
+          { position: left.turn.position, sequence: left.sequence },
+          { position: right.turn.position, sequence: right.sequence },
+        );
+        return input.order === "newest_first" ? -comparison : comparison;
+      });
+      if (input.unit === "turn") {
+        const uniqueTurns = new Map(items.map((item) => [item.turn.id, item]));
+        return [...uniqueTurns.values()].slice(0, input.limit + 1).flatMap((item) => {
+          const owned = [...blocks.values()]
+            .filter((block) => block.turnId === item.turn.id)
+            .sort((left, right) => left.sequence - right.sequence);
+          return owned.length > 0
+            ? owned.map((block) => ({ turn: item.turn, block, sequence: block.sequence }))
+            : [item];
+        });
+      }
+      return items.slice(0, input.limit + 1);
+    },
+    async findFirstUnsettledTranscriptTurn(spans) {
+      const matches = spans.flatMap((span) =>
+        [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === span.threadId &&
+            turn.position > span.afterPosition &&
+            (span.throughPosition === null || turn.position <= span.throughPosition) &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt"),
+        ),
+      );
+      return matches.sort((left, right) => left.position - right.position)[0] ?? null;
+    },
+    async listUnsettledForThread(threadId) {
+      return orderTurnsByPosition(
+        [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === threadId &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt"),
+        ),
+      );
+    },
+    async listTranscriptBoundaries(spans) {
+      return spans
+        .flatMap((span) =>
+          [...turns.values()].filter(
+            (turn) =>
+              turn.threadId === span.threadId &&
+              turn.position > span.afterPosition &&
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              turn.promptBakeId !== null &&
+              turn.status === "complete",
+          ),
+        )
+        .sort((left, right) => left.position - right.position);
+    },
+    async listUnsettledPrimaryTurns(limit, after) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      return [...turns.values()]
+        .filter(
+          (turn) =>
+            threads.get(turn.threadId)?.kind === "primary" &&
+            turn.role === "assistant" &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt") &&
+            (!after ||
+              turn.threadId.localeCompare(after.threadId) > 0 ||
+              (turn.threadId === after.threadId && turn.position > after.position)),
+        )
+        .sort(
+          (left, right) =>
+            left.threadId.localeCompare(right.threadId) || left.position - right.position,
+        )
+        .slice(0, limit)
+        .map(({ id, threadId, position, role, status }) => ({
+          id,
+          threadId: threadId as ThreadId,
+          position,
+          role,
+          status,
+        }));
     },
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
@@ -563,6 +841,13 @@ export function createInMemoryRepositories(
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const turn = turns.get(id);
       if (!turn) throw new Error(`Turn not found: ${id}`);
+      if (
+        turn.promptBakeId != null &&
+        input.promptBakeId !== undefined &&
+        input.promptBakeId !== turn.promptBakeId
+      ) {
+        throw new Error("Turn prompt bake pointer is write-once");
+      }
       const updated: Turn = {
         ...turn,
         status: input.status,
@@ -574,6 +859,10 @@ export function createInMemoryRepositories(
               : toIsoString(input.completedAt)
             : turn.completedAt,
         error: input.error !== undefined ? input.error : turn.error,
+        compactionModel: input.compactionModel ?? turn.compactionModel ?? null,
+        promptBakeId:
+          input.promptBakeId !== undefined ? input.promptBakeId : (turn.promptBakeId ?? null),
+        metadata: input.metadata !== undefined ? input.metadata : (turn.metadata ?? null),
       };
       turns.set(id, updated);
       return updated;
@@ -630,6 +919,18 @@ export function createInMemoryRepositories(
   };
 
   const blockRepo: BlockRepository = {
+    async listToolBlocks(keys) {
+      const selected = new Set(
+        keys.map(({ turnId, toolCallId }) => JSON.stringify([turnId, toolCallId])),
+      );
+      return [...blocks.values()].filter(
+        (block) =>
+          (block.blockType === "tool_use" || block.blockType === "tool_result") &&
+          selected.has(
+            JSON.stringify([block.turnId, (block.content as { toolCallId?: string })?.toolCallId]),
+          ),
+      );
+    },
     async create(input: CreateBlockInput) {
       const block: Block = {
         id: input.id ?? crypto.randomUUID(),
@@ -645,7 +946,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        pruned: false,
         createdAt: toIsoString(new Date()),
       };
       blocks.set(block.id, block);
@@ -668,7 +968,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        pruned: existing?.pruned ?? false,
         createdAt: existing?.createdAt ?? toIsoString(new Date()),
       };
       blocks.set(block.id, block);
@@ -700,9 +999,9 @@ export function createInMemoryRepositories(
         .sort((a, b) => a.sequence - b.sequence);
     },
     async listByThread(threadId: ThreadId) {
-      const orderedTurns = [...turns.values()]
-        .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const orderedTurns = orderTurnsByPosition(
+        [...turns.values()].filter((t) => t.threadId === threadId),
+      );
       const turnOrder = new Map(orderedTurns.map((turn, index) => [turn.id as string, index]));
       return [...blocks.values()]
         .filter((b) => turnOrder.has(b.turnId as string))
@@ -711,13 +1010,6 @@ export function createInMemoryRepositories(
             (turnOrder.get(a.turnId as string) ?? 0) - (turnOrder.get(b.turnId as string) ?? 0);
           return turnDelta === 0 ? a.sequence - b.sequence : turnDelta;
         });
-    },
-    async updatePruned(id, pruned) {
-      const block = blocks.get(id);
-      if (!block) return null;
-      const updated = { ...block, pruned };
-      blocks.set(id, updated);
-      return updated;
     },
   };
 
@@ -746,9 +1038,13 @@ export function createInMemoryRepositories(
         pricingSnapshot: input.pricingSnapshot ?? null,
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
+        requestMessageCount: input.requestMessageCount,
+        requestStartedAt: input.requestStartedAt ?? null,
         timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
         generationMs: input.generationMs ?? null,
         rawUsage: input.rawUsage ?? null,
+        predictedCacheState: input.predictedCacheState,
+        predictedCacheReason: input.predictedCacheReason,
         createdAt: toIsoString(new Date()),
       };
       modelResponses.set(row.id, row);
@@ -756,6 +1052,60 @@ export function createInMemoryRepositories(
     },
     async findById(id) {
       return modelResponses.get(id) ?? null;
+    },
+    async findLatestByThread(threadId) {
+      const turnById = new Map(
+        [...turns.values()]
+          .filter((turn) => turn.threadId === threadId)
+          .map((turn) => [turn.id, turn]),
+      );
+      const latest = [...modelResponses.values()]
+        .flatMap((response) => {
+          const turn = turnById.get(response.turnId);
+          return turn && turn.role === "assistant" ? [{ response, turn }] : [];
+        })
+        .sort(
+          (left, right) =>
+            right.turn.position - left.turn.position ||
+            right.response.sequence - left.response.sequence,
+        )[0]?.response;
+      return latest
+        ? {
+            turnId: latest.turnId,
+            sequence: latest.sequence,
+            model: latest.model,
+            requestStartedAt: latest.requestStartedAt,
+            inputTokens: latest.inputTokens,
+            requestMessageCount: latest.requestMessageCount,
+          }
+        : null;
+    },
+    async findLatestForTurns(turnIds) {
+      const turnById = new Map(
+        [...turns.values()]
+          .filter((turn) => turnIds.includes(turn.id))
+          .map((turn) => [turn.id, turn]),
+      );
+      const latest = [...modelResponses.values()]
+        .flatMap((response) => {
+          const turn = turnById.get(response.turnId);
+          return turn && turn.role === "assistant" ? [{ response, turn }] : [];
+        })
+        .sort(
+          (left, right) =>
+            right.turn.position - left.turn.position ||
+            right.response.sequence - left.response.sequence,
+        )[0]?.response;
+      return latest
+        ? {
+            turnId: latest.turnId,
+            sequence: latest.sequence,
+            model: latest.model,
+            requestStartedAt: latest.requestStartedAt,
+            inputTokens: latest.inputTokens,
+            requestMessageCount: latest.requestMessageCount,
+          }
+        : null;
     },
     async listByThread(threadId) {
       const turnIds = new Set(
@@ -792,7 +1142,11 @@ export function createInMemoryRepositories(
     },
     async cacheResetContext(threadId) {
       const responses = await this.listByThread(threadId);
-      const ordered = responses.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const ordered = responses.sort(
+        (a, b) =>
+          (turns.get(b.turnId)?.position ?? 0) - (turns.get(a.turnId)?.position ?? 0) ||
+          b.sequence - a.sequence,
+      );
       return {
         hasCacheActivity: responses.some(
           (response) => (response.cacheReadTokens ?? 0) > 0 || (response.cacheWriteTokens ?? 0) > 0,
@@ -804,6 +1158,21 @@ export function createInMemoryRepositories(
       return [...modelResponses.values()]
         .filter((r) => r.turnId === turnId)
         .sort((a, b) => a.sequence - b.sequence);
+    },
+  };
+
+  const promptBakeRepo: PromptBakeRepository = {
+    async create(input: CreatePromptBakeInput) {
+      const bake: PromptBake = {
+        ...input,
+        id: crypto.randomUUID() as PromptBakeId,
+        createdAt: toIsoString(new Date()),
+      };
+      promptBakes.set(bake.id, bake);
+      return bake;
+    },
+    async findById(id) {
+      return promptBakes.get(id) ?? null;
     },
   };
 
@@ -896,13 +1265,40 @@ export function createInMemoryRepositories(
     userStateByThreadUser,
   );
 
+  const imageInclusionsRepo: ThreadImageInclusionRepository = {
+    async findByThread(threadId) {
+      const latest = new Map<string, ThreadImageInclusion>();
+      const history = [...imageInclusions.values()]
+        .filter((row) => row.threadId === threadId)
+        .sort(
+          (left, right) =>
+            (turns.get(left.decisionTurnId)?.position ?? 0) -
+            (turns.get(right.decisionTurnId)?.position ?? 0),
+        );
+      for (const row of history) latest.set(row.blockId, row);
+      return [...latest.values()].map((row) => ({ ...row }));
+    },
+    async listByThread(threadId) {
+      return [...imageInclusions.values()]
+        .filter((row) => row.threadId === threadId)
+        .map((row) => ({ ...row }));
+    },
+    async set(input) {
+      imageInclusions.set(`${input.threadId}\0${input.blockId}\0${input.decisionTurnId}`, {
+        ...input,
+      });
+    },
+  };
+
   return {
     threads: threadRepo,
     chatFeed,
     threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,
+    promptBakes: promptBakeRepo,
     blocks: blockRepo,
+    imageInclusions: imageInclusionsRepo,
     modelResponses: modelResponseRepo,
     executionReports: createInMemoryExecutionReportRepository(transactionOwner, {
       threads,

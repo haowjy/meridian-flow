@@ -2,7 +2,7 @@
 
 Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (plain `postgres:16` Docker container in dev).
 
-- PL/pgSQL functions live in `src/functions/` and are applied with `pnpm db:apply-functions`.
+- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies them after migrations; `pnpm db:apply-functions` is the guarded standalone sync command.
 - Keep provider-specific auth assumptions at the adapter/composition boundary; schema should remain ordinary Postgres where possible.
 - Thread-domain usage/cost rollups are persisted columns maintained by
   application repositories/projectors, not database triggers or functions.
@@ -19,7 +19,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Migrations: fresh-install baseline `0000_baseline.sql` (no
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
-  migration.
+  migration. When merging branches whose migrations collide, delete the
+  incoming migration and regenerate it from the merged schema; never renumber
+  or rename by hand (see `.context/CONTEXT.md`).
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Never
   reset another developer's database. Legacy imports are a separate ETL.

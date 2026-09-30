@@ -90,6 +90,27 @@ describe("durable custom projection reduction", () => {
     expect(api.getState().turns("thread-1")?.[0]?.blocks).toHaveLength(0);
   });
 
+  it("does not project meridian.agent.spawn into a transcript block", () => {
+    const api = store();
+    api.getState().ensureAssistantTurn("thread-1", "turn-1");
+
+    applyAguiEventToStore(
+      api.getState(),
+      "thread-1",
+      customEvent("meridian.agent.spawn", {
+        type: "agent.spawn",
+        parentThreadId: "thread-1",
+        parentTurnId: "turn-1",
+        childThreadId: "child-1",
+        agentSlug: "critic",
+        prompt: "Review chapter 12 against the outline.",
+        fromThreadId: "source-1",
+      }),
+    );
+
+    expect(api.getState().turns("thread-1")?.[0]?.blocks).toHaveLength(0);
+  });
+
   it("does not project meridian.work_context.changed into a transcript block", () => {
     const api = store();
     api.getState().ensureAssistantTurn("thread-1", "turn-1");

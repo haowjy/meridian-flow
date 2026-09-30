@@ -1,4 +1,5 @@
 /** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
+import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { type Block, blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
 import { oneLine, truncate } from "../../core/output";
@@ -9,6 +10,7 @@ export type CompactBlock =
   | { kind: "text" | "reasoning"; text: string }
   | { kind: "tool_call"; toolCallId: string; name: string; input: unknown }
   | { kind: "tool_result"; toolCallId: string; output: unknown; isError: boolean }
+  | { kind: "thread-reference"; props: ThreadReferenceProps }
   | { kind: "other"; blockType: string; summary: string };
 
 export type CompactTurn = {
@@ -19,6 +21,18 @@ export type CompactTurn = {
   finishReason: Turn["finishReason"];
   model: string | null;
   error: string | null;
+  failureReason?: string;
+  compactionMetadata?: {
+    trigger?: string;
+    controlMessageId?: string;
+    instructions?: string;
+    reason?: string;
+    phase?: string;
+    estimatedTokens?: number;
+    fitLimitTokens?: number;
+    tokensBefore?: number;
+    tokensAfter?: number;
+  };
   createdAt: string;
   usage: { inputTokens: number; outputTokens: number; costUsd: string };
   blocks: CompactBlock[];
@@ -65,6 +79,8 @@ function clip(value: unknown, limit: number, full: boolean): unknown {
 
 export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlock {
   const content = asRecord(block.content);
+  if (block.blockType === "custom" && content.kind === "thread-reference")
+    return { kind: "thread-reference", props: content.props as ThreadReferenceProps };
   switch (block.blockType) {
     case "text":
     case "reasoning":
@@ -102,6 +118,41 @@ export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlo
 }
 
 export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
+  const metadata = asRecord(turn.metadata);
+  const summaryBlock = turn.blocks.find(
+    (block) => block.blockType === "custom" && asRecord(block.content).kind === "compaction",
+  );
+  const summaryProps = asRecord(asRecord(summaryBlock?.content).props);
+  const compactionMetadata =
+    turn.role === "compaction"
+      ? {
+          ...(typeof metadata.trigger === "string" ? { trigger: metadata.trigger } : {}),
+          ...(typeof metadata.controlMessageId === "string"
+            ? { controlMessageId: metadata.controlMessageId }
+            : {}),
+          ...(typeof metadata.instructions === "string"
+            ? { instructions: metadata.instructions }
+            : {}),
+          ...(typeof metadata.reason === "string" ? { reason: metadata.reason } : {}),
+          ...(typeof metadata.phase === "string" ? { phase: metadata.phase } : {}),
+          ...(typeof metadata.estimatedTokens === "number"
+            ? { estimatedTokens: metadata.estimatedTokens }
+            : {}),
+          ...(typeof metadata.fitLimitTokens === "number"
+            ? { fitLimitTokens: metadata.fitLimitTokens }
+            : {}),
+          ...(typeof metadata.tokensBefore === "number"
+            ? { tokensBefore: metadata.tokensBefore }
+            : typeof summaryProps?.tokensBefore === "number"
+              ? { tokensBefore: summaryProps.tokensBefore }
+              : {}),
+          ...(typeof metadata.tokensAfter === "number"
+            ? { tokensAfter: metadata.tokensAfter }
+            : typeof summaryProps?.tokensAfter === "number"
+              ? { tokensAfter: summaryProps.tokensAfter }
+              : {}),
+        }
+      : undefined;
   return {
     id: turn.id,
     role: turn.role,
@@ -110,6 +161,12 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
     finishReason: turn.finishReason,
     model: turn.model ?? null,
     error: turn.error,
+    ...(turn.role === "assistant" && turn.status === "error" && typeof metadata.reason === "string"
+      ? { failureReason: metadata.reason }
+      : {}),
+    ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
+      ? { compactionMetadata }
+      : {}),
     createdAt: turn.createdAt,
     usage: {
       inputTokens: turn.inputTokens,
@@ -184,6 +241,8 @@ function renderBlock(block: CompactBlock): string {
         typeof block.output === "string" ? block.output : (JSON.stringify(block.output) ?? "");
       return `tool_result [${block.toolCallId}]${block.isError ? " ERROR" : ""}: ${oneLine(output)}`;
     }
+    case "thread-reference":
+      return block.props.text;
     case "other":
       return `(${block.blockType}) ${block.summary}`;
   }
@@ -203,6 +262,19 @@ export function renderThreadView(view: ThreadView): string {
       `[${turn.role}] ${turn.id} ${turn.status}${turn.finishReason ? `/${turn.finishReason}` : ""}${turn.model ? ` ${turn.model}` : ""}${turn.role === "assistant" ? ` in=${turn.usage.inputTokens} out=${turn.usage.outputTokens}` : ""}`,
     );
     if (turn.error) lines.push(`  error: ${turn.error}`);
+    if (turn.role === "assistant" && turn.status === "error" && turn.failureReason)
+      lines.push(`  failure reason: ${turn.failureReason}`);
+    if (turn.role === "compaction" && turn.compactionMetadata?.instructions)
+      lines.push(`  instructions: ${turn.compactionMetadata.instructions}`);
+    if (
+      turn.role === "compaction" &&
+      turn.status === "error" &&
+      turn.compactionMetadata?.reason &&
+      turn.compactionMetadata.phase
+    )
+      lines.push(
+        `  compaction failure: ${turn.compactionMetadata.reason} during ${turn.compactionMetadata.phase}`,
+      );
     for (const block of turn.blocks) {
       const rendered = renderBlock(block);
       if (rendered) lines.push(...rendered.split("\n").map((line) => `  ${line}`));

@@ -8,6 +8,7 @@ export type InternalWriteResult = InternalWriteResultBase &
 
 interface InternalWriteResultBase {
   text: string;
+  revision?: string | null;
   model?: AgentEditModelPayload;
   writeId?: string;
   settlementId?: string;

@@ -25,6 +25,7 @@ describe("reverseTurn", () => {
           return {
             command: "undo" as const,
             status: "cant_undo_dependent" as const,
+            revision: null,
             isError: true,
             text: "status: cant_undo_dependent",
             result: modelResult({ command: "undo", status: "cant_undo_dependent" }),

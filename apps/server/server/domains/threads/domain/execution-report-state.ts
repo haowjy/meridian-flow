@@ -68,7 +68,7 @@ function canonical(value: unknown): string | undefined {
 export function reportIdentity(input: AdmitExecutionReportInput) {
   return {
     childThreadId: input.childThreadId,
-    assistantTurnId: input.assistantTurnId,
+    executionTurnId: input.executionTurnId,
     handle: input.handle,
     origin: input.origin,
     deliveryMode: input.deliveryMode,
@@ -112,7 +112,7 @@ export function assertReportCapture(
 
 export function reportTerminalContent(input: FinalizeExecutionReportInput) {
   return {
-    terminalAssistantTurnId: input.terminalAssistantTurnId ?? input.assistantTurnId,
+    terminalTurnId: input.terminalTurnId ?? input.executionTurnId,
     outcome: input.outcome,
     reason: input.reason,
     source: input.source,
