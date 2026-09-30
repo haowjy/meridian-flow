@@ -26,7 +26,7 @@ import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
 import { WorkChatsTab } from "./WorkChatsTab";
 import { WorkFilesTab } from "./WorkFilesTab";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
-import { WorkStatusLabel } from "./WorkStatusLabel";
+import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
 import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
@@ -64,11 +64,7 @@ export function WorkScreenHeader({
   return (
     <>
       <header className="flex min-w-0 flex-col gap-1.5">
-        {/* The title truncates to leave the status its (capped) width. */}
-        <div className="flex min-w-0 items-center gap-3">
-          {title}
-          <WorkStatusLabel status={status} size="heading" />
-        </div>
+        <WorkTitleLine title={title} status={status} size="heading" />
         {/* A bordered box needs more air than the title-to-goal line gap. */}
         {notice ? <div className="mt-1.5 min-w-0 not-last:mb-1.5">{notice}</div> : null}
         {details}

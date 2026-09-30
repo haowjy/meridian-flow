@@ -8,7 +8,7 @@ import type { Work } from "@meridian/contracts/works";
 import type { MouseEvent, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "../relative-time";
-import { WorkStatusLabel } from "./WorkStatusLabel";
+import { WorkTitleLine } from "./WorkTitleLine";
 
 export function WorkRow({
   work,
@@ -43,10 +43,14 @@ export function WorkRow({
         <span className="sr-only">
           {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
         </span>
-        <span aria-hidden className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
-          <WorkStatusLabel status={work.status} />
-        </span>
+        <div aria-hidden>
+          <WorkTitleLine
+            title={
+              <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
+            }
+            status={work.status}
+          />
+        </div>
         {work.goal ? (
           <span aria-hidden className="block truncate text-xs text-muted-foreground">
             {work.goal.split("\n").find((line) => line.trim()) ?? ""}

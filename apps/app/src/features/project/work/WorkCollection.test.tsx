@@ -151,7 +151,7 @@ async function showTab(view: WorksView) {
 
 /** Names of the Work rows in the visible list. */
 const rowNames = () =>
-  [...document.querySelectorAll("li a span[aria-hidden]")].map((node) => node.textContent);
+  [...document.querySelectorAll("li a div[aria-hidden]")].map((node) => node.textContent);
 
 const band = () => document.querySelector('[data-testid="band"]');
 const listAlerts = () =>
