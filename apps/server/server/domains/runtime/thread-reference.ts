@@ -11,10 +11,10 @@ export function threadReferenceText(source: {
   const title = source.title ? JSON.stringify(source.title) : "";
   const agent = source.agentName ? ` (Agent: ${source.agentName})` : "";
   const activity = source.lastActivityAt
-    ? `, last active ${source.lastActivityAt.slice(0, 16).replace("T", " ")} UTC`
+    ? `last active ${source.lastActivityAt.slice(0, 16).replace("T", " ")} UTC`
     : "";
   const args = JSON.stringify({ ref: source.ref });
-  const details = `${title}${agent}${activity}`;
+  const details = [`${title}${agent}`.trim(), activity].filter(Boolean).join(", ");
   return `<thread_reference ref="${source.ref}">${details ? `\n${details}. ` : ""}Not included here; read it with thread_history(${args}).${details ? "\n" : ""}</thread_reference>`;
 }
 
