@@ -239,16 +239,18 @@ export function defineThreadHistoryContract(
 
     it("keeps a failed reply labelled assistant with its error after a later writer turn", async () => {
       const f = await fixture();
-      const failed = await f.turn("assistant", null, "error");
+      const failed = await f.turn("assistant", { reason: "image_resolution_failed" }, "error");
       await f.block(failed, "text", "Partial scene.");
       await f.repos.turns.updateStatus(failed.id, {
         status: "error",
-        error: "provider unavailable",
+        error: "This response failed.",
       });
       await f.block(await f.turn("user", null, "complete", "writer"), "text", "Move on.");
       const text = output(await f.read({ order: "oldest_first" }));
       expect(text).toContain(`[${failed.position}.0] assistant`);
-      expect(text).toContain("Partial scene.\nerror: provider unavailable");
+      expect(text).toContain(
+        "Partial scene.\nerror: This response failed.\nfailure reason: image_resolution_failed",
+      );
       expect(text).toContain("Move on.");
     });
 

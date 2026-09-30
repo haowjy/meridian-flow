@@ -61,6 +61,8 @@ export function renderHistoryItem(input: {
   const handle = `${turn.position}${sequence < 0 ? "" : `.${sequence}`}`;
   const documents: DocumentRevisionEvidence[] = [];
   const metadata = turn.metadata as JsonObject | null;
+  const failureReason =
+    turn.status === "error" && typeof metadata?.reason === "string" ? metadata.reason : undefined;
   const cardKind =
     block?.blockType === "custom" && kind.kind === "assistant_response"
       ? String((block.content as JsonObject).kind)
@@ -86,7 +88,7 @@ export function renderHistoryItem(input: {
         : kind.kind === "writer_request"
           ? "writer"
           : "agent";
-    body = `${turn.status}${turn.error ? `: ${turn.error}` : ""}`;
+    body = `${turn.status}${turn.error ? `: ${turn.error}` : ""}${failureReason ? `\nfailure reason: ${failureReason}` : ""}`;
   } else if (block.blockType === "tool_use" || block.blockType === "tool_result") {
     if (block.blockType === "tool_result" && !expand && !include.has("tool_results")) return null;
     const content = block.content as JsonObject;
@@ -167,6 +169,6 @@ export function renderHistoryItem(input: {
     position: turn.position,
     sequence,
     documents,
-    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}\n${body}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}`,
+    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}\n${body}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
   };
 }
