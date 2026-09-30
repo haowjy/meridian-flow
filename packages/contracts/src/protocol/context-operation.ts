@@ -13,7 +13,12 @@ export type ContextError =
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string }
-  | { code: "context_unavailable"; uri: string; message?: string }
+  | {
+      code: "context_unavailable";
+      uri: string;
+      reason: "work_archived" | "work_deleted" | "work_missing";
+      workSlug: string | null;
+    }
   | {
       code: "invalid_uri";
       uri: string;

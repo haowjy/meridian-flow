@@ -2,6 +2,7 @@
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { ProjectChatFeedPage } from "@meridian/contracts/threads";
+import { workLifecycleState } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
 import type { ProjectChatFeedRepository } from "../ports/repositories.js";
 import { getChatFeedPage } from "./chat-feed-page.js";
@@ -29,7 +30,7 @@ export async function getProjectChatFeedPage(input: {
   const workId = input.workId;
   if (workId) {
     const work = await input.works.findById(workId);
-    if (!work || work.projectId !== input.projectId || work.deletedAt) {
+    if (!work || work.projectId !== input.projectId || workLifecycleState(work) === "deleted") {
       throw new ProjectChatFeedWorkUnavailableError();
     }
   }

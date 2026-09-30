@@ -23,6 +23,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../lib/interrupt-boundary.js");
+    const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
+    const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
     const { createDrizzleProjectContextAvailability } = await import(
       "../context/adapters/project-context-availability.js"
     );
@@ -35,7 +38,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleProjectWorkAuthorityResolver,
       deleteWorkTransition,
       restoreWork,
-      updateActiveWorkMetadata,
       updateWorkTransition,
       WorkRestoreConflictError,
       WorkRestoreExpiredError,
@@ -64,6 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const threadRepos = createDrizzleRepositoriesForTest(db);
     const authorities = createDrizzleProjectWorkAuthorityResolver(db);
+    const projects = createProjectRepositoryForTest({ db });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -121,12 +124,59 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await works.archive(work.id);
 
       await expect(
-        updateActiveWorkMetadata(deps, work.id, { goal: "Should not change" }),
+        updateWorkTransition(deps, work.id, { goal: "Should not change" }),
       ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
       await works.unarchive(work.id);
       await expect(
-        updateActiveWorkMetadata(deps, work.id, { goal: "Writable again" }),
+        updateWorkTransition(deps, work.id, { goal: "Writable again" }),
       ).resolves.toMatchObject({ after: { goal: "Writable again", archivedAt: null } });
+    });
+
+    it("returns coded PATCH refusals for archived and deleted Works", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "PATCH lifecycle" });
+      const deps = {
+        works,
+        projects,
+        workContextNotices: { async projectChanged() {} },
+      };
+      const codeFrom = async (operation: Promise<unknown>) => {
+        try {
+          await operation;
+          throw new Error("Expected Work metadata refusal");
+        } catch (error) {
+          const data = (error as { data?: Record<string, unknown> }).data;
+          const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY] as
+            | { error?: { code?: string } }
+            | undefined;
+          return {
+            status: (error as { statusCode?: number }).statusCode,
+            code: envelope?.error?.code,
+          };
+        }
+      };
+
+      await works.archive(work.id);
+      await expect(
+        codeFrom(
+          updateWorkMetadataForWriter(deps, {
+            workId: work.id,
+            userId: USER_ID,
+            goal: "Blocked",
+          }),
+        ),
+      ).resolves.toEqual({ status: 409, code: "work_archived" });
+
+      await works.unarchive(work.id);
+      await works.softDelete(work.id);
+      await expect(
+        codeFrom(
+          updateWorkMetadataForWriter(deps, {
+            workId: work.id,
+            userId: USER_ID,
+            goal: "Gone",
+          }),
+        ),
+      ).resolves.toEqual({ status: 404, code: "work_not_found" });
     });
 
     it("generates deduplicated handles and keeps them through rename", async () => {

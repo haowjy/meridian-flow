@@ -77,11 +77,7 @@ export type RetireAdmissionResult =
   | { kind: "pending"; submissionId: string }
   | { kind: "rejected"; submissionId: string; code: string };
 
-export type AdmissionErrorCode =
-  | "idempotency_conflict"
-  | "invalid_message"
-  | "work_archived"
-  | "work_unavailable";
+export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "work_unavailable";
 
 export type UserTurnAdmissionResult =
   | AcceptedAdmission

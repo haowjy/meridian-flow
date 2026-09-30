@@ -1,6 +1,7 @@
 /** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
+import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,
@@ -164,7 +165,10 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       return [...rows.values()]
         .filter((w) => w.projectId === projectId && (opts?.includeDeleted || w.deletedAt === null))
-        .filter((w) => opts?.archived === undefined || (w.archivedAt !== null) === opts.archived)
+        .filter((w) => {
+          const lifecycle = opts?.lifecycle ?? "active";
+          return lifecycle === "all" || (w.archivedAt !== null) === (lifecycle === "archived");
+        })
         .filter((w) => opts?.includeNoWork || !w.isNoWork)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
@@ -180,7 +184,8 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
 
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) {
         if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
@@ -195,12 +200,13 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       return { ...row };
     },
 
-    async archive(id: WorkId, archivedAt?: string): Promise<Work> {
+    async archive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
       if (row.archivedAt === null) {
-        row.archivedAt = archivedAt ?? now();
+        row.archivedAt = now();
         row.updatedAt = row.archivedAt;
         row.lastActivityAt = row.updatedAt;
         advance(row);
@@ -210,7 +216,8 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
 
     async unarchive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
       if (row.archivedAt !== null) {
         row.archivedAt = null;

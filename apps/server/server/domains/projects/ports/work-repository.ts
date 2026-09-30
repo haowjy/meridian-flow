@@ -25,8 +25,8 @@ export interface UpdateWorkInput {
 export interface ListWorksOptions {
   /** Include soft-deleted works. Defaults to false. */
   includeDeleted?: boolean;
-  /** Filter by archive lifecycle. Omit to include both. */
-  archived?: boolean;
+  /** Archive lifecycle selection. Defaults to active. */
+  lifecycle?: "active" | "archived" | "all";
   /** Include the locked No Work row. Defaults to false. */
   includeNoWork?: boolean;
 }
@@ -110,7 +110,7 @@ export interface WorkRepository {
     authorityRevision: string;
   }>;
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
-  archive(id: WorkId, archivedAt?: string): Promise<Work>;
+  archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
   /** Soft-deletes the Work and marks its live children in the same transaction. */
   softDelete(id: WorkId): Promise<WorkDeletion>;

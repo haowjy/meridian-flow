@@ -15,7 +15,11 @@ import {
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
-import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
+import {
+  INVALID_WORK_STATUS,
+  normalizeWorkStatus,
+  WORK_STATUS_MAX_LENGTH,
+} from "@meridian/contracts/works";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { writeToolDescription } from "./write-tool-description.js";
@@ -38,12 +42,15 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     goal: z.string().optional(),
     status: z
       .string()
-      .max(
-        WORK_STATUS_MAX_LENGTH,
-        `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
-      )
-      .regex(/^\s*(?:\S+(?:\s+\S+){0,2})?\s*$/, "Work status must be one to three words")
       .nullable()
+      .superRefine((value, context) => {
+        if (normalizeWorkStatus(value) === INVALID_WORK_STATUS) {
+          context.addIssue({
+            code: "custom",
+            message: `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
+          });
+        }
+      })
       .optional(),
   }).strict(),
   WorkSelectorSchema.extend({ command: z.literal("archive") }).strict(),

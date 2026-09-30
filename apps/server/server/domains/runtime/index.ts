@@ -26,6 +26,7 @@ export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
 } from "./admission/drizzle-admission-records.js";
+export { requireWritableThread } from "./admission/require-writable-thread.js";
 export {
   AdmissionConflictError,
   createUserTurnAdmission,

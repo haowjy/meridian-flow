@@ -17,6 +17,7 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,
@@ -102,7 +103,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
   async function requireUnlocked(id: WorkId): Promise<Work> {
     const existing = await findWorkById(id);
-    if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
+    if (!existing) throw new WorkLifecycleUnavailableError(id, "missing");
+    if (existing.deletedAt) {
+      throw new WorkLifecycleUnavailableError(id, "deleted", existing.slug);
+    }
     if (existing.isNoWork) throw new WorkLockedError();
     return existing;
   }
@@ -225,9 +229,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const where = and(
         eq(works.projectId, projectId),
         opts?.includeDeleted ? undefined : isNull(works.deletedAt),
-        opts?.archived === undefined
+        (opts?.lifecycle ?? "active") === "all"
           ? undefined
-          : opts.archived
+          : opts?.lifecycle === "archived"
             ? sql`${works.archivedAt} IS NOT NULL`
             : isNull(works.archivedAt),
         opts?.includeNoWork ? undefined : eq(works.isNoWork, false),
@@ -277,10 +281,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         throw cause;
       }
     },
-    async archive(id: WorkId, archivedAt?: string): Promise<Work> {
+    async archive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt !== null) return existing;
-      return updateWork(id, { archivedAt: archivedAt ? new Date(archivedAt) : new Date() });
+      return updateWork(id, { archivedAt: new Date() });
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);

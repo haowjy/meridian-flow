@@ -1,6 +1,11 @@
 /** Renders and resolves the frozen model-facing Work context block. */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
-import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
+import {
+  isWorkArchived,
+  type ThreadExecutionContext,
+  type Work,
+  workLifecycleState,
+} from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
 import {
   type ThreadRepository,
@@ -11,7 +16,6 @@ import {
 export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 export const WORK_CONTEXT_GOAL_LIMIT = 2_000;
 export const WORK_CONTEXT_OTHER_GOAL_LIMIT = 140;
-export const WORK_CONTEXT_STATUS_LIMIT = 32;
 const GOAL_TRUNCATION_MARKER = "… [truncated]";
 const OTHER_GOAL_TRUNCATION_MARKER = "…";
 
@@ -57,23 +61,22 @@ function boundedGoalSummary(value: string | null): string | null {
   return boundedPromptText(flattened, WORK_CONTEXT_OTHER_GOAL_LIMIT, OTHER_GOAL_TRUNCATION_MARKER);
 }
 
-function boundedStatus(value: string | null): string | null {
-  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
-  return normalized
-    ? boundedPromptText(normalized, WORK_CONTEXT_STATUS_LIMIT, OTHER_GOAL_TRUNCATION_MARKER)
-    : null;
-}
-
 function workIdentity(work: Pick<Work, "slug" | "name">, indent = ""): string {
   return `${indent}${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
 }
 
-function currentWorkLines(work: Pick<Work, "slug" | "name" | "goal" | "status">): string[] {
+function currentWorkLines(
+  work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt">,
+): string[] {
   const identity = workIdentity(work);
-  const status = boundedStatus(work.status);
+  const status = work.status;
   const goal = boundedGoal(work.goal);
-  if (status === null && goal === null) return [`${identity} (goal: none)`];
+  if (status === null && goal === null && !isWorkArchived(work))
+    return [`${identity} (goal: none)`];
   const lines = [identity];
+  if (isWorkArchived(work)) {
+    lines.push("  archived: this Work is read-only; use work unarchive before changing it.");
+  }
   if (status !== null) lines.push(`  status: ${status}`);
   if (goal === null) lines.push("  goal: none");
   else lines.push("  goal: |", ...goal.split("\n").map((line) => `    ${line}`));
@@ -82,12 +85,12 @@ function currentWorkLines(work: Pick<Work, "slug" | "name" | "goal" | "status">)
 
 function otherWorkLine(work: Pick<Work, "slug" | "name" | "goal" | "status">): string {
   const goal = boundedGoalSummary(work.goal);
-  const status = boundedStatus(work.status);
+  const status = work.status;
   return `${workIdentity(work, "  ")} (${status ? `status: ${status}; ` : ""}goal: ${goal ?? "none"})`;
 }
 
 function currentLines(
-  work: Pick<Work, "slug" | "name" | "goal" | "status" | "aiWriteMode" | "isNoWork">,
+  work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork">,
 ): string[] {
   if (work.isNoWork) return [`current: none (${work.aiWriteMode} writes)`];
   const [identity, ...goalLines] = currentWorkLines(work);
@@ -95,7 +98,10 @@ function currentLines(
 }
 
 export function renderWorkContext(input: {
-  current: Pick<Work, "id" | "slug" | "name" | "goal" | "status" | "aiWriteMode" | "isNoWork">;
+  current: Pick<
+    Work,
+    "id" | "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork"
+  >;
   activeWorks: Array<
     Pick<Work, "id" | "slug" | "name" | "goal" | "status" | "lastActivityAt" | "isNoWork">
   >;
@@ -133,10 +139,12 @@ export function createWorkContextReader(deps: {
       const primary = await deps.threadWorks.findPrimary(threadId);
       if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
       const current = await deps.works.findById(primary.workId);
-      if (!current || current.deletedAt) {
+      if (!current || workLifecycleState(current) === "deleted") {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
-      const activeWorks = await deps.works.listByProject(thread.projectId, { archived: false });
+      const activeWorks = await deps.works.listByProject(thread.projectId, {
+        lifecycle: "active",
+      });
       const execution: ThreadExecutionContext = threadExecutionContext(current);
       return {
         text: renderWorkContext({ current, activeWorks }),

@@ -254,13 +254,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  private async readableSourceStore(): Promise<DrizzleContextDocumentStore> {
+  private async readableSourceStore(): Promise<DrizzleContextDocumentStore | null> {
     const existing = await this.existingContextSourceId();
-    return existing ? this.storeForSource(existing) : this.sourceStore();
+    return existing ? this.storeForSource(existing) : null;
   }
 
   async findFolder(parentId: string | null, name: string) {
-    return (await this.readableSourceStore()).findFolder(parentId, name);
+    return (await this.readableSourceStore())?.findFolder(parentId, name) ?? null;
   }
 
   async createFolder(parentId: string | null, name: string) {
@@ -268,11 +268,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async findDocument(folderId: string | null, name: string, extension: string) {
-    return (await this.readableSourceStore()).findDocument(folderId, name, extension);
+    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
   }
 
   async findDocumentById(documentId: string) {
-    return (await this.readableSourceStore()).findDocumentById(documentId);
+    return (await this.readableSourceStore())?.findDocumentById(documentId) ?? null;
   }
 
   async recordDocumentMembership(documentId: string) {
@@ -300,7 +300,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async contextSourceId() {
-    return (await this.readableSourceStore()).contextSourceId();
+    return (await this.sourceStore()).contextSourceId();
   }
 
   async existingContextSourceId(): Promise<string | null> {
@@ -335,11 +335,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async listFolders(parentId: string | null) {
-    return (await this.readableSourceStore()).listFolders(parentId);
+    return (await this.readableSourceStore())?.listFolders(parentId) ?? [];
   }
 
   async listDocuments(folderId: string | null) {
-    return (await this.readableSourceStore()).listDocuments(folderId);
+    return (await this.readableSourceStore())?.listDocuments(folderId) ?? [];
   }
 }
 

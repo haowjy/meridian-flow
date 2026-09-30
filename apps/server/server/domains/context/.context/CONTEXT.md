@@ -249,6 +249,7 @@ currently available to the request owner in the requested project.
   view: the ws live-room gate checks the live project manifest.
 - Work-scoped source provisioning and tree/content mutations lock and recheck the
   owning Work in their transaction. Work deletion takes the same lifecycle lock,
+  while read paths never provision a missing source and instead return empty/not-found.
   so it cannot commit between authorization and a new scratch/upload mutation.
 - Cross-source moves preserve document identity and therefore preserve the same live
   project-manifest membership; source scope is storage location, not a second

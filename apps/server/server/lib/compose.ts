@@ -138,8 +138,8 @@ import {
   type RunStarter,
   type RunTurnPort,
   readPendingInbox,
+  requireWritableThread,
   sweepWakes,
-  ThreadWorkUnavailableAdmissionError,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
@@ -732,13 +732,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     turns: ports.threadRepos.turns,
     delivery,
     records: admissionRecords,
-    async requireWritableThread(threadId) {
-      const locked = await lockThreadAndWorks(ports.db, threadId);
-      const state = locked?.primaryWorkId ? locked.workStates.get(locked.primaryWorkId) : "missing";
-      if (state !== "active") {
-        throw new ThreadWorkUnavailableAdmissionError(state ?? "missing");
-      }
-    },
+    requireWritableThread: (threadId) =>
+      requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),

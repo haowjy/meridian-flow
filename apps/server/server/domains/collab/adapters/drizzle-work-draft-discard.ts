@@ -55,7 +55,7 @@ export function createDrizzleWorkDraftDiscard(
             try {
               await runInDrizzleSavepoint(db, async () => {
                 const lifecycle = await lockWorkLifecycle(db, command.workId);
-                if (lifecycle !== "active" && lifecycle !== "archived")
+                if (lifecycle !== "active")
                   throw new WorkLifecycleUnavailableError(command.workId, lifecycle);
                 const content = await branches.getBranch(command.contentBranchId);
                 if (

@@ -6,8 +6,6 @@ import { WorkLifecycleUnavailableError } from "./domain/work-lifecycle.js";
 import {
   normalizeWorkUpdateInput,
   setWorkArchived,
-  updateActiveWorkMetadata,
-  updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
   WorkStatusInvalidError,
@@ -55,7 +53,7 @@ describe("updateWork", () => {
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const changed: string[] = [];
 
-    await updateWork(
+    await updateWorkTransition(
       {
         works,
         workContextNotices: {
@@ -76,7 +74,7 @@ describe("updateWork", () => {
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     let refreshes = 0;
 
-    await updateWork(
+    await updateWorkTransition(
       {
         works,
         workContextNotices: {
@@ -177,11 +175,11 @@ describe("updateWork", () => {
     await setWorkArchived(deps, existing.id, true);
 
     await expect(
-      updateActiveWorkMetadata(deps, existing.id, { name: "Still blocked" }),
+      updateWorkTransition(deps, existing.id, { name: "Still blocked" }),
     ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
     await setWorkArchived(deps, existing.id, false);
     await expect(
-      updateActiveWorkMetadata(deps, existing.id, { name: "Revised" }),
+      updateWorkTransition(deps, existing.id, { name: "Revised" }),
     ).resolves.toMatchObject({ after: { name: "Revised", archivedAt: null } });
   });
 
@@ -196,10 +194,14 @@ describe("updateWork", () => {
     };
 
     await expect(
-      updateWork({ works, workContextNotices: { async projectChanged() {} } }, existing.id, {
-        name: "Revised",
-        status: "Drafting",
-      }),
+      updateWorkTransition(
+        { works, workContextNotices: { async projectChanged() {} } },
+        existing.id,
+        {
+          name: "Revised",
+          status: "Drafting",
+        },
+      ),
     ).rejects.toThrow("update interrupted");
     await expect(works.findById(existing.id)).resolves.toMatchObject({
       name: "Draft",

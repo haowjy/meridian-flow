@@ -5,13 +5,9 @@ export class WorkLifecycleUnavailableError extends Error {
   constructor(
     readonly workId: string,
     readonly state: WorkLifecycleState,
-    readonly workSlug?: string | null,
+    readonly workSlug: string | null = null,
   ) {
-    super(
-      state === "archived"
-        ? `Work ${workSlug ? `@${workSlug}` : workId} is archived; it is read-only until unarchived. You can unarchive it with the work unarchive command if the writer wants that.`
-        : `Work not found: ${workId}`,
-    );
+    super(`Work lifecycle unavailable (${state})`);
     this.name = "WorkLifecycleUnavailableError";
   }
 }

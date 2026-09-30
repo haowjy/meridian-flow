@@ -356,8 +356,6 @@ export {
   normalizeWorkUpdateInput,
   setWorkArchived,
   type UpdateWorkCommandInput,
-  updateActiveWorkMetadata,
-  updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
   WorkStatusInvalidError,

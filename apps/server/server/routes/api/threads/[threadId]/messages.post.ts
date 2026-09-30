@@ -38,15 +38,6 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       throw createError({ statusCode: 409, message: "admission_pending" });
     }
     if (result.kind === "rejected") {
-      if (result.code === "work_archived") {
-        throwHttpInterrupt(
-          meridianErrorFromSystem(
-            result.code,
-            "This Work is archived. Unarchive it to continue the conversation.",
-          ),
-          409,
-        );
-      }
       if (result.code === "work_unavailable") {
         throwHttpInterrupt(meridianErrorFromSystem(result.code, "This Work is unavailable."), 409);
       }

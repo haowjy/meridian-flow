@@ -48,8 +48,17 @@ function state(name: string, status: "active" | "archived" = "active") {
     name,
     goal: null,
     status: null,
-    archivedAt: status === "archived" ? "2026-01-01T00:00:00.000Z" : null,
+    archived: status === "archived",
   } as const;
+}
+
+function persistedState(name: string, status: "active" | "archived" = "active") {
+  return {
+    name,
+    goal: null,
+    status: null,
+    archivedAt: status === "archived" ? expect.any(String) : null,
+  };
 }
 
 describe("Work receipt reversal", () => {
@@ -90,7 +99,7 @@ describe("Work receipt reversal", () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     await h.works.update(work.id, { name: "Arc revised" });
-    const archived = await h.works.archive(work.id);
+    await h.works.archive(work.id);
     const receipt: WorkReceipt = {
       operation: "update",
       category: "mutate",
@@ -98,19 +107,18 @@ describe("Work receipt reversal", () => {
       workId: work.id,
       workName: "Arc revised",
       before: state("Arc"),
-      after: { ...state("Arc revised", "archived"), archivedAt: archived.archivedAt },
+      after: state("Arc revised", "archived"),
       inverse: { command: "update", workId: work.id, state: state("Arc") },
     };
     Object.assign(h.deps.blocks, {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
     });
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
+    await expect(h.works.findById(work.id)).resolves.toMatchObject(persistedState("Arc"));
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "redo" });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject({
-      ...state("Arc revised", "archived"),
-      archivedAt: archived.archivedAt,
-    });
+    await expect(h.works.findById(work.id)).resolves.toMatchObject(
+      persistedState("Arc revised", "archived"),
+    );
   });
 
   it("enqueues context inside the reversal transaction and returns the committed outcome", async () => {
@@ -152,7 +160,7 @@ describe("Work receipt reversal", () => {
     expect(result).toEqual([
       expect.objectContaining({ projectId: "project-1", status: "reversed" }),
     ]);
-    await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
+    await expect(h.works.findById(work.id)).resolves.toMatchObject(persistedState("Arc"));
 
     expect(result[0]?.status).toBe("reversed");
   });

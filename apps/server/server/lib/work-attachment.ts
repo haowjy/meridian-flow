@@ -1,4 +1,5 @@
 /** Work membership resolution for newly created root and child threads. */
+import { workLifecycleState } from "@meridian/contracts/works";
 import type { WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
 
@@ -33,7 +34,7 @@ export async function resolveWorkMembership(
     primaryWorkId = (await deps.threadWorks.findPrimary(args.parentThreadId))?.workId ?? null;
   } else if (args.workId) {
     const work = await deps.workRepo.findById(args.workId);
-    if (!work || work.deletedAt || work.archivedAt !== null || work.projectId !== args.projectId) {
+    if (!work || workLifecycleState(work) !== "active" || work.projectId !== args.projectId) {
       throw new InvalidWorkAttachmentError("Work is not available in this project");
     }
     primaryWorkId = args.workId;

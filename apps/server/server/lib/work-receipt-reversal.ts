@@ -4,6 +4,7 @@ import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import {
   isReversibleWorkMutationReceipt,
+  isWorkArchived,
   parseWorkReceipt,
   type Work,
   type WorkMutationReceipt,
@@ -12,6 +13,8 @@ import {
 } from "@meridian/contracts/works";
 import {
   runWorkLifecycleCommand,
+  setWorkArchived,
+  updateWorkTransition,
   type WorkContextNotices,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -95,10 +98,11 @@ export async function reverseWorkReceipts(
             );
             continue;
           }
-          for (const threadId of await applyStep(deps, step.receipt, input.direction)) {
+          const appliedStep = await applyStep(deps, step.receipt, input.direction);
+          for (const threadId of appliedStep.threadIds) {
             deletedThreadIds.add(threadId);
           }
-          changedProjects.add(context.thread.projectId);
+          if (!appliedStep.contextNotified) changedProjects.add(context.thread.projectId);
           applied.push(
             result(
               step.receipt,
@@ -193,11 +197,10 @@ async function planReceipts(
   thread: Thread,
   direction: Direction,
 ): Promise<PlannedStep[]> {
-  const [activeWorks, archivedWorks] = await Promise.all([
-    deps.works.listByProject(thread.projectId, { includeDeleted: true }),
-    deps.works.listByProject(thread.projectId, { includeDeleted: true, archived: true }),
-  ]);
-  const projectWorks = [...activeWorks, ...archivedWorks];
+  const projectWorks = await deps.works.listByProject(thread.projectId, {
+    includeDeleted: true,
+    lifecycle: "all",
+  });
   const works = new Map<WorkId, ShadowWork>(
     projectWorks.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]),
   );
@@ -264,38 +267,72 @@ async function planReceipts(
 }
 
 async function applyStep(
-  deps: Pick<WorkReceiptReversalDeps, "works">,
+  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
   receipt: WorkMutationReceipt,
   direction: Direction,
-): Promise<ThreadId[]> {
+): Promise<{ threadIds: ThreadId[]; contextNotified: boolean }> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
-      return (await deps.works.softDelete(receipt.workId)).threadIds;
+      return {
+        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
+        contextNotified: false,
+      };
     } else {
       await deps.works.restore(receipt.workId);
     }
   } else if (receipt.operation === "update") {
     const state = direction === "undo" ? receipt.before : receipt.after;
     if (!state) throw new Error("Receipt state is incomplete");
-    await applyState(deps.works, receipt.workId, state);
+    await applyState(deps, receipt.workId, state);
+    return { threadIds: [], contextNotified: true };
   } else if (receipt.operation === "delete") {
     if (direction === "undo") await deps.works.restore(receipt.workId);
-    else return (await deps.works.softDelete(receipt.workId)).threadIds;
+    else {
+      return {
+        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
+        contextNotified: false,
+      };
+    }
   }
-  return [];
+  return { threadIds: [], contextNotified: false };
 }
 
-async function applyState(works: WorkRepository, workId: WorkId, state: WorkReceiptState) {
-  await works.update(workId, {
-    name: state.name,
-    goal: state.goal,
-    status: state.status,
-  });
-  const current = await works.findById(workId);
+async function applyState(
+  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
+  workId: WorkId,
+  state: WorkReceiptState,
+) {
+  let current = await deps.works.findById(workId);
   if (!current) throw new Error(`Work not found: ${workId}`);
-  if (state.archivedAt !== null && current.archivedAt === null)
-    await works.archive(workId, state.archivedAt);
-  if (state.archivedAt === null && current.archivedAt !== null) await works.unarchive(workId);
+  if (!state.archived && isWorkArchived(current)) {
+    current = (
+      await setWorkArchived(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        false,
+      )
+    ).after;
+  }
+  if (
+    current.name !== state.name ||
+    current.goal !== state.goal ||
+    current.status !== state.status
+  ) {
+    current = (
+      await updateWorkTransition(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        { name: state.name, goal: state.goal, status: state.status },
+      )
+    ).after;
+  }
+  if (state.archived && !isWorkArchived(current)) {
+    await setWorkArchived(
+      { works: deps.works, workContextNotices: deps.workContextNotices },
+      workId,
+      true,
+    );
+  }
 }
 
 function commandFor(
@@ -339,7 +376,7 @@ function sameState(
     work.name === state.name &&
     work.goal === state.goal &&
     work.status === state.status &&
-    work.archivedAt === state.archivedAt
+    isWorkArchived(work) === state.archived
   );
 }
 

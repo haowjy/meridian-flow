@@ -38,7 +38,12 @@ import {
 
 function lifecycleCommandFailure(error: unknown, uri: string): Result<never, ContextError> {
   if (error instanceof WorkLifecycleUnavailableError)
-    return Err({ code: "context_unavailable", uri, message: error.message });
+    return Err({
+      code: "context_unavailable",
+      uri,
+      reason: `work_${error.state}`,
+      workSlug: error.workSlug ?? null,
+    });
   throw error;
 }
 

@@ -35,16 +35,11 @@ export class AdmissionConflictError extends Error {
 }
 
 export class ThreadWorkUnavailableAdmissionError extends Error {
-  readonly code: "work_archived" | "work_unavailable";
+  readonly code = "work_unavailable" as const;
 
-  constructor(state: "archived" | "deleted" | "missing") {
-    super(
-      state === "archived"
-        ? "This Work is archived. Unarchive it to continue the conversation."
-        : "This Work is unavailable.",
-    );
+  constructor() {
+    super("Thread Work unavailable");
     this.name = "ThreadWorkUnavailableAdmissionError";
-    this.code = state === "archived" ? "work_archived" : "work_unavailable";
   }
 }
 

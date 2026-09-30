@@ -1,13 +1,13 @@
 /** JSON-natural Work mutation receipts shared by runtime, reversal, and UI. */
 import type { WorkId } from "../ids.js";
-import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "./index.js";
+import { type AiWriteMode, INVALID_WORK_STATUS, normalizeWorkStatus } from "./index.js";
 import { decodeWorkSlug, type WorkSlug } from "./work-slug.js";
 
 export type WorkReceiptState = {
   name: string;
   goal: string | null;
   status: string | null;
-  archivedAt: string | null;
+  archived: boolean;
 };
 
 export type WorkBindingReceiptState = WorkReceiptState & {
@@ -128,23 +128,23 @@ function parseBindingState(value: unknown): WorkBindingReceiptState | null {
 function parseState(value: unknown): WorkReceiptState | null {
   const state = record(value);
   if (!state) return null;
+  const status =
+    state.status === null || typeof state.status === "string"
+      ? normalizeWorkStatus(state.status)
+      : INVALID_WORK_STATUS;
   if (
     typeof state.name !== "string" ||
     (state.goal !== null && typeof state.goal !== "string") ||
-    (state.status !== null &&
-      (typeof state.status !== "string" ||
-        state.status.length > WORK_STATUS_MAX_LENGTH ||
-        state.status.trim().length === 0 ||
-        state.status.trim().split(/\s+/).length > 3)) ||
-    (state.archivedAt !== null && typeof state.archivedAt !== "string")
+    status === INVALID_WORK_STATUS ||
+    typeof state.archived !== "boolean"
   ) {
     return null;
   }
   return {
     name: state.name,
     goal: state.goal,
-    status: state.status,
-    archivedAt: state.archivedAt,
+    status,
+    archived: state.archived,
   };
 }
 

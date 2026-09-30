@@ -362,6 +362,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(membershipAfterDelete.members).not.toContain(created.documentId);
     });
 
+    it("lists an archived Work with no scratch source as empty without provisioning", async () => {
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Empty archived Work",
+        slug: "empty-archived-work",
+        archivedAt: new Date(),
+      });
+      const { contextPorts } = createFixture({ load: false });
+      const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(
+        PROJECT_ID,
+        WORK_ID,
+      );
+      if (!authority?.workSlug) throw new Error("missing Work authority");
+      const port = contextPorts.forWork(
+        authority,
+        PROJECT_ID,
+        USER_ID,
+        new Map([[authority.workSlug, authority]]),
+      );
+
+      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toEqual({
+        ok: true,
+        value: [],
+      });
+      await expect(
+        db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, WORK_ID)),
+      ).resolves.toEqual([]);
+    });
+
     it("only backfills observer-less scratch documents during explicit reconciliation", async () => {
       const projectSourceId = "00000000-0000-4000-8000-000000000925";
       const workSourceId = "00000000-0000-4000-8000-000000000926";

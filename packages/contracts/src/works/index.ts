@@ -1,6 +1,19 @@
 export type AiWriteMode = "direct" | "draft";
 
 export const WORK_STATUS_MAX_LENGTH = 32;
+export const INVALID_WORK_STATUS = Symbol("invalid_work_status");
+
+export function normalizeWorkStatus(
+  raw: string | null,
+): string | null | typeof INVALID_WORK_STATUS {
+  if (raw === null) return null;
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  if (normalized.length > WORK_STATUS_MAX_LENGTH || normalized.split(" ").length > 3) {
+    return INVALID_WORK_STATUS;
+  }
+  return normalized;
+}
 
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 

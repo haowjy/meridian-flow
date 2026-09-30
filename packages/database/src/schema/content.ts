@@ -7,6 +7,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -118,7 +119,7 @@ export const works = pgTable(
     ),
     check(
       "works_status_length",
-      sql`${table.status} IS NULL OR char_length(${table.status}) <= 32`,
+      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${WORK_STATUS_MAX_LENGTH}`,
     ),
     check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),

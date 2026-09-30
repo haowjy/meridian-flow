@@ -5,7 +5,8 @@ import { createTestWorkProjectionMutation } from "../../../test-support/work-pro
 import {
   createDrizzleProjectWorkRepository,
   deleteWorkTransition,
-  updateWork,
+  setWorkArchived,
+  updateWorkTransition,
 } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
@@ -76,7 +77,7 @@ else
       const before = await works.findById(ids.workId);
       await expect(
         repos.transaction(async () => {
-          await updateWork({ works, workContextNotices: delivery() }, ids.workId, {
+          await updateWorkTransition({ works, workContextNotices: delivery() }, ids.workId, {
             goal: "lost goal",
           });
           expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
@@ -97,8 +98,12 @@ else
 
     it("coalesces immutable mutation rows into latest-state history without waking or rebaking", async () => {
       const notices = delivery();
-      await updateWork({ works, workContextNotices: notices }, ids.workId, { goal: "first" });
-      await updateWork({ works, workContextNotices: notices }, ids.workId, { goal: "latest" });
+      await updateWorkTransition({ works, workContextNotices: notices }, ids.workId, {
+        goal: "first",
+      });
+      await updateWorkTransition({ works, workContextNotices: notices }, ids.workId, {
+        goal: "latest",
+      });
       await rebind(ids.targetWorkId);
       const pending = await notices.selectPending(ids.threadId);
       expect(pending).toHaveLength(3);
@@ -125,6 +130,19 @@ else
       );
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
+    });
+
+    it("publishes archive and unarchive context refreshes", async () => {
+      const notices = delivery();
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true);
+      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
+      await notices.materializeIdle(ids.threadId);
+      const archived = await updates();
+      const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
+      expect(archivedBlocks[0]?.textContent).toContain("archived: this Work is read-only");
+
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
+      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
     });
 
     it("does not count a deleted Work's system-update sweep as activity in another Work", async () => {
@@ -455,7 +473,7 @@ else
       const rendering = new Promise<void>((resolve) => {
         render = resolve;
       });
-      const mutation = updateWork(
+      const mutation = updateWorkTransition(
         {
           works,
           workContextNotices: {

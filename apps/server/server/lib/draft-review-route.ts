@@ -11,6 +11,7 @@ import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/
 import { createError } from "nitro/h3";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
+import { throwWorkMutationHttpError } from "./work-http.js";
 
 type DraftRouteServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
@@ -118,10 +119,7 @@ export async function handleApplyWorkDraftRequest(
   },
 ): Promise<DraftApplyResponse> {
   await requireDraftWorkAccess(deps, input);
-  const work = await deps.works.findById(input.workId);
-  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input), {
-    archivedWorkSlug: work?.slug ?? input.workId,
-  });
+  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
   if (result.status === "applied") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
@@ -152,26 +150,15 @@ function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpd
   return wire;
 }
 
-async function callDraftReview<T>(
-  promise: Promise<T>,
-  options: { archivedWorkSlug?: string } = {},
-): Promise<T> {
+async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
-    if (cause instanceof WorkLifecycleUnavailableError && options.archivedWorkSlug) {
-      throw createError({
-        statusCode: 409,
-        message: `Work @${options.archivedWorkSlug} is archived; it is read-only until unarchived.`,
-      });
-    }
-    if (
-      cause instanceof WorkLifecycleUnavailableError ||
-      (cause instanceof Error && cause.message === "draft_not_found")
-    ) {
+    if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
+    if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }
     throw cause;

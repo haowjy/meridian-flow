@@ -41,7 +41,7 @@ if (!RUN) {
       "../../../shared/drizzle-transaction.js"
     );
     const { lockThreadAndWorks } = await import("../../../shared/thread-work-lock.js");
-    const { ThreadWorkUnavailableAdmissionError } = await import("./user-turn-admission.js");
+    const { requireWritableThread } = await import("./require-writable-thread.js");
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL disappeared after the DB test gate");
     const firstDb = createDb(url, { max: 2 });
@@ -188,15 +188,8 @@ if (!RUN) {
           return true;
         },
         producer: createWriterTurnProducer({
-          async requireWritableThread(threadId) {
-            const locked = await lockThreadAndWorks(firstDb, threadId);
-            const state = locked?.primaryWorkId
-              ? locked.workStates.get(locked.primaryWorkId)
-              : "missing";
-            if (state !== "active") {
-              throw new ThreadWorkUnavailableAdmissionError(state ?? "missing");
-            }
-          },
+          requireWritableThread: (threadId) =>
+            requireWritableThread((id) => lockThreadAndWorks(firstDb, id), threadId),
           inbox: createDrizzleInbox(firstDb),
           persistence: { repos, eventWriter: hub },
           hub,
@@ -246,7 +239,7 @@ if (!RUN) {
       });
     });
 
-    it("rejects archived Work sends atomically and admits a fresh send after unarchive", async () => {
+    it("admits sends while the thread's Work is archived", async () => {
       const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri: "" });
       await firstDb
         .update(schema.works)
@@ -261,17 +254,8 @@ if (!RUN) {
         blocks: [{ type: "text" as const, text: "Continue" }],
         references: [],
       };
-      await expect(service.admit(request)).resolves.toEqual({
-        kind: "rejected",
-        submissionId: request.submissionId,
-        code: "work_archived",
-      });
-      await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(0);
-
-      await firstDb.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, WORK));
-      await expect(
-        service.admit({ ...request, submissionId: "after-unarchive" }),
-      ).resolves.toMatchObject({ kind: "accepted" });
+      await expect(service.admit(request)).resolves.toMatchObject({ kind: "accepted" });
+      await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(1);
     });
 
     it("rolls the writer turn, inbox row, and journal back on an admission winner", async () => {

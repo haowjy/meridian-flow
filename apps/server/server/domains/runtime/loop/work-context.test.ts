@@ -35,6 +35,18 @@ function work(overrides: Partial<Work> & Pick<Work, "id" | "name">): Work {
 }
 
 describe("renderWorkContext", () => {
+  it("tells the AI that the current archived Work is read-only", () => {
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      archivedAt: "2026-08-09T00:00:00.000Z",
+    });
+
+    expect(renderWorkContext({ current, activeWorks: [] })).toContain(
+      "archived: this Work is read-only; use work unarchive before changing it.",
+    );
+  });
+
   it("bakes No Work current from the row's write mode", () => {
     const locked = work({
       id: NO_WORK_ID,
