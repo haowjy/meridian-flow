@@ -46,13 +46,13 @@ describe("ErrorBlock", () => {
     expect(html).not.toContain("aria-disabled=");
   });
 
-  it("notes a refused Retry, current or in history", () => {
+  it("notes a refused Retry only while the error is current", () => {
     const refused = "Couldn&#x27;t retry.</p>";
     expect(
       renderToStaticMarkup(<ErrorBlock isLatest onRetry={() => undefined} retryRefused />),
     ).toContain(refused);
     const historical = renderToStaticMarkup(<ErrorBlock isLatest={false} retryRefused />);
-    expect(historical).toContain(refused);
+    expect(historical).not.toContain(refused);
     expect(historical).not.toContain('role="alert"');
   });
 

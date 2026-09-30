@@ -85,7 +85,7 @@ export type AssistantTurnProps = {
 export type ReplyRetryView = {
   /** Present only while this failed reply is the latest turn. */
   onRetry?: () => void;
-  /** The server refused this reply's last Retry. */
+  /** The server refused this reply's last Retry, and it is still the latest turn. */
   refused: boolean;
   /** This is a Retry's stand-in whose request never answered. */
   requestLost: boolean;

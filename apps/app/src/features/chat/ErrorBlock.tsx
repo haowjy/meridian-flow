@@ -24,7 +24,10 @@ export type ErrorBlockProps = {
   kind?: "send" | "generation" | "retry";
   /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
-  /** The server refused this turn's last Retry; the cause stays in diagnostics. */
+  /**
+   * The server refused this turn's last Retry; the cause stays in diagnostics.
+   * Shown only while the error is current: once the chat moves on, it is history.
+   */
   retryRefused?: boolean;
 };
 
@@ -54,18 +57,12 @@ export function ErrorBlock({
   onRetry,
   retryRefused = false,
 }: ErrorBlockProps) {
-  const note = retryRefused ? <RefusedNote /> : null;
   if (!isLatest) {
-    return (
-      <div className="flex flex-col gap-1">
-        <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>
-        {note}
-      </div>
-    );
+    return <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>;
   }
   return (
     <ActiveError kind={kind} onRetry={onRetry}>
-      {note}
+      {retryRefused ? <RefusedNote /> : null}
     </ActiveError>
   );
 }

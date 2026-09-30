@@ -385,6 +385,15 @@ describe("TurnList failed reply Retry", () => {
     expect(offer("a1")?.refused).toBe(true);
   });
 
+  it("drops the refused note once a later reply lands below the failed one", async () => {
+    // A same-id re-send was refused while its compaction ran; that reply then lands.
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1"), turn("r", "assistant")],
+      replyRetry: replyRetry({ refused: new Set(["a1"]) }),
+    });
+    expect(offer("a1")).toMatchObject({ onRetry: undefined, refused: false });
+  });
+
   it("renders the new reply below the failed one, which becomes history", async () => {
     const standIn = turn("r", "assistant", { status: "pending", prevTurnId: "a1" });
     await render({

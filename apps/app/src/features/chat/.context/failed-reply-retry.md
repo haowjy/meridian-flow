@@ -10,7 +10,7 @@ reply itself.
 |---|---|
 | Latest turn | Tinted block: "This response failed." with **Retry** beside it |
 | Not the latest turn | The quiet line "This response failed.", with no action |
-| Its Retry was refused | Adds the muted note "Couldn't retry.", current or in history |
+| Its Retry was refused | Adds the muted note "Couldn't retry." while it is the latest turn |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
 divider counts as a row. The client does not gate Retry on the chat being
@@ -37,7 +37,8 @@ snapshot) replaces that.
   Nothing was written. The stand-in goes, the snapshot refreshes, and the
   failed reply carries the generic refused note. The cause never reaches the
   writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
-  Pressing Retry again clears the note.
+  Pressing Retry again clears the note, and so does any row landing below the
+  failed reply: like Retry, the note belongs to the current reply only.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
   failed reply: a request that did land replays (the server answers 200 with
