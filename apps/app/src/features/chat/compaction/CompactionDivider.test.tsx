@@ -62,7 +62,12 @@ function divider(overrides: Record<string, unknown> = {}): Turn {
         sequence: 0,
         content: {
           kind: "compaction",
-          props: { summary: "The keeper counts ships.", tokensBefore: 90, tokensAfter: 20 },
+          props: {
+            summary: "The keeper counts ships.",
+            model: "summary-model",
+            tokensBefore: 14617,
+            tokensAfter: 8080,
+          },
         },
       },
     ],
@@ -148,16 +153,55 @@ describe("CompactionDivider", () => {
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted"]);
+    expect(names).toEqual(["Conversation compacted", "Compaction information"]);
   });
 
-  it("complete: a compaction is a turn whose only action is Fork", async () => {
+  it("complete: the summary says nothing about token counts", async () => {
+    await render({ turn: divider() });
+    await act(async () => button("Conversation compacted")?.click());
+    const panel = host.querySelector<HTMLElement>("[data-compaction-summary]");
+    expect(panel?.textContent).toBe("The keeper counts ships.");
+    expect(panel?.textContent).not.toMatch(/token|14,617|8,080/);
+  });
+
+  it("complete: its info button, right of Fork, shows the context sizes and model", async () => {
+    await render({ turn: divider() }, derivation());
+    const actions = host.querySelector("[data-compaction-actions]");
+    const names = [...(actions?.querySelectorAll("button") ?? [])].map(
+      (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
+    );
+    expect(names).toEqual(["Fork from here", "Compaction information"]);
+    await act(async () => button("Compaction information")?.click());
+    const popover = document.querySelector("[data-slot='popover-content']");
+    expect(popover?.textContent).toContain("Model");
+    expect(popover?.textContent).toContain("summary-model");
+    expect(popover?.textContent).toMatch(/Tokens before14,617/);
+    expect(popover?.textContent).toMatch(/Tokens after8,080/);
+  });
+
+  it("complete: no info button when the divider recorded no stats", async () => {
+    await render({
+      turn: divider({
+        blocks: [
+          {
+            id: "b",
+            blockType: "custom",
+            sequence: 0,
+            content: { kind: "compaction", props: { summary: "S" } },
+          },
+        ],
+      }),
+    });
+    expect(button("Compaction information")).toBeUndefined();
+  });
+
+  it("complete: a compaction is a turn whose only derive action is Fork", async () => {
     const actions = derivation();
     await render({ turn: divider() }, actions);
     const names = [...host.querySelectorAll("button")].map(
       (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
     );
-    expect(names).toEqual(["Conversation compacted", "Fork from here"]);
+    expect(names).toEqual(["Conversation compacted", "Fork from here", "Compaction information"]);
     await act(async () => button("Fork from here")?.click());
     expect(actions.fork).toHaveBeenCalledWith("c");
   });
@@ -223,6 +267,7 @@ describe("CompactionDivider", () => {
     button("Stop compaction")?.focus();
     expect(document.activeElement).toBe(button("Stop compaction"));
     await render({ turn: divider(), onStop });
+    // Focus lands on the state words that replaced Stop, not a trailing action.
     expect(document.activeElement).toBe(button("Conversation compacted"));
   });
 

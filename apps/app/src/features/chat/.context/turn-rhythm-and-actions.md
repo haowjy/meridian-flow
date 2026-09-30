@@ -49,7 +49,9 @@ flavor is rendered only inside the click handler through a module-level
 unified pipeline that strips presentation properties on the HAST tree (never
 by regex on serialized HTML, which corrupts code text). Stripping `className`
 leaves copied KaTeX unstyled by design. Report payloads stay in a fenced JSON
-block in both clipboard formats. The information popover summarizes
+block in both clipboard formats. Info is `TurnInfoButton`, the one stats
+popover for every turn: a compaction divider's Info uses it too (see
+[compaction surfaces](compaction-surfaces.md)). The reply's popover summarizes
 the whole writer-facing reply: all assistant parts joined by
 `continuesResponse`, excluding any writer steer turns. Input/output tokens are
 summed across those parts, cache hit is summed

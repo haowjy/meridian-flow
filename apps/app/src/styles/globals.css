@@ -472,14 +472,16 @@
 @media (hover: none), (pointer: coarse) {
   [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
 }
-/* A finished compaction divider's Fork follows the same rule, revealed from
-   anywhere on the divider. */
+/* A finished compaction divider's Fork and Info follow the same rule, revealed
+   from anywhere on the divider; an open Info popover keeps them shown. */
 @media (hover: hover) {
   [data-compaction-divider] .compaction-divider-actions {
     opacity: 0;
   }
   [data-compaction-divider]:hover .compaction-divider-actions,
-  [data-compaction-divider]:focus-within .compaction-divider-actions {
+  [data-compaction-divider]:focus-within .compaction-divider-actions,
+  [data-compaction-divider]:has(.compaction-divider-actions [aria-expanded="true"])
+    .compaction-divider-actions {
     opacity: 1;
   }
 }

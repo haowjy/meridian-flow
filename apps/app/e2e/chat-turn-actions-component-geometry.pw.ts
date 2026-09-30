@@ -155,6 +155,39 @@ test("a divider row speaks at one text size, on one line, at every width", async
   expect(label).toBe(stop);
 });
 
+test("a finished divider's info sits right of Fork and opens the reply's stats popover", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await mount(page);
+  const divider = page.locator("#divider-auto");
+  await divider.hover();
+  const fork = await divider.getByRole("button", { name: "Fork from here" }).boundingBox();
+  const info = divider.getByRole("button", { name: "Compaction information" });
+  const infoBox = await info.boundingBox();
+  if (!fork || !infoBox) throw new Error("Missing divider actions");
+  expect(infoBox.x).toBeGreaterThanOrEqual(fork.x + fork.width);
+  expect(Math.abs(infoBox.y + infoBox.height / 2 - (fork.y + fork.height / 2))).toBeLessThanOrEqual(
+    1,
+  );
+  await info.click();
+  const popover = page.getByRole("dialog").filter({ hasText: "Tokens before" });
+  await expect(popover).toContainText("14,617");
+  await expect(popover).toContainText("8,080");
+  await expect(popover).toContainText("mock-summary");
+  // The same popover as a reply's Turn information: same width and card.
+  const replyInfo = page.locator("#reply").getByRole("button", { name: "Turn information" });
+  const dividerClass = await page
+    .locator("[data-slot='popover-content'][data-state='open']")
+    .getAttribute("class");
+  await page.keyboard.press("Escape");
+  await replyInfo.click();
+  const replyClass = await page
+    .locator("[data-slot='popover-content'][data-state='open']")
+    .getAttribute("class");
+  expect(dividerClass).toBe(replyClass);
+});
+
 /** The open tooltips, not ones fading out, by their accessible text. */
 const openTooltips = (page: Page) =>
   page.locator('[data-slot="tooltip-content"]:not([data-state="closed"]) [role="tooltip"]');
@@ -222,10 +255,18 @@ test("a turn action's tooltip opens below its button, clear of the message it ac
       message: "#reply p",
       names: ["Copy", "Fork from here", "Hand off from here", "Turn information"],
     },
+    {
+      scope: "#divider-auto",
+      message: "#divider-auto [data-compaction-label]",
+      names: ["Fork from here", "Compaction information"],
+    },
   ];
   for (const width of [1100, 390]) {
     await page.setViewportSize({ width, height: 900 });
     for (const { scope, message, names } of cases) {
+      // Leave the last button so its tooltip closes before the next row.
+      await page.mouse.move(0, 0);
+      await expect(openTooltips(page)).toHaveCount(0);
       await page.locator(message).hover();
       for (const name of names) {
         const where = `${name} in ${scope} at ${width}px`;

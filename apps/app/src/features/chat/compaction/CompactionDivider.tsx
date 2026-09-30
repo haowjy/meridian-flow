@@ -3,8 +3,9 @@
  *
  * One quiet rule across the transcript, with the state in words at its start
  * and its controls right after the words (bare transcript rows never
- * right-align controls). A compaction is a turn: once it finishes, its action
- * is Fork (no Copy, no Hand off), revealed like a reply's actions. A finished
+ * right-align controls). A compaction is a turn: once it finishes, its actions
+ * are Fork and, for stats for nerds, Info (no Copy, no Hand off), revealed like
+ * a reply's actions. A finished
  * divider's state words (icon and label, one button) open and close its
  * summary; a running compaction's Stop lives on the same line. The writer's `/compact <instructions>` sit under the line, verbatim. A
  * manual compaction's failure speaks on the divider it belongs to. An
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
+import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
 import { CompactionInstructions } from "./CompactionInstructions";
 import { type DividerView, dividerView } from "./compaction-model";
 import { useFocusWithinRow } from "./useFocusWithinRow";
@@ -92,6 +94,8 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             aria-expanded={open}
             aria-controls={panelId}
             aria-label={label.full}
+            // Stop's replacement: focus lands here when a finished run removes it.
+            data-focus-landing
             // Negative margin: the hover wash grows outward, so the icon keeps
             // the edge every other divider state and the instructions align to.
             className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
@@ -132,6 +136,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             className="compaction-divider-actions flex shrink-0 transition-opacity"
           >
             <ForkTurnAction turnId={turn.id} />
+            <CompactionInfo view={view} />
           </span>
         ) : null}
 
@@ -151,15 +156,44 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
           data-compaction-summary
           className="chat-card mt-[var(--chat-space-inline)] bg-muted/40"
         >
-          {view.tokens ? (
-            <p className="mb-[var(--chat-space-block)] text-caption text-muted-foreground">
-              {t`The model's context went from ${formatTokens(view.tokens.before)} to ${formatTokens(view.tokens.after)} tokens.`}
-            </p>
-          ) : null}
           <Markdown variant="compact">{view.summary}</Markdown>
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** The divider's stats, in the same popover a reply's Turn information opens. */
+function CompactionInfo({ view }: { view: DividerView }) {
+  const { model, tokens } = view;
+  if (!model && !tokens) return null;
+  return (
+    <TurnInfoButton
+      label={t`Compaction information`}
+      sections={[
+        {
+          title: t`Compaction`,
+          rows: (
+            <>
+              {model ? (
+                <TurnInfoRow
+                  label={t`Model`}
+                  value={model}
+                  valueClassName="max-w-36 truncate font-medium"
+                  title={model}
+                />
+              ) : null}
+              {tokens ? (
+                <>
+                  <TurnInfoRow label={t`Tokens before`} value={formatTokens(tokens.before)} mono />
+                  <TurnInfoRow label={t`Tokens after`} value={formatTokens(tokens.after)} mono />
+                </>
+              ) : null}
+            </>
+          ),
+        },
+      ]}
+    />
   );
 }
 

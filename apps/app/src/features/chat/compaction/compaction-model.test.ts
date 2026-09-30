@@ -70,7 +70,7 @@ describe("dividerView", () => {
     });
   });
 
-  it("complete: summary, and tokens when smaller", () => {
+  it("complete: summary, and the context sizes it recorded", () => {
     expect(view(compaction({ summary: "S" }))).toMatchObject({
       state: "complete",
       summary: "S",
@@ -78,7 +78,7 @@ describe("dividerView", () => {
     });
   });
 
-  it("hides tokens when the context did not shrink", () => {
+  it("reports the context sizes even when the context grew", () => {
     const grown = compaction();
     (grown as { blocks: unknown[] }).blocks = [
       {
@@ -91,7 +91,22 @@ describe("dividerView", () => {
         },
       },
     ];
-    expect(view(grown).tokens).toBeNull();
+    expect(view(grown).tokens).toEqual({ before: 48, after: 5_317 });
+  });
+
+  it("reads the summary model from the block, else the turn", () => {
+    const withBlockModel = compaction();
+    (withBlockModel as { blocks: unknown[] }).blocks = [
+      {
+        id: "b",
+        blockType: "custom",
+        sequence: 0,
+        content: { kind: "compaction", props: { summary: "S", model: "summary-model" } },
+      },
+    ];
+    expect(view(withBlockModel).model).toBe("summary-model");
+    expect(view(compaction({ model: "turn-model" })).model).toBe("turn-model");
+    expect(view(compaction()).model).toBeNull();
   });
 
   it("failed manual: shows the server's generic copy, or a generic line when it has none", () => {
