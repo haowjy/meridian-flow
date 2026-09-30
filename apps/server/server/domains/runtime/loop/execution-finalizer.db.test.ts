@@ -325,7 +325,6 @@ else
                 kind: "failed",
                 reason: "budget",
                 error: "budget exhausted",
-                copy: "This response failed.",
               },
             },
           );
@@ -348,7 +347,6 @@ else
             kind: "failed",
             reason: "budget",
             error: "budget exhausted",
-            copy: "This response failed.",
           },
         },
       );
@@ -372,7 +370,6 @@ else
             kind: "failed",
             reason: "budget",
             error: "budget exhausted",
-            copy: "This response failed.",
           },
         },
       );

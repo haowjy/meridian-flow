@@ -569,7 +569,6 @@ export function createDeliveryAdapter(
           kind: "failed",
           reason: error.code,
           error,
-          copy: error.message,
         },
       });
       next = completion.turn;

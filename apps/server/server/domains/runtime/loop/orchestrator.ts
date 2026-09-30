@@ -88,7 +88,6 @@ import {
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
-  turnFailedCopy,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -148,7 +147,6 @@ import {
 } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
-import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
@@ -294,17 +292,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         input.error instanceof RequestPreparationError ? input.error.original : input.error;
       const contextError = error instanceof ThreadConversationContextError ? error : null;
       const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
-      const preparationFailure =
-        contextError ??
-        imageResolutionError ??
-        (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
-      const publicPreparationError = preparationFailure
-        ? writerFacingPreparationError(preparationFailure)
-        : requestPreparationFailed
-          ? writerFacingPreparationError(asError(error))
-          : null;
       const failedTurn = await deps.repos.turns.findById(input.turnId);
       if (!failedTurn) throw new Error(`Failure turn not found: ${input.turnId}`);
       const outcome = await deps.delivery.close({
@@ -316,7 +305,6 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                 kind: "failed",
                 reason: "shutdown",
                 error: "Runtime shut down before the response completed",
-                copy: turnFailedCopy(failedTurn),
               }
             : { kind: "cancelled", reason: "cancelled" }
           : {
@@ -329,7 +317,6 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                     ? "request_preparation_failed"
                     : "execution_error"),
               error: error instanceof Error ? error.message : String(error),
-              copy: publicPreparationError?.message ?? turnFailedCopy(failedTurn),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -1807,18 +1794,12 @@ async function executeLoop({
           kind: "failed",
           reason: "shutdown",
           error: "Runtime shut down before the response completed",
-          copy: turnFailedCopy(currentTurn),
         }
       : cancelTerminal;
-  const errorTerminal = (
-    error: MeridianError | string,
-    reason?: string,
-    copy = turnFailedCopy(currentTurn),
-  ): TerminalCause => ({
+  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
     error,
-    copy,
   });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
@@ -1887,7 +1868,7 @@ async function executeLoop({
 
         const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
         if (budgetError) {
-          return exitRun(false, errorTerminal(budgetError, undefined, budgetError.message));
+          return exitRun(false, errorTerminal(budgetError));
         }
 
         turnAccounting.recordIterationSpend(treeBudget);
@@ -2084,9 +2065,6 @@ async function executeLoop({
                   kind: "failed",
                   reason: "context_window_exceeded",
                   error: "Model context overflowed after compaction retry",
-                  copy: writerFacingPreparationError(
-                    new CompactionPreparationError("context_window_exceeded"),
-                  ).message,
                 });
               }
               retriedContextOverflow = true;
