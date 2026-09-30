@@ -1,11 +1,12 @@
 /**
  * CreationDialog — the one way to create a named thing (a Work, a project).
  *
- * Questions as labels, one body text size for labels, fields and
- * placeholders, and Cancel beside Create at the bottom right. Create is ready
- * once the name has text; Enter in the name field or Ctrl/Cmd+Enter in the
- * description creates. Creating closes the dialog at once and hands off to the
- * caller, which navigates first and lets the server catch up.
+ * Questions as labels and one text size (text-sm, 16px on phones so iOS does
+ * not zoom) for labels, fields and placeholders, in the Dialog's default padding
+ * with default-size buttons: Cancel beside Create at the bottom right. Create
+ * is ready once the name has text; Enter in the name field or Ctrl/Cmd+Enter
+ * in the details field creates. Creating closes the dialog at once and hands
+ * off to the caller, which navigates first and lets the server catch up.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -23,16 +24,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-const fieldClass = "bg-card text-body placeholder:text-body md:text-body";
-const buttonClass = "h-10 px-4 text-body [@media(pointer:coarse)]:min-h-11";
+// One size for labels, fields and placeholders: 16px below md, as the ui
+// Input does, because iOS zooms into smaller fields on focus; text-sm above.
+const textClass = "text-base md:text-sm";
+const labelClass = `${textClass} font-medium`;
+const fieldClass = `bg-card ${textClass}`;
+const buttonClass = "[@media(pointer:coarse)]:min-h-11";
 
-export type CreationValues = { name: string; description: string };
+export type CreationValues = { name: string; details: string };
 
 export function CreationDialog({
   title,
   nameLabel,
   namePlaceholder,
-  description,
+  details,
   submitLabel,
   onClose,
   onCreate,
@@ -41,31 +46,31 @@ export function CreationDialog({
   nameLabel: string;
   namePlaceholder: string;
   /** The optional second question; omitted when the thing has only a name. */
-  description?: { label: string; placeholder: string };
+  details?: { label: string; placeholder: string };
   submitLabel: string;
   onClose: () => void;
   onCreate: (values: CreationValues) => void;
 }) {
   const [name, setName] = useState("");
-  const [details, setDetails] = useState("");
+  const [detailsText, setDetailsText] = useState("");
   const nameId = useId();
   const detailsId = useId();
   const ready = name.trim().length > 0;
   const create = () => {
     if (!ready) return;
-    onCreate({ name: name.trim(), description: details.trim() });
+    onCreate({ name: name.trim(), details: detailsText.trim() });
   };
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl gap-6 p-6 sm:p-7">
+      <DialogContent className="max-w-xl gap-5">
         <DialogHeader className="text-left sm:text-left">
-          <DialogTitle className="text-xl leading-tight font-semibold tracking-tight">
+          <DialogTitle className="text-lg leading-tight font-semibold tracking-tight">
             {title}
           </DialogTitle>
           <DialogDescription className="sr-only">{nameLabel}</DialogDescription>
         </DialogHeader>
         <form
-          className="grid gap-5"
+          className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             create();
@@ -73,7 +78,7 @@ export function CreationDialog({
           noValidate
         >
           <div className="grid gap-2">
-            <label htmlFor={nameId} className="text-body font-medium">
+            <label htmlFor={nameId} className={labelClass}>
               {nameLabel}
             </label>
             <Input
@@ -83,26 +88,26 @@ export function CreationDialog({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={namePlaceholder}
-              className={`h-10 ${fieldClass}`}
+              className={fieldClass}
             />
           </div>
-          {description ? (
+          {details ? (
             <div className="grid gap-2">
-              <label htmlFor={detailsId} className="text-body font-medium">
-                {description.label}
+              <label htmlFor={detailsId} className={labelClass}>
+                {details.label}
               </label>
               <Textarea
                 id={detailsId}
-                value={details}
-                onChange={(event) => setDetails(event.target.value)}
+                value={detailsText}
+                onChange={(event) => setDetailsText(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                     event.preventDefault();
                     create();
                   }
                 }}
-                placeholder={description.placeholder}
-                className={`min-h-28 resize-y ${fieldClass}`}
+                placeholder={details.placeholder}
+                className={`min-h-24 resize-y ${fieldClass}`}
               />
             </div>
           ) : null}

@@ -36,15 +36,13 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
           title={t`Create a Work`}
           nameLabel={t`What are you working on?`}
           namePlaceholder={t`Name this Work`}
-          description={{
-            label: t`What should the AI know?`,
-            placeholder: t`The goal, scope, or anything to keep in mind. Every chat in this Work reads it.`,
+          details={{
+            label: t`What is your goal?`,
+            placeholder: t`Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss.`,
           }}
           submitLabel={t`Create Work`}
           onClose={() => void routeCommands.closeWork({ replace: true })}
-          onCreate={({ name, description }) =>
-            createWork.create({ name, goal: description || undefined })
-          }
+          onCreate={({ name, details }) => createWork.create({ name, goal: details || undefined })}
         />
       </>
     );

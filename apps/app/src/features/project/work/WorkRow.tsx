@@ -1,6 +1,6 @@
 /**
- * A Work list row in the app's list grammar (Chats, Editor recents): name over a
- * one-line description, a relative age, and the shared Work actions menu.
+ * A Work list row in the app's list grammar (Chats, Editor recents): name over
+ * the first line of its goal, a relative age, and the shared Work actions menu.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";

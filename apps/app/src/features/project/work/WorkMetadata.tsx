@@ -1,7 +1,7 @@
 /**
- * Page-scoped Work description editing lifecycle. The name is renamed in the
- * band's title tab; this owns the description, which never saves on blur and
- * so guards navigation while a draft is dirty.
+ * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
+ * title tab; this owns the goal, which never saves on blur and so guards
+ * navigation while a draft is dirty.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -49,7 +49,7 @@ export function useWorkMetadataController(
     setEditing(false);
     setError(null);
     takeHeld()?.cancel();
-    setAnnouncement(t`Description edit canceled`);
+    setAnnouncement(t`Goal edit canceled`);
     focusDisplay();
   }, [editing, focusDisplay, saving, takeHeld]);
   const save = useCallback(async (): Promise<boolean> => {
@@ -67,7 +67,7 @@ export function useWorkMetadataController(
     try {
       await saveWork({ goal });
       setEditing(false);
-      setAnnouncement(t`Description saved`);
+      setAnnouncement(t`Goal saved`);
       focusDisplay();
       return true;
     } catch (cause) {
@@ -137,12 +137,12 @@ const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
 const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
 
 /**
- * The Work description: body text clamped to three lines. Clicking a clamped
- * description shows all of it; Show less folds it again. Edit (or clicking an
- * empty description) edits in place: the field takes the text's exact position
- * and size. Save and Cancel sit below; blur never saves.
+ * The Work goal: body text clamped to three lines. Clicking a clamped goal
+ * shows all of it; Show less folds it again. Edit (or clicking an empty goal)
+ * edits in place: the field takes the text's exact position and size. Save and
+ * Cancel sit below; blur never saves.
  */
-export function WorkDescription({
+export function WorkGoal({
   work,
   controller: c,
 }: {
@@ -180,7 +180,7 @@ export function WorkDescription({
         {c.announcement}
       </p>
       {c.editing ? (
-        <DescriptionEditor controller={c} />
+        <GoalEditor controller={c} />
       ) : !work.goal ? (
         <button
           type="button"
@@ -191,7 +191,7 @@ export function WorkDescription({
             "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
           )}
         >
-          {t`Add a description of what this Work is for`}
+          {t`Add a goal for this Work`}
         </button>
       ) : (
         <>
@@ -246,18 +246,18 @@ export function WorkDescription({
   );
 }
 
-function DescriptionEditor({ controller: c }: { controller: WorkMetadataController }) {
-  const errorId = "work-description-error";
+function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
+  const errorId = "work-goal-error";
   return (
     <>
       <InlineEditTextarea
         ref={c.editorRef}
         value={c.draft}
         disabled={c.saving}
-        aria-label={t`Description`}
+        aria-label={t`Goal`}
         aria-invalid={Boolean(c.error)}
         aria-describedby={c.error ? errorId : undefined}
-        placeholder={t`Add a description of what this Work is for`}
+        placeholder={t`Add a goal for this Work`}
         onChange={(event) => c.setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;

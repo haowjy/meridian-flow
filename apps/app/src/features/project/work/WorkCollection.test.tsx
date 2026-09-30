@@ -213,7 +213,7 @@ describe("Work collection archive", () => {
 
           // Query cache notifications flush on a timer, outside the act() scope.
           await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
           );
           expect(document.activeElement).toBe(tab("archived"));
           await showTab("archived");
@@ -241,7 +241,7 @@ describe("Work collection archive", () => {
           );
           await act(async () => retry?.click());
           await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
           );
           expect(archiveWork).toHaveBeenCalledTimes(2);
           expect(archiveWork).toHaveBeenLastCalledWith(WORK.id, expect.anything());
@@ -278,7 +278,7 @@ describe("Work collection archive failures", () => {
           await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Coda"])));
           await archiveFromMenu("Coda");
           await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
           );
 
           await act(async () => first.reject(new Error("Rejected")));
@@ -328,7 +328,7 @@ describe("Work collection archive failures", () => {
           );
           await act(async () => bandRetry?.click());
           await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
           );
           await act(() => vi.waitFor(() => expect(band()?.textContent).toBe("")));
           expect(document.querySelector('[role="alert"]')).toBeNull();
@@ -465,7 +465,7 @@ describe("Work collection delete", () => {
           expect(rowNames()).toEqual([]);
           await showTab("active");
           expect(undoRows()).toEqual([]);
-          expect(document.body.textContent).toContain("No active Work yet.");
+          expect(document.body.textContent).toContain("Start a Work");
         },
         { drainMacrotask: true },
       );

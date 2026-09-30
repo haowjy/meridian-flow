@@ -24,7 +24,7 @@ export function WorkCreationDestination({
     <div className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          description={
+          intro={
             <>
               <PendingWorkHeading name={name} />
               <p

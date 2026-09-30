@@ -1,5 +1,5 @@
 /**
- * The Work page: its titles and description over one sticky toolbar, then
+ * The Work page: its titles and goal over one sticky toolbar, then
  * the Chats or Files tab, each owning its own search, actions and queries.
  */
 import { t } from "@lingui/core/macro";
@@ -20,11 +20,7 @@ import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkChatsTab } from "./WorkChatsTab";
 import { WorkFilesTab } from "./WorkFilesTab";
-import {
-  useWorkMetadataController,
-  WorkDescription,
-  type WorkMetadataController,
-} from "./WorkMetadata";
+import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
 import { WorkHeading } from "./WorkTitles";
 import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
@@ -35,17 +31,17 @@ export type WorkDetailScreenProps = {
 };
 
 /**
- * The Work page's own header block under the band: the description (or a
+ * The Work page's own header block under the band: its titles and goal (or a
  * pending Work's state), then one sticky toolbar row.
  */
 export function WorkScreenHeader({
-  description,
+  intro,
   view,
   onViewChange,
   tools,
   pending = false,
 }: {
-  description?: React.ReactNode;
+  intro?: React.ReactNode;
   view: "chats" | "files";
   onViewChange: (view: "chats" | "files") => void;
   tools: React.ReactNode;
@@ -53,9 +49,7 @@ export function WorkScreenHeader({
 }) {
   return (
     <>
-      {description ? (
-        <header className="flex min-w-0 flex-col gap-1.5">{description}</header>
-      ) : null}
+      {intro ? <header className="flex min-w-0 flex-col gap-1.5">{intro}</header> : null}
       <div className="sticky top-0 z-10 -my-2 flex min-w-0 items-center gap-2 bg-background py-2 sm:gap-3">
         <SegmentedTabs
           label={t`Work view`}
@@ -89,10 +83,10 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          description={
+          intro={
             <>
               <WorkHeading projectId={projectId} work={work} />
-              <WorkDescription work={work} controller={controller} />
+              <WorkGoal work={work} controller={controller} />
             </>
           }
           view={routeCommands.workView}
@@ -121,7 +115,7 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
       >
         <DialogHeader>
           <DialogTitle>
-            <Trans>Save description changes?</Trans>
+            <Trans>Save goal changes?</Trans>
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">

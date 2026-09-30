@@ -21,13 +21,13 @@ function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
   node.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function dialog(onCreate: (values: { name: string; description: string }) => void) {
+function dialog(onCreate: (values: { name: string; details: string }) => void) {
   return (
     <CreationDialog
       title="Create a Work"
       nameLabel="What are you working on?"
       namePlaceholder="Name this Work"
-      description={{ label: "What should the AI know?", placeholder: "Goals" }}
+      details={{ label: "What is your goal?", placeholder: "Goals" }}
       submitLabel="Create Work"
       onClose={vi.fn()}
       onCreate={onCreate}
@@ -49,7 +49,7 @@ it("keeps Create disabled until the name has text", async () => {
   });
 });
 
-it("creates with trimmed values from Enter in the name and Ctrl+Enter in the description", async () => {
+it("creates with trimmed values from Enter in the name and Ctrl+Enter in the details field", async () => {
   const onCreate = vi.fn();
   await withReactRoot(dialog(onCreate), async () => {
     const name = document.querySelector<HTMLInputElement>("input");
@@ -63,7 +63,7 @@ it("creates with trimmed values from Enter in the name and Ctrl+Enter in the des
     await act(async () => form.requestSubmit());
     expect(onCreate).toHaveBeenLastCalledWith({
       name: "Arc three",
-      description: "Tighten the midpoint.",
+      details: "Tighten the midpoint.",
     });
     await act(async () => {
       details.dispatchEvent(

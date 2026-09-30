@@ -156,12 +156,7 @@ export function WorkCollection({
           <h1 ref={collectionHeading} tabIndex={-1} className="text-xl font-semibold">
             <Trans>Work</Trans>
           </h1>
-          <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
-            <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
-              <Plus aria-hidden />
-              <Trans>New Work</Trans>
-            </Link>
-          </Button>
+          <NewWorkButton projectId={projectId} />
         </div>
         <div ref={archiveFocus.tabs} className="sticky top-0 z-10 mt-4 flex bg-background py-2">
           <SegmentedTabs
@@ -196,13 +191,17 @@ export function WorkCollection({
             <WorkRows
               entries={entries.archived}
               row={row}
-              empty={<Trans>No archived Work.</Trans>}
+              empty={
+                <p className="px-2 py-2 text-sm text-muted-foreground">
+                  <Trans>No archived Work.</Trans>
+                </p>
+              }
             />
           ) : (
             <WorkRows
               entries={entries.active}
               row={row}
-              empty={<Trans>No active Work yet.</Trans>}
+              empty={<StartWork projectId={projectId} />}
             />
           )}
         </div>
@@ -220,8 +219,39 @@ function WorkRows({
   row: (entry: WorkListEntry) => ReactNode;
   empty: ReactNode;
 }) {
-  if (!entries.length) return <p className="px-2 py-2 text-sm text-muted-foreground">{empty}</p>;
+  if (!entries.length) return empty;
   return <RuledList rows={entries.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
+}
+
+function NewWorkButton({ projectId, variant }: { projectId: string; variant?: "outline" }) {
+  return (
+    <Button asChild size="sm" variant={variant} className="[@media(pointer:coarse)]:min-h-11">
+      <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
+        <Plus aria-hidden />
+        <Trans>New Work</Trans>
+      </Link>
+    </Button>
+  );
+}
+
+/** The Active tab with no Work: what a Work is for, and the way to start one. */
+function StartWork({ projectId }: { projectId: string }) {
+  return (
+    <div className="flex flex-col items-center px-2 py-16 text-center sm:py-20">
+      <h2 className="text-base font-semibold text-foreground">
+        <Trans>Start a Work</Trans>
+      </h2>
+      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+        <Trans>
+          A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI
+          what you’re after.
+        </Trans>
+      </p>
+      <div className="mt-5">
+        <NewWorkButton projectId={projectId} variant="outline" />
+      </div>
+    </div>
+  );
 }
 
 function DeletedWorkRow({

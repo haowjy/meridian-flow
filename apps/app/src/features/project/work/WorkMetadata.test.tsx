@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-/** Work description edit safety and clamped display behavior. */
+/** Work goal edit safety and clamped display behavior. */
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useWorkMetadataController, WorkDescription } from "./WorkMetadata";
+import { useWorkMetadataController, WorkGoal } from "./WorkMetadata";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -38,7 +38,7 @@ function Harness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<
     setWork(updated);
     return updated;
   });
-  return <WorkDescription work={work} controller={controller} />;
+  return <WorkGoal work={work} controller={controller} />;
 }
 function LeaveGuardHarness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
   const [work, setWork] = useState(WORK);
@@ -50,7 +50,7 @@ function LeaveGuardHarness({ saveWork }: { saveWork: (data: UpdateWorkRequest) =
   });
   return (
     <>
-      <WorkDescription work={work} controller={controller} />
+      <WorkGoal work={work} controller={controller} />
       <button
         type="button"
         onClick={() =>
@@ -78,7 +78,7 @@ async function click(node: Element | null) {
 }
 
 describe("WorkMetadata", () => {
-  it("does not save the description on blur and cancels on Escape", async () => {
+  it("does not save the goal on blur and cancels on Escape", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
@@ -87,7 +87,7 @@ describe("WorkMetadata", () => {
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       expect(textarea).not.toBeNull();
-      if (!textarea) throw new Error("Description editor did not open");
+      if (!textarea) throw new Error("Goal editor did not open");
       await act(async () => {
         setValue(textarea, "Unfinished draft");
         textarea.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
@@ -101,7 +101,7 @@ describe("WorkMetadata", () => {
     });
   });
 
-  it("saves the edited description with Save", async () => {
+  it("saves the edited goal with Save", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
@@ -109,20 +109,20 @@ describe("WorkMetadata", () => {
           null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      if (!textarea) throw new Error("Description editor did not open");
+      if (!textarea) throw new Error("Goal editor did not open");
       await act(async () => {
-        setValue(textarea, "  A changed description  ");
+        setValue(textarea, "  A changed goal  ");
       });
       await click(
         [...document.querySelectorAll("button")].find((button) => button.textContent === "Save") ??
           null,
       );
-      expect(saveWork).toHaveBeenCalledWith({ goal: "A changed description" });
+      expect(saveWork).toHaveBeenCalledWith({ goal: "A changed goal" });
       expect(document.querySelector("textarea")).toBeNull();
     });
   });
 
-  it("holds a leave intent until a dirty description is explicitly discarded", async () => {
+  it("holds a leave intent until a dirty goal is explicitly discarded", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
       await click(
@@ -130,8 +130,8 @@ describe("WorkMetadata", () => {
           null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      if (!textarea) throw new Error("Description editor did not open");
-      await act(async () => setValue(textarea, "Changed description"));
+      if (!textarea) throw new Error("Goal editor did not open");
+      await act(async () => setValue(textarea, "Changed goal"));
       await click(
         [...document.querySelectorAll("button")].find((button) => button.textContent === "Leave") ??
           null,
