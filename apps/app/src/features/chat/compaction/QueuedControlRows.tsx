@@ -5,7 +5,8 @@
  * the transcript tail, after every queued message, as a dashed rule: the
  * divider it will become, not yet drawn. The writer's instructions show under
  * it verbatim, at once. Withdraw is right after the
- * words and removes the row at once. There is no Stop on a queued row. The rows
+ * words on every row, a failed enqueue's too (beside its Retry), and removes
+ * the row at once. There is no Stop on a queued row. The rows
  * carry no live region: `useThreadControls` announces each change through the
  * global polite announcer, which also reaches a row scrolled out of the
  * virtualized list.
@@ -63,7 +64,6 @@ function QueuedControlRow({
 }) {
   const { status } = control;
   const failed = status === "failed";
-  const canWithdraw = status === "queued" || status === "withdraw_failed";
   const instructions = control.control.instructions?.trim() ? control.control.instructions : null;
   return (
     <li
@@ -93,7 +93,7 @@ function QueuedControlRow({
             <Trans>Retry</Trans>
           </Button>
         ) : null}
-        {canWithdraw && onWithdraw ? (
+        {onWithdraw ? (
           <Button
             type="button"
             variant="quiet"

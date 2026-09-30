@@ -173,7 +173,7 @@ describe("useThreadControls", () => {
     expect(announcements.announceError).not.toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
-  it("withdraws on the server once a failed in-flight enqueue settles, and 404 is withdrawn", async () => {
+  it("withdraws on the server once a failed in-flight enqueue settles, and a 404 drops the row", async () => {
     const enqueued = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValue(enqueued.promise);
     api.withdrawThreadControl.mockRejectedValue(
@@ -191,6 +191,38 @@ describe("useThreadControls", () => {
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);
     expect(announcements.announceError).not.toHaveBeenCalled();
+  });
+
+  it("shows the row again, queued, when the server lists a command its withdrawal 404ed", async () => {
+    // The enqueue was still being committed when Withdraw reached the server.
+    api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact" });
+    });
+    const [failed] = latest.queued;
+    if (!failed) throw new Error("expected a failed control");
+    await act(async () => latest.withdraw(failed));
+    expect(latest.queued).toEqual([]);
+    const committed: ThreadPendingInbox = {
+      items: [
+        {
+          id,
+          seq: 1,
+          intent: "control",
+          control: { kind: "compact" },
+          provenance: { kind: "writer", actorId: "w" },
+          deliveryState: "awaiting_run",
+          summary: "Compact conversation",
+          enqueuedAt: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+    };
+    await act(async () => root.render(<Probe pending={committed} />));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
   it("brings the row back when the withdrawal fails", async () => {

@@ -284,13 +284,22 @@ describe("QueuedControlRows", () => {
     );
   });
 
-  it("keeps a failed enqueue on the item with Retry", async () => {
+  it("keeps a failed enqueue on the item with Retry and Withdraw", async () => {
     const onRetry = vi.fn();
+    const onWithdraw = vi.fn();
     await act(async () =>
-      root.render(<QueuedControlRows controls={[compact("failed")]} onRetry={onRetry} />),
+      root.render(
+        <QueuedControlRows
+          controls={[compact("failed")]}
+          onRetry={onRetry}
+          onWithdraw={onWithdraw}
+        />,
+      ),
     );
     expect(host.textContent).toContain("Couldn't queue the compaction.");
     await act(async () => button("Retry queueing")?.click());
     expect(onRetry).toHaveBeenCalledWith("k");
+    await act(async () => button("Withdraw compaction")?.click());
+    expect(onWithdraw).toHaveBeenCalledWith(compact("failed"));
   });
 });

@@ -8,9 +8,12 @@
  *   the item with Retry (same id, so the server treats a retry as a no-op).
  *   Once the inbox lists the id the server owns it, and the send is dropped.
  * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
- *   always asks the server. A failed withdrawal brings the row back. A
- *   command that already started leaves the queue too; its compaction divider
- *   carries the state.
+ *   always asks the server. A withdrawal the server confirmed (withdrawn, or
+ *   already started, whose compaction divider carries the state) keeps the id
+ *   hidden against stale inbox frames. A 404 only drops the local send: the
+ *   enqueue may still have been committing, and if the inbox lists the id
+ *   later the row shows again, queued, so it never runs unseen. A failed
+ *   withdrawal brings the row back.
  *
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
@@ -27,7 +30,7 @@ export type LocalSend = {
   request: "sending" | "sent" | "failed" | "finished";
 };
 
-/** `settled`: the server answered, either withdrawn or already started. */
+/** `settled`: the server confirmed it, either withdrawn or already started. */
 export type Withdrawal = "withdrawing" | "failed" | "settled";
 
 export type LocalControls = {
@@ -52,6 +55,8 @@ export type ControlAction =
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
   | { type: "withdrawn"; id: string }
+  /** The server had no such command (404) when the withdrawal reached it. */
+  | { type: "withdraw_not_found"; id: string }
   | { type: "withdraw_failed"; id: string }
   /** The server inbox lists these ids: it owns them from now on. */
   | { type: "listed"; pendingIds: ReadonlySet<string> };
@@ -85,6 +90,11 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
       return withdrawal(action.id, "settled");
     case "withdraw_failed":
       return withdrawal(action.id, "failed");
+    case "withdraw_not_found": {
+      const withdrawals = new Map(state.withdrawals);
+      withdrawals.delete(action.id);
+      return { sends: state.sends.filter((entry) => entry.id !== action.id), withdrawals };
+    }
     case "listed": {
       const sends = state.sends.filter((entry) => !action.pendingIds.has(entry.id));
       return sends.length === state.sends.length ? state : { ...state, sends };

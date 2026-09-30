@@ -279,7 +279,8 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              refused: replyRetry.refused.has(turn.id),
+              // Like Retry, the refused note is only for the current reply.
+              refused: endsTranscript && replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }
           : undefined;

@@ -160,6 +160,19 @@ describe("withdrawal", () => {
     expect(merge(listed, { items: [inboxItem("k")] })).toEqual([]);
   });
 
+  it("drops the send on a 404, and shows the row again if the server lists it later", () => {
+    const notFound = run([
+      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue_failed", id: "k" },
+      { type: "withdraw", id: "k" },
+      { type: "withdraw_not_found", id: "k" },
+    ]);
+    expect(notFound).toEqual(NO_LOCAL_CONTROLS);
+    expect(merge(notFound)).toEqual([]);
+    // The enqueue was still committing when the 404 came back: it will run.
+    expect(merge(notFound, { items: [inboxItem("k")] })).toEqual([{ id: "k", status: "queued" }]);
+  });
+
   it("keeps a failed enqueue's row, retryable, after its withdrawal fails", () => {
     const failed = run([
       { type: "enqueue", id: "k", control: COMPACT },
