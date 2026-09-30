@@ -261,6 +261,16 @@ context for draft review, independent of later Chat changes. Null is shared
 scope; loading/error is never converted to null. Invalid optional query selectors
 are cleared without blocking documents; required path identities remain errors.
 Archived Work identity remains manageable but cannot authorize content mutation.
+`isWorkArchived` (`@meridian/contracts/works`) is the one archived test. An
+archived Work's own content is view-only: the Work page shows its titles, goal
+and files as plain text, and its files open read-only in the Editor under
+`ArchivedWorkNotice`. Its chats stay live: the composer keeps working, with the
+notice as a strip on the composer's top edge (`ChatView`'s `composerStrip`),
+and sending does not unarchive. The Work picker never offers an archived Work,
+since binding a chat to one is refused.
+The Editor shows a tab by one rule, `isEditorTab(tab, workId)` in
+`client/stores/context-tabs-store/editor-workspace-model.ts`: every scheme but
+Uploads (`isEditorScheme`), and a Work's Scratch only in that Work's Editor.
 
 ### Slot paints the material; surfaces must not
 
