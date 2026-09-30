@@ -145,7 +145,10 @@ describe("thread", () => {
   });
 
   it("thread events --child follows one descendant's status and current tool", async () => {
-    expect((await mf(["thread", "send", THREAD_ID, "delegate"])).code).toBe(EXIT.ok);
+    const sent = await mf(["thread", "send", THREAD_ID, "delegate"]);
+    expect(sent.code).toBe(EXIT.ok);
+    // Replies split by a tool call stay separate paragraphs.
+    expect(sent.stdout.trim()).toBe("Delegating.\n\nHello there");
     const byRef = await mf(["thread", "events", THREAD_ID, "--child", "p2"]);
     expect(byRef.code).toBe(EXIT.ok);
     expect(byRef.stdout.trim().split("\n")).toEqual([
@@ -173,13 +176,14 @@ describe("thread", () => {
     expect(json.code).toBe(EXIT.ok);
     const { blocks } = JSON.parse(json.stdout);
     expect(blocks).toEqual([
-      expect.objectContaining({ sequence: 0, type: "tool_use", tool: "spawn", offsetMs: 500 }),
-      expect.objectContaining({ sequence: 1, type: "tool_result", tool: "spawn", gapMs: 1500 }),
-      expect.objectContaining({ sequence: 2, type: "text", tool: null, offsetMs: 3000 }),
+      expect.objectContaining({ sequence: 0, type: "text", tool: null, offsetMs: 100 }),
+      expect.objectContaining({ sequence: 1, type: "tool_use", tool: "spawn", offsetMs: 500 }),
+      expect.objectContaining({ sequence: 2, type: "tool_result", tool: "spawn", gapMs: 1500 }),
+      expect.objectContaining({ sequence: 3, type: "text", tool: null, offsetMs: 3000 }),
     ]);
     const text = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1"]);
     expect(text.stdout).toContain(
-      "#1 2026-01-01T00:00:02.000Z +2.00s (gap +1.50s) tool_result spawn",
+      "#2 2026-01-01T00:00:02.000Z +2.00s (gap +1.50s) tool_result spawn",
     );
   });
 
@@ -188,6 +192,15 @@ describe("thread", () => {
     expect(result.code).toBe(EXIT.ok);
     expect(result.stdout).toContain("[assistant]");
     expect(result.stdout).toContain("Hello there");
+  });
+});
+
+describe("doc", () => {
+  it("doc read names the missing URI instead of the raw route", async () => {
+    const result = await mf(["doc", "read", "manuscript://missing.md"]);
+    expect(result.code).toBe(EXIT.notFound);
+    expect(result.stderr).toContain("No live document at manuscript://missing.md");
+    expect(result.stderr).not.toContain("HTTP 404");
   });
 });
 

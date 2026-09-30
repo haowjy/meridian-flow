@@ -15,7 +15,7 @@ import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
-import { branchToPortlessPrefix } from "./portless-prefix";
+import { worktreePortlessPrefix } from "./portless-prefix";
 import {
   type ExpectedServiceName,
   type ExternalDevRoute,
@@ -40,19 +40,8 @@ interface PortlessState {
   errors: string[];
 }
 
-function isLinkedWorktree(): boolean {
-  const gitDir = runGit(repoRoot, ["rev-parse", "--git-dir"]);
-  const commonDir = runGit(repoRoot, ["rev-parse", "--git-common-dir"]);
-  if (!gitDir || !commonDir) return false;
-
-  const resolvedGitDir = path.resolve(repoRoot, gitDir);
-  const resolvedCommonDir = path.resolve(repoRoot, commonDir);
-  return resolvedGitDir !== resolvedCommonDir;
-}
-
 function detectWorktreePrefix(branchName: string): string | undefined {
-  if (!isLinkedWorktree()) return undefined;
-  return branchToPortlessPrefix(branchName);
+  return worktreePortlessPrefix(repoRoot, branchName);
 }
 
 function isDevMode(value: string | null | undefined): value is DevMode {

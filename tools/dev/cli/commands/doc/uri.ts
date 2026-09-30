@@ -48,12 +48,14 @@ export async function resolveDocumentId(
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, { workId: target.workId }),
   );
-  if (address.kind === "unavailable") {
-    throw new CliError("not_found", `No live document at ${target.uri}`, {
-      hint: `Create it with \`./mf doc put ${target.uri} --text "..."\`.`,
-    });
-  }
+  if (address.kind === "unavailable") throw documentNotFound(target);
   return address.document.documentId;
+}
+
+export function documentNotFound(target: ResolvedUri): CliError {
+  return new CliError("not_found", `No live document at ${target.uri}`, {
+    hint: `Create it with \`./mf doc put ${target.uri} --text "..."\`.`,
+  });
 }
 
 /** `--project`/`--work` shared by every command that takes a document URI. */

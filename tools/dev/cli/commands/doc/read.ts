@@ -1,8 +1,9 @@
 import { apiProjectContextReadPath, type ContextReadResponse } from "@meridian/contracts/protocol";
+import { CliError } from "../../core/cli-error";
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { truncate } from "../../core/output";
 import { resolveProjectId } from "../project/resolve";
-import { PROJECT_OPTION, resolveUri } from "./uri";
+import { documentNotFound, PROJECT_OPTION, resolveUri } from "./uri";
 
 export const docReadCommand: CommandSpec = {
   path: ["doc", "read"],
@@ -23,10 +24,16 @@ export const docReadCommand: CommandSpec = {
       requirePositional(ctx, 0, "<uri>"),
       stringOption(ctx, "work"),
     );
-    const response = await session.request<ContextReadResponse>(
-      "GET",
-      apiProjectContextReadPath(projectId, target.scheme, target.path, { workId: target.workId }),
-    );
+    const response = await session
+      .request<ContextReadResponse>(
+        "GET",
+        apiProjectContextReadPath(projectId, target.scheme, target.path, { workId: target.workId }),
+      )
+      .catch((error: unknown) => {
+        throw error instanceof CliError && error.code === "not_found"
+          ? documentNotFound(target)
+          : error;
+      });
     const full = flag(ctx, "full");
     ctx.out.result({ uri: target.uri, ...response }, (value) =>
       value.kind === "tracked"

@@ -8,7 +8,7 @@ import https from "node:https";
 import path from "node:path";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 import { portlessCa } from "../../dev-readiness";
-import { branchToPortlessPrefix } from "../../portless-prefix";
+import { worktreePortlessPrefix } from "../../portless-prefix";
 import { resolveExpectedRouteUrls } from "../../portless-routes";
 import { CliError } from "./cli-error";
 
@@ -235,7 +235,7 @@ function resolvePortlessOrigins(repoRoot: string): { app: string; server: string
   const urls = resolveExpectedRouteUrls({
     output,
     mode: "local",
-    worktreePrefix: branchToPortlessPrefix(branch),
+    worktreePrefix: worktreePortlessPrefix(repoRoot, branch),
   });
   if (!urls.app || !urls.server) {
     throw new CliError("unavailable", "This worktree's app/server routes are not running", {

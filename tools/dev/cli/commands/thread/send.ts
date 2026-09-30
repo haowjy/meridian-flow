@@ -84,11 +84,19 @@ export type SendOutcome = {
 
 function assistantText(turn: Turn | undefined): string | null {
   if (!turn) return null;
-  const text = [...turn.blocks]
-    .sort((a, b) => a.sequence - b.sequence)
-    .filter((block) => block.blockType === "text")
-    .map((block) => blockPlainText(block.blockType, block.content) ?? block.textContent ?? "")
-    .join("");
+  // Text segments split by tool calls are separate replies, so they get a paragraph break.
+  let text = "";
+  let brokenByOtherBlock = false;
+  for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
+    if (block.blockType !== "text") {
+      brokenByOtherBlock = true;
+      continue;
+    }
+    const piece = blockPlainText(block.blockType, block.content) ?? block.textContent ?? "";
+    if (!piece) continue;
+    text = text && brokenByOtherBlock ? `${text.trimEnd()}\n\n${piece.trimStart()}` : text + piece;
+    brokenByOtherBlock = false;
+  }
   return text || null;
 }
 

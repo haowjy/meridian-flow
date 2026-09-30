@@ -189,6 +189,7 @@ function createFake() {
           content: "p2 done",
         } as AGUIEvent);
         assistant.blocks = [
+          { blockType: "text", content: "Delegating.", createdAt: "2026-01-01T00:00:00.100Z" },
           {
             blockType: "tool_use",
             content: { toolCallId: "call-1", toolName: "spawn", input: { agent: "r" } },
@@ -257,6 +258,9 @@ function createFake() {
       return byRef[1] === PROJECT_ID && byRef[2] === "c1"
         ? sendEnveloped(200, threadDto())
         : send(404, { message: "No live thread" });
+    }
+    if (route === `GET /api/projects/${PROJECT_ID}/context/manuscript/read`) {
+      return send(404, { message: "Context path not found" });
     }
     if (route === "POST /api/threads") {
       const body = (await readBody(req)) as { agentSelection?: unknown };
