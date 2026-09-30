@@ -44,9 +44,14 @@ export function defineThreadLsContract(
         })
       ).thread;
     }
+    const awakeThreadIds = new Set<ThreadId>();
     const statusReader = {
-      async readMany() {
-        return new Map();
+      async readMany(threadIds: readonly ThreadId[]) {
+        return new Map(
+          threadIds
+            .filter((threadId) => awakeThreadIds.has(threadId))
+            .map((threadId) => [threadId, undefined as never]),
+        );
       },
     };
     const read = (caller = root, input = {}) =>
@@ -73,7 +78,8 @@ export function defineThreadLsContract(
       });
       return turn;
     }
-    return { repos, root, child, fork, requester, read };
+    const setAwake = (thread: { id: string }) => awakeThreadIds.add(thread.id as ThreadId);
+    return { repos, root, child, fork, requester, read, setAwake };
   }
   describe("thread_ls", () => {
     it("formats collapsed, quoted snippets at a word boundary", () => {
@@ -134,7 +140,7 @@ export function defineThreadLsContract(
 
       expect(await f.read(f.root, { ref: child.ref })).toMatchInlineSnapshot(`
         "c1 (you) › p2
-        p2  running  Chapter 2 continuity check
+        p2  Chapter 2 continuity check
              last asked: "Read the referenced planning conversation and identify the three continuity risks.""
       `);
       expect(emptyFork.ref).toBe("c3");
@@ -168,6 +174,14 @@ export function defineThreadLsContract(
       expect(reads).toBe(1);
       expect(output).toContain('last asked: "Check the revised ending instead."');
       expect(output).not.toContain("Initial spawn prompt");
+    });
+
+    it("shows a running lifecycle only while the conversation is awake", async () => {
+      const f = await fixture();
+      const child = await f.child();
+      expect(await f.read(f.root, { ref: child.ref })).not.toContain("running");
+      f.setAwake(child);
+      expect(await f.read(f.root, { ref: child.ref })).toContain("p2  awake  running  child");
     });
 
     it("allows every lineage edge in both directions, enforces roots and denies live outsiders and trash", async () => {

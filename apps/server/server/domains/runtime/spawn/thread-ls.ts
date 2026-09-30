@@ -156,11 +156,14 @@ export async function listReadableThreads({
     const status = await statusReader.readMany(nodes.map((n) => n.thread.id));
     const render = (thread: Thread, level: number): string[] => {
       const snippet = lastAsked.get(thread.id as ThreadId);
+      const awake = status.has(thread.id);
       return [
         `${"  ".repeat(level)}${[
           label(thread),
-          ...(status.has(thread.id) ? ["awake"] : []),
-          ...(thread.spawnStatus ? [thread.spawnStatus] : []),
+          ...(awake ? ["awake"] : []),
+          ...(thread.spawnStatus && (thread.spawnStatus !== "running" || awake)
+            ? [thread.spawnStatus]
+            : []),
           ...(thread.title ? [thread.title] : []),
           ...(edge(thread) ? [edge(thread)] : []),
         ].join("  ")}`,
