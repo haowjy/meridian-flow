@@ -111,10 +111,11 @@
 - Pass `/compact <instructions>` to the summarizer and show the instructions on the queued row and divider. Offer Fork from a compaction divider.
 - Show "Compacting conversation" on every pending divider and the server's generic failure copy when compaction fails.
 - Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
-- Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
+- Summarize long chats with cached requests or rolling cheap-model summaries. Give summaries and handoff briefs fixed sections, merge earlier summaries explicitly, and keep story facts and user preferences.
+- Show what each conversation was last asked beneath its `thread_ls` row.
 - Default compaction to the model's usable window or a 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
-- Compact long conversations through reserved summary turns and atomic successor replies.
+- Compact long conversations through durable summary turns and atomic successor replies.
 - Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
@@ -136,7 +137,11 @@
 - Stop ends only the current turn; normal queue selection runs waiting messages before a command. Leave a command whose start throws queued like a message.
 - Always send queued-compaction withdrawal to the server so a command cannot run unseen after its local row disappears. When sending a row fails, offer Withdraw beside Retry.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
-- Fail a warm-summary error once instead of retrying it cold. Bound summary output without changing cached thinking.
+- Follow each compaction summary with an explicit continuation line, and give handoff briefs the same changed-document warnings as compaction.
+- Refer to the human as `the user` throughout model-facing prompts and `thread_history` labels.
+- Advertise defaulted model-tool fields as optional rather than required.
+- Render component model text in `thread_history` instead of raw props or IDs; omit bake hashes from segment headers and revision tokens from reference reads.
+- Fail a warm-summary error once instead of retrying it cold. Give summaries no output limit of their own, leaving provider defaults in place without changing cached thinking; advertise DeepSeek V4 Flash at 65,536 output tokens and Claude Sonnet 4 at 64,000.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
 - Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
 - Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
@@ -157,7 +162,7 @@
 - Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.
 
 - Add the pure compaction classifier, trigger resolution, retained-tail planner, and active-history projection; project completed summaries before image inclusion and context building.
-- Make forks retain their source Agent and idempotent by client ID. Normalize cutoff selection to the settled prefix of effective history. Refuse fork and handoff from subagent threads.
+- Make forks retain their source Agent and idempotent by client ID. Require fork and handoff to use the selected `originTurnId` exactly; refuse unsettled history with 409 `unsettled_history` and non-actionable turns with 400 `turn_not_actionable` instead of falling back to an earlier settled turn. Refuse fork and handoff from subagent threads.
 - Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
 - Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
 
