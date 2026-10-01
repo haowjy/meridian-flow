@@ -61,7 +61,8 @@ tools/dev/
 │   ├── tailscale-lifecycle.ts Stale route pruning + external route verification
 │   ├── tailscale-external-routes.ts  Pure policy: verify expected bindings
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
-│   ├── migration-state.ts     Expected vs applied migration hash drift detection
+│   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
+│   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
@@ -85,6 +86,8 @@ tools/dev/
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
 ├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
+├── migrate-db.ts              pnpm db:migrate (runner + SQL function sync)
+├── check-migration-history.ts pnpm db:migration-history -- --base <ref> (CI frozen-history check)
 ├── migration-lint.ts
 ├── project.json               Nx project; exposes the tools typecheck target
 └── tsconfig.json              Canonical strict TypeScript boundary for this directory
@@ -195,6 +198,26 @@ Plain HTTP hits to WebSocket routes (`/api/threads/ws`, `/ws/yjs`) produce 426 U
 
 ## Migration tooling
 
+`lib/migration-history.ts` is the one owner of migration identity: a journal
+entry (`idx`, `tag`, `when`, `breakpoints`) plus the SHA-256 of its SQL bytes.
+Two consumers compare it:
+
+- `check-migration-history.ts` reads the base ref's journal and SQL with
+  `git show` / `git ls-tree` (no checkout) and refuses any removed, edited,
+  renumbered, or re-timestamped base entry, plus a head journal that is not
+  contiguous in `idx`, strictly increasing and unique in `when`, and unique in
+  tags. CI runs it on PRs into `main`/`staging` (base `HEAD^1`) and on pushes
+  to `main` and, through Deploy Staging's `workflow_call`, `staging` (base
+  `github.event.before`, failing if that commit is gone). Only a manual
+  `workflow_dispatch` skips it.
+- `planDatabaseMigrations` classifies applied `__drizzle_migrations` rows as
+  `edited`, `retimestamped`, `missing-timestamp`, or `unknown`, and pending
+  entries not newer than the newest applied row as `out-of-order`. Any issue
+  is a full refusal. `runMigrations` takes `pg_advisory_xact_lock` before it
+  reads applied rows or creates the Drizzle schema, so concurrent runners
+  cannot double-apply; the `pnpm dev` preflight in `dev-infra.ts` uses the
+  same plan.
+
 `migration-lint.ts` scans generated Drizzle SQL for risky production patterns
 (renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, indexes
 without `CONCURRENTLY`, table-wide deletes/updates). A line can opt out with
@@ -212,9 +235,6 @@ Supported modes:
 Policy:
 
 - Errors always exit non-zero.
-- `ADD_NOT_NULL_WITHOUT_DEFAULT` is enforced across the current unreleased
-  migration tail beginning at `0060`; released migration `0059` and earlier
-  remain exempt and rely on executable migration tests.
 - Warnings exit non-zero only with `--strict`.
 - The squashed `0000_` baseline is warning-exempt; `DELETE_WITHOUT_WHERE` remains
   an error there too.
