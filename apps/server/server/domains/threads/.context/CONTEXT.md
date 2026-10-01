@@ -336,12 +336,13 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   does not — the fork cannot foreground-drive the source's subtree, or vice
   versa. The fork-source edge is not a `threads` column; it is recovered by
   resolving `originTurnId`'s owning thread.
-- **Fork cutoff** — normalization walks the effective transcript forward, no
-  later than the requested selection, and stops before the first unsettled turn
-  (`pending`, `streaming`, or `waiting_interrupt`). `complete`, `cancelled`, and
-  `error` are settled and valid cutoffs. A queued writer turn after a streaming
-  reply is therefore never inherited. A source with no settled turn fails with
-  `no_settled_turn`.
+- **Derivation cutoff** — `requireDerivationCutoff` in
+  `domain/derive-conversation.ts` cuts exactly at the named turn and never
+  moves it. It refuses a turn outside the source's effective transcript
+  (`turn_not_in_transcript`), any unsettled turn (`pending`, `streaming`,
+  `waiting_interrupt`) at or before it (`unsettled_history`, 409), and a turn
+  the UI offers no Fork or Hand off action on (`turn_not_actionable`).
+  `complete`, `cancelled`, and `error` are settled.
 - **Fork idempotency** — an existing client ID is reused from its thread row
   when owner and project match and its origin is `fork` and kind is `primary`;
   source/cutoff journal events are not consulted. All other ID reuse is a 409.
@@ -677,7 +678,17 @@ runtime orphan repair finalizes it; see
 ## Connected conversation authority
 
 Every thread persists a non-null `rootThreadId`. Organic primaries root at
-themselves; spawn, fork, and handoff creation copy the source root. A fork's
+themselves; spawn, fork, and handoff creation copy the source root. The root
+is consistent across a whole lineage: every thread reachable through spawn
+parents or derivation cutoffs carries it, and `spawnDepth` counts spawn hops
+from it. Anything that re-roots an existing thread must re-root its entire
+reachable subtree and shift depth in the same step (the only such path is
+`0014`'s lineage repair in `packages/database`). One stale descendant breaks
+`listLineageChildren` (`thread_ls`), `sameLineage` (`thread_message`
+authorization), Work purge's dependent-root retention, and trash restore's
+root-primary Work check. `(project_id, root_thread_id)` is an `ON DELETE
+CASCADE` FK, so a stale root also puts the descendant in another
+conversation's deletion path. A fork's
 up-edge is the owner of its cutoff turn, which may be an inherited owner;
 a handoff's cutoff points to its source. `threads_lineage_derivations` indexes
 fork/handoff rows by root. Mappers never invent a missing root.

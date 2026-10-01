@@ -35,6 +35,7 @@
     "dev:db:prepare": "tsx tools/dev/prepare-db.ts",
     "dev:db:drop": "tsx tools/dev/drop-db.ts",
     "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
+    "db:migration-history": "tsx tools/dev/check-migration-history.ts",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
     "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",

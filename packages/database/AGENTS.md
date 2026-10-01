@@ -19,12 +19,19 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Migrations: fresh-install baseline `0000_baseline.sql` (no
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
-  migration. When merging branches whose migrations collide, delete the
-  incoming migration and regenerate it from the merged schema; never renumber
-  or rename by hand (see `.context/CONTEXT.md`).
+  migration.
+- Migrations merged to `main` or `staging` are frozen: never edit, remove,
+  renumber, or retimestamp them. After merging the base branch, regenerate this
+  branch's unmerged generated migrations from the merged schema so they append
+  after the base tip; never renumber or rename them by hand (see
+  `.context/CONTEXT.md`). CI enforces this with `pnpm db:migration-history`;
+  journal indexes must be contiguous, timestamps strictly increasing, and tags
+  and timestamps unique. `db:migrate` refuses divergent applied history rather
+  than skipping it.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
-  (destroys local data); the new baseline is not an incremental upgrade. Never
-  reset another developer's database. Legacy imports are a separate ETL.
+  (destroys local data); the new baseline is not an incremental upgrade. Reset
+  only the current checkout's own dev database, never another developer's,
+  shared, or deployed database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.
