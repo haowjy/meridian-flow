@@ -1,0 +1,88 @@
+/**
+ * The one look for links, keyed by rendered-only data attributes so every
+ * surface (transcript, composer, Editor) draws the same thing by emitting the
+ * same attributes and never restyles it locally.
+ *
+ * Internal links are a tag chip (`linkChipAttributes()` in
+ * `core/editor/links/link-chip.ts`): `data-link-chip` is filled or dashed, and
+ * `data-link-chip-icon` names the document family. Each family's mask image
+ * arrives as `--link-chip-icon` from `family-icons.ts`, injected once into the
+ * document head, so the shapes are defined in one place.
+ *
+ * External links keep their underline and wear the outbound arrow, the one
+ * thing that tells a writer a link leaves the app before they press it.
+ *
+ * Unlayered on purpose: it must beat `.prose-tokens a` (a utility) wherever a
+ * chip is an anchor inside rendered prose.
+ */
+
+[data-link-chip] {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background-color: var(--color-muted);
+  color: inherit;
+  padding: 0.0625em 0.375em;
+  text-decoration: none;
+  /* A long name wraps as prose does, and every line fragment is a chip. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-color 150ms ease;
+}
+
+/* Drawn in the mask rather than as an element, so it is never in a copy or in
+   a screen reader's reading of the sentence. */
+[data-link-chip]::before {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.25em;
+  background-color: var(--color-muted-foreground);
+  content: "";
+  vertical-align: -0.14em;
+  mask-image: var(--link-chip-icon);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+/* Nothing at that address yet. Not an error: serial writers link chapters
+   before they write them, so this is quiet ink and an outline, never a
+   warning. */
+[data-link-chip="dashed"] {
+  border-color: var(--color-border);
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--color-ink-subtle);
+}
+
+/* Only a chip that goes somewhere answers the pointer. */
+[data-link-chip][role="link"]:not([aria-disabled="true"]):hover {
+  background-color: var(--color-sidebar-accent);
+}
+
+[data-link-chip="dashed"][role="link"]:not([aria-disabled="true"]):hover {
+  background-color: var(--color-muted);
+}
+
+[data-link-chip]:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+/* The outbound arrow: the Editor's external mark (`data-link-kind`) and the
+   transcript's (Streamdown's link control). A link still streaming in has no
+   destination yet and wears none. */
+a[data-link-kind="external"]::after,
+[data-streamdown="link"]:not([data-incomplete="true"])::after {
+  display: inline-block;
+  width: 0.625em;
+  height: 0.625em;
+  margin-left: 0.125em;
+  background-color: currentColor;
+  content: "";
+  vertical-align: 0.0625em;
+  opacity: 0.7;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M9 7h8v8'/%3E%3C/svg%3E");
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}

@@ -1,6 +1,7 @@
 /**
- * The link surfaces (§5.5, mockup 06): the destination hint, the state of an
- * unresolved target, and the mark an external link wears.
+ * The link surfaces (§5.5, mockup 06): the destination hint and the state of
+ * an unresolved target. The external link's outbound arrow and the internal
+ * link chip are shared with chat and live in `components/app/link-chip/`.
  *
  * The hint is approach chrome — it fades both ways and never takes the
  * pointer — and is portalled into the manuscript's scroll pane, hence the
@@ -66,22 +67,4 @@
   color: var(--color-ink-subtle);
   text-decoration-style: dashed;
   text-decoration-color: color-mix(in oklab, var(--color-ink-subtle) 55%, transparent);
-}
-
-/* The one thing that tells a writer a link leaves the app before they press
-   it: internal links carry no mark, external ones carry this arrow. Drawn in
-   the mask rather than as text so it never lands in a copy or a screen
-   reader's reading of the sentence. */
-.meridian-editor .ProseMirror a[data-link-kind="external"]::after {
-  display: inline-block;
-  width: 0.625em;
-  height: 0.625em;
-  margin-left: 0.125em;
-  background-color: currentColor;
-  content: "";
-  vertical-align: 0.0625em;
-  opacity: 0.7;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M9 7h8v8'/%3E%3C/svg%3E");
-  mask-repeat: no-repeat;
-  mask-size: contain;
 }
