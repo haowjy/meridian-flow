@@ -132,8 +132,9 @@ null on a code surface, on a read-only host, and behind a schema fence — the
 last because a slash command dispatches through a chain, and chains run on a
 non-editable editor. The wikilink getter answers null on the same three, plus a
 host with no project: without one there is nothing to search and nothing a link
-could resolve against. Its documents are the manuscript plus the active Work's
-scratch, which is the resolver's own candidate set.
+could resolve against. Its documents are `useLinkableDocuments`' index, which
+is the resolver's own candidate set
+([`features/links`](../../links/.context/CONTEXT.md)).
 
 ## The editor's scope
 
@@ -143,9 +144,9 @@ questions the document itself cannot:
 
 | Consumer | What the Work decides |
 |---|---|
-| `useLinkableDocuments` | the `[[` menu offers that Work's scratch beside the manuscript |
+| `useLinkableDocuments` | the `[[` menu offers that Work's Scratch and Uploads (the No Work row's when none is selected) beside the project's documents |
 | `ResolveDocumentLinkRequest.workId` | a contextual `scratch://` or `uploads://` link resolves in that Work |
-| `useOpenProjectDocument` | a followed link is looked for in that Work's scratch |
+| `useOpenProjectDocument` | a followed link opens with that Work still selected |
 
 `workId` arrives as a prop (the active thread's Work, or the project's default)
 and is deliberately NOT part of `EditorMountIdentity`: it is runtime scope, and

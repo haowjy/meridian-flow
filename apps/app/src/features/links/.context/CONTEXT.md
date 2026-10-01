@@ -118,16 +118,18 @@ outcome's state:
   and makes the new follow the owner before it says anything, so a fast answer
   clears the failure it replaces.
 
-Chat's `LinkFollowDialog` calls them directly. The Editor's chrome-hosted
-dialog reaches them through the link store's `dismissFollow()` and
-`retryFollow()`, which `ProjectLinkRuntime` registers. A dismissal is never
+A `LinkFollowDialog` host passes them straight through as `onClose` and
+`onRetry`. The Editor's chrome-hosted dialog reaches them through the link
+store's `dismissFollow()` and `retryFollow()`, which `ProjectLinkRuntime`
+registers. A dismissal is never
 inferred from the store clearing, because the procedure clears right before it
 opens.
 
 `gesture` comes from the click: `current` or `new-tab` (middle click,
-Ctrl/Cmd+click). The Editor maps `new-tab` to a background tab on its strip. There is no browser-tab disposition:
-the pane holds a live collaborative session, and a second window costs the
-writer their place to reach a document that was one tab away.
+Ctrl/Cmd+click). The Editor maps `new-tab` to a background tab on its strip;
+chat only ever follows `current`. There is no browser-tab disposition: the
+pane holds a live collaborative session, and a second window costs the writer
+their place to reach a document that was one tab away.
 
 Creating from the offer (`useCreateLinkedDocument`) writes `/<name>.md` into
 the manuscript, because a wikilink resolves by title and `documents.name` is the

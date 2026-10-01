@@ -120,6 +120,12 @@ The navigator is where a follow goes. The resolver is where every rendered
 internal link's state comes from, and the two share one cache, so a click on a
 link the writer can already see resolved opens the document with no round trip.
 
+The link store also takes `registerFollowHandlers({ dismiss, retry })`. The
+follow-outcome dialog mounts through the chrome host, not beside the follower,
+so its Close, Cancel, and Try again reach the follower through
+`dismissFollow()` and `retryFollow()`; only the follower knows which follow
+owns what is shown. With nothing registered, `dismissFollow()` just clears.
+
 `createLinkResolution` keys answers by `linkTargetHref(target)` — the
 classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
 ask once between them. Three states are answers (`pending`, `resolved`,
@@ -129,8 +135,10 @@ be drawn as a link that does not exist.
 
 Null from the port covers both "nothing matched" and "several did": ambiguity
 resolves to nothing rather than to a guess, and the writer sees the same
-dashed link either way. The `[[` menu is where ambiguity is named, before the
-link is written.
+dashed link either way. Ambiguity is named in two places, both outside this
+module: the `[[` menu offers every row a name matches before the link is
+written, and the app's follower reports `ambiguous` with the candidates when a
+complete local index proves several matches (`LinkFollowOutcome`).
 
 ### A registration is a generation
 
@@ -181,8 +189,8 @@ not an exotic one.
 All five canonical Context schemes resolve through the same server port. Wiki
 names search project/personal content plus the selected Work/no-Work, not other
 Works. An explicit canonical Work slug may navigate to that Work in the same
-  project; contextual scratch/uploads use the host's selected Work and `@/` is
-  explicit No Work. The server gets personal scope from authenticated identity.
+project; contextual scratch/uploads use the host's selected Work and `@/` is
+explicit No Work. The server gets personal scope from authenticated identity.
 There is no legacy `work://` adapter or client-side title-search fallback.
 Submitted transcript `(documentId, uri)` authority remains separate from syntax
 lookup; rendering a title does not adopt it as an attachment.
@@ -206,8 +214,8 @@ ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
 `surfaces/link/link-surfaces.css` reaches the anchor through
 `a:has([data-link-state="unresolved"])`
 — the underline belongs to the anchor and a descendant cannot call it off.
-  That nesting is load-bearing: a change to it is a silently unstyled
-  unresolved link.
+That nesting is load-bearing: a change to it is a silently unstyled unresolved
+link.
 
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
 zero extra attributes, and no peer ever receives a resolution.
