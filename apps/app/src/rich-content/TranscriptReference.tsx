@@ -27,6 +27,7 @@ import {
 
 import {
   classifyLinkTarget,
+  type LinkRequester,
   type LinkResolution,
   type LinkResolutionEntry,
   type LinkTarget,
@@ -47,6 +48,8 @@ export type TranscriptLinkNavigation = {
   canFollow(target: LinkTarget): boolean;
   /** The cache the surface's follows resolve through; what a syntax link draws. */
   resolution: LinkResolution | null;
+  /** Ask about an href while it is shown; one batched requester per surface. */
+  watch: LinkRequester["watch"];
 };
 
 export const TranscriptLinkNavigationContext = createContext<TranscriptLinkNavigation | undefined>(
@@ -105,7 +108,7 @@ export function TranscriptReference({
   const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
   const unfollowable = Boolean(navigation && syntax && !syntaxFollowable);
   const answer = useLinkAnswer(
-    syntax && !unfollowable ? (navigation?.resolution ?? null) : null,
+    syntax && !unfollowable ? navigation : undefined,
     syntax ? linkTargetHref(syntax) : null,
   );
   // A syntax link this surface can never follow (a relative path with nothing
@@ -155,17 +158,17 @@ export function TranscriptReference({
 }
 
 /**
- * What the cache says about one href, asked for while the reference is shown,
- * the way the Editor's decoration plugin asks for the links it draws. Asking
- * again on every publish is how a new generation (a scope or catalog change)
- * gets its question; an href already answered, or failed, is never re-asked,
- * so the loop ends. The cache batches, so many chips cost one question per
- * distinct target.
+ * What the cache says about one href, read per reference. Asking is the
+ * surface's single requester's job (`watch`), the way the Editor's decoration
+ * plugin asks for the whole document in one pass: a reference only registers
+ * that it is shown.
  */
 function useLinkAnswer(
-  resolution: LinkResolution | null,
+  navigation: TranscriptLinkNavigation | undefined,
   href: string | null,
 ): LinkResolutionEntry | null {
+  const resolution = navigation?.resolution ?? null;
+  const watch = navigation?.watch;
   const subscribe = useCallback(
     (listener: () => void) => resolution?.subscribe(listener) ?? (() => {}),
     [resolution],
@@ -175,26 +178,6 @@ function useLinkAnswer(
     () => (resolution && href ? resolution.read(href) : null),
     () => null,
   );
-  useEffect(() => {
-    if (!resolution || !href) return;
-    let live = true;
-    let scheduled = false;
-    // Deferred and coalesced: asking publishes, and publishing from inside a
-    // publish would re-enter every listener once per chip.
-    const ask = () => {
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        scheduled = false;
-        if (live) resolution.request([href]);
-      });
-    };
-    resolution.request([href]);
-    const unsubscribe = resolution.subscribe(ask);
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [resolution, href]);
+  useEffect(() => (watch && href ? watch(href) : undefined), [watch, href]);
   return entry;
 }

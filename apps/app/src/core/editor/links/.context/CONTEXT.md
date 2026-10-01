@@ -225,6 +225,12 @@ stylesheet reaches the anchor through `a:has([data-link-chip-part])`. So
 load-bearing: a mark ranked above the link would split the `<a>`, and a change
 to the decoration shape is a silently undrawn chip.
 
+A React surface with no document to scan (the chat transcript) does the same
+through `createLinkRequester`: each shown link `watch`es its href, one
+requester per surface asks about the whole watched set in one microtask-
+coalesced `request()` on mount and on every publish, and each link only reads
+its answer. Asking per link costs links × publishes.
+
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
 zero extra attributes, and no peer ever receives a resolution.
 

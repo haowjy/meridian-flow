@@ -25,7 +25,7 @@
  *
  * Drawing: the chat owns one resolution cache and hands it to the follower and
  * to the transcript, so a syntax link's chip and a click on it read the same
- * answer. Created once and never destroyed, as the follower's own would be:
+ * answer. One requester asks about every link the transcript shows, batched. Created once and never destroyed, as the follower's own would be:
  * `destroy()` drops listeners, and a StrictMode remount keeps the instance.
  */
 
@@ -33,7 +33,7 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useMemo, useState } from "react";
 
 import { useWorks } from "@/client/query/useWorks";
-import { createLinkResolution } from "@/core/editor/links";
+import { createLinkRequester, createLinkResolution } from "@/core/editor/links";
 import {
   type LinkDestination,
   type LinkFollowDialog,
@@ -113,6 +113,7 @@ export function useChatLinkFollowing({
 
   const { outcome, reporter } = useFollowOutcomeState();
   const [resolution] = useState(createLinkResolution);
+  const [requester] = useState(() => createLinkRequester(resolution));
   const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
 
   const navigation = useMemo<TranscriptLinkNavigation>(
@@ -120,8 +121,9 @@ export function useChatLinkFollowing({
       follow: (target) => follower.follow(target),
       canFollow: follower.canFollow,
       resolution,
+      watch: requester.watch,
     }),
-    [follower, resolution],
+    [follower, requester, resolution],
   );
 
   return {

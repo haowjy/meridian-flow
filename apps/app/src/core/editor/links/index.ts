@@ -54,6 +54,7 @@ export {
   linkClickIntent,
   MIDDLE_BUTTON,
 } from "./link-navigation";
+export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
   createLinkResolution,
   type InternalLinkResolver,

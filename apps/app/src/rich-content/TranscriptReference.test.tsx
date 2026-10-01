@@ -5,11 +5,16 @@
  */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createLinkResolution, type LinkResolution, type LinkTarget } from "@/core/editor/links";
+import {
+  createLinkRequester,
+  createLinkResolution,
+  type LinkResolution,
+  type LinkTarget,
+} from "@/core/editor/links";
 
 import {
   type TranscriptLinkNavigation,
@@ -47,6 +52,7 @@ beforeEach(() => {
     follow,
     canFollow: (target: LinkTarget) => target.kind !== "relative",
     resolution,
+    watch: createLinkRequester(resolution).watch,
   };
 });
 
@@ -169,6 +175,26 @@ describe("TranscriptReference", () => {
     await settle();
 
     expect(chip(reference)).toEqual({ state: "filled", icon: "kb" });
+  });
+
+  it("asks once per href and settles under StrictMode's double mount", async () => {
+    const resolver = vi.fn(async () => KB_KAEL);
+    resolution.registerResolver(resolver);
+    act(() =>
+      root.render(
+        <StrictMode>
+          <TranscriptLinkNavigationContext.Provider value={navigation}>
+            <TranscriptReference data-target-href="[[Kael]]">Kael</TranscriptReference>
+            <TranscriptReference data-target-href="[[Kael]]">the warden</TranscriptReference>
+          </TranscriptLinkNavigationContext.Provider>
+        </StrictMode>,
+      ),
+    );
+    await settle();
+
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(chip(find("Kael"))).toEqual({ state: "filled", icon: "kb" });
+    expect(chip(find("the warden"))).toEqual({ state: "filled", icon: "kb" });
   });
 
   it("dashes an exact reference whose document is gone, and does not follow it", () => {
