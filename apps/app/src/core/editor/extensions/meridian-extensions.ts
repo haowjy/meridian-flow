@@ -289,8 +289,8 @@ export const MeridianLink = Link.extend({
 
   /**
    * Rendered, not stored: `data-link-kind` is what lets CSS give an external
-   * link its trailing arrow and (at M12) an unresolved wikilink its dashed
-   * quiet ink. It is absent from `addAttributes`, so it never reaches the
+   * link its trailing arrow. An internal link's chip comes from the
+   * resolution decorations inside this `<a>`, never from the mark. It is absent from `addAttributes`, so it never reaches the
    * schema, the wire format, or another peer's document.
    *
    * It replaces TipTap's own renderHTML, so it also carries TipTap's fence:

@@ -65,7 +65,10 @@ Beside them, three things that are not summoned surfaces:
   means, or decides whether it can be followed, is a second classifier.
 - **Unresolved is a sentence, never a warning.** The hint says no document
   carries that name yet; it is not an error voice, because linking ahead of
-  writing is the job (§5.5).
+  writing is the job (§5.5). A name several documents carry says so, in the
+  follow outcome's own words. How the link itself looks is the shared chip
+  ([`components/app/link-chip/`](../../../../components/app/link-chip/AGENTS.md)),
+  never a rule in this lane's stylesheet.
 - **A pending answer claims nothing.** The hint shows the destination and
   waits.
 - **Following is `features/links`'.** The scope an answer belongs to, cache

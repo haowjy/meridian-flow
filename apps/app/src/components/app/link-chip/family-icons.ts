@@ -124,12 +124,14 @@ export function familyIcon(family: LinkChipIcon): LucideIcon {
 
 /**
  * One rule per chip icon, setting `--link-chip-icon` to that family's mask
- * image. The chip stylesheet (`link-chip.css`) draws the icon from the custom
- * property, so the family-to-image map lives only here.
+ * image on the chip: the element carrying the icon attribute, or the Editor's
+ * `<a>` whose decoration spans carry it (see `link-chip.css`). The chip
+ * stylesheet draws the icon from the custom property, so the family-to-image
+ * map lives only here.
  */
 export const LINK_CHIP_ICON_CSS = LINK_CHIP_ICONS.map(
   (icon) =>
-    `[data-link-chip-icon="${icon}"]{--link-chip-icon:${maskImage(FAMILY_ICON_NODES[icon].node)}}`,
+    `:is([data-link-chip-icon="${icon}"],a:has([data-link-chip-icon="${icon}"])){--link-chip-icon:${maskImage(FAMILY_ICON_NODES[icon].node)}}`,
 ).join("\n");
 
 /** lucide's own stroke defaults; the mask paints whatever colour the chip gives it. */

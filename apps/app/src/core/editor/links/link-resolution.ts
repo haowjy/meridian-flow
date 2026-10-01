@@ -66,6 +66,12 @@ export type LinkResolution = {
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
   /**
+   * The URI of the document holding the links, as the live registration
+   * stated it: what a relative link's family is drawn from before it
+   * resolves. Null with no registration, or before the holder is known.
+   */
+  readonly baseUri: string | null;
+  /**
    * The answer for this href as it stands, or null when there is nothing to
    * say: an external link, an unclassifiable one, a failed request, or no port
    * yet. Pure — a renderer may call it as often as it likes.
@@ -85,9 +91,13 @@ export type LinkResolution = {
    * Registers the port and starts a generation with it. Every answer and every
    * failure the previous one produced is gone at that moment, which is what
    * makes this the app's only invalidation: register again and the last
-   * generation's answers are unreachable.
+   * generation's answers are unreachable. `baseUri` is part of what the
+   * generation is true of, so a base arriving is a new registration.
    */
-  registerResolver: (resolve: InternalLinkResolver) => () => void;
+  registerResolver: (
+    resolve: InternalLinkResolver,
+    options?: { baseUri?: string | null },
+  ) => () => void;
   destroy: () => void;
 };
 
@@ -122,6 +132,7 @@ type Request = {
 /** Everything true of one registration of the port. */
 type Generation = {
   readonly resolver: InternalLinkResolver;
+  readonly baseUri: string | null;
   /** Answers, keyed by the classifier's spelling of the href. */
   readonly answers: Map<string, LinkResolutionEntry>;
   /** Keys whose request failed. Not answers — questions that never got asked. */
@@ -264,6 +275,10 @@ export function createLinkResolution(): LinkResolution {
       return current !== null;
     },
 
+    get baseUri() {
+      return current?.baseUri ?? null;
+    },
+
     read(href) {
       if (!current) return null;
       const internal = internalHref(href);
@@ -298,10 +313,11 @@ export function createLinkResolution(): LinkResolution {
       return askAwaited(generation, internal.key, internal.target);
     },
 
-    registerResolver(resolve) {
+    registerResolver(resolve, options) {
       const previous = current;
       current = {
         resolver: resolve,
+        baseUri: options?.baseUri ?? null,
         answers: new Map(),
         failed: new Set(),
         asking: new Map(),

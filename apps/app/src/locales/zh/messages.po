@@ -2388,6 +2388,7 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "More than one document carries that name"
 msgstr ""

@@ -27,41 +27,80 @@ afterEach(() => {
   }
 });
 
-function drawn(resolver: InternalLinkResolver): Editor {
+function drawn(
+  resolver: InternalLinkResolver,
+  { href = "[[Kael]]", baseUri }: { href?: string; baseUri?: string } = {},
+): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   const editor = new Editor({
     element,
     extensions: createStandaloneEditorExtensions(),
-    content: '<p>Ask <a href="[[Kael]]">Kael</a> first.</p>',
+    content: `<p>Ask <a href="${href}">Kael</a> first.</p>`,
   });
   live.push({ editor, host: element });
-  getLinkResolution(editor)?.registerResolver(resolver);
+  getLinkResolution(editor)?.registerResolver(resolver, { baseUri });
   return editor;
 }
 
-function state(editor: Editor): string | null | undefined {
-  return editor.view.dom.querySelector("a [data-link-state]")?.getAttribute("data-link-state");
+/** What the decoration inside the link's anchor says. */
+function drawing(editor: Editor) {
+  const span = editor.view.dom.querySelector("a [data-link-chip-part]");
+  return {
+    state: span?.getAttribute("data-link-state") ?? null,
+    chip: span?.getAttribute("data-link-chip-part") ?? null,
+    icon: span?.getAttribute("data-link-chip-icon") ?? null,
+  };
 }
 
-const ANSWERS: Array<[string, InternalLinkResolver]> = [
-  ["resolved", async () => KAEL],
-  ["unresolved", async () => null],
+const ANSWERS: Array<[string, InternalLinkResolver, string, string]> = [
+  ["resolved", async () => KAEL, "filled", "manuscript"],
+  ["unresolved", async () => null, "dashed", "file-plus"],
   // Several documents carry the name: a link that leads somewhere, never drawn
   // as one with nothing behind it.
-  ["ambiguous", async () => "ambiguous"],
+  ["ambiguous", async () => "ambiguous", "filled", "file"],
 ];
 
 describe("link resolution decorations", () => {
-  it.each(ANSWERS)("draws a %s answer", async (expected, resolver) => {
+  it.each(ANSWERS)("draws a %s answer as a %s chip", async (state, resolver, chip, icon) => {
     const editor = drawn(resolver);
 
-    await vi.waitFor(() => expect(state(editor)).toBe(expected));
+    await vi.waitFor(() => expect(drawing(editor)).toEqual({ state, chip, icon }));
   });
 
   it("draws pending while the question is out", async () => {
     const editor = drawn(() => new Promise(() => {}));
 
-    await vi.waitFor(() => expect(state(editor)).toBe("pending"));
+    await vi.waitFor(() =>
+      expect(drawing(editor)).toEqual({ state: "pending", chip: "filled", icon: "file" }),
+    );
+  });
+
+  it("draws a link that could not be checked as filled, never as missing", async () => {
+    const editor = drawn(async () => {
+      throw new Error("offline");
+    });
+
+    await vi.waitFor(() =>
+      expect(drawing(editor)).toEqual({ state: null, chip: "filled", icon: "file" }),
+    );
+  });
+
+  it("gives a relative link the family of the document holding it", async () => {
+    const editor = drawn(async () => null, {
+      href: "./cast.md",
+      baseUri: "kb://characters/index.md",
+    });
+
+    await vi.waitFor(() =>
+      expect(drawing(editor)).toEqual({ state: "unresolved", chip: "dashed", icon: "kb" }),
+    );
+  });
+
+  it("draws nothing on an external link", async () => {
+    const editor = drawn(async () => KAEL, { href: "https://example.com/" });
+    await Promise.resolve();
+
+    expect(editor.view.dom.querySelector("[data-link-chip-part]")).toBeNull();
   });
 });

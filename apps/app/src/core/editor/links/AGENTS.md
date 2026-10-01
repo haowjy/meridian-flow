@@ -24,8 +24,9 @@ offering a dead verb.
 
 **Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
 target and its resolution answer to a state (filled, or dashed when nothing is
-at that address) and a family icon name; every surface emits
-`linkChipAttributes()` and the look lives in
+at that address) and a family icon name; every surface emits its
+attributes (the Editor on the decoration spans inside its `<a>`) and the look
+lives in
 [`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
 Core names families and imports no icons.
 
