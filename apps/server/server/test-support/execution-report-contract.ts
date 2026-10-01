@@ -17,7 +17,7 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
       await new Promise((resolve) => setTimeout(resolve, 2));
       const second = await s.repos.executionReports.admit({
         ...s.input,
-        assistantTurnId: nextTurn.id,
+        executionTurnId: nextTurn.id,
         origin: "thread_run",
         deliveryMode: "none",
         callerThreadId: null,
@@ -48,11 +48,12 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
         projectId: ids.project,
         parentThreadId: ids.caller,
         rootThreadId: ids.caller,
+        originTurnId: ids.callerTurn,
         spawnDepth: 1,
       });
       await expect(s.admit({ childThreadId: other.id, handle: other.ref ?? "" })).rejects.toThrow();
       await expect(s.admit({ toolCallId: "another-invocation" })).rejects.toThrow();
-      await expect(s.admit({ assistantTurnId: ids.childUserTurn })).rejects.toThrow();
+      await expect(s.admit({ executionTurnId: ids.childUserTurn })).rejects.toThrow();
       const capture = { summary: "saved", payload: { nested: [1, true, null, "text"] } };
       await s.capture(capture);
       capture.payload.nested.push("external mutation");
@@ -72,7 +73,7 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
       ).rejects.toThrow();
       expect(await repos.executionReports.listPendingPublication(10)).toContainEqual({
         childThreadId: ids.child,
-        assistantTurnId: ids.execution,
+        executionTurnId: ids.execution,
         callerThreadId: ids.caller,
       });
       await repos.transaction(async () => {

@@ -89,6 +89,11 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
+- **Only a finished turn auto-pushes**: the trail-work claim
+  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` when
+  its turn ended `error` or `cancelled`, so a failed reply's draft waits for
+  the writer's Apply. This depends on the read model never rewriting a failed
+  turn's status (see the threads read-model projector).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
@@ -131,11 +136,18 @@
   authority joined after the durable commit publishes another trail version. If
   that admission's aggregate fold cancels a provisional row, settlement restores
   the push contribution from the replacement's durable owner/title context.
-- **Settlement verification stack**: the killed-process oracle owns durable
-  settlement risks—transaction boundaries, claims and leases, lock cuts, crash
-  windows, and cold recovery. Pure provenance and policy semantics belong to their
-  focused owners rather than to a second PostgreSQL replay graph. The oracle is
-  necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
+- **Settlement verification stack**: transition ordering, deletion rechecks,
+  lease expiry and handoff, and fault windows run in
+  `domain/branch-push-transition.test.ts` over real Yjs, in-memory ports and fake
+  time; add new matrix cases there. The PostgreSQL killed-process oracle
+  (`branch-push-settlement-oracle.db.test.ts`) keeps only what an in-memory port
+  cannot prove: the cold lock cut with post-cut joins, stale-claim fencing
+  against a live holder, and commit-fault durability inside the completion
+  transaction. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
+  replay, aggregate row version, fold restoration, and journal attribution
+  assertions; do not move them to fakes. Pure provenance and policy semantics
+  belong to their focused owners rather than to a second PostgreSQL replay graph.
+  The oracle is necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
   updates, and release probes must verify writer-visible trail flows.

@@ -4,7 +4,8 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
-import type { AgentSelection } from "../agents/index.js";
+import { z } from "zod";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -54,7 +55,7 @@ export type ThreadLiveState = {
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
   runningTurnId: string | null;
-  /** Recursive subagent activity for this thread's own subtree; derived, never a turn block. */
+  /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
   /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
   pending: ThreadPendingInbox;
@@ -361,11 +362,29 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
-/** Omission or the parent's revision retains its frozen prompt and Agent configuration. */
-export type ForkThreadRequest = {
-  agentSelection?: AgentSelection;
-  originTurnId?: string | null;
-};
+export const forkThreadRequestSchema = z
+  .object({
+    /** Client-minted id makes a navigate-first fork retryable. */
+    id: z.string(),
+    originTurnId: z.uuid(),
+  })
+  .strict();
+
+export const handoffThreadRequestSchema = z.strictObject({
+  id: z.uuid(),
+  originTurnId: z.uuid(),
+  agentSelection: agentSelectionSchema,
+});
+export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
+
+export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
+
+/** Client-minted assistant-turn identity for an explicit retry of a failed reply. */
+export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
@@ -448,6 +467,24 @@ export type ThreadSnapshotResponse = {
   nextSeq: string;
   /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
   ancestors: ThreadSnapshotAncestor[];
+};
+
+/** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
+export type TranscriptPageResponse = {
+  /** Page entries are chronological, even when requested newest-first. */
+  entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
+  owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
+  segment: {
+    index: number;
+    bakeId: string | null;
+    openedBy: { turnId: string; kind: "compaction" | "other" } | null;
+    compactedThrough?: { turnId: string; blockSequence?: number };
+  };
+  segmentBoundary: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
+  /** A live, non-cursor preview returned only on the first effective newest-first page. */
+  unsettledTail?: Array<{ turn: Turn; blocks: Block[] }>;
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

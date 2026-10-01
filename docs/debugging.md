@@ -42,6 +42,8 @@ Start from your symptom in [Strategies](#strategies), or scan the
 
 ## Drive the App from the CLI
 
+Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
+
 `./mf` (repo root) is a thin wrapper over this worktree's own API: every command
 maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the
@@ -54,7 +56,7 @@ Use it instead of the browser for anything that is not visual.
 ./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
 ./mf thread view c3                                # transcript (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
-./mf thread events <id> --child p2                 # one subagent's status, phase, tool, and target per activity frame
+./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md
 ./mf api GET /api/threads/<id>/skills              # any route without a dedicated command
@@ -72,6 +74,15 @@ Contract:
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
+  When a run splits across a compaction (for example overflow recovery), the
+  result can name the run's first turn with a null `finalText` instead of the
+  reply that answered: read the answer with `./mf thread view`
+  ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+- `thread view` prints a failed compaction's typed outcome as
+  `compaction failure: <reason> during <phase>`. With `--json`, compaction
+  turns carry `compactionMetadata` (trigger, control IDs, failure reason and
+  phase, fit tokens, `tokensBefore`/`tokensAfter`);
+  `error` remains writer-facing copy.
 - `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,

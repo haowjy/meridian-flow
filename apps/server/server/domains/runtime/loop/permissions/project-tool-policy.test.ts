@@ -23,6 +23,8 @@ const ALL_FLOW_TOOLS = [
   "search",
   "skill",
   "spawn",
+  "thread_history",
+  "thread_ls",
   "thread_message",
   "thread_report",
   "work",

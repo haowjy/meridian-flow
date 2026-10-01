@@ -95,6 +95,44 @@ describe("wake run", () => {
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual([]);
   });
 
+  it("rereads after an empty run when a message arrives under its claim", async () => {
+    const rig = await runtimeScenario({ gateway: textGateway() });
+    const repair = rig.delivery.repairOrphanedTurns.bind(rig.delivery);
+    let injected = false;
+    rig.delivery.repairOrphanedTurns = async (lease) => {
+      await repair(lease);
+      if (injected) return;
+      injected = true;
+      await rig.inbox.enqueue(message("arrived during empty run", rig.thread.id));
+    };
+
+    await expect(rig.runner.startDrain(rig.thread.id)).resolves.toBeUndefined();
+    await rig.untilSettled();
+
+    expect(await rig.repos.turns.listByThread(rig.thread.id)).toHaveLength(2);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+  });
+
+  it("does not reread after a real setup error", async () => {
+    const rig = await runtimeScenario({ gateway: textGateway() });
+    const messageRow = await rig.inbox.enqueue(message("wait for recovery", rig.thread.id));
+    const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+    let starts = 0;
+    rig.runClaim.startExecution = async (...args) => {
+      starts += 1;
+      return startExecution(...args);
+    };
+    rig.delivery.repairOrphanedTurns = async () => {
+      throw new Error("orphan repair unavailable");
+    };
+
+    await expect(rig.runner.startDrain(rig.thread.id)).rejects.toThrow("orphan repair unavailable");
+
+    expect(starts).toBe(1);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toMatchObject([{ id: messageRow.id }]);
+    expect(await rig.runClaim.holder(rig.thread.id)).toBeNull();
+  });
+
   it("notifies on run start while the run is live", async () => {
     const gate = runtimeGate();
     const started: ThreadId[] = [];

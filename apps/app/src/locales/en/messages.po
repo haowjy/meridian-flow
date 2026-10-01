@@ -163,7 +163,7 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
-#. placeholder {0}: descendants.length
+#. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
 msgstr "{0} running"
@@ -184,7 +184,7 @@ msgstr "{0} source copied"
 msgid "{0} stopped"
 msgstr "{0} stopped"
 
-#. placeholder {0}: descendants.length
+#. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} subagents"
 msgstr "{0} subagents"
@@ -242,6 +242,10 @@ msgstr "{filename} could not be read from that site. It stayed a link."
 msgid "{filename} did not import. It stayed a link."
 msgstr "{filename} did not import. It stayed a link."
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "{full}, summary"
+msgstr "{full}, summary"
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
 msgstr "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
@@ -261,6 +265,10 @@ msgstr "{matches} results in {inDocuments}"
 #: src/lib/date-groups.ts
 msgid "{minutes}m"
 msgstr "{minutes}m"
+
+#: src/features/chat/derivation/SourceChatLink.tsx
+msgid "{name} (in the trash)"
+msgstr "{name} (in the trash)"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -308,6 +316,16 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
+
+#: src/features/chat/derivation/InheritedMarks.tsx
+#: src/features/chat/derivation/ThreadReferenceChip.tsx
+#: src/features/chat/SpawnReportCard.tsx
+msgid "<0>From </0><1/>"
+msgstr "<0>From </0><1/>"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "<0>Handed off from </0><1/>"
+msgstr "<0>Handed off from </0><1/>"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
@@ -540,8 +558,8 @@ msgid "workReceipt.archived"
 msgstr "Archived Work {name}"
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Asleep"
-msgstr "Asleep"
+#~ msgid "Asleep"
+#~ msgstr "Asleep"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -812,7 +830,7 @@ msgstr "Chime in"
 msgid "Choose a document or enter a web address or document path."
 msgstr "Choose a document or enter a web address or document path."
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Choose a home"
 msgstr "Choose a home"
 
@@ -950,6 +968,44 @@ msgstr "Combines {0} AI turns"
 msgid "Commands"
 msgstr "Commands"
 
+#: src/features/chat/ChatView.tsx
+msgid "Compact conversation"
+msgstr "Compact conversation"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacted"
+msgstr "Compacted"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacting"
+msgstr "Compacting"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+msgid "Compacting conversation"
+msgstr "Compacting conversation"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction"
+msgstr "Compaction"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compaction information"
+msgstr "Compaction information"
+
+#: src/features/chat/compaction/control-copy.ts
+msgid "Compaction queued"
+msgstr "Compaction queued"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+msgid "Compaction stopped"
+msgstr "Compaction stopped"
+
+#: src/features/chat/compaction/control-copy.ts
+msgid "Compaction withdrawn"
+msgstr "Compaction withdrawn"
+
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
 msgstr "Composer controls"
@@ -970,6 +1026,19 @@ msgstr "Connection lost. Retrying… attempt {0}"
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
 msgstr "Context"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+msgid "Conversation compacted"
+msgstr "Conversation compacted"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Conversation compacted automatically"
+msgstr "Conversation compacted automatically"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Conversation not compacted"
+msgstr "Conversation not compacted"
 
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1030,6 +1099,10 @@ msgstr "Couldn't check recent changes"
 msgid "Couldn't check Work"
 msgstr "Couldn't check Work"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Couldn't compact"
+msgstr "Couldn't compact"
+
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
@@ -1045,6 +1118,10 @@ msgstr "Couldn’t create note"
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Couldn't create this file."
 msgstr "Couldn't create this file."
+
+#: src/features/chat/derivation/derive-conversation.ts
+msgid "Couldn't create this fork."
+msgstr "Couldn't create this fork."
 
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Couldn’t create this Work."
@@ -1130,6 +1207,10 @@ msgstr "Couldn't load references."
 msgid "Couldn't load results."
 msgstr "Couldn't load results."
 
+#: src/features/chat/TurnList.tsx
+msgid "Couldn't load the conversation this fork continues."
+msgstr "Couldn't load the conversation this fork continues."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -1155,6 +1236,10 @@ msgstr "Couldn't open review mode."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/chat/compaction/control-copy.ts
+msgid "Couldn't queue the compaction."
+msgstr "Couldn't queue the compaction."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
@@ -1196,6 +1281,12 @@ msgstr "Couldn’t rename this Work. Try again."
 msgid "Couldn’t restore this Work"
 msgstr "Couldn’t restore this Work"
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useRetryStandIns.ts
+msgid "Couldn't retry."
+msgstr "Couldn't retry."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
@@ -1233,6 +1324,32 @@ msgstr "Couldn't send."
 msgid "Couldn't send. Your message was not lost."
 msgstr "Couldn't send. Your message was not lost."
 
+#: src/features/chat/derivation/useHandoffBrief.ts
+msgid "Couldn't start a new brief. Try again."
+msgstr "Couldn't start a new brief. Try again."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't start the retry."
+msgstr "Couldn't start the retry."
+
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useReplyRetry.ts
+msgid "Couldn't start the retry. Try again."
+msgstr "Couldn't start the retry. Try again."
+
+#: src/features/chat/derivation/derive-conversation.ts
+msgid "Couldn't start this handoff."
+msgstr "Couldn't start this handoff."
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/derivation/useHandoffBrief.ts
+msgid "Couldn't stop the brief. Try again."
+msgstr "Couldn't stop the brief. Try again."
+
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't stop the compaction. Try again."
+msgstr "Couldn't stop the compaction. Try again."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr "Couldn't switch Work"
@@ -1244,6 +1361,11 @@ msgstr "Couldn't undo"
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't withdraw. Try again."
+msgstr "Couldn't withdraw. Try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
@@ -1642,8 +1764,8 @@ msgid "epigraph"
 msgstr "epigraph"
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "Errored."
-msgstr "Errored."
+#~ msgid "Errored."
+#~ msgstr "Errored."
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -1776,13 +1898,17 @@ msgstr "flowchart"
 msgid "Folder name"
 msgstr "Folder name"
 
+#: src/features/chat/derivation/DeriveTurnActions.tsx
+msgid "Fork from here"
+msgstr "Fork from here"
+
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Generating"
-msgstr "Generating"
+#~ msgid "Generating"
+#~ msgstr "Generating"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -1820,6 +1946,36 @@ msgstr "h2"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h3"
 msgstr "h3"
+
+#: src/features/chat/derivation/DeriveTurnActions.tsx
+msgid "Hand off from here"
+msgstr "Hand off from here"
+
+#: src/features/chat/derivation/DeriveTurnActions.tsx
+msgid "Hand off to"
+msgstr "Hand off to"
+
+#: src/features/chat/derivation/DeriveTurnActions.tsx
+msgid "Hand off to an Agent"
+msgstr "Hand off to an Agent"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Handoff brief"
+msgstr "Handoff brief"
+
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+msgid "Handoff brief ready"
+msgstr "Handoff brief ready"
+
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Handoff brief stopped"
+msgstr "Handoff brief stopped"
+
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Handoff brief unavailable"
+msgstr "Handoff brief unavailable"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Header row"
@@ -2210,6 +2366,7 @@ msgid "missing kind"
 msgstr "missing kind"
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "Model"
 
@@ -2474,6 +2631,10 @@ msgstr "No Work matches your search."
 msgid "No Work yet."
 msgstr "No Work yet."
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Not compacted"
+msgstr "Not compacted"
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -2521,7 +2682,7 @@ msgstr "Numbered list"
 msgid "ol"
 msgstr "ol"
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr "Only on this device"
 
@@ -2625,6 +2786,10 @@ msgstr "Open result {name}"
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Open results"
 msgstr "Open results"
+
+#: src/features/chat/derivation/SourceChatLink.tsx
+msgid "Open source chat {name}"
+msgstr "Open source chat {name}"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."
@@ -2739,6 +2904,10 @@ msgstr "Put the caret in a table first."
 #: src/features/chat/UserTurn.tsx
 msgid "Queued"
 msgstr "Queued"
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Queued commands"
+msgstr "Queued commands"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
@@ -2891,7 +3060,7 @@ msgstr "Removed"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -2906,7 +3075,7 @@ msgstr "Rename chat"
 msgid "Rename project: {title}"
 msgstr "Rename project: {title}"
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Rename this document or move it somewhere else in your project."
 msgstr "Rename this document or move it somewhere else in your project."
 
@@ -2990,6 +3159,8 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
@@ -3013,6 +3184,10 @@ msgstr "Retry loading"
 msgid "Retry Pending drafts"
 msgstr "Retry Pending drafts"
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Retry queueing"
+msgstr "Retry queueing"
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
 msgstr "Retry save"
@@ -3020,6 +3195,10 @@ msgstr "Retry save"
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Retry the handoff brief"
+msgstr "Retry the handoff brief"
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -3224,6 +3403,7 @@ msgstr "Shared an attachment"
 msgid "Show chats"
 msgstr "Show chats"
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show less"
 msgstr "Show less"
@@ -3232,9 +3412,17 @@ msgstr "Show less"
 msgid "Show more"
 msgstr "Show more"
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Show the whole brief"
+msgstr "Show the whole brief"
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Show Work"
 msgstr "Show Work"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Shows token counts and the model on each reply and compaction"
+msgstr "Shows token counts and the model on each reply and compaction"
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -3276,7 +3464,6 @@ msgstr "Some changes couldn't be completed."
 msgid "Some changes to {name} couldn't be completed."
 msgstr "Some changes to {name} couldn't be completed."
 
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
 msgstr "Something went wrong generating a response."
@@ -3315,6 +3502,10 @@ msgstr "Start writing…"
 msgid "stat block"
 msgstr "stat block"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Stats for nerds"
+msgstr "Stats for nerds"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "status"
 msgstr "status"
@@ -3324,14 +3515,24 @@ msgid "Status unknown"
 msgstr "Status unknown"
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "Stop"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Stop compaction"
+msgstr "Stop compaction"
+
 #: src/features/chat/FormBlock.tsx
 msgid "Stop run"
 msgstr "Stop run"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Stop the handoff brief"
+msgstr "Stop the handoff brief"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
@@ -3342,6 +3543,20 @@ msgstr "stopped"
 msgid "Stopped"
 msgstr "Stopped"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Stopping"
+msgstr "Stopping"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Stopping compaction"
+msgstr "Stopping compaction"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/derivation/useHandoffBrief.ts
+msgid "Stopping the handoff brief"
+msgstr "Stopping the handoff brief"
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
 msgstr "Strikethrough"
@@ -3350,7 +3565,7 @@ msgstr "Strikethrough"
 msgid "Subagent chat path"
 msgstr "Subagent chat path"
 
-#. placeholder {0}: directNodes.length
+#. placeholder {0}: nodes.length
 #: src/features/chat/SubagentHeader.tsx
 msgid "Subagents, {0}"
 msgstr "Subagents, {0}"
@@ -3375,6 +3590,10 @@ msgstr "Suggested text is prefilled; edit it before submitting if needed."
 #: src/features/chat/FormBlock.tsx
 msgid "Suggested: {0}"
 msgstr "Suggested: {0}"
+
+#: src/features/chat/ChatView.tsx
+msgid "Summarize earlier messages so the model has room to keep going"
+msgstr "Summarize earlier messages so the model has room to keep going"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
@@ -3540,10 +3759,6 @@ msgstr "The location changed. Try again."
 msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
 
-#: src/features/links/FollowOutcomeContent.tsx
-#~ msgid "The project has nothing at this address. It may have moved or been removed."
-#~ msgstr "The project has nothing at this address. It may have moved or been removed."
-
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "The removed text could not be recovered."
 msgstr "The removed text could not be recovered."
@@ -3555,6 +3770,10 @@ msgstr "The requested passage in {name} wasn't specific enough."
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "the source chat"
+msgstr "the source chat"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -3581,6 +3800,10 @@ msgstr "Thinking out loud?"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr "Thinking part {0}"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "This brief failed."
+msgstr "This brief failed."
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
@@ -3646,6 +3869,10 @@ msgstr "This chapter is temporarily unavailable"
 msgid "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
 msgstr "This chapter was opened in a newer version of Meridian. Refresh to keep writing."
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "This chat continues without a brief."
+msgstr "This chat continues without a brief."
+
 #. placeholder {0}: commit.work.name
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
@@ -3670,6 +3897,14 @@ msgstr "This chat's Work changed to {0}"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This column is already at the edge."
 msgstr "This column is already at the edge."
+
+#: src/features/chat/compaction/control-copy.ts
+msgid "This compaction already started."
+msgstr "This compaction already started."
+
+#: src/features/chat/compaction/compaction-model.ts
+msgid "This conversation couldn't be compacted."
+msgstr "This conversation couldn't be compacted."
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -3721,7 +3956,7 @@ msgstr "This document is read only right now."
 msgid "This document is still opening."
 msgstr "This document is still opening."
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
@@ -3750,6 +3985,10 @@ msgstr "This folder is empty."
 msgid "This folder no longer exists."
 msgstr "This folder no longer exists."
 
+#: src/features/chat/derivation/InheritedMarks.tsx
+msgid "This fork continues here"
+msgstr "This fork continues here"
+
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "This image never finished uploading."
 msgstr "This image never finished uploading."
@@ -3769,6 +4008,10 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "This response failed."
+msgstr "This response failed."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."
@@ -3827,6 +4070,14 @@ msgstr "Today"
 msgid "Toggle folder {0}"
 msgstr "Toggle folder {0}"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens after"
+msgstr "Tokens after"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Tokens before"
+msgstr "Tokens before"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
@@ -3839,6 +4090,10 @@ msgstr "Try again"
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
+
+#: src/features/chat/useReplyRetry.ts
+msgid "Trying the response again"
+msgstr "Trying the response again"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn"
@@ -3935,6 +4190,10 @@ msgstr "Unknown component: {kindLabel}"
 msgid "Untitled"
 msgstr "Untitled"
 
+#: src/features/chat/derivation/SourceChatLink.tsx
+msgid "Untitled chat"
+msgstr "Untitled chat"
+
 #: src/features/chat/document-display-name.ts
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Untitled document"
@@ -4015,8 +4274,8 @@ msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Waiting"
-msgstr "Waiting"
+#~ msgid "Waiting"
+#~ msgstr "Waiting"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4061,6 +4320,14 @@ msgstr "Where were we?"
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw"
+msgstr "Withdraw"
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw compaction"
+msgstr "Withdraw compaction"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -4124,6 +4391,11 @@ msgstr "Write mode"
 msgid "Writing"
 msgstr "Writing"
 
+#: src/features/chat/compaction/useControlTurnAnnouncements.ts
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "Writing the handoff brief"
+msgstr "Writing the handoff brief"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Wrote"
 msgstr "Wrote"
@@ -4141,6 +4413,10 @@ msgstr "Yesterday"
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr "you answered"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "You can retry when this chat is free."
+msgstr "You can retry when this chat is free."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

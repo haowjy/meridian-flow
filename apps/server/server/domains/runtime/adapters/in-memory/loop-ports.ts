@@ -38,6 +38,9 @@ export function createInMemoryInbox(): DeliveryStore {
         .filter((id) => !afterThreadId || id > afterThreadId)
         .slice(0, limit);
     },
+    async findMessage(id) {
+      return messages.find((row) => row.id === id) ?? null;
+    },
     async enqueue(draft) {
       const existing = messages.find(
         (message) =>
@@ -89,7 +92,11 @@ export function createInMemoryInbox(): DeliveryStore {
       return [
         ...new Set(
           messages
-            .filter((message) => message.intent === "message" && message.deliveredAt === null)
+            .filter(
+              (message) =>
+                (message.intent === "message" || message.intent === "control") &&
+                message.deliveredAt === null,
+            )
             .map((message) => message.threadId),
         ),
       ]
@@ -103,6 +110,7 @@ export function createInMemoryInbox(): DeliveryStore {
 interface InMemoryLease {
   runId: RunId;
   turnId: TurnId | null;
+  boundTurnIds: Set<TurnId>;
   messageIds: string[];
   holderId: string;
   phase: ThreadPhase;
@@ -135,18 +143,35 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     return lease;
   };
 
+  async function hold(threadId: ThreadId) {
+    if (shortClaims.has(threadId) || leases.has(threadId)) return null;
+    shortClaims.add(threadId);
+    let held = true;
+    return {
+      async release() {
+        if (!held) return;
+        held = false;
+        shortClaims.delete(threadId);
+      },
+      onLost() {
+        return () => undefined;
+      },
+    };
+  }
+
   return {
     readDeliveryRun(threadId) {
       const row = liveLease(threadId);
       return row ? { turnId: row.turnId, messageIds: [...row.messageIds] } : null;
     },
+    hold,
     async withExclusiveThread(threadId, operation) {
-      if (shortClaims.has(threadId) || leases.has(threadId)) return null;
-      shortClaims.add(threadId);
+      const claim = await hold(threadId);
+      if (!claim) return null;
       try {
         return await operation();
       } finally {
-        shortClaims.delete(threadId);
+        await claim.release();
       }
     },
     async startExecution(threadId, runId) {
@@ -154,6 +179,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       leases.set(threadId, {
         runId,
         turnId: null,
+        boundTurnIds: new Set(),
         messageIds: [],
         holderId,
         phase: "generating",
@@ -194,6 +220,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       if (!row || row.runId !== lease.runId || row.cancelRequested)
         throw new Error("Cannot bind assistant turn after losing live run lease");
       row.turnId = turnId;
+      row.boundTurnIds.add(turnId);
       row.messageIds = [...messageIds];
     },
 
@@ -216,6 +243,30 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         return false;
       row.messageIds = [];
       return true;
+    },
+    async clearOrphanedReceipt(threadId, turnId, expectedIds) {
+      const row = leases.get(threadId);
+      if (
+        !row ||
+        row.turnId !== turnId ||
+        row.messageIds.length !== expectedIds.length ||
+        row.messageIds.some((id, i) => id !== expectedIds[i])
+      )
+        return false;
+      row.turnId = null;
+      row.boundTurnIds.clear();
+      row.messageIds = [];
+      return true;
+    },
+    async cancelThreadReceipt(threadId, turnId) {
+      const row = leases.get(threadId);
+      if (!row || row.turnId !== turnId) return false;
+      row.cancelRequested = true;
+      return true;
+    },
+    async lockThreadReceipt(threadId) {
+      const row = leases.get(threadId);
+      return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
     },
     async lockReceipt(lease) {
       const row = leases.get(lease.threadId);
@@ -250,7 +301,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
 
     async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
-      if (!row || row.turnId !== turnId) return false;
+      if (!row?.boundTurnIds.has(turnId)) return false;
       row.cancelRequested = true;
       return true;
     },

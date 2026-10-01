@@ -13,7 +13,7 @@ if (!RUN) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
@@ -59,12 +59,13 @@ if (!RUN) {
     const ROLLBACK_DOCUMENT = "00000000-0000-4000-8000-000000000f60" as never;
 
     beforeEach(async () => {
-      await truncateDrizzleTables(firstDb, [schema.users]);
+      await deleteDrizzleRows(firstDb, [schema.users]);
       await firstDb.insert(schema.users).values(conformanceUserValues(USER, "admission"));
       await firstDb
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Admission", slug: "admission" });
       await firstDb.insert(schema.threads).values({
+        rootThreadId: THREAD,
         id: THREAD,
         projectId: PROJECT,
         createdByUserId: USER,
@@ -347,6 +348,7 @@ if (!RUN) {
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {
       await firstDb.insert(schema.threads).values({
+        rootThreadId: ROLLBACK_THREAD,
         id: ROLLBACK_THREAD,
         projectId: PROJECT,
         createdByUserId: USER,

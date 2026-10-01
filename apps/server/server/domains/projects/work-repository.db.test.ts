@@ -22,7 +22,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../lib/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
@@ -69,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const projects = createProjectRepositoryForTest({ db });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "work-repository"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -266,6 +266,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("serializes Work restore and enqueues only the transition that restores", async () => {
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -590,12 +591,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const resultId = "00000000-0000-4000-8000-000000000849";
       await db.insert(schema.threads).values({
         id: THREAD_ID,
+        rootThreadId: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Bound chat",
       });
       await db.insert(schema.turns).values({
         id: resultTurnId,
+        position: 1,
         threadId: THREAD_ID,
         role: "assistant",
         origin: "assistant",
@@ -636,7 +639,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "subagent",
         parentThreadId: THREAD_ID,
         rootThreadId: THREAD_ID,
-        originTurnId: THREAD_ID,
+        originTurnId: resultTurnId,
         originType: "spawn",
         spawnStatus: "succeeded",
         spawnDepth: 1,
@@ -644,6 +647,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const separatelyDeletedThreadId = "00000000-0000-4000-8000-000000000844";
       await db.insert(schema.threads).values({
         id: separatelyDeletedThreadId,
+        rootThreadId: separatelyDeletedThreadId,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Previously trashed chat",
@@ -791,27 +795,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const deletedWork = await works.create({ projectId: PROJECT_ID, name: "Deleted Work" });
       const liveWork = await works.create({ projectId: PROJECT_ID, name: "Live Work" });
       const childThreadId = "00000000-0000-4000-8000-000000000845";
-      await db.insert(schema.threads).values([
-        {
-          id: THREAD_ID,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          title: "Rebound root",
-        },
-        {
-          id: childThreadId,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          title: "Child left behind",
-          kind: "subagent",
-          parentThreadId: THREAD_ID,
-          rootThreadId: THREAD_ID,
-          originTurnId: THREAD_ID,
-          originType: "spawn",
-          spawnStatus: "succeeded",
-          spawnDepth: 1,
-        },
-      ]);
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.threads).values({
+        id: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Rebound root",
+      });
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        position: 1,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      await db.insert(schema.threads).values({
+        id: childThreadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Child left behind",
+        kind: "subagent",
+        parentThreadId: THREAD_ID,
+        rootThreadId: THREAD_ID,
+        originTurnId: resultTurnId,
+        originType: "spawn",
+        spawnStatus: "succeeded",
+        spawnDepth: 1,
+      });
       await db.insert(schema.threadWorks).values([
         {
           threadId: THREAD_ID,
@@ -870,6 +881,82 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(noWork.id).not.toBe(deletedWork.id);
     });
 
+    it("retains a source needed by another Work without blocking unrelated expired Works", async () => {
+      const sourceWork = await works.create({ projectId: PROJECT_ID, name: "Source" });
+      const destinationWork = await works.create({ projectId: PROJECT_ID, name: "Destination" });
+      const unrelatedWork = await works.create({ projectId: PROJECT_ID, name: "Unrelated" });
+      const source = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+      const turn = await threadRepos.turns.create({
+        threadId: source.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await threadRepos.threadWorks.addMembership(source.id, sourceWork.id, true);
+      const derivedId = crypto.randomUUID();
+      await db.insert(schema.threads).values({
+        id: derivedId,
+        rootThreadId: source.id,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        originType: "fork",
+        originTurnId: turn.id,
+      });
+      await threadRepos.threadWorks.addMembership(derivedId, sourceWork.id, true);
+      await threadRepos.threadWorks.rebindPrimary(derivedId, destinationWork.id);
+      await works.softDelete(sourceWork.id);
+      await works.softDelete(unrelatedWork.id);
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
+        .where(inArray(schema.works.id, [sourceWork.id, unrelatedWork.id]));
+      // Fill the oldest page with retained sources; the later unrelated Work must still purge.
+      for (let index = 1; index < 100; index += 1) {
+        const blocked = await works.create({ projectId: PROJECT_ID, name: `Retained ${index}` });
+        const root = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+        await threadRepos.threadWorks.addMembership(root.id, blocked.id, true);
+        const forkId = crypto.randomUUID();
+        const cutoff = await threadRepos.turns.create({
+          threadId: root.id,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.threads).values({
+          id: forkId,
+          rootThreadId: root.id,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          originType: "fork",
+          originTurnId: cutoff.id,
+        });
+        await threadRepos.threadWorks.addMembership(forkId, destinationWork.id, true);
+        await works.softDelete(blocked.id);
+        await db
+          .update(schema.works)
+          .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+          .where(eq(schema.works.id, blocked.id));
+      }
+      await db
+        .update(schema.works)
+        .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+        .where(eq(schema.works.id, sourceWork.id));
+      const purger = createDrizzleWorkPurger({
+        db,
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createInMemoryEventSink(),
+      });
+      await expect(purger.sweep()).resolves.toBe(1);
+      await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
+      await expect(works.findById(sourceWork.id)).resolves.toMatchObject({
+        deletedAt: expect.any(String),
+      });
+      await expect(threadRepos.threads.findById(derivedId)).resolves.toMatchObject({
+        deletedAt: null,
+      });
+      await expect(threadRepos.turns.findById(turn.id)).resolves.not.toBeNull();
+    });
+
     it("commits an expired Work purge before best-effort blob deletion", async () => {
       const backingStore = createInMemoryObjectStore();
       const work = await works.create({ projectId: PROJECT_ID, name: "Purge me" });
@@ -893,6 +980,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
       await db.insert(schema.threads).values({
         id: THREAD_ID,
+        rootThreadId: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Purged Work chat",
@@ -903,6 +991,84 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         isPrimary: true,
       });
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        position: 1,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      const bakeId = crypto.randomUUID();
+      await db.insert(schema.promptBakes).values({
+        id: bakeId,
+        ownerThreadId: THREAD_ID,
+        composedSystemPrompt: "Frozen purge probe",
+        bakedSkillSlugs: [],
+        bakedTools: [],
+        contentHash: "purge-probe",
+      });
+      await db
+        .update(schema.threads)
+        .set({ initialPromptBakeId: bakeId })
+        .where(eq(schema.threads.id, THREAD_ID));
+      const derivedIds = [crypto.randomUUID(), crypto.randomUUID()];
+      for (const [index, originType] of ["fork", "handoff"].entries()) {
+        const derivedId = derivedIds[index];
+        await db.insert(schema.threads).values({
+          id: derivedId,
+          rootThreadId: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          originType,
+          originTurnId: resultTurnId,
+          initialPromptBakeId: bakeId,
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: derivedId,
+          workId: work.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        await db.insert(schema.turns).values({
+          threadId: derivedId,
+          position: 1,
+          role: "system",
+          origin: "system",
+          status: "complete",
+        });
+      }
+      const compactionId = crypto.randomUUID();
+      await db.insert(schema.turns).values({
+        id: compactionId,
+        threadId: THREAD_ID,
+        position: 2,
+        parentTurnId: resultTurnId,
+        role: "compaction",
+        origin: "system",
+        status: "complete",
+        compactionModel: "mock",
+        promptBakeId: bakeId,
+      });
+      const blockId = crypto.randomUUID();
+      await db.insert(schema.turnBlocks).values({
+        id: blockId,
+        turnId: resultTurnId,
+        sequence: 0,
+        blockType: "image",
+        status: "complete",
+        content: {
+          type: "image_reference",
+          documentId: crypto.randomUUID(),
+          uri: "uploads://reference.png",
+        },
+      });
+      await db.insert(schema.threadImageInclusions).values({
+        threadId: THREAD_ID,
+        blockId,
+        decisionTurnId: compactionId,
+        included: true,
+      });
       const childThreadId = "00000000-0000-4000-8000-000000000846";
       await db.insert(schema.threads).values({
         id: childThreadId,
@@ -912,13 +1078,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "subagent",
         parentThreadId: THREAD_ID,
         rootThreadId: THREAD_ID,
-        originTurnId: THREAD_ID,
+        originTurnId: resultTurnId,
         originType: "spawn",
         spawnStatus: "succeeded",
         spawnDepth: 1,
       });
       await db.insert(schema.threads).values({
         id: expiredTrashThreadId,
+        rootThreadId: expiredTrashThreadId,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Already trashed chat",
@@ -952,13 +1119,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: work.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
-      });
-      const resultTurnId = "00000000-0000-4000-8000-000000000848";
-      await db.insert(schema.turns).values({
-        id: resultTurnId,
-        threadId: THREAD_ID,
-        role: "assistant",
-        origin: "assistant",
       });
       await db.insert(schema.projectResults).values({
         id: "00000000-0000-4000-8000-000000000849",
@@ -1029,6 +1189,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "purged-work-draft")),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.promptBakes).where(eq(schema.promptBakes.id, bakeId)),
+      ).resolves.toEqual([]);
+      await expect(
+        db.select().from(schema.turns).where(eq(schema.turns.threadId, THREAD_ID)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.threadImageInclusions)
+          .where(eq(schema.threadImageInclusions.threadId, THREAD_ID)),
       ).resolves.toEqual([]);
       expect(deleteObservedCommittedPurge).toBe(true);
       await expect(objectStore.get(objectKey)).resolves.toMatchObject({ ok: true });

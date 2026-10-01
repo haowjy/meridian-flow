@@ -30,6 +30,7 @@ import {
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
+import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
@@ -39,8 +40,11 @@ import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { readPendingInbox } from "../pending-inbox.js";
+import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
+import { createWakeIfRunnable } from "../wake-if-runnable.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
+import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
 
 function noopChildRunCoordinator(): ChildRunCoordinator {
@@ -52,7 +56,8 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 }
 
 export function createRuntimeHarness(
-  overrides: Partial<OrchestratorDeps> & {
+  overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
+    backgroundTasks?: DetachedWorkTracker;
     repos?: ThreadRepositories;
     inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
@@ -70,10 +75,12 @@ export function createRuntimeHarness(
     threadLock: suppliedLock,
     runStarter,
     schedulePostCommit,
+    backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
     ...dependencies
   } = overrides;
+  const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
   const repos = overrides.repos ?? createInMemoryRepositories({ projects });
   const activeDocuments = createActiveDocumentResolver(repos);
@@ -91,9 +98,10 @@ export function createRuntimeHarness(
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
-  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const inbox = suppliedInbox ?? createInMemoryInbox();
+  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
+  const shutdown = overrides.shutdown ?? { started: false };
   const workContext = overrides.workContext ?? {
     async renderForThread() {
       return {
@@ -118,10 +126,17 @@ export function createRuntimeHarness(
   const flushWakes = async () => {
     for (const wake of wakes.splice(0)) await wake();
   };
+  let wakeIfRunnable!: (threadId: string) => Promise<void>;
   const deps: OrchestratorDeps & { creditLedger: CreditLedger } = {
     creditLedger,
+    summarizer: scriptedSummarizer(),
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
+    documentRevisions: {
+      async current({ documentIds }) {
+        return new Map(documentIds.map((id) => [id, null]));
+      },
+    },
     referenceReader: {
       async read() {
         throw new Error("Reference reader not configured");
@@ -150,11 +165,19 @@ export function createRuntimeHarness(
     childRunCoordinator: noopChildRunCoordinator(),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
+    wakeIfRunnable: (threadId) => wakeIfRunnable(threadId),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     runClaim,
+    handoffBriefs: {
+      async stop() {
+        return false;
+      },
+    },
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
+        backgroundTasks,
+        toolRegistry,
         workContext,
         repos,
         eventWriter,
@@ -163,6 +186,7 @@ export function createRuntimeHarness(
         inbox,
         threadLock,
         runStarter: runStarter ?? { async start() {} },
+        async publishFinalizedReports() {},
         schedulePostCommit:
           schedulePostCommit ??
           ((task) => {
@@ -182,10 +206,20 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     ...dependencies,
+    backgroundTasks,
+    shutdown,
     workContext,
   };
   let runtime: ReturnType<typeof createOrchestrator>;
   const orchestrator = () => (runtime ??= createOrchestrator(deps));
+  wakeIfRunnable = createWakeIfRunnable({
+    delivery: deps.delivery,
+    runStarter: createRunStarter(
+      { startDrain: (id) => orchestrator().startDrain(id) },
+      deps.eventSink,
+    ),
+    shutdown,
+  });
   const producer = createWriterTurnProducer({
     async requireWritableThread() {},
     persistence: { repos, eventWriter },
@@ -219,6 +253,7 @@ export function createRuntimeHarness(
   });
   return {
     deps,
+    backgroundTasks,
     flushWakes,
     repos,
     creditLedger,

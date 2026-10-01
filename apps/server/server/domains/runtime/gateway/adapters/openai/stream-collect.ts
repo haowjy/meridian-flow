@@ -442,6 +442,8 @@ export function* eventsFromResponseStreamEvent(
       break;
     }
 
+    case "response.failed":
+    case "response.incomplete":
     case "response.completed": {
       const response = event.response;
 
@@ -460,6 +462,19 @@ export function* eventsFromResponseStreamEvent(
       if (response.usage) {
         acc.usage = mapUsage(response.usage);
         yield { type: "usage", usage: acc.usage };
+      }
+      if (response.error) {
+        acc.finishReason = "error";
+        yield {
+          type: "error",
+          code:
+            (response.error.code as string) === "context_length_exceeded"
+              ? "context_overflow"
+              : "provider_error",
+          message: response.error.message,
+          retryable: false,
+          result: buildGenerateResult(acc),
+        };
       }
       response.output.forEach((item, outputIndex) => {
         if (item.type === "reasoning") {

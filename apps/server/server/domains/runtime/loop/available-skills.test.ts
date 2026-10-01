@@ -8,7 +8,7 @@ import {
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
-import { createInMemoryRepositories } from "../../threads/index.js";
+import { createInMemoryRepositories, hashPromptBakeContent } from "../../threads/index.js";
 import {
   loadModelSkillBody,
   loadUserSkillBody,
@@ -263,10 +263,14 @@ You are Writer.
 
   it("fails unknown model slugs without touching freeze", async () => {
     const { thread, agentRevisions, repos } = await launchAgentsChat();
-    await repos.threads.bakeComposedSystemPrompt(thread.id, {
+    const content = {
       composedSystemPrompt: "frozen",
       bakedSkillSlugs: ["creative-writing-modes", "writing-principles"],
       bakedTools: [],
+    };
+    await repos.threads.bakeInitialPrompt(thread.id, {
+      ...content,
+      contentHash: hashPromptBakeContent(content),
     });
     const frozen = await repos.threads.findById(thread.id);
 
@@ -279,8 +283,12 @@ You are Writer.
     ).rejects.toBeInstanceOf(SkillUnavailableError);
 
     const after = await repos.threads.findById(thread.id);
-    expect(after?.composedSystemPrompt).toBe("frozen");
-    expect(after?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
+    expect(after?.initialPromptBakeId).toBe(frozen?.initialPromptBakeId);
+    const bake = after?.initialPromptBakeId
+      ? await repos.promptBakes.findById(after.initialPromptBakeId)
+      : null;
+    expect(bake?.composedSystemPrompt).toBe("frozen");
+    expect(bake?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
   });
 
   it("lists packaged slash skills for a selected Agent without a thread", async () => {

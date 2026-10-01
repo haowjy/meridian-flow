@@ -3,7 +3,7 @@
 import { Hocuspocus } from "@hocuspocus/server";
 import { splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -17,8 +17,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import("../test-support/rollback-test-database.js");
-    const { truncateDrizzleTables } = await import("../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../test-support/drizzle-reset.js"
+    );
     const { createInMemoryEventSink, createNoopEventSink } = await import(
       "../domains/observability/index.js"
     );
@@ -35,9 +36,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const RESPONSE_ID = "00000000-0000-4000-8000-000000000908";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
+    const composedApps: Array<{ shutdown(): Promise<void> }> = [];
+    afterEach(async () => {
+      await Promise.all(composedApps.splice(0).map((app) => app.shutdown()));
+    });
     beforeEach(async () => {
       db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "runtime-settlement"));
@@ -71,6 +76,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -81,6 +87,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "complete",
@@ -91,6 +98,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         isPrimary: true,
       });
+    });
+
+    it("returns a structured history tool error for a removed bound model", async () => {
+      const runtime = await composeRuntime();
+      try {
+        await runtime.app.agentRevisions.bindThread(
+          THREAD_ID,
+          null,
+          {
+            model: "removed-history-model",
+            skills: { load: [], available: [] },
+            namedTargets: [],
+          },
+          null,
+        );
+        const result = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "history-unavailable",
+            name: "thread_history",
+            arguments: {},
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(result).toMatchObject({
+          isError: true,
+          output: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+        });
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
     });
 
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
@@ -131,6 +168,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
 
       const toolContext = {
@@ -217,6 +257,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       await ports.documentSync.agentEdit().write(
         { command: "read", file: "runtime-settlement.md", documentId: DOC_ID },
@@ -370,7 +413,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ports.documentSync.storeHocuspocusDocument(documentName, document),
       });
       ports.documentSync.bindHocuspocus(server);
-      return { ports, hocuspocus: server, app: composeAppServices(ports) };
+      const app = composeAppServices(ports);
+      composedApps.push(app);
+      return { ports, hocuspocus: server, app };
     }
 
     async function unloadRuntime(server: Hocuspocus): Promise<void> {

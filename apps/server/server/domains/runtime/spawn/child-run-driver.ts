@@ -6,9 +6,10 @@ import type {
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import type { Thread, ThreadActivity } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -28,12 +29,15 @@ export type PreparedChild = {
   handle: string;
   resolvedSlug: string;
   description?: string;
+  seedBlocks?: BlockUpsertedRow[];
+  from?: { threadId: ThreadId; ref: string; title: string | null };
   signal?: AbortSignal;
   background: boolean;
   origin: "spawn" | "message";
 };
 
 export interface ChildRunDriverDeps {
+  backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports">;
   eventWriter: EventJournalWriter;
@@ -62,6 +66,7 @@ export interface ChildRunDriver {
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
+  const backgroundTasks = deps.backgroundTasks;
   async function register(
     child: Thread,
     resolvedSlug: string,
@@ -89,8 +94,13 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     const handle = await deps.orchestrator.prepare({
       threadId: prepared.child.id as ThreadId,
       userText: input.prompt,
+      seedBlocks: prepared.seedBlocks,
       signal: prepared.signal,
-      child: { parentThreadId: input.parentThread.id as ThreadId, background: prepared.background },
+      child: {
+        parentThreadId: input.parentThread.id as ThreadId,
+        background: prepared.background,
+        origin: prepared.origin,
+      },
       treeBudget: input.budget,
       executionReport: {
         correlation: input.reportCorrelation,
@@ -102,10 +112,10 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       if (onAdmitted) {
         const report = await deps.repos.executionReports.findByExecution(
           prepared.child.id as ThreadId,
-          handle.assistantTurnId,
+          handle.executionTurnId,
         );
         if (!report) throw new Error("Admitted child run has no execution report");
-        await onAdmitted(handle.assistantTurnId, report.admittedAt);
+        await onAdmitted(handle.executionTurnId, report.admittedAt);
       }
     } catch (error) {
       observeCleanupFailure(prepared, "child.admission_callback_failed", error);
@@ -123,21 +133,17 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     });
   }
 
-  async function finish(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    handle: PreparedRun,
-  ): Promise<SpawnResult> {
+  async function finish(prepared: PreparedChild, handle: PreparedRun): Promise<SpawnResult> {
     const childThreadId = prepared.child.id as ThreadId;
     const outcome = await handle.execute();
 
     const saved = await deps.repos.executionReports.findByExecution(
       childThreadId,
-      handle.assistantTurnId,
+      handle.executionTurnId,
     );
     if (saved?.outcome) {
       try {
-        await deps.publisher.publish(childThreadId, handle.assistantTurnId);
+        await deps.publisher.publish(childThreadId, handle.executionTurnId);
       } catch (error) {
         observeCleanupFailure(prepared, "child.publication_failed", error);
       }
@@ -145,7 +151,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
-      rootThreadId: (input.parentThread.rootThreadId ?? input.parentThread.id) as ThreadId,
+      parentThreadId: prepared.child.parentThreadId as ThreadId,
       childThreadId,
       eventSink: deps.eventSink,
     });
@@ -158,7 +164,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
           ? "Child run failed before a saved terminal report"
           : "Child report is unavailable",
       ),
-      execution: handle.assistantTurnId,
+      execution: handle.executionTurnId,
     };
   }
 
@@ -168,7 +174,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
   ): Promise<SpawnResult> {
     const handle = await start(prepared, input, onAdmitted);
-    return finish(prepared, input, handle);
+    return finish(prepared, handle);
   }
 
   async function driveBackground(
@@ -177,10 +183,13 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
   ): Promise<TurnId> {
     const handle = await start(prepared, input, onAdmitted);
-    void finish(prepared, input, handle).catch((error) => {
-      observeCleanupFailure(prepared, "child.background_driver_failed", error);
-    });
-    return handle.assistantTurnId;
+    backgroundTasks.track(
+      finish(prepared, handle).catch((error) => {
+        observeCleanupFailure(prepared, "child.background_driver_failed", error);
+      }),
+      "background child completion",
+    );
+    return handle.executionTurnId;
   }
 
   return { register, drive, driveBackground };

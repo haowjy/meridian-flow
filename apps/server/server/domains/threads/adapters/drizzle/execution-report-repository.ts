@@ -1,9 +1,9 @@
-/** Durable per-assistant-turn execution reports and publication obligations. */
+/** Durable per-execution execution reports and publication obligations. */
 
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import {
   assertReportCapture,
@@ -36,9 +36,9 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
   // a JSON scalar string as the JSON text it happens to contain.
   return {
     childThreadId: row.childThreadId,
-    assistantTurnId: row.assistantTurnId,
+    executionTurnId: row.executionTurnId,
     admittedAt: row.createdAt.toISOString(),
-    terminalAssistantTurnId: row.terminalAssistantTurnId,
+    terminalTurnId: row.terminalTurnId,
     handle: row.handle,
     origin: row.origin as SavedExecutionReport["origin"],
     deliveryMode: row.deliveryMode as SavedExecutionReport["deliveryMode"],
@@ -67,14 +67,14 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     payload: sql<string | null>`${table.payload}::text`,
     capture: sql<string | null>`${table.capture}::text`,
   };
-  const find = async (childThreadId: string, assistantTurnId: string) => {
+  const find = async (childThreadId: string, executionTurnId: string) => {
     const [row] = await currentDrizzleDb(db)
       .select(reportSelection)
       .from(table)
       .where(
         and(
           eq(table.childThreadId, childThreadId as never),
-          eq(table.assistantTurnId, assistantTurnId as never),
+          eq(table.executionTurnId, executionTurnId as never),
         ),
       )
       .limit(1);
@@ -91,12 +91,12 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
           JOIN chain ON t.id = chain.parent_turn_id
           WHERE t.thread_id = ${childThreadId}
         )
-        SELECT r.assistant_turn_id FROM chain
-        JOIN thread_execution_reports r ON r.assistant_turn_id = chain.id
+        SELECT r.execution_turn_id FROM chain
+        JOIN thread_execution_reports r ON r.execution_turn_id = chain.id
         WHERE r.child_thread_id = ${childThreadId}
         ORDER BY chain.depth LIMIT 1
       `);
-      const id = rows[0]?.assistant_turn_id as string | undefined;
+      const id = rows[0]?.execution_turn_id as string | undefined;
       const row = id ? await find(childThreadId, id) : null;
       return row ? map(row) : null;
     },
@@ -114,7 +114,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
           role: schema.turns.role,
         })
         .from(schema.turns)
-        .where(eq(schema.turns.id, input.assistantTurnId))
+        .where(eq(schema.turns.id, input.executionTurnId))
         .limit(1);
       const [caller] = input.callerThreadId
         ? await database
@@ -153,13 +153,13 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       });
       const values = reportIdentity(input);
       await currentDrizzleDb(db).insert(table).values(values).onConflictDoNothing();
-      const row = await find(input.childThreadId, input.assistantTurnId);
+      const row = await find(input.childThreadId, input.executionTurnId);
       if (!row) throw new Error("Execution report admission did not persist");
       const report = map(row);
       assertReportIdentity(report, values);
       return report;
     },
-    async captureOnce(childThreadId, assistantTurnId, toolCallId, capture) {
+    async captureOnce(childThreadId, executionTurnId, toolCallId, capture) {
       const candidate = reportCapture(capture);
       const [row] = await currentDrizzleDb(db)
         .update(table)
@@ -167,13 +167,13 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .where(
           and(
             eq(table.childThreadId, childThreadId),
-            eq(table.assistantTurnId, assistantTurnId),
+            eq(table.executionTurnId, executionTurnId),
             isNull(table.capture),
             isNull(table.outcome),
           ),
         )
         .returning(reportSelection);
-      const existing = row ?? (await find(childThreadId, assistantTurnId));
+      const existing = row ?? (await find(childThreadId, executionTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
       const report = map(existing);
       assertReportCapture(report, toolCallId, candidate);
@@ -205,19 +205,19 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .where(
           and(
             eq(table.childThreadId, input.childThreadId),
-            eq(table.assistantTurnId, input.assistantTurnId),
+            eq(table.executionTurnId, input.executionTurnId),
             isNull(table.outcome),
           ),
         )
         .returning(reportSelection);
-      const existing = row ?? (await find(input.childThreadId, input.assistantTurnId));
+      const existing = row ?? (await find(input.childThreadId, input.executionTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
       const report = map(existing);
       assertReportTerminal(report, content);
       return report;
     },
-    async findByExecution(childThreadId, assistantTurnId) {
-      const row = await find(childThreadId, assistantTurnId);
+    async findByExecution(childThreadId, executionTurnId) {
+      const row = await find(childThreadId, executionTurnId);
       return row ? map(row) : null;
     },
     async listLatestByChildren(childThreadIds) {
@@ -231,7 +231,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         })
         .from(table)
         .where(inArray(table.childThreadId, childThreadIds))
-        .orderBy(asc(table.childThreadId), desc(table.createdAt), desc(table.assistantTurnId));
+        .orderBy(asc(table.childThreadId), desc(table.createdAt), desc(table.executionTurnId));
       return rows.map((row) => ({
         childThreadId: row.childThreadId,
         deliveryMode: row.deliveryMode as SavedExecutionReport["deliveryMode"],
@@ -243,11 +243,11 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       const rows = await currentDrizzleDb(db)
         .select(reportSelection)
         .from(table)
-        .innerJoin(schema.turns, eq(schema.turns.id, table.assistantTurnId))
+        .innerJoin(schema.turns, eq(schema.turns.id, table.executionTurnId))
         .where(
           and(eq(table.childThreadId, childThreadId as never), sql`${table.outcome} IS NOT NULL`),
         )
-        .orderBy(asc(schema.turns.createdAt), asc(table.assistantTurnId));
+        .orderBy(asc(schema.turns.position), asc(table.executionTurnId));
       return rows.map(map);
     },
     async listUnfinalized(limit, afterExecutionId) {
@@ -255,16 +255,16 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       return currentDrizzleDb(db)
         .select({
           childThreadId: table.childThreadId,
-          assistantTurnId: table.assistantTurnId,
+          executionTurnId: table.executionTurnId,
         })
         .from(table)
         .where(
           and(
             isNull(table.outcome),
-            ...(afterExecutionId ? [gt(table.assistantTurnId, afterExecutionId)] : []),
+            ...(afterExecutionId ? [gt(table.executionTurnId, afterExecutionId)] : []),
           ),
         )
-        .orderBy(asc(table.assistantTurnId))
+        .orderBy(asc(table.executionTurnId))
         .limit(limit);
     },
     async listPendingPublication(limit, afterExecutionId) {
@@ -272,34 +272,32 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       const rows = await currentDrizzleDb(db)
         .select({
           childThreadId: table.childThreadId,
-          assistantTurnId: table.assistantTurnId,
-          callerThreadId: table.callerThreadId,
+          executionTurnId: table.executionTurnId,
+          callerThreadId: caller.id,
         })
         .from(table)
-        .leftJoin(caller, eq(caller.id, table.callerThreadId))
-        .leftJoin(schema.projects, eq(schema.projects.id, caller.projectId))
+        .innerJoin(caller, eq(caller.id, table.callerThreadId))
+        .innerJoin(schema.projects, eq(schema.projects.id, caller.projectId))
         .where(
           and(
             eq(table.publication, "pending"),
-            ...(afterExecutionId ? [gt(table.assistantTurnId, afterExecutionId)] : []),
-            or(
-              isNull(table.callerThreadId),
-              and(isNull(caller.deletedAt), isNull(schema.projects.deletedAt)),
-            ),
+            ...(afterExecutionId ? [gt(table.executionTurnId, afterExecutionId)] : []),
+            isNull(caller.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         )
-        .orderBy(asc(table.assistantTurnId))
+        .orderBy(asc(table.executionTurnId))
         .limit(limit);
       return rows;
     },
-    async lockPendingPublication(childThreadId, assistantTurnId) {
+    async lockPendingPublication(childThreadId, executionTurnId) {
       const [row] = await currentDrizzleDb(db)
         .select(reportSelection)
         .from(table)
         .where(
           and(
             eq(table.childThreadId, childThreadId),
-            eq(table.assistantTurnId, assistantTurnId),
+            eq(table.executionTurnId, executionTurnId),
             eq(table.publication, "pending"),
           ),
         )
@@ -307,14 +305,14 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .limit(1);
       return row ? map(row) : null;
     },
-    async markPublished(childThreadId, assistantTurnId, publication) {
+    async markPublished(childThreadId, executionTurnId, publication) {
       await currentDrizzleDb(db)
         .update(table)
         .set({ publication, publishedAt: new Date() })
         .where(
           and(
             eq(table.childThreadId, childThreadId),
-            eq(table.assistantTurnId, assistantTurnId),
+            eq(table.executionTurnId, executionTurnId),
             eq(table.publication, "pending"),
           ),
         );

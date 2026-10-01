@@ -4,6 +4,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import type { MessageDraft } from "../loop/ports.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -29,20 +30,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
     const { sweepWakes } = await import("../loop/sweep-wakes.js");
     const { createTestDrizzleDelivery } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createDrizzleRunClaim } = await import("./drizzle-run-claim.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../threads/adapters/drizzle/repositories.js"
+    );
     const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "loop-ports"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -51,12 +55,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "loop-ports",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_A,
         id: THREAD_A,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Thread A",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_B,
         id: THREAD_B,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -183,30 +189,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.pendingMessageThreads(1, THREAD_B)).toEqual([]);
     });
 
-    it("pages past a poisoned wake candidate and wraps to retry it", async () => {
+    it("discovers queued messages behind pending handoff seeds for ordinary repair", async () => {
+      const repos = createDrizzleRepositoriesForTest(db);
+      const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-repair" });
       const inbox = createDrizzleInbox(db);
-      const authority = createDrizzleRunClaim(db);
-      await inbox.enqueue(message("poison", THREAD_A));
-      await inbox.enqueue(message("later", THREAD_B));
-      const started: ThreadId[] = [];
-      let afterThreadId: ThreadId | undefined;
-      for (let pass = 0; pass < 3; pass++) {
-        ({ cursor: afterThreadId } = await sweepWakes({
-          delivery: { ...inbox, async refreshPending() {} },
-          authority,
-          eventSink: createInMemoryEventSink(),
-          limit: 1,
-          afterThreadId,
-          runStarter: {
-            async start(threadId) {
-              started.push(threadId);
-              if (threadId === THREAD_A) throw new Error("exhausted balance");
-            },
-          },
-        }));
-      }
-      expect(started).toEqual([THREAD_A, THREAD_B, THREAD_A]);
-      expect(await inbox.selectPending(THREAD_A)).toHaveLength(1);
+      const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+      const seed = await repos.turns.create({
+        threadId: THREAD_A,
+        role: "system",
+        origin: "system",
+        status: "pending",
+        metadata: {
+          kind: "derivation_seed",
+          derivation: "handoff",
+          sourceThreadId: THREAD_B,
+          sourceRef: "p1",
+          sourceTitle: "Source",
+          cutoffTurnId: crypto.randomUUID(),
+        },
+      });
+      const waiting = await inbox.enqueue(message("wait-for-seed", THREAD_A));
+      await inbox.enqueue(message("other-thread", THREAD_B));
+
+      expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
+      expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
+      expect(await runClaim.holder(THREAD_A)).toBeNull();
+      const repairLease = required(await runClaim.startExecution(THREAD_A, "placeholder-repair"));
+      await delivery.repairOrphanedTurns(repairLease);
+      expect(await repos.turns.findById(seed.id)).toMatchObject({
+        status: "error",
+        metadata: { reason: "interrupted", phase: "recovery" },
+      });
+      await runClaim.release(repairLease);
+
+      expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
+      expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
     });
 
     it("wakes a pending-message thread and skips one with a live lease", async () => {
@@ -358,12 +375,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: ASSISTANT_TURN,
         threadId: THREAD_A,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "streaming",
       });
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
         value: undefined,
+        turnKind: "assistant" as const,
         turnId: ASSISTANT_TURN,
         messageIds: [],
       }));
@@ -477,7 +496,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
         const failing = createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure });
         const row = await delivery.enqueue(message("batch"));
-        const prepare = async () => ({ value: undefined, turnId: turn.id, messageIds: [row.id] });
+        const prepare = async () => ({
+          value: undefined,
+          turnKind: "assistant" as const,
+          turnId: turn.id,
+          messageIds: [row.id],
+        });
         await expect(failing.adoptBatch(lease, prepare)).rejects.toThrow("projection unavailable");
         expect(await runClaim.readRunningTurnId(THREAD_A)).toBeNull();
         await delivery.adoptBatch(lease, prepare);
@@ -496,7 +520,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
         const terminal = {
           lease,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success" as const, finishReason: "end_turn" as const },
         };
         await expect(failing.close(terminal)).rejects.toThrow("projection unavailable");
@@ -514,6 +538,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         try {
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [],
           }));
@@ -533,10 +558,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
           });
-          const events = await db
-            .select()
-            .from(schema.eventJournal)
-            .where(eq(schema.eventJournal.threadId, THREAD_A));
+          const events = await journalEventsByThread(db, THREAD_A);
           expect(events.at(-1)?.payload).toMatchObject({
             type: "inbox.changed",
             pending: { items: [{ deliveryState: "awaiting_run" }] },
@@ -557,6 +579,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           const row = await delivery.enqueue(message("receipt"));
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [row.id],
           }));
@@ -593,6 +616,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         try {
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [],
           }));
@@ -600,13 +624,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect(await remote.cancelExecution(THREAD_A, turn.id)).toBe(true);
           const closed = await delivery.close({
             lease,
-            assistantTurnId: turn.id,
+            turnId: turn.id,
             cause: { kind: "success", finishReason: "end_turn" },
             continueWith: {
               lease,
               currentTurn: turn,
+              current: { kind: "assistant" },
               knownTurnIds: new Set([turn.id]),
               expectedLeafTurnId: turn.id,
+              prepareNextContext: async () => ({
+                events: [],
+                turns: [],
+                blocks: [],
+                requiresSplit: false,
+              }),
             },
           });
           expect(closed.kind).toBe("completed");
@@ -634,6 +665,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
         await delivery.adoptBatch(lease, async () => ({
           value: undefined,
+          turnKind: "assistant" as const,
           turnId: turn.id,
           messageIds: [],
         }));
@@ -651,7 +683,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         }).close({
           lease,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success", finishReason: "end_turn" },
         });
         await reached;

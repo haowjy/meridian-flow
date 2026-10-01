@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { CircleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -8,19 +9,38 @@ import { cn } from "@/lib/utils";
 
 export type ErrorBlockProps = {
   /**
-   * Whether this errored turn is the latest assistant turn in the thread.
+   * Whether this error is current: no visible turn follows the errored one.
    * - `true` → full tinted block with icon + message.
    * - `false` → quiet historical marker: single muted line, no background.
    */
   isLatest: boolean;
-  /** Empty working turn that never generated. Not generation-failure copy. */
-  kind?: "send" | "generation";
-  /** Retry this turn with the same ids. Omit to hide the control. */
+  /**
+   * - `send` → the writer's message was never admitted (failed first send).
+   * - `generation` → the message was admitted and the reply failed, with or
+   *   without partial output.
+   * - `retry` → a failed reply's Retry never reached the server; this is its
+   *   stand-in, and Retry re-sends the same request.
+   */
+  kind?: "send" | "generation" | "retry";
+  /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
+  /**
+   * The server refused this turn's last Retry; the cause stays in diagnostics.
+   * Shown only while the error is current: once the chat moves on, it is history.
+   */
+  retryRefused?: boolean;
 };
 
-function errorCopy(kind: ErrorBlockProps["kind"]): string {
-  return kind === "send" ? t`Couldn't send.` : t`Something went wrong generating a response.`;
+/** One quiet sentence per kind; reads on its own in history, no status prefix. */
+function copy(kind: ErrorBlockProps["kind"], current: boolean): string {
+  switch (kind) {
+    case "send":
+      return t`Couldn't send.`;
+    case "retry":
+      return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
+    default:
+      return t`This response failed.`;
+  }
 }
 
 /**
@@ -28,17 +48,42 @@ function errorCopy(kind: ErrorBlockProps["kind"]): string {
  *
  * Two visual modes:
  * - **Active** (isLatest): destructive-tinted soft block with icon, plain
- *   sentence, and Retry when this turn can be resubmitted.
+ *   sentence, and Retry beside it when this turn can be tried again.
  * - **Historical** (!isLatest): quiet inline muted marker.
  */
-export function ErrorBlock({ isLatest, kind = "generation", onRetry }: ErrorBlockProps) {
+export function ErrorBlock({
+  isLatest,
+  kind = "generation",
+  onRetry,
+  retryRefused = false,
+}: ErrorBlockProps) {
   if (!isLatest) {
-    return <HistoricalError kind={kind} />;
+    return <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>;
   }
-  return <ActiveError kind={kind} onRetry={onRetry} />;
+  return (
+    <ActiveError kind={kind} onRetry={onRetry}>
+      {retryRefused ? <RefusedNote /> : null}
+    </ActiveError>
+  );
 }
 
-function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry?: () => void }) {
+function RefusedNote() {
+  return (
+    <p className="text-caption text-muted-foreground" data-retry-refused>
+      <Trans>Couldn't retry.</Trans>
+    </p>
+  );
+}
+
+function ActiveError({
+  kind,
+  onRetry,
+  children,
+}: {
+  kind: ErrorBlockProps["kind"];
+  onRetry?: () => void;
+  children: ReactNode;
+}) {
   return (
     <Alert
       variant="destructive"
@@ -49,27 +94,16 @@ function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry
     >
       <CircleAlert className="text-destructive" aria-hidden />
       <AlertDescription className="text-compact text-ink-muted">
-        <p>{errorCopy(kind)}</p>
-        {onRetry ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-[var(--chat-space-block)]"
-            onClick={onRetry}
-          >
-            <Trans>Retry</Trans>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-1">
+          <p>{copy(kind, true)}</p>
+          {onRetry ? (
+            <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
+              <Trans>Retry</Trans>
+            </Button>
+          ) : null}
+        </div>
+        {children}
       </AlertDescription>
     </Alert>
-  );
-}
-
-function HistoricalError({ kind }: { kind: ErrorBlockProps["kind"] }) {
-  return (
-    <p className="text-caption text-muted-foreground">
-      <Trans>Errored.</Trans> {errorCopy(kind)}
-    </p>
   );
 }

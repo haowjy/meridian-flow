@@ -20,7 +20,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../threads/adapters/drizzle/index.js"
     );
     const { createThreadEventHub } = await import("../../threads/thread-event-hub.js");
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleChangeTrailDispatcher } = await import(
       "./drizzle-change-trail-dispatcher.js"
     );
@@ -39,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SETTLED_EVENT_ID = "00000000-0000-4000-8000-000000000a07";
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         schema.eventJournal,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailShells,
@@ -56,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "trail-delivery-crash-proofs",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -66,6 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "complete",

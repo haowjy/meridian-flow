@@ -30,9 +30,12 @@ import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
 import {
   type ComposerAvailableSkill,
+  type ComposerChatCommand,
   ComposerCommandExtension,
   ComposerCommandMenu,
+  composerChatCommandItems,
   composerSkillCommandItems,
+  matchComposerChatCommand,
 } from "./command";
 import {
   type ComposerDraftChange,
@@ -101,7 +104,12 @@ export type ComposerProps = {
   onCheckSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
   onRetireSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
   onStop?: () => void;
-  streaming?: boolean;
+  /**
+   * A run is active on this thread (a reply streaming, a compaction, a brief).
+   * Stop replaces an empty Send, Escape in the empty composer presses it, and a
+   * send queues behind the run.
+   */
+  running?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
@@ -113,6 +121,8 @@ export type ComposerProps = {
   uploadPort?: ComposerUploadPort;
   referenceCatalog?: AtReferenceCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
+  /** Chat verbs (`/compact`) the owning surface can run on its thread. */
+  commands?: readonly ComposerChatCommand[] | null;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -145,7 +155,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onCheckSubmission,
     onRetireSubmission,
     onStop,
-    streaming = false,
+    running = false,
     placeholder,
     autoFocus,
     variant = "hero",
@@ -157,8 +167,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     uploadPort,
     referenceCatalog = null,
     availableSkills = null,
+    commands = null,
   } = props;
-  const rotatingPlaceholder = useComposerPlaceholder(streaming);
+  const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
   const revision = useRef(initialDraft?.revision ?? 0);
   const restored = useRef(new Set<string>());
@@ -173,6 +184,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   referenceCatalogRef.current = referenceCatalog;
   const availableSkillsRef = useRef(availableSkills);
   availableSkillsRef.current = availableSkills;
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
@@ -242,11 +255,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       ComposerCommandExtension.configure({
         catalog: () => {
           const skills = availableSkillsRef.current;
-          if (!skills) return null;
+          const chatCommands = commandsRef.current ?? [];
+          if (!skills && chatCommands.length === 0) return null;
           return {
             menuLabel: t`Commands`,
             groupLabels: { skills: t`Skills`, chat: t`Chat` },
-            items: composerSkillCommandItems(skills),
+            items: [
+              ...composerSkillCommandItems(skills ?? []),
+              ...composerChatCommandItems(chatCommands),
+            ],
+            runCommand: (slug) =>
+              commandsRef.current?.find((command) => command.slug === slug)?.run(null),
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
@@ -439,6 +458,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       revision.current,
       composerSelection(editor.state.selection),
     );
+    // `/compact <instructions>` is a verb, not a message: it runs on the thread
+    // and its text leaves the composer at once, like choosing it from the menu.
+    const verb = matchComposerChatCommand(envelope.text, commandsRef.current ?? []);
+    if (verb) {
+      setSubmitFailure(false);
+      editor.commands.clearContent(true);
+      verb.command.run(verb.instructions);
+      editor.commands.focus(undefined, { scrollIntoView: false });
+      return;
+    }
     inFlight.current = envelope;
     const outcome = await Promise.resolve(onSubmit(envelope)).catch(
       (): ComposerSubmitOutcome => ({
@@ -549,6 +578,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
+  // Escape is the Stop button: it stops only while Stop shows. With a draft it
+  // leaves the run and the draft alone for other Escape owners.
+  const showStop = running && !hasContent;
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -557,12 +589,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && streaming) {
+    if (event.key === "Escape" && showStop) {
       event.preventDefault();
       onStop?.();
     }
   };
-  const showStop = streaming && !hasContent;
   return (
     <div
       data-composer=""
@@ -637,14 +668,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           disabled={!showStop && (!hasContent || submitDisabled || pending > 0 || locked)}
           aria-label={showStop ? t`Stop` : t`Send message`}
           aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-          className={streaming ? "relative rounded-full" : "rounded-field"}
+          className={running ? "relative rounded-full" : "rounded-field"}
         >
           {showStop ? (
             <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
           ) : (
             <ArrowUp className="size-4" />
           )}
-          {streaming && hasContent ? (
+          {running && hasContent ? (
             <span
               aria-hidden="true"
               className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"

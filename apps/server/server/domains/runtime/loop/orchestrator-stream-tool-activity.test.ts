@@ -55,6 +55,12 @@ async function fixture(kind: "primary" | "subagent") {
   const repos = createInMemoryRepositories({ projects });
   const project = await projects.create({ userId: USER_ID, title: "Runtime" });
   const parent = await repos.threads.create({ userId: USER_ID, projectId: project.id });
+  const originTurn = await repos.turns.create({
+    threadId: parent.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "complete",
+  });
   const child =
     kind === "subagent"
       ? await repos.threads.createSubagent({
@@ -63,6 +69,7 @@ async function fixture(kind: "primary" | "subagent") {
           parentThreadId: parent.id,
           rootThreadId: parent.id,
           spawnDepth: 1,
+          originTurnId: originTurn.id,
         })
       : null;
   const thread = child ?? parent;
@@ -86,7 +93,7 @@ async function fixture(kind: "primary" | "subagent") {
   const run = await harness.orchestrator.prepare({
     threadId: thread.id,
     userText: "Draft story-b.md",
-    ...(child ? { child: { parentThreadId: parent.id, background: false } } : {}),
+    ...(child ? { child: { parentThreadId: parent.id, background: false, origin: "spawn" } } : {}),
   });
   return { harness, run, ready, release: gate.open };
 }

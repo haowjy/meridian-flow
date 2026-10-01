@@ -6,7 +6,14 @@
 
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  ProjectId,
+  PromptBakeId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type {
   ExecutionReportCorrelation,
   ExecutionReportSource,
@@ -21,8 +28,11 @@ import type {
   FinishReason,
   JsonValue,
   ModelResponse,
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
   PriceSource,
   ProjectChatItem,
+  PromptBake,
   SpawnStatus,
   Thread,
   ThreadKind,
@@ -67,10 +77,25 @@ export interface BlockRepository {
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
+  /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
+  listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
-  /** Sets the prune flag. A missing row is a no-op (`null`), not an error. */
-  updatePruned(id: string, pruned: boolean): Promise<Block | null>;
+}
+
+export interface ThreadImageInclusion {
+  threadId: ThreadId;
+  blockId: string;
+  decisionTurnId: TurnId;
+  included: boolean;
+}
+
+export interface ThreadImageInclusionRepository {
+  /** Latest decision per block, ordered by the deciding turn's transcript position. */
+  findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  /** Append-only decision history, used to reconstruct forks at their cutoff. */
+  listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  set(input: ThreadImageInclusion): Promise<void>;
 }
 
 export interface CreateModelResponseInput {
@@ -92,10 +117,19 @@ export interface CreateModelResponseInput {
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
+  requestMessageCount: number;
+  requestStartedAt?: string | null;
   timeToFirstTokenMs?: number | null;
   generationMs?: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
 }
+
+export type LatestModelResponse = Pick<
+  ModelResponse,
+  "turnId" | "sequence" | "model" | "requestStartedAt" | "inputTokens" | "requestMessageCount"
+>;
 
 export interface CreateModelResponseResult {
   row: ModelResponse;
@@ -106,6 +140,10 @@ export interface ModelResponseRepository {
   /** Inserts a response row, or returns the existing row plus `inserted:false` on response-id replay. */
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
+  /** Most recent non-compaction response by turn position and sequence; cache and estimate facts. */
+  findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
+  /** Most recent response whose turn belongs to the supplied active ancestor chain. */
+  findLatestForTurns(turnIds: readonly TurnId[]): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
   sumUsageByThread(threadId: ThreadId): Promise<{
@@ -124,15 +162,15 @@ export interface ModelResponseRepository {
 
 export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   handle: string;
   agentSlug?: string | null;
   description?: string | null;
 }
 export interface FinalizeExecutionReportInput {
-  terminalAssistantTurnId?: TurnId;
+  terminalTurnId?: TurnId;
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   outcome: SavedOutcome;
   reason: string | null;
   source: ExecutionReportSource;
@@ -147,14 +185,14 @@ export interface ExecutionReportRepository {
   admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
   captureOnce(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
     toolCallId: string,
     capture: import("@meridian/contracts/spawn").ReturnResultCapture,
   ): Promise<SavedExecutionReport>;
   finalizeOnce(input: FinalizeExecutionReportInput): Promise<SavedExecutionReport>;
   findByExecution(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
@@ -163,22 +201,26 @@ export interface ExecutionReportRepository {
   listUnfinalized(
     limit: number,
     afterExecutionId?: TurnId,
-  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId">>>;
+  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "executionTurnId">>>;
   /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
   listPendingPublication(
     limit: number,
     afterExecutionId?: TurnId,
   ): Promise<
-    Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId" | "callerThreadId">>
+    Array<
+      Pick<SavedExecutionReport, "childThreadId" | "executionTurnId"> & {
+        callerThreadId: ThreadId;
+      }
+    >
   >;
   lockPendingPublication(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
   markPublished(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
-    publication: "published" | "skipped",
+    executionTurnId: TurnId,
+    publication: "published",
   ): Promise<void>;
 }
 
@@ -195,7 +237,6 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   kind?: ThreadKind;
   title?: string | null;
-  systemPrompt?: string | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
   spawnDepth?: number;
@@ -205,18 +246,29 @@ export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
 }
 
-/** Atomic first-attempt bake payload for gateway prompt + skill + tool contract. */
-export interface BakeComposedSystemPromptInput {
+/** Immutable system and tool bytes stored in a prompt bake. */
+export interface PromptBakeContent {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
-  /** Exact advertised Tool[] payload, opaque JSON; the runtime owns its shape. */
   bakedTools: JsonValue;
+  contentHash: string;
+}
+
+export interface CreatePromptBakeInput extends PromptBakeContent {
+  ownerThreadId: ThreadId;
+}
+
+export interface PromptBakeRepository {
+  create(input: CreatePromptBakeInput): Promise<PromptBake>;
+  findById(id: PromptBakeId): Promise<PromptBake | null>;
 }
 
 export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
+  /** Reads a thread even when it or its project is soft-deleted, for inherited history. */
+  findByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
   /** Exact live handle lookup by server-assigned `cN`/`pN` ref; caller must authorize the project. */
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
@@ -229,13 +281,15 @@ export interface ThreadRepository {
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /**
-   * Every live descendant of `threadId` in its spawn subtree, breadth-first by
-   * `(spawnDepth, createdAt, id)`. Walks `parent_thread_id` from the viewed
-   * thread (so a sibling branch sharing the root is excluded), skips soft-deleted
-   * rows, and never includes the thread itself. Feeds the recursive activity read.
-   */
-  listDescendants(threadId: ThreadId): Promise<ThreadDescendant[]>;
+  /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
+  listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
+  /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
+  listLineageChildren(input: {
+    rootThreadId: ThreadId;
+    parentIds: ThreadId[];
+    limit: number;
+    after?: { createdAt: string; id: string };
+  }): Promise<Array<Thread & { upThreadId: ThreadId; siblingCount: number }>>;
   /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
@@ -245,11 +299,11 @@ export interface ThreadRepository {
   updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
-  /**
-   * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
-   * null. Returns the authoritative thread row (winner's bake on CAS loss).
-   */
-  bakeComposedSystemPrompt(id: ThreadId, input: BakeComposedSystemPromptInput): Promise<Thread>;
+  /** Locks, inserts, and points at the first bake; contenders receive the winner. */
+  bakeInitialPrompt(
+    id: ThreadId,
+    input: PromptBakeContent,
+  ): Promise<{ thread: Thread; bake: PromptBake }>;
   /** Recomputes total cost from all model responses belonging to this thread's turns. */
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;
@@ -270,18 +324,10 @@ export interface WorkThreadSummary {
   status: ThreadLifecycleStatus;
 }
 
-/** One descendant in a thread's spawn subtree, as the activity read needs it. */
-export type ThreadDescendant = Pick<
+/** One direct child row, as the activity read needs it. */
+export type ThreadChild = Pick<
   Thread,
-  | "id"
-  | "parentThreadId"
-  | "rootThreadId"
-  | "spawnDepth"
-  | "ref"
-  | "title"
-  | "agentName"
-  | "spawnStatus"
-  | "originTurnId"
+  "id" | "parentThreadId" | "ref" | "title" | "agentName" | "spawnStatus" | "originTurnId"
 >;
 
 /**
@@ -309,9 +355,6 @@ export interface ThreadStatusReader {
 export interface ThreadPendingInboxReader {
   readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
 }
-
-/** The derived live reads the snapshot builder and WS `subscribed` state share. */
-export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
 
 export interface ProjectChatCursorKey {
   sortAt: string;
@@ -348,7 +391,10 @@ export interface SubagentThreadFactory {
 }
 
 export interface DerivedPrimaryThreadFactory {
-  createDerivedPrimary(input: CreateDerivedPrimaryThreadInput): Promise<Thread>;
+  /** Inserts by the caller-minted ID, returning the existing row on ID conflict. */
+  createDerivedPrimary(
+    input: CreateDerivedPrimaryThreadInput,
+  ): Promise<{ thread: Thread; created: boolean }>;
 }
 
 export interface CreateTurnInput {
@@ -358,6 +404,8 @@ export interface CreateTurnInput {
   /** Event/projector callers may preserve the event-authored creation time. */
   createdAt?: string;
   prevTurnId?: TurnId | null;
+  promptBakeId?: PromptBakeId | null;
+  compactionModel?: string | null;
   role: TurnRole;
   /** No default: every creation path must state who authored the turn. */
   origin: TurnOrigin;
@@ -372,13 +420,66 @@ export interface UpdateTurnStatusInput {
   finishReason?: FinishReason | null;
   completedAt?: string | null;
   error?: string | null;
+  promptBakeId?: PromptBakeId | null;
+  compactionModel?: string | null;
+  metadata?: JsonValue | null;
+}
+
+/** One owner-local slice of an effective transcript. Bounds are exclusive/inclusive. */
+export interface TranscriptSpan {
+  threadId: ThreadId;
+  afterPosition: number;
+  throughPosition: number | null;
+}
+
+export interface TranscriptKey {
+  position: number;
+  sequence: number;
+}
+
+export interface TranscriptItemRow {
+  turn: Turn;
+  block: Block | null;
+  sequence: number;
+}
+
+export interface ReadTranscriptItemsInput {
+  spans: readonly TranscriptSpan[];
+  order: "newest_first" | "oldest_first";
+  unit: "item" | "turn";
+  limit: number;
+  after?: TranscriptKey;
+  through?: TranscriptKey;
 }
 
 export interface TurnRepository {
   /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
   findById(id: TurnId): Promise<Turn | null>;
+  /** Latest execution or automatic satisfaction of one inbox control. */
+  findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
+  findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Latest local requester text per thread, without walking inherited transcript spans. */
+  listLatestLocalRequesterText(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, string>>;
+  /** Keyset page of pending placeholders eligible for orphan repair. */
+  listPendingPlaceholders(
+    limit: number,
+    afterTurnId?: TurnId,
+  ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
+  /** Reads bounded transcript items by `(position, sequence)` across owner spans. */
+  readTranscriptItems(input: ReadTranscriptItemsInput): Promise<TranscriptItemRow[]>;
+  /** Finds the first unsettled turn across owner spans using the partial index. */
+  findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
+  /** Unsettled turns in one claimed thread, ordered by transcript position. */
+  listUnsettledForThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Complete epoch boundaries in the supplied transcript spans. */
+  listTranscriptBoundaries(spans: readonly TranscriptSpan[]): Promise<Turn[]>;
+  /** Bounded global discovery for startup orphan repair, ordered by owner and position. */
+  listUnsettledPrimaryTurns(
+    limit: number,
+    after?: { threadId: ThreadId; position: number },
+  ): Promise<Array<Pick<Turn, "id" | "threadId" | "position" | "role" | "status">>>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
   /**
    * The assistant container of a run that the caller has already proven live
@@ -466,12 +567,14 @@ export type ThreadRepositories = {
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
+  imageInclusions: ThreadImageInclusionRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ExecutionReportRepository;
   /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
+  promptBakes: PromptBakeRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects

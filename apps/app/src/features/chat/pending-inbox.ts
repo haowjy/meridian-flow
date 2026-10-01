@@ -13,7 +13,13 @@ export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const item of pending.items) {
-    if (item.provenance.kind === "writer" && item.deliveryState === "waiting") ids.add(item.id);
+    // A control is writer-authored but never a turn; it renders as its own row.
+    if (
+      item.intent !== "control" &&
+      item.provenance.kind === "writer" &&
+      item.deliveryState === "waiting"
+    )
+      ids.add(item.id);
   }
   return ids;
 }

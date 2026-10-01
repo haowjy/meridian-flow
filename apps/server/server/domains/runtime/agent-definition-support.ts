@@ -6,6 +6,8 @@ const supported = new Set([
   "name",
   "description",
   "model",
+  "autocompact",
+  "autocompact_pct",
   "effort",
   "mode",
   "model-invocable",

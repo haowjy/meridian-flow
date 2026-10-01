@@ -220,7 +220,7 @@ which reconciles server turns against local optimistic state via
 
 `useThreadSnapshotSync` is always stale and refetches on activation. Its one
 mounted-thread transport handler also owns addressed `meridian.block.upserted`
-and `meridian.block.pruned` reduction after a run terminates; the run controller
+reduction after a run terminates; the run controller
 owns deltas, commands and terminals, and flushes buffered deltas before a
 thread-owned block mutation. The handler refetches on `RUN_STARTED` and gap.
 A thread that advanced while the writer was elsewhere — a background child's

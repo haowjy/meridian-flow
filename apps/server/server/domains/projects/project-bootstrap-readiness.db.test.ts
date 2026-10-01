@@ -20,7 +20,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
 
@@ -30,7 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const probeClient = postgres(DATABASE_URL, { max: 1 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "bootstrap-readiness"));
     });
 

@@ -10,13 +10,18 @@ import { useEffect, useMemo, useState } from "react";
 import { getJson, isMeridianApiError } from "@/client/api/http-client";
 import { getThreadModelRequestDebugRecords, getThreadSnapshot } from "@/client/api/threads-api";
 import { Button } from "@/components/ui/button";
-import { cacheHitPercent } from "@/features/chat/turn-stats";
 import { cn } from "@/lib/utils";
 import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
 import { JsonTree } from "../JsonTree";
 import { ModelRequestInspector } from "../model-requests/ModelRequestInspector";
 import type { LlmCallsScope } from "../use-debug-enabled";
-import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
+import {
+  deriveLlmCalls,
+  type LlmCallCacheComparison,
+  type LlmCallOutcome,
+  type LlmCallSummary,
+  pairLlmCallResponses,
+} from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
 const POLL_INTERVAL_MS = 3_000;
@@ -79,26 +84,6 @@ function LlmCallsContent({
 
   useEffect(() => {
     let active = true;
-    setResponsesByTurn({});
-    if (!filter)
-      return () => {
-        active = false;
-      };
-    void getThreadSnapshot({ data: { threadId: filter.threadId } })
-      .then((snapshot) => {
-        if (!active) return;
-        setResponsesByTurn(
-          Object.fromEntries(snapshot.turns.map((turn) => [turn.id, turn.responses])),
-        );
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [filter]);
-
-  useEffect(() => {
-    let active = true;
     let request: AbortController | undefined;
 
     async function poll() {
@@ -142,6 +127,39 @@ function LlmCallsContent({
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
   );
+  const responseThreadIds = useMemo(
+    () =>
+      filter
+        ? [filter.threadId]
+        : [...new Set(allCalls.flatMap((call) => (call.threadId ? [call.threadId] : [])))],
+    [allCalls, filter],
+  );
+  const responseThreadKey = responseThreadIds.join(",");
+  const responseCallKey = allCalls.map((call) => call.gatewayCallId).join(",");
+  useEffect(() => {
+    let active = true;
+    setResponsesByTurn({});
+    const threadIds = responseThreadKey ? responseThreadKey.split(",") : [];
+    if (threadIds.length === 0) {
+      return () => {
+        active = false;
+      };
+    }
+    void Promise.all(
+      threadIds.map((threadId) => getThreadSnapshot({ data: { threadId } }).catch(() => null)),
+    ).then((snapshots) => {
+      if (!active) return;
+      const responseRows = Object.fromEntries(
+        snapshots
+          .filter((snapshot) => snapshot !== null)
+          .flatMap((snapshot) => snapshot.turns.map((turn) => [turn.id, turn.responses])),
+      );
+      setResponsesByTurn(responseRows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [responseCallKey, responseThreadKey]);
   const calls = useMemo(
     () =>
       filter
@@ -155,29 +173,14 @@ function LlmCallsContent({
         : allCalls,
     [allCalls, filter],
   );
-  const cacheResponseByCall = useMemo(() => {
-    const result = new Map<string, ModelResponse>();
-    const byTurn = new Map<string, LlmCallSummary[]>();
-    for (const call of allCalls) {
-      if (!call.turnId || !call.threadId || (filter && call.threadId !== filter.threadId)) continue;
-      const turnCalls = byTurn.get(call.turnId) ?? [];
-      turnCalls.push(call);
-      byTurn.set(call.turnId, turnCalls);
-    }
-    for (const [turnId, responses] of Object.entries(responsesByTurn)) {
-      const turnCalls = (byTurn.get(turnId) ?? [])
-        .filter((call) => call.outcome === "ok")
-        .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-      const available = [...responses].sort((a, b) => a.sequence - b.sequence);
-      for (const call of turnCalls) {
-        const responseIndex = available.findIndex((response) => response.model === call.model);
-        if (responseIndex < 0) continue;
-        const [response] = available.splice(responseIndex, 1);
-        if (response) result.set(call.gatewayCallId, response);
-      }
-    }
-    return result;
-  }, [allCalls, filter, responsesByTurn]);
+  const cacheComparisonByCall = useMemo(
+    () =>
+      pairLlmCallResponses(
+        allCalls.filter((call) => !filter || call.threadId === filter.threadId),
+        responsesByTurn,
+      ),
+    [allCalls, filter, responsesByTurn],
+  );
 
   return (
     <section
@@ -240,7 +243,7 @@ function LlmCallsContent({
               <CallCard
                 key={call.gatewayCallId}
                 call={call}
-                response={cacheResponseByCall.get(call.gatewayCallId)}
+                cacheComparison={cacheComparisonByCall.get(call.gatewayCallId)}
               />
             ))}
           </div>
@@ -250,12 +253,15 @@ function LlmCallsContent({
   );
 }
 
-function CallCard({ call, response }: { call: LlmCallSummary; response?: ModelResponse }) {
+function CallCard({
+  call,
+  cacheComparison,
+}: {
+  call: LlmCallSummary;
+  cacheComparison?: LlmCallCacheComparison;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const responseCacheHit =
-    response?.cacheReadTokens == null
-      ? null
-      : cacheHitPercent(response.cacheReadTokens, response.inputTokens);
+  const response = cacheComparison?.response;
   const correlation = [
     call.threadId ? `thread ${call.threadId}` : null,
     call.turnId ? `turn ${call.turnId}` : null,
@@ -307,10 +313,32 @@ function CallCard({ call, response }: { call: LlmCallSummary; response?: ModelRe
               <Metric
                 label="cache hit"
                 value={
-                  responseCacheHit == null ? "Not reported" : `${responseCacheHit.toFixed(1)}%`
+                  cacheComparison?.cacheHitPercent == null
+                    ? "Not reported"
+                    : `${cacheComparison.cacheHitPercent.toFixed(1)}%`
                 }
               />
               <Metric label="cache reset" value={response.cacheReset ? "Yes" : "No"} />
+              <Metric
+                label="predicted cache"
+                value={predictionLabel(cacheComparison)}
+                detail={
+                  cacheComparison?.predictedReason
+                    ? predictionReasonLabel(cacheComparison.predictedReason)
+                    : undefined
+                }
+              />
+              <Metric
+                label="prediction mismatch"
+                value={
+                  cacheComparison?.predictedState
+                    ? cacheComparison.mismatch
+                      ? "Yes"
+                      : "No"
+                    : "Unavailable"
+                }
+                emphasis={cacheComparison?.mismatch}
+              />
             </>
           ) : null}
         </dl>
@@ -328,13 +356,57 @@ function CallCard({ call, response }: { call: LlmCallSummary; response?: ModelRe
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  detail,
+  emphasis,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  emphasis?: boolean;
+}) {
   return (
     <div>
       <dt className="text-meta text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-xs text-foreground">{value}</dd>
+      <dd
+        className={cn(
+          "font-mono text-xs text-foreground",
+          emphasis && "font-semibold text-status-warning",
+        )}
+      >
+        {value}
+      </dd>
+      {detail ? <dd className="text-meta text-muted-foreground">{detail}</dd> : null}
     </div>
   );
+}
+
+function predictionLabel(comparison?: LlmCallCacheComparison): string {
+  if (!comparison?.predictedState) return "Unavailable";
+  return comparison.predictedState === "warm" ? "Warm" : "Cold";
+}
+
+function predictionReasonLabel(
+  reason: NonNullable<LlmCallCacheComparison["predictedReason"]>,
+): string {
+  const labels: Record<typeof reason, string> = {
+    reusable_prefix: "Reusable prefix",
+    uncached: "Uncached model",
+    no_response: "No prior response",
+    model_changed: "Model changed",
+    prompt_epoch: "Prompt changed",
+    image_eviction: "Image prefix changed",
+    compaction: "Compaction boundary",
+    ttl_unknown: "Cache lifetime unknown",
+    summary_transcript: "Separate summary transcript",
+    ttl_expired: "Cache expired",
+    fork_cutoff: "Fork cutoff",
+    fork_bake_changed: "Fork prompt changed",
+    facts_unavailable: "Cache facts unavailable",
+  };
+  return labels[reason];
 }
 
 function CallDetail({ call }: { call: LlmCallSummary }) {

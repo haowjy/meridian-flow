@@ -72,7 +72,8 @@ hidden constraints, surprising invariants, and workarounds.
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
-**Debugging.** Follow [docs/debugging.md](docs/debugging.md).
+**Debugging.** Follow [docs/debugging.md](docs/debugging.md); use the
+[runtime probe catalog](docs/qa/README.md) for repeatable verification.
 
 ## Knowledge and structure
 
