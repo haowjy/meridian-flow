@@ -9,6 +9,7 @@ import {
   CleanupResolverError,
   type CleanupTarget,
   createCleanupPlan,
+  createCleanupTarget,
   executeCleanupPlan,
   isPrNumberTarget,
   type MeridianWorkItem,
@@ -18,6 +19,7 @@ import {
   parsePrNumber,
   resolveAutoTargets,
   resolveTarget,
+  resolveTargetWorktree,
   type TargetReference,
 } from "./lib/worktree-cleanup";
 import {
@@ -32,18 +34,18 @@ import {
   autoCleanupReadinessKey,
   collectAutoCleanupReadiness,
   inspectAutoCleanupReadiness,
-  inspectCleanupCleanliness,
 } from "./lib/worktree-cleanup-readiness";
 
 interface CliOptions {
   readonly mode: "auto" | "target" | "help";
   readonly target?: string;
+  readonly manuallyVerified?: string;
   readonly dryRun: boolean;
   readonly yes: boolean;
 }
 
 const USAGE = `Usage:
-  pnpm dev:prune-worktrees -- --target <value> [--dry-run] [--yes]
+  pnpm dev:prune-worktrees -- --target <value> [--manually-verified <reason>] [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- -h|--help
 
@@ -58,6 +60,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
   let auto = false;
   let acknowledgeBatchRisk = false;
   let target: string | undefined;
+  let manuallyVerified: string | undefined;
   let dryRun = false;
   let yes = false;
 
@@ -79,6 +82,15 @@ function parseArgs(argv: readonly string[]): CliOptions {
       i += 1;
       continue;
     }
+    if (arg === "--manually-verified") {
+      const note = argv[i + 1];
+      if (!note || note.startsWith("--") || note.trim() === "") {
+        throw new Error(`--manually-verified requires a non-empty reason.\n\n${USAGE}`);
+      }
+      manuallyVerified = note.trim();
+      i += 1;
+      continue;
+    }
     if (arg === "--dry-run") {
       dryRun = true;
       continue;
@@ -95,8 +107,16 @@ function parseArgs(argv: readonly string[]): CliOptions {
   if (acknowledgeBatchRisk && !auto) {
     throw new Error(`--acknowledge-batch-risk requires --auto.\n\n${USAGE}`);
   }
+  if (manuallyVerified && auto) {
+    throw new Error(`--manually-verified requires --target.\n\n${USAGE}`);
+  }
+  if (manuallyVerified && target && isPrNumberTarget(target)) {
+    throw new Error(`--manually-verified cannot be used with a PR-number target.\n\n${USAGE}`);
+  }
   if (auto && !acknowledgeBatchRisk) throw new Error(AUTO_NOTICE);
-  return auto ? { mode: "auto", dryRun, yes } : { mode: "target", target, dryRun, yes };
+  return auto
+    ? { mode: "auto", dryRun, yes }
+    : { mode: "target", target, manuallyVerified, dryRun, yes };
 }
 
 function runText(command: string, args: readonly string[], cwd: string): string {
@@ -149,11 +169,16 @@ function printPlan(plan: CleanupPlan): void {
     console.log(`  branch:   ${target.branch}`);
     console.log(`  commit:   ${target.eligibility.plannedOid}`);
     console.log(
-      `  evidence: ${
-        target.eligibility.kind === "ancestry"
-          ? `ancestor of ${target.eligibility.baseBranch}`
-          : `merged PR #${target.eligibility.pullRequestNumber}`
-      }`,
+      `  evidence: ${(() => {
+        switch (target.eligibility.kind) {
+          case "ancestry":
+            return `ancestor of ${target.eligibility.baseBranch}`;
+          case "pull-request":
+            return `merged PR #${target.eligibility.pullRequestNumber}`;
+          case "manual":
+            return `manually verified — ${JSON.stringify(target.eligibility.note)}`;
+        }
+      })()}`,
     );
     console.log(`  work:     ${target.workItem?.id ?? "(none linked)"}`);
     console.log("  actions:");
@@ -447,12 +472,18 @@ function printAutoReadinessSkips(
 }
 
 async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan> {
-  console.log("Discovering worktrees, active work items, and merged PR evidence...");
+  console.log(
+    options.mode === "target" && options.manuallyVerified
+      ? "Discovering worktrees and active work items..."
+      : "Discovering worktrees, active work items, and merged PR evidence...",
+  );
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
   const baseBranch = resolveBaseBranch(cwd);
   const [eligibilityByBranch, meridianWorkItems] = await Promise.all([
-    collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
+    options.mode === "target" && options.manuallyVerified
+      ? Promise.resolve(new Map<string, CleanupEligibility>())
+      : collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
     collectMeridianWorkItems(cwd),
   ]);
   const worktrees = parseGitWorktreePorcelain(gitWorktreePorcelain);
@@ -486,11 +517,35 @@ async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan>
     const reference: TargetReference = isPrNumberTarget(options.target)
       ? { kind: "pr", value: options.target, headBranch: resolvePrHeadBranch(options.target, cwd) }
       : { kind: "direct", value: options.target };
-    const target = resolveTarget(context, reference);
-    const cleanliness = inspectCleanupCleanliness(target.worktree.path);
-    if (!cleanliness.ready) {
+    const target = options.manuallyVerified
+      ? (() => {
+          if (reference.kind !== "direct") {
+            throw new Error("Manual verification requires a direct target.");
+          }
+          const worktree = resolveTargetWorktree(context, reference);
+          if (!worktree.branch) {
+            throw new CleanupResolverError(
+              `Refusing to clean worktree without a local branch: ${worktree.path}`,
+            );
+          }
+          const plannedOid = runText(
+            "git",
+            ["rev-parse", "--verify", `refs/heads/${worktree.branch}^{commit}`],
+            cwd,
+          );
+          return createCleanupTarget(context, worktree, {
+            kind: "manual",
+            branch: worktree.branch,
+            plannedOid,
+            baseBranch,
+            note: options.manuallyVerified,
+          });
+        })()
+      : resolveTarget(context, reference);
+    const readiness = inspectAutoCleanupReadiness(target.worktree.path, meridianWorkItems);
+    if (!readiness.ready) {
       throw new CleanupResolverError(
-        `Refusing to clean '${target.worktree.path}': ${cleanliness.reasons.join("; ")}.`,
+        `Refusing to clean '${target.worktree.path}': ${readiness.reasons.join("; ")}.`,
       );
     }
     return [target];
@@ -534,30 +589,18 @@ function revalidateTarget(target: CleanupPlan["targets"][number]) {
 
 async function revalidateCleanupReadiness(
   target: CleanupPlan["targets"][number],
-  mode: CliOptions["mode"],
 ): Promise<AutoCleanupReadinessDecision> {
   try {
-    if (mode === "target") {
-      const cleanliness = inspectCleanupCleanliness(target.worktree.path);
-      if (!cleanliness.ready) return cleanliness;
-      const primaryCwd =
-        target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
-      const currentWorktree = parseGitWorktreePorcelain(
-        runText("git", ["worktree", "list", "--porcelain"], primaryCwd),
-      ).find(
-        (worktree) =>
-          autoCleanupReadinessKey(worktree.path) === autoCleanupReadinessKey(target.worktree.path),
-      );
-      if (!currentWorktree) {
-        return { ready: false, reasons: ["worktree is no longer registered"] };
-      }
-      if (currentWorktree.locked) {
-        return { ready: false, reasons: ["worktree is locked"] };
-      }
-      return cleanliness;
-    }
     const primaryCwd =
       target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
+    const currentWorktree = parseGitWorktreePorcelain(
+      runText("git", ["worktree", "list", "--porcelain"], primaryCwd),
+    ).find(
+      (worktree) =>
+        autoCleanupReadinessKey(worktree.path) === autoCleanupReadinessKey(target.worktree.path),
+    );
+    if (!currentWorktree) return { ready: false, reasons: ["worktree is no longer registered"] };
+    if (currentWorktree.locked) return { ready: false, reasons: ["worktree is locked"] };
     const workItems = await collectMeridianWorkItems(primaryCwd);
     return inspectAutoCleanupReadiness(target.worktree.path, workItems);
   } catch (error) {
@@ -572,11 +615,11 @@ async function revalidateCleanupReadiness(
   }
 }
 
-async function executePlan(plan: CleanupPlan, mode: CliOptions["mode"]): Promise<number> {
+async function executePlan(plan: CleanupPlan): Promise<number> {
   const result = await executeCleanupPlan(
     plan,
     revalidateTarget,
-    (target) => revalidateCleanupReadiness(target, mode),
+    (target) => revalidateCleanupReadiness(target),
     (action) => runAction(action),
     {
       onTargetStart: (target) =>
@@ -637,7 +680,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan, options.mode);
+  const failures = await executePlan(plan);
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);
