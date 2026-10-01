@@ -14,6 +14,14 @@ export {
   openLinkForm,
 } from "./LinkSurfaceExtension";
 export {
+  LINK_CHIP_ICONS,
+  type LinkChip,
+  type LinkChipIcon,
+  linkChip,
+  linkChipAttributes,
+  referenceChip,
+} from "./link-chip";
+export {
   anchorLinkRange,
   commitLinkDraft,
   type LinkAnchor,

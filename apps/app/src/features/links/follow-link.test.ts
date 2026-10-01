@@ -97,6 +97,16 @@ describe("followProjectLink", () => {
     expect(events).toEqual(["report:missing"]);
   });
 
+  it("reports a name several documents carry as ambiguous, with the candidates", async () => {
+    const kbKael: ResolvedDocumentLink = { ...KAEL, documentId: "doc-kb-kael", scheme: "kb" };
+    register(async () => "ambiguous");
+    candidates = () => [KAEL, kbKael];
+
+    await follow();
+
+    expect(events).toEqual(["report:ambiguous"]);
+  });
+
   it("reports a request that could not be made as failed, not missing", async () => {
     register(async () => {
       throw new Error("offline");

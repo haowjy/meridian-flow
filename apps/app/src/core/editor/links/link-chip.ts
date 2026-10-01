@@ -1,0 +1,89 @@
+/**
+ * How an internal link is drawn: a tag chip, filled or dashed, with an icon
+ * naming the family of the document behind it.
+ *
+ * Pure presentation rules, shared by every surface that shows a link (the
+ * transcript, the composer, the Editor). A surface emits the two attributes
+ * from `linkChipAttributes` and nothing else; the one look keyed by them is
+ * the app's link-chip stylesheet, and the icon images keyed by the icon
+ * attribute come from the app's family icon data. Core names the family and
+ * never draws it, so it imports no icons.
+ *
+ * Dashed means one thing: nothing is at that address. Every state that is
+ * not settled yet (asking, failed, several candidates) draws filled, because
+ * guessing "not written" and correcting it a moment later is worse than
+ * waiting.
+ */
+
+import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
+
+import type { LinkResolutionEntry } from "./link-resolution";
+import type { LinkTarget } from "./link-target";
+
+/**
+ * A document family by scheme, or one of the two names a wikilink wears
+ * before it settles: `file-plus` when nothing carries the name (Create is
+ * offered), `file` while it is not one document yet.
+ */
+export type LinkChipIcon = ContextUriScheme | "file" | "file-plus";
+
+export type LinkChip = { state: "filled" | "dashed"; icon: LinkChipIcon };
+
+/** Every icon a chip can ask for; the app supplies one image per entry. */
+export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [
+  ...CONTEXT_URI_SCHEMES,
+  "file",
+  "file-plus",
+];
+
+/**
+ * The chip for an internal target in its current state, or null for an
+ * external one (external links keep the underline and outbound arrow).
+ *
+ * `baseUri` is the URI of the document holding the link: a relative path
+ * shares its family. A resolved link shows the family of the document it
+ * resolved to; a scheme or relative link otherwise shows its own, because it
+ * knows its family before it resolves.
+ */
+export function linkChip(
+  target: LinkTarget,
+  entry: LinkResolutionEntry | null,
+  baseUri: string | null = null,
+): LinkChip | null {
+  if (target.kind === "external") return null;
+  if (entry?.state === "resolved") return { state: "filled", icon: entry.document.scheme };
+  const family = targetFamily(target, baseUri);
+  if (entry?.state === "unresolved") {
+    return { state: "dashed", icon: family ?? (target.kind === "wikilink" ? "file-plus" : "file") };
+  }
+  return { state: "filled", icon: family ?? "file" };
+}
+
+/**
+ * An exact reference: identity is known, so the family is its URI's. A
+ * reference whose document is gone draws dashed.
+ */
+export function referenceChip(uri: string, available = true): LinkChip {
+  return { state: available ? "filled" : "dashed", icon: uriFamily(uri) ?? "file" };
+}
+
+/** The rendered-only attributes the link-chip stylesheet is keyed by. */
+export function linkChipAttributes(chip: LinkChip): {
+  "data-link-chip": LinkChip["state"];
+  "data-link-chip-icon": LinkChipIcon;
+} {
+  return { "data-link-chip": chip.state, "data-link-chip-icon": chip.icon };
+}
+
+function targetFamily(target: LinkTarget, baseUri: string | null): ContextUriScheme | null {
+  if (target.kind === "scheme") return uriFamily(target.uri);
+  if (target.kind === "relative") return baseUri ? uriFamily(baseUri) : null;
+  return null;
+}
+
+const SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
+
+function uriFamily(uri: string): ContextUriScheme | null {
+  const scheme = /^([a-z][a-z\d+.-]*):\/\//i.exec(uri.trim())?.[1]?.toLowerCase();
+  return scheme && SCHEMES.has(scheme) ? (scheme as ContextUriScheme) : null;
+}

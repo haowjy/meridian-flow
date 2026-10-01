@@ -55,9 +55,11 @@ export type FollowReporter = {
  * arriving, so a slow scope reads as checking like a slow answer does. It must
  * settle when `signal` aborts.
  *
- * The resolver answers several matches as unresolved, so `candidates` is how
- * the procedure tells "nothing carries that name" from "more than one
- * document does": more than one candidate reports `ambiguous`, with no Create.
+ * The cache says `ambiguous` when the resolver proved several matches, but it
+ * holds no list of them, and the server answers several as unresolved; so
+ * `candidates` is how the procedure tells "nothing carries that name" from
+ * "more than one document does" and names them: more than one candidate
+ * reports `ambiguous`, with no Create.
  */
 export async function followProjectLink({
   target,
@@ -113,7 +115,7 @@ export async function followProjectLink({
     await open(documentRef(entry.document), gesture);
     return;
   }
-  if (entry?.state !== "unresolved") {
+  if (entry?.state !== "unresolved" && entry?.state !== "ambiguous") {
     reporter.report({ state: "failed", target });
     return;
   }

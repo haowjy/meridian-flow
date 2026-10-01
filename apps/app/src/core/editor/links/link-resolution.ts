@@ -9,9 +9,11 @@
  * share an entry, and a second normalizer never appears.
  *
  * Unresolved is a normal, rendered state, not an error: serial writers link
- * chapters and characters before they exist. A FAILED request is a different
- * thing entirely and caches nothing, because a link the editor could not ask
- * about must never be drawn as a link that does not exist.
+ * chapters and characters before they exist. Ambiguous is not unresolved:
+ * several documents carry the name, so the link is drawn as one that leads
+ * somewhere, and the follow lists them. A FAILED request is a different thing
+ * entirely and caches nothing, because a link the editor could not ask about
+ * must never be drawn as a link that does not exist.
  *
  * The port is the app's: only it knows the project, the work, the URI of the
  * document holding the link, and which documents the project holds. Until one
@@ -45,14 +47,19 @@ import {
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   | { state: "resolved"; document: ResolvedDocumentLink }
-  | { state: "unresolved"; document: null };
+  | { state: "unresolved"; document: null }
+  | { state: "ambiguous"; document: null };
 
 /**
- * Asks the project about one internal target. Null is the answer for "nothing
- * matched" AND for "several did" — ambiguity resolves to nothing rather than
- * to a guess. Throwing is the other outcome: the question could not be asked.
+ * Asks the project about one internal target. A document is the answer;
+ * `"ambiguous"` says several matched and the resolver can prove it, which
+ * resolves to no document rather than to a guess; null says nothing matched
+ * (or several did and only the server knows, which cannot tell the two
+ * apart). Throwing is the other outcome: the question could not be asked.
  */
-export type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
+export type InternalLinkResolver = (
+  target: LinkTarget,
+) => Promise<ResolvedDocumentLink | "ambiguous" | null>;
 
 export type LinkResolution = {
   subscribe: (listener: () => void) => () => void;
@@ -86,6 +93,7 @@ export type LinkResolution = {
 
 const PENDING: LinkResolutionEntry = Object.freeze({ state: "pending", document: null });
 const UNRESOLVED: LinkResolutionEntry = Object.freeze({ state: "unresolved", document: null });
+const AMBIGUOUS: LinkResolutionEntry = Object.freeze({ state: "ambiguous", document: null });
 
 /**
  * How many questions are in flight at once. A chapter can carry dozens of
@@ -167,8 +175,15 @@ export function createLinkResolution(): LinkResolution {
       generation.running += 1;
       void generation
         .resolver(request.target)
-        .then((document) =>
-          settle(request, document ? { state: "resolved", document } : UNRESOLVED),
+        .then((answer) =>
+          settle(
+            request,
+            answer === "ambiguous"
+              ? AMBIGUOUS
+              : answer
+                ? { state: "resolved", document: answer }
+                : UNRESOLVED,
+          ),
         )
         .catch(() => settle(request, null))
         .finally(() => {

@@ -112,7 +112,9 @@ type InternalLinkNavigator = (request: {
 }) => void;
 getLinkSurface(editor)?.registerNavigator(navigate);      // returns an unregister
 
-type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
+type InternalLinkResolver = (
+  target: LinkTarget,
+) => Promise<ResolvedDocumentLink | "ambiguous" | null>;
 getLinkResolution(editor)?.registerResolver(resolve);     // returns an unregister
 ```
 
@@ -128,17 +130,20 @@ owns what is shown. With nothing registered, `dismissFollow()` just clears.
 
 `createLinkResolution` keys answers by `linkTargetHref(target)` — the
 classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
-ask once between them. Three states are answers (`pending`, `resolved`,
-`unresolved`) and a fourth outcome is not: a request that THROWS caches nothing
-and renders nothing, because a link the editor could not ask about must never
-be drawn as a link that does not exist.
+ask once between them. Four states are answers (`pending`, `resolved`,
+`unresolved`, `ambiguous`) and a fifth outcome is not: a request that THROWS
+caches nothing and renders nothing, because a link the editor could not ask
+about must never be drawn as a link that does not exist.
 
-Null from the port covers both "nothing matched" and "several did": ambiguity
-resolves to nothing rather than to a guess, and the writer sees the same
-dashed link either way. Ambiguity is named in two places, both outside this
-module: the `[[` menu offers every row a name matches before the link is
-written, and the app's follower reports `ambiguous` with the candidates when a
-complete local index proves several matches (`LinkFollowOutcome`).
+Ambiguity resolves to no document rather than to a guess, and it is not
+unresolved: `unresolved` draws as "nothing here yet", which is false of a name
+several documents carry. The port answers `"ambiguous"` when it can prove
+several matches (the app's resolver does from a complete local index); null
+covers "nothing matched" and also "several did" when only the server could
+answer, because the server cannot tell the two apart. The candidates live
+outside this module: the `[[` menu offers every row a name matches before the
+link is written, and the app's follower reports `ambiguous` with them
+(`LinkFollowOutcome`).
 
 ### A registration is a generation
 
