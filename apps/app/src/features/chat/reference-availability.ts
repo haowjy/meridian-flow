@@ -10,6 +10,19 @@
  * (`refresh`), which is the same change that re-registers the chat's link
  * resolver. Per-turn lookups that never re-asked are why a deleted document
  * stayed filled until a reload.
+ *
+ * An answer is current until a refresh or a failed question. A refresh asks
+ * every watched id now and marks the rest stale: the transcript is
+ * virtualized, so a turn scrolled away is unwatched, and it is asked again
+ * when it scrolls back. A stale answer stays drawn until the new one lands, so
+ * nothing flashes.
+ *
+ * Known limit: refresh follows the chat's own catalog revision (its Work's
+ * linkable catalogs). A delete in another Work's Scratch, a Work deletion, or
+ * a change in what this writer may see shows on the next catalog change or
+ * on reload. Until then such a chip stays filled, and following it lands on
+ * the destination's own "no longer available" answer. A precise signal would
+ * be a document lifecycle event, not the catalog projection.
  */
 
 import {
@@ -71,6 +84,15 @@ export function transcriptReferenceResolutions(
 
 const NOTHING: ReadonlyMap<string, TranscriptReferenceResolution> = new Map();
 
+function sameAnswer(
+  left: TranscriptReferenceResolution | undefined,
+  right: TranscriptReferenceResolution | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  if (!left.available || !right.available) return left.available === right.available;
+  return left.uri === right.uri && left.label === right.label;
+}
+
 export function createReferenceAvailability(lookup: Lookup): ReferenceAvailability {
   const listeners = new Set<() => void>();
   const watched = new Map<string, number>();
@@ -78,6 +100,8 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
   const due = new Set<string>();
   /** The latest question per id; an older answer arriving late is ignored. */
   const asked = new Map<string, number>();
+  /** Ids whose answer is current or on its way: never asked again on watch. */
+  const current = new Set<string>();
   let answers: ReadonlyMap<string, TranscriptReferenceResolution> = NOTHING;
   let scheduled = false;
   let sequence = 0;
@@ -91,19 +115,32 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
     question: number,
     result: ProjectContextIdentityLookupResult,
   ) => {
-    const current = ids.filter((id) => asked.get(id) === question);
-    if (current.length === 0) return;
+    const settled = ids.filter((id) => asked.get(id) === question);
+    if (settled.length === 0) return;
     const projected = transcriptReferenceResolutions(result.resolutions);
     const next = new Map(answers);
-    for (const id of current) {
+    let changed = false;
+    for (const id of settled) {
       const answer = projected.get(id);
       // Indeterminate is not settled: drop what was known rather than keep a
       // claim the server no longer makes.
+      if (!sameAnswer(next.get(id), answer)) changed = true;
       if (answer) next.set(id, answer);
       else next.delete(id);
     }
+    // A recheck that found what was already drawn re-renders nothing.
+    if (!changed) return;
     answers = next;
     publish();
+  };
+
+  /** A question that failed is not an answer: ask it again on the next watch or refresh. */
+  const forget = (ids: readonly string[], question: number) => {
+    for (const id of ids) {
+      if (asked.get(id) !== question) continue;
+      asked.delete(id);
+      current.delete(id);
+    }
   };
 
   const flush = () => {
@@ -113,11 +150,15 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
     for (let start = 0; start < ids.length; start += PROJECT_CONTEXT_AVAILABILITY_MAX_IDS) {
       const chunk = ids.slice(start, start + PROJECT_CONTEXT_AVAILABILITY_MAX_IDS);
       const question = ++sequence;
-      for (const id of chunk) asked.set(id, question);
-      // A failed recheck keeps what was known: not settled is not gone.
+      for (const id of chunk) {
+        asked.set(id, question);
+        current.add(id);
+      }
+      // A failed question keeps what was known drawn (not settled is not
+      // gone) and is asked again later.
       void lookup(chunk).then(
         (result) => settle(chunk, question, result),
-        () => undefined,
+        () => forget(chunk, question),
       );
     }
   };
@@ -135,7 +176,7 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       for (const id of new Set(documentIds)) {
         const count = watched.get(id) ?? 0;
         watched.set(id, count + 1);
-        if (count === 0 && !answers.has(id) && !asked.has(id)) fresh.push(id);
+        if (count === 0 && !current.has(id)) fresh.push(id);
       }
       ask(fresh);
       let watching = true;
@@ -150,6 +191,9 @@ export function createReferenceAvailability(lookup: Lookup): ReferenceAvailabili
       };
     },
     refresh() {
+      // Everything known is stale; what is shown is asked now, the rest when
+      // it is shown again.
+      current.clear();
       ask(watched.keys());
     },
     subscribe(listener) {
