@@ -76,13 +76,17 @@
   color: inherit;
 }
 
-/* Only a chip that goes somewhere answers the pointer. */
-:is([data-link-chip], a:has([data-link-chip-part]))[role="link"]:not([aria-disabled="true"]):hover {
+/* Only a chip that goes somewhere answers the pointer. A transcript or
+   composer chip says so with an enabled `role="link"`; an Editor chip always
+   goes somewhere (a plain click follows it), so its anchor form answers
+   without needing a role. */
+:is([data-link-chip][role="link"]:not([aria-disabled="true"]), a:has([data-link-chip-part])):hover {
   background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
 }
 
-:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"]))[role="link"]:not(
-  [aria-disabled="true"]
+:is(
+  [data-link-chip="dashed"][role="link"]:not([aria-disabled="true"]),
+  a:has([data-link-chip-part="dashed"])
 ):hover {
   background-color: var(--link-chip-fill, var(--color-muted));
 }
