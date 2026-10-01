@@ -9,6 +9,7 @@
 
 - Links in the Editor and chat: a name more than one document carries lists those documents so you can choose one, instead of offering to create another. Cancel on "Opening the link" now stops the link from opening. A link to an address with nothing there says "No document at that address".
 - Links in chat: a link with nothing behind it now says so and offers to create the document, which opens in the Editor. A link that could not be checked offers Try again, and Cancel stops a slow one. Relative links in chat are plain text.
+- Links in chat and the composer show as tags: an icon for where the document lives, then its name. A link with nothing behind it yet has a dashed outline, and a name more than one document carries no longer looks missing (in the Editor too). Links to websites in chat are underlined with an arrow, as in the Editor.
 - Links: the `[[` menu under a named Work now offers Unfiled documents. With no Work selected, it offers Scratch notes and Uploads. Clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
 - Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.

@@ -225,6 +225,31 @@ link.
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
 zero extra attributes, and no peer ever receives a resolution.
 
+## Which chip a link draws
+
+`link-chip.ts` is the one presentation rule for internal links. The transcript
+and the composer draw chips from it; the Editor's decorations still emit only
+`data-link-state`, drawn by `link-surfaces.css`, until the Editor adopts the
+chip.
+
+| Answer | Chip | Icon |
+|---|---|---|
+| resolved | filled | the resolved document's scheme |
+| unresolved | dashed | the target's own family; a wikilink gets `file-plus` |
+| pending, ambiguous, failed, not asked | filled | the target's own family; a wikilink gets `file` |
+
+A scheme URI knows its family from its prefix and a relative path from the
+holder's `baseUri`, so neither waits on an answer for its icon. An exact
+reference (`referenceChip`) is its URI's family, dashed once its document is
+gone. External targets get no chip.
+
+The seam: core emits `data-link-chip` and `data-link-chip-icon`, never an
+image. The app owns the icon data and turns each family into a
+`--link-chip-icon` mask image keyed by the icon attribute
+(`components/app/link-chip/`). The alternatives were an image passed into
+core (core would import app icon data) or a per-element inline style (the
+Editor's decorations could not carry it without a second hook).
+
 ## Where the mark's own fences are
 
 `MeridianLink` (in `../extensions/meridian-extensions.ts`) configures TipTap

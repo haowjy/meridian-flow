@@ -1,22 +1,38 @@
 // @vitest-environment jsdom
-/** How a syntax link in a transcript reaches the surface's follower. */
+/**
+ * How a transcript reference reaches the surface's follower, and which chip it
+ * draws from the surface's own resolution cache.
+ */
 
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LinkTarget } from "@/core/editor/links";
+import { createLinkResolution, type LinkResolution, type LinkTarget } from "@/core/editor/links";
 
 import {
   type TranscriptLinkNavigation,
   TranscriptLinkNavigationContext,
   TranscriptReference,
+  TranscriptReferenceContext,
+  type TranscriptReferenceResolution,
 } from "./TranscriptReference";
+
+const KB_KAEL: ResolvedDocumentLink = {
+  documentId: "doc-kael",
+  title: "Kael",
+  scheme: "kb",
+  path: "characters/Kael.md",
+  uri: "kb://characters/Kael.md",
+  workId: null,
+};
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 let root: Root;
 let host: HTMLDivElement;
 let follow: ReturnType<typeof vi.fn<(target: LinkTarget) => void>>;
+let resolution: LinkResolution;
 let navigation: TranscriptLinkNavigation;
 
 beforeEach(() => {
@@ -24,18 +40,27 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  // Chat's rule: no base URI, so a relative path can never be followed.
   follow = vi.fn<(target: LinkTarget) => void>();
+  resolution = createLinkResolution();
+  // Chat's rule: no base URI, so a relative path can never be followed.
   navigation = {
     follow,
     canFollow: (target: LinkTarget) => target.kind !== "relative",
+    resolution,
   };
 });
 
 afterEach(() => {
   act(() => root.unmount());
+  resolution.destroy();
   host.remove();
 });
+
+function find(label: string): HTMLSpanElement {
+  const element = [...host.querySelectorAll("span")].find((span) => span.textContent === label);
+  if (!element) throw new Error(`no reference labelled ${label}`);
+  return element;
+}
 
 function render(href: string, label: string) {
   act(() =>
@@ -45,9 +70,36 @@ function render(href: string, label: string) {
       </TranscriptLinkNavigationContext.Provider>,
     ),
   );
-  const element = [...host.querySelectorAll("span")].find((span) => span.textContent === label);
-  if (!element) throw new Error(`no reference labelled ${label}`);
-  return element;
+  return find(label);
+}
+
+function renderExact(resolved: TranscriptReferenceResolution, label: string) {
+  act(() =>
+    root.render(
+      <TranscriptReferenceContext.Provider
+        value={{ resolutions: new Map([[resolved.documentId, resolved]]), onOpen: vi.fn() }}
+      >
+        <TranscriptReference data-document-id={resolved.documentId} data-uri={resolved.uri}>
+          {label}
+        </TranscriptReference>
+      </TranscriptReferenceContext.Provider>,
+    ),
+  );
+  return find(label);
+}
+
+function chip(element: HTMLElement) {
+  return {
+    state: element.getAttribute("data-link-chip"),
+    icon: element.getAttribute("data-link-chip-icon"),
+  };
+}
+
+/** Lets queued questions settle and the microtask re-ask run. */
+async function settle() {
+  await act(async () => {
+    for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+  });
 }
 
 describe("TranscriptReference", () => {
@@ -65,8 +117,77 @@ describe("TranscriptReference", () => {
 
     expect(reference.getAttribute("role")).toBeNull();
     expect(reference.hasAttribute("tabindex")).toBe(false);
+    expect(reference.hasAttribute("data-link-chip")).toBe(false);
     expect(reference.getAttribute("title")).toBe("./cast.md");
     act(() => reference.click());
     expect(follow).not.toHaveBeenCalled();
+  });
+
+  it("draws a resolved name in the family of the document it found", async () => {
+    resolution.registerResolver(async () => KB_KAEL);
+    const reference = render("[[Kael]]", "Kael");
+    await settle();
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "kb" });
+  });
+
+  it("dashes a name nothing carries yet, with the create icon, and still follows it", async () => {
+    resolution.registerResolver(async () => null);
+    const reference = render("[[Ilsever]]", "Ilsever");
+    await settle();
+
+    expect(chip(reference)).toEqual({ state: "dashed", icon: "file-plus" });
+    expect(reference.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("draws a name several documents carry filled, never dashed", async () => {
+    resolution.registerResolver(async () => "ambiguous");
+    const reference = render("[[Twin]]", "Twin");
+    await settle();
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "file" });
+  });
+
+  it("shows an address's family while it is still being asked", async () => {
+    resolution.registerResolver(() => new Promise(() => {}));
+    const reference = render("scratch://@revision-pass/notes.md", "notes");
+    await settle();
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "scratch" });
+  });
+
+  it("asks again when the scope registers a new generation", async () => {
+    resolution.registerResolver(async () => null);
+    const reference = render("[[Kael]]", "Kael");
+    await settle();
+    expect(chip(reference).state).toBe("dashed");
+
+    // A created document is a new catalog, so the chat registers again.
+    act(() => {
+      resolution.registerResolver(async () => KB_KAEL);
+    });
+    await settle();
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "kb" });
+  });
+
+  it("dashes an exact reference whose document is gone, and does not follow it", () => {
+    const reference = renderExact(
+      { documentId: "doc-map", uri: "uploads://@/map.png", label: "map.png", available: false },
+      "map.png",
+    );
+
+    expect(chip(reference)).toEqual({ state: "dashed", icon: "uploads" });
+    expect(reference.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("names an exact reference's family by its URI", () => {
+    const reference = renderExact(
+      { documentId: "doc-style", uri: "user://style.md", label: "style", available: true },
+      "style",
+    );
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "user" });
+    expect(reference.getAttribute("aria-disabled")).toBe("false");
   });
 });
