@@ -15,9 +15,9 @@
  * rather than riding up over the app above it.
  *
  * An internal link says two things: where it goes, and — when nothing is there
- * yet, or several documents carry its name — that, in the follow's own words. The second line is a sentence rather than a
- * warning, because linking a chapter before writing it is how serial writers
- * work (§5.5). While the answer is still in flight it says only the
+ * yet, or several documents carry its name — that, in the follow's own words.
+ * The second line is a sentence rather than a warning, because linking a
+ * chapter before writing it is how serial writers work (§5.5). While the answer is still in flight it says only the
  * destination: a hint that guessed "not written" and corrected itself a moment
  * later would be worse than one that waited.
  */
