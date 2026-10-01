@@ -118,7 +118,9 @@ outcome's state:
   the dialog back, and a background follow that owns nothing keeps going.
 - `retry()` (Try again) follows the shown link again, with the same gesture,
   and makes the new follow the owner before it says anything, so a fast answer
-  clears the failure it replaces.
+  clears the failure it replaces. It re-asks (`resolve(href, { reask: true })`)
+  rather than reading back the answer it replaces: a stale ambiguous answer
+  would otherwise fail the same way forever.
 
 A `LinkFollowDialog` host passes them straight through as `onClose` and
 `onRetry`. The Editor's chrome-hosted dialog reaches them through the link

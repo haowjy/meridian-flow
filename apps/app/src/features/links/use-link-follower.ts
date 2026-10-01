@@ -192,7 +192,9 @@ export function useLinkFollower({
   }, [abortAll, clearShown, scopeKey]);
 
   const start = useCallback(
-    (target: LinkTarget, gesture: LinkFollowDisposition, claimShown: boolean) => {
+    // `retrying`: Try again. It owns the shown outcome from the start, and it
+    // asks the question afresh rather than reading back the answer it replaces.
+    (target: LinkTarget, gesture: LinkFollowDisposition, retrying: boolean) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
@@ -202,7 +204,7 @@ export function useLinkFollower({
         currentFollow.current = controller;
       }
       inFlight.current.add(controller);
-      if (claimShown) shown.current = { owner: controller, target, gesture };
+      if (retrying) shown.current = { owner: controller, target, gesture };
       const owned: FollowReporter = {
         report(outcome) {
           shown.current = { owner: controller, target, gesture };
@@ -234,6 +236,7 @@ export function useLinkFollower({
         signal: controller.signal,
         scopeReady,
         candidates,
+        reask: retrying,
       }).finally(() => {
         inFlight.current.delete(controller);
         if (currentFollow.current === controller) currentFollow.current = null;

@@ -117,6 +117,31 @@ describe("followProjectLink", () => {
     expect(events).toEqual(["report:failed"]);
   });
 
+  it("asks again on Try again instead of reading the stale ambiguous answer back", async () => {
+    const resolver = vi
+      .fn<InternalLinkResolver>()
+      .mockResolvedValueOnce("ambiguous")
+      .mockResolvedValueOnce(KAEL);
+    register(resolver);
+    candidates = () => [KAEL];
+    await follow();
+    expect(events).toEqual(["report:failed"]);
+
+    await followProjectLink({
+      target,
+      gesture: "current",
+      resolution,
+      open,
+      reporter,
+      signal: new AbortController().signal,
+      candidates,
+      reask: true,
+    });
+
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(["report:failed", "clear", "open:doc-kael:current"]);
+  });
+
   it("reports a request that could not be made as failed, not missing", async () => {
     register(async () => {
       throw new Error("offline");
