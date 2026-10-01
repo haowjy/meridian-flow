@@ -147,21 +147,27 @@ grammar for presentation and `reference-occurrences.ts` for submitted-reference
 authority. Those are separate decisions: grammar may make syntax readable, but
 only an exact submitted `(documentId, uri)` match grants occurrence navigation.
 Syntax-only navigation goes through the hosting surface's link follower
-(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution }`, built
-by `features/chat/useChatLinkFollowing.ts` over
+(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution, watch }`,
+built by `features/chat/useChatLinkFollowing.ts` over
 [`features/links`](../src/features/links/AGENTS.md)) and must
 never inherit attachment authority. `resolution` is the cache those follows
 use; a syntax link draws its chip state from it, so what it shows and what a
-click finds agree. A syntax reference `canFollow` rejects (a relative path in
+click finds agree. `watch` is the surface's single requester
+(`createLinkRequester`): a shown link registers its href, and the requester
+asks about every shown link in one batched request per pass. A link never
+asks for itself. A syntax reference `canFollow` rejects (a relative path in
 chat, which has no base URI) renders as plain text with its href as a tooltip:
 no link role, no tab stop, no context menu.
 
 Every other reference is a link chip
 ([`components/app/link-chip`](../src/components/app/link-chip/AGENTS.md)). An
 exact reference draws in its URI's family from the host's
-`TranscriptReferenceResolution` map (`UserTurn`'s
-`transcriptReferenceResolutions` over the availability lookup): dashed and
-unfollowable once its document is gone for this writer, filled while the
+`TranscriptReferenceResolution` map. In chat that is the chat's
+`ReferenceAvailability` store (`features/chat/reference-availability.ts`):
+user turns watch their document ids, the store looks every new id up in one
+batched availability request, and the catalog revision change that
+re-registers the link resolver asks again about everything watched. Dashed
+and unfollowable once its document is gone for this writer; filled while the
 answer is out, indeterminate, or for a document that has moved since.
 
 Occurrence coordinates are offsets in the original serialized message, not in

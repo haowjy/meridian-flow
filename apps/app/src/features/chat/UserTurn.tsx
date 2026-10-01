@@ -1,14 +1,12 @@
 import { t } from "@lingui/core/macro";
 import {
-  type ProjectContextIdentityResolution,
   referenceOccurrenceContent,
   skillOccurrenceContent,
   type Turn,
 } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { Button } from "@/components/ui/button";
 import {
   useOpenProjectDocument,
@@ -19,8 +17,8 @@ import type {
   MarkdownReferenceOccurrence,
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
-import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
+import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnRecovery =
   | {
@@ -81,42 +79,6 @@ export function projectUserTurn(turn: Turn): {
   return { text, references, skills };
 }
 
-/**
- * What each exact reference in a writer message draws, from the availability
- * lookup. A document that is gone for this writer (deleted, its Work or project
- * deleted, or no longer visible) is unavailable: a dashed chip that does not
- * follow. An indeterminate answer is left out, like a lookup still out or
- * failed: not settled, so the chip stays filled and does not follow.
- */
-export function transcriptReferenceResolutions(
-  resolutions: readonly ProjectContextIdentityResolution[],
-): ReadonlyMap<string, TranscriptReferenceResolution> {
-  const projected = new Map<string, TranscriptReferenceResolution>();
-  for (const resolution of resolutions) {
-    switch (resolution.kind) {
-      case "available":
-        projected.set(resolution.documentId, {
-          documentId: resolution.documentId,
-          uri: resolution.entry.uri,
-          label: resolution.entry.name,
-          available: true,
-        });
-        break;
-      case "deleted":
-      case "authority-unavailable":
-      case "not-visible":
-        projected.set(resolution.documentId, {
-          documentId: resolution.documentId,
-          available: false,
-        });
-        break;
-      case "indeterminate":
-        break;
-    }
-  }
-  return projected;
-}
-
 function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -124,27 +86,12 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
-  const [resolutions, setResolutions] = useState<
-    ReadonlyMap<string, TranscriptReferenceResolution>
-  >(new Map());
-  useEffect(() => {
-    const ids = [...new Set(projected.references.map(({ documentId }) => documentId))];
-    if (!projectId || ids.length === 0) {
-      setResolutions(new Map());
-      return;
-    }
-    let current = true;
-    void lookupProjectContextAvailability(projectId, ids)
-      .then((result) => {
-        if (current) setResolutions(transcriptReferenceResolutions(result.resolutions));
-      })
-      .catch(() => {
-        if (current) setResolutions(new Map());
-      });
-    return () => {
-      current = false;
-    };
-  }, [projectId, projected.references]);
+  const resolutions = useReferenceAvailability(
+    useMemo(
+      () => [...new Set(projected.references.map(({ documentId }) => documentId))],
+      [projected.references],
+    ),
+  );
 
   return (
     <article
