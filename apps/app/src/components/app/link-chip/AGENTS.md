@@ -57,3 +57,8 @@ them back. A new surface whose tone is the recess does the same.
   does (a plain click follows it), so the anchor form (`a:has(...)`) hovers
   on its own. Do not make Editor hover depend on a role on the `<a>`. Skills
   (`/slug` atoms) are not document links and keep their own underline.
+
+→ [Internal Links Are Link Chips][link-chips] (KB): the owner decision, the
+  states, and the rejected looks
+
+[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/link-chips.md
