@@ -85,8 +85,12 @@ export type LinkResolution = {
    * previous failure is retried rather than remembered. A registration landing
    * while this waits asks the question again in the new generation rather than
    * answering null; only unregistering (or destroying) the port does that.
+   *
+   * `reask` is a writer's Try again: this one href's settled answer is asked
+   * again rather than returned. It is a question, not an invalidation; every
+   * other answer stands.
    */
-  resolve: (href: string) => Promise<LinkResolutionEntry | null>;
+  resolve: (href: string, options?: { reask?: boolean }) => Promise<LinkResolutionEntry | null>;
   /**
    * Registers the port and starts a generation with it. Every answer and every
    * failure the previous one produced is gone at that moment, which is what
@@ -301,13 +305,16 @@ export function createLinkResolution(): LinkResolution {
       if (asked) publish();
     },
 
-    async resolve(href) {
+    async resolve(href, options) {
       const generation = current;
       if (!generation) return null;
       const internal = internalHref(href);
       if (!internal) return null;
       const known = generation.answers.get(internal.key);
-      if (known && known.state !== "pending") return known;
+      if (known && known.state !== "pending") {
+        if (!options?.reask) return known;
+        generation.answers.delete(internal.key);
+      }
       // A click is the writer asking again, so a failure is worth retrying.
       generation.failed.delete(internal.key);
       return askAwaited(generation, internal.key, internal.target);

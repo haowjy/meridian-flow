@@ -70,6 +70,7 @@ export async function followProjectLink({
   signal,
   scopeReady,
   candidates,
+  reask = false,
 }: {
   target: LinkTarget;
   gesture: LinkFollowDisposition;
@@ -80,6 +81,8 @@ export async function followProjectLink({
   scopeReady?: Promise<void>;
   /** Every document the scope can prove the link matches; empty when it cannot tell. */
   candidates: (target: LinkTarget) => readonly ResolvedDocumentLink[];
+  /** Try again: ask afresh rather than trust what the cache already holds. */
+  reask?: boolean;
 }): Promise<void> {
   if (signal.aborted) return;
   const href = linkTargetHref(target);
@@ -98,7 +101,7 @@ export async function followProjectLink({
 
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
-  const known = resolution.read(href);
+  const known = reask ? null : resolution.read(href);
   if (known?.state === "resolved") {
     settle();
     reporter.clear();
@@ -106,7 +109,7 @@ export async function followProjectLink({
     return;
   }
 
-  const entry = await resolution.resolve(href);
+  const entry = await resolution.resolve(href, { reask });
   settle();
   if (signal.aborted) return;
 
@@ -126,7 +129,8 @@ export async function followProjectLink({
   }
   // The cache proved several matches, but the index no longer lists them (it
   // moved under the follow before the scope re-registered). That is not a
-  // name nothing carries, so it never offers Create; Try again asks afresh.
+  // name nothing carries, so it never offers Create; Try again re-asks
+  // (`reask`) instead of reading the same stale answer back.
   reporter.report(
     entry.state === "ambiguous" ? { state: "failed", target } : { state: "missing", target },
   );

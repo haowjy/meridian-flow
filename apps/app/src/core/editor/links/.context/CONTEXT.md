@@ -149,7 +149,9 @@ link is written, and the app's follower reports `ambiguous` with them
 ### A registration is a generation
 
 `registerResolver` is the whole invalidation mechanism; there is no second verb
-that drops answers. Registering starts a generation, and that generation owns
+that drops answers. `resolve(href, { reask: true })` is a writer's Try again on
+one href, not an invalidation: it asks that question again and leaves every
+other answer alone. Registering starts a generation, and that generation owns
 everything true of it:
 
 | It owns | Which means |
