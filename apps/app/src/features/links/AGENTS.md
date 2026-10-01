@@ -15,18 +15,17 @@ A surface supplies three things, and everything between is here:
   Together with the index's revision, it is what an answer is true of. A
   surface that does not know its Work yet passes `"pending"`; a click waits for
   the real scope and is never answered from a guessed one.
-- **Destination** (`LinkDestination`): an injected `open` callback. The Editor
-  opens in its pane or tab strip in its own Work; chat opens in the Editor with
-  the thread's Work.
+- **Destination** (`LinkDestination`): an injected `open` callback. Each
+  surface supplies its own; this module never decides where a document opens.
 - **Host** (`FollowReporter` plus a dialog around `FollowOutcomeContent`): where
-  checking, missing, and failed are said. The Editor's host is `EditorDialog`
-  (`surfaces/link/FollowOutcomeDialog.tsx`), because its outcome can open 250ms
-  late and the chrome kernel must know about it. Chat, which has no editor
-  kernel, uses `LinkFollowDialog`.
+  checking, missing, ambiguous, and failed are said. The Editor's host is
+  `EditorDialog` (`surfaces/link/FollowOutcomeDialog.tsx`), because its outcome
+  can open 250ms late and the chrome kernel must know about it. A surface with
+  no editor kernel uses `LinkFollowDialog`.
 
 Two surfaces use this today: the Editor (`ProjectLinkRuntime`, over its
-per-editor decoration cache) and chat (`features/chat/ChatView.tsx`, which lets
-the follower own a cache and passes its visibility as `active`).
+per-editor decoration cache) and chat (`features/chat/useChatLinkFollowing.ts`,
+whose header holds chat's own rules).
 
 `useLinkFollower` binds the three: it registers `createProjectLinkResolver` on
 the surface's resolution cache once per scope and runs `followProjectLink` for
@@ -53,8 +52,9 @@ request. Its catalogs mirror the server's candidate set
   takes no signal. A newer `current` follow aborts the previous one; `new-tab`
   follows are never aborted by a newer one.
 - **A follow clears only what it reported.** Follows share one surface
-  reporter, so the follower tracks which follow owns the shown outcome; only
-  that follow, an abort of it, or an explicit cancel clears it.
+  reporter, so the follower tracks which follow owns the shown outcome. Hosts
+  act through `dismiss()` and `retry()` and never branch on the outcome's
+  state.
 - **A pending answer claims nothing.** A follow interrupts only after
   `CHECKING_DELAY_MS`, so a link already resolved for rendering just opens.
 - **A failed request is not an unresolved link.** It says so on follow, with

@@ -147,8 +147,9 @@ grammar for presentation and `reference-occurrences.ts` for submitted-reference
 authority. Those are separate decisions: grammar may make syntax readable, but
 only an exact submitted `(documentId, uri)` match grants occurrence navigation.
 Syntax-only navigation goes through the hosting surface's link follower
-(`TranscriptLinkNavigationContext`: `{ follow, canFollow }`, provided by
-`ChatView` from [`features/links`](../src/features/links/AGENTS.md)) and must
+(`TranscriptLinkNavigationContext`: `{ follow, canFollow }`, built by
+`features/chat/useChatLinkFollowing.ts` over
+[`features/links`](../src/features/links/AGENTS.md)) and must
 never inherit attachment authority. A syntax reference `canFollow` rejects (a
 relative path in chat, which has no base URI) renders as plain text with its
 href as a tooltip: no link role, no tab stop, no context menu. Exact references,

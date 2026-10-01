@@ -50,6 +50,10 @@ draft-control changes can be understood independently.
   bridge an accepted row after teardown.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
+- Transcript links follow through `useChatLinkFollowing.ts` over the shared
+  [`features/links`](../../links/AGENTS.md) follower; its header holds chat's
+  scope, destination, and visibility rules, including the known deleted-Work gap.
+
 - Every `ChatView` is owned by a project workspace and receives its required
   project ID from `ChatScreen`. Child-thread doors use the project shell's
   `ChatThreadNavigationProvider`, so they open the child in the same project

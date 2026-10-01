@@ -18,11 +18,12 @@ document's URI, found by id in that index. It calls `useLinkFollower` with:
 - `useEditorLinkDestination()`: `useOpenProjectDocument` with the editor's Work,
   `current` or `background` from the gesture.
 
-It registers `follower.follow` as the store's navigator, which is also what
-makes the link menu's Open link verb exist, and `follower.cancel` as the store's
-follow cancel: `FollowOutcomeDialog`'s Cancel, and dismissing it while checking,
-call `surface.cancelFollow()`. M7 leaves it absent on purpose (law
-5); this is what fills the hole.
+It registers `follower.follow` as the store's navigator, and the follower's
+`dismiss` and `retry` as the store's follow handlers: `FollowOutcomeDialog`'s
+Close, Cancel and Escape call `surface.dismissFollow()`, and Try again calls
+`surface.retryFollow()`. Registering the navigator is also what makes the link
+menu's Open link verb exist: M7 leaves that verb absent until something can
+follow (law 5), and this registration is what fills the hole.
 
 Scope contracts, what a follow does per answer, create-on-miss, and the document
 index are the follower's:

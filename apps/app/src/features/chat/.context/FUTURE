@@ -1,5 +1,10 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
+- Chat's document doors (transcript link follows in `useChatLinkFollowing.ts`,
+  exact-reference pills, tool-row document names, composer `onOpenReference`)
+  each open the Editor with no Work. Whether the Editor should adopt the
+  chat's Work is one decision for all of them, with one open command (#625).
+
 - Spawn/agent UI follow-ups stay tracked in the docs work item
   ([`complete-implementation-todo.md`](https://github.com/haowjy/meridian-flow-docs/blob/main/work/implement-agents/design/complete-implementation-todo.md#milestone-3)),
   not duplicated here: `GET /api/threads` primary-only and the switcher Agent
