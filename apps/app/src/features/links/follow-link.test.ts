@@ -40,8 +40,11 @@ const open = async (document: { documentId: string }, gesture: string) => {
 };
 
 function follow(gesture: "current" | "new-tab" = "current", signal = new AbortController().signal) {
-  return followProjectLink({ target, gesture, resolution, open, reporter, signal });
+  return followProjectLink({ target, gesture, resolution, open, reporter, signal, candidates });
 }
+
+/** What the scope's index can prove the link matches; none unless a test says so. */
+let candidates: (target: LinkTarget) => readonly ResolvedDocumentLink[];
 
 function register(resolver: InternalLinkResolver) {
   resolution.registerResolver(resolver);
@@ -50,6 +53,7 @@ function register(resolver: InternalLinkResolver) {
 beforeEach(() => {
   vi.useFakeTimers();
   events = [];
+  candidates = () => [];
   resolution = createLinkResolution();
 });
 
@@ -169,6 +173,7 @@ describe("followProjectLink", () => {
       open: destination,
       reporter,
       signal: controller.signal,
+      candidates,
     });
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();

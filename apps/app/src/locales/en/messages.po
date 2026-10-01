@@ -242,6 +242,10 @@ msgstr "{filename} could not be read from that site. It stayed a link."
 msgid "{filename} did not import. It stayed a link."
 msgstr "{filename} did not import. It stayed a link."
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
+msgstr "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
@@ -824,6 +828,10 @@ msgstr "Choose agent, currently {0}"
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr "Choose an option"
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Choose the one to open. Once only one document carries the name, the link opens it directly."
+msgstr "Choose the one to open. Once only one document carries the name, the link opens it directly."
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -2215,6 +2223,10 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "More than one document carries that name"
+msgstr "More than one document carries that name"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr "Move column left"
@@ -2372,6 +2384,10 @@ msgstr "No context files yet."
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
 msgstr "No document answers to this name. A document can be created for it once the name works as a filename."
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "No document at that address"
+msgstr "No document at that address"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -3515,6 +3531,10 @@ msgstr "The location changed. Try again."
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "The project has nothing at this address. It may have moved or been removed."
+msgstr "The project has nothing at this address. It may have moved or been removed."
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "The removed text could not be recovered."

@@ -67,10 +67,17 @@ the batch endpoint in [`FUTURE`](FUTURE).
 |---|---|
 | resolved, already cached | the document opens, no surface at all |
 | resolved after a wait | the same, and the checking dialog closes if it appeared |
-| unresolved (nothing matched) | an offer to create the document now |
-| unresolved (several matched) | the same offer |
+| a name nothing matched | "Nothing carries that name yet", with an offer to create the document |
+| an address (scheme or relative) nothing matched | "No document at that address", no Create |
+| several matched, proven by a complete index | "More than one document carries that name", up to 5 candidates with where each lives, no Create; choosing one opens it through the surface's `open` |
 | the request failed | "That link could not be checked", with Try again |
-| still in flight past 250ms | "Opening the link", with Cancel (which closes the dialog; the follow keeps going) |
+| still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
+
+Ambiguity comes from the scope's index, not the server: the resolver answers
+several matches as unresolved, and `followProjectLink`'s `candidates` (the
+follower's `projectLinkAnswer` over the latest index) tells the two apart. While
+the index is incomplete nothing can be proven, so several matches read as
+missing until it completes.
 
 An aborted follow never reports and never opens. An abort only stops a follow
 before it opens: `LinkDestination` takes no signal, so once the procedure decides
@@ -99,30 +106,14 @@ pane follow opening would wipe a background follow's missing offer before the
 writer could press Create. Aborting a follow takes down the outcome it owns;
 `cancel()` clears whatever is shown.
 
-Chat's Cancel and Escape during checking call `cancel()`. The Editor's Cancel
-button does not yet; it only closes the dialog.
+Cancel, and dismissing the dialog while it is checking, call `cancel()` on both
+surfaces: chat's `LinkFollowDialog` directly, the Editor through the link
+store's `cancelFollow()`, which `ProjectLinkRuntime` registers. The answer
+landing later neither opens the document nor brings the dialog back. Dismissing
+any settled outcome only clears it. A cancel is never inferred from the store
+clearing, because the procedure itself clears right before it opens.
 
-## Chat
-
-`ChatView` follows the links the model wrote through `useLinkFollower`:
-
-- the scope is the thread's Work with no base URI, `"pending"` until the thread
-  and Works snapshots name that Work (a No Work thread's Work is the No Work
-  row);
-- the follower owns its resolution cache, created once and never destroyed;
-- the index is `useLinkableDocuments` for that Work, asked only once it is
-  known;
-- the destination opens in the Editor with the thread's Work, and the No Work
-  row as explicit No Work rather than as a Work id;
-- `active` is the chat's visibility, so hiding the dock or Settings aborts a
-  follow; ChatView remounts per thread, so switching threads aborts too.
-
-`TranscriptLinkNavigationContext` hands transcript references `{ follow,
-canFollow }`. A relative link has no base in chat, so `canFollow` rejects it and
-the reference renders as plain text with its href as a tooltip.
-
-`gesture` comes from the
-click: `current` or `new-tab` (middle click, Ctrl/Cmd+click). The Editor maps
+`gesture` comes from the click: `current` or `new-tab` (middle click, Ctrl/Cmd+click). The Editor maps
 `new-tab` to a background tab on its strip. There is no browser-tab disposition:
 the pane holds a live collaborative session, and a second window costs the
 writer their place to reach a document that was one tab away.
@@ -170,3 +161,28 @@ on remount and claim a change that never happened.
 
 Catalog URIs remain canonical. Nothing here rewrites schemes or derives identity
 from a path or label.
+
+## Chat
+
+`useChatLinkFollowing` (in `features/chat`) follows the links the model wrote
+through `useLinkFollower`, and `ChatView` only provides its navigation and
+renders its dialog:
+
+- the scope is the thread's Work with no base URI (`chatLinkScope`), and
+  `"pending"` only while the thread or the Works snapshot is loading. Once the
+  snapshot has loaded without the thread's Work (deleted, or not visible), the
+  scope is the thread's own binding and the server answers, as nothing found.
+  A No Work thread's Work is the No Work row, and an unknown Work is never read
+  as No Work;
+- the follower owns its resolution cache, created once and never destroyed;
+- the index is `useLinkableDocuments` for that Work, asked only once it is
+  known;
+- the destination opens in the Editor with the thread's Work, and the No Work
+  row as explicit No Work rather than as a Work id (a Work the snapshot does not
+  have is not somewhere the Editor can go, so it opens with no Work);
+- `active` is the chat's visibility, so hiding the dock or Settings aborts a
+  follow; ChatView remounts per thread, so switching threads aborts too.
+
+`TranscriptLinkNavigationContext` hands transcript references `{ follow,
+canFollow }`. A relative link has no base in chat, so `canFollow` rejects it and
+the reference renders as plain text with its href as a tooltip.
