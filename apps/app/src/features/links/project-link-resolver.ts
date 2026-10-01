@@ -2,13 +2,13 @@
  * What an internal link addresses in one resolution scope: the local answer
  * from the scope's document index, then the server.
  *
- * The local projection mirrors the server resolver over the documents the
- * index holds, so a link the index can answer costs no request. It only
- * answers when the index is complete; an incomplete one cannot prove that a
- * single match is the only match.
+ * The local projection applies the server's address rule
+ * (`matchDocumentPath`) to the documents the index holds, so a link the index
+ * can answer costs no request. It only answers when the index is complete; an
+ * incomplete one cannot prove which document is at an address.
  */
 
-import { resolveDocumentHref } from "@meridian/contracts";
+import { matchDocumentPath, resolveDocumentHref } from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -29,38 +29,20 @@ export type LinkResolutionScope = {
   baseUri: string | null;
 };
 
-export type ProjectedLinkAnswer =
-  | { kind: "resolved"; document: ResolvedDocumentLink }
-  /** A complete index with more than one match. */
-  | { kind: "ambiguous"; candidates: readonly ResolvedDocumentLink[] }
-  /** Zero local matches, or an incomplete index: only the server can say. */
-  | { kind: "unknown" };
-
-const UNKNOWN: ProjectedLinkAnswer = { kind: "unknown" };
-
+/** The document at the address, or null when only the server can say. */
 export function projectLinkAnswer(
   index: LinkableDocumentIndex,
   request: DocumentLinkTarget,
-): ProjectedLinkAnswer {
-  if (!index.complete) return UNKNOWN;
-  const matches = localMatches(index.documents, request);
-  const [only] = matches;
-  if (!only) return UNKNOWN;
-  if (matches.length > 1) {
-    return {
-      kind: "ambiguous",
-      candidates: matches.flatMap((document) => resolvedLink(document) ?? []),
-    };
-  }
-  const document = resolvedLink(only);
-  return document ? { kind: "resolved", document } : UNKNOWN;
+): ResolvedDocumentLink | null {
+  if (!index.complete) return null;
+  const match = localMatch(index.documents, request);
+  return match ? resolvedLink(match) : null;
 }
 
 /**
- * Local answer first, then `resolveDocumentLink`. Several local matches answer
- * `"ambiguous"`, which draws as a link that leads somewhere, not as a missing
- * one. The server answers several matches as null, which cannot be told from
- * none, so an incomplete index draws them unresolved until it completes.
+ * Local answer first, then `resolveDocumentLink`. Nothing local at the address
+ * still asks the server: the index may not hold the scope the address names
+ * (another Work's Scratch).
  */
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
@@ -79,39 +61,36 @@ export function createProjectLinkResolver(
       throw new Error("relative link has no base document URI yet");
     }
     const local = projectLinkAnswer(index, request);
-    if (local.kind === "resolved") return local.document;
-    if (local.kind === "ambiguous") return "ambiguous";
+    if (local) return local;
     const { document } = await resolveDocumentLink(projectId, { workId, target: request });
     return document;
   };
 }
 
-function localMatches(
+function localMatch(
   documents: readonly LinkableDocument[],
   target: DocumentLinkTarget,
-): readonly LinkableDocument[] {
-  if (target.kind === "wikilink") {
-    const name = target.name.trim().toLowerCase();
-    return documents.filter((document) =>
-      [document.filename, document.title, ...document.aliases].some(
-        (candidate) => candidate.trim().toLowerCase() === name,
-      ),
-    );
-  }
+): LinkableDocument | null {
   const resolved =
     target.kind === "scheme"
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, target.baseUri);
   const requested = resolved ? parseContextUri(resolved.uri) : null;
-  if (!requested?.ok) return [];
+  if (!requested?.ok) return null;
   const { scheme, path, authority } = requested.value;
-  return documents.filter((document) => {
+  const candidates = documents.flatMap((document) => {
     const candidate = parseContextUri(document.uri);
-    if (!candidate.ok || candidate.value.scheme !== scheme) return false;
-    if (!sameDocumentPath(candidate.value.path, path)) return false;
-    if (authority.kind === "contextual") return true;
-    return JSON.stringify(candidate.value.authority) === JSON.stringify(authority);
+    if (!candidate.ok || candidate.value.scheme !== scheme) return [];
+    // A contextual address means the scope's own Work, which is the only Work
+    // whose Scratch and Uploads the index holds.
+    if (
+      authority.kind !== "contextual" &&
+      JSON.stringify(candidate.value.authority) !== JSON.stringify(authority)
+    )
+      return [];
+    return [{ document, path: candidate.value.path }];
   });
+  return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
@@ -125,13 +104,4 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     uri: document.uri,
     workId: document.workId,
   };
-}
-
-/** A path matches with or without its extension, as the server's does. */
-function sameDocumentPath(candidate: string, requested: string): boolean {
-  return (
-    candidate === requested ||
-    (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
-      candidate.slice(0, candidate.lastIndexOf(".")) === requested)
-  );
 }

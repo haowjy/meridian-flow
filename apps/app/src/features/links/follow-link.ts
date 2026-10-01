@@ -8,13 +8,12 @@
  * own destination and host rather than by writing a second follow.
  */
 
-import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
-
 import {
   type LinkFollowDisposition,
   type LinkFollowOutcome,
   type LinkResolution,
   type LinkTarget,
+  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -54,12 +53,6 @@ export type FollowReporter = {
  * Work is still loading). The 250ms runs from the click, not from the scope
  * arriving, so a slow scope reads as checking like a slow answer does. It must
  * settle when `signal` aborts.
- *
- * The cache says `ambiguous` when the resolver proved several matches, but it
- * holds no list of them, and the server answers several as unresolved; so
- * `candidates` is how the procedure tells "nothing carries that name" from
- * "more than one document does" and names them: more than one candidate
- * reports `ambiguous`, with no Create.
  */
 export async function followProjectLink({
   target,
@@ -69,8 +62,6 @@ export async function followProjectLink({
   reporter,
   signal,
   scopeReady,
-  candidates,
-  reask = false,
 }: {
   target: LinkTarget;
   gesture: LinkFollowDisposition;
@@ -79,10 +70,6 @@ export async function followProjectLink({
   reporter: FollowReporter;
   signal: AbortSignal;
   scopeReady?: Promise<void>;
-  /** Every document the scope can prove the link matches; empty when it cannot tell. */
-  candidates: (target: LinkTarget) => readonly ResolvedDocumentLink[];
-  /** Try again: ask afresh rather than trust what the cache already holds. */
-  reask?: boolean;
 }): Promise<void> {
   if (signal.aborted) return;
   const href = linkTargetHref(target);
@@ -101,7 +88,7 @@ export async function followProjectLink({
 
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
-  const known = reask ? null : resolution.read(href);
+  const known = resolution.read(href);
   if (known?.state === "resolved") {
     settle();
     reporter.clear();
@@ -109,7 +96,7 @@ export async function followProjectLink({
     return;
   }
 
-  const entry = await resolution.resolve(href, { reask });
+  const entry = await resolution.resolve(href);
   settle();
   if (signal.aborted) return;
 
@@ -118,22 +105,15 @@ export async function followProjectLink({
     await open(documentRef(entry.document), gesture);
     return;
   }
-  if (entry?.state !== "unresolved" && entry?.state !== "ambiguous") {
+  if (entry?.state !== "unresolved") {
     reporter.report({ state: "failed", target });
     return;
   }
-  const several = candidates(target);
-  if (several.length > 1) {
-    reporter.report({ state: "ambiguous", target, candidates: several });
-    return;
-  }
-  // The cache proved several matches, but the index no longer lists them (it
-  // moved under the follow before the scope re-registered). That is not a
-  // name nothing carries, so it never offers Create; Try again re-asks
-  // (`reask`) instead of reading the same stale answer back.
-  reporter.report(
-    entry.state === "ambiguous" ? { state: "failed", target } : { state: "missing", target },
-  );
+  reporter.report({
+    state: "missing",
+    target,
+    address: linkTargetAddress(target, resolution.baseUri),
+  });
 }
 
 function documentRef(document: { documentId: string }): LinkDocumentRef {

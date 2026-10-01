@@ -1,9 +1,8 @@
 /**
- * Where `[[` opens the document menu — the whole envelope, as one predicate.
+ * Where `[[` opens the link picker — the whole envelope, as one predicate.
  *
- * Wikilinks are what an LLM emits and what a writer types, so the trigger has
- * to be readable in one place (§5.5, and the lesson §5.7 learned the hard
- * way). The rule:
+ * The trigger has to be readable in one place (§5.5, and the lesson §5.7
+ * learned the hard way). The rule:
  *
  * - anywhere in prose the writer is composing a sentence in: paragraphs,
  *   headings, list items, quote paragraphs, and table cells, all of which
@@ -14,7 +13,7 @@
  *   rather than a new link they are starting
  *
  * Unlike `/`, `[[` needs no word boundary: two brackets are already an
- * unambiguous request, and a wikilink legitimately follows an opening quote or
+ * unambiguous request, and a link legitimately follows an opening quote or
  * parenthesis with nothing between.
  */
 
@@ -26,7 +25,7 @@ import { PROSE_TRIGGER_BLOCKS } from "../suggestion";
  * `from` is the position of the first `[`, which is what `@tiptap/suggestion`
  * hands its `allow` predicate as `range.from`.
  */
-export function allowsWikilinkTrigger(doc: PMNode, from: number): boolean {
+export function allowsLinkPickerTrigger(doc: PMNode, from: number): boolean {
   if (from < 0 || from > doc.content.size) return false;
 
   const $from = doc.resolve(from);
@@ -43,7 +42,7 @@ export function allowsWikilinkTrigger(doc: PMNode, from: number): boolean {
 /**
  * True only between two halves of the same link. The end of a link is not
  * inside it — the mark is non-inclusive, so what the writer types there is
- * plain prose and may perfectly well be a new wikilink.
+ * plain prose and may perfectly well start a new link.
  */
 function insideLink(before: PMNode | null, after: PMNode | null): boolean {
   const opening = linkHref(before);

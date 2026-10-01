@@ -2,9 +2,11 @@
 
 This directory owns authored text, reference atoms, skill atoms, and pending/failed uploads.
 
-- Rich clipboard HTML preserves selected reference identity. Plain clipboard text
-  uses canonical scoped wikilinks with display text. HTML metadata is untrusted;
-  turn admission authorizes identity and clipboard cannot grant access.
+- A reference reads in text as a standard Markdown link to its canonical URI,
+  `[label](uri)` (`referenceSpelling`): the occurrence a sent message carries,
+  which is what the model reads, and the plain clipboard form. Rich clipboard
+  HTML preserves selected reference identity. HTML metadata is untrusted; turn
+  admission authorizes identity and clipboard cannot grant access.
 - A copied occurrence never owns the source draft's upload lifecycle.
 - Manuscript marks carry targets, not admitted attachment identity. Preserve their
   Markdown on paste without inventing a Composer attachment.

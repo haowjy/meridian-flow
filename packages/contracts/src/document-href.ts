@@ -59,6 +59,26 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
   return target.value.normalized;
 }
 
+/**
+ * The one candidate at a resolved path: the exact path, or else the path with
+ * its final extension omitted when exactly one candidate fits. Addresses are
+ * unique, so there is never a choice between several.
+ */
+export function matchDocumentPath<T>(
+  candidates: readonly T[],
+  path: string,
+  pathOf: (candidate: T) => string,
+): T | null {
+  const exact = candidates.find((candidate) => pathOf(candidate) === path);
+  if (exact) return exact;
+  const loose = candidates.filter((candidate) => {
+    const value = pathOf(candidate);
+    const dot = value.lastIndexOf(".");
+    return dot > value.lastIndexOf("/") && value.slice(0, dot) === path;
+  });
+  return loose.length === 1 ? (loose[0] ?? null) : null;
+}
+
 function splitSuffix(value: string): { path: string; suffix: string } {
   const index = value.search(/[?#]/);
   return index < 0

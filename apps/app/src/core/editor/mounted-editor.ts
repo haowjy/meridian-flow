@@ -16,11 +16,11 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { WikilinkCatalog } from "@/core/completion";
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
+import type { LinkPickerCatalog } from "./extensions/link-picker";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
@@ -98,7 +98,7 @@ export type MountedEditorInput = {
    * offers — which changes every time the writer creates or renames a file —
    * is not.
    */
-  wikilinkCatalog?: () => WikilinkCatalog | null;
+  linkPickerCatalog?: () => LinkPickerCatalog | null;
   atReferenceCatalog?: () => AtReferenceCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
@@ -111,7 +111,7 @@ export function useMountedEditor({
   agentNames,
   placeholder,
   slashCommandCatalog,
-  wikilinkCatalog,
+  linkPickerCatalog,
   atReferenceCatalog,
   surface,
   evidenceDegraded = false,
@@ -121,8 +121,8 @@ export function useMountedEditor({
   // reads through.
   const catalogRef = useRef(slashCommandCatalog);
   catalogRef.current = slashCommandCatalog;
-  const wikilinkCatalogRef = useRef(wikilinkCatalog);
-  wikilinkCatalogRef.current = wikilinkCatalog;
+  const linkPickerCatalogRef = useRef(linkPickerCatalog);
+  linkPickerCatalogRef.current = linkPickerCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
   atReferenceCatalogRef.current = atReferenceCatalog;
   // Frozen on first render: identity is constant for the mount by construction
@@ -144,7 +144,7 @@ export function useMountedEditor({
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
-      wikilinks: { catalog: () => wikilinkCatalogRef.current?.() ?? null },
+      linkPicker: { catalog: () => linkPickerCatalogRef.current?.() ?? null },
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
     });
     return {

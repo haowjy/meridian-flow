@@ -14,8 +14,8 @@
  * so it travels with its link through a scroll and is clipped by the pane
  * rather than riding up over the app above it.
  *
- * An internal link says two things: where it goes, and — when nothing is there
- * yet, or several documents carry its name — that, in the follow's own words.
+ * An internal link says two things: where it goes, and — when nothing is at
+ * that address yet — that, in the follow's own words.
  * The second line is a sentence rather than a warning, because linking a
  * chapter before writing it is how serial writers work (§5.5). While the
  * answer is still in flight it says only the destination: a hint that guessed
@@ -81,10 +81,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
         <span className="meridian-link-hint__note">{resolution.document.path}</span>
       ) : null}
       {resolution?.state === "unresolved" ? (
-        <span className="meridian-link-hint__note">{t`No document with this name yet`}</span>
-      ) : null}
-      {resolution?.state === "ambiguous" ? (
-        <span className="meridian-link-hint__note">{t`More than one document carries that name`}</span>
+        <span className="meridian-link-hint__note">{t`No document at that address`}</span>
       ) : null}
     </div>,
     overlay,

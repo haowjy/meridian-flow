@@ -59,7 +59,7 @@ keystroke that lands as itself costs far less than one that disappears.
 - Dispatching during composition. An IME is mid-word and a transaction
   underneath it corrupts the composition.
 
-→ [`../wikilink/AGENTS.md`](../wikilink/AGENTS.md) — what `[[` opens once the
+→ [`../link-picker/AGENTS.md`](../link-picker/AGENTS.md) — what `[[` opens once the
   brackets are there
 → [`../MarkdownAutoformatExtension.ts`](../MarkdownAutoformatExtension.ts) —
   the rules this stays out of the way of

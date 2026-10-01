@@ -54,15 +54,20 @@ export function useEditorLinkDestination(): LinkDestination {
   );
 }
 
-/** Runtime over the index already consumed by the editor's wikilink completion surface. */
+/** Runtime over the index the editor's `[[` picker already offers rows from. */
 export function ProjectLinkRuntime({
   editor,
-  documentId,
+  baseUri,
   index,
   active,
 }: {
   editor: Editor | null;
-  documentId: string;
+  /**
+   * The document's own address: what its relative links are relative to.
+   * Null until the tree carrying it arrives, which is a link with no answer
+   * yet rather than a missing document.
+   */
+  baseUri: string | null;
   index: LinkableDocumentIndex;
   active: boolean;
 }) {
@@ -71,14 +76,6 @@ export function ProjectLinkRuntime({
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
 
-  // What this document's relative links are relative to, read out of the same
-  // index the `[[` menu offers rows from: a scratch note the menu names is a
-  // note that can hold `./cast.md` too. Null until the tree carrying it
-  // arrives, which is a link with no answer yet rather than a missing document.
-  const baseUri = useMemo(
-    () => index.documents.find((document) => document.documentId === documentId)?.uri ?? null,
-    [index, documentId],
-  );
   const scope = useMemo<LinkResolutionScope | null>(
     () => (active && projectId ? { projectId, workId, baseUri } : null),
     [active, baseUri, projectId, workId],

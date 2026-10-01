@@ -7,13 +7,15 @@ and following a link (scope, resolver, outcomes) is
 
 ## Mental model
 
-**One classifier, four kinds.** `classifyLinkTarget` turns an href into
-`wikilink | scheme | relative | external`, and every consumer reads that one
-answer: the click, the hover hint, the menu, the mark's own rendering, the
-paste sanitizer. The first three are the *internal family* — three spellings,
-one behavior (§5.5) — and are exactly the server's `DocumentLinkTarget`, so
+**One classifier, three kinds.** A link is a standard Markdown link to an
+address. `classifyLinkTarget` turns an href into `scheme | relative |
+external`, and every consumer reads that one answer: the click, the hover
+hint, the menu, the mark's own rendering, the paste sanitizer. The first two
+are the *internal family* — a Context URI or a path relative to the holder,
+one behavior — and are exactly the server's `DocumentLinkTarget`, so
 `documentLinkTarget()` is a projection, not a translation. `external` is the
-client's alone and never crosses the resolution port.
+client's alone and never crosses the resolution port. There are no wikilinks:
+`[[name]]` is text, and nothing converts it.
 
 **Following is a decision, then a destination.** `linkClickIntent` decides
 whether a press follows or places the caret, and where a follow goes;
@@ -55,10 +57,9 @@ pointer, and calls into it.
   the surface acts on whatever slid into the coordinates.
 - **Unresolved is normal, not an error.** Serial writers link chapters before
   they write them, so an internal target that resolves to nothing is a state
-  the UI renders, never a failure it reports. Ambiguous (several documents
-  carry the name) is not unresolved and never draws as missing. A request
-  that *failed* is a further thing: no answer at all, rendered as an ordinary
-  link.
+  the UI renders, never a failure it reports. Addresses are unique, so there
+  is no "several documents" state. A request that *failed* is a further
+  thing: no answer at all, rendered as an ordinary link.
 - **Invalidation is a registration, and a registration is a generation.**
   Registering the port starts a generation that owns its answers, its one
   question per href, its queue, and its in-flight counter; a question settles
@@ -69,7 +70,7 @@ pointer, and calls into it.
   (`resolve()`) is carried into the next generation and asked again; one only
   the decorations asked is dropped with its generation.
 - **No resolution is ever stored.** The state rides a decoration, not a schema
-  attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
+  attribute (law 9), so `[Chapter 214](chapter-214.md)` from an LLM needs no extra
   attributes and no peer receives an answer that was true in someone else's
   project.
 - **The decorations are mapped on an ordinary keystroke and rebuilt only when
@@ -90,6 +91,6 @@ pointer, and calls into it.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the seam, the behavior matrix,
   the resolution port, and how a state nobody stored gets drawn
-→ [`../extensions/wikilink/AGENTS.md`](../extensions/wikilink/AGENTS.md) — the
-  `[[` trigger that writes one of these links
+→ [`../extensions/link-picker/AGENTS.md`](../extensions/link-picker/AGENTS.md) —
+  the `[[` picker that writes one of these links
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — the kernel this registers with

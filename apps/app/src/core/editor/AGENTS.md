@@ -177,8 +177,8 @@ change-trail events, not manuscript content.
   keymap cannot empty the rectangle, and declines caret/text selections to the
   ordinary split chain.
 
-- What an href means is `links/`, once. A link is four kinds — wikilink,
-  scheme, relative, external — and every consumer (the click, the hover hint,
+- What an href means is `links/`, once. A link is a standard Markdown link of
+  three kinds — Context URI, relative path, external — and every consumer (the click, the hover hint,
   the menu, the mark's own rendering, the paste sanitizer) reads the same
   classifier. TipTap's link extension does not know the internal family and
   must be configured against ours.
@@ -202,7 +202,7 @@ and navigation contracts.
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
-→ [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
+→ [`extensions/link-picker/AGENTS.md`](extensions/link-picker/AGENTS.md) — the `[[` picker
 → [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — which fences draw, and who draws them

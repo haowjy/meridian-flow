@@ -24,7 +24,7 @@ const LIN_FENG: ResolvedDocumentLink = {
   workId: null,
 };
 
-const LINK = { type: "link", attrs: { href: "[[Lin Feng]]" } };
+const LINK = { type: "link", attrs: { href: "../cast/Lin Feng.md" } };
 
 /** `Ask Lin **Feng** now.` with the link around `Lin Feng`. */
 const MIXED = {
@@ -161,7 +161,7 @@ describe("an internal link drawn as a chip", () => {
 
     expect(dom.querySelector("[data-link-chip-part], [data-link-state]")).toBeNull();
     // Plain text is Markdown: the label keeps its formatting, the target its spelling.
-    expect(text).toBe("Ask [Lin **Feng**]([[Lin Feng]])");
+    expect(text).toBe("Ask [Lin **Feng**](<../cast/Lin Feng.md>)");
 
     const pair = createCollabPair({ type: "doc", content: [{ type: "paragraph" }] });
     pairs.push(pair);
@@ -174,6 +174,6 @@ describe("an internal link drawn as a chip", () => {
     target.state.doc.descendants((node) => {
       for (const mark of node.marks) if (mark.type.name === "link") marks.add(mark.attrs.href);
     });
-    expect([...marks]).toEqual(["[[Lin Feng]]"]);
+    expect([...marks]).toEqual(["../cast/Lin Feng.md"]);
   });
 });

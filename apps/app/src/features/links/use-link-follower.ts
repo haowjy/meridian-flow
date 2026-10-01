@@ -30,7 +30,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import {
   createLinkResolution,
-  documentLinkTarget,
   isInternalLinkTarget,
   type LinkFollowDisposition,
   type LinkResolution,
@@ -38,11 +37,7 @@ import {
 } from "@/core/editor/links";
 
 import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
-import {
-  createProjectLinkResolver,
-  type LinkResolutionScope,
-  projectLinkAnswer,
-} from "./project-link-resolver";
+import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
@@ -101,13 +96,12 @@ export function useLinkFollower({
   const workId = ready?.workId ?? null;
   const baseUri = ready?.baseUri ?? null;
 
-  // The latest host callbacks and index, read when a follow needs them. A host
-  // passing a fresh `open` or reporter object each render must not restart or
-  // abort anything, and an answer is read against the index as it is when the
-  // answer lands, not as it was at the click.
-  const latest = useRef({ open, reporter, index, baseUri });
+  // The latest host callbacks, read when a follow needs them. A host passing a
+  // fresh `open` or reporter object each render must not restart or abort
+  // anything.
+  const latest = useRef({ open, reporter });
   useLayoutEffect(() => {
-    latest.current = { open, reporter, index, baseUri };
+    latest.current = { open, reporter };
   });
 
   /** Follows clicked while the scope was pending, released once it registers. */
@@ -131,13 +125,6 @@ export function useLinkFollower({
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
   }, [baseUri, index, projectId, resolution, workId]);
-
-  const candidates = useCallback((target: LinkTarget) => {
-    const request = documentLinkTarget(target, latest.current.baseUri ?? "");
-    if (!request) return [];
-    const answer = projectLinkAnswer(latest.current.index, request);
-    return answer.kind === "ambiguous" ? answer.candidates : [];
-  }, []);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -192,8 +179,8 @@ export function useLinkFollower({
   }, [abortAll, clearShown, scopeKey]);
 
   const start = useCallback(
-    // `retrying`: Try again. It owns the shown outcome from the start, and it
-    // asks the question afresh rather than reading back the answer it replaces.
+    // `retrying`: Try again. It owns the shown outcome from the start, so a
+    // fast answer can clear the failure it replaces.
     (target: LinkTarget, gesture: LinkFollowDisposition, retrying: boolean) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
@@ -235,14 +222,12 @@ export function useLinkFollower({
         reporter: owned,
         signal: controller.signal,
         scopeReady,
-        candidates,
-        reask: retrying,
       }).finally(() => {
         inFlight.current.delete(controller);
         if (currentFollow.current === controller) currentFollow.current = null;
       });
     },
-    [abortFollow, active, candidates, clearShown, pending, projectId, resolution],
+    [abortFollow, active, clearShown, pending, projectId, resolution],
   );
 
   const follow = useCallback(

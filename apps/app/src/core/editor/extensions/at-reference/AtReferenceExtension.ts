@@ -8,8 +8,8 @@ import type {
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
+import { insertDocumentLink } from "../link-picker";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
-import { insertWikilink } from "../wikilink";
 import { allowsAtTrigger } from "./at-trigger";
 
 export type AtReferenceCatalog = {
@@ -22,6 +22,8 @@ export type AtReferenceCatalog = {
   ) => boolean;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
+  /** The URI of the document a reference goes into; what its link is spelled relative to. */
+  holderUri?: string | null;
 };
 export type AtReferenceMenu = SuggestionMenu<
   ReferenceRow,
@@ -32,6 +34,7 @@ function insertReference(
   editor: import("@tiptap/core").Editor,
   range: Range,
   row: Extract<ReferenceRow, { kind: "file" }>,
+  holderUri: string | null,
 ) {
   const reference = row.action.reference;
   if (row.fileKind === "asset") {
@@ -44,18 +47,11 @@ function insertReference(
       })
       .run();
   }
-  if (!row.ambiguous && reference.authority.kind === "project")
-    return insertWikilink(editor, range, reference.label);
-  return editor
-    .chain()
-    .focus()
-    .insertContentAt(range, {
-      type: "text",
-      text: reference.label,
-      marks: [{ type: "link", attrs: { href: reference.uri, title: null } }],
-    })
-    .unsetMark("link")
-    .run();
+  return insertDocumentLink(editor, range, {
+    label: reference.label,
+    uri: reference.uri,
+    holderUri,
+  });
 }
 
 const lane = createSuggestionLane<
@@ -93,9 +89,9 @@ const lane = createSuggestionLane<
       onSelect: ({ row, triggerRange }) => {
         yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
         editor.view.dispatch(closeHistory(editor.state.tr));
-        const hostInsert = catalog()?.insertReference;
-        if (hostInsert) hostInsert(editor, triggerRange, row);
-        else insertReference(editor, triggerRange, row);
+        const current = catalog();
+        if (current?.insertReference) current.insertReference(editor, triggerRange, row);
+        else insertReference(editor, triggerRange, row, current?.holderUri ?? null);
       },
     }),
   keyBindings: (menu) => ({

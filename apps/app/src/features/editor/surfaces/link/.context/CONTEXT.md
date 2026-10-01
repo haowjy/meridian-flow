@@ -7,9 +7,11 @@ for what a link means before it reaches a component.
 ## What `ProjectLinkRuntime` registers
 
 The Editor's adapter over [`features/links`](../../../../links/AGENTS.md), mounted
-by `EditorView` with the document id and the index its `[[` menu already reads.
-The project and the Work come from `useEditorScope()`; `baseUri` is the held
-document's URI, found by id in that index. It calls `useLinkFollower` with:
+by `EditorView` with the held document's URI (`baseUri`) and the index its `[[`
+picker already reads; `EditorView` finds the URI by document id in that index
+and hands the same value to the picker's catalog, so a relative link resolves
+against the holder it is spelled from. The project and the Work come from
+`useEditorScope()`. It calls `useLinkFollower` with:
 
 - the scope `{ projectId, workId, baseUri }`, or null while the editor is not
   active or has no project;
@@ -31,14 +33,17 @@ index are the follower's:
 
 ## Link completion catalogs
 
-`useLinkableDocuments` (in `features/links`) is the `[[` menu's and the
-relative-link base's projection. Canonical `@` and LinkForm completion instead read
-the normalized F1 catalog through `useReferenceBrowserCatalog` and let the F2
-browser own scope, navigation, and ordering. LinkForm keeps editable display text
-separate from the selected destination. A catalog selection stores a scoped URI
-as a bracketed wikilink destination, so plain prose can serialize canonically as
-`[[destination|display text]]`; the label never participates in resolution.
-External links retain ordinary Markdown link spelling. The form shows a
+`useLinkableDocuments` (in `features/links`) is the `[[` picker's and the
+relative-link base's projection. Canonical `@` and LinkForm completion instead
+read the normalized F1 catalog through `useReferenceBrowserCatalog` and let the
+F2 browser own scope, navigation, and ordering. Every one of them writes a
+standard Markdown link: the picker, an Editor `@` reference, and a LinkForm
+selection all spell the destination with `spellDocumentHref(holderUri, uri)`
+(relative within the holder's area, a full Context URI across areas). LinkForm
+reads the holder from the resolution store's `baseUri`, which
+`ProjectLinkRuntime` registers. LinkForm keeps editable display text separate
+from the selected destination, and a typed destination may be a web URL, a
+Context URI, or a relative path. The form shows a
 destination summary with Change and observes its focused search input through the
 shared DOM suggestion transport; one Chrome-reaching lease owns its semantic
 keys and retreat, and the shared menu attaches accessibility state to that search

@@ -20,6 +20,7 @@ export {
   authoritativeReferenceForFile,
   canonicalReferenceUri,
   MAX_REFERENCE_QUERY_LENGTH,
+  matchReferenceName,
   normalizeReferenceName,
   REFERENCE_ROW_LIMIT,
   type ReferenceAuthorityIndex,
@@ -53,9 +54,3 @@ export {
   type SuggestionMenuSnapshot,
   type SuggestionRetreat,
 } from "./suggestion-menu-store";
-export {
-  filterWikilinkItems,
-  type WikilinkCatalog,
-  type WikilinkDocument,
-  type WikilinkMenuItem,
-} from "./wikilink-catalog";

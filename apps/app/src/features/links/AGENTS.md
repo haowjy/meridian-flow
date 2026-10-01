@@ -1,8 +1,10 @@
 # features/links — following an internal link
 
-What a click on `[[Kael]]`, `manuscript://…`, or `./cast.md` does in any
-surface that shows one: resolve it in that surface's scope, then open the
-document or say what the follow found. Owned by neither the Editor nor chat.
+What a click on a link to `manuscript://…` or `./cast.md` does in any surface
+that shows one: resolve the address in that surface's scope, then open the
+document or say what the follow found. A link is a standard Markdown link to
+an address; `[[name]]` is text and never reaches here. Owned by neither the
+Editor nor chat.
 What a link *means* (classification, the per-editor cache, the click decision)
 is [`core/editor/links/`](../../core/editor/links/AGENTS.md); what a writer
 *sees* is the calling surface's host.
@@ -18,7 +20,7 @@ A surface supplies three things, and everything between is here:
 - **Destination** (`LinkDestination`): an injected `open` callback. Each
   surface supplies its own; this module never decides where a document opens.
 - **Host** (`FollowReporter` plus a dialog around `FollowOutcomeContent`): where
-  checking, missing, ambiguous, and failed are said. The Editor's host is
+  checking, missing, and failed are said. The Editor's host is
   `EditorDialog` (`surfaces/link/FollowOutcomeDialog.tsx`), because its outcome
   can open 250ms late and the chrome kernel must know about it. A surface with
   no editor kernel uses `LinkFollowDialog`.
@@ -32,16 +34,15 @@ finds come from the same cache.
 `useLinkFollower` binds the three: it registers `createProjectLinkResolver` on
 the surface's resolution cache once per scope and runs `followProjectLink` for
 each click. `useLinkableDocuments` is the scope's local document index: the
-`[[` menu's rows, a relative link's base, and the local answer that saves a
-request. Its catalogs mirror the server's candidate set
-(`linkable-catalog-scopes.ts`); change the two together.
+`[[` picker's rows, the holder's address (a relative link's base), and the
+local answer that saves a request.
 
 ## Key rules
 
 - **An answer belongs to a scope, not to a href.** Register again whenever
   project, Work, base URI, or catalog revision changes; registering is the
-  cache's only invalidation. A rename is a scope change: `[[Old Name]]` is
-  spelled the same, and its old answer is now the wrong document.
+  cache's only invalidation. A move or delete is a scope change: the link is
+  spelled the same, and its old answer is now the wrong document or none.
 - **No component invalidates the link cache.** A create or rename anywhere is a
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
@@ -63,10 +64,13 @@ request. Its catalogs mirror the server's candidate set
   Try again. An unasked question (a relative link with no base yet) throws in
   the resolver rather than answering null.
 - **Unresolved is a sentence, never a warning.** Linking ahead of writing is
-  the job; a missing wikilink offers to create the document.
-- **Create is only for a name nothing carries.** An address that misses says
-  so, and a name several documents carry lists them; neither offers Create,
-  which would add a document the link still could not tell apart.
+  the job: "No document at that address", with Create when the address is
+  creatable (manuscript, kb, user, or scratch, with a filename; never uploads).
+- **Create makes the document at exactly the link's address**: scheme,
+  folders, filename (`.md` added when omitted), and for Scratch the Work its
+  authority names, or the surface's Work for a contextual `scratch://`. It
+  commits locally and opens the document through the surface's `open` at once;
+  sync failure lands on the document.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md): scope contracts, what a follow
   does per answer, create-on-miss, and the document index

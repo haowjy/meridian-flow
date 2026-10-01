@@ -677,7 +677,6 @@ function rowForFile(
     fileKind: entry.editable ? "document" : "asset",
     aliases: entry.aliases,
     matchedAlias: null,
-    ambiguous: false,
     action: { type: "select", reference },
   };
 }

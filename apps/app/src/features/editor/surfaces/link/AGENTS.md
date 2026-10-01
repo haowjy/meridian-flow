@@ -1,12 +1,12 @@
 # surfaces/link — everything a writer meets a link through
 
-The destination hint, the right-click menu, the form, the `[[` menu, what a
+The destination hint, the right-click menu, the form, the `[[` picker, what a
 follow says when it finds nothing, and the runtime that gives an internal link
 somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
 runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
-[`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
-and — for the rows and their ranking, which the chat composer will share —
+[`core/editor/extensions/link-picker/`](../../../../core/editor/extensions/link-picker/AGENTS.md),
+and — for the shared name matching and the `@` reference browser —
 [`core/completion/`](../../../../core/completion/AGENTS.md).
 
 ## Mental model
@@ -26,12 +26,13 @@ Three summoned components, three physics, one store.
 
 Beside them, three things that are not summoned surfaces:
 
-- **`WikilinkMenu`** — rows for the `[[` trigger, over the shared
-  `SuggestionMenu` the slash menu also renders through. Its documents come from
-  the context trees the app already caches (`useLinkableDocuments` in
+- **`LinkPickerMenu`** — rows for the `[[` picker, over the shared
+  `SuggestionMenu` the slash menu also renders through: each document's name
+  and where it lives, plus the create row. Its documents come from the context
+  trees the app already caches (`useLinkableDocuments` in
   [`features/links`](../../../links/AGENTS.md)), so opening it costs no request.
 - **`FollowOutcomeDialog`** — what a follow says when it has something to say
-  (still checking, missing, ambiguous, or failed): the `EditorDialog` host over
+  (still checking, missing, or failed): the `EditorDialog` host over
   the shared `FollowOutcomeContent`. A chrome
   surface rather than the runtime's own dialog, and that is the whole point: it
   can open a quarter second after the click, so the kernel has to know it is the
@@ -63,10 +64,10 @@ Beside them, three things that are not summoned surfaces:
   swept around the link is what they chose, so Cut takes that.
 - **Copy comes from the link core.** A component that spells out what a target
   means, or decides whether it can be followed, is a second classifier.
-- **Unresolved is a sentence, never a warning.** The hint says no document
-  carries that name yet; it is not an error voice, because linking ahead of
-  writing is the job (§5.5). A name several documents carry says so, in the
-  follow outcome's own words. How the link itself looks is the shared chip
+- **Unresolved is a sentence, never a warning.** The hint says "No document at
+  that address", in the follow outcome's own words; it is not an error voice,
+  because linking ahead of writing is the job (§5.5). How the link itself
+  looks is the shared chip
   ([`components/app/link-chip/`](../../../../components/app/link-chip/AGENTS.md)),
   never a rule in this lane's stylesheet.
 - **A pending answer claims nothing.** The hint shows the destination and

@@ -16,7 +16,7 @@ vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn()
 function document(
   documentId: string,
   uri: string,
-  options: { aliases?: string[]; workId?: string | null } = {},
+  options: { workId?: string | null } = {},
 ): LinkableDocument {
   const filename = uri.slice(uri.lastIndexOf("/") + 1);
   return {
@@ -25,12 +25,12 @@ function document(
     filename,
     title: filename.replace(/\.[^.]+$/, ""),
     location: "",
-    aliases: options.aliases ?? [],
+    aliases: [],
     workId: options.workId ?? null,
   };
 }
 
-const kael = document("doc-kael", "manuscript://cast/Kael.md", { aliases: ["The Warden"] });
+const kael = document("doc-kael", "manuscript://cast/Kael.md");
 const gate = document("doc-gate", "manuscript://chapters/The Second Gate.md");
 const notes = document("doc-notes", "scratch://@revision-pass/notes.md", { workId: "work-1" });
 
@@ -41,29 +41,18 @@ function index(documents: LinkableDocument[], complete = true): LinkableDocument
 const everything = index([kael, gate, notes]);
 
 function resolvedId(request: DocumentLinkTarget, from = everything): string | null {
-  const answer = projectLinkAnswer(from, request);
-  return answer.kind === "resolved" ? answer.document.documentId : null;
+  return projectLinkAnswer(from, request)?.documentId ?? null;
 }
 
 describe("projectLinkAnswer", () => {
-  it("matches a wikilink by title, filename, or alias, ignoring case and padding", () => {
-    expect(resolvedId({ kind: "wikilink", name: "Kael" })).toBe("doc-kael");
-    expect(resolvedId({ kind: "wikilink", name: "Kael.md" })).toBe("doc-kael");
-    expect(resolvedId({ kind: "wikilink", name: "the warden" })).toBe("doc-kael");
-    expect(resolvedId({ kind: "wikilink", name: "  THE SECOND GATE " })).toBe("doc-gate");
-  });
-
   it("answers with the document's resolver spelling", () => {
-    expect(projectLinkAnswer(everything, { kind: "wikilink", name: "notes" })).toEqual({
-      kind: "resolved",
-      document: {
-        documentId: "doc-notes",
-        title: "notes",
-        scheme: "scratch",
-        path: "notes.md",
-        uri: "scratch://@revision-pass/notes.md",
-        workId: "work-1",
-      },
+    expect(projectLinkAnswer(everything, { kind: "scheme", uri: "scratch://notes.md" })).toEqual({
+      documentId: "doc-notes",
+      title: "notes",
+      scheme: "scratch",
+      path: "notes.md",
+      uri: "scratch://@revision-pass/notes.md",
+      workId: "work-1",
     });
   });
 
@@ -71,6 +60,17 @@ describe("projectLinkAnswer", () => {
     expect(resolvedId({ kind: "scheme", uri: "manuscript://cast/Kael.md" })).toBe("doc-kael");
     expect(resolvedId({ kind: "scheme", uri: "manuscript://cast/Kael" })).toBe("doc-kael");
     expect(resolvedId({ kind: "scheme", uri: "kb://cast/Kael.md" })).toBeNull();
+  });
+
+  it("prefers the exact path, and refuses an omitted extension two documents fit", () => {
+    const bare = document("doc-bare", "manuscript://cast/Kael");
+    const mdx = document("doc-mdx", "manuscript://cast/Kael.mdx");
+    expect(resolvedId({ kind: "scheme", uri: "manuscript://cast/Kael" }, index([kael, bare]))).toBe(
+      "doc-bare",
+    );
+    expect(
+      resolvedId({ kind: "scheme", uri: "manuscript://cast/Kael" }, index([kael, mdx])),
+    ).toBeNull();
   });
 
   it("ignores a fragment or query on a scheme or relative href", () => {
@@ -94,6 +94,9 @@ describe("projectLinkAnswer", () => {
     expect(resolvedId({ kind: "relative", path: "./The Second Gate", baseUri: base })).toBe(
       "doc-gate",
     );
+    expect(resolvedId({ kind: "relative", path: "The%20Second%20Gate.md", baseUri: base })).toBe(
+      "doc-gate",
+    );
   });
 
   it("lets a contextual scratch URI match the scope's Work", () => {
@@ -103,36 +106,29 @@ describe("projectLinkAnswer", () => {
     );
   });
 
-  it("leaves zero local matches and another Work's scratch to the server", () => {
-    expect(projectLinkAnswer(everything, { kind: "wikilink", name: "Ilsever" })).toEqual({
-      kind: "unknown",
-    });
+  it("leaves nothing at the address and another Work's scratch to the server", () => {
+    expect(projectLinkAnswer(everything, { kind: "scheme", uri: "manuscript://Ilsever.md" })).toBe(
+      null,
+    );
     expect(
       projectLinkAnswer(everything, { kind: "scheme", uri: "scratch://@other-work/notes.md" }),
-    ).toEqual({ kind: "unknown" });
+    ).toBeNull();
   });
 
   it("never answers from an incomplete index, even with one match", () => {
-    expect(projectLinkAnswer(index([kael], false), { kind: "wikilink", name: "Kael" })).toEqual({
-      kind: "unknown",
-    });
-  });
-
-  it("calls two matches ambiguous and names both", () => {
-    const kbKael = document("doc-kb-kael", "kb://Kael.md");
-    const answer = projectLinkAnswer(index([kael, kbKael]), { kind: "wikilink", name: "Kael" });
-
-    expect(answer.kind).toBe("ambiguous");
     expect(
-      answer.kind === "ambiguous" && answer.candidates.map((entry) => entry.documentId),
-    ).toEqual(["doc-kael", "doc-kb-kael"]);
+      projectLinkAnswer(index([kael], false), { kind: "scheme", uri: "manuscript://cast/Kael.md" }),
+    ).toBeNull();
   });
 
-  it("leaves a single match whose URI does not parse to the server", () => {
-    const ghost = { ...document("doc-ghost", "manuscript://Ghost.md"), uri: "nope://Ghost.md" };
-    expect(projectLinkAnswer(index([ghost]), { kind: "wikilink", name: "Ghost" })).toEqual({
-      kind: "unknown",
-    });
+  it("treats `[[name]]`-looking text as nothing it can resolve", () => {
+    expect(
+      resolvedId({
+        kind: "relative",
+        path: "[[Kael]]",
+        baseUri: "manuscript://chapters/The Second Gate.md",
+      }),
+    ).toBeNull();
   });
 });
 
@@ -145,11 +141,12 @@ describe("createProjectLinkResolver", () => {
     server.mockResolvedValue({ document: null });
   });
 
-  it("answers a name two local documents carry as ambiguous, without asking the server", async () => {
-    const kbKael = document("doc-kb-kael", "kb://Kael.md");
-    const resolve = createProjectLinkResolver(scope, index([kael, kbKael]));
+  it("answers locally without asking the server", async () => {
+    const resolve = createProjectLinkResolver(scope, everything);
 
-    await expect(resolve({ kind: "wikilink", name: "Kael" })).resolves.toBe("ambiguous");
+    await expect(resolve({ kind: "scheme", uri: "manuscript://cast/Kael" })).resolves.toMatchObject(
+      { documentId: "doc-kael" },
+    );
     expect(server).not.toHaveBeenCalled();
   });
 
@@ -164,10 +161,10 @@ describe("createProjectLinkResolver", () => {
     server.mockResolvedValue({ document: null });
     const resolve = createProjectLinkResolver(scope, everything);
 
-    await expect(resolve({ kind: "wikilink", name: "Ilsever" })).resolves.toBeNull();
+    await expect(resolve({ kind: "scheme", uri: "kb://Ilsever.md" })).resolves.toBeNull();
     expect(server).toHaveBeenCalledWith("project-1", {
       workId: "work-1",
-      target: { kind: "wikilink", name: "Ilsever" },
+      target: { kind: "scheme", uri: "kb://Ilsever.md" },
     });
   });
 });
