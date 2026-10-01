@@ -48,6 +48,11 @@ export type FollowReporter = {
  * then open or report an outcome. Aborted before the open: never reports,
  * never opens. The signal is not forwarded into `open`.
  *
+ * `scopeReady` is for a surface whose scope is not known yet (a chat whose
+ * Work is still loading). The 250ms runs from the click, not from the scope
+ * arriving, so a slow scope reads as checking like a slow answer does. It must
+ * settle when `signal` aborts.
+ *
  * Several matches arrive here as unresolved, so they report `missing`.
  */
 export async function followProjectLink({
@@ -57,6 +62,7 @@ export async function followProjectLink({
   open,
   reporter,
   signal,
+  scopeReady,
 }: {
   target: LinkTarget;
   gesture: LinkFollowDisposition;
@@ -64,27 +70,35 @@ export async function followProjectLink({
   open: LinkDestination;
   reporter: FollowReporter;
   signal: AbortSignal;
+  scopeReady?: Promise<void>;
 }): Promise<void> {
   if (signal.aborted) return;
   const href = linkTargetHref(target);
-  const known = resolution.read(href);
-
-  // The common case: the link was resolved to draw it, so following is
-  // instant and nothing is ever shown.
-  if (known?.state === "resolved") {
-    reporter.clear();
-    await open(documentRef(known.document), gesture);
-    return;
-  }
 
   let settled = false;
   const checking = setTimeout(() => {
     if (!settled && !signal.aborted) reporter.report({ state: "checking", target });
   }, CHECKING_DELAY_MS);
+  const settle = () => {
+    settled = true;
+    clearTimeout(checking);
+  };
+
+  if (scopeReady) await scopeReady;
+  if (signal.aborted) return settle();
+
+  // The common case: the link was resolved to draw it, so following is
+  // instant and nothing is ever shown.
+  const known = resolution.read(href);
+  if (known?.state === "resolved") {
+    settle();
+    reporter.clear();
+    await open(documentRef(known.document), gesture);
+    return;
+  }
 
   const entry = await resolution.resolve(href);
-  settled = true;
-  clearTimeout(checking);
+  settle();
   if (signal.aborted) return;
 
   if (entry?.state === "resolved") {

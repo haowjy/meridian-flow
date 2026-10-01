@@ -12,13 +12,21 @@ is [`core/editor/links/`](../../core/editor/links/AGENTS.md); what a writer
 A surface supplies three things, and everything between is here:
 
 - **Scope** (`LinkResolutionScope`): project, Work, and the holder's base URI.
-  Together with the index's revision, it is what an answer is true of.
+  Together with the index's revision, it is what an answer is true of. A
+  surface that does not know its Work yet passes `"pending"`; a click waits for
+  the real scope and is never answered from a guessed one.
 - **Destination** (`LinkDestination`): an injected `open` callback. The Editor
-  opens in its pane or tab strip; another surface passes its own.
+  opens in its pane or tab strip in its own Work; chat opens in the Editor with
+  the thread's Work.
 - **Host** (`FollowReporter` plus a dialog around `FollowOutcomeContent`): where
   checking, missing, and failed are said. The Editor's host is `EditorDialog`
   (`surfaces/link/FollowOutcomeDialog.tsx`), because its outcome can open 250ms
-  late and the chrome kernel must know about it.
+  late and the chrome kernel must know about it. Chat, which has no editor
+  kernel, uses `LinkFollowDialog`.
+
+Two surfaces use this today: the Editor (`ProjectLinkRuntime`, over its
+per-editor decoration cache) and chat (`features/chat/ChatView.tsx`, which lets
+the follower own a cache and passes its visibility as `active`).
 
 `useLinkFollower` binds the three: it registers `createProjectLinkResolver` on
 the surface's resolution cache once per scope and runs `followProjectLink` for
@@ -37,11 +45,16 @@ request. Its catalogs mirror the server's candidate set
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
 - **One follow procedure.** A surface never calls `resolveDocumentLink` or
-  reads the resolution cache to decide what a click does. Destination policy
+  reads the resolution cache to decide what a click does; only this module
+  does. Whether a reference is a link at all is `follower.canFollow`, which
+  depends on the target and base URI, never on loading. Destination policy
   stays out of this module: no `surface` switch, only the injected `open`.
 - **An abort stops a follow before it opens, never during.** The destination
   takes no signal. A newer `current` follow aborts the previous one; `new-tab`
   follows are never aborted by a newer one.
+- **A follow clears only what it reported.** Follows share one surface
+  reporter, so the follower tracks which follow owns the shown outcome; only
+  that follow, an abort of it, or an explicit cancel clears it.
 - **A pending answer claims nothing.** A follow interrupts only after
   `CHECKING_DELAY_MS`, so a link already resolved for rendering just opens.
 - **A failed request is not an unresolved link.** It says so on follow, with

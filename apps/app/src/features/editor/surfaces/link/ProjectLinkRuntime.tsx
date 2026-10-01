@@ -90,7 +90,7 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  const follower = useLinkFollower({ scope, index, resolution, open, reporter });
+  const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;

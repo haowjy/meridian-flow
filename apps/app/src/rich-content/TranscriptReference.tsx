@@ -11,9 +11,20 @@ import {
 
 import { classifyLinkTarget, type LinkTarget } from "@/core/editor/links";
 
-export const TranscriptLinkNavigationContext = createContext<
-  ((target: LinkTarget) => void) | undefined
->(undefined);
+/**
+ * How the hosting surface follows a link written as syntax (a wikilink, a
+ * scheme URI, a relative path) rather than an exact submitted reference.
+ * `canFollow` depends only on the target and the surface's base URI, never on
+ * loading, so a reference does not flicker between a link and text.
+ */
+export type TranscriptLinkNavigation = {
+  follow(target: LinkTarget): void;
+  canFollow(target: LinkTarget): boolean;
+};
+
+export const TranscriptLinkNavigationContext = createContext<TranscriptLinkNavigation | undefined>(
+  undefined,
+);
 
 export type TranscriptReferenceResolution = {
   documentId: string;
@@ -40,7 +51,7 @@ export function TranscriptReference({
   "data-authored-label"?: string;
 }) {
   const { resolutions, onOpen } = useContext(TranscriptReferenceContext);
-  const navigateSyntax = useContext(TranscriptLinkNavigationContext);
+  const navigation = useContext(TranscriptLinkNavigationContext);
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
   const trigger = useRef<HTMLSpanElement>(null);
   const candidate = documentId ? resolutions?.get(documentId) : null;
@@ -50,10 +61,16 @@ export function TranscriptReference({
     ? resolution?.available && onOpen
       ? () => onOpen(resolution.documentId)
       : undefined
-    : navigateSyntax && target && (target.kind === "wikilink" || target.kind === "scheme")
-      ? () => navigateSyntax(target)
+    : navigation && target && navigation.canFollow(target)
+      ? () => navigation.follow(target)
       : undefined;
   const label = authoredLabel === "true" ? children : (resolution?.label ?? children);
+  // A syntax link this surface can never follow (a relative path with nothing
+  // to be relative to) is text. A link control that can never work is a dead
+  // control; the href stays reachable as a tooltip.
+  if (!documentId && navigation && target && !navigation.canFollow(target)) {
+    return <span title={targetHref}>{label}</span>;
+  }
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>

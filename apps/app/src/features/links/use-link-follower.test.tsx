@@ -52,12 +52,25 @@ function catalog(revision: string): LinkableDocumentIndex {
   return { documents: [], revision, complete: false };
 }
 
-function Probe(props: { scope: LinkResolutionScope | null; index: LinkableDocumentIndex }) {
-  follower = useLinkFollower({ ...props, resolution, open, reporter });
+type ProbeProps = {
+  scope: LinkResolutionScope | "pending" | null;
+  index: LinkableDocumentIndex;
+  active?: boolean;
+  /** Chat's shape: the follower owns its cache. */
+  ownCache?: boolean;
+};
+
+function Probe({ ownCache, ...props }: ProbeProps) {
+  follower = useLinkFollower({
+    ...props,
+    ...(ownCache ? {} : { resolution }),
+    open,
+    reporter,
+  });
   return null;
 }
 
-function render(props: { scope: LinkResolutionScope | null; index: LinkableDocumentIndex }) {
+function render(props: ProbeProps) {
   act(() => root.render(<Probe {...props} />));
 }
 
@@ -111,7 +124,8 @@ describe("useLinkFollower", () => {
     await answer("Second", doc("second"));
     await answer("First", doc("first"));
 
-    expect(events).toEqual(["clear", "open:doc-second:current"]);
+    // Nothing was shown, so the second follow has nothing of its own to clear.
+    expect(events).toEqual(["open:doc-second:current"]);
   });
 
   it("never aborts a background follow, and a background follow aborts nothing", async () => {
@@ -144,7 +158,7 @@ describe("useLinkFollower", () => {
     expect(events).toEqual(["report:checking", "report:checking", "clear"]);
   });
 
-  it("reports nothing and opens nothing once unmounted mid-check", async () => {
+  it("takes its checking outcome down and opens nothing once unmounted", async () => {
     render({ scope, index: catalog("a") });
     act(() => follower.follow(wikilink("Kael")));
     await elapse(CHECKING_DELAY_MS);
@@ -153,7 +167,7 @@ describe("useLinkFollower", () => {
     await answer("Kael", doc("kael"));
     await elapse(CHECKING_DELAY_MS);
 
-    expect(events).toEqual(["report:checking"]);
+    expect(events).toEqual(["report:checking", "clear"]);
   });
 
   it("does nothing without a scope, rather than saying the link could not be checked", async () => {
@@ -189,5 +203,67 @@ describe("useLinkFollower", () => {
     await elapse(CHECKING_DELAY_MS);
 
     expect(events).toEqual([]);
+  });
+
+  it("takes down the checking a superseded pane follow was showing", async () => {
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(wikilink("First")));
+    await elapse(CHECKING_DELAY_MS);
+
+    act(() => follower.follow(wikilink("Second")));
+
+    expect(events).toEqual(["report:checking", "clear"]);
+  });
+
+  it("lets a background follow open without wiping the pane follow's checking", async () => {
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(wikilink("Pane")));
+    await elapse(CHECKING_DELAY_MS);
+
+    act(() => follower.follow(wikilink("Tab"), "new-tab"));
+    await answer("Tab", doc("tab"));
+
+    expect(events).toEqual(["report:checking", "open:doc-tab:new-tab"]);
+  });
+
+  it("lets a pane follow open without wiping a background follow's missing offer", async () => {
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(wikilink("Tab"), "new-tab"));
+    await answer("Tab", null);
+
+    act(() => follower.follow(wikilink("Pane")));
+    await answer("Pane", doc("pane"));
+
+    expect(events).toEqual(["report:missing", "open:doc-pane:current"]);
+  });
+
+  it("waits for a pending scope, showing checking, and never asks a guessed one", async () => {
+    render({ scope: "pending", index: catalog("a"), ownCache: true });
+    act(() => follower.follow(wikilink("Kael")));
+    await elapse(CHECKING_DELAY_MS);
+
+    expect(events).toEqual(["report:checking"]);
+    expect(server).not.toHaveBeenCalled();
+
+    render({ scope: { ...scope, workId: "work-1" }, index: catalog("a"), ownCache: true });
+    await elapse(0);
+    await answer("Kael", doc("kael"));
+
+    expect(server).toHaveBeenCalledWith("project-1", {
+      workId: "work-1",
+      target: { kind: "wikilink", name: "Kael" },
+    });
+    expect(events).toEqual(["report:checking", "clear", "open:doc-kael:current"]);
+  });
+
+  it("aborts when the surface hides", async () => {
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(wikilink("Kael")));
+    await elapse(CHECKING_DELAY_MS);
+
+    render({ scope, index: catalog("a"), active: false });
+    await answer("Kael", doc("kael"));
+
+    expect(events).toEqual(["report:checking", "clear"]);
   });
 });
