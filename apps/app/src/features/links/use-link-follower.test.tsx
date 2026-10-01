@@ -181,6 +181,21 @@ describe("useLinkFollower", () => {
     expect(events).toEqual(["report:failed", "clear", "open:doc-kael:current"]);
   });
 
+  it("re-asks only on Try again; a plain follow reads what the cache holds", async () => {
+    render({ scope, index: catalog("a") });
+    const resolve = vi.spyOn(resolution, "resolve");
+    server.mockImplementationOnce(() => Promise.reject(new Error("offline")));
+    act(() => follower.follow(wikilink("Kael")));
+    await elapse(0);
+    expect(resolve).toHaveBeenLastCalledWith("[[Kael]]", { reask: false });
+
+    act(() => follower.retry());
+    await answer("Kael", doc("kael"));
+
+    expect(resolve).toHaveBeenLastCalledWith("[[Kael]]", { reask: true });
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+
   it("dismisses a settled outcome when the surface hides", async () => {
     render({ scope, index: catalog("a") });
     act(() => follower.follow(wikilink("Kael")));
