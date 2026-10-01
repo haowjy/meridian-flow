@@ -36,12 +36,20 @@ with the name starting the next.
 Core names families and never imports icons (`core` must not import
 `features/` or `components/`); the family-to-image map exists only here.
 
+The fill follows the surface through `--link-chip-fill` and
+`--link-chip-fill-hover` (default: the recess and one step deeper). The dock,
+whose own tone is the recess, re-points them in `dock-surface`; raised
+page-toned surfaces inside it (`bg-chat-interactive`, `composer-input`) point
+them back. A new surface whose tone is the recess does the same.
+
 ## Key rules
 
 - **No surface restyles a chip.** A local class on a chip is a second look.
   Change `link-chip.css`, and every surface changes together.
 - **Dashed means nothing is at that address.** Asking, failed, and ambiguous
-  draw filled; a guess that corrects itself is worse than waiting.
+  draw filled; a guess that corrects itself is worse than waiting. The dashed
+  border carries the quietness, never the ink: a dashed name stays at 4.5:1
+  on every surface (`--color-muted-foreground`).
 - **A new family is a new scheme in contracts plus a node here.** The
   `Record<LinkChipIcon, …>` makes a missing image a type error.
 - **Hover is for chips that go somewhere** (`role="link"` without
