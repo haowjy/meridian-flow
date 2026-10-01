@@ -89,7 +89,7 @@ export function FollowOutcomeContent({
             directly.
           </Trans>
         ) : isAddress(target) ? (
-          <Trans>The project has nothing at this address. It may have moved or been removed.</Trans>
+          <Trans>It may have moved or been removed.</Trans>
         ) : creatable ? (
           <Trans>Create it now and the link starts working. Nothing about the link changes.</Trans>
         ) : (
@@ -109,7 +109,7 @@ export function FollowOutcomeContent({
           candidates={outcome.candidates}
           onChoose={(candidate) => {
             onClose();
-            void onOpen({ documentId: candidate.documentId, workId: candidate.workId });
+            void onOpen({ documentId: candidate.documentId });
           }}
         />
       ) : null}
@@ -168,6 +168,7 @@ function CandidateList({
       <ul className="flex flex-col gap-1">
         {shown.map((candidate) => {
           const folder = candidate.path.split("/").slice(0, -1).join("/");
+          const label = schemeLabel(candidate.scheme);
           return (
             <li key={candidate.documentId}>
               <Button
@@ -178,9 +179,7 @@ function CandidateList({
               >
                 <span className="break-all font-medium text-sm">{candidate.title}</span>
                 <span className="break-all text-ink-muted text-xs">
-                  {folder
-                    ? `${schemeLabel(candidate.scheme)} (${folder})`
-                    : schemeLabel(candidate.scheme)}
+                  {folder ? t`${label} (${folder})` : label}
                 </span>
               </Button>
             </li>

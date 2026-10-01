@@ -7,7 +7,7 @@
  * following belong to [`features/links`](../../../links/AGENTS.md). This
  * supplies the Editor's three parts (its scope, its destination, and the store
  * its outcome is reported into), registers the follower as the navigator a
- * click is handed to and as the store's follow cancel, and renders nothing.
+ * click is handed to and as the store's follow handlers, and renders nothing.
  * Registering the navigator is also what makes the link menu's Open link verb
  * appear at all: absent until something can follow, never dead (law 5).
  *
@@ -90,7 +90,8 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
+  // Inactive is scope null: the follower aborts and dismisses on its own.
+  const follower = useLinkFollower({ scope, index, resolution, open, reporter });
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;
@@ -98,11 +99,15 @@ export function ProjectLinkRuntime({
       follower.follow(target, disposition);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
-    // Cancel in the outcome dialog stops the follow, not just the dialog.
-    const unregisterCancel = surface.registerFollowCancel(follower.cancel);
+    // What the outcome dialog's Close, Cancel, and Try again mean is the
+    // follower's: it knows which follow owns what is shown.
+    const unregisterHandlers = surface.registerFollowHandlers({
+      dismiss: follower.dismiss,
+      retry: follower.retry,
+    });
     return () => {
       unregisterNavigator();
-      unregisterCancel();
+      unregisterHandlers();
     };
   }, [active, follower, projectId, surface]);
 

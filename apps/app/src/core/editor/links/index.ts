@@ -53,6 +53,7 @@ export {
 } from "./link-resolution";
 export {
   createLinkSurface,
+  type FollowHandlers,
   type LinkFollowOutcome,
   type LinkFormRequest,
   type LinkHint,
