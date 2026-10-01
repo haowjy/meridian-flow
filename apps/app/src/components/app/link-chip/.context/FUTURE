@@ -1,0 +1,9 @@
+# Deferred, link chip
+
+- `family-icons.ts` holds copies of lucide shapes (`scroll`, `feather`,
+  `library`, `user`, `notebook-pen`, `upload`, `file`, `file-plus`) taken from
+  lucide-react 1.21.0. Chip and sidebar read the same copy, so they never
+  disagree with each other, but a lucide upgrade that redraws one of these
+  leaves the family icons on the old drawing beside the app's other lucide
+  icons. A test that renders each installed lucide component and compares its
+  SVG children with the copy would flag the upgrade.
