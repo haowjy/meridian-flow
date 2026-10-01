@@ -6,6 +6,7 @@ import { emitEvent } from "../domains/observability";
 import {
   closeAppResources,
   drainAppBackgroundWork,
+  drainAppServices,
   getApp,
   stopAppBackgroundWork,
 } from "../lib/app";
@@ -15,6 +16,7 @@ import { stopHttpRequestAdmission, waitForHttpRequestDrain } from "../lib/http-d
 import { getOrBindProcessObservability } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import {
+  APP_DRAIN_DEADLINE_MS,
   installProcessShutdownHooks,
   POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS,
   registerProcessShutdownCallback,
@@ -57,6 +59,9 @@ registerProcessShutdownCallback(
   },
   { timeoutMs: POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS },
 );
+registerProcessShutdownCallback("application-drain", drainAppServices, {
+  timeoutMs: APP_DRAIN_DEADLINE_MS,
+});
 registerProcessShutdownCallback("http-drain", async () => {
   stopHttpRequestAdmission();
   await waitForHttpRequestDrain(10_000);

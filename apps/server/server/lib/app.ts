@@ -31,14 +31,16 @@ let backgroundStopPromise: Promise<void> | undefined;
 let appResourcesStopped = false;
 
 export function stopAppBackgroundWork(): void {
-  backgroundStopPromise ??= Promise.all([recoveryScheduler?.stop(), appServices?.shutdown()]).then(
-    () => undefined,
-  );
+  backgroundStopPromise ??= recoveryScheduler?.stop() ?? Promise.resolve();
 }
 
 export async function drainAppBackgroundWork(): Promise<void> {
   stopAppBackgroundWork();
   await backgroundStopPromise;
+}
+
+export async function drainAppServices(): Promise<void> {
+  await appServices?.shutdown();
 }
 
 export async function closeAppResources(): Promise<void> {

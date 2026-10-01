@@ -5,6 +5,8 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 
+export { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
+
 export type ShutdownStep = {
   name: string;
   callback: () => Promise<void> | void;
