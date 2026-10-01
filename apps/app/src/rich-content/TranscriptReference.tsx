@@ -1,6 +1,22 @@
-/** Readable transcript references; exact identity enables navigation, never syntax alone. */
+/**
+ * Readable transcript references, drawn as link chips; exact identity enables
+ * navigation, never syntax alone.
+ *
+ * An exact `@` reference knows its document: its chip's family is its URI's,
+ * and it is dashed once the document is gone. A syntax link (a wikilink, a
+ * scheme URI) learns its state from the surface's own resolution cache, the
+ * one its follows go through, so what it draws and what a click finds agree.
+ */
 import { t } from "@lingui/core/macro";
-import { createContext, type ReactNode, useContext, useRef } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -9,7 +25,16 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 
-import { classifyLinkTarget, type LinkTarget } from "@/core/editor/links";
+import {
+  classifyLinkTarget,
+  type LinkResolution,
+  type LinkResolutionEntry,
+  type LinkTarget,
+  linkChip,
+  linkChipAttributes,
+  linkTargetHref,
+  referenceChip,
+} from "@/core/editor/links";
 
 /**
  * How the hosting surface follows a link written as syntax (a wikilink, a
@@ -20,6 +45,8 @@ import { classifyLinkTarget, type LinkTarget } from "@/core/editor/links";
 export type TranscriptLinkNavigation = {
   follow(target: LinkTarget): void;
   canFollow(target: LinkTarget): boolean;
+  /** The cache the surface's follows resolve through; what a syntax link draws. */
+  resolution: LinkResolution | null;
 };
 
 export const TranscriptLinkNavigationContext = createContext<TranscriptLinkNavigation | undefined>(
@@ -57,20 +84,28 @@ export function TranscriptReference({
   const candidate = documentId ? resolutions?.get(documentId) : null;
   const resolution =
     candidate?.documentId === documentId && candidate?.uri === uri ? candidate : null;
+  const syntax = !documentId && target ? target : null;
+  const syntaxFollowable = Boolean(syntax && navigation?.canFollow(syntax));
   const follow = documentId
     ? resolution?.available && onOpen
       ? () => onOpen(resolution.documentId)
       : undefined
-    : navigation && target && navigation.canFollow(target)
-      ? () => navigation.follow(target)
+    : navigation && syntax && syntaxFollowable
+      ? () => navigation.follow(syntax)
       : undefined;
   const label = authoredLabel === "true" ? children : (resolution?.label ?? children);
+  const unfollowable = Boolean(navigation && syntax && !syntaxFollowable);
+  const answer = useLinkAnswer(
+    syntax && !unfollowable ? (navigation?.resolution ?? null) : null,
+    syntax ? linkTargetHref(syntax) : null,
+  );
   // A syntax link this surface can never follow (a relative path with nothing
   // to be relative to) is text. A link control that can never work is a dead
   // control; the href stays reachable as a tooltip.
-  if (!documentId && navigation && target && !navigation.canFollow(target)) {
-    return <span title={targetHref}>{label}</span>;
-  }
+  if (unfollowable) return <span title={targetHref}>{label}</span>;
+  const chip = documentId
+    ? referenceChip(uri ?? "", resolution?.available ?? true)
+    : syntax && linkChip(syntax, answer);
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -80,7 +115,7 @@ export function TranscriptReference({
           role="link"
           tabIndex={0}
           aria-disabled={!follow}
-          className={follow ? "underline decoration-border-subtle underline-offset-2" : undefined}
+          {...(chip ? linkChipAttributes(chip) : {})}
           onClick={follow}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -108,4 +143,49 @@ export function TranscriptReference({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/**
+ * What the cache says about one href, asked for while the reference is shown,
+ * the way the Editor's decoration plugin asks for the links it draws. Asking
+ * again on every publish is how a new generation (a scope or catalog change)
+ * gets its question; an href already answered, or failed, is never re-asked,
+ * so the loop ends. The cache batches, so many chips cost one question per
+ * distinct target.
+ */
+function useLinkAnswer(
+  resolution: LinkResolution | null,
+  href: string | null,
+): LinkResolutionEntry | null {
+  const subscribe = useCallback(
+    (listener: () => void) => resolution?.subscribe(listener) ?? (() => {}),
+    [resolution],
+  );
+  const entry = useSyncExternalStore(
+    subscribe,
+    () => (resolution && href ? resolution.read(href) : null),
+    () => null,
+  );
+  useEffect(() => {
+    if (!resolution || !href) return;
+    let live = true;
+    let scheduled = false;
+    // Deferred and coalesced: asking publishes, and publishing from inside a
+    // publish would re-enter every listener once per chip.
+    const ask = () => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (live) resolution.request([href]);
+      });
+    };
+    resolution.request([href]);
+    const unsubscribe = resolution.subscribe(ask);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [resolution, href]);
+  return entry;
 }

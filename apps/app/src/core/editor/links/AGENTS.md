@@ -22,6 +22,13 @@ navigator the app registers. No navigator is a real state, not a bug — the
 click falls through to the caret and the menu omits Open link rather than
 offering a dead verb.
 
+**Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
+target and its resolution answer to a state (filled, or dashed when nothing is
+at that address) and a family icon name; every surface emits
+`linkChipAttributes()` and the look lives in
+[`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
+Core names families and imports no icons.
+
 **The store is the surface policy.** `link-surface.ts` holds which link is
 being approached and which of the two summoned surfaces is open;
 `LinkSurfaceExtension` is the only thing that reads the document, watches the
@@ -47,8 +54,10 @@ pointer, and calls into it.
   the surface acts on whatever slid into the coordinates.
 - **Unresolved is normal, not an error.** Serial writers link chapters before
   they write them, so an internal target that resolves to nothing is a state
-  the UI renders, never a failure it reports. A request that *failed* is a
-  third thing: no answer at all, rendered as an ordinary link.
+  the UI renders, never a failure it reports. Ambiguous (several documents
+  carry the name) is not unresolved and never draws as missing. A request
+  that *failed* is a further thing: no answer at all, rendered as an ordinary
+  link.
 - **Invalidation is a registration, and a registration is a generation.**
   Registering the port starts a generation that owns its answers, its one
   question per href, its queue, and its in-flight counter; a question settles
