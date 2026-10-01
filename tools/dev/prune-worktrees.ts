@@ -22,6 +22,7 @@ import {
   resolveTargetWorktree,
   type TargetReference,
 } from "./lib/worktree-cleanup";
+import { resolveAncestryRef } from "./lib/worktree-cleanup-ancestry";
 import {
   type CleanupEligibility,
   decideCleanupEligibility,
@@ -281,6 +282,25 @@ function resolveBaseBranch(cwd: string): string {
   return "main";
 }
 
+function prepareAncestryRef(baseBranch: string, cwd: string): string {
+  // Fetch is best-effort: an existing remote-tracking ref is still better than
+  // a stale local branch when the network is unavailable.
+  spawnSync("git", ["fetch", "origin", baseBranch, "--quiet"], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  return resolveAncestryRef(baseBranch, (ref) => {
+    const result = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/remotes/${ref}`], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return result.status === 0;
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -350,8 +370,8 @@ async function resolveRepositoryOwner(cwd: string): Promise<string> {
   return runTextAsync("gh", ["repo", "view", "--json", "owner", "--jq", ".owner.login"], cwd);
 }
 
-function checkAncestry(oid: string, baseBranch: string, cwd: string): boolean {
-  const result = spawnSync("git", ["merge-base", "--is-ancestor", oid, baseBranch], {
+function checkAncestry(oid: string, ancestryRef: string, cwd: string): boolean {
+  const result = spawnSync("git", ["merge-base", "--is-ancestor", oid, ancestryRef], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -361,7 +381,7 @@ function checkAncestry(oid: string, baseBranch: string, cwd: string): boolean {
   throw new Error(
     result.stderr.trim() ||
       result.error?.message ||
-      `Could not verify whether ${oid} is an ancestor of '${baseBranch}'.`,
+      `Could not verify whether ${oid} is an ancestor of '${ancestryRef}'.`,
   );
 }
 
@@ -392,6 +412,7 @@ function indexMergedPullRequests(
 async function collectCleanupEligibility(
   gitWorktreePorcelain: string,
   baseBranch: string,
+  ancestryRef: string,
   cwd: string,
   allowAncestry: boolean,
 ): Promise<Map<string, CleanupEligibility>> {
@@ -422,7 +443,7 @@ async function collectCleanupEligibility(
       continue;
     }
 
-    const isAncestor = allowAncestry ? checkAncestry(plannedOid, baseBranch, cwd) : false;
+    const isAncestor = allowAncestry ? checkAncestry(plannedOid, ancestryRef, cwd) : false;
     const branchPullRequestDiscovery: PullRequestDiscovery = pullRequestDiscovery.ok
       ? {
           ok: true,
@@ -471,7 +492,10 @@ function printAutoReadinessSkips(
   }
 }
 
-async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan> {
+async function buildPlan(
+  options: CliOptions,
+  cwd: string,
+): Promise<{ readonly plan: CleanupPlan; readonly ancestryRef: string }> {
   console.log(
     options.mode === "target" && options.manuallyVerified
       ? "Discovering worktrees and active work items..."
@@ -480,10 +504,17 @@ async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan>
   const currentWorktreePath = runText("git", ["rev-parse", "--show-toplevel"], cwd);
   const gitWorktreePorcelain = runText("git", ["worktree", "list", "--porcelain"], cwd);
   const baseBranch = resolveBaseBranch(cwd);
+  const ancestryRef = prepareAncestryRef(baseBranch, cwd);
   const [eligibilityByBranch, meridianWorkItems] = await Promise.all([
     options.mode === "target" && options.manuallyVerified
       ? Promise.resolve(new Map<string, CleanupEligibility>())
-      : collectCleanupEligibility(gitWorktreePorcelain, baseBranch, cwd, options.mode !== "auto"),
+      : collectCleanupEligibility(
+          gitWorktreePorcelain,
+          baseBranch,
+          ancestryRef,
+          cwd,
+          options.mode !== "auto",
+        ),
     collectMeridianWorkItems(cwd),
   ]);
   const worktrees = parseGitWorktreePorcelain(gitWorktreePorcelain);
@@ -551,7 +582,7 @@ async function buildPlan(options: CliOptions, cwd: string): Promise<CleanupPlan>
     return [target];
   })();
 
-  return createCleanupPlan(context, targets);
+  return { plan: createCleanupPlan(context, targets), ancestryRef };
 }
 
 function runAction(action: CleanupAction): { ok: boolean; output: string } {
@@ -567,7 +598,7 @@ function runAction(action: CleanupAction): { ok: boolean; output: string } {
   return { ok: result.status === 0, output: actionOutput };
 }
 
-function revalidateTarget(target: CleanupPlan["targets"][number]) {
+function revalidateTarget(target: CleanupPlan["targets"][number], ancestryRef: string) {
   const primaryCwd =
     target.actions.find((action) => action.kind === "remove-worktree")?.cwd ?? process.cwd();
   let currentOid: string | undefined;
@@ -582,7 +613,7 @@ function revalidateTarget(target: CleanupPlan["targets"][number]) {
   }
   const isAncestor =
     target.eligibility.kind === "ancestry"
-      ? checkAncestry(target.eligibility.plannedOid, target.eligibility.baseBranch, primaryCwd)
+      ? checkAncestry(target.eligibility.plannedOid, ancestryRef, primaryCwd)
       : undefined;
   return validateCleanupEligibility({ evidence: target.eligibility, currentOid, isAncestor });
 }
@@ -615,10 +646,10 @@ async function revalidateCleanupReadiness(
   }
 }
 
-async function executePlan(plan: CleanupPlan): Promise<number> {
+async function executePlan(plan: CleanupPlan, ancestryRef: string): Promise<number> {
   const result = await executeCleanupPlan(
     plan,
-    revalidateTarget,
+    (target) => revalidateTarget(target, ancestryRef),
     (target) => revalidateCleanupReadiness(target),
     (action) => runAction(action),
     {
@@ -655,8 +686,9 @@ async function main(): Promise<void> {
   }
 
   let plan: CleanupPlan;
+  let ancestryRef: string;
   try {
-    plan = await buildPlan(options, process.cwd());
+    ({ plan, ancestryRef } = await buildPlan(options, process.cwd()));
   } catch (error) {
     if (error instanceof CleanupResolverError) {
       console.error(`✗ ${error.message}`);
@@ -680,7 +712,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const failures = await executePlan(plan);
+  const failures = await executePlan(plan, ancestryRef);
   if (failures > 0) {
     console.error(`\nCleanup completed with ${failures} failure(s).`);
     process.exit(1);
