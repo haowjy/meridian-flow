@@ -1,7 +1,7 @@
 /** What a registration change does to questions already out. */
 
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createLinkResolution } from "./link-resolution";
 
@@ -97,5 +97,23 @@ describe("createLinkResolution across generations", () => {
     resolution.registerResolver(async () => KAEL);
 
     await expect(answer).resolves.toEqual({ state: "resolved", document: KAEL });
+  });
+
+  it("ignores the old generation answering late, after its waiter was carried", async () => {
+    const resolution = createLinkResolution();
+    let oldAnswer: (document: ResolvedDocumentLink | null) => void = () => {};
+    let newAnswer: (document: ResolvedDocumentLink | null) => void = () => {};
+    resolution.registerResolver(() => new Promise((done) => (oldAnswer = done)));
+    let settled: unknown = "waiting";
+    void resolution.resolve("[[Kael]]").then((entry) => (settled = entry));
+    resolution.registerResolver(() => new Promise((done) => (newAnswer = done)));
+
+    oldAnswer(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe("waiting");
+
+    newAnswer(KAEL);
+    await vi.waitFor(() => expect(settled).toEqual({ state: "resolved", document: KAEL }));
   });
 });

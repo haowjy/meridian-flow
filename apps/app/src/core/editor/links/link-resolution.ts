@@ -109,8 +109,6 @@ type Request = {
   readonly settle: (entry: LinkResolutionEntry | null) => void;
   /** Someone is waiting through `resolve()`, so retirement carries it forward. */
   awaited: boolean;
-  /** Retirement handed the waiter to the next generation; this completion owes it nothing. */
-  handedOff: boolean;
 };
 
 /** Everything true of one registration of the port. */
@@ -153,12 +151,12 @@ export function createLinkResolution(): LinkResolution {
       generation.answers.delete(key);
       generation.failed.add(key);
     }
-    // An answer about a project state nobody is looking at any more tells the
-    // caller nothing, so it comes back null rather than stale — unless the
-    // waiter was already carried into the live generation.
-    const live = generation === current;
-    if (!request.handedOff) request.settle(live ? entry : null);
-    if (live) publish();
+    // A generation stops being live only through `retire`, which has already
+    // answered this waiter (null, or carried into the next generation). An
+    // answer arriving afterwards is about a project state nobody is looking at.
+    if (generation !== current) return;
+    request.settle(entry);
+    publish();
   };
 
   const pump = (generation: Generation) => {
@@ -202,7 +200,6 @@ export function createLinkResolution(): LinkResolution {
       promise,
       settle: settleWaiter,
       awaited: false,
-      handedOff: false,
     };
     generation.asking.set(key, request);
     generation.answers.set(key, PENDING);
@@ -236,7 +233,6 @@ export function createLinkResolution(): LinkResolution {
     const next = current !== generation ? current : null;
     for (const request of generation.asking.values()) {
       if (next && request.awaited) {
-        request.handedOff = true;
         void askAwaited(next, request.key, request.target).then(request.settle);
       } else request.settle(null);
     }
