@@ -13,6 +13,7 @@
  * have to remember to clear a hint.
  */
 
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import type { Mark } from "@tiptap/pm/model";
 
 import type { LinkAnchor } from "./link-commands";
@@ -84,10 +85,10 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
  * half has to render its own dialog, and a dialog the kernel never hears about
  * is a second owner of Escape.
  */
-export type LinkFollowOutcome = {
-  state: "checking" | "missing" | "failed";
-  target: LinkTarget;
-};
+export type LinkFollowOutcome =
+  | { state: "checking" | "missing" | "failed"; target: LinkTarget }
+  /** Several documents answer to the link; the writer chooses, nothing is created. */
+  | { state: "ambiguous"; target: LinkTarget; candidates: readonly ResolvedDocumentLink[] };
 
 export type LinkSurfaceState = {
   hint: LinkHint | null;
@@ -115,6 +116,14 @@ export type LinkSurface = {
   /** A follow that has something to say. Reported by whoever answered it. */
   reportFollow: (outcome: LinkFollowOutcome) => void;
   clearFollow: () => void;
+  /**
+   * Stop the follow in flight and clear what it said: the writer pressed
+   * Cancel. Clearing alone would let the answer land later and open the
+   * document or bring the dialog back. Without a registered canceller it only
+   * clears.
+   */
+  cancelFollow: () => void;
+  registerFollowCancel: (cancel: () => void) => () => void;
 
   /**
    * Where an internal link goes. Absent is a real state, not a bug: until the
@@ -133,6 +142,7 @@ export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
   let state = EMPTY_STATE;
   let navigator: InternalLinkNavigator | null = null;
+  let followCancel: (() => void) | null = null;
   let sequence = 0;
 
   const set = (next: Partial<LinkSurfaceState>) => {
@@ -192,6 +202,16 @@ export function createLinkSurface(): LinkSurface {
     clearFollow() {
       set({ follow: null });
     },
+    cancelFollow() {
+      if (followCancel) followCancel();
+      else set({ follow: null });
+    },
+    registerFollowCancel(cancel) {
+      followCancel = cancel;
+      return () => {
+        if (followCancel === cancel) followCancel = null;
+      };
+    },
 
     get navigator() {
       return navigator;
@@ -206,6 +226,7 @@ export function createLinkSurface(): LinkSurface {
     destroy() {
       listeners.clear();
       navigator = null;
+      followCancel = null;
       state = EMPTY_STATE;
     },
   };

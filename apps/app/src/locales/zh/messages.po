@@ -242,6 +242,10 @@ msgstr ""
 msgid "{filename} did not import. It stayed a link."
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
@@ -823,6 +827,10 @@ msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
+msgstr ""
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Choose the one to open. Once only one document carries the name, the link opens it directly."
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2215,6 +2223,10 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "More than one document carries that name"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -2371,6 +2383,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
+msgstr ""
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "No document at that address"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -3514,6 +3530,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
+msgstr ""
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "The project has nothing at this address. It may have moved or been removed."
 msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx

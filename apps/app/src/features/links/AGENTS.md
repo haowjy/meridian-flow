@@ -62,6 +62,9 @@ request. Its catalogs mirror the server's candidate set
   the resolver rather than answering null.
 - **Unresolved is a sentence, never a warning.** Linking ahead of writing is
   the job; a missing wikilink offers to create the document.
+- **Create is only for a name nothing carries.** An address that misses says
+  so, and a name several documents carry lists them; neither offers Create,
+  which would add a document the link still could not tell apart.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md): scope contracts, what a follow
   does per answer, create-on-miss, and the document index

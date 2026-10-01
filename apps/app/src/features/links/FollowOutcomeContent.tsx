@@ -14,17 +14,27 @@
  * through `onOpen`, the surface's own destination.
  */
 
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
+import { type LinkFollowOutcome, type LinkTarget, linkTargetHref } from "@/core/editor/links";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import type { LinkDocumentRef } from "./follow-link";
 import { useCreateLinkedDocument } from "./use-create-linked-document";
+
+/** How many same-named documents the dialog lists before summarizing the rest. */
+const MAX_CANDIDATES = 5;
+
+/** A name is a wikilink; a scheme URI or a relative path is an address. */
+function isAddress(target: LinkTarget): boolean {
+  return target.kind !== "wikilink";
+}
 
 export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
   switch (outcome.state) {
@@ -32,8 +42,14 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
       return <Trans>Opening the link</Trans>;
     case "failed":
       return <Trans>That link could not be checked</Trans>;
+    case "ambiguous":
+      return <Trans>More than one document carries that name</Trans>;
     case "missing":
-      return <Trans>Nothing carries that name yet</Trans>;
+      return isAddress(outcome.target) ? (
+        <Trans>No document at that address</Trans>
+      ) : (
+        <Trans>Nothing carries that name yet</Trans>
+      );
   }
 }
 
@@ -67,6 +83,13 @@ export function FollowOutcomeContent({
           <Trans>Looking for the document this link names.</Trans>
         ) : outcome.state === "failed" ? (
           <Trans>The project could not be reached. The link itself is fine.</Trans>
+        ) : outcome.state === "ambiguous" ? (
+          <Trans>
+            Choose the one to open. Once only one document carries the name, the link opens it
+            directly.
+          </Trans>
+        ) : isAddress(target) ? (
+          <Trans>The project has nothing at this address. It may have moved or been removed.</Trans>
         ) : creatable ? (
           <Trans>Create it now and the link starts working. Nothing about the link changes.</Trans>
         ) : (
@@ -80,6 +103,16 @@ export function FollowOutcomeContent({
       <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
         {linkTargetHref(target)}
       </p>
+
+      {outcome.state === "ambiguous" ? (
+        <CandidateList
+          candidates={outcome.candidates}
+          onChoose={(candidate) => {
+            onClose();
+            void onOpen({ documentId: candidate.documentId, workId: candidate.workId });
+          }}
+        />
+      ) : null}
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">
@@ -96,7 +129,7 @@ export function FollowOutcomeContent({
             {t`Try again`}
           </Button>
         ) : null}
-        {outcome.state === "missing" && creatable && name ? (
+        {outcome.state === "missing" && !isAddress(target) && creatable && name ? (
           <Button
             type="button"
             size="sm"
@@ -114,5 +147,54 @@ export function FollowOutcomeContent({
         ) : null}
       </DialogFooter>
     </>
+  );
+}
+
+/**
+ * The documents a name is shared by, each with where it lives: two documents
+ * that answer to one name usually differ only by tree or folder.
+ */
+function CandidateList({
+  candidates,
+  onChoose,
+}: {
+  candidates: readonly ResolvedDocumentLink[];
+  onChoose: (candidate: ResolvedDocumentLink) => void;
+}) {
+  const shown = candidates.slice(0, MAX_CANDIDATES);
+  const hidden = candidates.length - shown.length;
+  return (
+    <div className="flex flex-col gap-1">
+      <ul className="flex flex-col gap-1">
+        {shown.map((candidate) => {
+          const folder = candidate.path.split("/").slice(0, -1).join("/");
+          return (
+            <li key={candidate.documentId}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal px-3 py-2 text-left"
+                onClick={() => onChoose(candidate)}
+              >
+                <span className="break-all font-medium text-sm">{candidate.title}</span>
+                <span className="break-all text-ink-muted text-xs">
+                  {folder
+                    ? `${schemeLabel(candidate.scheme)} (${folder})`
+                    : schemeLabel(candidate.scheme)}
+                </span>
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 0 ? (
+        <p className="text-ink-muted text-xs">
+          {plural(hidden, {
+            one: "# more document carries this name.",
+            other: "# more documents carry this name.",
+          })}
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -19,7 +19,9 @@ document's URI, found by id in that index. It calls `useLinkFollower` with:
   `current` or `background` from the gesture.
 
 It registers `follower.follow` as the store's navigator, which is also what
-makes the link menu's Open link verb exist. M7 leaves it absent on purpose (law
+makes the link menu's Open link verb exist, and `follower.cancel` as the store's
+follow cancel: `FollowOutcomeDialog`'s Cancel, and dismissing it while checking,
+call `surface.cancelFollow()`. M7 leaves it absent on purpose (law
 5); this is what fills the hole.
 
 Scope contracts, what a follow does per answer, create-on-miss, and the document

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createLinkResolution,
+  documentLinkTarget,
   isInternalLinkTarget,
   type LinkFollowDisposition,
   type LinkResolution,
@@ -31,7 +32,11 @@ import {
 } from "@/core/editor/links";
 
 import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
-import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
+import {
+  createProjectLinkResolver,
+  type LinkResolutionScope,
+  projectLinkAnswer,
+} from "./project-link-resolver";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
@@ -101,6 +106,17 @@ export function useLinkFollower({
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
   }, [baseUri, index, projectId, resolution, workId]);
+
+  // Read when an answer lands, not when the click happened: a pending scope or
+  // a catalog change in between means the click-time index is the wrong one.
+  const latest = useRef({ index, baseUri });
+  latest.current = { index, baseUri };
+  const candidates = useCallback((target: LinkTarget) => {
+    const request = documentLinkTarget(target, latest.current.baseUri ?? "");
+    if (!request) return [];
+    const answer = projectLinkAnswer(latest.current.index, request);
+    return answer.kind === "ambiguous" ? answer.candidates : [];
+  }, []);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -193,12 +209,13 @@ export function useLinkFollower({
         reporter: owned,
         signal: controller.signal,
         scopeReady,
+        candidates,
       }).finally(() => {
         inFlight.current.delete(controller);
         if (currentFollow.current === controller) currentFollow.current = null;
       });
     },
-    [abortFollow, active, open, pending, projectId, reporter, resolution],
+    [abortFollow, active, candidates, open, pending, projectId, reporter, resolution],
   );
 
   const cancel = useCallback(() => {

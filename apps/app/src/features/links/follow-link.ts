@@ -8,6 +8,8 @@
  * own destination and host rather than by writing a second follow.
  */
 
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
+
 import {
   type LinkFollowDisposition,
   type LinkFollowOutcome,
@@ -53,7 +55,9 @@ export type FollowReporter = {
  * arriving, so a slow scope reads as checking like a slow answer does. It must
  * settle when `signal` aborts.
  *
- * Several matches arrive here as unresolved, so they report `missing`.
+ * The resolver answers several matches as unresolved, so `candidates` is how
+ * the procedure tells "nothing carries that name" from "more than one
+ * document does": more than one candidate reports `ambiguous`, with no Create.
  */
 export async function followProjectLink({
   target,
@@ -63,6 +67,7 @@ export async function followProjectLink({
   reporter,
   signal,
   scopeReady,
+  candidates,
 }: {
   target: LinkTarget;
   gesture: LinkFollowDisposition;
@@ -71,6 +76,8 @@ export async function followProjectLink({
   reporter: FollowReporter;
   signal: AbortSignal;
   scopeReady?: Promise<void>;
+  /** Every document the scope can prove the link matches; empty when it cannot tell. */
+  candidates: (target: LinkTarget) => readonly ResolvedDocumentLink[];
 }): Promise<void> {
   if (signal.aborted) return;
   const href = linkTargetHref(target);
@@ -106,7 +113,16 @@ export async function followProjectLink({
     await open(documentRef(entry.document), gesture);
     return;
   }
-  reporter.report({ state: entry?.state === "unresolved" ? "missing" : "failed", target });
+  if (entry?.state !== "unresolved") {
+    reporter.report({ state: "failed", target });
+    return;
+  }
+  const several = candidates(target);
+  reporter.report(
+    several.length > 1
+      ? { state: "ambiguous", target, candidates: several }
+      : { state: "missing", target },
+  );
 }
 
 function documentRef(document: { documentId: string; workId: string | null }): LinkDocumentRef {

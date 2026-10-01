@@ -7,7 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveDocumentLink } from "@/client/api/document-links-api";
-import { createLinkResolution, type LinkResolution, type LinkTarget } from "@/core/editor/links";
+import {
+  createLinkResolution,
+  type LinkFollowOutcome,
+  type LinkResolution,
+  type LinkTarget,
+} from "@/core/editor/links";
 
 import { CHECKING_DELAY_MS, type FollowReporter, type LinkDestination } from "./follow-link";
 import type { LinkResolutionScope } from "./project-link-resolver";
@@ -33,6 +38,7 @@ function doc(name: string): ResolvedDocumentLink {
 /** Server answers the test releases by name. */
 let pending: Map<string, (document: ResolvedDocumentLink | null) => void>;
 let events: string[];
+let lastOutcome: LinkFollowOutcome | null;
 let resolution: LinkResolution;
 let root: Root;
 let host: HTMLDivElement;
@@ -40,7 +46,10 @@ let follower: LinkFollower;
 
 const scope: LinkResolutionScope = { projectId: "project-1", workId: null, baseUri: null };
 const reporter: FollowReporter = {
-  report: (outcome) => events.push(`report:${outcome.state}`),
+  report: (outcome) => {
+    lastOutcome = outcome;
+    events.push(`report:${outcome.state}`);
+  },
   clear: () => events.push("clear"),
 };
 const open: LinkDestination = async (document, gesture) => {
@@ -94,6 +103,7 @@ beforeEach(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
   pending = new Map();
   events = [];
+  lastOutcome = null;
   resolution = createLinkResolution();
   server.mockReset();
   server.mockImplementation(
@@ -265,5 +275,31 @@ describe("useLinkFollower", () => {
     await answer("Kael", doc("kael"));
 
     expect(events).toEqual(["report:checking", "clear"]);
+  });
+
+  it("names the documents a shared name matches, from a complete index, without asking the server", async () => {
+    const kael = (documentId: string, uri: string) => ({
+      documentId,
+      uri,
+      filename: "Kael.md",
+      title: "Kael",
+      location: "",
+      aliases: [],
+      workId: null,
+    });
+    const complete: LinkableDocumentIndex = {
+      documents: [kael("doc-ms", "manuscript://Kael.md"), kael("doc-kb", "kb://Kael.md")],
+      revision: "two-kaels",
+      complete: true,
+    };
+    render({ scope, index: complete });
+    act(() => follower.follow(wikilink("Kael")));
+    await elapse(0);
+
+    expect(server).not.toHaveBeenCalled();
+    expect(events).toEqual(["report:ambiguous"]);
+    expect(
+      lastOutcome?.state === "ambiguous" && lastOutcome.candidates.map((entry) => entry.uri),
+    ).toEqual(["manuscript://Kael.md", "kb://Kael.md"]);
   });
 });

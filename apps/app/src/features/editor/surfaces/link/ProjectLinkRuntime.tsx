@@ -7,9 +7,9 @@
  * following belong to [`features/links`](../../../links/AGENTS.md). This
  * supplies the Editor's three parts (its scope, its destination, and the store
  * its outcome is reported into), registers the follower as the navigator a
- * click is handed to, and renders nothing. Registering the navigator is also
- * what makes the link menu's Open link verb appear at all: absent until
- * something can follow, never dead (law 5).
+ * click is handed to and as the store's follow cancel, and renders nothing.
+ * Registering the navigator is also what makes the link menu's Open link verb
+ * appear at all: absent until something can follow, never dead (law 5).
  *
  * What a follow FOUND is reported into the link store, and the surface that
  * says it out loud mounts through the chrome host
@@ -97,7 +97,13 @@ export function ProjectLinkRuntime({
     const navigate: InternalLinkNavigator = ({ target, disposition }) => {
       follower.follow(target, disposition);
     };
-    return surface.registerNavigator(navigate);
+    const unregisterNavigator = surface.registerNavigator(navigate);
+    // Cancel in the outcome dialog stops the follow, not just the dialog.
+    const unregisterCancel = surface.registerFollowCancel(follower.cancel);
+    return () => {
+      unregisterNavigator();
+      unregisterCancel();
+    };
   }, [active, follower, projectId, surface]);
 
   return null;

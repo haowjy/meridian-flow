@@ -31,7 +31,11 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   // one button.
   if (!surface || !follow) return null;
 
-  const close = () => surface.clearFollow();
+  // Cancel (and dismissing) while checking stops the follow, so the answer
+  // landing later neither opens the document nor brings the dialog back. Any
+  // other outcome is already settled, and dismissing it only clears.
+  const close = () =>
+    follow.state === "checking" ? surface.cancelFollow() : surface.clearFollow();
 
   return (
     <EditorDialog

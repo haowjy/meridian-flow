@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
   getChatSubmissionEpoch,
@@ -35,20 +35,11 @@ import {
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import {
-  type LinkDestination,
-  LinkFollowDialog,
-  useFollowOutcomeState,
-  useLinkableDocuments,
-  useLinkFollower,
-} from "@/features/links";
+import { LinkFollowDialog } from "@/features/links";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
-import {
-  type TranscriptLinkNavigation,
-  TranscriptLinkNavigationContext,
-} from "@/rich-content/TranscriptReference";
+import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -61,6 +52,7 @@ import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
+import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import {
   type FailedChatSubmission,
   forgetSubmissionTurnId,
@@ -304,43 +296,7 @@ export function ChatView({
     [controller],
   );
 
-  // Links the model wrote follow through the app's one link procedure, scoped
-  // to the thread's Work. Until that Work is known the scope is pending: a
-  // click waits and shows checking, and is never answered as No Work.
-  const linkIndex = useLinkableDocuments(
-    activeWork ? { projectId, workId: activeWork.id } : { projectId: null, workId: null },
-  );
-  const linkScope = useMemo(
-    () => (activeWork ? { projectId, workId: activeWork.id, baseUri: null } : ("pending" as const)),
-    [activeWork, projectId],
-  );
-  // The Editor adopts the chat's Work, so the document opens where the model
-  // was working. The No Work row opens as explicit No Work, never as a Work id.
-  const linkWorkId = activeWork && !activeWork.isNoWork ? activeWork.id : null;
-  const openLinkedDocument = useCallback<LinkDestination>(
-    (document, gesture) =>
-      openReferenceDocument({
-        documentId: document.documentId,
-        workId: linkWorkId,
-        disposition: gesture === "new-tab" ? "background" : "current",
-      }),
-    [linkWorkId, openReferenceDocument],
-  );
-  const { outcome: linkOutcome, reporter: linkReporter } = useFollowOutcomeState();
-  const linkFollower = useLinkFollower({
-    scope: linkScope,
-    index: linkIndex,
-    active,
-    open: openLinkedDocument,
-    reporter: linkReporter,
-  });
-  const transcriptLinkNavigation = useMemo<TranscriptLinkNavigation>(
-    () => ({
-      follow: (target) => linkFollower.follow(target),
-      canFollow: linkFollower.canFollow,
-    }),
-    [linkFollower],
-  );
+  const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
   for (const entry of submissionRecovery.recovered) {
@@ -364,7 +320,7 @@ export function ChatView({
   }
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={transcriptLinkNavigation}>
+    <TranscriptLinkNavigationContext.Provider value={links.navigation}>
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
@@ -438,19 +394,7 @@ export function ChatView({
           </SubagentActivityProvider>
         </SubagentDisclosureProvider>
       </ChatSurface>
-      <LinkFollowDialog
-        outcome={linkOutcome}
-        projectId={projectId}
-        // Cancel and Escape while checking stop the follow; on any other
-        // outcome there is nothing left to stop.
-        onClose={() =>
-          linkOutcome?.state === "checking" ? linkFollower.cancel() : linkReporter.clear()
-        }
-        onRetry={() => {
-          if (linkOutcome) linkFollower.follow(linkOutcome.target);
-        }}
-        onOpen={(document) => openLinkedDocument(document, "current")}
-      />
+      <LinkFollowDialog {...links.dialog} />
     </TranscriptLinkNavigationContext.Provider>
   );
 }
