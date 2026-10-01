@@ -3,6 +3,7 @@ import {
   buildCleanupContext,
   type CleanupContext,
   createCleanupPlan,
+  createCleanupTarget,
   executeCleanupPlan,
   parseGitWorktreePorcelain,
   parseMeridianWorkList,
@@ -57,6 +58,14 @@ function makeContext(overrides?: { eligible?: boolean; baseBranch?: string }): C
   });
 }
 
+const manualEvidence: CleanupEligibility = {
+  kind: "manual",
+  branch: "feature",
+  plannedOid: "2222222222222222222222222222222222222222",
+  baseBranch: "main",
+  note: "verified against preserved integration history",
+};
+
 describe("worktree cleanup resolver", () => {
   it("ignores diagnostics in the Meridian work list", () => {
     expect(
@@ -104,6 +113,46 @@ describe("worktree cleanup resolver", () => {
       "refs/heads/feature",
       "2222222222222222222222222222222222222222",
     ]);
+  });
+
+  it("builds the normal action sequence from manual evidence without automatic eligibility", () => {
+    const context = makeContext({ eligible: false });
+    const target = createCleanupTarget(context, context.worktrees[1], manualEvidence);
+    const plan = createCleanupPlan(context, [target]);
+
+    expect(plan.targets[0].actions.map((action) => action.kind)).toEqual([
+      "stop-dev",
+      "drop-database",
+      "remove-worktree",
+      "delete-branch",
+    ]);
+  });
+
+  it("does not let manual evidence bypass primary, current, base, or locked protections", () => {
+    const base = makeContext({ eligible: false });
+    const primaryEvidence: CleanupEligibility = {
+      ...manualEvidence,
+      branch: "main",
+      plannedOid: "1111111111111111111111111111111111111111",
+    };
+    expect(() => createCleanupTarget(base, base.worktrees[0], primaryEvidence)).toThrow(
+      /primary worktree/,
+    );
+
+    const currentContext = { ...base, currentWorktreePath: "/repo/wt/feature" };
+    expect(() =>
+      createCleanupTarget(currentContext, currentContext.worktrees[1], manualEvidence),
+    ).toThrow(/current worktree/);
+
+    const baseBranchContext = { ...base, baseBranch: "feature" };
+    expect(() =>
+      createCleanupTarget(baseBranchContext, baseBranchContext.worktrees[1], manualEvidence),
+    ).toThrow(/base branch/);
+
+    const lockedWorktree = { ...base.worktrees[1], locked: true };
+    expect(() => createCleanupTarget(base, lockedWorktree, manualEvidence)).toThrow(
+      /locked worktree/,
+    );
   });
 
   it("cleans a merged feature branch found only via PR state (not ancestry)", () => {
