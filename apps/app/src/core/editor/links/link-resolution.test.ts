@@ -53,4 +53,49 @@ describe("createLinkResolution across generations", () => {
 
     await expect(answer).resolves.toBeNull();
   });
+
+  it("answers a carried question null when it fails in the new generation", async () => {
+    const resolution = createLinkResolution();
+    resolution.registerResolver(never);
+    const answer = resolution.resolve("[[Kael]]");
+
+    resolution.registerResolver(async () => {
+      throw new Error("offline");
+    });
+
+    await expect(answer).resolves.toBeNull();
+  });
+
+  it("carries through registrations that land back to back", async () => {
+    const resolution = createLinkResolution();
+    resolution.registerResolver(never);
+    const answer = resolution.resolve("[[Kael]]");
+
+    resolution.registerResolver(never);
+    resolution.registerResolver(async () => KAEL);
+
+    await expect(answer).resolves.toEqual({ state: "resolved", document: KAEL });
+  });
+
+  it("answers a carried question null when the cache is destroyed", async () => {
+    const resolution = createLinkResolution();
+    resolution.registerResolver(never);
+    const answer = resolution.resolve("[[Kael]]");
+    resolution.registerResolver(never);
+
+    resolution.destroy();
+
+    await expect(answer).resolves.toBeNull();
+  });
+
+  it("carries a click that joined a question the decorations asked first", async () => {
+    const resolution = createLinkResolution();
+    resolution.registerResolver(never);
+    resolution.request(["[[Kael]]"]);
+    const answer = resolution.resolve("[[Kael]]");
+
+    resolution.registerResolver(async () => KAEL);
+
+    await expect(answer).resolves.toEqual({ state: "resolved", document: KAEL });
+  });
 });
