@@ -13,7 +13,6 @@
  * have to remember to clear a hint.
  */
 
-import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import type { Mark } from "@tiptap/pm/model";
 
 import type { LinkAnchor } from "./link-commands";
@@ -86,9 +85,13 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
  * is a second owner of Escape.
  */
 export type LinkFollowOutcome =
-  | { state: "checking" | "missing" | "failed"; target: LinkTarget }
-  /** Several documents answer to the link; the writer chooses, nothing is created. */
-  | { state: "ambiguous"; target: LinkTarget; candidates: readonly ResolvedDocumentLink[] };
+  | { state: "checking" | "failed"; target: LinkTarget }
+  /**
+   * Nothing is at the link's address. `address` is the canonical Context URI
+   * it names (a relative path resolved against its holder), or null when it
+   * names none.
+   */
+  | { state: "missing"; target: LinkTarget; address: string | null };
 
 /** What the app's follower does when the writer acts on a follow's outcome. */
 export type FollowHandlers = { dismiss: () => void; retry: () => void };

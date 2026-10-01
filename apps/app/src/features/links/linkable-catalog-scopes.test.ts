@@ -1,4 +1,4 @@
-/** The client's copy of the server's wikilink candidate catalogs. */
+/** The catalogs a scope's document index walks. */
 
 import { describe, expect, it } from "vitest";
 

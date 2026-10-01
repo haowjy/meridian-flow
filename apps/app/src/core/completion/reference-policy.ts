@@ -67,7 +67,6 @@ export type ReferenceRow =
       fileKind: "document" | "asset";
       aliases: readonly string[];
       matchedAlias: string | null;
-      ambiguous: boolean;
       action: ReferenceSelectAction;
     };
 
@@ -144,13 +143,16 @@ export function rankReferenceRows(
 ): ReferenceRow[] {
   if (!validReferenceQuery(query) || limit <= 0) return [];
   const needle = normalizeReferenceName(query);
-  const ambiguousNames = duplicatedResolvableNames(rows);
   const kinds = options.kinds ? new Set(options.kinds) : null;
   const ranked: RankedRow[] = [];
 
   rows.forEach((row, order) => {
     if (row.kind === "file" && kinds && !kinds.has(row.fileKind)) return;
-    const match = bestRowMatch(row, needle);
+    const match = bestNameMatch(
+      row.label,
+      row.kind === "file" ? row.aliases : row.matchAliases,
+      needle,
+    );
     if (!match) return;
     const documentId = row.kind === "file" ? row.action.reference.documentId : null;
     ranked.push({
@@ -180,16 +182,7 @@ export function rankReferenceRows(
     if (seen.has(identity)) continue;
     seen.add(identity);
     result.push(
-      match.row.kind === "file"
-        ? {
-            ...match.row,
-            matchedAlias: match.matchedAlias,
-            ambiguous:
-              ambiguousNames.has(normalizeReferenceName(match.row.label)) ||
-              (match.matchedAlias !== null &&
-                ambiguousNames.has(normalizeReferenceName(match.matchedAlias))),
-          }
-        : match.row,
+      match.row.kind === "file" ? { ...match.row, matchedAlias: match.matchedAlias } : match.row,
     );
     if (result.length === limit) break;
   }
@@ -202,6 +195,19 @@ export function validReferenceQuery(query: string): boolean {
 
 export function normalizeReferenceName(value: string): string {
   return value.trim().toLocaleLowerCase();
+}
+
+/**
+ * How well a name, or failing that one of its aliases, answers a query: the
+ * lexical tier (exact, prefix, word-start, contains, fuzzy; lower is better)
+ * and which alias matched. The one matching rule every menu ranks by.
+ */
+export function matchReferenceName(
+  label: string,
+  aliases: readonly string[],
+  query: string,
+): { tier: number; matchedAlias: string | null } | null {
+  return bestNameMatch(label, aliases, normalizeReferenceName(query));
 }
 
 function stableAuthority(
@@ -259,14 +265,14 @@ function canonicalRowIdentity(row: ReferenceRow): string {
   return `${row.kind}:${row.action.scope.kind}:${row.action.containerId ?? row.action.prefix}`;
 }
 
-function bestRowMatch(
-  row: ReferenceRow,
+function bestNameMatch(
+  label: string,
+  aliases: readonly string[],
   needle: string,
 ): { tier: number; matchedAlias: string | null } | null {
-  const labelTier = lexicalTier(row.label, needle);
+  const labelTier = lexicalTier(label, needle);
   let best: { tier: number; matchedAlias: string | null } | null =
     labelTier === null ? null : { tier: labelTier, matchedAlias: null };
-  const aliases = row.kind === "file" ? row.aliases : row.matchAliases;
   for (const alias of aliases) {
     const tier = lexicalTier(alias, needle);
     if (tier !== null && (!best || tier < best.tier)) best = { tier, matchedAlias: alias };
@@ -301,20 +307,4 @@ function isSubsequence(needle: string, value: string): boolean {
     if (index === needle.length) return true;
   }
   return false;
-}
-
-function duplicatedResolvableNames(rows: readonly ReferenceRow[]): ReadonlySet<string> {
-  const identitiesByName = new Map<string, Set<string>>();
-  const duplicated = new Set<string>();
-  for (const row of rows) {
-    if (row.kind !== "file") continue;
-    for (const spelling of [row.label, ...row.aliases]) {
-      const name = normalizeReferenceName(spelling);
-      const identities = identitiesByName.get(name) ?? new Set<string>();
-      identities.add(row.action.reference.documentId);
-      identitiesByName.set(name, identities);
-      if (identities.size > 1) duplicated.add(name);
-    }
-  }
-  return duplicated;
 }

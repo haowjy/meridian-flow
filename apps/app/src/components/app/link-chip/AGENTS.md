@@ -46,8 +46,8 @@ them back. A new surface whose tone is the recess does the same.
 
 - **No surface restyles a chip.** A local class on a chip is a second look.
   Change `link-chip.css`, and every surface changes together.
-- **Dashed means nothing is at that address.** Asking, failed, and ambiguous
-  draw filled; a guess that corrects itself is worse than waiting. The dashed
+- **Dashed means nothing is at that address.** Asking and failed draw
+  filled; a guess that corrects itself is worse than waiting. The dashed
   border carries the quietness, never the ink: a dashed name stays at 4.5:1
   on every surface (`--color-muted-foreground`).
 - **A new family is a new scheme in contracts plus a node here.** The

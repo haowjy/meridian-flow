@@ -61,9 +61,12 @@ stable authority, and full non-contextual URI. Work and no-Work contextual URI
 syntax is verified through the contracts parser at this boundary; contextual
 Work syntax is never reconstructed into stable identity on the client.
 
-**Ambiguity is shown, not resolved.** Two documents with one title resolve to
-nothing, so a row whose name is shared says so and is still offered. Renaming one
-of them is the writer's fix, and the menu never guesses which they meant.
+**One matching rule.** `matchReferenceName` is the lexical tier for a name or
+its aliases; `rankReferenceRows` ranks `@` rows with it, and the Editor's `[[`
+link picker ranks its rows with it, so both menus agree about one query. Rows
+say where a document lives, which is what tells two same-named documents apart;
+a reference is identity-bearing and a link is an address, so neither needs a
+"shared name" state.
 
 ## Key rules
 
@@ -91,10 +94,7 @@ of them is the writer's fix, and the menu never guesses which they meant.
 - Reading availability lookup or cold wake hints as browse candidates.
 - Fetching recursively or retaining catalog entries in the browser controller.
 
-`wikilink-catalog.ts` serves only the narrower `[[` lane. Do not use it as a
-second `@` browser or add another caller or compatibility export around it.
-
 → [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
   the TipTap adapter that drives this from a lane spec
-→ [`../editor/extensions/wikilink/AGENTS.md`](../editor/extensions/wikilink/AGENTS.md) —
-  what `[[` does with a chosen row
+→ [`../editor/extensions/link-picker/AGENTS.md`](../editor/extensions/link-picker/AGENTS.md) —
+  the `[[` picker, which ranks with `matchReferenceName`

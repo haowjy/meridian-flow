@@ -1,7 +1,7 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { formatWikilink } from "@meridian/markup";
+import { spellDocumentHref } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -25,6 +25,7 @@ import {
 import {
   classifyLinkTarget,
   commitLinkDraft,
+  getLinkResolution,
   type LinkDraft,
   type LinkFormRequest,
   type LinkSurface,
@@ -147,7 +148,10 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              setHref(formatWikilink(row.action.reference.uri));
+              // Spelled from the holder the way the `[[` picker spells it:
+              // relative within its area, a full Context URI across areas.
+              const holderUri = getLinkResolution(editor)?.baseUri ?? null;
+              setHref(spellDocumentHref(holderUri, row.action.reference.uri));
               setSelectedDestination({ label: row.label, location: row.location });
               setText((current) => current || row.label);
               setChoosing(false);
@@ -156,7 +160,7 @@ function LinkFields({
             },
           })
         : null,
-    [referenceCatalog],
+    [editor, referenceCatalog],
   );
 
   useEffect(() => {
@@ -200,15 +204,9 @@ function LinkFields({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const address = choosing ? query.trim() : href;
-    // Search words are not destinations. Explicit pasted addresses still use the core normalizer.
-    if (
-      choosing &&
-      !(
-        linkInputStepsAsideFromReferences(address) ||
-        /[./]/.test(address) ||
-        address.startsWith("[[")
-      )
-    ) {
+    // Search words are not destinations. A web URL, a Context URI, or a
+    // relative path the writer typed goes through the core normalizer.
+    if (choosing && !(linkInputStepsAsideFromReferences(address) || /[./]/.test(address))) {
       setInvalid(true);
       return;
     }
@@ -217,11 +215,7 @@ function LinkFields({
       setInvalid(true);
       return;
     }
-    const destination = classifyLinkTarget(normalized);
-    const result = commitLinkDraft(editor, readDraft(), {
-      text,
-      href: destination?.kind === "scheme" ? formatWikilink(destination.uri) : normalized,
-    });
+    const result = commitLinkDraft(editor, readDraft(), { text, href: normalized });
     if (result === "invalid") {
       setInvalid(true);
       return;
@@ -280,7 +274,7 @@ function LinkFields({
             </span>
           ) : null}
           {resolution?.state === "unresolved" ? (
-            <span className="text-xs text-muted-foreground">{t`No document with this name yet`}</span>
+            <span className="text-xs text-muted-foreground">{t`No document at that address`}</span>
           ) : null}
         </div>
       )}

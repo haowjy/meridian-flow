@@ -167,6 +167,8 @@ export function useChatLinkFollowing({
     dialog: {
       outcome,
       projectId,
+      // An outcome is only reported once the scope is known.
+      workId: scope === "pending" ? null : scope.workId,
       onClose: follower.dismiss,
       onRetry: follower.retry,
       onOpen: (document) => open(document, "current"),

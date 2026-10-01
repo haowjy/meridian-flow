@@ -10,7 +10,7 @@
  * never draws it, so it imports no icons.
  *
  * Dashed means one thing: nothing is at that address. Every state that is
- * not settled yet (asking, failed, several candidates) draws filled, because
+ * not settled yet (asking, failed) draws filled, because
  * guessing "not written" and correcting it a moment later is worse than
  * waiting.
  */
@@ -21,20 +21,16 @@ import type { LinkResolutionEntry } from "./link-resolution";
 import type { LinkTarget } from "./link-target";
 
 /**
- * A document family by scheme, or one of the two names a wikilink wears
- * before it settles: `file-plus` when nothing carries the name (Create is
- * offered), `file` while it is not one document yet.
+ * A document family by scheme. Every internal link knows its family from its
+ * address; `file` is the fallback for the one that cannot yet: a relative
+ * path whose holder's URI has not arrived.
  */
-export type LinkChipIcon = ContextUriScheme | "file" | "file-plus";
+export type LinkChipIcon = ContextUriScheme | "file";
 
 export type LinkChip = { state: "filled" | "dashed"; icon: LinkChipIcon };
 
 /** Every icon a chip can ask for; the app supplies one image per entry. */
-export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [
-  ...CONTEXT_URI_SCHEMES,
-  "file",
-  "file-plus",
-];
+export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file"];
 
 /**
  * The chip for an internal target in its current state, or null for an
@@ -52,11 +48,8 @@ export function linkChip(
 ): LinkChip | null {
   if (target.kind === "external") return null;
   if (entry?.state === "resolved") return { state: "filled", icon: entry.document.scheme };
-  const family = targetFamily(target, baseUri);
-  if (entry?.state === "unresolved") {
-    return { state: "dashed", icon: family ?? (target.kind === "wikilink" ? "file-plus" : "file") };
-  }
-  return { state: "filled", icon: family ?? "file" };
+  const icon = targetFamily(target, baseUri) ?? "file";
+  return { state: entry?.state === "unresolved" ? "dashed" : "filled", icon };
 }
 
 /**
@@ -91,8 +84,7 @@ export function linkChipAttributes(chip: LinkChip): {
 
 function targetFamily(target: LinkTarget, baseUri: string | null): ContextUriScheme | null {
   if (target.kind === "scheme") return uriFamily(target.uri);
-  if (target.kind === "relative") return baseUri ? uriFamily(baseUri) : null;
-  return null;
+  return baseUri ? uriFamily(baseUri) : null;
 }
 
 const SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);

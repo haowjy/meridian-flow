@@ -29,7 +29,7 @@ afterEach(() => {
 
 function drawn(
   resolver: InternalLinkResolver,
-  { href = "[[Kael]]", baseUri }: { href?: string; baseUri?: string } = {},
+  { href = "Kael.md", baseUri }: { href?: string; baseUri?: string } = {},
 ): Editor {
   const element = document.createElement("div");
   document.body.append(element);
@@ -53,12 +53,11 @@ function drawing(editor: Editor) {
   };
 }
 
+// No base URI is registered, so a relative link's family is the generic one
+// until it resolves.
 const ANSWERS: Array<[string, InternalLinkResolver, string, string]> = [
   ["resolved", async () => KAEL, "filled", "manuscript"],
-  ["unresolved", async () => null, "dashed", "file-plus"],
-  // Several documents carry the name: a link that leads somewhere, never drawn
-  // as one with nothing behind it.
-  ["ambiguous", async () => "ambiguous", "filled", "file"],
+  ["unresolved", async () => null, "dashed", "file"],
 ];
 
 describe("link resolution decorations", () => {

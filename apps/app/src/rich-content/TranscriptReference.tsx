@@ -3,9 +3,10 @@
  * navigation, never syntax alone.
  *
  * An exact `@` reference knows its document: its chip's family is its URI's,
- * and it is dashed once the document is gone. A syntax link (a wikilink, a
- * scheme URI) learns its state from the surface's own resolution cache, the
- * one its follows go through, so what it draws and what a click finds agree.
+ * and it is dashed once the document is gone. A syntax link (a Markdown link
+ * to a Context URI) learns its state from the surface's own resolution cache,
+ * the one its follows go through, so what it draws and what a click finds
+ * agree. `[[name]]` is text, never a link.
  */
 import { t } from "@lingui/core/macro";
 import {
@@ -38,8 +39,8 @@ import {
 } from "@/core/editor/links";
 
 /**
- * How the hosting surface follows a link written as syntax (a wikilink, a
- * scheme URI, a relative path) rather than an exact submitted reference.
+ * How the hosting surface follows a link written as syntax (a Context URI or
+ * a relative path) rather than an exact submitted reference.
  * `canFollow` depends only on the target and the surface's base URI, never on
  * loading, so a reference does not flicker between a link and text.
  */
@@ -120,12 +121,7 @@ export function TranscriptReference({
     : syntax && linkChip(syntax, answer);
   // The dashed outline says "nothing here yet" to the eye; this says it to a
   // screen reader, in the words the Editor's hint and the follow already use.
-  const missing =
-    chip?.state === "dashed"
-      ? syntax?.kind === "wikilink"
-        ? t`No document with this name yet`
-        : t`No document at that address`
-      : undefined;
+  const missing = chip?.state === "dashed" ? t`No document at that address` : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createLinkResolution,
   type InternalLinkResolver,
+  type LinkFollowOutcome,
   type LinkResolution,
   type LinkTarget,
 } from "@/core/editor/links";
@@ -24,14 +25,18 @@ const KAEL: ResolvedDocumentLink = {
   workId: null,
 };
 
-const target: LinkTarget = { kind: "wikilink", name: "Kael" };
+const target: LinkTarget = { kind: "scheme", uri: "manuscript://cast/Kael.md" };
 
 /** Everything the writer can observe, in the order it happened. */
 let events: string[];
+let outcomes: LinkFollowOutcome[];
 let resolution: LinkResolution;
 
 const reporter: FollowReporter = {
-  report: (outcome) => events.push(`report:${outcome.state}`),
+  report: (outcome) => {
+    events.push(`report:${outcome.state}`);
+    outcomes.push(outcome);
+  },
   clear: () => events.push("clear"),
 };
 
@@ -40,20 +45,17 @@ const open = async (document: { documentId: string }, gesture: string) => {
 };
 
 function follow(gesture: "current" | "new-tab" = "current", signal = new AbortController().signal) {
-  return followProjectLink({ target, gesture, resolution, open, reporter, signal, candidates });
+  return followProjectLink({ target, gesture, resolution, open, reporter, signal });
 }
 
-/** What the scope's index can prove the link matches; none unless a test says so. */
-let candidates: (target: LinkTarget) => readonly ResolvedDocumentLink[];
-
-function register(resolver: InternalLinkResolver) {
-  resolution.registerResolver(resolver);
+function register(resolver: InternalLinkResolver, baseUri: string | null = null) {
+  resolution.registerResolver(resolver, { baseUri });
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   events = [];
-  candidates = () => [];
+  outcomes = [];
   resolution = createLinkResolution();
 });
 
@@ -65,7 +67,7 @@ afterEach(() => {
 describe("followProjectLink", () => {
   it("opens a link already resolved for rendering and says nothing", async () => {
     register(async () => KAEL);
-    resolution.request(["[[Kael]]"]);
+    resolution.request(["manuscript://cast/Kael.md"]);
     await vi.advanceTimersByTimeAsync(0);
 
     await follow("new-tab");
@@ -89,57 +91,31 @@ describe("followProjectLink", () => {
     expect(events).toEqual(["report:checking", "clear", "open:doc-kael:current"]);
   });
 
-  it("reports a link nothing answers to as missing", async () => {
+  it("reports a link nothing answers to as missing, with the address it names", async () => {
     register(async () => null);
 
     await follow();
 
     expect(events).toEqual(["report:missing"]);
+    expect(outcomes).toEqual([{ state: "missing", target, address: "manuscript://cast/Kael.md" }]);
   });
 
-  it("reports a name several documents carry as ambiguous, with the candidates", async () => {
-    const kbKael: ResolvedDocumentLink = { ...KAEL, documentId: "doc-kb-kael", scheme: "kb" };
-    register(async () => "ambiguous");
-    candidates = () => [KAEL, kbKael];
-
-    await follow();
-
-    expect(events).toEqual(["report:ambiguous"]);
-  });
-
-  it("never reports a name the cache found ambiguous as missing", async () => {
-    // The index moved under the follow and no longer lists the candidates.
-    register(async () => "ambiguous");
-    candidates = () => [KAEL];
-
-    await follow();
-
-    expect(events).toEqual(["report:failed"]);
-  });
-
-  it("asks again on Try again instead of reading the stale ambiguous answer back", async () => {
-    const resolver = vi
-      .fn<InternalLinkResolver>()
-      .mockResolvedValueOnce("ambiguous")
-      .mockResolvedValueOnce(KAEL);
-    register(resolver);
-    candidates = () => [KAEL];
-    await follow();
-    expect(events).toEqual(["report:failed"]);
+  it("resolves a missing relative link's address against its holder, without the fragment", async () => {
+    register(async () => null, "manuscript://volume-2/chapter-1.md");
+    const relative: LinkTarget = { kind: "relative", path: "../cast/Lin Feng#intro" };
 
     await followProjectLink({
-      target,
+      target: relative,
       gesture: "current",
       resolution,
       open,
       reporter,
       signal: new AbortController().signal,
-      candidates,
-      reask: true,
     });
 
-    expect(resolver).toHaveBeenCalledTimes(2);
-    expect(events).toEqual(["report:failed", "clear", "open:doc-kael:current"]);
+    expect(outcomes).toEqual([
+      { state: "missing", target: relative, address: "manuscript://cast/Lin Feng" },
+    ]);
   });
 
   it("reports a request that could not be made as failed, not missing", async () => {
@@ -198,7 +174,6 @@ describe("followProjectLink", () => {
       open: destination,
       reporter,
       signal: controller.signal,
-      candidates,
     });
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();

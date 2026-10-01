@@ -26,7 +26,7 @@ import { installJsdomLayoutFallbacks } from "./jsdom-layout";
 
 export type StandaloneEditorOptions = Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "linkPicker"
 > & {
   content?: Content;
   /** What this lane adds on top of the canonical set — usually its own extension. */

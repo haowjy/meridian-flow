@@ -53,3 +53,56 @@ describe("serializeComposerDraft skill slugs", () => {
     ]);
   });
 });
+
+describe("serializeComposerDraft reference occurrences", () => {
+  const reference = (uri: string, label: string, displayText?: string) => ({
+    type: "composerReference",
+    attrs: {
+      reference: {
+        documentId: "01900000-0000-7000-8000-000000000001",
+        uri,
+        fileType: "markdown",
+        authority: { kind: "project", projectId: "01900000-0000-7000-8000-000000000002" },
+        label,
+        ...(displayText === undefined ? {} : { displayText }),
+        imageCapable: false,
+        upload: null,
+      },
+    },
+  });
+
+  it("spells a reference as a standard link to its canonical URI, which the model reads", () => {
+    const envelope = serializeComposerDraft({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Compare " },
+            reference("kb://characters/Lin Feng.md", "Lin Feng.md"),
+            { type: "text", text: " with " },
+            reference("manuscript://volume-1/chapter-1.md", "chapter-1.md", "the [first] chapter"),
+          ],
+        },
+      ],
+    });
+
+    expect(envelope.text).toBe(
+      "Compare [Lin Feng.md](<kb://characters/Lin Feng.md>) with [the \\[first\\] chapter](manuscript://volume-1/chapter-1.md)",
+    );
+    expect(envelope.blocks.filter((block) => block.type === "reference")).toEqual([
+      {
+        type: "reference",
+        text: "[Lin Feng.md](<kb://characters/Lin Feng.md>)",
+        documentId: "01900000-0000-7000-8000-000000000001",
+        uri: "kb://characters/Lin Feng.md",
+      },
+      {
+        type: "reference",
+        text: "[the \\[first\\] chapter](manuscript://volume-1/chapter-1.md)",
+        documentId: "01900000-0000-7000-8000-000000000001",
+        uri: "manuscript://volume-1/chapter-1.md",
+      },
+    ]);
+  });
+});

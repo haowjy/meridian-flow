@@ -17,6 +17,7 @@ export {
   stringifyBlock,
 } from "./helpers.js";
 export { markdownCodec } from "./markdown/index.js";
+export { formatMarkdownLink } from "./markdown/marks/link.js";
 export { remarkWikiLink } from "./markdown/wikilink.js";
 export { formatWikilink, wikilinkTarget } from "./markdown/wikilink-target.js";
 export { mdxCodec } from "./mdx/index.js";

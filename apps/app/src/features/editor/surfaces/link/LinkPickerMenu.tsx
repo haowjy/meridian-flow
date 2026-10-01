@@ -1,26 +1,27 @@
 /**
- * WikilinkMenu — the documents `[[` offers (§5.5, mockup 06 state D).
+ * LinkPickerMenu — the documents `[[` offers (§5.5, mockup 06 state D).
  *
  * Rows and nothing else: the physics are `SuggestionMenu`'s, shared with the
  * slash menu, so a writer meets both the same way. What this file decides is
- * what a row says — the document's name, where it lives, the alias that
- * matched, and the one row that links a page nobody has written yet.
+ * what a row says — the document's name, where it lives (so two documents with
+ * one name in different folders are told apart), the alias that matched, and
+ * the one row that links a page nobody has written yet.
  */
 
 import { t } from "@lingui/core/macro";
 import { FilePlus2, FileText } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-import { closedSuggestionMenu, type WikilinkMenuItem } from "@/core/completion";
-import { getWikilinkMenu } from "@/core/editor/extensions/wikilink";
+import { closedSuggestionMenu } from "@/core/completion";
+import { getLinkPickerMenu, type LinkPickerItem } from "@/core/editor/extensions/link-picker";
 
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 
 const NO_SUBSCRIPTION = () => () => {};
-const closed = () => closedSuggestionMenu<WikilinkMenuItem>();
+const closed = () => closedSuggestionMenu<LinkPickerItem>();
 
-export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
-  const menu = getWikilinkMenu(editor);
+export function LinkPickerMenu({ editor }: EditorChromeSurfaceProps) {
+  const menu = getLinkPickerMenu(editor);
   const snapshot = useSyncExternalStore(
     menu?.subscribe ?? NO_SUBSCRIPTION,
     () => menu?.snapshot() ?? closed(),
@@ -32,7 +33,7 @@ export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
     <SuggestionMenu
       editor={editor}
       typingElement={editor.view.dom}
-      id="wikilink-menu"
+      id="link-picker-menu"
       open={snapshot.open}
       label={snapshot.label}
       anchorRect={snapshot.anchorRect}
@@ -49,13 +50,13 @@ export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
           item.kind === "create" && index > 0 ? (
             <div className="my-1 border-border-subtle border-t" />
           ) : undefined,
-        content: <WikilinkRow item={item} />,
+        content: <LinkPickerRow item={item} />,
       }))}
     />
   );
 }
 
-function WikilinkRow({ item }: { item: WikilinkMenuItem }) {
+function LinkPickerRow({ item }: { item: LinkPickerItem }) {
   if (item.kind === "create") {
     return (
       <>
@@ -77,12 +78,7 @@ function WikilinkRow({ item }: { item: WikilinkMenuItem }) {
           <span className="text-ink-subtle"> {t`(also ${item.matchedAlias})`}</span>
         ) : null}
       </span>
-      <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">
-        {/* Two documents answering to one name resolve to neither, so telling
-            them apart by folder would not help: what the writer needs to know
-            is that this link will not land until one of them is renamed. */}
-        {item.ambiguous ? t`two documents share this name` : item.location}
-      </span>
+      <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">{item.location}</span>
     </>
   );
 }

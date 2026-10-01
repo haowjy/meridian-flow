@@ -2,16 +2,14 @@
  * What an internal link points at, right now.
  *
  * Resolution is per-request and never persisted (law 9): an LLM emits
- * `[[The Second Gate]]` with no extra attributes, and whether that names a
- * document is a question about the project this minute, not a fact about the
- * mark. So the document holds the spelling and this holds the answer, keyed by
+ * `[The Second Gate](the-second-gate.md)` with no extra attributes, and
+ * whether a document is at that address is a question about the project this
+ * minute, not a fact about the mark. So the document holds the spelling and this holds the answer, keyed by
  * the classifier's own spelling of the href — two ways of writing one target
  * share an entry, and a second normalizer never appears.
  *
  * Unresolved is a normal, rendered state, not an error: serial writers link
- * chapters and characters before they exist. Ambiguous is not unresolved:
- * several documents carry the name, so the link is drawn as one that leads
- * somewhere, and the follow lists them. A FAILED request is a different thing
+ * chapters and characters before they exist. A FAILED request is a different thing
  * entirely and caches nothing, because a link the editor could not ask about
  * must never be drawn as a link that does not exist.
  *
@@ -47,19 +45,14 @@ import {
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   | { state: "resolved"; document: ResolvedDocumentLink }
-  | { state: "unresolved"; document: null }
-  | { state: "ambiguous"; document: null };
+  | { state: "unresolved"; document: null };
 
 /**
- * Asks the project about one internal target. A document is the answer;
- * `"ambiguous"` says several matched and the resolver can prove it, which
- * resolves to no document rather than to a guess; null says nothing matched
- * (or several did and only the server knows, which cannot tell the two
- * apart). Throwing is the other outcome: the question could not be asked.
+ * Asks the project about one internal target. A document is the answer; null
+ * says nothing is at that address. Throwing is the other outcome: the
+ * question could not be asked.
  */
-export type InternalLinkResolver = (
-  target: LinkTarget,
-) => Promise<ResolvedDocumentLink | "ambiguous" | null>;
+export type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
 
 export type LinkResolution = {
   subscribe: (listener: () => void) => () => void;
@@ -85,12 +78,8 @@ export type LinkResolution = {
    * previous failure is retried rather than remembered. A registration landing
    * while this waits asks the question again in the new generation rather than
    * answering null; only unregistering (or destroying) the port does that.
-   *
-   * `reask` is a writer's Try again: this one href's settled answer is asked
-   * again rather than returned. It is a question, not an invalidation; every
-   * other answer stands.
    */
-  resolve: (href: string, options?: { reask?: boolean }) => Promise<LinkResolutionEntry | null>;
+  resolve: (href: string) => Promise<LinkResolutionEntry | null>;
   /**
    * Registers the port and starts a generation with it. Every answer and every
    * failure the previous one produced is gone at that moment, which is what
@@ -107,7 +96,6 @@ export type LinkResolution = {
 
 const PENDING: LinkResolutionEntry = Object.freeze({ state: "pending", document: null });
 const UNRESOLVED: LinkResolutionEntry = Object.freeze({ state: "unresolved", document: null });
-const AMBIGUOUS: LinkResolutionEntry = Object.freeze({ state: "ambiguous", document: null });
 
 /**
  * How many questions are in flight at once. A chapter can carry dozens of
@@ -191,14 +179,7 @@ export function createLinkResolution(): LinkResolution {
       void generation
         .resolver(request.target)
         .then((answer) =>
-          settle(
-            request,
-            answer === "ambiguous"
-              ? AMBIGUOUS
-              : answer
-                ? { state: "resolved", document: answer }
-                : UNRESOLVED,
-          ),
+          settle(request, answer ? { state: "resolved", document: answer } : UNRESOLVED),
         )
         .catch(() => settle(request, null))
         .finally(() => {
@@ -305,16 +286,13 @@ export function createLinkResolution(): LinkResolution {
       if (asked) publish();
     },
 
-    async resolve(href, options) {
+    async resolve(href) {
       const generation = current;
       if (!generation) return null;
       const internal = internalHref(href);
       if (!internal) return null;
       const known = generation.answers.get(internal.key);
-      if (known && known.state !== "pending") {
-        if (!options?.reask) return known;
-        generation.answers.delete(internal.key);
-      }
+      if (known && known.state !== "pending") return known;
       // A click is the writer asking again, so a failure is worth retrying.
       generation.failed.delete(internal.key);
       return askAwaited(generation, internal.key, internal.target);

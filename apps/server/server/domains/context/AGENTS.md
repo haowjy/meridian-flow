@@ -61,7 +61,7 @@ Composer reference removal never calls the separate upload-delete route.
 
 Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. This does not change
-wikilink resolution. Every successful namespace claim consumes the exact old
+link resolution. Every successful namespace claim consumes the exact old
 alias in the same transaction; source provisioning and hidden manifests are not
 path claims.
 
@@ -78,6 +78,7 @@ Routes authenticate and translate transport only; catalog transaction and replay
 policy live in the context domain.
 
 Internal document links resolve through the same domain at
-`POST /api/projects/[projectId]/links/resolve`. The route accepts a discriminated
-wikilink, scheme, or relative target and returns `{ document: null }` for both
-misses and ambiguity.
+`POST /api/projects/[projectId]/links/resolve`. The route accepts a scheme or
+relative target (a standard Markdown link's destination; there are no
+wikilinks), resolves it through `resolveDocumentHref`, and returns the one
+document at that address or `{ document: null }`.

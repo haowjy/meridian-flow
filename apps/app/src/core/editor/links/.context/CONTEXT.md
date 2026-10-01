@@ -6,7 +6,6 @@ Reference depth. Read [`AGENTS.md`](../AGENTS.md) first.
 
 ```ts
 export type LinkTarget =
-  | { kind: "wikilink"; name: string }   // [[The Second Gate]]
   | { kind: "scheme"; uri: string }      // manuscript://…, scratch://…
   | { kind: "relative"; path: string }   // chapter-213.md, ../notes/kael.md
   | { kind: "external"; url: string };   // http, https, mailto
@@ -15,30 +14,34 @@ classifyLinkTarget(href: string): LinkTarget | null
 documentLinkTarget(target: LinkTarget, baseUri: string): DocumentLinkTarget | null
 normalizeLinkHref(input: string): string | null
 linkTargetHref(target: LinkTarget): string
+linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
 ```
 
-The three internal kinds line up one-for-one with `DocumentLinkTarget` in
+There are no wikilinks: `[[name]]` is text wherever it appears. The two
+internal kinds line up one-for-one with `DocumentLinkTarget` in
 `@meridian/contracts/protocol`, which is what `POST /api/projects/:projectId/
 links/resolve` takes. `baseUri` is the URI of the document holding the link;
-only `relative` needs it and only the caller knows it.
+only `relative` needs it and only the caller knows it. `linkTargetAddress`
+resolves either kind to its canonical Context URI through `resolveDocumentHref`
+(`@meridian/contracts`), the one href module both resolvers use;
+`link-address.ts` also holds the filename rule (`documentFileName`) and the
+address of a new document beside its holder (`siblingDocumentAddress`).
 
 Two directions, one fence. `classifyLinkTarget` reads an href already in the
 document — from the markdown parser, an LLM, or this module — and asks what it
 is. `normalizeLinkHref` reads what a writer typed and asks what to store; the
-one thing it adds is the missing `https://`, last, so a wikilink, a scheme URI,
-and a relative path keep their own meaning. The difference shows on a bare
+one thing it adds is the missing `https://`, last, so a Context URI and a
+relative path keep their own meaning. The difference shows on a bare
 hostname: `example.com` in an href is a path (markdown never adds a scheme),
 and `example.com` in the form is a website.
 
 | href | classify | normalize |
 |---|---|---|
-| `[[The Second Gate]]` | wikilink | `[[The Second Gate]]` |
-| `[[ Warden Ilsever ]]` | wikilink | `[[Warden Ilsever]]` |
-| `[[Kael\|the warden]]` | null | null (an href is destination-only; display text is stored in linked prose) |
 | `manuscript://appendix/charter` | scheme | unchanged |
 | `scratch://@revision-pass/notes.md` | scheme | unchanged |
 | `chapter-213.md`, `../notes/kael.md` | relative | unchanged |
 | `example.com` | relative | `https://example.com` |
+| `/chapter.md` | relative (resolves to nothing) | null (there is no project root) |
 | `https://…`, `mailto:…`, `//host/p` | external | unchanged (`//` gains `https:`) |
 | `javascript:`, `data:`, `ftp://` | null | null |
 
@@ -112,9 +115,7 @@ type InternalLinkNavigator = (request: {
 }) => void;
 getLinkSurface(editor)?.registerNavigator(navigate);      // returns an unregister
 
-type InternalLinkResolver = (
-  target: LinkTarget,
-) => Promise<ResolvedDocumentLink | "ambiguous" | null>;
+type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
 getLinkResolution(editor)?.registerResolver(resolve);     // returns an unregister
 ```
 
@@ -129,29 +130,18 @@ so its Close, Cancel, and Try again reach the follower through
 owns what is shown. With nothing registered, `dismissFollow()` just clears.
 
 `createLinkResolution` keys answers by `linkTargetHref(target)` — the
-classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
-ask once between them. Four states are answers (`pending`, `resolved`,
-`unresolved`, `ambiguous`) and a fifth outcome is not: a request that THROWS
-caches nothing, and the link draws as a filled chip in its own family, because
-a link the editor could not ask about must never be drawn as a link that does
-not exist.
-
-Ambiguity resolves to no document rather than to a guess, and it is not
-unresolved: `unresolved` draws as "nothing here yet", which is false of a name
-several documents carry. The port answers `"ambiguous"` when it can prove
-several matches (the app's resolver does from a complete local index); null
-covers "nothing matched" and also "several did" when only the server could
-answer, because the server cannot tell the two apart. The candidates live
-outside this module: the `[[` menu offers every row a name matches before the
-link is written, and the app's follower reports `ambiguous` with them
-(`LinkFollowOutcome`).
+classifier's own spelling. Three states are answers (`pending`, `resolved`,
+`unresolved`) and a fourth outcome is not: a request that THROWS caches
+nothing, and the link draws as a filled chip in its own family, because a link
+the editor could not ask about must never be drawn as a link that does not
+exist. Addresses are unique, so there is no "several documents" state: a link
+names one document or none.
 
 ### A registration is a generation
 
 `registerResolver` is the whole invalidation mechanism; there is no second verb
-that drops answers. `resolve(href, { reask: true })` is a writer's Try again on
-one href, not an invalidation: it asks that question again and leaves every
-other answer alone. Registering starts a generation, and that generation owns
+that drops answers. A writer's Try again follows a failed link, and a failure
+caches nothing, so it is simply asked again. Registering starts a generation, and that generation owns
 everything true of it:
 
 | It owns | Which means |
@@ -167,7 +157,7 @@ not hold:
   null and touches nothing live. It cannot settle the promise a question asked
   AFTER the change is waiting on. A store that looked its waiter up by href
   instead answered the new question null while the cache held the right
-  document, so the follow said nothing carries that name.
+  document, so the follow said nothing was at that address.
 - An abandoned generation's promises decrement their own counter, so they never
   admit work into the live one and the live counter never goes negative. A
   shared counter reset at invalidation admitted twice the limit and then drifted
@@ -194,12 +184,13 @@ not an exotic one.
 
 ### Server authority
 
-All five canonical Context schemes resolve through the same server port. Wiki
-names search project/personal content plus the selected Work/no-Work, not other
-Works. An explicit canonical Work slug may navigate to that Work in the same
-project; contextual scratch/uploads use the host's selected Work and `@/` is
-explicit No Work. The server gets personal scope from authenticated identity.
-There is no legacy `work://` adapter or client-side title-search fallback.
+All canonical Context schemes resolve through the same server port, by
+address only: the exact path, or the path with its final extension omitted
+when exactly one document fits (`matchDocumentPath`). An explicit canonical
+Work slug may navigate to that Work in the same project; contextual
+scratch/uploads use the host's selected Work and `@/` is explicit No Work. The
+server gets personal scope from authenticated identity. Nothing searches by
+name or title.
 Submitted transcript `(documentId, uri)` authority remains separate from syntax
 lookup; rendering a title does not adopt it as an attachment.
 
@@ -233,8 +224,9 @@ requester per surface asks about the whole watched set in one microtask-
 coalesced `request()` on mount and on every publish, and each link only reads
 its answer. Asking per link costs links × publishes.
 
-Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
-zero extra attributes, and no peer ever receives a resolution.
+Nothing here is stored. Law 9 is the reason: an LLM's
+`[Chapter 214](chapter-214.md)` needs zero extra attributes, and no peer ever
+receives a resolution.
 
 ## Which chip a link draws
 
@@ -246,11 +238,12 @@ surface draws from it: the transcript and the composer on their own element
 | Answer | Chip | Icon |
 |---|---|---|
 | resolved | filled | the resolved document's scheme |
-| unresolved | dashed | the target's own family; a wikilink gets `file-plus` |
-| pending, ambiguous, failed, not asked | filled | the target's own family; a wikilink gets `file` |
+| unresolved | dashed | the target's own family |
+| pending, failed, not asked | filled | the target's own family |
 
 A scheme URI knows its family from its prefix and a relative path from the
-holder's `baseUri` (the registration states it: `registerResolver(resolve,
+holder's `baseUri`. The one link that cannot know it yet is a relative path
+before the holder's URI arrives; it draws the generic `file` icon (the registration states it: `registerResolver(resolve,
 { baseUri })`, read back as `resolution.baseUri`), so neither waits on an
 answer for its icon. An exact
 reference (`referenceChip`) is its URI's family, dashed once its document is
@@ -310,7 +303,7 @@ applying peer writes.
 
 Internal links have no browser `href`. Their validated stored target travels in
 `data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
-codec (including wikilink aliases). The app's click handler reads the semantic
+codec (`[label](destination)`). The app's click handler reads the semantic
 target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and

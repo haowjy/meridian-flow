@@ -2,21 +2,16 @@
  * Every document a link in this scope can reach, from the trees the app already
  * has.
  *
- * One index answers both halves of a link question. "What can `[[…]]` name?"
- * uses the server resolver's candidate catalogs (`linkableCatalogScopes`): the
- * project's manuscript, kb, and Unfiled, the writer's user files, and the
- * current Work's Scratch and Uploads, where no Work means the No Work row.
- * "What is `./cast.md` relative to?" uses the URI of the document holding it
- * from that same set.
+ * One index answers three link questions: which documents the `[[` picker
+ * offers (the project's manuscript, kb, and Unfiled, the writer's user files,
+ * and the current Work's Scratch and Uploads, where no Work means the No Work
+ * row), what the document holding a link is called (its address, which a
+ * relative link resolves against), and which document is at an address, so a
+ * link the index can answer costs no request. A URI naming another Work's
+ * Scratch is outside it and always asks the server.
  *
- * The candidate set is the resolver's, not the tree panel's: a row for anything
- * the resolver cannot match is a row that inserts a link nobody can follow, and
- * withholding one it CAN match is the menu disagreeing with the link. It covers
- * names and contextual URIs. A URI naming another Work's Scratch is outside it,
- * and always asks the server.
- *
- * Titles are filenames without their extension; aliases remain alternate
- * resolver names.
+ * Titles are filenames without their extension; aliases are alternate names
+ * the picker's search matches.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -26,7 +21,7 @@
  * remember to poke a cache it does not own.
  *
  * Cached client-side and free: these are the same queries the context tree
- * already pays for, so opening the menu costs no request.
+ * already pays for, so opening the picker costs no request.
  */
 
 import { useMemo, useRef } from "react";
@@ -34,16 +29,18 @@ import { useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
-import type { WikilinkDocument } from "@/core/completion";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
 
-export type LinkableDocument = WikilinkDocument & {
-  /**
-   * The document's URI in the resolver's spelling, which is what a relative
-   * link in it resolves against.
-   */
+export type LinkableDocument = {
+  /** Persisted identity, stable across reorder, move, and rename. */
+  documentId: string;
+  /** The filename without its extension: the picker's label. */
+  title: string;
+  /** Where it lives, for the picker row's quiet second column. */
+  location: string;
+  /** Its canonical Context URI: its address, and what a relative link in it resolves against. */
   uri: string;
   filename: string;
   aliases: readonly string[];
@@ -59,7 +56,7 @@ export type LinkableDocumentIndex = {
    * different one.
    */
   readonly revision: string;
-  /** All server candidate scopes are represented, so uniqueness can be proven locally. */
+  /** Every catalog has loaded, so an address it holds no document at can be left to the server. */
   readonly complete: boolean;
 };
 
@@ -88,7 +85,7 @@ export function useLinkableDocuments({
 
   return useMemo(() => {
     const documents = [
-      // The manuscript first, so a title both trees carry keeps the chapter's
+      // The manuscript first, so a name both trees carry keeps the chapter's
       // row above the note's: ranking ties hold the order they arrive in.
       ...(manuscript ? linkableDocuments(manuscript, [], null) : []),
       ...(knowledgeBase ? linkableDocuments(knowledgeBase, [schemeLabel("kb")], null) : []),
@@ -150,7 +147,7 @@ function catalogRevision(documents: readonly LinkableDocument[]): string {
  *
  * `root` names the tree a row came out of. The manuscript is where a chapter
  * lives and needs no label; a scratch note says so, because "where it lives" is
- * the only thing separating two documents whose titles look alike.
+ * the only thing separating two documents whose names look alike.
  */
 function linkableDocuments(
   catalog: CatalogContextView,

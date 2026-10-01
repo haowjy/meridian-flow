@@ -3,6 +3,7 @@ import {
   type ContextUriScheme,
   documentTitleFromUri,
   isProjectScopedScheme,
+  matchDocumentPath,
   parseContextUri,
   resolveDocumentHref,
 } from "@meridian/contracts";
@@ -47,57 +48,30 @@ export function createDocumentLinkResolver({
     } else scope = await currentScope(input);
     return scope ? { scope, scheme, path } : null;
   }
-  async function files(scope: CatalogScope) {
-    return (await catalog.snapshot(scope)).entries.filter(
-      (entry): entry is CatalogFileEntry => entry.kind === "file",
-    );
-  }
   return {
     async resolve(input) {
       const { target } = input;
-      if (target.kind === "wikilink") {
-        const name = target.name.trim().toLowerCase();
-        if (!name || /[\r\n[\]|]/.test(name)) return null;
-        const current = await currentScope(input);
-        if (!current) return null;
-        const scopes: CatalogScope[] = [
-          { kind: "project", projectId: input.projectId },
-          { kind: "user", userId: input.userId },
-          current,
-        ];
-        const candidates = (await Promise.all(scopes.map(files))).flat();
-        return unique(
-          candidates.filter((file) =>
-            [file.name, documentTitleFromUri(file.uri), ...file.aliases].some(
-              (alias) => alias?.trim().toLowerCase() === name,
-            ),
-          ),
-        );
-      }
       const resolved =
         target.kind === "scheme"
           ? resolveDocumentHref(target.uri, null)
           : resolveDocumentHref(target.path, target.baseUri);
       if (!resolved) return null;
-      const base = await location(input, resolved.uri);
-      if (!base) return null;
-      const { path } = base;
-      return unique(
-        (await files(base.scope)).filter((file) => {
-          const parsed = parseContextUri(file.uri);
-          return (
-            parsed.ok && parsed.value.scheme === base.scheme && pathMatches(parsed.value.path, path)
-          );
-        }),
-      );
+      const address = await location(input, resolved.uri);
+      if (!address) return null;
+      const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
+        if (entry.kind !== "file") return [];
+        const parsed = parseContextUri(entry.uri);
+        return parsed.ok && parsed.value.scheme === address.scheme
+          ? [{ entry, path: parsed.value.path }]
+          : [];
+      });
+      const match = matchDocumentPath(files, address.path, (file) => file.path);
+      return match ? resolvedLink(match.entry) : null;
     },
   };
 }
 
-function unique(files: readonly CatalogFileEntry[]): ResolvedDocumentLink | null {
-  if (files.length !== 1) return null;
-  const file = files[0];
-  if (!file) return null;
+function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok) return null;
   return {
@@ -108,12 +82,4 @@ function unique(files: readonly CatalogFileEntry[]): ResolvedDocumentLink | null
     uri: file.uri,
     workId: file.scope.kind === "work" ? file.scope.workId : null,
   };
-}
-
-function pathMatches(candidate: string, requested: string): boolean {
-  return (
-    candidate === requested ||
-    (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
-      candidate.slice(0, candidate.lastIndexOf(".")) === requested)
-  );
 }

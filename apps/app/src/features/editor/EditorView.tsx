@@ -324,19 +324,32 @@ function ActiveSessionEditorView({
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  const { documents: wikilinkDocuments } = linkableDocuments;
-  const wikilinkCatalog = useCallback(() => {
+  // This document's own address, from the same index the picker offers rows
+  // from: what its relative links resolve against and what a link inserted
+  // into it is spelled relative to. Null until the tree carrying it arrives,
+  // or while it has no address yet, which spells full URIs.
+  const holderUri = useMemo(
+    () =>
+      linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
+      null,
+    [linkableDocuments, documentId],
+  );
+  const { documents: linkPickerDocuments } = linkableDocuments;
+  const linkPickerCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: wikilinkDocuments };
-  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+    return { label: t`Link a document`, documents: linkPickerDocuments, holderUri };
+  }, [effectiveEditable, holderUri, identity.schemaType, linkPickerDocuments, projectId]);
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? workId : null,
     t`Reference a file`,
   );
   const atReferenceCatalog = useCallback(
-    () => (identity.schemaType === "document" && effectiveEditable ? sharedReferenceCatalog : null),
-    [effectiveEditable, identity.schemaType, sharedReferenceCatalog],
+    () =>
+      identity.schemaType === "document" && effectiveEditable && sharedReferenceCatalog
+        ? { ...sharedReferenceCatalog, holderUri }
+        : null,
+    [effectiveEditable, holderUri, identity.schemaType, sharedReferenceCatalog],
   );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
@@ -358,7 +371,7 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     slashCommandCatalog,
-    wikilinkCatalog,
+    linkPickerCatalog,
     atReferenceCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
@@ -473,7 +486,7 @@ function ActiveSessionEditorView({
           mounts through the host above. */}
         <ProjectLinkRuntime
           editor={editor}
-          documentId={documentId}
+          baseUri={holderUri}
           index={linkableDocuments}
           active={active}
         />

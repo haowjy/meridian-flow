@@ -109,13 +109,13 @@ async function settle() {
 }
 
 describe("TranscriptReference", () => {
-  it("hands a syntax wikilink to the surface's follower", () => {
-    const reference = render("[[Kael]]", "Kael");
+  it("hands a Context URI link to the surface's follower", () => {
+    const reference = render("kb://characters/Kael.md", "Kael");
 
     expect(reference.getAttribute("role")).toBe("link");
     act(() => reference.click());
 
-    expect(follow).toHaveBeenCalledWith({ kind: "wikilink", name: "Kael" });
+    expect(follow).toHaveBeenCalledWith({ kind: "scheme", uri: "kb://characters/Kael.md" });
   });
 
   it("renders a link the surface can never follow as plain text with its href", () => {
@@ -129,31 +129,22 @@ describe("TranscriptReference", () => {
     expect(follow).not.toHaveBeenCalled();
   });
 
-  it("draws a resolved name in the family of the document it found", async () => {
+  it("draws a resolved link in the family of the document it found", async () => {
     resolution.registerResolver(async () => KB_KAEL);
-    const reference = render("[[Kael]]", "Kael");
+    const reference = render("manuscript://Kael.md", "Kael");
     await settle();
 
     expect(chip(reference)).toEqual({ state: "filled", icon: "kb" });
   });
 
-  it("dashes a name nothing carries yet, with the create icon, and still follows it", async () => {
+  it("dashes an address nothing is at yet, in its own family, and still follows it", async () => {
     resolution.registerResolver(async () => null);
-    const reference = render("[[Ilsever]]", "Ilsever");
+    const reference = render("kb://characters/Ilsever.md", "Ilsever");
     await settle();
 
-    expect(chip(reference)).toEqual({ state: "dashed", icon: "file-plus" });
+    expect(chip(reference)).toEqual({ state: "dashed", icon: "kb" });
     expect(reference.getAttribute("aria-disabled")).toBe("false");
-    expect(reference.getAttribute("aria-description")).toBe("No document with this name yet");
-  });
-
-  it("draws a name several documents carry filled, never dashed", async () => {
-    resolution.registerResolver(async () => "ambiguous");
-    const reference = render("[[Twin]]", "Twin");
-    await settle();
-
-    expect(chip(reference)).toEqual({ state: "filled", icon: "file" });
-    expect(reference.hasAttribute("aria-description")).toBe(false);
+    expect(reference.getAttribute("aria-description")).toBe("No document at that address");
   });
 
   it("shows an address's family while it is still being asked", async () => {
@@ -166,7 +157,7 @@ describe("TranscriptReference", () => {
 
   it("asks again when the scope registers a new generation", async () => {
     resolution.registerResolver(async () => null);
-    const reference = render("[[Kael]]", "Kael");
+    const reference = render("kb://characters/Kael.md", "Kael");
     await settle();
     expect(chip(reference).state).toBe("dashed");
 
@@ -186,8 +177,12 @@ describe("TranscriptReference", () => {
       root.render(
         <StrictMode>
           <TranscriptLinkNavigationContext.Provider value={navigation}>
-            <TranscriptReference data-target-href="[[Kael]]">Kael</TranscriptReference>
-            <TranscriptReference data-target-href="[[Kael]]">the warden</TranscriptReference>
+            <TranscriptReference data-target-href="kb://characters/Kael.md">
+              Kael
+            </TranscriptReference>
+            <TranscriptReference data-target-href="kb://characters/Kael.md">
+              the warden
+            </TranscriptReference>
           </TranscriptLinkNavigationContext.Provider>
         </StrictMode>,
       ),

@@ -16,23 +16,17 @@ const KB_KAEL: ResolvedDocumentLink = {
   workId: null,
 };
 
-const wikilink: LinkTarget = { kind: "wikilink", name: "Kael" };
 const scratch: LinkTarget = { kind: "scheme", uri: "scratch://@revision-pass/notes.md" };
 const relative: LinkTarget = { kind: "relative", path: "../cast/Kael.md" };
 
 const resolved: LinkResolutionEntry = { state: "resolved", document: KB_KAEL };
 const unresolved: LinkResolutionEntry = { state: "unresolved", document: null };
-const ambiguous: LinkResolutionEntry = { state: "ambiguous", document: null };
 const pending: LinkResolutionEntry = { state: "pending", document: null };
 
 describe("linkChip", () => {
   it("shows the family of the document a link resolved to", () => {
-    expect(linkChip(wikilink, resolved)).toEqual({ state: "filled", icon: "kb" });
     expect(linkChip(scratch, resolved)).toEqual({ state: "filled", icon: "kb" });
-  });
-
-  it("dashes a name nothing carries and offers to create it", () => {
-    expect(linkChip(wikilink, unresolved)).toEqual({ state: "dashed", icon: "file-plus" });
+    expect(linkChip(relative, resolved)).toEqual({ state: "filled", icon: "kb" });
   });
 
   it("keeps an address's own family when nothing is there", () => {
@@ -43,13 +37,10 @@ describe("linkChip", () => {
     });
   });
 
-  it("never dashes a name several documents carry", () => {
-    expect(linkChip(wikilink, ambiguous)).toEqual({ state: "filled", icon: "file" });
-  });
-
-  it("draws an unsettled name filled and generic: asking, failed, or not asked", () => {
-    expect(linkChip(wikilink, pending)).toEqual({ state: "filled", icon: "file" });
-    expect(linkChip(wikilink, null)).toEqual({ state: "filled", icon: "file" });
+  it("draws a relative link with no holder yet generic, dashed only once nothing is there", () => {
+    expect(linkChip(relative, pending)).toEqual({ state: "filled", icon: "file" });
+    expect(linkChip(relative, null)).toEqual({ state: "filled", icon: "file" });
+    expect(linkChip(relative, unresolved)).toEqual({ state: "dashed", icon: "file" });
   });
 
   it("knows an address's family before it resolves", () => {

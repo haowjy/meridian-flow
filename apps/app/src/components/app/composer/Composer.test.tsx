@@ -175,7 +175,6 @@ describe("Composer references", () => {
       fileType: "markdown",
       authority: { kind: "project", projectId: "01900000-0000-7000-8000-000000000002" },
       label: "Kael",
-      spelling: "[[Kael]]",
       imageCapable: false,
       upload: null,
     } as unknown as ComposerReferenceAttrs;
