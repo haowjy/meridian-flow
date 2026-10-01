@@ -46,20 +46,22 @@ mutation result.
 `server/lib/process-shutdown.ts` owns SIGTERM/SIGINT sequencing and the only
 application `process.exit`. The stage order is **websocket-admission** (close
 thread and Yjs peers with 1012), **polling-loops** (stop loops and drain for
-up to 3 s), **http-drain** (stop admission and wait up to 10 s), **websocket-drain** (Yjs
-checkpoint and persistence queue while Postgres is open), **database-close**,
+up to 3 s), **application-drain** (stop new runner and handoff work, then give
+in-flight reply settlement up to 10 s), **http-drain** (stop admission and wait
+up to 10 s), **websocket-drain** (Yjs checkpoint and persistence queue while Postgres is open), **database-close**,
 then bounded observability flush. Stage timeout/failure emits an incomplete or
 failed event and proceeds to later stages; the shared 25 s deadline bounds
 process exit. srvx closes its listener independently and keeps its force-close
-fallback at 29 s, after the application deadline. In-flight turns get no special
-shutdown handling; process loss (deploy, crash, OOM, SIGKILL) is handled by a
-bounded boot and 20 s periodic sweep. The sweep scans assistant `pending`,
-`streaming`, and `waiting_interrupt` turns, acquires the same per-thread Postgres
-run claim as active runners, re-reads the turn under that claim, and settles
-only unowned turns. A live owner, including a runner paused on an interrupt,
-keeps its claim and is skipped for a later sweep. A dead paused turn is settled
-with its existing `interrupt.expired` and `turn.error` events so the ask block
-closes through normal client handling.
+fallback at 29 s, after the application deadline. The application drain calls
+`beginShutdown` on runners and handoff briefs, then waits for active work and
+settles aborted replies with reason `shutdown` while Postgres remains open.
+
+Crash loss (OOM, SIGKILL, or an expired drain) is repaired by the orphan-repair
+lane at startup and every 30 s. It scans assistant `pending`, `streaming`, and
+`waiting_interrupt` turns, acquires the same per-thread Postgres run claim and
+thread lock as active runners, and skips a turn whose owner still holds its
+claim. Unowned turns are settled through `finalizeExecution` with reason
+`orphaned`.
 
 ## Project route surface
 
