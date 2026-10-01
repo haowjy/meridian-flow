@@ -29,6 +29,8 @@ export type ChatScreenProps = {
   activeWork: Work | null;
   availableWorks: readonly Work[];
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
+  /** False while the host keeps the chat mounted but hidden. */
+  visible?: boolean;
 };
 
 /** Renders the resolved thread, with parent context when it is a subagent. */
@@ -38,6 +40,7 @@ export function ChatScreen({
   activeWork,
   availableWorks,
   onOpenContextTarget,
+  visible = true,
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
   const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
@@ -72,6 +75,7 @@ export function ChatScreen({
       projectThreads={projectThreads ?? []}
       onSelectThread={openChat}
       onOpenContextTarget={onOpenContextTarget}
+      visible={visible}
     />
   );
 }
@@ -84,6 +88,7 @@ function ChatScreenLoaded({
   projectThreads,
   onSelectThread,
   onOpenContextTarget,
+  visible,
 }: {
   projectId: string;
   threadId: string;
@@ -92,6 +97,7 @@ function ChatScreenLoaded({
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
+  visible: boolean;
 }) {
   const {
     activateProjection,
@@ -156,6 +162,7 @@ function ChatScreenLoaded({
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
             activateProjection={activateProjection}
+            active={visible}
             composerStrip={
               activeWork && isWorkArchived(activeWork) ? (
                 <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />

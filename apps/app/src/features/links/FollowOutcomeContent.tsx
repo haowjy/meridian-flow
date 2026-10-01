@@ -77,7 +77,7 @@ export function FollowOutcomeContent({
         )}
       </DialogDescription>
 
-      <p className="rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
+      <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
         {linkTargetHref(target)}
       </p>
 

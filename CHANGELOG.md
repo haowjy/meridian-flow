@@ -7,7 +7,8 @@
 
 ## [Unreleased]
 
-- Links: the `[[` menu under a named Work now offers Unfiled documents too, with no Work selected it offers Scratch notes and Uploads, and clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
+- Links in chat: a link with nothing behind it now says so and offers to create the document, which opens in the Editor in the chat's Work. A link that could not be checked offers Try again, and Cancel stops a slow one. Relative links in chat are plain text.
+- Links: the `[[` menu under a named Work now offers Unfiled documents. With no Work selected, it offers Scratch notes and Uploads. Clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
 - Create Work and Create project open as dialogs over their list; Back after creating returns to the list.

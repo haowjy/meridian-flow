@@ -19,7 +19,6 @@ import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
   getChatSubmissionEpoch,
@@ -29,18 +28,27 @@ import {
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
+import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
-import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import {
+  type LinkDestination,
+  LinkFollowDialog,
+  useFollowOutcomeState,
+  useLinkableDocuments,
+  useLinkFollower,
+} from "@/features/links";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
+import {
+  type TranscriptLinkNavigation,
+  TranscriptLinkNavigationContext,
+} from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -95,6 +103,8 @@ export type ChatViewProps = {
   activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
+  /** False while the chat is mounted but hidden (collapsed dock, Settings). */
+  active?: boolean;
 };
 
 export function ChatView({
@@ -108,6 +118,7 @@ export function ChatView({
   historySettled,
   activateProjection,
   composerStrip,
+  active = true,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
@@ -293,39 +304,42 @@ export function ChatView({
     [controller],
   );
 
-  const transcriptNavigation = useRef<AbortController | null>(null);
-  useEffect(() => () => transcriptNavigation.current?.abort(), [projectId, activeWork?.id]);
-  const followTranscriptLink = useCallback(
-    async (target: LinkTarget) => {
-      if (target.kind === "relative") return;
-      const request = documentLinkTarget(target, "");
-      if (!request) return;
-      transcriptNavigation.current?.abort();
-      const attempt = new AbortController();
-      transcriptNavigation.current = attempt;
-      try {
-        const result = await resolveDocumentLink(
-          projectId,
-          {
-            workId: activeWork?.id,
-            target: request,
-          },
-          { signal: attempt.signal },
-        );
-        if (attempt.signal.aborted) return;
-        if (!result.document) {
-          announce(t`No document with this name yet`);
-          return;
-        }
-        await openReferenceDocument({
-          documentId: result.document.documentId,
-          disposition: "current",
-        });
-      } catch {
-        if (!attempt.signal.aborted) announceError(t`That link could not be checked`);
-      }
-    },
-    [projectId, activeWork?.id, openReferenceDocument],
+  // Links the model wrote follow through the app's one link procedure, scoped
+  // to the thread's Work. Until that Work is known the scope is pending: a
+  // click waits and shows checking, and is never answered as No Work.
+  const linkIndex = useLinkableDocuments(
+    activeWork ? { projectId, workId: activeWork.id } : { projectId: null, workId: null },
+  );
+  const linkScope = useMemo(
+    () => (activeWork ? { projectId, workId: activeWork.id, baseUri: null } : ("pending" as const)),
+    [activeWork, projectId],
+  );
+  // The Editor adopts the chat's Work, so the document opens where the model
+  // was working. The No Work row opens as explicit No Work, never as a Work id.
+  const linkWorkId = activeWork && !activeWork.isNoWork ? activeWork.id : null;
+  const openLinkedDocument = useCallback<LinkDestination>(
+    (document, gesture) =>
+      openReferenceDocument({
+        documentId: document.documentId,
+        workId: linkWorkId,
+        disposition: gesture === "new-tab" ? "background" : "current",
+      }),
+    [linkWorkId, openReferenceDocument],
+  );
+  const { outcome: linkOutcome, reporter: linkReporter } = useFollowOutcomeState();
+  const linkFollower = useLinkFollower({
+    scope: linkScope,
+    index: linkIndex,
+    active,
+    open: openLinkedDocument,
+    reporter: linkReporter,
+  });
+  const transcriptLinkNavigation = useMemo<TranscriptLinkNavigation>(
+    () => ({
+      follow: (target) => linkFollower.follow(target),
+      canFollow: linkFollower.canFollow,
+    }),
+    [linkFollower],
   );
 
   const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
@@ -350,7 +364,7 @@ export function ChatView({
   }
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={followTranscriptLink}>
+    <TranscriptLinkNavigationContext.Provider value={transcriptLinkNavigation}>
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
@@ -424,6 +438,19 @@ export function ChatView({
           </SubagentActivityProvider>
         </SubagentDisclosureProvider>
       </ChatSurface>
+      <LinkFollowDialog
+        outcome={linkOutcome}
+        projectId={projectId}
+        // Cancel and Escape while checking stop the follow; on any other
+        // outcome there is nothing left to stop.
+        onClose={() =>
+          linkOutcome?.state === "checking" ? linkFollower.cancel() : linkReporter.clear()
+        }
+        onRetry={() => {
+          if (linkOutcome) linkFollower.follow(linkOutcome.target);
+        }}
+        onOpen={(document) => openLinkedDocument(document, "current")}
+      />
     </TranscriptLinkNavigationContext.Provider>
   );
 }

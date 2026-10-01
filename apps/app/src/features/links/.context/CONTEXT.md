@@ -85,8 +85,41 @@ What aborts a follow (`useLinkFollower`):
 - a project or Work change, unmount, and `cancel()` abort everything in flight.
 
 A follower with no scope does nothing on `follow`: no resolver is registered, and
-asking anyway would report a failure about a question nobody could ask. The
-Editor's Cancel button does not call `cancel()` yet; it only closes the dialog.
+asking anyway would report a failure about a question nobody could ask. A
+`"pending"` scope is different: the project is known and the Work is not, so a
+click waits (`scopeReady`), shows checking 250ms after the click like any slow
+answer, and is asked once the real scope registers. A pending scope becoming
+known does not abort; a known Work changing does.
+
+Follows on one surface share its reporter, so each follow reports through an
+owned wrapper: `report` records the follow as the owner of the shown outcome,
+and `clear` is a no-op unless that follow still owns it. Without this, a
+background follow opening would wipe the pane follow's checking dialog, and a
+pane follow opening would wipe a background follow's missing offer before the
+writer could press Create. Aborting a follow takes down the outcome it owns;
+`cancel()` clears whatever is shown.
+
+Chat's Cancel and Escape during checking call `cancel()`. The Editor's Cancel
+button does not yet; it only closes the dialog.
+
+## Chat
+
+`ChatView` follows the links the model wrote through `useLinkFollower`:
+
+- the scope is the thread's Work with no base URI, `"pending"` until the thread
+  and Works snapshots name that Work (a No Work thread's Work is the No Work
+  row);
+- the follower owns its resolution cache, created once and never destroyed;
+- the index is `useLinkableDocuments` for that Work, asked only once it is
+  known;
+- the destination opens in the Editor with the thread's Work, and the No Work
+  row as explicit No Work rather than as a Work id;
+- `active` is the chat's visibility, so hiding the dock or Settings aborts a
+  follow; ChatView remounts per thread, so switching threads aborts too.
+
+`TranscriptLinkNavigationContext` hands transcript references `{ follow,
+canFollow }`. A relative link has no base in chat, so `canFollow` rejects it and
+the reference renders as plain text with its href as a tooltip.
 
 `gesture` comes from the
 click: `current` or `new-tab` (middle click, Ctrl/Cmd+click). The Editor maps
