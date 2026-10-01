@@ -452,6 +452,10 @@
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
   @apply text-base leading-relaxed md:text-[15px];
+  /* The composer is a raised, page-toned surface wherever it sits, so its
+     reference chips keep the page's fill (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 
 @utility user-turn {
@@ -523,6 +527,10 @@
    surface") without per-component forks. */
 @utility bg-chat-interactive {
   background-color: var(--color-chat-interactive, var(--color-background));
+  /* A raised surface is page-toned again, so a link chip on it takes the
+     page's fill back from the dock (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
    own whitespace, so this wrapper sets typography without `whitespace-pre-wrap`.
@@ -840,6 +848,10 @@
 @utility dock-surface {
   /* Chat interactive surfaces lift above the chrome (background = page tone). */
   --color-chat-interactive: var(--color-background);
+  /* The dock's own tone is the recess, so a link chip on it would vanish; it
+     takes the next step, and hovers one further toward the ink. */
+  --link-chip-fill: var(--color-sidebar-accent);
+  --link-chip-fill-hover: color-mix(in oklab, var(--color-sidebar-accent) 90%, var(--color-foreground));
   background-color: var(--color-sidebar);
   background-image: var(--background-image-dock-airlight);
 }

@@ -14,6 +14,12 @@
  * `--link-chip-icon` from `family-icons.ts`, injected once into the document
  * head, so the shapes are defined in one place.
  *
+ * The fill follows the surface: `--link-chip-fill` and `--link-chip-fill-hover`
+ * default to the recess and one step deeper, and a surface whose own tone is
+ * the recess (the chat dock) re-points them, the way `--color-chat-interactive`
+ * lifts bubbles. A surface never restyles the chip; it only says what its
+ * fill is.
+ *
  * External links keep their underline and wear the outbound arrow, the one
  * thing that tells a writer a link leaves the app before they press it.
  *
@@ -25,7 +31,7 @@
 :is([data-link-chip], a:has([data-link-chip-part])) {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background-color: var(--color-muted);
+  background-color: var(--link-chip-fill, var(--color-muted));
   color: inherit;
   padding: 0.0625em 0.375em;
   text-decoration: none;
@@ -47,20 +53,22 @@
   margin-right: 0.25em;
   background-color: var(--color-muted-foreground);
   content: "";
-  mask-image: var(--link-chip-icon);
+  /* A chip with no family image draws nothing rather than a solid block. */
+  mask-image: var(--link-chip-icon, linear-gradient(transparent, transparent));
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: 0.95em 0.95em;
 }
 
 /* Nothing at that address yet. Not an error: serial writers link chapters
-   before they write them, so this is quiet ink and an outline, never a
-   warning. */
+   before they write them, so this is an outline, never a warning. The dashed
+   border carries the quietness; the name stays at reading contrast (muted ink
+   is at least 4.5:1 on every surface a chip sits on, hovered or not). */
 :is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"])) {
   border-color: var(--color-border);
   border-style: dashed;
   background-color: transparent;
-  color: var(--color-ink-subtle);
+  color: var(--color-muted-foreground);
 }
 
 /* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
@@ -70,13 +78,13 @@
 
 /* Only a chip that goes somewhere answers the pointer. */
 :is([data-link-chip], a:has([data-link-chip-part]))[role="link"]:not([aria-disabled="true"]):hover {
-  background-color: var(--color-sidebar-accent);
+  background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
 }
 
 :is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"]))[role="link"]:not(
   [aria-disabled="true"]
 ):hover {
-  background-color: var(--color-muted);
+  background-color: var(--link-chip-fill, var(--color-muted));
 }
 
 /* The outline replaces prose links' focus glow, which would ring the box twice. */
