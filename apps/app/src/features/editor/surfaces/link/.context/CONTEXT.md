@@ -51,8 +51,8 @@ input rather than to editor prose.
 `FollowOutcomeContent` through the chrome host as an `EditorDialog`. The split
 is not cosmetic — the outcome can appear 250ms after the click, so it must be a
 kernel layer or the writer ends up with two live surfaces and two owners of
-Escape. Retry goes back out through the
-registered navigator, so the dialog needs no callback from the runtime.
+Escape. Close, Cancel, and Try again go back through the store's follow
+handlers, so the dialog needs no callback from the runtime.
 
 ## Why the hint reads the resolution store directly
 

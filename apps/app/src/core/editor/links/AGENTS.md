@@ -1,8 +1,9 @@
 # core/editor/links — the link system, headless
 
 What a link means, what pressing one does, and which surface is open. React
-lives in [`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md);
-nothing here renders.
+lives in [`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md),
+and following a link (scope, resolver, outcomes) is
+[`features/links/`](../../../features/links/AGENTS.md); nothing here renders.
 
 ## Mental model
 
