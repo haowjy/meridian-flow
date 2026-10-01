@@ -122,6 +122,14 @@ Documentation-only changes commit directly to `main`; never open a PR only for
 documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
 docs repository.
 
+Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
+or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
+<work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
+Don't defer this: if the integration branch is later squash-merged, none of
+its side-lane branches remain provable as merged by PR match or by ancestry,
+and only a human who tracked the actual history can confirm by hand that they
+are safe to remove.
+
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its
 path to spawns with `--task-dir`:

@@ -61,9 +61,11 @@ tools/dev/
 │   ├── tailscale-lifecycle.ts Stale route pruning + external route verification
 │   ├── tailscale-external-routes.ts  Pure policy: verify expected bindings
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
-│   ├── migration-state.ts     Expected vs applied migration hash drift detection
+│   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
+│   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
+│   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
 │   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
@@ -85,6 +87,8 @@ tools/dev/
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
 ├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
+├── migrate-db.ts              pnpm db:migrate (runner + SQL function sync)
+├── check-migration-history.ts pnpm db:migration-history -- --base <ref> (CI frozen-history check)
 ├── migration-lint.ts
 ├── project.json               Nx project; exposes the tools typecheck target
 └── tsconfig.json              Canonical strict TypeScript boundary for this directory
@@ -175,11 +179,12 @@ tools/dev/
 `pnpm dev:prune-worktrees` safely tears down merged worktree resources, one deliberate target at a time:
 
 - **Target-first cleanup:** `--target <value>` accepts a work id, worktree path, branch name, or PR number via `gh`.
+- **Manual evidence:** `--manually-verified <reason>` is available only with a direct targeted reference, never a PR number or `--auto`. It records operator-reconstructed evidence when squash history makes automatic proof impossible. It replaces only automatic eligibility discovery and remains bound to the planned local branch OID.
 - **Advanced batch cleanup:** `--auto` is not yet trusted for routine use and requires `--acknowledge-batch-risk`. The acknowledgement permits batch selection only; it bypasses no eligibility or readiness gate.
 - **Resolver** (`lib/worktree-cleanup.ts`) correlates work item ↔ task dir/worktree ↔ branch ↔ PR head branch. Ambiguous matches (multiple worktrees for a target, multiple work items for a worktree) refuse to resolve with candidate lists.
-- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Planning resolves the local branch ref OID. Explicit `--target` cleanup requires that exact OID to be either an ancestor of the base or the unique head OID of a merged PR matching the base, branch, and repository owner. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action.
-- **Target readiness.** `--target` refuses dirty or locked worktrees while planning and revalidates both gates before stopping dev and again immediately before database teardown. All refusal checks therefore finish before the first irreversible action.
-- **Auto readiness is separate.** `--auto` accepts exact merged-PR evidence only—ancestry alone is not stale evidence—and skips dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes whose cwd is inside the worktree. A missing tmux server/socket with no live listener means no session; an existing but unqueryable server/socket remains an inspection failure. These gates run during planning, before stopping dev, and again immediately before database teardown.
+- **Commit-bound eligibility.** The base branch is detected from `origin/HEAD` (fallback `main`), not hardcoded. Ancestry uses the fetched `origin/<base>` remote-tracking ref when present and falls back to the bare local branch when it is absent; fetch failure is non-fatal so offline cleanup can use existing refs. Planning resolves the local branch ref OID. Explicit `--target` cleanup requires that exact OID to be either an ancestor of the base, the unique head OID of a merged PR matching the base, branch, and repository owner, or covered by a non-empty `--manually-verified` reason on a direct target. Historical same-name PRs, ambiguous matches, GitHub discovery failures, and moved refs are safe refusals. The OID (and ancestry evidence when used) is revalidated immediately before every action against the same selected ancestry ref.
+- **Target readiness.** `--target` applies the same ownership and liveness inspection as `--auto`: dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes under the worktree all block planning. Registration, lock state, active work, and liveness are revalidated before stopping dev and again immediately before database teardown.
+- **Batch readiness.** `--auto` accepts exact merged-PR evidence only—ancestry alone is not stale evidence—and skips dirty or locked worktrees, active Meridian work items, live tmux dev sessions, and processes whose cwd is inside the worktree. A missing tmux server/socket with no live listener means no session; an existing but unqueryable server/socket remains an inspection failure. These gates run during planning, before stopping dev, and again immediately before database teardown.
 - **Process-location evidence is target-specific.** A readable cwd inside a worktree blocks that target. When cwd is unreadable, a cmdline reference to the worktree path blocks only that target; unattributed PIDs are surfaced once as a global caveat instead of poisoning every candidate. Residual risk: a process with an unreadable cwd inside the target and no target-path argument cannot be attributed, so `--auto` may miss that holder.
 - **Cleanup order:** targeted cleanup runs stop dev stack → drop DB → remove git worktree → mark linked Meridian work done → atomically delete the local ref with `git update-ref -d <ref> <plannedOid>`. Auto cleanup requires active work to be done before selection, so its reachable order omits the work-item action.
 - **Safety gates:** refuses primary worktree, current or locked worktrees, the base branch, branches that lack mode-appropriate commit evidence, detached worktrees, dirty targets, and auto targets with ownership or liveness evidence.
@@ -194,6 +199,26 @@ Plain HTTP hits to WebSocket routes (`/api/threads/ws`, `/ws/yjs`) produce 426 U
 - `routeStatusEvent` returns `null` for expected WS status codes (and all sub-400 statuses).
 
 ## Migration tooling
+
+`lib/migration-history.ts` is the one owner of migration identity: a journal
+entry (`idx`, `tag`, `when`, `breakpoints`) plus the SHA-256 of its SQL bytes.
+Two consumers compare it:
+
+- `check-migration-history.ts` reads the base ref's journal and SQL with
+  `git show` / `git ls-tree` (no checkout) and refuses any removed, edited,
+  renumbered, or re-timestamped base entry, plus a head journal that is not
+  contiguous in `idx`, strictly increasing and unique in `when`, and unique in
+  tags. CI runs it on PRs into `main`/`staging` (base `HEAD^1`) and on pushes
+  to `main` and, through Deploy Staging's `workflow_call`, `staging` (base
+  `github.event.before`, failing if that commit is gone). Only a manual
+  `workflow_dispatch` skips it.
+- `planDatabaseMigrations` classifies applied `__drizzle_migrations` rows as
+  `edited`, `retimestamped`, `missing-timestamp`, or `unknown`, and pending
+  entries not newer than the newest applied row as `out-of-order`. Any issue
+  is a full refusal. `runMigrations` takes `pg_advisory_xact_lock` before it
+  reads applied rows or creates the Drizzle schema, so concurrent runners
+  cannot double-apply; the `pnpm dev` preflight in `dev-infra.ts` uses the
+  same plan.
 
 `migration-lint.ts` scans generated Drizzle SQL for risky production patterns
 (renames, drops, unsafe `SET NOT NULL`, foreign keys without `NOT VALID`, indexes
@@ -212,9 +237,6 @@ Supported modes:
 Policy:
 
 - Errors always exit non-zero.
-- `ADD_NOT_NULL_WITHOUT_DEFAULT` is enforced across the current unreleased
-  migration tail beginning at `0060`; released migration `0059` and earlier
-  remain exempt and rely on executable migration tests.
 - Warnings exit non-zero only with `--strict`.
 - The squashed `0000_` baseline is warning-exempt; `DELETE_WITHOUT_WHERE` remains
   an error there too.

@@ -7,23 +7,34 @@ transaction propagation live in `apps/server`.
 
 ## Migration integrity
 
-M4's `0014_threads_origin_turn_fk` repairs forward what main's
-`0009_repair_saved_subagent_contracts` left before adding the origin foreign
-key.
-Forks and handoffs whose origin notices 0009 deleted become ordinary (organic)
-chats that keep their own turns, their descendant subtrees are re-rooted under
-them, and their orphaned first turns become roots. Main's 0009 is frozen and
-already applied everywhere under the merged-migration freeze ([#639]), so its
-repair lives in 0014 rather than changing 0009. Never hand-patch an applied
-database's migration ledger or reset a shared database.
+A migration merged to `main` or `staging` is frozen ([`../AGENTS.md`](../AGENTS.md)).
+When one leaves data that a later change cannot accept, a later migration
+repairs it forward, scoped to the rows the gap produced and placed before the
+statement that needs clean data. Any unrelated violation must still fail.
+The frozen file is never corrected in place, because databases that already
+ran it would never see the correction.
 
-[#639]: https://github.com/haowjy/meridian-flow/issues/639
+`0014_threads_origin_turn_fk` is the example. `0009_repair_saved_subagent_contracts`
+deletes unrepairable subagent notices without updating `threads.origin_turn_id`
+or a cross-thread `turns.parent_turn_id`, so `0014`'s `lineage-repair` block
+runs before the origin foreign key, in this order:
 
-After the Work screen merge, main owns 0010–0013. M4’s migrations are
-`0014_threads_origin_turn_fk` through `0024_married_khan`; their SQL bodies
-are unchanged, with cumulative snapshots and increasing journal timestamps
-rebased after main. A worktree that applied M4’s old 0010–0020 chain also
-requires `pnpm db:reset` from its own checkout.
+1. Snapshot forks and handoffs whose origin turn is gone, with their old
+   `spawn_depth`.
+2. Re-root each one's reachable subtree (spawn children by `parent_thread_id`,
+   derivations by the owner of their origin turn): `root_thread_id` becomes the
+   nearest broken ancestor, `spawn_depth` shifts down by its old depth, and a
+   derivation sibling's `parent_thread_id` is cleared.
+3. Null dangling `parent_turn_id`s inside the broken threads only.
+4. Demote the broken threads to organic roots.
+
+Demotion erases the dangling origin and the old depth, so it runs last.
+Re-rooting the whole subtree preserves the threads domain's one-root lineage
+contract ([threads context](../../../apps/server/server/domains/threads/.context/CONTEXT.md)).
+Never hand-patch an applied database's migration ledger or reset a shared
+database. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
+
+[kb-migration-integrity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/drizzle-migration-integrity.md
 
 ## Contracts
 
@@ -158,17 +169,17 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
    since the base ref. The squashed `0000_` baseline is exempt from all lint rules
    except `DELETE_WITHOUT_WHERE`.
-5. `pnpm db:migrate` — apply pending migrations.
-6. If PL/pgSQL functions/triggers changed: update
-   [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
-   (functions are applied separately, after migrate).
+5. `pnpm db:migrate` — apply pending migrations, then synchronize the PL/pgSQL
+   functions in [`../src/functions/`](../src/functions). Use
+   `pnpm db:apply-functions` only when the guarded standalone function sync is
+   needed.
 
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes
-after the remaining chain runs. Cull the fixture once the migration is
-superseded and frozen: pre-launch schema freedom means old migration history is
-not a live contract.
+after the remaining chain runs. The upgrade fixture may be culled once a later
+frozen migration supersedes the transform. The original migration file itself
+stays frozen once merged, as required by [`../AGENTS.md`](../AGENTS.md).
 
 The journal starts at `0000_baseline`; future schema changes append migrations.
 Existing databases that ran the pre-relaunch chain must be reset with
@@ -176,20 +187,16 @@ Existing databases that ran the pre-relaunch chain must be reset with
 
 The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
 change-trail lifecycle functions/triggers on `branch_write_journal`. The six
-functions in `src/functions/` remain a separate post-migration install. Fresh
-installs seed no users, Projects, or Works: the historical No Work and thread
-binding backfills had no rows to transform. Application project bootstrap
-creates locked No Work; thread admission establishes the primary binding.
-Legacy user imports belong in a separate ETL, not universal schema migrations.
+functions in `src/functions/` remain a separate post-migration install that the
+`db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
+Works: the historical No Work and thread binding backfills had no rows to
+transform. Application project bootstrap creates locked No Work; thread
+admission establishes the primary binding. Legacy user imports belong in a
+separate ETL, not universal schema migrations.
 
 ### Merging parallel migration lanes
 
-The M4 merge is a maintainer-directed exception: its handwritten multi-migration
-lane was renumbered byte-identically after verifying no overlapping constraint
-or enum rewrites, rebuilding cumulative snapshots, and advancing every journal
-timestamp. Previously applied M4 worktree databases require a scoped reset.
-
-For ordinary generated migrations, when two branches add at the same ordinal, **regenerate the
+For generated migrations, when two branches add at the same ordinal, **regenerate the
 incoming branch's migration from the merged schema; never renumber, rename, or
 hand-edit it.** Never touch a migration already present on the target branch
 (or on `main`).
