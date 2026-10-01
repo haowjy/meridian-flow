@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { getSchemaStatus, runRelease } from "./release-runner";
+import { getSchemaStatus, runMigrations, runRelease } from "./release-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -32,6 +32,7 @@ if (!enabled || !databaseUrl) {
         JSON.stringify({ ...journal, entries: [first] }),
       );
       await writeFile(join(migrationsDirectory, `${first.tag}.sql`), sql);
+      await cp(sourceFunctions, join(fixtureDirectory, "functions"), { recursive: true });
       return { fixtureDirectory, migrationsDirectory };
     }
 
@@ -113,8 +114,20 @@ if (!enabled || !databaseUrl) {
           databaseUrl,
           migrationsDirectory,
           functionsDirectory: sourceFunctions,
+          allowAhead: true,
         });
         expect(result.appliedMigrations).toBe(0);
+      } finally {
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
+    it("refuses an ahead database through the development migration path", async () => {
+      const { fixtureDirectory, migrationsDirectory } = await prefixBundle();
+      try {
+        await expect(runMigrations({ databaseUrl, migrationsDirectory })).rejects.toMatchObject({
+          name: "DatabaseHistoryRefusalError",
+        });
       } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
       }
@@ -135,7 +148,12 @@ if (!enabled || !databaseUrl) {
         } finally {
           await sql.end();
         }
-        const result = await runRelease({ databaseUrl, migrationsDirectory, functionsDirectory });
+        const result = await runRelease({
+          databaseUrl,
+          migrationsDirectory,
+          functionsDirectory,
+          allowAhead: true,
+        });
         expect(result).toEqual({ appliedMigrations: 0, skippedFunctions: true });
       } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
@@ -208,7 +226,7 @@ if (!enabled || !databaseUrl) {
       try {
         await expect(
           runRelease({ databaseUrl, migrationsDirectory, functionsDirectory: sourceFunctions }),
-        ).rejects.toThrow(/Divergent migration history at ordinal 0/);
+        ).rejects.toMatchObject({ name: "DatabaseHistoryRefusalError" });
       } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
       }

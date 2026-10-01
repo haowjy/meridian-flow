@@ -47,6 +47,7 @@ async function main(): Promise<void> {
     databaseUrl,
     migrationsDirectory: path.join(dir, "migrations"),
     functionsDirectory: path.join(dir, "functions"),
+    allowAhead: true,
     beforeMigrate(pendingMigrations) {
       if (pendingMigrations === 0) {
         log("backup-check: not required (0 pending migrations)");

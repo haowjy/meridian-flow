@@ -11,6 +11,19 @@ interface MigrationJournal {
 export type SchemaStatus = "current" | "ahead" | "behind" | "divergent";
 type AppliedMigration = { hash: string; created_at: string | number | null };
 
+export class DatabaseHistoryRefusalError extends Error {
+  readonly applied: Array<{ hash: string; createdAt: number | null }>;
+
+  constructor(applied: AppliedMigration[]) {
+    super("Database migration history is ahead of or divergent from this checkout");
+    this.name = "DatabaseHistoryRefusalError";
+    this.applied = applied.map((row) => ({
+      hash: row.hash,
+      createdAt: row.created_at === null ? null : Number(row.created_at),
+    }));
+  }
+}
+
 function readReleaseMigrations(migrationsDirectory: string) {
   const journal = JSON.parse(
     readFileSync(path.join(migrationsDirectory, "meta/_journal.json"), "utf8"),
@@ -120,6 +133,7 @@ export async function runRelease(input: {
   migrationsDirectory: string;
   functionsDirectory: string;
   beforeMigrate?: (pendingMigrations: number) => void | Promise<void>;
+  allowAhead?: boolean;
 }): Promise<{ appliedMigrations: number; skippedFunctions: boolean }> {
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
@@ -153,9 +167,10 @@ export async function runRelease(input: {
       const applied = (await readAppliedHistory(tx)) ?? [];
       const schemaStatus = compareMigrationHistory(applied, migrations);
       if (schemaStatus === "divergent") {
-        throw new Error(
-          "Divergent migration history at ordinal 0 or later: database ledger does not match the release journal",
-        );
+        throw new DatabaseHistoryRefusalError(applied);
+      }
+      if (schemaStatus === "ahead" && !input.allowAhead) {
+        throw new DatabaseHistoryRefusalError(applied);
       }
       const pending =
         applied.length >= migrations.length
@@ -225,6 +240,7 @@ export async function runMigrations(input: {
 }): Promise<void> {
   await runRelease({
     ...input,
+    allowAhead: false,
     functionsDirectory: path.resolve(input.migrationsDirectory, "../functions"),
   });
 }
