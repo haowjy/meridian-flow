@@ -73,6 +73,19 @@ describe("projectLinkAnswer", () => {
     expect(resolvedId({ kind: "scheme", uri: "kb://cast/Kael.md" })).toBeNull();
   });
 
+  it("ignores a fragment or query on a scheme or relative href", () => {
+    expect(resolvedId({ kind: "scheme", uri: "manuscript://cast/Kael.md#scene-2" })).toBe(
+      "doc-kael",
+    );
+    expect(
+      resolvedId({
+        kind: "relative",
+        path: "../cast/Kael.md?view=outline#scene-2",
+        baseUri: "manuscript://chapters/The Second Gate.md",
+      }),
+    ).toBe("doc-kael");
+  });
+
   it("resolves a relative path against the holder's URI", () => {
     const base = "manuscript://chapters/The Second Gate.md";
     expect(resolvedId({ kind: "relative", path: "../cast/Kael.md", baseUri: base })).toBe(

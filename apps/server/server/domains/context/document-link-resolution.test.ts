@@ -143,6 +143,20 @@ describe("catalog-backed document links", () => {
     ).toBeNull();
     expect(await f.resolve({ kind: "scheme", uri: "work://a/Gate.md" })).toBeNull();
   });
+  it("ignores a fragment or query on a scheme or relative href", async () => {
+    const f = fixture();
+    const file = f.add(project, "manuscript", "volume-1/chapter.md");
+    expect(
+      await f.resolve({ kind: "scheme", uri: "manuscript://volume-1/chapter.md#scene-2" }),
+    ).toMatchObject({ documentId: file.entryId });
+    expect(
+      await f.resolve({
+        kind: "relative",
+        baseUri: "manuscript://volume-2/other.md",
+        path: "../volume-1/chapter.md?view=outline#scene-2",
+      }),
+    ).toMatchObject({ documentId: file.entryId });
+  });
   it("does not use another user's personal scope", async () => {
     const f = fixture();
     const file = f.add(user, "user", "Secret.md");

@@ -98,23 +98,19 @@ function localMatches(
       ),
     );
   }
-  const base = parseContextUri(target.kind === "scheme" ? target.uri : target.baseUri);
-  if (!base.ok || !base.value.path) return [];
-  let requestedPath = base.value.path;
-  if (target.kind === "relative") {
-    const resolved = resolveDocumentHref(target.path, target.baseUri);
-    if (!resolved) return [];
-    const parsed = parseContextUri(resolved.uri);
-    if (!parsed.ok) return [];
-    requestedPath = parsed.value.path;
-  }
-  if (!requestedPath) return [];
+  const resolved =
+    target.kind === "scheme"
+      ? resolveDocumentHref(target.uri, null)
+      : resolveDocumentHref(target.path, target.baseUri);
+  const requested = resolved ? parseContextUri(resolved.uri) : null;
+  if (!requested?.ok) return [];
+  const { scheme, path, authority } = requested.value;
   return documents.filter((document) => {
     const candidate = parseContextUri(document.uri);
-    if (!candidate.ok || candidate.value.scheme !== base.value.scheme) return false;
-    if (!sameDocumentPath(candidate.value.path, requestedPath)) return false;
-    if (base.value.authority.kind === "contextual") return true;
-    return JSON.stringify(candidate.value.authority) === JSON.stringify(base.value.authority);
+    if (!candidate.ok || candidate.value.scheme !== scheme) return false;
+    if (!sameDocumentPath(candidate.value.path, path)) return false;
+    if (authority.kind === "contextual") return true;
+    return JSON.stringify(candidate.value.authority) === JSON.stringify(authority);
   });
 }
 

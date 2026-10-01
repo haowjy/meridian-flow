@@ -34,7 +34,6 @@ export function createDocumentLinkResolver({
     return work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
   }
   async function location(input: ResolveDocumentLinkInput, uri: string): Promise<Location | null> {
-    if (!uri.includes("://")) return null;
     const parsed = parseContextUri(uri);
     if (!parsed.ok || !parsed.value.path) return null;
     const { scheme, path, authority } = parsed.value;
@@ -75,17 +74,14 @@ export function createDocumentLinkResolver({
           ),
         );
       }
-      const base = await location(input, target.kind === "scheme" ? target.uri : target.baseUri);
+      const resolved =
+        target.kind === "scheme"
+          ? resolveDocumentHref(target.uri, null)
+          : resolveDocumentHref(target.path, target.baseUri);
+      if (!resolved) return null;
+      const base = await location(input, resolved.uri);
       if (!base) return null;
-      let path = base.path;
-      if (target.kind === "relative") {
-        const resolved = resolveDocumentHref(target.path, target.baseUri);
-        if (!resolved) return null;
-        const parsed = parseContextUri(resolved.uri);
-        if (!parsed.ok || parsed.value.scheme !== base.scheme) return null;
-        path = parsed.value.path;
-      }
-      if (!path) return null;
+      const { path } = base;
       return unique(
         (await files(base.scope)).filter((file) => {
           const parsed = parseContextUri(file.uri);

@@ -48,12 +48,12 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
       const from = holder.value.path.split("/");
       from.pop();
       const to = target.value.path.split("/");
-      while (from.length && to.length && from[0] === to[0]) {
+      // The target's last segment is its filename, never a shared folder.
+      while (from.length && to.length > 1 && from[0] === to[0]) {
         from.shift();
         to.shift();
       }
-      const relative = [...from.map(() => ".."), ...to].join("/") || to.at(-1) || "";
-      return encodePath(relative);
+      return encodePath([...from.map(() => ".."), ...to].join("/"));
     }
   }
   return target.value.normalized;

@@ -96,6 +96,13 @@ describe("spellDocumentHref", () => {
     expect(resolveDocumentHref(href, holder)?.uri).toBe(target);
   });
 
+  it("never consumes the target's filename as a shared folder", () => {
+    expect(spellDocumentHref("manuscript://x/notes.md", "manuscript://x")).toBe("../x");
+    expect(resolveDocumentHref("../x", "manuscript://x/notes.md")?.uri).toBe("manuscript://x");
+    expect(spellDocumentHref("manuscript://x/y/notes.md", "manuscript://x/y")).toBe("../y");
+    expect(resolveDocumentHref("../y", "manuscript://x/y/notes.md")?.uri).toBe("manuscript://x/y");
+  });
+
   it.each([
     ["manuscript://chapter.md", "kb://chapter.md", "kb://chapter.md"],
     ["scratch://@first/a.md", "scratch://@second/a.md", "scratch://@second/a.md"],
