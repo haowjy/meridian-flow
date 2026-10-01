@@ -9,12 +9,16 @@ Drizzle schema and migrations for the v3 Meridian Postgres database (plain `post
 From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Postgres):
 
 ```bash
-pnpm db:migrate          # apply pending migrations
+pnpm db:migrate          # apply pending migrations and sync SQL functions
 pnpm db:apply-functions  # transactionally sync PL/pgSQL from src/functions/
 pnpm --filter @meridian/database build:release # self-contained deploy release bundle
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio
 ```
+
+In the main checkout, append `-- --allow-main-database` only when intentionally
+targeting its registered database (for example,
+`pnpm db:migrate -- --allow-main-database`).
 
 From this package:
 
@@ -23,9 +27,9 @@ pnpm typecheck
 pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
-**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
+**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then migrate + apply functions).
 
-Deploy builds a self-contained release bundle with `pnpm --filter @meridian/database build:release`; the server image runs `node /app/release/release.mjs` after a confirmed pre-migration Neon snapshot. Pending migrations require a matching `MERIDIAN_BACKUP_REF` and `MERIDIAN_RELEASE_SHA`; use the [deployment runbook](../../docs/deploy/runbook.md) for setup and recovery.
+Deploy builds a self-contained release bundle with `pnpm --filter @meridian/database build:release`; the server image runs `node /app/release/release.mjs` only after a confirmed pre-migration Neon snapshot. Pending migrations require matching `MERIDIAN_BACKUP_REF` and `MERIDIAN_RELEASE_SHA` values; use the [deployment runbook](../../docs/deploy/runbook.md) for setup and recovery.
 
 ## Auth boundary
 
@@ -55,4 +59,4 @@ Deploy builds a self-contained release bundle with `pnpm --filter @meridian/data
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
 
-Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:apply-functions` keeps dev DB functions in sync after edits.
+Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` applies migrations and functions in one transaction, and `db:apply-functions` transactionally keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.

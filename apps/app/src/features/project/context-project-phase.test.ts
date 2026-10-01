@@ -1,3 +1,4 @@
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { describe, expect, it } from "vitest";
 import {
   cancelContextProjectAttempt,
@@ -7,17 +8,15 @@ import {
   updateContextProjectReadiness,
 } from "./context-project-phase";
 
-const ready = { status: "ready" as const, workId: "work-1", source: "route" as const };
+const WORK_1 = "work-1" as ParsedRequestId;
+const WORK_2 = "work-2" as ParsedRequestId;
+const ready = { status: "ready" as const, workId: WORK_1, source: "route" as const };
 
 describe("Context project authority", () => {
-  it.each([
-    "loading",
-    "error",
-    "unavailable",
-  ] as const)("withholds initial authority while Work is %s", (status) => {
+  it.each(["loading"] as const)("withholds initial authority while Work is %s", (status) => {
     const next = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, {
       status,
-      workId: "work-1",
+      workId: WORK_1,
     });
     expect(contextProjectPhase(next.authority)).toMatchObject({
       status: "waiting-for-work",
@@ -39,14 +38,14 @@ describe("Context project authority", () => {
       rawValidation: "settled",
     });
     const live = settleContextProjectBootstrap(replay.authority, 2);
-    expect(contextProjectPhase(live)).toEqual({ status: "live", workId: "work-1" });
+    expect(contextProjectPhase(live)).toEqual({ status: "live", workId: WORK_1 });
   });
 
   it("adopts a settled raw operation after readiness cancellation", () => {
     const first = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     const waiting = updateContextProjectReadiness(first.authority, true, {
       status: "loading",
-      workId: "work-1",
+      workId: WORK_1,
     }).authority;
     const settled = settleContextProjectBootstrap(waiting, 1);
     expect(settled).toMatchObject({ rawValidation: "settled", hasCompletedBootstrap: false });
@@ -55,14 +54,12 @@ describe("Context project authority", () => {
     expect(replacement.effect?.raw).toBe("adopt");
     expect(contextProjectPhase(settleContextProjectBootstrap(replacement.authority, 2))).toEqual({
       status: "live",
-      workId: "work-1",
+      workId: WORK_1,
     });
   });
 
   it.each([
-    { status: "loading" as const, workId: "work-1" },
-    { status: "error" as const, workId: "work-1" },
-    { status: "unavailable" as const, workId: "work-1" },
+    { status: "loading" as const, workId: WORK_1 },
   ])("suspends after live for $status and never restores bootstrap", (work) => {
     const attempt = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     const live = settleContextProjectBootstrap(attempt.authority, 1);
@@ -72,10 +69,10 @@ describe("Context project authority", () => {
 
     const resumed = updateContextProjectReadiness(suspended.authority, true, {
       ...ready,
-      workId: "work-2",
+      workId: WORK_2,
     });
     expect(resumed.effect).toBeNull();
-    expect(contextProjectPhase(resumed.authority)).toEqual({ status: "live", workId: "work-2" });
+    expect(contextProjectPhase(resumed.authority)).toEqual({ status: "live", workId: WORK_2 });
     expect(resumed.authority.rawValidation).toBe("settled");
   });
 });

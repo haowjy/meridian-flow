@@ -1,4 +1,13 @@
 /** System instruction for the context URI namespaces exposed to model tools. */
 
-export const RUNTIME_URI_SYSTEM_INSTRUCTION =
-  "Context file URI rules: bare file paths resolve as `manuscript://` -- the writer's manuscript documents. `kb://` is the project knowledge base (durable reference: characters, places, canon). `unfiled://` holds project-owned autosaved documents not yet filed into a manuscript or reference location. They can be read, edited and moved like other project documents; naming alone does not file them. `scratch://` holds working files for this Work -- plans, notes, intermediate material; never the manuscript. `scratch://@<slug>/...` addresses another Work in this project. File and folder names cannot begin with `@` in any scheme or at any depth. Switch Works and an unqualified `scratch://` path resolves in a different scratch space. Anything meant to outlive this Work belongs in `kb://` or the manuscript. `uploads://` holds files the writer attached to this Work (same scoping). `user://` is the writer's personal files. See the `write` tool schema for document-content commands; use `ls` and `search` for discovery.";
+export const RUNTIME_URI_SYSTEM_INSTRUCTION = [
+  "# Context URIs",
+  "",
+  "- A bare path means `manuscript://`, the user's manuscript.",
+  "- `kb://` is the project knowledge base: characters, places, canon.",
+  "- `unfiled://` holds project documents not yet filed anywhere; renaming one does not file it.",
+  "- `scratch://` is this Work's working files (plans, notes), never the manuscript. `scratch://@<slug>/…` is another Work's. Switching Works changes what an unqualified `scratch://` path means, so anything meant to outlast the Work belongs in `kb://` or the manuscript.",
+  "- `uploads://` holds files the user attached to this Work, scoped like `scratch://`.",
+  "- `user://` is the user's personal files.",
+  "- File and folder names cannot start with `@`.",
+].join("\n");

@@ -1,9 +1,14 @@
 /**
- * ContextViewer — the Editor destination's persistent tab strip and document
- * surface. File navigation belongs to the project sidebar.
+ * Renders the Editor destination and its active document. A file of an
+ * archived Work opens read-only under the archived notice. The Editor shows
+ * only its own Work's files, so the Editor's Work is that file's Work.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
@@ -13,6 +18,7 @@ import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -32,15 +38,12 @@ export type ContextViewerProps = {
   projectId: string;
   /** Shell-resolved Editor Work for all reads, suggestions, and mutations. */
   editorWorkId: string | null;
+  /** The Editor's Work, when it has one. */
+  editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
   onCloseTab: (documentId: string) => void;
-  /**
-   * Project left-sidebar expand toggle (pinned at the tab strip's leading
-   * edge). Reuses the `PaneHeader` rail-toggle shape: render the expand
-   * button when collapsed, nothing when open (the rail owns its own close).
-   */
   sidebarToggle?: PaneHeaderRailToggle;
   /**
    * Project right-dock expand toggle (pinned at the tab strip's trailing
@@ -62,14 +65,10 @@ export type ContextViewerProps = {
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 };
 
-/**
- * Desktop tab-aware host. The store (lifted via the workspace controller) is
- * the source of truth for open tabs; the committed route chooses which one
- * is visible. Screen-entry commands choose a destination before navigating.
- */
 export function ContextViewer({
   projectId,
   editorWorkId,
+  editorWork,
   tabs,
   paneState,
   onSelectTab,
@@ -106,6 +105,10 @@ export function ContextViewer({
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
+  const activeFileInWork =
+    activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
+  const archivedWork =
+    activeFileInWork && editorWork && isWorkArchived(editorWork) ? editorWork : null;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
@@ -149,6 +152,9 @@ export function ContextViewer({
         {activeTab && activeReviewDraftId ? (
           <DraftReviewHeader documentId={activeTab.documentId} draftId={activeReviewDraftId} />
         ) : null}
+        {archivedWork ? (
+          <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
+        ) : null}
         {/* Identity bar — the top edge of the page every open document
             shares. Keyed by document so edit state never crosses tabs. */}
         {activeTab ? (
@@ -157,6 +163,7 @@ export function ContextViewer({
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
+            readOnly={Boolean(archivedWork)}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
@@ -177,6 +184,8 @@ export function ContextViewer({
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
+              // Warm editors are hidden, so following the front tab is enough.
+              readOnly={Boolean(archivedWork)}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
             />
           </div>
@@ -210,20 +219,7 @@ export function ContextViewer({
   );
 }
 
-/**
- * Where a timeline door lands when its document is gone.
- *
- * The timeline deliberately doesn't pre-check existence: that would make the
- * same row clickable or not depending on cache warmth. This pane is the other
- * half of that decision, so it has to be worth landing on. The generic empty
- * workspace read as "nothing here" and offered to start a new document, which is
- * both untrue and the wrong thing to hand someone who was following a
- * reference.
- *
- * One copy covers renames, deletions and documents that never finished being
- * created, because the writer's next move is the same for all three and the
- * pane genuinely cannot tell them apart. No retry: there is nothing to retry.
- */
+/** Where a timeline door lands when its document is gone. */
 function MissingDocumentState({ destination }: { destination: MissingDestination }) {
   const section = schemeLabel(destination.scheme);
   return (
@@ -245,12 +241,6 @@ function MissingDocumentState({ destination }: { destination: MissingDestination
   );
 }
 
-/**
- * Build a `PaneHeader`-style rail toggle for the tab strip's pinned slots.
- * Returns `null` (not an empty element) when the rail is open so the strip
- * skips the padded slot entirely — an always-truthy element here would leave
- * a blank `px-2` box glued to the strip edge and the first tab off-flush.
- */
 function railToggleNode(
   toggle: PaneHeaderRailToggle | undefined,
   side: "left" | "right",
@@ -260,11 +250,6 @@ function railToggleNode(
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }
 
-/**
- * Where an Editor route that could not resolve lands. Not the empty state: the
- * writer asked for a specific destination and it failed, so this says so
- * rather than offering to start something new.
- */
 function RouteErrorState() {
   return (
     <div className="grid h-full place-items-center px-6 text-center">

@@ -2,9 +2,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertProductionAppEnvPresent,
-  resolveModelRequestDebugCaptureEnabled,
+  resolveDebugPathsEnabled,
   resolveObsVerbose,
-  resolveRecentEventsEnabled,
 } from "./env.js";
 
 describe("assertProductionAppEnvPresent", () => {
@@ -14,7 +13,7 @@ describe("assertProductionAppEnvPresent", () => {
     );
   });
 
-  it("allows explicit production/staging APP_ENV and non-production defaults", () => {
+  it("allows explicit live APP_ENV values and non-production defaults", () => {
     expect(() =>
       assertProductionAppEnvPresent({ rawNodeEnv: "production", rawAppEnv: "staging" }),
     ).not.toThrow();
@@ -22,47 +21,27 @@ describe("assertProductionAppEnvPresent", () => {
   });
 });
 
-describe("resolveModelRequestDebugCaptureEnabled", () => {
-  it.each(["development", "test"])("enables capture in local %s", (rawNodeEnv) => {
-    expect(resolveModelRequestDebugCaptureEnabled({ rawNodeEnv, rawAppEnv: "dev" })).toBe(true);
-  });
-
-  it("allows the local override to disable capture", () => {
-    expect(
-      resolveModelRequestDebugCaptureEnabled({
-        rawNodeEnv: "development",
-        rawAppEnv: "dev",
-        debugCaptureOverride: "0",
-      }),
-    ).toBe(false);
+describe("resolveDebugPathsEnabled", () => {
+  it.each([
+    { rawNodeEnv: "development", rawAppEnv: "dev" },
+    { rawNodeEnv: "test", rawAppEnv: "dev" },
+    { rawNodeEnv: "development", rawAppEnv: undefined },
+    { rawNodeEnv: "production", rawAppEnv: "staging" },
+    { rawNodeEnv: "development", rawAppEnv: "staging" },
+  ])("is on only with the explicit flag outside production: %o", (environment) => {
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(true);
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "true" })).toBe(true);
+    expect(resolveDebugPathsEnabled(environment)).toBe(false);
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "0" })).toBe(false);
   });
 
   it.each([
     { rawNodeEnv: "production", rawAppEnv: "production" },
+    { rawNodeEnv: "development", rawAppEnv: "production" },
     { rawNodeEnv: "production", rawAppEnv: "dev" },
-    { rawNodeEnv: "development", rawAppEnv: "staging" },
-  ])("cannot be enabled outside local dev/test: %o", (environment) => {
-    expect(
-      resolveModelRequestDebugCaptureEnabled({
-        ...environment,
-        debugCaptureOverride: "1",
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("resolveRecentEventsEnabled", () => {
-  it.each(["development", "test"])("enables recent events in %s", (rawNodeEnv) => {
-    expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(true);
-  });
-
-  it.each([
-    "production",
-    "staging",
-    "",
-    undefined,
-  ])("fails closed for NODE_ENV=%s", (rawNodeEnv) => {
-    expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(false);
+    { rawNodeEnv: "production", rawAppEnv: undefined },
+  ])("never turns on in production, even with the flag: %o", (environment) => {
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(false);
   });
 });
 
@@ -73,7 +52,7 @@ describe("resolveObsVerbose", () => {
     );
   });
 
-  it.each(["development", "test"])("parses known categories in %s", (rawNodeEnv) => {
+  it.each(["development"])("parses known categories in %s", (rawNodeEnv) => {
     expect(
       resolveObsVerbose({
         rawNodeEnv,

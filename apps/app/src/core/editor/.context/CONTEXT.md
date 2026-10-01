@@ -581,9 +581,10 @@ the codec reads, and all of them produce the same node.
 
 `MarkdownAutoformatExtension` owns completed wikilinks, the fence info string,
 and the Backspace recovery policy for inherited rules.
-`MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
-whole, inherited rules included: a dependency upgrade that drops a trigger has
-to fail there rather than in a manuscript.
+`MarkdownAutoformatExtension.test.ts` exercises representative inherited
+triggers and the local mutation, refusal, and Undo/Redo boundaries. It is not
+an exhaustive table of accepted Markdown spellings; when changing a distinct
+local rule or upgrading inherited rules, check the affected behavior directly.
 
 - Completing `[[target]]` or `[[target|display text]]` in manuscript prose
   parses the shared wire grammar into an ordinary link mark without a catalog

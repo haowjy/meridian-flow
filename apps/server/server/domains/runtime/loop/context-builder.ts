@@ -1,70 +1,26 @@
-/**
- * Context builder: assembles a thread's turns and blocks into the canonical
- * Message[] sent to the gateway for the next model call. Owns the
- * thread-history → model-context projection.
- *
- * Key design decisions:
- *
- * - **Block ordering within a turn**: blocks are sorted by `sequence`
- *   (ascending).  This is the persisted order from the orchestrator's
- *   blockSeq allocation — content blocks appear in adapter output order
- *   (Anthropic content-block index / OpenAI Responses output_index),
- *   followed by synthesized tool_use blocks, then tool_result blocks.
- *
- * - **Tool_result interleaving**: when an assistant turn contains
- *   tool_result blocks, the builder emits an assistant message for the
- *   content parts *before* the first tool_result, then a separate `tool`
- *   role message for each tool_result, then another assistant message for
- *   content parts after the last tool_result. This matches the gateway's
- *   message format where tool results are distinct messages, not inline
- *   content parts of the assistant message.
- *
- * - **Frozen system prompt**: on first attempt the orchestrator bakes the
- *   immutable agent body, the spawn-time append layer, available skill names and
- *   descriptions, named subagent slug/name/description, document dialect, URI
- *   guidance, and (subagent threads only) the closing report instruction into
- *   `composedSystemPrompt`. Later turns send that string verbatim
- *   (byte-identical). Autoprune is the only future re-bake trigger.
- *
- * - **Runtime URI guidance**: the server appends storage-scheme instructions
- *   to every thread prompt so the model chooses `kb://` for knowledge-base
- *   files while bare paths continue to resolve as `manuscript://`.
- *
- * - **Working state injection**: if `thread.workingState` is set, it's
- *   injected as a separate system message containing JSON-serialized state.
- *   This gives the model persistent scratch space across turns.
- *
- * - **Custom block filtering**: custom blocks are UI surfaces. Interrupt Q&A
- *   already travels through the ask_user tool_use input and tool_result output;
- *   projecting the UI block into the assistant message would break Anthropic's
- *   required tool_use→tool_result adjacency. System turns are the one exception:
- *   a completed `helper-result` card projects as text so the parent model reads
- *   a background child's report, while the writer keeps the card.
- *
- * - **User turns**: all blocks of allowed types (text, image, file)
- *   are merged into a single user message's content[] array.
- *
- * - **Activated skill bodies**: slash-activated SKILL.md is appended as extra
- *   request-only text on the current user message (slug, description, body).
- *   Not a fabricated tool round, not persisted, not frozen prompt bytes.
- *
- * - **System turns**: text blocks from system-role turns are concatenated
- *   into a single system message — they appear as multi-line system
- *   content, not as turn-structured data.
- */
+/** Projects persisted turns and blocks into the canonical gateway message context. */
 
-import type { ComponentBlockContent, HelperResultProps } from "@meridian/contracts/components";
+import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
+import {
+  ChildCompletionMetadataCodec,
+  ChildCompletionMetadataTagCodec,
+} from "../../threads/index.js";
+import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
+import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  /** Immutable bake read by the assembler when the thread already has a pointer. */
+  frozenSystemPrompt?: string;
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
@@ -84,24 +40,27 @@ export interface BuildContextInput {
   workContext?: string;
   /** Subagent closing instruction; pre-freeze only, owns the prompt's last layer. */
   subagentGuidance?: string | null;
+  /** Dev observability for invalid persisted chat contracts. */
+  eventSink?: EventSink;
 }
 
 export function buildContext(input: BuildContextInput): {
   messages: Message[];
   tools?: Tool[];
 } {
+  reportPersistedContractFailures(input);
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
-  const composed = input.thread.composedSystemPrompt;
-  if (composed && isThreadPromptFrozen(input.thread)) {
-    messages.push(system(composed));
+  if (isThreadPromptFrozen(input.thread)) {
+    if (input.frozenSystemPrompt === undefined)
+      throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
+    messages.push(system(input.frozenSystemPrompt));
   } else {
-    const systemPrompt = input.unfrozenBasePrompt ?? composed;
     messages.push(
       system(
         assembleComposedSystemPrompt({
-          basePrompt: systemPrompt,
+          basePrompt: input.unfrozenBasePrompt,
           appendPrompt: input.appendPrompt,
           workContext: input.workContext,
           availableSkills: input.availableSkills,
@@ -112,96 +71,153 @@ export function buildContext(input: BuildContextInput): {
     );
   }
 
-  if (input.thread.workingState) {
-    messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
-  }
-
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
-    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
     blocksByTurn.set(key, list);
   }
-  for (const list of blocksByTurn.values()) {
-    list.sort((a, b) => a.sequence - b.sequence);
-  }
 
-  for (const turn of input.turns) {
+  for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
-    if (turn.role === "user") {
-      const parts = turnBlocksToContentParts(turnBlocks, ["text", "image", "file"]);
-      const included = new Set<string>();
-      for (const block of turnBlocks) {
-        const reference = referenceOccurrenceContent(block);
-        if (!reference?.read) continue;
-        const key = `${reference.documentId}\0${reference.uri}`;
-        if (included.has(key)) continue;
-        included.add(key);
-        parts.push(
-          text(
-            `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
-          ),
-        );
-      }
-      if (parts.length > 0) {
-        messages.push({ role: "user", content: parts });
-      }
-      continue;
-    }
-    if (turn.role === "system") {
-      const textParts = turnBlocks
-        .flatMap((b) =>
-          b.blockType === "text" && b.textContent
-            ? [b.textContent]
-            : b.blockType === "custom"
-              ? [componentModelText(b.content as ComponentBlockContent)].filter(
-                  (v): v is string => !!v,
-                )
-              : [],
-        )
-        .join("\n");
-      if (textParts) messages.push(system(textParts));
-      continue;
-    }
-
-    if (turn.role === "assistant") {
-      const assistantParts: ContentPart[] = [];
-      for (const block of turnBlocks) {
-        if (block.blockType === "tool_result") {
-          if (assistantParts.length > 0) {
-            const message = assistant(assistantParts.slice());
-            messages.push(message);
-            sourceTurnStatusByMessage.set(message, turn.status);
-            assistantParts.length = 0;
-          }
-          const content = block.content as {
-            toolCallId?: string;
-            output?: JsonValue;
-            isError?: boolean;
-          } | null;
-          const toolCallId = content?.toolCallId ?? "";
-          messages.push(
-            toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
-          );
-          continue;
-        }
-        const part = blockToContentPart(block);
-        if (part) assistantParts.push(part);
-      }
-      if (assistantParts.length > 0) {
-        const message = assistant(assistantParts.slice());
-        messages.push(message);
-        sourceTurnStatusByMessage.set(message, turn.status);
-      }
+    const rendered = turnContextMessages(turn, turnBlocks);
+    for (const message of rendered) {
+      messages.push(message);
+      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
     }
   }
 
   return {
-    messages: completeToolResultGroups(messages, sourceTurnStatusByMessage),
+    messages: mergeAdjacentUserMessages(
+      completeToolResultGroups(messages, sourceTurnStatusByMessage),
+    ),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+/** One model-visible turn, shared by live requests and cold summary transcripts. */
+export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
+  const messages: Message[] = [];
+  const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
+  if (turn.role === "user") {
+    const parts = userTurnContentParts(turnBlocks);
+    if (parts.length > 0) {
+      messages.push({ role: "user", content: parts });
+    }
+    return messages;
+  }
+  if (turn.role === "system") {
+    const textParts = turnBlocks
+      .flatMap((b) =>
+        b.blockType === "text" && b.textContent
+          ? [b.textContent]
+          : b.blockType === "custom"
+            ? [componentModelText(b.content as ComponentBlockContent)].filter(
+                (v): v is string => !!v,
+              )
+            : [],
+      )
+      .join("\n");
+    if (textParts) {
+      const update =
+        textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
+          ? textParts
+          : `<system_update>\n${textParts}\n</system_update>`;
+      messages.push({ role: "user", content: [text(update)] });
+    }
+    return messages;
+  }
+
+  if (turn.role === "assistant") {
+    const assistantParts: ContentPart[] = [];
+    for (const block of turnBlocks) {
+      if (block.blockType === "tool_result") {
+        if (assistantParts.length > 0) {
+          const message = assistant(assistantParts.slice());
+          messages.push(message);
+          assistantParts.length = 0;
+        }
+        const content = block.content as {
+          toolCallId?: string;
+          output?: JsonValue;
+          isError?: boolean;
+        } | null;
+        const toolCallId = content?.toolCallId ?? "";
+        messages.push(
+          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+        );
+        continue;
+      }
+      const part = blockToContentPart(block);
+      if (part) assistantParts.push(part);
+    }
+    if (assistantParts.length > 0) {
+      const message = assistant(assistantParts.slice());
+      messages.push(message);
+    }
+  }
+
+  return messages;
+}
+
+function reportPersistedContractFailures(input: BuildContextInput): void {
+  if (!input.eventSink) return;
+  const threadId = input.thread.id as string;
+  for (const turn of input.turns) {
+    const metadata = turn.metadata;
+    if (
+      ChildCompletionMetadataTagCodec.safeParse(metadata).success &&
+      !ChildCompletionMetadataCodec.safeParse(metadata).success
+    ) {
+      emitEvent(input.eventSink, {
+        level: "warn",
+        source: "runtime.context_builder",
+        name: "chat.persisted_contract.invalid",
+        correlation: { threadId, turnId: turn.id as string },
+        sensitivity: "safe",
+        payload: { field: "subagent_update" },
+      });
+    }
+  }
+  for (const block of input.blocks) {
+    if (block.blockType !== "custom") continue;
+    const content = block.content;
+    if (
+      !content ||
+      typeof content !== "object" ||
+      Array.isArray(content) ||
+      content.kind !== "helper-result" ||
+      parseInvocationCard(content)
+    ) {
+      continue;
+    }
+    emitEvent(input.eventSink, {
+      level: "warn",
+      source: "runtime.context_builder",
+      name: "chat.persisted_contract.invalid",
+      correlation: { threadId, turnId: block.turnId as string },
+      sensitivity: "safe",
+      payload: { field: "invocation_card" },
+    });
+  }
+}
+
+/** Inbox turns retain durable graph identity but travel to the model as one delivery. */
+function mergeAdjacentUserMessages(messages: readonly Message[]): Message[] {
+  const merged: Message[] = [];
+  for (const message of messages) {
+    const previous = merged.at(-1);
+    if (previous?.role === "user" && message.role === "user") {
+      merged[merged.length - 1] = {
+        role: "user",
+        content: [...previous.content, ...message.content],
+      };
+    } else {
+      merged.push(message);
+    }
+  }
+  return merged;
 }
 
 function completeToolResultGroups(
@@ -253,26 +269,33 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
   return parts;
 }
 
-// Projects a system-turn custom card into the model-facing text. Only the
-// delivered background report (`helper-result`) has model meaning; the card
-// itself stays in the writer transcript. A running card has nothing to report.
-function componentModelText(content: ComponentBlockContent): string | null {
-  if (content.kind !== "helper-result") return null;
-  const props = content.props as HelperResultProps;
-  if (props.status === "running") return null;
-  const lines = [
-    `Background subagent "${props.agentName}" ${props.status === "failed" ? "failed" : "reported"}.`,
-    props.summary ?? "",
-    props.payload !== undefined ? JSON.stringify(props.payload) : "",
-  ].filter(Boolean);
-  return lines.join("\n");
+/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
+function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
+  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
+  const included = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType === "custom") {
+      const content = block.content as ComponentBlockContent;
+      if (content.kind === "thread-reference") {
+        const modelText = componentModelText(content);
+        if (modelText) parts.push(text(`\n\n${modelText}`));
+      }
+    }
+    const reference = referenceOccurrenceContent(block);
+    if (!reference?.read) continue;
+    const key = `${reference.documentId}\0${reference.uri}`;
+    if (included.has(key)) continue;
+    included.add(key);
+    parts.push(
+      text(
+        `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
+      ),
+    );
+  }
+  return parts;
 }
 
-// Converts a single block into a gateway ContentPart.
-// Returns null for blocks whose content cannot be represented as a
-// gateway content part (e.g. empty text blocks, malformed JSON content).
-// reasoning blocks extract `text` from a structured content object or
-// fall back to `textContent`; providerOptions are preserved if present.
+// Unsupported or empty blocks have no gateway content part.
 function blockToContentPart(block: Block): ContentPart | null {
   switch (block.blockType) {
     case "text":
@@ -325,88 +348,11 @@ function blockToContentPart(block: Block): ContentPart | null {
       }
       return null;
     case "custom":
-      // Custom blocks are UI-only. For interrupts, the tool_use input carries
-      // the question/options and the tool_result carries the answer; adding a
-      // text summary here would separate Anthropic tool_use blocks from their
-      // required immediately-following tool_result blocks.
+      // Interrupt content stays in its tool input/result to preserve provider ordering.
       return null;
     default:
       return null;
   }
-}
-
-export function attachSkillBodiesToLatestUserMessage(
-  messages: readonly Message[],
-  skills: readonly { slug: string; description: string; body: string }[],
-): Message[] {
-  if (skills.length === 0) return [...messages];
-  return appendTextToLatestUserMessage(
-    messages,
-    skills.map(formatInvokedSkill).join("\n\n"),
-    "skill bodies",
-  );
-}
-
-function formatInvokedSkill(skill: { slug: string; description: string; body: string }): string {
-  const description = skill.description.replace(/\s+/g, " ").trim();
-  return [
-    `skill invoked: ${skill.slug}`,
-    ...(description ? ["", `description: ${description}`] : []),
-    "",
-    skill.body,
-  ].join("\n");
-}
-
-export function attachNoticesToLatestUserMessage(
-  messages: readonly Message[],
-  notices: readonly Notice[],
-): Message[] {
-  const content = formatNotices(notices);
-  if (!content) return [...messages];
-  return appendTextToLatestUserMessage(
-    messages,
-    `\n\nMeridian context for this message:\n${content}`,
-    "pre-turn notices",
-  );
-}
-
-function appendTextToLatestUserMessage(
-  messages: readonly Message[],
-  value: string,
-  label: string,
-): Message[] {
-  const updated = [...messages];
-  const part = text(value);
-  for (let index = updated.length - 1; index >= 0; index--) {
-    const message = updated[index];
-    if (message?.role !== "user") continue;
-    updated[index] = {
-      ...message,
-      content: [...message.content, part],
-    };
-    return updated;
-  }
-
-  throw new Error(`Cannot attach ${label} without a writer message`);
-}
-
-export function insertPostToolNotices(
-  messages: readonly Message[],
-  notices: readonly Notice[],
-  afterMessageCount: number,
-): Message[] {
-  const content = formatNotices(notices);
-  if (!content) return [...messages];
-  if (afterMessageCount < 0 || afterMessageCount > messages.length) {
-    throw new Error("Post-tool notice anchor is outside the model request");
-  }
-
-  const updated = [...messages];
-  updated.splice(afterMessageCount, 0, {
-    role: "user",
-    content: [text(`Meridian context after the preceding edits:\n${content}`)],
-  });
-  return updated;
 }
 
 export function formatNotices(notices: readonly Notice[]): string {
@@ -434,7 +380,7 @@ function formatNotice(notice: Notice): string {
       : [];
     const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
     const noun = documentNames.length > 1 ? "documents" : "document";
-    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
+    return `The system could not verify whether concurrent user content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
   }
   return notice.message;
 }
@@ -458,8 +404,7 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   const reversals = [...latest.values()].filter(
     (notification) => notification.direction === "undo",
   );
-  // Group by uri (the document identity), not filename — distinct docs can share
-  // a basename, and merging their handles would mislabel which file changed.
+  // URI, not basename, identifies a document; distinct documents can share a name.
   const grouped = new Map<string, { label: string; handles: string[] }>();
   for (const notification of reversals) {
     const key = notification.uri || notification.writeHandle;
@@ -475,7 +420,7 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   );
   return lines.length > 0
     ? [
-        "The writer reversed the following edits before this message:",
+        "The user reversed the following edits before this message:",
         ...lines,
         "They are signaling these changes were unwanted.",
       ].join("\n")

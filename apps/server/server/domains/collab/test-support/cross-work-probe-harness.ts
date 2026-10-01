@@ -89,17 +89,20 @@ export async function runCrossWorkProbe(
     aiWriteMode: "draft",
   });
   await db.insert(schema.threads).values({
+    rootThreadId: THREAD_B_ID,
     id: THREAD_B_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
     title: "Work B primary chat",
     kind: "primary",
-    status: "active",
+    status: "idle",
   });
   await db.insert(schema.turns).values({
     id: TURN_B_ID,
     threadId: THREAD_B_ID,
+    position: 1,
     role: "assistant",
+    origin: "assistant",
     status: "complete",
   });
   await db.insert(schema.threadWorks).values({

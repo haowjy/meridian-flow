@@ -2,7 +2,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, gte, lte, notInArray, sql } from "drizzle-orm";
-import type { DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
 import type {
@@ -30,7 +30,7 @@ function mapJournalEntry(row: typeof schema.eventJournal.$inferSelect): JournalE
 export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJournalReader {
   return {
     async readAfter(threadId: ThreadId, afterSeq: bigint, limit = DEFAULT_READ_LIMIT) {
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.eventJournal)
         .where(
@@ -43,7 +43,7 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async headSeq(threadId: ThreadId) {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select({ nextSeq: schema.threads.nextSeq })
         .from(schema.threads)
         .where(eq(schema.threads.id, threadId))
@@ -53,7 +53,7 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async readModelProjectionWatermark(threadId: ThreadId) {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select({ seq: schema.eventJournal.seq })
         .from(schema.eventJournal)
         .where(
@@ -71,7 +71,7 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async listByThread(threadId, opts = {}) {
-      const query = db
+      const query = currentDrizzleDb(db)
         .select()
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, threadId))
@@ -81,7 +81,7 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async listByType(threadId, eventType) {
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.eventJournal)
         .where(
@@ -95,13 +95,13 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async listSince(threadId, afterId) {
-      const [cursor] = await db
+      const [cursor] = await currentDrizzleDb(db)
         .select({ seq: schema.eventJournal.seq })
         .from(schema.eventJournal)
         .where(and(eq(schema.eventJournal.threadId, threadId), eq(schema.eventJournal.id, afterId)))
         .limit(1);
       if (!cursor) return [];
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.eventJournal)
         .where(
@@ -112,7 +112,7 @@ export function createDrizzleEventJournalReader(db: DrizzleDatabase): EventJourn
     },
 
     async listByTimeRange(threadId, from, to) {
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.eventJournal)
         .where(

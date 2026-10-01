@@ -1,9 +1,6 @@
 /** Resolves browser-local resource history without turning missing ownership into a default. */
-import {
-  isWorkScopedProjectContextScheme,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { WorkingSetRoute } from "@meridian/contracts/protocol";
+import { type ContextTab, isEditorTab } from "@/client/stores";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 
 export function resolveLocalDocumentSelection(input: {
@@ -48,10 +45,10 @@ export function selectEditorEntryTab(input: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   recentRoutes: readonly WorkingSetRoute[];
+  /** The Editor being entered: its Work, or null for No Work. */
+  workId: string | null;
 }): ContextTab | null {
-  const eligible = input.tabs.filter((tab) =>
-    tab.kind === "new" ? true : !isWorkScopedProjectContextScheme(tab.scheme),
-  );
+  const eligible = input.tabs.filter((tab) => isEditorTab(tab, input.workId));
   const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
   if (selected) return selected;
   for (const route of input.recentRoutes) {

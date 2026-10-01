@@ -15,7 +15,12 @@ export function adapterFaultToContextError(fault: AdapterFault, uri: string): Co
     case "invalid_operation":
       return { code: "invalid_operation", uri, message: fault.message };
     case "context_unavailable":
-      return { code: "context_unavailable", uri };
+      return {
+        code: "context_unavailable",
+        uri,
+        reason: fault.reason,
+        workSlug: fault.workSlug,
+      };
     case "io_error":
       return { code: "io_error", uri, message: fault.message };
   }

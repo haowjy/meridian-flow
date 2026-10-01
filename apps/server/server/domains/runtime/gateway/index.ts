@@ -5,6 +5,8 @@
  * This is the single import entry point for gateway consumers (orchestrator,
  * turn runner, routes). Every public type and factory is re-exported here.
  */
+
+export type { MockScriptQueue } from "./adapters/mock/script-queue.js";
 export type { MockOpenAIServer } from "./adapters/mock/server.js";
 export { createMockOpenAICompatibleServer } from "./adapters/mock/server.js";
 export type { GatewayFromEnv } from "./config/create-from-env.js";
@@ -29,9 +31,15 @@ export {
   MODEL_REGISTRY,
 } from "./config/registry.js";
 export { consumeStream, GatewayStreamError } from "./consume-stream.js";
-export { createGateway, isPartialOutputEvent } from "./create-gateway.js";
+export { createGateway } from "./create-gateway.js";
 export * from "./domain/index.js";
+export { thinkingBudgetTokens } from "./domain/thinking-budget.js";
 export { assistant, image, system, text, toolResult, user } from "./helpers/messages.js";
 export { createInstrumentedGateway } from "./instrumented-gateway.js";
 export type { Gateway } from "./ports/gateway.js";
 export type { ProviderAdapter } from "./ports/provider-adapter.js";
+export {
+  isCommittedOutputEvent,
+  isFirstTokenEvent,
+  isPartialOutputEvent,
+} from "./stream-events.js";

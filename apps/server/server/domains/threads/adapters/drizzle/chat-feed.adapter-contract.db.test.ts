@@ -12,17 +12,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const {
       expectChatFeedCursorAcrossFilterContract,
       expectChatFeedFavoriteFilterContract,
       expectChatFeedSearchSemanticsContract,
       expectChatFeedTiesContract,
-      expectWorkChatFeedContract,
+      expectChatFeedWorkFilterContract,
     } = await import("../__conformance__/chat-feed-contract.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
@@ -30,7 +29,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -82,8 +81,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expectChatFeedCursorAcrossFilterContract(harness());
     });
 
-    it("scopes the Work feed to membership and shares the Project feed's row shape", async () => {
-      await expectWorkChatFeedContract(harness());
+    it("composes Work membership with search, Favorites, and cursor pagination", async () => {
+      await expectChatFeedWorkFilterContract(harness());
     });
   });
 }

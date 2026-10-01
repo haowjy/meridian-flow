@@ -59,6 +59,7 @@ pnpm dev
 | `pnpm dev:infra` | Shared — start once if Postgres is not already running |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
+| Nx task cache | Shared with the main checkout. A cache hit replays output that can name another worktree's paths; the hit still means identical inputs. `NX_SKIP_NX_CACHE=true pnpm typecheck` forces a fresh run |
 
 **First browser load after `pnpm install`** in a fresh worktree can hit a
 stale-Vite-deps crash: Vite's pre-bundled dependency cache may hold a
@@ -81,11 +82,24 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
+### Pre-relaunch baseline reset
+
+Migration history now starts at `0000_baseline`. **Existing dev databases that
+ran the old chain must be reset with `pnpm db:reset` from their owning checkout.**
+This destroys that checkout's local schema and data, then installs the baseline
+and post-migrate functions. Back up anything you need first. `pnpm db:migrate`
+does not upgrade an old-history database to this baseline. Do not reset someone
+else's database or a shared deployment; deployment rebuilds need separate
+coordination. Legacy users will arrive through a separate ETL, not this migration.
+
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
-template owned by that invocation, clones four isolated worker databases from
-it, then drops the workers and template on exit. If the process is killed
-before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes every managed name and
-drops it only after its owner process has stopped. Manually named test
+template owned by that invocation and clones eight isolated worker databases
+from it. Set `DB_TEST_WORKERS=1..8` to lower concurrency on a busy server. After
+Vitest exits, an ownership-validated detached child drops the workers and
+template without making the test command wait for PostgreSQL checkpoints.
+Cleanup logs live in `.meridian/db-test-cleanup/<owner-pid>.log`.
+`pnpm dev:gc-dbs -- --yes` recognizes managed names and can reclaim leftovers
+(or in-flight cleanup) only after the owning test process has stopped. Manually named test
 databases that must survive GC use `<base>_test-manual-<label>`; test lifecycle
 prefixes are reserved from worktree slugs.
 

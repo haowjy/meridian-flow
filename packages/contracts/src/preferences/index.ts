@@ -24,7 +24,7 @@ export interface ProjectPreferences {
   /** Ids of threads in this project the user has pinned to the top of the list. */
   pinnedThreadIds: string[];
   /** Same-turn interrupt timeout policy. Defaults keep runs moving if the user walks away. */
-  autoResume?: {
+  autoResume: {
     enabled: boolean;
     timeoutMs: number;
   };

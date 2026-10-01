@@ -47,13 +47,7 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   }
 }
 
-/**
- * Identity icons re-derived 2026-07 after two scheme renames left glyphs on
- * concepts that no longer exist (Brain was "Work Memory", FileText left the
- * manuscript indistinct from its own file rows). The book of the product
- * gets the quill-and-scroll; kb is the reference shelf; scratch is the
- * work-scoped scratchpad.
- */
+/** Icons distinguish the current project-context resource families. */
 export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
   switch (scheme) {
     case "manuscript":

@@ -18,7 +18,7 @@
  */
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
-import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { cn } from "@/lib/utils";
 import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
@@ -80,10 +80,16 @@ export function ChatSurface({
       )}
     >
       <DockShell
+        projectId={projectId}
         placement={placement}
         screen={activeScreen}
         renderHeader={(args) => {
-          const headerProps: DockHeaderProps = { ...args, onClose: onCloseDock, threadSelect };
+          const headerProps: DockHeaderProps = {
+            ...args,
+            onClose: onCloseDock,
+            threadSelect,
+            threadId,
+          };
           return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
         }}
       >

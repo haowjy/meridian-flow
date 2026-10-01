@@ -21,13 +21,14 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { PanelRightClose } from "lucide-react";
+import { PanelRightClose, X } from "lucide-react";
 import type { ReactNode } from "react";
-
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
-
+import { SubagentHeader } from "@/features/chat/SubagentHeader";
+import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
+import { useDockViewStore } from "./dock-view-store";
 
 export type DockHeaderSlotArgs = {
   view: DockView;
@@ -38,16 +39,31 @@ export type DockHeaderSlotArgs = {
 export type DockHeaderProps = DockHeaderSlotArgs & {
   onClose?: () => void;
   threadSelect?: ReactNode;
+  threadId?: string | null;
 };
 
-export function DockHeader({ view, views, onSelectView, onClose, threadSelect }: DockHeaderProps) {
+export function DockHeader({
+  view,
+  views,
+  onSelectView,
+  onClose,
+  threadSelect,
+  threadId,
+}: DockHeaderProps) {
+  const activity = useThreadActivity({
+    threadId: threadId ?? "",
+    seed: null,
+  });
   return (
     <header className="flex h-10 shrink-0 items-stretch pl-2">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
+        {view === "chat" && threadId ? (
+          <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+        ) : null}
       </div>
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
       {onClose ? (
@@ -64,6 +80,8 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
 
 /** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
 export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs) {
+  const file = useDockViewStore((state) => state.workFile);
+  const closeFile = useDockViewStore((state) => state.closeWorkFile);
   if (views.length <= 1) return null;
   return (
     <SegmentedTabs
@@ -72,7 +90,16 @@ export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs
       onChange={onSelectView}
       options={views.map((segment) => ({
         value: segment,
-        label: <DockViewLabel view={segment} />,
+        label:
+          segment === "file" && file ? (
+            <span className="block max-w-36 truncate">{file.tab.name}</span>
+          ) : (
+            <DockViewLabel view={segment} />
+          ),
+        closeAction:
+          segment === "file" && file
+            ? { icon: <X className="size-3.5" aria-hidden />, onClose: closeFile }
+            : undefined,
       }))}
     />
   );
@@ -86,5 +113,7 @@ function DockViewLabel({ view }: { view: DockView }) {
       return <Trans>Context</Trans>;
     case "changes":
       return <Trans>Changes</Trans>;
+    case "file":
+      return null;
   }
 }

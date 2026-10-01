@@ -37,7 +37,7 @@ registerProcessShutdownCallback("websocket-admission", async () => {
   ]);
   const errors: unknown[] = [];
   try {
-    threads.shutdownThreadWebSockets();
+    threads.stopAcceptingThreadWebSockets();
   } catch (error) {
     errors.push(error);
   }

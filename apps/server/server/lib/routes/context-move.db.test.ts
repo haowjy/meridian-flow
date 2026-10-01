@@ -2,6 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -21,12 +22,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
-    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("../../domains/projects/index.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { createDrizzleProjectWorkAuthorityResolver } = await import(
+      "../../domains/projects/index.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
@@ -85,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000942";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
 
@@ -414,7 +415,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId, port } = await arrangeUntitled();
       await db
         .update(schema.works)
-        .set({ status: "archived", archivedAt: new Date() })
+        .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, workId));
       await expect(port.write("scratch://@current-work/new.md", "blocked")).resolves.toMatchObject({
         ok: false,
@@ -430,10 +431,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const authority = createDrizzleProjectWorkAuthorityResolver(db);
       await expect(authority.byId(projectId, workId)).resolves.toMatchObject({ workId });
       expect((await documentOwner(DOCUMENT_ID)).sourceWorkId).toBe(workId);
-      await db
-        .update(schema.works)
-        .set({ status: "active", archivedAt: null })
-        .where(eq(schema.works.id, workId));
+      await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, workId));
       await expect(
         port.commitWriterLocation(
           "scratch://@current-work/Untitled 1.md",

@@ -1,33 +1,61 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
-import { describe, expect, expectTypeOf, it } from "vitest";
-import type { WorkId } from "../ids.js";
-import type {
-  CreateThreadRequest,
-  DeleteContextEntryRequest,
-  DeleteContextEntryResult,
+import { describe, expect, it } from "vitest";
+import {
+  forkThreadRequestSchema,
+  handoffBriefRetryRequestSchema,
+  parseWorkingSetRoute,
+  parseWorkingSetRouteList,
+  replyRetryRequestSchema,
 } from "./http-types.js";
-import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
+import { apiThreadHandoffBriefPath, apiThreadTurnRetryPath } from "./paths.js";
 
-describe("context deletion result", () => {
-  it("requires the initiating kind and file identity", () => {
-    expectTypeOf<DeleteContextEntryRequest>().toEqualTypeOf<{
-      operationId: string;
-      path: string;
-      expected: { kind: "file"; documentId: string } | { kind: "folder" };
-    }>();
-  });
-  it("carries an exact batch of committed document identities", () => {
-    expectTypeOf<DeleteContextEntryResult>().toEqualTypeOf<{
-      status: "deleted";
-      deletedDocumentIds: string[];
-      availabilityGeneration: string;
-    }>();
+describe("fork request schema", () => {
+  it("requires a client id and explicit cutoff and rejects removed Agent selection input", () => {
+    const request = { id: crypto.randomUUID(), originTurnId: crypto.randomUUID() };
+    expect(forkThreadRequestSchema.safeParse(request).success).toBe(true);
+    expect(forkThreadRequestSchema.safeParse({ id: request.id }).success).toBe(false);
+    expect(
+      forkThreadRequestSchema.safeParse({
+        ...request,
+        agentSelection: {
+          catalogEntryId: crypto.randomUUID(),
+          definitionRevisionId: crypto.randomUUID(),
+        },
+      }).success,
+    ).toBe(false);
   });
 });
 
-describe("root thread creation", () => {
-  it("preserves omitted, explicit null, and real Work identity", () => {
-    expectTypeOf<CreateThreadRequest["workId"]>().toEqualTypeOf<WorkId | null | undefined>();
+describe("reply retry request schema", () => {
+  it("requires exactly one client-minted UUID", () => {
+    expect(replyRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(true);
+    expect(replyRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
+    expect(
+      replyRetryRequestSchema.safeParse({ id: crypto.randomUUID(), turnId: crypto.randomUUID() })
+        .success,
+    ).toBe(false);
+  });
+
+  it("builds the canonical retry path for a failed reply", () => {
+    expect(apiThreadTurnRetryPath("thread-id", "turn-id")).toBe(
+      "/api/threads/thread-id/turns/turn-id/retry",
+    );
+  });
+});
+
+describe("handoff brief retry route contract", () => {
+  it("requires one client-minted seed id and rejects extra fields", () => {
+    expect(handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(
+      true,
+    );
+    expect(
+      handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID(), control: {} }).success,
+    ).toBe(false);
+    expect(handoffBriefRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("builds the canonical direct retry path", () => {
+    expect(apiThreadHandoffBriefPath("thread-id")).toBe("/api/threads/thread-id/handoff/brief");
   });
 });
 
@@ -67,9 +95,29 @@ describe("working-set route parser", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid paths and invalid list entries", () => {
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "" }).ok).toBe(false);
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "x".repeat(1025) }).ok).toBe(false);
-    expect(parseWorkingSetRouteList([{ scheme: "unknown", path: "/" }]).ok).toBe(false);
+  it("rejects invalid paths and invalid list entries at their intended guards", () => {
+    const validRoute = {
+      documentId: "00000000-0000-0000-0000-000000000001",
+      scheme: "manuscript" as const,
+      path: "/chapter.md",
+    };
+
+    expect(parseWorkingSetRoute({ ...validRoute, path: "" })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1025) })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1024) }).ok).toBe(true);
+    expect(parseWorkingSetRoute({ ...validRoute, scheme: "unknown" })).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
+    expect(parseWorkingSetRouteList([{ ...validRoute, scheme: "unknown" }])).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
   });
 });

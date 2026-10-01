@@ -39,7 +39,6 @@ export type UserTurnAdmissionInput = {
   actorUserId: UserId;
   threadId: ThreadId;
   submissionId: string;
-  connectionToken?: string;
   text: string;
   blocks: unknown;
   references: readonly SubmittedReference[];
@@ -52,7 +51,11 @@ export type AcceptedAdmission = {
   threadId: ThreadId;
   submissionId: string;
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  /**
+   * The live run's assistant turn when the send merged into a running run; null
+   * for a fresh run, whose assistant turn the client learns from RUN_STARTED.
+   */
+  assistantTurnId: TurnId | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 };
@@ -74,11 +77,7 @@ export type RetireAdmissionResult =
   | { kind: "pending"; submissionId: string }
   | { kind: "rejected"; submissionId: string; code: string };
 
-export type AdmissionErrorCode =
-  | "idempotency_conflict"
-  | "connection_token_not_live"
-  | "already_running"
-  | "invalid_message";
+export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "work_unavailable";
 
 export type UserTurnAdmissionResult =
   | AcceptedAdmission
@@ -87,7 +86,7 @@ export type UserTurnAdmissionResult =
 
 /** Server-generated snapshot; never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue };
+  read?: { result: JsonValue; revision: string | null };
 };
 
 export function referenceOccurrenceContent(block: {
@@ -124,9 +123,11 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).length !== 1 ||
+      Object.keys(read).length !== 2 ||
       !("result" in read) ||
-      read.result === undefined
+      read.result === undefined ||
+      !("revision" in read) ||
+      (read.revision !== null && typeof read.revision !== "string")
     )
       return null;
   }

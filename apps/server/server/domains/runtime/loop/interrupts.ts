@@ -22,6 +22,7 @@ import {
   type EventJournalReader,
   type EventJournalWriter,
   projectReadModelEvent,
+  replyFailedCopy,
   type ThreadRepositories,
 } from "../../threads/index.js";
 
@@ -230,7 +231,6 @@ export function createInterruptRegistry(): InterruptRegistry {
         // subscribe-triggered recovery remains idempotent even if a second caller
         // observed the unresolved interrupt before this transaction committed.
         if (await interruptHasClosingEvent(deps, payload.interruptId)) return;
-        await deps.repos.threads.updateStatus(deps.threadId, "error");
         for (const event of events) {
           await deps.journalWriter.appendEvent(deps.threadId, event);
           await projectReadModelEvent(deps.repos, event);
@@ -341,7 +341,7 @@ function restartInterruptedTurnEvent(turn: Turn): OrchestratorEvent {
       ...turn,
       status: "error",
       finishReason: "error",
-      error: error.message,
+      error: replyFailedCopy,
       completedAt: toIsoString(new Date()),
     },
     error,

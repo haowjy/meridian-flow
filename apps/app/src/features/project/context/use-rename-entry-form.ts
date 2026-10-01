@@ -1,5 +1,5 @@
 /**
- * useRenameEntryForm — inline context entry renaming, built on useInlineNameForm.
+ * useRenameEntryForm — inline context entry renaming, built on useInlineEdit.
  *
  * Adds rename-specific behavior: pre-populated name, extension-aware selection
  * (selects basename without extension), sibling filtering that excludes the
@@ -13,11 +13,11 @@ import {
 } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import { parentContextEntryPath } from "./context-entry-name";
+import { parentContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { createContextIdentityMutationService } from "./context-identity-mutation";
-import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
@@ -37,7 +37,7 @@ export type UseRenameEntryFormOptions = {
   onDone: () => void;
 };
 
-export type RenameEntryForm = InlineNameForm;
+export type RenameEntryForm = InlineEdit;
 
 export function useRenameEntryForm({
   projectId,
@@ -93,15 +93,8 @@ export function useRenameEntryForm({
     [siblingNames, currentName],
   );
 
-  const handleSubmit = useCallback(
-    async (trimmed: string) => {
-      await mutation.mutateAsync(trimmed);
-    },
-    [mutation],
-  );
-
   // Select the name sans extension on focus (e.g. "chapter-1" in "chapter-1.md").
-  const afterFocus = useCallback(
+  const select = useCallback(
     (input: HTMLInputElement) => {
       const initialName = repairName ?? currentName;
       const dotIndex = initialName.lastIndexOf(".");
@@ -110,17 +103,18 @@ export function useRenameEntryForm({
     [currentName, repairName],
   );
 
-  return useInlineNameForm({
-    initialName: repairName ?? currentName,
+  return useInlineEdit({
+    initial: repairName ?? currentName,
+    unchanged: currentName,
     initialError: repairName
       ? t`That rename couldn't be completed. Choose another name or try again.`
       : undefined,
-    siblingNames: filteredSiblings,
-    kind,
-    isPending: mutation.isPending,
-    onSubmit: handleSubmit,
-    onDone,
-    isCancelName: (n) => n === currentName,
-    afterFocus,
+    validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind),
+    onCommit: async (name) => {
+      await mutation.mutateAsync(name);
+      onDone();
+    },
+    onCancel: onDone,
+    select,
   });
 }

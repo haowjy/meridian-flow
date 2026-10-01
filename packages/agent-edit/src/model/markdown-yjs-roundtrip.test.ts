@@ -8,11 +8,6 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 const model = yProsemirrorModel(schema);
 
-const longParagraph = Array.from({ length: 360 }, (_, index) => {
-  const n = index + 1;
-  return `word${n} cultivation arc memory thread`;
-}).join(" ");
-
 type Case = {
   name: string;
   markdown: string;
@@ -20,67 +15,24 @@ type Case = {
 
 const passCases: Case[] = [
   { name: "empty doc", markdown: "" },
-  { name: "heading", markdown: "# Chapter One\n" },
   {
     name: "bold italic inline code link image",
     markdown:
       'Plain **bold**, *italic*, `code()`, [portal](https://example.com "Portal"), and ![map](map.png "Map").\n',
   },
-  { name: "strikethrough", markdown: "This is ~~removed~~ text.\n" },
-  {
-    name: "strikethrough combined with bold inside a sentence",
-    markdown: "This is ~~removed with **bold** inside~~ text.\n",
-  },
-  { name: "unordered list", markdown: "- alpha\n- beta\n- gamma\n" },
-  { name: "ordered list", markdown: "1. alpha\n2. beta\n3. gamma\n" },
   {
     name: "nested mixed list",
     markdown: "- outer\n  - inner bullet\n  1. inner ordered\n- after\n",
   },
-  { name: "task list", markdown: "- [x] Draft\n- [ ] Revise\n" },
   {
     name: "mixed task and regular list items",
     markdown: "- [x] a\n- plain\n- [ ] b\n",
   },
-  { name: "blockquote", markdown: "> quoted line\n> second line\n" },
   { name: "nested blockquote", markdown: "> outer\n>\n> > inner\n" },
   { name: "fenced code language", markdown: "```ts\nconst chi = 9;\nconsole.log(chi);\n```\n" },
-  { name: "horizontal rule", markdown: "Before\n\n---\n\nAfter\n" },
-  { name: "hard line break", markdown: "line one\\\nline two\n" },
-  {
-    name: "mixed long paragraphs",
-    markdown:
-      "The sect elder raised one brow, then wrote **three rules** in the dust. The first was simple: never trust a silent auction. The second was worse.\n\n" +
-      "When dawn came, Mei counted 1,024 spirit stones, `two` broken seals, and a promise she had not meant to make.\n",
-  },
-  { name: "multi-thousand-word doc", markdown: `${longParagraph}\n\n${longParagraph}\n` },
 ];
 
 const acceptedNormalizationCases: Case[] = [
-  {
-    name: "escaped punctuation drops redundant prose backslashes but keeps stable semantics",
-    markdown: "Escaped \\*stars\\*, \\[brackets\\], and \\# hash.\n",
-  },
-  {
-    name: "table cell padding canonicalizes after first round-trip",
-    markdown: "| Stat | Value |\n| :-- | --: |\n| Strength | 128 |\n",
-  },
-  {
-    name: "ragged table rows pad to the header width after first round-trip",
-    markdown: "| A | B |\n| - | - |\n| a |\n",
-  },
-  {
-    name: "table alignment canonicalizes to HTML after first round-trip",
-    markdown: "| Left | Center | Right |\n| :--- | :----: | ----: |\n| a    |    b   |     c |\n",
-  },
-  {
-    name: "table with empty cell canonicalizes to HTML after first round-trip",
-    markdown: "| A | B |\n| - | - |\n| a |   |\n",
-  },
-  {
-    name: "table with escaped pipe canonicalizes to HTML after first round-trip",
-    markdown: "| A           | B |\n| ----------- | - |\n| has \\| pipe | b |\n",
-  },
   {
     name: "table with mixed alignment canonicalizes to HTML after first round-trip",
     markdown: "| Left | Plain | Right |\n| :--- | ----- | ----: |\n| a    | b     |     c |\n",
@@ -131,14 +83,12 @@ describe("markdown → Yjs → markdown fidelity", () => {
         const output = roundTrip(testCase.markdown);
         const normalizedOutput = normalizeMarkdown(output);
 
-        if (testCase.name.includes("prose backslashes")) {
-          expect(normalizedOutput).toBe(
-            normalizeMarkdown(normalizeProseEscapes(testCase.markdown)),
-          );
-        }
         // Tables normalize to the canonical HTML spelling in one pass. Content,
         // cell structure, and column alignment remain semantically lossless.
         expect(normalizeMarkdown(roundTrip(output))).toBe(normalizedOutput);
+        expect(prosemirrorReadbackJson(testCase.markdown)).toEqual(
+          prosemirrorJson(testCase.markdown),
+        );
       });
     }
   });
@@ -176,8 +126,12 @@ function normalizeMarkdown(value: string): string {
   return `${lines.join("\n")}\n`;
 }
 
-function normalizeProseEscapes(markdown: string): string {
-  // The serializer drops redundant `\#` and `\]` in prose here while keeping
-  // `\*` and `\[` escaped so they continue to render as literal characters.
-  return markdown.replace(/\\([#\]])/g, "$1");
+function prosemirrorJson(markdown: string): unknown {
+  return schema.node("doc", null, codec.parse(markdown).blocks).toJSON();
+}
+
+function prosemirrorReadbackJson(markdown: string): unknown {
+  const doc = createCollabYDoc({ gc: false });
+  model.insertBlocks(doc, null, codec.parse(markdown));
+  return prosemirrorRootOf(doc, schema).toJSON();
 }

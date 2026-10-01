@@ -23,8 +23,8 @@ export function ChangeViewRows({
   reveal?: ChangeRevealRequest | null;
 }) {
   return (
-    <div className="px-3 pb-2 pl-9">
-      <ol className="space-y-2">
+    <div className="px-[var(--chat-card-pad-x)] pb-[var(--chat-card-pad-y)] pl-9">
+      <ol className="space-y-[var(--chat-space-row)]">
         {[...changes]
           .sort((left, right) => left.ordinal - right.ordinal)
           .map((change) => (
@@ -71,7 +71,11 @@ function ChangeViewRow({
   }
 
   return (
-    <li ref={rowRef} className="space-y-2 py-2 text-caption" data-change-view-row={change.kind}>
+    <li
+      ref={rowRef}
+      className="space-y-[var(--chat-space-block)] text-caption"
+      data-change-view-row={change.kind}
+    >
       <button
         type="button"
         className="focus-ring rounded-sm text-left font-medium text-prose-foreground"
@@ -99,7 +103,7 @@ export function ChangeExcerpts({ change }: { change: TrailChange }) {
   const after = bodyFromTrailHashline(change.afterTextAtReceipt);
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-[var(--chat-space-row)]">
       {before !== null ? (
         <p
           data-change-excerpt="before"

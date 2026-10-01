@@ -353,6 +353,7 @@ export function createBranchAgentEditJournal(input: {
 
   const resolveBranchScope = async (docId: string): Promise<BranchReversalScope | null> => {
     if (!input.branches) return null;
+    if (!input.branchRows) throw new Error("Branch reversal history is unavailable");
     return resolveBranchReversalScope({
       documentId: docId as DocumentId,
       threadId: input.threadId,
@@ -508,6 +509,7 @@ export function createBranchAgentEditJournal(input: {
     async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
       const scope = await branchScope(docId);
       if (!scope) return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
+      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
       stageBranchReversal({
         pending: input.pendingJournalEntries,
         docId,
@@ -538,6 +540,7 @@ export function createBranchAgentEditJournal(input: {
       const scope = await branchScope(docId);
       if (!scope) return input.liveJournal.persistRedoBatch(docId, entries);
       if (entries.length === 0) return { consumed: false };
+      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
       stageBranchReversal({
         pending: input.pendingJournalEntries,
         docId,
@@ -592,7 +595,7 @@ export class StagedBranchWriteNoopError extends Error {
 
 export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
-    getBranch?(
+    getBranch(
       branchId: string,
     ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
   };

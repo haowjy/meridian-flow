@@ -1,4 +1,5 @@
 /** Drizzle persistence adapter for shadow branch peers and manifest peers. */
+
 import { randomUUID } from "node:crypto";
 import {
   type DocumentCoordinator,
@@ -17,7 +18,6 @@ import {
   documents,
   documentYjsHeads,
   documentYjsUpdates,
-  threads,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -35,7 +35,9 @@ import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
@@ -293,7 +295,7 @@ export function createDrizzleBranchStore(
   }
 
   async function reconcileProjectManifest(projectId: ProjectId): Promise<void> {
-    const { documentId, doc } = await ensureProjectManifest({ projectId });
+    const { documentId, doc } = await loadProjectManifest({ projectId });
     doc.destroy();
     await reconcileLiveManifest(documentId, projectId, await draftSeedExclusions(projectId));
   }
@@ -326,44 +328,47 @@ export function createDrizzleBranchStore(
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
     return runInDrizzleTransaction(db, async () => {
-      await currentDrizzleDb(db)
-        .select({ id: threads.id })
-        .from(threads)
-        .where(eq(threads.id, input.threadId))
-        .for("update");
-      const workId = await findPrimaryWork(input.threadId);
-      const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-      if (existing?.workId === workId) return existing;
-      if (existing) {
-        await currentDrizzleDb(db)
-          .update(documentBranches)
-          .set({ status: "closed", updatedAt: new Date() })
-          .where(
-            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
-          );
-      }
-      const workDraft = await ensureWorkDraftBranch({
-        documentId: input.documentId,
-        workId,
-        liveDoc: input.liveDoc,
-      });
-      const upstreamDoc = materializeBranch(workDraft, input.threadId);
-      try {
-        return await insertBranch({
-          id: `branch_${randomUUID()}`,
+      await lockThreadForMutation(db, input.threadId);
+      // Keep authority stable with the caller's thread lock. The branch writes
+      // commit independently; reacquiring this row in the root would self-deadlock.
+      return runInRootDrizzleTransaction(db, async () => {
+        const workId = await findPrimaryWork(input.threadId);
+        const existing = await findActiveThreadPeer(input.documentId, input.threadId);
+        if (existing?.workId === workId) return existing;
+        if (existing) {
+          await currentDrizzleDb(db)
+            .update(documentBranches)
+            .set({ status: "closed", updatedAt: new Date() })
+            .where(
+              and(
+                eq(documentBranches.id, existing.branchId),
+                eq(documentBranches.status, "active"),
+              ),
+            );
+        }
+        const workDraft = await ensureWorkDraftBranch({
           documentId: input.documentId,
-          kind: "thread_peer",
-          upstreamBranchId: workDraft.branchId,
           workId,
-          threadId: input.threadId,
-          pushPolicy: workDraft.pushPolicy,
-          status: "active",
-          ...(await replicatedSnapshotFrom(upstreamDoc)),
-          schemaVersion: workDraft.schemaVersion,
+          liveDoc: input.liveDoc,
         });
-      } finally {
-        upstreamDoc.destroy();
-      }
+        const upstreamDoc = materializeBranch(workDraft, input.threadId);
+        try {
+          return await insertBranch({
+            id: `branch_${randomUUID()}`,
+            documentId: input.documentId,
+            kind: "thread_peer",
+            upstreamBranchId: workDraft.branchId,
+            workId,
+            threadId: input.threadId,
+            pushPolicy: workDraft.pushPolicy,
+            status: "active",
+            ...(await replicatedSnapshotFrom(upstreamDoc)),
+            schemaVersion: workDraft.schemaVersion,
+          });
+        } finally {
+          upstreamDoc.destroy();
+        }
+      });
     });
   }
 
@@ -413,7 +418,16 @@ export function createDrizzleBranchStore(
     return (row?.projectId as ProjectId | null | undefined) ?? null;
   }
 
-  async function ensureProjectManifest(input: {
+  function ensureProjectManifest(input: {
+    projectId: ProjectId;
+    contextSourceId?: string;
+  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
+    return runInRootDrizzleTransaction(db, () => loadProjectManifest(input));
+  }
+
+  // Live bootstrap joins its caller: the project/source may not be committed yet.
+  // Branch readers use ensureProjectManifest so root peer FKs see durable identity.
+  async function loadProjectManifest(input: {
     projectId: ProjectId;
     contextSourceId?: string;
   }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
@@ -556,7 +570,10 @@ export function createDrizzleBranchStore(
     workId?: WorkId | null;
     threadId?: ThreadId | null;
   }): Promise<{ documentId: DocumentId; members: string[] }> {
-    const manifest = await ensureProjectManifest({ projectId: input.projectId });
+    const manifest =
+      input.threadId || input.workId
+        ? await ensureProjectManifest({ projectId: input.projectId })
+        : await loadProjectManifest({ projectId: input.projectId });
     let doc = manifest.doc;
     if (input.threadId) {
       const peer = await ensureThreadPeerBranch({
@@ -824,7 +841,7 @@ export function createDrizzleBranchStore(
   ): Promise<ManifestMutationResult> {
     const projectId = await projectForDocument(documentId);
     if (!projectId) return {};
-    const { documentId: manifestDocumentId, doc } = await ensureProjectManifest({ projectId });
+    const { documentId: manifestDocumentId, doc } = await loadProjectManifest({ projectId });
     doc.destroy();
     await mutateLiveManifestDocument(manifestDocumentId, (manifestDoc) => {
       const map = manifestDoc.getMap<{ present: true }>("documents");

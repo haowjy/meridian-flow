@@ -1,1 +1,0 @@
-ALTER TABLE "document_branches" ADD COLUMN "discarded_state_vector" "bytea";

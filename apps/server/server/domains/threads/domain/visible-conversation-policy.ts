@@ -1,5 +1,10 @@
 /** Canonical visible-conversational-head and action-required policy. */
-import type { JsonValue, TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type { JsonValue, Turn, TurnRole } from "@meridian/contracts/threads";
+import {
+  ChildCompletionMetadataTagCodec,
+  InboxMessageMetadataCodec,
+  SystemUpdateMetadataCodec,
+} from "./turn-metadata.js";
 
 export function isVisibleConversationalTurn(input: {
   role: TurnRole;
@@ -7,16 +12,20 @@ export function isVisibleConversationalTurn(input: {
   hasCustomBlock: boolean;
 }): boolean {
   if (input.role === "assistant") return true;
-  if (input.role === "system") return input.hasCustomBlock;
+  if (input.role === "system") {
+    return (
+      !ChildCompletionMetadataTagCodec.safeParse(input.metadata).success && input.hasCustomBlock
+    );
+  }
   if (input.role !== "user") return false;
-  const metadata = input.metadata as Record<string, unknown> | null;
-  if (metadata?.kind !== "system_update") return true;
-  return metadata.section !== "work_context" && metadata.section !== "child_report";
+  if (InboxMessageMetadataCodec.safeParse(input.metadata).success) return false;
+  const systemUpdate = SystemUpdateMetadataCodec.safeParse(input.metadata);
+  return !systemUpdate.success || systemUpdate.data.section !== "work_context";
 }
 
 export function isThreadActionRequired(input: {
-  headRole: TurnRole | null;
-  headStatus: TurnStatus | null;
+  activeLineage: ReadonlyArray<Pick<Turn, "role" | "status">>;
 }): boolean {
-  return input.headRole === "assistant" && input.headStatus === "waiting_interrupt";
+  const nearestAssistant = input.activeLineage.find((turn) => turn.role === "assistant");
+  return nearestAssistant?.status === "waiting_interrupt";
 }

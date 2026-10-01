@@ -27,6 +27,8 @@ import {
   meridianErrorFromTool,
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
+import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   ThreadExecutionContext,
@@ -34,6 +36,7 @@ import type {
   WorkReceipt,
   WorkReceiptState,
 } from "@meridian/contracts/works";
+import { workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -55,11 +58,13 @@ import {
 import {
   createWork,
   deleteWorkTransition,
+  setWorkArchived,
   updateWorkTransition,
-  type WorkContextDelivery,
-  WorkDeleteBlockedError,
+  type WorkContextNotices,
+  WorkLifecycleUnavailableError,
   WorkNameRequiredError,
   type WorkRepository,
+  WorkStatusInvalidError,
 } from "../domains/projects/index.js";
 import {
   createCoreToolRegistrations,
@@ -73,7 +78,6 @@ import type {
   ThreadRepository,
   ThreadWorksRepository,
   TurnDocumentTouchRepository,
-  WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import {
   RebindThreadWorkError,
@@ -93,8 +97,8 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
-  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
+  stopThreadRun(threadId: ThreadId): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -115,15 +119,15 @@ type ModelDocumentWriteCommand = {
 }[DocumentWriteCommand["command"]];
 type ModelWriteCommand = DiffWriteCommand | ModelDocumentWriteCommand;
 
-type ResolvedDocumentAddress = DocumentAddress & { created?: boolean };
+type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?: boolean };
 
 type ModelWork = Pick<
   Work,
   | "slug"
   | "name"
   | "goal"
-  | "description"
   | "status"
+  | "archivedAt"
   | "aiWriteMode"
   | "createdAt"
   | "updatedAt"
@@ -221,7 +225,7 @@ async function resolveExecutionContext(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || workLifecycleState(work) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
   return threadExecutionContext(work);
@@ -234,7 +238,7 @@ async function resolveExecutionContextOrThrow(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || workLifecycleState(work) === "deleted") {
     throw new Error("The current Work is unavailable during response finalization");
   }
   return threadExecutionContext(work);
@@ -245,8 +249,8 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -257,8 +261,8 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -375,8 +379,8 @@ function receiptState(work: Work): WorkReceiptState {
   return {
     name: work.name,
     goal: work.goal,
-    description: work.description,
     status: work.status,
+    archived: work.archivedAt !== null,
   };
 }
 
@@ -385,7 +389,7 @@ async function workBySlug(
   projectId: string,
   slug: string,
 ): Promise<Awaited<ReturnType<WorkRepository["findById"]>> | ToolErrorOutput> {
-  const works = await deps.works.listByProject(projectId);
+  const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
   const work = works.find((candidate) => candidate.slug === slug) ?? null;
   if (work) return work;
   const validWorkSlugs = works.map((candidate) => candidate.slug);
@@ -425,6 +429,7 @@ async function resolveDocumentAddress(
     }
     return {
       documentId: ensured.value.documentId,
+      uri: ensured.value.uri,
       filePath: basePath,
       ...(fragment === undefined ? {} : { fragment }),
       created: ensured.value.created,
@@ -447,6 +452,7 @@ async function resolveDocumentAddress(
   }
   return {
     documentId: ref.value.documentId,
+    uri: ref.value.uri,
     filePath: basePath,
     ...(fragment === undefined ? {} : { fragment }),
   };
@@ -459,8 +465,21 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 }
 
 function contextErrorMessage(error: ContextError): string {
+  if (error.code === "context_unavailable") {
+    return workLifecycleMessage(error.reason, error.workSlug);
+  }
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
+}
+
+function workLifecycleMessage(
+  reason: "work_archived" | "work_deleted" | "work_missing",
+  workSlug: string | null,
+): string {
+  const identity = workSlug ? `@${workSlug}` : "the requested Work";
+  return reason === "work_archived"
+    ? `Work ${identity} is archived and read-only. Use the work unarchive command before changing its content.`
+    : `Work ${identity} is unavailable.`;
 }
 
 async function deleteCreatedTrackedDocument(input: {
@@ -619,22 +638,28 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
   return {
     async read(reference, ctx) {
       const execution = await resolveExecutionContext(deps, ctx.threadId);
-      if ("isError" in execution) return JSON.parse(JSON.stringify(execution.output));
+      if ("isError" in execution)
+        return { result: JSON.parse(JSON.stringify(execution.output)), revision: null };
       const context = await resolveContextPort(deps, ctx.threadId);
-      if ("isError" in context) return JSON.parse(JSON.stringify(context.output));
+      if ("isError" in context)
+        return { result: JSON.parse(JSON.stringify(context.output)), revision: null };
       const command = { command: "read" as const, path: reference.uri, format: "auto" as const };
       const address = await resolveDocumentAddress(context, command);
-      if (isToolError(address)) return JSON.parse(JSON.stringify(address.output));
+      if (isToolError(address))
+        return { result: JSON.parse(JSON.stringify(address.output)), revision: null };
       if (address.documentId !== reference.documentId) {
-        return JSON.parse(
-          JSON.stringify(
-            writeToolError(
-              "read",
-              "Referenced document is no longer available at this URI.",
-              "document_not_found",
-            ).output,
+        return {
+          revision: null,
+          result: JSON.parse(
+            JSON.stringify(
+              writeToolError(
+                "read",
+                "Referenced document is no longer available at this URI.",
+                "document_not_found",
+              ).output,
+            ),
           ),
-        );
+        };
       }
       const outcome = await deps.documentSync
         .agentEdit(execution)
@@ -644,7 +669,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
           turnId: ctx.turnId,
         });
       if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
-      return JSON.parse(JSON.stringify(outcome.result));
+      return { result: JSON.parse(JSON.stringify(outcome.result)), revision: outcome.revision };
     },
   };
 }
@@ -677,9 +702,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         responseId: ctx.responseId,
         tool_use_id: ctx.toolCallId,
       });
-      return outcome.isError
-        ? { isError: true, output: outcome.result }
-        : { output: outcome.result };
+      return {
+        ...(outcome.isError ? { isError: true } : {}),
+        output: outcome.result,
+        metadata: {
+          documentRevisions: [
+            ...new Set(outcome.result.diff?.changes.map((change) => change.documentId) ?? []),
+          ].map(
+            (documentId) =>
+              ({ documentId, uri: null, revision: null }) satisfies DocumentRevisionEvidence,
+          ),
+        },
+      };
     }
 
     const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
@@ -749,21 +783,27 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     }
     return {
       output: outcome.result,
-      ...(stagedWrite
-        ? {
-            metadata: {
+      metadata: {
+        documentRevisions: [
+          {
+            documentId: address.documentId,
+            uri: address.uri,
+            revision: outcome.revision,
+          } satisfies DocumentRevisionEvidence,
+        ],
+        ...(stagedWrite
+          ? {
               documentId: address.documentId,
               stagedWrite: true,
               ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
               ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     };
   };
 
   return createCoreToolRegistrations({
-    read: documentToolHandler,
     write: documentToolHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = WorkCommandSchema.safeParse(input);
@@ -775,23 +815,19 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       try {
         if (command.command === "list") {
           const works = await deps.works.listByProject(thread.projectId, {
-            status: command.status ?? "active",
+            lifecycle: command.archived ? "archived" : "active",
           });
           return works.map(modelWork);
         }
 
         if (command.command === "create") {
           const work = await createWork(
-            {
-              works: deps.works,
-              workContextDelivery: deps.workContextDelivery,
-            },
+            { works: deps.works },
             {
               projectId: thread.projectId,
               createdByUserId: thread.userId,
               name: command.name,
               goal: command.goal,
-              description: command.description,
             },
           );
           return {
@@ -807,7 +843,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 after: receiptState(work),
                 inverse: { command: "delete", workId: work.id },
               } satisfies WorkReceipt,
-              workContextChanged: true,
             },
           };
         }
@@ -832,7 +867,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 threads: deps.threads,
                 threadWorks: deps.threadWorks,
                 works: deps.works,
-                obligations: deps.obligations,
+                workContextNotices: deps.workContextNotices,
               },
               {
                 threadId: thread.id,
@@ -846,13 +881,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               slug: rebound.after.slug,
               name: rebound.after.name,
               goal: rebound.after.goal,
-              description: rebound.after.description,
               status: rebound.after.status,
+              archived: rebound.after.archived,
               aiWriteMode: rebound.after.aiWriteMode,
             },
             metadata: {
               workReceipt: rebound.receipt,
-              ...(rebound.changed ? { workContextChanged: true } : {}),
             },
           };
         }
@@ -879,14 +913,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "update") {
           const transition = await updateWorkTransition(
-            { works: deps.works, workContextDelivery: deps.workContextDelivery },
+            { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
-            {
-              name: command.name,
-              goal: command.goal,
-              description: command.description,
-              status: command.status,
-            },
+            { name: command.name, goal: command.goal, status: command.status },
           );
           const { before, after: updated, changed } = transition;
           return {
@@ -904,18 +933,42 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                   ? { command: "update", workId: before.id, state: receiptState(before) }
                   : null,
               } satisfies WorkReceipt,
-              ...(before.name !== updated.name ||
-              before.goal !== updated.goal ||
-              before.status !== updated.status
-                ? { workContextChanged: true }
-                : {}),
+            },
+          };
+        }
+
+        if (command.command === "archive" || command.command === "unarchive") {
+          const transition = await setWorkArchived(
+            { works: deps.works, workContextNotices: deps.workContextNotices },
+            selected.id,
+            command.command === "archive",
+          );
+          const { before, after, changed } = transition;
+          return {
+            output: modelWork(after),
+            metadata: {
+              workReceipt: {
+                operation: "update",
+                category: "mutate",
+                changed,
+                workId: after.id,
+                workName: after.name,
+                before: receiptState(before),
+                after: receiptState(after),
+                inverse: changed
+                  ? { command: "update", workId: before.id, state: receiptState(before) }
+                  : null,
+              } satisfies WorkReceipt,
             },
           };
         }
 
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, workContextDelivery: deps.workContextDelivery },
+            {
+              works: deps.works,
+              stopThreadRun: deps.stopThreadRun,
+            },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -933,7 +986,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 after: null,
                 inverse: transition.changed ? { command: "restore", workId: before.id } : null,
               } satisfies WorkReceipt,
-              ...(transition.changed ? { workContextChanged: true } : {}),
             },
           };
         }
@@ -945,14 +997,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             ...(error.workId ? { workId: error.workId } : {}),
           });
         }
+        if (error instanceof WorkStatusInvalidError) {
+          return toolError({ code: "invalid_work_status", message: error.message });
+        }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
         }
-        if (error instanceof WorkDeleteBlockedError) {
+        if (error instanceof WorkLifecycleUnavailableError) {
+          const reason = `work_${error.state}` as const;
           return toolError({
-            code: "work_delete_blocked",
-            message: error.message,
-            blockingContentKind: error.reason,
+            code: error.state === "archived" ? "work_archived" : "work_not_found",
+            message: workLifecycleMessage(
+              reason,
+              "work" in command ? command.work : (error.workSlug ?? null),
+            ),
           });
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });
@@ -973,7 +1031,22 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.search(pattern, scope);
       if (!result.ok) return modelContextError(result.error, portOrError);
-      return modelContextResults(result.value, portOrError);
+      return {
+        output: modelContextResults(
+          result.value.map(({ documentId: _id, revision: _revision, ...hit }) => hit),
+          portOrError,
+        ),
+        metadata: {
+          documentRevisions: result.value.map(
+            ({ documentId, uri, revision }) =>
+              ({
+                documentId,
+                uri,
+                revision,
+              }) satisfies DocumentRevisionEvidence,
+          ),
+        },
+      };
     },
     ask_user: askUserHandler,
   });

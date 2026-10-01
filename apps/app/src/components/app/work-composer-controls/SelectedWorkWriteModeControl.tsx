@@ -4,8 +4,11 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type RefObject, useRef, useState } from "react";
-import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
+import {
+  activeWorkDraftGroups,
+  useUpdateWorkWriteMode,
+  useWorkDrafts,
+} from "@/client/query/useWorkDrafts";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
@@ -248,7 +251,11 @@ function WriteModeChoices({
   onAuto(): void;
 }) {
   return (
-    <div role="radiogroup" aria-label={t`AI write mode`} className="space-y-1">
+    <div
+      role="radiogroup"
+      aria-label={t`AI write mode`}
+      className="space-y-[var(--chat-space-row)]"
+    >
       <Button
         ref={draftRef}
         role="radio"
@@ -302,26 +309,26 @@ function Confirmation({
   onConfirm(): void;
 }) {
   return (
-    <div className="px-1">
+    <div className="px-[var(--chat-space-inline)]">
       <h2 className="font-semibold">
         <Trans>Drafts are waiting</Trans>
       </h2>
       {failed ? (
-        <p className="mt-1 text-caption text-destructive" role="alert">
+        <p className="mt-[var(--chat-space-inline)] text-caption text-destructive" role="alert">
           <Trans>Couldn't apply everything. Nothing changed, so you're still in Draft.</Trans>
         </p>
       ) : count == null ? (
-        <p className="mt-1 text-caption text-muted-foreground">
+        <p className="mt-[var(--chat-space-inline)] text-caption text-muted-foreground">
           <Trans>Checking pending changes…</Trans>
         </p>
       ) : (
-        <p className="mt-1 text-caption text-muted-foreground">
+        <p className="mt-[var(--chat-space-inline)] text-caption text-muted-foreground">
           <Trans>
             This Work has <Plural value={count} one="# AI change" other="# AI changes" /> in draft.
           </Trans>
         </p>
       )}
-      <div className="mt-3 flex flex-col gap-1">
+      <div className="mt-[var(--chat-space-block)] flex flex-col gap-[var(--chat-space-inline)]">
         <Button
           ref={reviewRef}
           variant="secondary"

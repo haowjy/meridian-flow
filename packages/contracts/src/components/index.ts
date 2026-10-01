@@ -1,8 +1,11 @@
 /**
  * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
- * Key decisions: component block content stays JSON-natural and generic at the envelope, while the MVP `ask_user` component props are typed here so server builders, reducers, and renderers do not re-spell per-kind schemas.
+ * Key decisions: component block content stays JSON-natural and generic at the envelope, while invocation cards and `ask_user` props have explicit typed builders so server producers do not lose their required fields.
  */
-import type { ArtifactRef } from "../interrupt/index.js";
+
+import { z } from "zod";
+import type { ThreadId, TurnId } from "../runtime/index.js";
+import type { ExecutionReportDelivery, SavedOutcome } from "../spawn/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 
 /** Registry key for a renderer/tool-owned custom component. */
@@ -29,52 +32,110 @@ export type ComponentBlockContent = {
   interrupt?: ComponentInterrupt;
 };
 
-export type HelperResultStatus = "running" | "completed" | "failed";
+/** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
+export type ThreadReferenceProps = {
+  threadId: string;
+  ref: string;
+  title: string | null;
+  agentName: string | null;
+  lastActivityAt: string;
+  text: string;
+};
 
-export type HelperResultProps = JsonObject & {
+/** Writer-facing handoff card data, frozen when its seed is reserved. */
+export type HandoffBriefProps = {
+  state: "available" | "unavailable";
+  brief: string | null;
+  sourceThreadId: string;
+  sourceRef: string;
+  sourceTitle: string | null;
+  cutoffTurnId: string;
+  model: string | null;
+  modelText: string;
+};
+
+/** Identity and timing shared by every retained child invocation card. */
+type InvocationCardBase = {
   agentSlug: string;
   agentName: string;
-  status: HelperResultStatus;
-  summary?: string;
-  childThreadId?: string;
-  parentTurnId: string;
+  parentTurnId: TurnId;
+  toolCallId: string;
+  deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
+  startedAt: string;
   title?: string;
-  payload?: JsonValue;
-  artifacts?: ArtifactRef[];
+  fromThreadId?: ThreadId;
+  fromThreadRef?: string;
+  fromThreadTitle?: string | null;
 };
 
-export type HelperResultComponentContent = ComponentBlockContent & {
-  kind: "helper-result";
-  props: HelperResultProps;
-};
+/** Exact parent invocation identity retained on a child run's historical card. */
+export type InvocationCardProps = InvocationCardBase &
+  (
+    | {
+        childThreadId: ThreadId;
+        execution: TurnId | null;
+        terminalAt: null;
+        outcome?: never;
+        reason?: never;
+      }
+    | {
+        childThreadId: ThreadId;
+        execution: TurnId;
+        terminalAt: string;
+        outcome: SavedOutcome;
+        reason?: never;
+      }
+    | {
+        childThreadId?: never;
+        execution?: never;
+        terminalAt: string;
+        outcome?: never;
+        reason: string;
+      }
+  );
 
-export function buildHelperResultComponentContent(
-  input: HelperResultProps,
-): HelperResultComponentContent {
-  return {
-    kind: "helper-result",
-    props: input,
-  };
+const invocationCardBaseSchema = z.strictObject({
+  agentSlug: z.string(),
+  agentName: z.string(),
+  parentTurnId: z.string(),
+  toolCallId: z.string(),
+  deliveryMode: z.enum(["direct", "background_notification"]),
+  startedAt: z.string(),
+  title: z.string().optional(),
+  fromThreadId: z.string().optional(),
+  fromThreadRef: z.string().optional(),
+  fromThreadTitle: z.string().nullable().optional(),
+});
+
+export const invocationCardPropsSchema = z.union([
+  invocationCardBaseSchema.extend({
+    childThreadId: z.string(),
+    execution: z.string().nullable(),
+    terminalAt: z.null(),
+  }),
+  invocationCardBaseSchema.extend({
+    childThreadId: z.string(),
+    execution: z.string(),
+    terminalAt: z.string(),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+  }),
+  invocationCardBaseSchema.extend({
+    terminalAt: z.string(),
+    reason: z.string().min(1),
+  }),
+]);
+
+/** Parse the single persisted invocation-card shape; malformed cards are ignored. */
+export function parseInvocationCard(content: unknown): InvocationCardProps | null {
+  if (!content || typeof content !== "object" || Array.isArray(content)) return null;
+  const candidate = content as Record<string, unknown>;
+  if (candidate.kind !== "helper-result") return null;
+  const parsed = invocationCardPropsSchema.safeParse(candidate.props);
+  return parsed.success ? (parsed.data as InvocationCardProps) : null;
 }
 
-/** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
-export type ChildReportProps = JsonObject & {
-  summary: string;
-  artifacts?: ArtifactRef[];
-};
-
-export type ChildReportComponentContent = ComponentBlockContent & {
-  kind: "child-report";
-  props: ChildReportProps;
-};
-
-export function buildChildReportComponentContent(
-  input: ChildReportProps,
-): ChildReportComponentContent {
-  return {
-    kind: "child-report",
-    props: input,
-  };
+export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {
+  return { kind: "helper-result", props: input as unknown as JsonObject };
 }
 
 /** Answer returned to interrupt tools after user response or auto-resume. */
@@ -152,13 +213,12 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
   properties: {
     question: {
       type: "string",
-      description: "The question to present to the user.",
+      description: "The question for the user.",
     },
     kind: {
       type: "string",
       enum: ASK_USER_KIND_VALUES,
-      description:
-        "choice: present discrete options the user selects from. free-text: present a text input field.",
+      description: "choice shows options to pick from; free-text shows a text field.",
     },
     options: {
       type: "array",
@@ -171,25 +231,21 @@ export const ASK_USER_TOOL_INPUT_SCHEMA = {
         required: ["value", "label"],
         additionalProperties: false,
       },
-      description:
-        "Options for 'choice' kind. Each has a value returned on selection and a label displayed to the user. Required when kind is 'choice'.",
+      description: "Required for choice. value is returned; label is shown.",
     },
     recommended: {
       type: ["string", "null"],
-      description:
-        "Recommended value used as the safe default if auto-resume fires. Null means there is no safe default.",
+      description: "Value used if the question times out; null if none is safe.",
     },
     requiresHuman: {
       type: "boolean",
       default: false,
-      description:
-        "Set true when the decision requires human judgment and must not be auto-resolved on timeout.",
+      description: "Never resolve on timeout; wait for the user.",
     },
     timeoutMs: {
       type: "integer",
       minimum: 1,
-      description:
-        "Optional interrupt timeout in milliseconds. When omitted, the project/default interrupt timeout is used.",
+      description: "Timeout in milliseconds; defaults to the project's.",
     },
   },
   required: ["question", "kind"],

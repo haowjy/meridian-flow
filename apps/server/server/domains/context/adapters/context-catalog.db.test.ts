@@ -13,12 +13,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../test-support/rollback-test-database.js";
-import { createDrizzleProjectRepository } from "../../projects/adapters/project-repository/drizzle.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
+import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
+import { createDocumentAddressResolver } from "../document-address.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
@@ -38,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000804";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
@@ -385,7 +385,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
         db,
-        hasUnreviewedDraft: async () => false,
         projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
@@ -414,7 +413,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const failingRepository = createDrizzleWorkRepository({
         db,
-        hasUnreviewedDraft: async () => false,
         projectionMutation: createWorkProjectionMutation({
           db,
           availability,
@@ -430,7 +428,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       });
       await expect(failingRepository.archive(workId)).rejects.toThrow("catalog failure");
-      await expect(repository.findById(workId)).resolves.toMatchObject({ status: "active" });
+      await expect(repository.findById(workId)).resolves.toMatchObject({ status: null });
       await expect(authority()).resolves.toMatchObject({ available: true });
     });
 
@@ -541,7 +539,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("returns the same @/ scratch and uploads for none and No Work id", async () => {
+    it("returns canonical Work files until the Work is deleted", async () => {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
       const NAMED = "00000000-0000-4000-8000-000000000809";
@@ -612,6 +610,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
+
+      await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
+      expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
+        "scratch://@draft/arc.md",
+      ]);
+      const namedAddress = () =>
+        createDocumentAddressResolver({
+          locations: createDrizzleDocumentAddressStore(db),
+          availability: createDrizzleProjectContextAvailability(db),
+        }).resolve({
+          projectId: PROJECT_ID as never,
+          userId: USER_ID,
+          scheme: "scratch",
+          workId: NAMED,
+          path: "/arc.md",
+        });
+      await expect(namedAddress()).resolves.toMatchObject({
+        kind: "current",
+        document: {
+          documentId: NAMED_FILE,
+          authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
+          entry: { uri: "scratch://@draft/arc.md" },
+        },
+      });
+
+      await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
+      expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
+      await expect(namedAddress()).resolves.toEqual({ kind: "unavailable" });
 
       await expect(
         createDrizzleDocumentAddressStore(db).candidate({

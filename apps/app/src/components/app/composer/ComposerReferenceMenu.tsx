@@ -242,7 +242,7 @@ function ReferenceDisplayText({
   const [text, setText] = useState(reference.displayText ?? reference.label);
   return (
     <form
-      className="space-y-3"
+      className="space-y-[var(--chat-space-block)]"
       onSubmit={(event) => {
         event.preventDefault();
         if (text.trim())

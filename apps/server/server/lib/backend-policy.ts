@@ -23,39 +23,15 @@ export type ResolvedBackends = {
   event: EventProvider;
 };
 
-export function resolveBackendTier(value: BackendTier | undefined): BackendTier {
-  return value ?? "local";
-}
-
-/** Pick a provider: explicit per-service override wins; otherwise follow the umbrella tier. */
-export function resolveProvider<T extends string>(args: {
-  override: T | undefined;
-  backends: BackendTier;
-  local: T;
-  live: T;
-}): T {
-  return args.override ?? (args.backends === "live" ? args.live : args.local);
-}
-
 /** Resolve subsystem providers from env in one place. */
 export function resolveBackends(env: BackendEnv): ResolvedBackends {
-  const backends = resolveBackendTier(env.MERIDIAN_BACKENDS);
+  const backends = env.MERIDIAN_BACKENDS ?? "local";
   return {
     backends,
-    objectStore: resolveProvider({
-      override: env.OBJECT_STORE_PROVIDER,
-      backends,
-      local: "local",
-      live: "s3",
-    }),
+    objectStore: env.OBJECT_STORE_PROVIDER ?? (backends === "live" ? "s3" : "local"),
     // Meridian Flow currently has process-local event fan-out plus durable DB
     // rows. Keep the event sink local in both tiers until a second provider is
     // implemented.
-    event: resolveProvider({
-      override: env.EVENT_PROVIDER,
-      backends,
-      local: "local",
-      live: "local",
-    }),
+    event: env.EVENT_PROVIDER ?? "local",
   };
 }

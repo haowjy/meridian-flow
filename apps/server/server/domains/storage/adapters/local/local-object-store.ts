@@ -4,6 +4,7 @@
  * on-disk layout and token signing; depends inward on the port and URL helper.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Stats } from "node:fs";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -48,6 +49,14 @@ function ok<T>(value: T): ObjectStoreResult<T> {
 
 function err(code: ObjectStoreErrorCode, message: string): ObjectStoreResult<never> {
   return { ok: false, error: { code, message } };
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function ioError(error: unknown, fallback: string): ObjectStoreResult<never> {
+  return err("io_error", error instanceof Error ? error.message : fallback);
 }
 
 const SAFE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$/;
@@ -128,8 +137,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       ]);
       const parsed = JSON.parse(metadata) as LocalObjectMetadata;
       return ok({ bytes: new Uint8Array(bytes), mimeType: parsed.mimeType });
-    } catch {
-      return err("not_found", "Object not found");
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to read object");
     }
   }
 
@@ -147,28 +158,37 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       return err("invalid_key", "Object key prefix is invalid");
 
     const limit = options?.limit ?? 1_000;
-    const keys = await this.collectKeysUnderPrefix(normalizedPrefix);
+    const collected = await this.collectKeysUnderPrefix(normalizedPrefix);
+    if (!collected.ok) return collected;
+    const keys = collected.value;
     const startIndex = options?.cursor ? Number.parseInt(options.cursor, 10) : 0;
     const page = keys.slice(startIndex, startIndex + limit);
     const entries = await Promise.all(
       page.map(async (key) => {
         const target = this.objectPath(key);
-        if (!target.ok) return { key, sizeBytes: 0 };
+        if (!target.ok) return target;
         try {
           const [fileStat, metadata] = await Promise.all([
             stat(target.value),
             readFile(this.metadataPath(target.value), "utf8"),
           ]);
           const parsed = JSON.parse(metadata) as LocalObjectMetadata;
-          return { key, sizeBytes: Number(fileStat.size), mimeType: parsed.mimeType };
-        } catch {
-          return { key, sizeBytes: 0 };
+          return ok({ key, sizeBytes: Number(fileStat.size), mimeType: parsed.mimeType });
+        } catch (error) {
+          return isMissingFile(error)
+            ? err("not_found", "Object changed while listing")
+            : ioError(error, "Failed to list object");
         }
       }),
     );
     const nextIndex = startIndex + page.length;
+    const listedEntries: Array<{ key: string; sizeBytes: number; mimeType?: string }> = [];
+    for (const entry of entries) {
+      if (!entry.ok) return entry;
+      listedEntries.push(entry.value);
+    }
     return ok({
-      keys: entries,
+      keys: listedEntries,
       ...(nextIndex < keys.length ? { cursor: String(nextIndex) } : {}),
     });
   }
@@ -179,8 +199,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
 
     try {
       await stat(target.value);
-    } catch {
-      return err("not_found", "Object not found");
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to stat object");
     }
 
     const exp = Math.floor(this.now().getTime() / 1000) + this.signedUrlTtlSeconds;
@@ -232,8 +254,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       metadata = JSON.parse(
         await readFile(this.metadataPath(target.value), "utf8"),
       ) as LocalObjectMetadata;
-    } catch {
-      return err("not_found", "Object metadata not found");
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object metadata not found")
+        : ioError(error, "Failed to read object metadata");
     }
 
     try {
@@ -244,8 +268,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         sizeBytes: Number(size.size),
         stream: createReadStream(target.value),
       });
-    } catch {
-      return err("not_found", "Object not found");
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to stat object");
     }
   }
 
@@ -267,31 +293,44 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return `${objectPath}.metadata.json`;
   }
 
-  private async collectKeysUnderPrefix(prefix: string): Promise<string[]> {
+  private async collectKeysUnderPrefix(prefix: string): Promise<ObjectStoreResult<string[]>> {
     const keys: string[] = [];
-    const walk = async (relativeDir: string): Promise<void> => {
+    const walk = async (relativeDir: string): Promise<ObjectStoreResult<void>> => {
       const absoluteDir = relativeDir ? path.join(this.rootDir, relativeDir) : this.rootDir;
       let entries: string[];
       try {
         entries = await readdir(absoluteDir);
-      } catch {
-        return;
+      } catch (error) {
+        return isMissingFile(error) && relativeDir
+          ? ok(undefined)
+          : isMissingFile(error)
+            ? ok(undefined)
+            : ioError(error, "Failed to enumerate object store");
       }
       for (const entry of entries) {
         if (entry.endsWith(".metadata.json")) continue;
         const relativePath = relativeDir ? path.join(relativeDir, entry) : entry;
         const absolutePath = path.join(absoluteDir, entry);
-        const fileStat = await stat(absolutePath);
+        let fileStat: Stats;
+        try {
+          fileStat = await stat(absolutePath);
+        } catch (error) {
+          return isMissingFile(error)
+            ? err("not_found", "Object changed while listing")
+            : ioError(error, "Failed to inspect object store entry");
+        }
         const key = relativePath.split(path.sep).join("/");
         if (fileStat.isDirectory()) {
-          await walk(relativePath);
+          const nested = await walk(relativePath);
+          if (!nested.ok) return nested;
           continue;
         }
         if (key.startsWith(prefix)) keys.push(key);
       }
+      return ok(undefined);
     };
-    await walk("");
-    return keys.sort((a, b) => a.localeCompare(b));
+    const result = await walk("");
+    return result.ok ? ok(keys.sort((a, b) => a.localeCompare(b))) : result;
   }
 
   private sign(payload: string): string {

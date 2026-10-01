@@ -1,1 +1,0 @@
-ALTER TABLE "change_trail_document_occurrences" ADD COLUMN "projection_revision" integer DEFAULT 0 NOT NULL;

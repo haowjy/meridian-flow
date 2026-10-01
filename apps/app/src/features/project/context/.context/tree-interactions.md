@@ -3,14 +3,16 @@
 Reference detail for Context-tree interactions. Read [CONTEXT.md](CONTEXT.md)
 for feature-level contracts first.
 
-## InlineNameForm semantics
+## Inline name form semantics
 
-The shared state machine in `use-inline-name-form.ts`. Adapters supply options;
-the core owns focus, validation, and commit behavior.
+Create and rename adapt `useInlineEdit` (`components/ui/use-inline-edit.ts`),
+the protocol every in-place edit in the app shares; `EntryNameField` renders
+the field with its floating validation note.
 
-**Submit:** Enter commits (unless pending or error-blocked). Escape cancels.
-Blur-with-content commits (unless Escape already cancelled). Empty input =
-cancel. Blocking errors refocus the input.
+**Submit:** Enter or blur commits (unless pending or error-blocked). Escape
+cancels. Empty or unchanged input = cancel. IME composition keys are ignored.
+Blocking errors refocus the input; a failed mutation stays open with its
+message.
 
 **Focus:** Auto-focus on mount. `requestAnimationFrame` retry handles Radix menu
 focus-scope teardown — the menu's closing animation holds focus for one frame,
@@ -20,12 +22,10 @@ swallowing a same-tick `focus()`.
 
 | Concern | `useCreateEntryForm` | `useRenameEntryForm` |
 |---|---|---|
-| initialName | `""` | `entry.name` |
-| isCancelName | — | same as current name |
-| siblingNames | all siblings | siblings excluding current |
-| afterFocus | — | extension-aware selection |
-
-Both adapters are ~25 lines. The shared core is ~100 lines.
+| initial | `""` | `entry.name` (or the failed repair name) |
+| unchanged | — | current name |
+| validate siblings | all siblings | siblings excluding current |
+| select | — | extension-aware selection |
 
 ## Dual-trigger caveat
 
@@ -64,7 +64,7 @@ open cancels creation and then performs the requested toggle; disclosure clicks
 must never feel inert. Sibling-collision
 validation uses the target folder's children. The captured `workId` keeps an in-flight request on its initiating Editor scope across route changes. Starting a creation anywhere
 replaces a pending one; Escape/blur semantics are the shared
-`useInlineNameForm` contract.
+`useInlineEdit` contract.
 
 ## Tree query invalidation
 

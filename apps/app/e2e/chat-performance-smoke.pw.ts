@@ -28,7 +28,9 @@ test("large chat keeps settled history virtualized", async ({ page }) => {
       titlePrefix: "Chat performance smoke",
     });
     await seedChatTurns(db, fixture, TURN_COUNT);
-    await page.goto(`/chat/${fixture.threadId}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByRole("heading", { name: fixture.title })).toBeVisible();
 
     const virtualList = page.locator("[data-chat-virtual-list]");
@@ -83,8 +85,8 @@ async function seedChatTurns(db: Db, fixture: ProjectFixture, turnCount: number)
       const createdAt = new Date(now + index * 1000);
 
       await tx`
-        INSERT INTO turns (id, thread_id, parent_turn_id, role, status, finish_reason, created_at, completed_at)
-        VALUES (${turnId}, ${fixture.threadId}, ${previousTurnId}, ${role}, 'complete', ${role === "assistant" ? "end_turn" : null}, ${createdAt}, ${createdAt})
+        INSERT INTO turns (id, thread_id, parent_turn_id, position, role, status, finish_reason, created_at, completed_at)
+        VALUES (${turnId}, ${fixture.threadId}, ${previousTurnId}, ${index + 1}, ${role}, 'complete', ${role === "assistant" ? "end_turn" : null}, ${createdAt}, ${createdAt})
       `;
       await tx`
         INSERT INTO turn_blocks (id, turn_id, block_type, sequence, content, model_text, compact, status, created_at)

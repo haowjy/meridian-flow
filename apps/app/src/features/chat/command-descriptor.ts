@@ -1,20 +1,6 @@
-/**
- * command-descriptor — everything the timeline says and shows about one
- * command, in one exhaustive table.
- *
- * `tool-command.ts` answers *which command is this*. This module answers *what
- * do we do with it*: the glyph, whether it changed the document, both tenses of
- * its verb, what a failure is called, and what the row says when the command
- * named no document. Those five used to be five switches in three files, so
- * adding a command meant finding all of them and a wrong failure verb was
- * invisible. One entry per command now, and `Record<ToolCommand, ...>` makes a
- * missing entry a type error.
- *
- * Every copy field is a function because Lingui's `t` resolves against the
- * active locale when it runs. A table of top-level strings would freeze the
- * catalog at module load.
- */
+/** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
   FilePlus2,
@@ -31,7 +17,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { folderDisplayName } from "./document-display-name";
+import { documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   humanizeSkillSlug,
@@ -44,11 +30,6 @@ import {
 } from "./tool-command";
 import { workReceiptLine } from "./work-receipt-copy";
 
-/**
- * A row title split the way the timeline renders it: the command leads at full
- * ink, and what it acted on follows, quieter. `parameter` is absent when the
- * phrase names nothing the writer would read as a separate thing.
- */
 export type ToolActivityPhrase = {
   verb: string;
   /**
@@ -66,13 +47,6 @@ export type ToolActivityVocabulary = {
   complete: ToolActivityPhrase;
 };
 
-/**
- * What a command's row shows behind its chevron. The registry keys expands by
- * tool name, but one `write` tool covers reading, skimming, creating and
- * editing, and those show different things. Naming the shape here keeps that
- * per-command decision beside the command's other policy instead of becoming
- * another switch in a renderer.
- */
 export type CommandExpand =
   /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
@@ -91,11 +65,7 @@ export type CommandDescriptor = {
   phrases: (tool: ToolView, writeMode: WriteMode) => ToolActivityVocabulary;
   /** A failure is its own claim, so it never reuses the success verb. */
   failureVerb: (writeMode: WriteMode) => string;
-  /**
-   * The complete-tense title when the command named no document. `null` for
-   * commands that never name one, whose phrase already reads as a whole
-   * sentence.
-   */
+  /** The complete-tense title when the command named no document. */
   pathlessTitle: ((writeMode: WriteMode) => string) | null;
   expand: CommandExpand;
 };
@@ -110,13 +80,6 @@ function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
 }
 
-/**
- * A Work command's tenses. The complete tense is the server's receipt line —
- * the factual record of what happened, written in Work names — worn as the
- * row title. Rows carry no terminal punctuation, so the sentence's period is
- * dropped; everything else is verbatim. The client verb covers a result that
- * carried no receipt (in flight, a failure, or an older server).
- */
 function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
   const receipt = workReceipt(tool);
   const line = receipt ? workReceiptLine(receipt) : null;
@@ -126,7 +89,7 @@ function workTenses(tool: ToolView, active: string, complete: string): ToolActiv
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   read: {
     Icon: BookOpen,
-    phrases: () => tenses(t`Reading…`, t`Read`),
+    phrases: (tool) => documentReadTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-preview",
@@ -135,23 +98,31 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   // over that payload claims the model saw the words.
   skim: {
     Icon: List,
-    phrases: () => tenses(t`Skimming…`, t`Skimmed`),
+    phrases: (tool) => documentReadTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-outline",
   },
   create: {
     Icon: FilePlus2,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Writing…`, t`Wrote`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Writing`,
+        writeMode === "draft" ? t`Drafted` : t`Wrote`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't write`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
     expand: "submitted-content",
   },
   edit: {
     Icon: PenLine,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Editing…`, t`Edited`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Editing`,
+        writeMode === "draft" ? t`Drafted` : t`Edited`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't edit`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Edited file`),
     expand: "submitted-content",
@@ -183,7 +154,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   search: {
     Icon: Search,
     phrases: (tool) => {
-      const pattern = stringInput(toolInputObject(tool), "pattern");
+      const input = toolInputObject(tool);
+      const pattern = stringInput(input, "query") ?? stringInput(input, "pattern");
       if (!pattern) return tenses(t`Searching…`, t`Searched context`);
       const quoted = `“${truncatePattern(pattern)}”`;
       return {
@@ -274,6 +246,39 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
 };
 
+function documentReadTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const file = documentTarget(input);
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+function documentWriteTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const file = documentTarget(toolInputObject(tool));
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+function documentTarget(input: Record<string, JsonValue>): string | undefined {
+  return stringInput(input, "path") ?? stringInput(input, "uri") ?? stringInput(input, "file");
+}
+
 export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];
 }
@@ -296,4 +301,21 @@ export function toolActivityPhrase(
 /** Flattens a phrase for the screen reader, which hears no typography. */
 export function toolActivityAnnouncement(phrase: ToolActivityPhrase): string {
   return phrase.parameter ? `${phrase.verb} ${phrase.parameter}` : phrase.verb;
+}
+
+/** Shared writer-facing label for a live tool dispatch (same vocabulary as ToolRow). */
+export function liveToolActivityLabel(toolName: string, input: unknown): string {
+  const tool: ToolView = {
+    toolCallId: null,
+    toolName,
+    input: (input ?? null) as ToolView["input"],
+    output: null,
+    status: "partial",
+    isError: false,
+    message: null,
+    streamedOutput: null,
+    metadata: null,
+    keyBlock: {} as ToolView["keyBlock"],
+  };
+  return toolActivityAnnouncement(toolActivityPhrase(tool));
 }

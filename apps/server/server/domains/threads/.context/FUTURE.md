@@ -17,3 +17,15 @@ and incremental index over turn text. It returns chat, excerpt, and deep link.
 It is not an extension of title search. Postgres built-in FTS does not segment
 Chinese: choose between `pg_trgm`, a segmentation extension, or a dedicated
 engine from a real English and Chinese relevance set.
+
+## More prompt epoch causes
+
+Compaction and its undo are the only callers of `beginPromptEpoch`. Other
+causes are deferred, not designed out: a fork with a fresh bake, a refresh when
+the provider cache is already known cold (so the rebake costs nothing), and a
+forced refresh. Each must be a named, visible boundary turn through
+`beginPromptEpoch` (see
+[runtime prompt lifetime](../../runtime/.context/request-assembly.md)). Never
+rebake silently on a model change, an idle timer, or an Agent revision update.
+A mid-thread change the model needs to learn about is a system notification in
+conversation, never a prompt or tool-list rewrite.

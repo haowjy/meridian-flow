@@ -1,21 +1,4 @@
-/**
- * TurnEditsReceipt — the compact per-turn receipt for what a turn changed.
- *
- * INVARIANT: record, not control panel — no draft affordance may be added here.
- * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
- * is the only turn control. At rest, the receipt is one quiet borderless line.
- * The header counts documents and carries durable word deltas — it never
- * names one (names are doors, and chrome carries no doors); expanding lists
- * each document as a navigable row in the same bordered card.
- *
- * A turn's changes have two halves: document edits and Work mutations. A Work
- * receipt carrying an inverse is as much this card's business as an edited
- * chapter — a Work-only delete must still offer Undo, and a reversal that
- * restored a Work must read as the success it was.
- *
- * Turn lineage owns Undo authority. Authorized trail detail owns durable row
- * evidence and navigation.
- */
+/** Renders durable document and Work change receipts. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
@@ -54,13 +37,7 @@ function hasTurnEditsReceiptDocuments(
   );
 }
 
-/**
- * Whether this turn has a receipt to show at all: committed document edits,
- * or a reversible Work mutation receipt. Both callers
- * (`AssistantTurn`'s render gate and this component's own null return) must
- * ask the same predicate, or a Work-only turn passes one gate and fails the
- * other.
- */
+/** Whether this turn has a receipt to show at all: committed document edits, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   changeTrail: ChangeTrailShell | undefined,
@@ -182,7 +159,7 @@ export function TurnEditsReceipt({
   }
   return (
     <div
-      className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
       data-turn-receipt
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
@@ -191,7 +168,7 @@ export function TurnEditsReceipt({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
+        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-muted"
       >
         <button
           type="button"
@@ -201,7 +178,7 @@ export function TurnEditsReceipt({
             event.stopPropagation();
             setExpanded((value) => !value);
           }}
-          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 text-left"
+          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left"
         >
           <ChevronDown
             className={cn(
@@ -229,7 +206,7 @@ export function TurnEditsReceipt({
         </button>
         {undoUnavailable ? (
           <span
-            className="shrink-0 rounded-full border border-border-subtle px-2 py-0.5 font-medium text-ink-muted"
+            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-ink-muted"
             data-undo-unavailable
           >
             <Trans>Can't undo</Trans>
@@ -251,11 +228,11 @@ export function TurnEditsReceipt({
         )}
       </div>
       {expanded ? (
-        <div id={panelId} className="border-border-subtle border-t py-1">
+        <div id={panelId} className="border-border-subtle border-t">
           {restoredNotices?.map((notice) => (
             <p
               key={notice}
-              className="px-3 py-2 pl-9 text-prose-foreground"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
               data-work-restored
               role="status"
             >
@@ -263,7 +240,11 @@ export function TurnEditsReceipt({
             </p>
           ))}
           {guardCopy ? (
-            <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason role="status">
+            <p
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-ink-muted"
+              data-undo-unavailable-reason
+              role="status"
+            >
               {guardCopy}
             </p>
           ) : null}
@@ -294,7 +275,7 @@ export function TurnEditsReceipt({
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
-                  <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
                     {workReceiptLine(workRow)}
                   </span>
                 </li>
@@ -307,14 +288,7 @@ export function TurnEditsReceipt({
   );
 }
 
-/**
- * A reversal the writer asked for and did not get, plus the direction they
- * asked in — the direction the receipt carries can flip under a refusal, and
- * the copy has to name the command the writer actually pressed.
- *
- * `request_failed` covers everything that never reached a status: a rejected
- * fetch, an HTTP error envelope, a dropped connection.
- */
+/** A reversal the writer asked for and did not get, plus the direction they asked in — the direction the receipt carries can flip under a refusal, and the copy has to name the comm.... */
 type ReversalRefusal = {
   direction: ReversalDirection;
   status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
@@ -330,13 +304,7 @@ function refusedReversalStatus(
   return status;
 }
 
-/**
- * Writer-facing copy for a refused reversal. Total by construction: the switch
- * is exhaustive over the wire union, and the fallback covers a server that
- * sends a status this client has never heard of. A refusal without copy is a
- * click that does nothing and explains nothing, which is the one outcome this
- * surface may never produce.
- */
+/** Writer-facing copy for a refused reversal. */
 function reversalRefusalCopy(refusal: ReversalRefusal): string {
   switch (refusal.status) {
     case "nothing_to_redo":
@@ -422,7 +390,7 @@ function ChangeViewDetail({
   if (shell.state !== "settled") return null;
   if (detail.isError) {
     return (
-      <div className="px-3 py-2 text-caption text-ink-muted">
+      <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
         <p>
           <Trans>Couldn't load change details.</Trans>
         </p>
@@ -435,7 +403,10 @@ function ChangeViewDetail({
   return detail.data?.map((document) => {
     if ("unavailable" in document) {
       return (
-        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
+        <p
+          key={document.documentId}
+          className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted"
+        >
           <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
         </p>
       );
@@ -454,12 +425,12 @@ function ChangeViewDetail({
             canOpenContextUri={canOpenContextUri}
           />
         ) : (
-          <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+          <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
             {document.documentTitle}
           </span>
         )}
         {document.anchorState === "deleted" ? (
-          <p className="px-3 py-1 text-caption text-ink-muted">
+          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
             <Trans>
               This chapter is no longer available. Copy any saved text you want to keep.
             </Trans>
@@ -502,7 +473,7 @@ function DocumentRow({
 }) {
   if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
-      <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
         <DocumentName path={document.uri} insideDoor />
       </span>
     );
@@ -511,7 +482,7 @@ function DocumentRow({
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-muted"
+      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
     >
       {/* The whole row is the door here, so the name inside it stays inert. */}
       <DocumentName path={document.uri} insideDoor />

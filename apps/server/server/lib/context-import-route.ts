@@ -8,7 +8,6 @@ import {
   type CorpusImportInputFile,
   type CorpusImportSource,
   createCorpusImportService,
-  createFixtureDriveImportSource,
   createMammothDocumentConverter,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
@@ -21,7 +20,6 @@ function importService(deps: ContextImportRouteDeps) {
   return createCorpusImportService({
     contextPorts: deps.contextPorts,
     converter: createMammothDocumentConverter(),
-    driveSource: createFixtureDriveImportSource(),
   });
 }
 
@@ -35,11 +33,4 @@ export async function handleContextKbImportFilesRequest(
   },
 ): Promise<CorpusImportBatchResult> {
   return importService(deps).importFiles(input);
-}
-
-export async function handleContextKbImportDriveFixtureRequest(
-  deps: ContextImportRouteDeps,
-  input: { userId: string; projectId: string },
-): Promise<CorpusImportBatchResult> {
-  return importService(deps).importDriveFixture(input);
 }

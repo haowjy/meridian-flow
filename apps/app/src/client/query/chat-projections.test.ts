@@ -54,7 +54,7 @@ const page = (items: ProjectChatItem[]): ChatFeedData => ({
 
 const allKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { favorite: false, search: null });
 const favoriteKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { favorite: true, search: null });
-const workKey = projectQueryKeys.workThreads(PROJECT_ID, WORK_ID);
+const workKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { workId: WORK_ID });
 
 function seededClient(): QueryClient {
   const client = new QueryClient();

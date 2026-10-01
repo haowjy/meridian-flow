@@ -1,5 +1,19 @@
 export type AiWriteMode = "direct" | "draft";
-export type WorkStatus = "active" | "archived";
+
+export const WORK_STATUS_MAX_LENGTH = 32;
+export const INVALID_WORK_STATUS = Symbol("invalid_work_status");
+
+export function normalizeWorkStatus(
+  raw: string | null,
+): string | null | typeof INVALID_WORK_STATUS {
+  if (raw === null) return null;
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  if (normalized.length > WORK_STATUS_MAX_LENGTH || normalized.split(" ").length > 3) {
+    return INVALID_WORK_STATUS;
+  }
+  return normalized;
+}
 
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
@@ -16,25 +30,33 @@ export interface Work {
   slug: WorkSlug | null;
   isNoWork: boolean;
   goal: string | null;
-  description: string | null;
-  status: WorkStatus;
+  /** AI-owned one-to-three-word progress summary. */
+  status: string | null;
   archivedAt: string | null;
   aiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /**
-   * the server's count of unpushed `branch_write_journal` rows across
-   * this work's branches (spec §3.4) — the single denominator the whole review
-   * surface trusts. The confirm-and-push popover renders this exact N ("Apply N
-   * and switch") and the server pushes exactly this many, so the copy cannot
-   * lie. MUST come from the server, never recomputed from visible dock rows.
-   * Produced by the S4 server lane; `null`/absent until it lands.
-   */
+  /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
   unpushedChangeCount?: number | null;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
   deletedAt: string | null;
+}
+
+/** Where a Work stands in its lifecycle. Deleted wins over archived. */
+export type WorkLifecycleState = "active" | "archived" | "deleted";
+
+export function workLifecycleState(
+  work: Pick<Work, "archivedAt" | "deletedAt">,
+): WorkLifecycleState {
+  if (work.deletedAt !== null) return "deleted";
+  return work.archivedAt !== null ? "archived" : "active";
+}
+
+/** The one archived test. An archived Work's own content is read-only; its chats still accept messages. */
+export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
+  return work.archivedAt !== null;
 }
 
 export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
@@ -58,13 +80,11 @@ export interface CreateWorkRequest {
   id?: WorkId;
   name: string;
   goal?: string;
-  description?: string;
 }
 
 export interface UpdateWorkRequest {
   name?: string;
   goal?: string;
-  description?: string;
 }
 
 /** Resolved execution scope. Null slug is No Work. */
@@ -121,4 +141,5 @@ export interface WorkContextProjectionSignal {
 
 export * from "./receipts.js";
 export * from "./work-authority.js";
+export * from "./work-retention.js";
 export * from "./work-slug.js";

@@ -4,7 +4,8 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
-import type { AgentSelection } from "../agents/index.js";
+import { z } from "zod";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -12,7 +13,7 @@ import {
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
 import type { DocumentId, UserId, WorkId } from "../ids.js";
-import type { Project } from "../projects/index.js";
+import type { ProjectDto } from "../projects/index.js";
 import { parseRequestId } from "../request-id.js";
 import type {
   Block,
@@ -21,7 +22,10 @@ import type {
   ModelRequestDebugRetention,
   ModelResponse,
   Thread,
+  ThreadActivity,
   ThreadListItem,
+  ThreadPendingInbox,
+  ThreadStatus,
   Turn,
   TurnContextPreview,
   TurnRole,
@@ -48,8 +52,13 @@ export type {
 
 export type ThreadLiveState = {
   threadId: string;
-  status: Thread["status"];
+  /** Derived from the live lease, not the durable thread row. */
+  status: ThreadStatus;
   runningTurnId: string | null;
+  /** Direct subagent activity for this thread; derived, never a turn block. */
+  activity: ThreadActivity;
+  /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
+  pending: ThreadPendingInbox;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };
@@ -61,7 +70,7 @@ export type CreateProjectRequest = {
   description?: string | null;
 };
 
-export type CreateProjectResponse = Project;
+export type CreateProjectResponse = ProjectDto;
 
 export type UpdateProjectRequest = {
   title?: string;
@@ -69,7 +78,7 @@ export type UpdateProjectRequest = {
 };
 
 export type ListProjectsResponse = {
-  projects: Project[];
+  projects: ProjectDto[];
 };
 
 export type ListProjectThreadsResponse = {
@@ -353,6 +362,30 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
+export const forkThreadRequestSchema = z
+  .object({
+    /** Client-minted id makes a navigate-first fork retryable. */
+    id: z.string(),
+    originTurnId: z.uuid(),
+  })
+  .strict();
+
+export const handoffThreadRequestSchema = z.strictObject({
+  id: z.uuid(),
+  originTurnId: z.uuid(),
+  agentSelection: agentSelectionSchema,
+});
+export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
+
+export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
+
+/** Client-minted assistant-turn identity for an explicit retry of a failed reply. */
+export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
+
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
   confirmedPush?: boolean;
@@ -373,8 +406,6 @@ export type SendMessageRequest = {
   text: string;
   blocks: unknown;
   references: SubmittedReference[];
-  /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
-  connectionToken?: string;
   /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: string[];
 };
@@ -392,7 +423,8 @@ export type ThreadAvailableSkillsResponse = {
 export type SendMessageResponse = {
   threadId: string;
   userTurnId: string;
-  assistantTurnId: string;
+  /** The live run's assistant turn on a merged send; null for a fresh run. */
+  assistantTurnId: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**
@@ -409,21 +441,50 @@ export type CancelTurnResponse = {
   status: "cancelled" | "already_finished" | "not_found";
 };
 
-export type ThreadSnapshotParent = {
+export type ThreadSnapshotAncestor = {
   id: string;
   title: string | null;
+  agentName: string | null;
 };
 
 export type ThreadSnapshotResponse = {
   threadId: string;
   thread: Thread;
   turns: Turn[];
+  /** Token totals across every model response billed to this thread, all turn branches included. */
+  threadUsage: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  };
   liveState: ThreadLiveState;
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
-  /** Point-lookup parent for subagent chrome. Absent conversation payload. */
-  parent?: ThreadSnapshotParent | null;
+  /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
+  ancestors: ThreadSnapshotAncestor[];
+};
+
+/** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
+export type TranscriptPageResponse = {
+  /** Page entries are chronological, even when requested newest-first. */
+  entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
+  owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
+  segment: {
+    index: number;
+    bakeId: string | null;
+    openedBy: { turnId: string; kind: "compaction" | "other" } | null;
+    compactedThrough?: { turnId: string; blockSequence?: number };
+  };
+  segmentBoundary: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
+  /** A live, non-cursor preview returned only on the first effective newest-first page. */
+  unsettledTail?: Array<{ turn: Turn; blocks: Block[] }>;
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

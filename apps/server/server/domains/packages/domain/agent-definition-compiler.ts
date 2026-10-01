@@ -1,7 +1,6 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
 import {
   agentEffortAuthoringSchema,
-  authoringToolContradiction,
   type ToolPolicy,
   toolReferencesSchema,
   toolRepresentationSchema,
@@ -32,7 +31,7 @@ const metadata = z.looseObject({
   subagents: references.optional(),
   skills: skills.optional(),
   approval: z.enum(["default", "auto", "confirm", "never"]).optional(),
-  autocompact: z.number().int().min(0).max(4_294_967_295).optional(),
+  autocompact: z.number().int().min(1).max(4_294_967_295).optional(),
   autocompact_pct: z.number().int().min(1).max(100).optional(),
 });
 
@@ -108,11 +107,6 @@ export function compileAgentDefinition(source: {
         Object.entries(merged.tools).filter(([, policy]) => policy === "allow"),
       );
     }
-  }
-  const contradiction = authoringToolContradiction(merged);
-  if (contradiction) {
-    diagnostics.push({ field: "tools", message: contradiction });
-    return { ok: false, diagnostics };
   }
   const definition: CompiledAgentDefinition = {
     schemaVersion: 1,

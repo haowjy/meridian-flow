@@ -5,16 +5,18 @@ export interface Project {
   id: ProjectId;
   userId: UserId;
   name: string;
-  /** Alias for name used by project CRUD routes. */
-  title: string;
   slug: string;
   isPersonal: boolean;
   systemPrompt: string | null;
-  /** Alias for systemPrompt used by project CRUD routes. */
-  description: string | null;
   settings: ProjectSettings;
   lastActivityAt: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
 }
+
+/** Route spelling for the domain's canonical name/systemPrompt fields. */
+export type ProjectDto = Omit<Project, "name" | "systemPrompt"> & {
+  title: string;
+  description: string | null;
+};

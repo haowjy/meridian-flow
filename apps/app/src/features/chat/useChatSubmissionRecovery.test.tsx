@@ -18,18 +18,21 @@ import {
   ThreadRunScenario,
 } from "@/client/copilot/test-support/ThreadRunScenario";
 import {
+  type DerivationIntent,
+  resetDerivationsForTest,
+  resumeDerivation,
+} from "./derivation/derive-conversation";
+import {
   type ChatSubmissionRecovery,
   clearChatSubmissionRecoverySession,
   rememberSubmissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-  msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
+const threadsApi = vi.hoisted(() => ({ forkThread: vi.fn(), handoffThread: vi.fn() }));
+vi.mock("@/client/api/threads-api", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...threadsApi,
 }));
 
 (
@@ -65,6 +68,8 @@ afterEach(async () => {
   // Session maps outlive a component mount; reset them so module memory cannot
   // leak across tests.
   clearChatSubmissionRecoverySession();
+  resetDerivationsForTest();
+  threadsApi.forkThread.mockReset();
 });
 
 beforeEach(() => {
@@ -510,5 +515,102 @@ describe("useChatSubmissionRecovery", () => {
     expect(scenario.activeSubscription()).toBeUndefined();
     // The journal stays: the returning session's lookup owns the bridge/retire.
     expect(readChatSubmissions(ACCOUNT)).toMatchObject([{ submissionId: "sub-unmount" }]);
+  });
+
+  describe("a fork reloaded while it is still being created", () => {
+    const intent: DerivationIntent = {
+      kind: "fork",
+      threadId: THREAD_ID,
+      projectId: "project-1",
+      sourceThreadId: "source",
+      sourceTitle: "Chapter 12 plan",
+      originTurnId: "cut",
+      workId: null,
+      agent: null,
+      agentName: "General",
+      createdAt: "2026-09-22T12:00:00.000Z",
+    };
+
+    function resumeCreation(scenario: ThreadRunScenario) {
+      let settle!: { resolve: (thread: unknown) => void; reject: (error: unknown) => void };
+      threadsApi.forkThread.mockReturnValue(
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+      );
+      // What ChatScreen does on reload, before the chat mounts.
+      const threadActions = scenario.store.getState();
+      resumeDerivation(intent, {
+        accountId: ACCOUNT,
+        accountSignal: new AbortController().signal,
+        threadActions: {
+          ensureThread: () => undefined,
+          markPendingCreation: threadActions.markPendingCreation,
+          clearPendingCreation: threadActions.clearPendingCreation,
+        },
+      });
+      return settle;
+    }
+
+    it("waits for the thread before looking up or replaying the first message", async () => {
+      recordChatSubmission(ACCOUNT, entry());
+      const scenario = new ThreadRunScenario({
+        lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+      });
+      const creation = resumeCreation(scenario);
+
+      await mount(ACCOUNT, scenario, () => undefined);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      // The message shows, pending, and nothing has asked a server that has no thread yet.
+      expect(scenario.turns()).toEqual([expect.objectContaining({ status: "pending" })]);
+      expect(scenario.lookupRequests).toHaveLength(0);
+      expect(scenario.appendRequests).toHaveLength(0);
+
+      await act(async () => {
+        creation.resolve({ id: THREAD_ID, originType: "fork" });
+      });
+      await act(async () => {
+        await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+      });
+      expect(scenario.lookupRequests).toEqual([
+        expect.objectContaining({ threadId: THREAD_ID, submissionId: "sub-1" }),
+      ]);
+      await act(async () => {
+        await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
+      });
+      expect(scenario.turns()).toEqual([
+        expect.objectContaining({ id: "turn-user", status: "complete" }),
+      ]);
+    });
+
+    it("fails the message with Retry when creation fails, as a live send does", async () => {
+      recordChatSubmission(ACCOUNT, entry());
+      const scenario = new ThreadRunScenario();
+      const creation = resumeCreation(scenario);
+      const latest: { current: ChatSubmissionRecovery | null } = { current: null };
+      await mount(ACCOUNT, scenario, (value) => {
+        latest.current = value;
+      });
+
+      await act(async () => {
+        creation.reject(new Error("offline"));
+      });
+      await act(async () => {
+        await vi.waitFor(() => expect(latest.current?.rejected).toHaveLength(1));
+      });
+      expect(scenario.lookupRequests).toHaveLength(0);
+      expect(scenario.turns()).toEqual([expect.objectContaining({ status: "error" })]);
+      expect(latest.current?.recovered).toEqual([]);
+
+      // Retry on the message waits for the fork, which still does not exist.
+      const turnId = scenario.turns()[0]?.id ?? "";
+      await act(async () => {
+        await latest.current?.retry(turnId);
+      });
+      expect(scenario.appendRequests).toHaveLength(0);
+      expect(latest.current?.rejected).toHaveLength(1);
+    });
   });
 });

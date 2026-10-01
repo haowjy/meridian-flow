@@ -17,7 +17,7 @@ function record(
   request: ModelRequestDebugRequest | null,
 ): ModelRequestDebugRecord {
   return {
-    schema: "meridian.model-request-debug.v1",
+    schema: "meridian.model-request-debug.v2",
     gatewayCallId: `call-${iteration}`,
     threadId: "thread-1",
     turnId: "turn-1",

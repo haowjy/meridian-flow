@@ -27,7 +27,7 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   for (const tool of tools) {
     const path = stringField(inputObject(tool), "path");
     // The writer-facing command, not the raw tool name, decides the bucket: a
-    // `read(command:"diff")` is a review of changes, not an edit or a document
+    // `write(command:"diff")` is a review of changes, not an edit or a document
     // read, and must not be summarized as one.
     const command = toolCommand(tool);
 

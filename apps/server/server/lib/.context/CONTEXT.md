@@ -12,7 +12,7 @@ collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
 |---|---|
 | `env.ts` | Typed env schema via `@t3-oss/env-core` + zod. Single source of truth for server env vars. |
 | `db.ts` | Singleton Drizzle `PostgresJsDatabase` client, lazily created from `DATABASE_URL`. |
-| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); local dev/test composition also exposes the recent-event query port. |
+| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); composition also exposes the recent-event query port when the debug gate (`APP_DEBUG`) is open. |
 | `observability.ts` | Process-scoped deferred EventSink; startup binds the concrete sink before validation/logging. |
 | `object-store-factory.ts` | Env-driven object-store adapter factory. |
 | `compose.ts` | `AppServices` type, production adapter-port construction, pure runtime service wiring, and in-memory stub factory for tests/dev. |
@@ -37,13 +37,13 @@ Production wiring is split by side-effect boundary:
    no-op observability. `hub` and `threadEventHub` are the same object so copied
    route/lib code sees the same alias shape as production.
 
-### Late-binding `RunTurnPort`
+### Shared run preparation
 
-The turn runner and child-run coordinator both need a `RunTurnPort` (the
-orchestrator) before it can be fully constructed (child-run coordinator calls
-back into the orchestrator for subagent turns). `createLateBindRunTurnPort()`
-creates a proxy that defers to an unbound `RunTurnPort`; `runTurnProxy.bind(orchestrator)`
-completes the cycle after the orchestrator is created.
+`createOrchestrator` composes the model loop with one run-session registry.
+The writer wake/cancel facade is that same object. Child invocation supplies a
+`prepare` callback that closes over the composed runtime; there is no bindable
+proxy or second event driver. Activity refresh callbacks cover both writer and
+child sessions at admission and after release.
 
 ### `AppServices` slots
 
@@ -67,13 +67,15 @@ represented as a fully-typed slot:
 | `accountSkillInstalls` | packages | Account-owned skill installs (unique per owner and slug) |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
-| `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
+| `eventQuery` | observability | Optional recent-event query port, present only when the debug gate is open |
 | `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |
+| `stopThreadRun` | runtime | One composed running-turn lookup and runner-cancel policy used by Work lifecycle routes and tools |
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
-| `modelRequestDebug` | runtime | Env-selected model request debug store |
+| `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |
+| `mockModelScript` | runtime | Scripted replies for the in-process mock model; null with real providers or when the debug gate (`APP_DEBUG`, never production) is closed |
 | `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
 
 ## Tool wiring
@@ -89,10 +91,10 @@ free of Meridian URI schemes and database concerns.
 | Tool | Backend |
 |---|---|
 | `write` | Command grammar (`read` / `diff` / `create` / `insert` / `replace` / `delete` / `undo` / `redo`). Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `work` | Six-branch strict union (list/show/create/update/delete/switch). Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
-| `list` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
+| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch); `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
+| `ls` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `search` | Searches the resolved unified `ContextPort` scope. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
-| `ask_user` | Creates a interrupt component block and keeps the assistant turn interruptible/resumable. |
+| `ask_user` | Registered but never advertised until its rework ([#601](https://github.com/haowjy/meridian-flow/issues/601)); the handler creates an interrupt component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership
 
@@ -111,7 +113,7 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 
 | File | Role |
 |---|---|
-| `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, hub catchup/live events, unsubscribe/cleanup. |
+| `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
 | `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
 | `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
 
@@ -142,6 +144,8 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `work-attachment.ts` | Determines a new thread's Work: root omission/null binds No Work; children inherit the parent's primary. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
+| `thread-ref-route.ts` | Owner-gated `cN`/`pN` handle lookup for `GET /api/projects/:projectId/threads/by-ref/:ref`; malformed or unknown refs are 404. |
+| `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |
@@ -193,6 +197,13 @@ Domain API call → contract wire shape
   error frame/close code.
 - **String(seq) at the HTTP/WS boundary.** Internal journal sequence values are
   bigint; protocol frames stringify them.
+- **Thread WS subscription authority.** One per-thread slot admits the newest
+  subscribe request by arrival order. Its active lease remains live until the
+  replacement passes ownership authorization; failed authorization leaves it
+  intact. Pending hub callbacks buffer until the `subscribed` catchup envelope
+  succeeds, then flush in sequence order above the delivered watermark.
+  Unsubscribe, replacement, close, and send failure invalidate pending work;
+  stale async results release their hub listener without publishing.
 - **Object store env-driven.** Local uses filesystem + HMAC signed token URLs;
   S3 uses presigned URLs. `localObjectStore` is `null` in S3 mode.
 

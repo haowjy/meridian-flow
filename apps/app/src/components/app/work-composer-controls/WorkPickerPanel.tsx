@@ -1,7 +1,12 @@
-/** Work-specific searchable catalog panel shared by both composer surfaces. */
+/**
+ * Work-specific searchable catalog panel shared by both composer surfaces.
+ * It lists only Works a chat can be bound to: an archived Work refuses new
+ * bindings, so it is not offered (a chat already in one still shows it as
+ * its current Work on the trigger).
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { Check, LoaderCircle, Search } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -36,9 +41,8 @@ export type WorkPickerOperation = {
 
 type WorkPickerRows = {
   query: string;
-  ordered: Work[];
-  active: Work[];
-  archived: Work[];
+  /** Works the chat can be bound to that match the query. */
+  works: Work[];
   enabled: boolean;
   enabledIds: string[];
 };
@@ -56,22 +60,19 @@ export function deriveWorkPickerViewModel(
   pending: boolean,
 ): WorkPickerViewModel {
   const needle = query.trim().toLocaleLowerCase();
-  const filtered =
+  const works =
     catalog.status === "ready"
-      ? catalog.works.filter((work) =>
-          `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+      ? catalog.works.filter(
+          (work) =>
+            !isWorkArchived(work) &&
+            `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
         )
       : [];
-  const active = filtered.filter(({ status }) => status === "active");
-  const archived = filtered.filter(({ status }) => status === "archived");
-  const ordered = [...active, ...archived];
   const rows = {
     query,
-    ordered,
-    active,
-    archived,
+    works,
     enabled: catalog.status === "ready" && !pending,
-    enabledIds: catalog.status === "ready" && !pending ? ordered.map(({ id }) => id) : [],
+    enabledIds: catalog.status === "ready" && !pending ? works.map(({ id }) => id) : [],
   };
   if (catalog.status === "ready")
     return { ...rows, status: "ready", refreshing: catalog.refreshing };
@@ -148,13 +149,13 @@ export function WorkPickerPanel({
       role="group"
       aria-label={purposeLabel}
       aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--chat-space-block)]"
       onKeyDown={navigate}
     >
       <label htmlFor={searchId} className="sr-only">
         <Trans>Search Work</Trans>
       </label>
-      <div className="relative mx-2 shrink-0">
+      <div className="relative mx-[var(--chat-space-block)] shrink-0">
         <Search
           className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -170,7 +171,7 @@ export function WorkPickerPanel({
           className={dropdownSearchClass}
         />
       </div>
-      <div className={`${dropdownResultsClass} space-y-2`}>
+      <div className={`${dropdownResultsClass} space-y-[var(--chat-space-row)]`}>
         {view.status === "ready" && onChooseNone ? (
           <Button
             ref={operation.currentWorkId === "" ? focusRefs?.selected : undefined}
@@ -206,31 +207,18 @@ export function WorkPickerPanel({
             <Trans>No Work yet.</Trans>
           </PickerState>
         ) : null}
-        {view.active.length ? (
+        {view.works.length ? (
           <WorkSection
             label={t`Active Work`}
-            works={view.active}
+            works={view.works}
             operation={operation}
             enabled={view.enabled}
             onChoose={onChoose}
             focusRefs={focusRefs}
-            firstWorkId={view.ordered[0]?.id}
           />
         ) : null}
-        {view.archived.length ? (
-          <WorkSection
-            label={t`Archived Work`}
-            works={view.archived}
-            operation={operation}
-            enabled={view.enabled}
-            onChoose={onChoose}
-            focusRefs={focusRefs}
-            firstWorkId={view.ordered[0]?.id}
-            archived
-          />
-        ) : null}
-        {view.status === "ready" && view.query.trim() !== "" && !view.ordered.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">
+        {view.status === "ready" && view.query.trim() !== "" && !view.works.length ? (
+          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
             <Trans>No Work matches your search.</Trans>
           </p>
         ) : null}
@@ -240,7 +228,11 @@ export function WorkPickerPanel({
 }
 
 function PickerState({ children }: { children: ReactNode }) {
-  return <p className="px-2 py-4 text-center text-sm text-muted-foreground">{children}</p>;
+  return (
+    <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
+      {children}
+    </p>
+  );
 }
 
 function WorkSection({
@@ -249,42 +241,43 @@ function WorkSection({
   operation,
   enabled,
   onChoose,
-  archived = false,
   focusRefs,
-  firstWorkId,
 }: {
   label: string;
   works: Work[];
   operation: WorkPickerOperation;
   enabled: boolean;
   onChoose: (work: Work) => void;
-  archived?: boolean;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
   };
-  firstWorkId?: string;
 }) {
   return (
     <section aria-label={label}>
-      <h3 className={sectionLabelVariants({ variant: "group", className: "mb-1 px-2" })}>
+      <h3
+        className={sectionLabelVariants({
+          variant: "group",
+          className: "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
+        })}
+      >
         {label}
       </h3>
-      <div className="space-y-0.5">
+      <div className="space-y-[var(--chat-space-row)]">
         {works.map((work) => {
           const current = work.id === operation.currentWorkId;
           const changing = work.id === operation.targetId && operation.pending;
           const error = work.id === operation.targetId ? operation.failure : null;
           const errorId = `${work.id}-work-error`;
-          const descriptionId = `${work.id}-work-description`;
-          const hasDescription = Boolean((changing && work.goal) || current);
+          const helpId = `${work.id}-work-help`;
+          const hasHelp = Boolean((changing && work.goal) || current);
           return (
             <div key={work.id}>
               <Button
                 ref={
                   current
                     ? focusRefs?.selected
-                    : work.id === firstWorkId
+                    : work.id === works[0]?.id
                       ? focusRefs?.first
                       : undefined
                 }
@@ -294,9 +287,8 @@ function WorkSection({
                 disabled={!enabled}
                 aria-current={current ? "true" : undefined}
                 aria-describedby={
-                  [hasDescription ? descriptionId : null, error ? errorId : null]
-                    .filter(Boolean)
-                    .join(" ") || undefined
+                  [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+                  undefined
                 }
                 onClick={() => onChoose(work)}
                 className={cn(
@@ -305,9 +297,7 @@ function WorkSection({
                 )}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {archived ? t`${work.name}, Archived` : work.name}
-                  </span>
+                  <span className="block truncate text-sm font-medium">{work.name}</span>
                   {changing ? (
                     <span className="block truncate text-xs text-muted-foreground">
                       <Trans>Changing work</Trans>
@@ -323,15 +313,19 @@ function WorkSection({
                 ) : current ? (
                   <Check className="size-4" aria-hidden />
                 ) : null}
-                {hasDescription ? (
-                  <span id={descriptionId} className="sr-only">
+                {hasHelp ? (
+                  <span id={helpId} className="sr-only">
                     {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
                     {current ? <Trans>Current Work for this chat.</Trans> : null}
                   </span>
                 ) : null}
               </Button>
               {error ? (
-                <p id={errorId} role="alert" className="px-2 pt-1 text-xs text-destructive">
+                <p
+                  id={errorId}
+                  role="alert"
+                  className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] text-xs text-destructive"
+                >
                   {failureCopy(error)}
                 </p>
               ) : null}

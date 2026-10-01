@@ -1,19 +1,4 @@
-/**
- * The chrome kernel's runtime: one small store per editor holding what every
- * surface has to agree on — which layers are open, what the pointer is doing,
- * which context owns chrome, and who claims a right-click.
- *
- * Headless and editor-free on purpose. It holds no `Editor`, dispatches no
- * transaction, and touches no DOM; `ChromeKernelExtension` is the one thing
- * that reads this store and acts on the document. That split is what lets the
- * walk-home policy, the claim table, and suppression be tested as data.
- *
- * Surface exclusivity is NOT here. Radix already makes menus, popovers, and
- * dialogs mutually exclusive layers, and hover rows are approach chrome rather
- * than active surfaces (decision 2026-07-29). A surface registers with
- * `openLayer` so the Esc chain knows about it; it does not ask permission to
- * exist.
- */
+/** Defines the editor chrome kernel interface and state. */
 
 import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import type { ContextClaimHandler } from "./context-claims";
@@ -39,32 +24,15 @@ export type ChromeLayerOptions = {
   id: string;
   /** Stable surface owner used to match host actions to this exact top layer. */
   ownerId?: string;
-  /**
-   * The layer this one opened INSIDE, when there is one.
-   *
-   * Depth cannot be inferred from registration order: React mounts child
-   * effects before parent effects, so a dialog that opens with its source pane
-   * already open registers the pane first. Reading the list as a stack would
-   * make the dialog topmost and spend both steps of the walk home on one key —
-   * and that is the design's mandated new-empty-diagram path, not an edge case.
-   */
+  /** The layer this one opened INSIDE, when there is one. */
   parentId?: string | null;
-  /**
-   * Dismiss this layer. The Esc chain calls it for the topmost layer; a
-   * Radix-backed surface points it at its own `onOpenChange(false)` so the
-   * library keeps owning the animation and focus return.
-   */
+  /** Dismiss this layer. */
   close: () => void;
   dismissal?: ChromeLayerDismissal;
 };
 
 export type ChromeLayerHandle = {
-  /**
-   * This layer's identity, as `chrome.layers` holds it. A surface hands it to
-   * `registerKeymap` so its keys name the layer that owns them, and the merge
-   * compares it against the open list — keys that cannot outlive their surface,
-   * and a chord two nested layers both want going to the deeper one.
-   */
+  /** This layer's identity, as `chrome.layers` holds it. */
   readonly layer: ChromeLayer;
   /** Names it in a trace, and is what a layer opened inside it passes as `parentId`. */
   readonly id: string;
@@ -90,41 +58,22 @@ export type ChromeLayerRetreat = {
 };
 
 export type EditorChrome = {
-  /**
-   * Identifies this editor's chrome. Two documents open side by side are two
-   * kernels listening on the same page, so chrome portalled out of the editor
-   * has to say whose it is or both would route a right-click on it.
-   */
+  /** Identifies this editor's chrome. */
   readonly id: string;
   /** Deepest context under the selection, recomputed per transaction. */
   readonly context: ChromeContext;
-  /**
-   * Open transient layers, shallowest first, so the last is topmost. Ordered
-   * by nesting depth rather than by when each registered, and a layer that has
-   * been asked to close is already out of the list.
-   */
+  /** Open transient layers, shallowest first, so the last is topmost. */
   readonly layers: readonly ChromeLayer[];
   /** How the topmost layer expects Escape to reach it. Null when none is open. */
   readonly topLayerDismissal: ChromeLayerDismissal | null;
   readonly gesture: GesturePhase;
-  /**
-   * A drag or sweep is in flight, so active surfaces stand down (BlockNote's
-   * rule, §3). Everything re-evaluates on release rather than reappearing
-   * where it was: the document moved under it.
-   */
+  /** A drag or sweep is in flight, so active surfaces stand down (BlockNote's rule,). */
   readonly suppressed: boolean;
   /** Fires on every change above. React reads it with `useSyncExternalStore`. */
   subscribe: (listener: () => void) => () => void;
 
   openLayer: (layer: ChromeLayerOptions) => ChromeLayerHandle;
-  /**
-   * Ask the topmost layer to dismiss. True when there was one to ask.
-   *
-   * Asking is once. A layer whose close does not land — a surface whose owner
-   * unmounted mid-animation, a dismissal that threw — leaves the walk on the
-   * asking, so the next Escape steps past it. "Nobody is ever trapped" outranks
-   * the tidier property of never over-stepping a surface that is still fading.
-   */
+  /** Ask the topmost layer to dismiss. */
   closeTopLayer: () => boolean;
   /**
    * Offer semantic retreat to the current top owner. Before its React layer
@@ -143,32 +92,13 @@ export type EditorChrome = {
   /** Bumps whenever the contribution set changes, so callers can cache a merge. */
   readonly keymapRevision: number;
 
-  /**
-   * A surface-owned drag (block handle, column resize). Returns its end.
-   * `onCancel` is how Esc reaches a drag the kernel did not start (§5.8):
-   * without it the kernel could only stop suppressing, leaving a drop line
-   * chasing a pointer nobody is listening to.
-   */
+  /** A surface-owned drag (block handle, column resize). */
   beginDrag: (onCancel?: () => void) => () => void;
 
-  /**
-   * Take part in the approach (`hover-anchor.ts`). ONE block owns hover chrome
-   * at a time and this lane is told its share of it, including after a scroll
-   * the writer's hand did not follow. A lane that answers "what am I hovering"
-   * from its own listener will disagree with the others eventually, and two
-   * disagreeing answers are two chromes on screen for two different blocks.
-   *
-   * This is the only door to hover here on purpose: a surface with its own
-   * intent has its own pointer, and that is the whole defect class.
-   */
+  /** Take part in the approach (`hover-anchor.ts`). */
   registerHoverAnchor: <T>(lane: HoverAnchorLane<T>) => () => void;
 
-  /**
-   * The writer's last input device was a finger or a pen. A tap has no
-   * approach to settle, so the lanes that can follow the selection instead do
-   * (§5.8, law 8) — and a hybrid machine answers for the hand actually on it
-   * rather than for a media query.
-   */
+  /** The writer's last input device was a finger or a pen. */
   readonly coarsePointer: boolean;
 };
 
@@ -214,11 +144,7 @@ export function createEditorChrome(
   let keymapRevision = 0;
   let coarsePointer = false;
 
-  /**
-   * Hover intent the kernel can reach: a gesture cancels every one of them, so
-   * approach chrome cannot linger through a drag. The coordinator's own intent
-   * is one of these, which is why a drag clears the whole approach at once.
-   */
+  /** Hover intent the kernel can reach: a gesture cancels every one of them, so approach chrome cannot linger through a drag. */
   const trackHoverIntent = <T>(options: HoverIntentOptions<T>): HoverIntent<T> => {
     const intent = createHoverIntent({ timers: hoverTimers, ...options });
     hoverIntents.add(intent as HoverIntent<unknown>);
@@ -276,7 +202,7 @@ export function createEditorChrome(
     },
 
     openLayer({ id, ownerId = id, parentId = null, close, dismissal = "kernel" }) {
-      // Law 4: one transient surface. A surface summoned at the top level
+      //: one transient surface. A surface summoned at the top level
       // REPLACES whatever was there — the slash menu and the link form both
       // staying live left two inputs competing for the same keystrokes. A
       // layer opened inside another (a submenu, a dialog's source pane) is
@@ -398,11 +324,7 @@ export function createEditorChrome(
     registerHoverAnchor: (lane) => hoverAnchors.register(lane),
   };
 
-  /**
-   * Active layers, shallowest first. Depth is the parent chain, so a child
-   * registered before its parent still sorts after it; siblings fall back to
-   * the order they opened in.
-   */
+  /** Active layers, shallowest first. */
   function reorderLayers(): void {
     const active = [...layerRecords.values()].filter((record) => !record.closing);
     const depths = new Map<string, number>();
@@ -425,11 +347,7 @@ export function createEditorChrome(
     notify();
   }
 
-  /**
-   * Ask every open top-level surface to close, and take its subtree out of the
-   * walk with it. Marked before the call, like `closeTopLayer`, so a surface
-   * whose dismissal never lands cannot keep the chain pointed at it.
-   */
+  /** Ask every open top-level surface to close, and take its subtree out of the walk with it. */
   function replaceOpenTransients(): void {
     const roots = [...layerRecords.values()].filter(
       (record) => record.parentId === null && !record.closing,

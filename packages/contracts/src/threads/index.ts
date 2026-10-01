@@ -4,13 +4,19 @@
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
 
+import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
+import type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
   ArtifactId,
   BlockId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnId,
   UserId,
@@ -27,12 +33,6 @@ export type JsonValue =
 
 export type JsonObject = { [key: string]: JsonValue };
 
-export type WorkingState = {
-  goals?: string[];
-  notes?: string[];
-  scratch?: JsonObject;
-};
-
 // TODO(archive-delete): make archive + delete "both real" (product decision).
 // Today `archived` is dead — nothing sets it and no UI reaches it — while
 // `deletedAt` soft-delete (the trash) is real but unwired. Intended model:
@@ -40,8 +40,68 @@ export type WorkingState = {
 //             browsable in an "Archived" view (unarchive returns it to idle)
 //   delete  → deletedAt tombstone → trashed, excluded from every list
 // Wire archive/unarchive mutations + a user-facing delete; keep them distinct.
-export type ThreadStatus = "idle" | "active" | "blocked" | "error" | "archived";
+/**
+ * Durable thread lifecycle. Run state (`active`/`idle`/`error`) is no longer
+ * stored here; it is derived from the live lease. See {@link ThreadStatus}.
+ */
+export type ThreadLifecycleStatus = "idle" | "archived";
+
+/** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
+export type ThreadPhase = "generating" | "waiting" | "compacting";
+
+/**
+ * Derived run status: awake iff a live lease exists, with the phase the holder
+ * last published. Never a second durable truth — a dead process expires its
+ * lease and reads `asleep`.
+ */
+export type ThreadStatus =
+  | { kind: "asleep" }
+  | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
+
+/**
+ * One thread's live-lease projection: the derived run status plus the assistant
+ * turn the lease is bound to. Batched lease reads (`readMany`) return this per
+ * thread; a thread absent from the map is asleep.
+ */
+export type ThreadLeaseState = {
+  status: ThreadStatus;
+  runningTurnId: string | null;
+  currentTool: CurrentToolCall | null;
+};
+/** Most recent tool call dispatched by a live run. */
+export type CurrentToolCall = {
+  toolCallId: string;
+  toolName: string;
+  input: JsonValue;
+};
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
+
+/** Roles that can reserve a pending placeholder turn before its work completes. */
+export const PENDING_PLACEHOLDER_ROLES = [
+  "compaction",
+  "system",
+] as const satisfies readonly TurnRole[];
+export type PendingPlaceholderRole = (typeof PENDING_PLACEHOLDER_ROLES)[number];
+
+export function isPlaceholderRole(role: TurnRole): role is PendingPlaceholderRole {
+  return PENDING_PLACEHOLDER_ROLES.some((placeholderRole) => placeholderRole === role);
+}
+
+export function isPendingPlaceholder<T extends Pick<Turn, "role" | "status">>(
+  turn: T,
+): turn is T & { role: PendingPlaceholderRole; status: "pending" } {
+  return turn.status === "pending" && isPlaceholderRole(turn.role);
+}
+
+/**
+ * Who authored a turn, independent of `role`: `writer` is any human send
+ * (idle send or mid-run steer), `assistant` is model output, `system` is
+ * everything else the platform or an agent injected (child completions,
+ * Work-context updates, notices, non-writer inbox provenance). The server uses
+ * this authorship to decide turn-driven thread, Work, and project activity;
+ * chat visibility and rendering still key off `role`/`metadata`.
+ */
+export type TurnOrigin = "writer" | "assistant" | "system";
 export type BlockType =
   | "text"
   | "image"
@@ -58,6 +118,91 @@ export type ThreadKind = "primary" | "subagent";
 export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
+
+/** One live-or-recent direct child thread. Derived; never persisted as a block. */
+export type ThreadActivityNode = {
+  threadId: string;
+  /** Immediate spawner. */
+  parentThreadId: string | null;
+  /** Server-assigned `pN` handle. */
+  ref: string | null;
+  title: string | null;
+  /** Display name from the retained Agent definition. */
+  agentName: string | null;
+  /** Durable child lifecycle. */
+  spawnStatus: SpawnStatus | null;
+  /** Derived from the live lease; absent lease reads `asleep`. */
+  status: ThreadStatus;
+  /** Delivery behavior for this thread's latest admitted execution. */
+  deliveryMode: "direct" | "background_notification" | null;
+  /** Admission time for the latest run, or null before its first admitted run. */
+  runStartedAt: string | null;
+  /** Terminal time for the latest run, or null while it is running. */
+  runEndedAt: string | null;
+  /** The live run's current or most recently dispatched tool call. */
+  currentTool: CurrentToolCall | null;
+  /** Parent turn that spawned this thread (transcript anchor). */
+  originTurnId: string | null;
+};
+
+/** Direct-child activity read for one viewed thread, ordered by createdAt. */
+export type ThreadActivity = {
+  children: ThreadActivityNode[];
+};
+
+/**
+ * Durable inbox message intent. A directed `message` wakes the thread; a
+ * `notice` supplies context without starting a run; a `control` is a writer
+ * command (never chat text) that wakes the thread and executes at a run boundary.
+ */
+export type MessageIntent = "message" | "notice" | "control";
+
+/** Runtime commands take their transcript position at execution, not enqueue. */
+export type ControlBody = { kind: "compact"; instructions?: string };
+export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
+export type EnqueueThreadControlResponse = {
+  id: string;
+  pending: PendingInboxItem | null;
+  turnId: string | null;
+};
+export type WithdrawThreadControlResponse = {
+  outcome: "withdrawn" | "already_started";
+};
+
+/** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
+export type MessageProvenance =
+  | { kind: "writer"; actorId: string }
+  | { kind: "agent"; threadId: string }
+  | {
+      kind: "child";
+      threadId: string;
+      reportId: string;
+      handle: string;
+      outcome: string;
+      agentName: string;
+    }
+  | { kind: "system"; source: string };
+
+/**
+ * One durably unacknowledged inbox row with server-derived delivery progress.
+ * `waiting` alone belongs in the writer's queued tray; never a persisted block.
+ */
+export type PendingInboxItem = {
+  id: string;
+  seq: number;
+  intent: MessageIntent;
+  control?: ControlBody;
+  provenance: MessageProvenance;
+  deliveryState: "awaiting_run" | "waiting";
+  /** Body text, or a report/notice summary. */
+  summary: string;
+  enqueuedAt: string;
+};
+
+/** A thread's unacknowledged inbox, ordered by `seq`; snapshots replace state wholesale. */
+export type ThreadPendingInbox = {
+  items: PendingInboxItem[];
+};
 
 /**
  * Canonical event-name registry for the thread journal and live event hub.
@@ -89,8 +234,9 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
+  | "image.inclusion_decided"
+  | "block.updated"
   | "block.delta"
-  | "block.pruned"
   | "tool.invoked"
   | "tool.denied"
   | "tool.corrected"
@@ -99,7 +245,10 @@ export type JournalEventType =
   | "agent.handoff"
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
-  | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or continue)
+  | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
+  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
+  | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
+  | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -108,9 +257,7 @@ export type JournalEventType =
   | "model.request_sent"
   | "model.response_received"
   | "model.retried"
-  | "background.started"
-  | "background.completed"
-  | "background.failed"
+  | "background.started" // PRODUCED NOW — launch metadata; terminal truth is agent.run_completed
   | "background.rearmed"
   | "background.killed"
   | "permission.requested"
@@ -133,47 +280,53 @@ export interface Thread {
   workId: string | null;
   userId: string;
   kind: ThreadKind;
-  status: ThreadStatus;
+  status: ThreadLifecycleStatus;
   title: string | null;
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;
-  /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
-  composedSystemPrompt?: string | null;
-  /**
-   * Model-invocable skill slugs frozen with `composedSystemPrompt` at first attempt
-   * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
-   */
-  bakedSkillSlugs?: string[] | null;
-  workingState?: WorkingState | null;
+  /** First immutable bake for this thread; null until the first request is assembled. */
+  initialPromptBakeId: PromptBakeId | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;
   nextSeq?: string;
   /** Canonical logical head of the active conversation branch. */
   activeLeafTurnId: string | null;
+  /**
+   * Spawn-tree parent: null for a root, the spawning thread for a subagent.
+   * A fork/handoff derivation is a SIBLING of its source, not the source's
+   * child, so it takes the source's own `parentThreadId` (null when the
+   * source is itself a root) rather than pointing at the source.
+   */
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */
   originType?: ThreadOriginType | null;
-  /** Fork/handoff anchor turn on the parent thread. */
+  /**
+   * Fork/handoff anchor turn on the SOURCE thread (not necessarily
+   * `parentThreadId`); resolving its owning thread recovers the fork-source
+   * edge, since `parentThreadId` never carries it.
+   */
   originTurnId?: string | null;
   /**
-   * Identifies the run tree this thread belongs to. For primary threads this equals
-   * the thread's own id; subagent threads (P2b) will point at the spawning root.
-   * Used for run-scoped project workspace paths such as `runs/<rootThreadId>/input/…`.
+   * Identifies the run tree this thread belongs to. An organic root equals its
+   * own id; a subagent takes its spawning parent's root; a fork/handoff
+   * derivation takes its SOURCE's root (sharing lineage with it instead of
+   * starting a new tree). Used for run-scoped project workspace paths such as
+   * `runs/<rootThreadId>/input/…`.
    */
   rootThreadId: string;
   spawnDepth: number;
   spawnStatus: SpawnStatus | null;
-  spawnResult?: JsonValue | null;
   totalCostUsd: string;
   turnCount: number;
-  historySummary?: string | null;
   createdAt: string;
   updatedAt: string;
+  lastActivityAt: string;
   deletedAt: string | null;
 }
 
 export type TurnUsage = {
+  /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number | null;
@@ -188,12 +341,19 @@ export type TurnUsage = {
 export interface Turn {
   id: string;
   threadId: string;
+  /** Write-once insertion order within its thread, assigned by persistence. */
+  position: number;
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
+  /** Who authored this turn; see {@link TurnOrigin}. */
+  origin: TurnOrigin;
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
+  /** Set once on a completed prompt-epoch boundary. */
+  promptBakeId: PromptBakeId | null;
+  compactionModel?: string | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;
@@ -217,6 +377,17 @@ export interface Turn {
   responses: ModelResponse[];
 }
 
+/** Immutable system prompt and advertised tools for one prompt epoch. */
+export interface PromptBake {
+  id: PromptBakeId;
+  ownerThreadId: ThreadId;
+  composedSystemPrompt: string;
+  bakedSkillSlugs: string[];
+  bakedTools: JsonValue;
+  contentHash: string;
+  createdAt: string;
+}
+
 export interface Block {
   id: string;
   turnId: string;
@@ -227,7 +398,6 @@ export interface Block {
   content: JsonValue;
   modelText?: string;
   compact?: string;
-  pruned?: boolean;
   provider?: string | null;
   providerData?: JsonValue | null;
   executionSide?: ExecutionSide | null;
@@ -241,6 +411,7 @@ export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
+export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
 
 export interface ModelResponse {
   id: string;
@@ -254,6 +425,8 @@ export interface ModelResponse {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  /** True when this call's reported cache read dropped below half the previous prompt after prior cache activity. */
+  cacheReset: boolean;
   usageBreakdown?: JsonValue | null;
   costUsd: string | null;
   millicredits?: string | null;
@@ -263,8 +436,18 @@ export interface ModelResponse {
   stopReason?: string | null;
   requestParams?: JsonValue | null;
   responseMetadata?: JsonValue | null;
+  /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: number | null;
+  /** Wall-clock start of the successful provider attempt; null means unknown. */
+  requestMessageCount: number;
+  requestStartedAt: string | null;
+  /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
+  timeToFirstTokenMs: number | null;
+  /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
+  generationMs: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
   createdAt: string;
   completedAt?: string | null;
 }
@@ -291,6 +474,10 @@ export type {
   OrchestratorEvent,
   WorkContextChangedEvent,
 } from "./orchestrator-events.js";
+export type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 export * from "./project-chat-feed.js";
 export type { ThreadListItem, ThreadListWork } from "./projections.js";
 export type {

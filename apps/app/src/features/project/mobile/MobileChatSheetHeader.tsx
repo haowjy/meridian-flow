@@ -34,7 +34,8 @@ export function MobileChatSheetHeader({
         paddingLeft: "calc(0.75rem + env(safe-area-inset-left))",
       }}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
+      {/* Relative: a refused chat rename floats under the header from here. */}
+      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />

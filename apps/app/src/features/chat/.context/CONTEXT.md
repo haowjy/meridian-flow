@@ -8,6 +8,9 @@ draft-control changes can be understood independently.
 - [Activity row anatomy](activity-row-anatomy.md) — document names as doors,
   the stretched-button row, command glyphs, verb vocabulary, and why row
   chrome carries no colour of its own.
+- [Turn rhythm and actions](turn-rhythm-and-actions.md) — the spacing scale,
+  which turns are finished, the Copy/Info/Debug row, and control placement on
+  rows and cards.
 - [Tool expands](tool-expands.md) — the three rendering tiers, the three
   channels, what each expand shows, and how a clipped expand states its bound.
 - [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
@@ -17,6 +20,14 @@ draft-control changes can be understood independently.
   composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
+  never render, `endsTranscript` with a divider, and optimistic writer
+  controls (`/compact`, withdrawal).
+- [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
+  creation and its failure, the brief card, a fork's inherited view, and
+  `from` sources.
+- [Failed-reply Retry](failed-reply-retry.md) — Retry on the latest failed
+  reply, the optimistic new reply below it, and the refused and lost cases.
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.
@@ -46,6 +57,11 @@ draft-control changes can be understood independently.
   bridge and the retire. Live sends keep the admission-epoch fence and still
   bridge an accepted row after teardown.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
+
+- Every `ChatView` is owned by a project workspace and receives its required
+  project ID from `ChatScreen`. Child-thread doors use the project shell's
+  `ChatThreadNavigationProvider`, so they open the child in the same project
+  address space instead of creating a second chat shell.
 
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.

@@ -12,18 +12,13 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as DevLoginRouteImport } from './routes/dev-login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as ProtoIndexRouteImport } from './routes/proto.index'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
-import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
-import { Route as ProtoLogoMarkRouteImport } from './routes/proto.logo-mark'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
 import { Route as AuthenticatedPProjectIdRouteImport } from './routes/_authenticated/p/$projectId'
-import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat/$threadId'
 import { Route as AuthenticatedPProjectIdSplatRouteImport } from './routes/_authenticated/p/$projectId/$'
 
 const LogoutRoute = LogoutRouteImport.update({
@@ -50,30 +45,10 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtoIndexRoute = ProtoIndexRouteImport.update({
-  id: '/proto/',
-  path: '/proto/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
-} as any)
-const ProtoSpikeLayoutRoute = ProtoSpikeLayoutRouteImport.update({
-  id: '/proto/spike-layout',
-  path: '/proto/spike-layout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProtoPersistentSurfacesRoute = ProtoPersistentSurfacesRouteImport.update({
-  id: '/proto/persistent-surfaces',
-  path: '/proto/persistent-surfaces',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProtoLogoMarkRoute = ProtoLogoMarkRouteImport.update({
-  id: '/proto/logo-mark',
-  path: '/proto/logo-mark',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
   id: '/billing',
@@ -106,12 +81,6 @@ const AuthenticatedPProjectIdRoute = AuthenticatedPProjectIdRouteImport.update({
   path: '/p/$projectId',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedChatThreadIdRoute =
-  AuthenticatedChatThreadIdRouteImport.update({
-    id: '/chat/$threadId',
-    path: '/chat/$threadId',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedPProjectIdSplatRoute =
   AuthenticatedPProjectIdSplatRouteImport.update({
     id: '/$',
@@ -127,11 +96,6 @@ export interface FileRoutesByFullPath {
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/proto/logo-mark': typeof ProtoLogoMarkRoute
-  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
-  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
-  '/proto/': typeof ProtoIndexRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -145,12 +109,7 @@ export interface FileRoutesByTo {
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/proto/logo-mark': typeof ProtoLogoMarkRoute
-  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
-  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/': typeof AuthenticatedIndexRoute
-  '/proto': typeof ProtoIndexRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -166,12 +125,7 @@ export interface FileRoutesById {
   '/logout': typeof LogoutRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
-  '/proto/logo-mark': typeof ProtoLogoMarkRoute
-  '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
-  '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/proto/': typeof ProtoIndexRoute
-  '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -188,11 +142,6 @@ export interface FileRouteTypes {
     | '/logout'
     | '/auth-check'
     | '/billing'
-    | '/proto/logo-mark'
-    | '/proto/persistent-surfaces'
-    | '/proto/spike-layout'
-    | '/proto/'
-    | '/chat/$threadId'
     | '/p/$projectId'
     | '/projects/new'
     | '/api/auth/callback'
@@ -206,12 +155,7 @@ export interface FileRouteTypes {
     | '/logout'
     | '/auth-check'
     | '/billing'
-    | '/proto/logo-mark'
-    | '/proto/persistent-surfaces'
-    | '/proto/spike-layout'
     | '/'
-    | '/proto'
-    | '/chat/$threadId'
     | '/p/$projectId'
     | '/projects/new'
     | '/api/auth/callback'
@@ -226,12 +170,7 @@ export interface FileRouteTypes {
     | '/logout'
     | '/_authenticated/auth-check'
     | '/_authenticated/billing'
-    | '/proto/logo-mark'
-    | '/proto/persistent-surfaces'
-    | '/proto/spike-layout'
     | '/_authenticated/'
-    | '/proto/'
-    | '/_authenticated/chat/$threadId'
     | '/_authenticated/p/$projectId'
     | '/_authenticated/projects/new'
     | '/api/auth/callback'
@@ -245,10 +184,6 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
-  ProtoLogoMarkRoute: typeof ProtoLogoMarkRoute
-  ProtoPersistentSurfacesRoute: typeof ProtoPersistentSurfacesRoute
-  ProtoSpikeLayoutRoute: typeof ProtoSpikeLayoutRoute
-  ProtoIndexRoute: typeof ProtoIndexRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
 }
@@ -290,40 +225,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/proto/': {
-      id: '/proto/'
-      path: '/proto'
-      fullPath: '/proto/'
-      preLoaderRoute: typeof ProtoIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated/': {
       id: '/_authenticated/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
-    }
-    '/proto/spike-layout': {
-      id: '/proto/spike-layout'
-      path: '/proto/spike-layout'
-      fullPath: '/proto/spike-layout'
-      preLoaderRoute: typeof ProtoSpikeLayoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/proto/persistent-surfaces': {
-      id: '/proto/persistent-surfaces'
-      path: '/proto/persistent-surfaces'
-      fullPath: '/proto/persistent-surfaces'
-      preLoaderRoute: typeof ProtoPersistentSurfacesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/proto/logo-mark': {
-      id: '/proto/logo-mark'
-      path: '/proto/logo-mark'
-      fullPath: '/proto/logo-mark'
-      preLoaderRoute: typeof ProtoLogoMarkRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/billing': {
       id: '/_authenticated/billing'
@@ -367,13 +274,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPProjectIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/chat/$threadId': {
-      id: '/_authenticated/chat/$threadId'
-      path: '/chat/$threadId'
-      fullPath: '/chat/$threadId'
-      preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/p/$projectId/$': {
       id: '/_authenticated/p/$projectId/$'
       path: '/$'
@@ -402,7 +302,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
   AuthenticatedPProjectIdRoute: typeof AuthenticatedPProjectIdRouteWithChildren
   AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
 }
@@ -411,7 +310,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
   AuthenticatedPProjectIdRoute: AuthenticatedPProjectIdRouteWithChildren,
   AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
 }
@@ -426,10 +324,6 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
-  ProtoLogoMarkRoute: ProtoLogoMarkRoute,
-  ProtoPersistentSurfacesRoute: ProtoPersistentSurfacesRoute,
-  ProtoSpikeLayoutRoute: ProtoSpikeLayoutRoute,
-  ProtoIndexRoute: ProtoIndexRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
 }

@@ -1,17 +1,5 @@
-/**
- * AssistantTurn — single render path for assistant turns.
- *
- * One `Block[]` for live and settled alike: no synthetic `"live-reasoning"`
- * block and no separate `thinkingStream`/`textStream`/`visibleTool` props.
- * `partitionTurn` reduces it to an ordered `RenderItem[]` — process folds
- * (reasoning + process tools) collapse in place, text and artifacts stay
- * visible — so prose never folds and is never remounted by a later reasoning
- * run. Render keys derive from `(turnId, sequence)` via `blockRenderKey`.
- *
- * Draft affordances live OFF the transcript now: pending AI changes are the
- * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsReceipt`). Write vocabulary comes from the mode frozen on the turn.
- */
+/** AssistantTurn — single render path for assistant turns. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
@@ -20,11 +8,14 @@ import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
+import { AssistantTurnActions } from "./AssistantTurnActions";
+import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
@@ -32,7 +23,10 @@ import {
   type RenderItem,
   type Run,
 } from "./partition-turn";
+import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
+import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
+import type { SubagentUpdateMetadata } from "./subagent/update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -44,18 +38,71 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
+  /** Assistant turns in the same writer-facing reply, supplied on its final part. */
+  responseParts?: readonly Turn[];
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
+  deliveryEvents?: Array<{
+    turn: Turn;
+    childThreadId?: string;
+    title?: string;
+    subagentUpdate: SubagentUpdateMetadata | null;
+  }>;
   isLatestAssistant?: boolean;
-  onRetry?: () => void;
+  /**
+   * No visible turn follows this one. An error is current only here: once the
+   * writer (or a woken model) moves on, it stays as a quiet historical marker.
+   */
+  endsTranscript?: boolean;
+  /**
+   * The next visible turn continues this response (a subagent notification
+   * woke the model, with no writer message between), so this part has no
+   * settled action row of its own.
+   */
+  continuesResponse?: boolean;
+  /**
+   * Present only on the working turn of a send the server never admitted (the
+   * failed first send during route handoff). Its presence is what makes the
+   * error send copy rather than generation copy; calling it resubmits.
+   */
+  failedSendRetry?: () => void;
+  /** Retry on a failed reply; absent where the reply can't be retried from here. */
+  replyRetry?: ReplyRetryView;
+  /** A Retry's new reply before the server has it: nothing to read or act on yet. */
+  standIn?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
 
+export type ReplyRetryView = {
+  /** Present only while this failed reply is the latest turn. */
+  onRetry?: () => void;
+  /** The server refused this reply's last Retry, and it is still the latest turn. */
+  refused: boolean;
+  /** This is a Retry's stand-in whose request never answered. */
+  requestLost: boolean;
+};
+
 function AssistantTurnComponent({
   threadId,
   turn,
+  responseParts,
+  threadUsage,
+  deliveryEvents = [],
   isLatestAssistant = false,
-  onRetry,
+  endsTranscript = false,
+  continuesResponse = false,
+  failedSendRetry,
+  replyRetry,
+  standIn = false,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -66,6 +113,8 @@ function AssistantTurnComponent({
   );
   const isSettled = isTerminalTurnStatus(turn.status);
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
+  const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
   // Ordinals count only visible folds: a process item whose runs have nothing
@@ -87,7 +136,9 @@ function AssistantTurnComponent({
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
+    enabled: !isLive && !standIn,
+  });
   const liveLineageDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
@@ -103,41 +154,62 @@ function AssistantTurnComponent({
 
   return (
     <div
-      className="mb-10"
+      data-assistant-turn
+      data-latest-assistant={isLatestAssistant ? "true" : undefined}
       data-turn-id={turn.id}
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal, processCount }) => (
-        <TurnItemView
-          key={itemRenderKey(item)}
-          item={item}
-          processOrdinal={processOrdinal}
-          processCount={processCount}
-          threadId={resolvedThreadId}
-          turnStatus={turn.status}
-          onRespondToInterrupt={onRespondToInterrupt}
-          writeMode={turn.writeMode ?? "direct"}
-        />
-      ))}
+      <div className="flex flex-col gap-[var(--chat-space-block)]">
+        {rows.map(({ item, processOrdinal, processCount }) => (
+          <TurnItemView
+            key={itemRenderKey(item)}
+            item={item}
+            processOrdinal={processOrdinal}
+            processCount={processCount}
+            threadId={resolvedThreadId}
+            turnStatus={turn.status}
+            onRespondToInterrupt={onRespondToInterrupt}
+            writeMode={turn.writeMode ?? "direct"}
+            directResult={
+              item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
+            }
+          />
+        ))}
+        {deliveryEvents.length ? (
+          <div data-turn-item-kind="delivery">
+            <DeliveryEventRows events={deliveryEvents} />
+          </div>
+        ) : null}
 
-      {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
-        <TurnEditsReceipt
+        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+          <TurnEditsReceipt
+            threadId={resolvedThreadId}
+            turn={turn}
+            documents={liveLineageDocuments}
+            receipt={liveLineage.receipt}
+            workReceipts={workReceipts}
+            changeTrail={changeTrail}
+            navigateToChange={navigateToChange}
+          />
+        ) : null}
+
+        {isErrored ? (
+          <ErrorBlock
+            isLatest={endsTranscript}
+            kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
+            onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
+            retryRefused={replyRetry?.refused ?? false}
+          />
+        ) : null}
+      </div>
+      {isSettled && !continuesResponse && !standIn ? (
+        <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
-          documents={liveLineageDocuments}
-          receipt={liveLineage.receipt}
-          workReceipts={workReceipts}
-          changeTrail={changeTrail}
-          navigateToChange={navigateToChange}
-        />
-      ) : null}
-
-      {isErrored ? (
-        <ErrorBlock
-          isLatest={isLatestAssistant}
-          kind={turn.blocks.length === 0 ? "send" : "generation"}
-          onRetry={isLatestAssistant ? onRetry : undefined}
+          responseParts={responseParts ?? [turn]}
+          markdown={copyMarkdown}
+          threadUsage={threadUsage ?? null}
         />
       ) : null}
       {showsInkDrop ? <InkDrop /> : null}
@@ -153,14 +225,7 @@ function InkDrop() {
   );
 }
 
-/**
- * One entry per document, preferring its committed (`live`) lineage.
- *
- * A turn that drafted an edit the writer later applied carries BOTH a `draft`
- * and a `live` entry for the same URI, draft first. The card is a receipt for
- * what happened to the manuscript, so the committed entry is the one that
- * counts — keeping the draft would render an applied edit as if it never landed.
- */
+/** One entry per document, preferring its committed (`live`) lineage. */
 function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
   documents: readonly T[],
 ): T[] {
@@ -181,6 +246,7 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus,
   onRespondToInterrupt,
   writeMode,
+  directResult,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -189,6 +255,7 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
+  directResult: DirectInvocationResult | null;
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -219,13 +286,29 @@ const TurnItemView = memo(function TurnItemView({
     );
   }
 
+  if (item.kind === "report") {
+    return (
+      <div
+        className="space-y-[var(--chat-space-block)] text-prose-foreground"
+        data-turn-item-kind="report"
+      >
+        <ReportContent
+          report={item.report}
+          empty={null}
+          className="space-y-[var(--chat-space-block)]"
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-1" data-turn-item-kind={item.kind}>
+    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind={item.kind}>
       <DeliveryBlock
         block={item.block}
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     </div>
   );
@@ -239,14 +322,7 @@ function thinkingAriaLabel(processIndex: number, processCount: number): string |
   return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
-/**
- * A process item earns its disclosure only when it holds something the writer
- * can read. Reasoning runs always qualify (empty ones are dropped in
- * `partitionTurn`); an activity run qualifies with at least one visible tool
- * row. The gate covers the one gap: a hidden protocol block whose provider
- * omitted its `toolCallId` is not detected as hidden, and `ToolRow` renders
- * nothing for it.
- */
+/** A process item earns its disclosure only when it holds something the writer can read. */
 function foldHasVisibleContent(runs: Run[]): boolean {
   return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
@@ -286,7 +362,7 @@ const FoldRun = memo(function FoldRun({
   }
 
   return (
-    <div className="space-y-1" data-activity-block data-fold-activity-run>
+    <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
       <DeliverySegments
         blocks={run.blocks}
         threadId={threadId}
@@ -315,12 +391,6 @@ function runRenderKey(run: Run): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-/**
- * Process rows: reasoning, tools, and other process blocks render as icon-rail
- * rows inside the Thinking disclosure. Text and artifacts render outside it
- * (see `DeliveryBlock`); that contrast carries the meaning — the fold is "what
- * the assistant did", prose is "what the assistant said".
- */
 const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,
@@ -377,11 +447,13 @@ function DeliveryBlock({
   threadId,
   turnStatus,
   onRespondToInterrupt,
+  directResult,
 }: {
   block: Block;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  directResult?: DirectInvocationResult | null;
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
@@ -402,6 +474,7 @@ function DeliveryBlock({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     );
   }

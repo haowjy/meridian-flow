@@ -1,1 +1,0 @@
-ALTER TABLE "projects" ADD COLUMN "default_bootstrap_ready" boolean DEFAULT false NOT NULL;

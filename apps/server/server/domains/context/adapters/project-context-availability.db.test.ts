@@ -20,8 +20,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../test-support/rollback-test-database.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
@@ -58,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "00000000-0000-4000-8000-000000000926",
     ] as const;
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     async function seed(db: Database = database.current) {
@@ -368,7 +367,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         releaseFirst = resolve;
       });
       try {
-        await truncateDrizzleTables(controlDb, [users]);
+        await deleteDrizzleRows(controlDb, [users]);
         await seed(controlDb);
         await createDrizzleProjectContextAvailability(controlDb).advance({
           projectIds: [PROJECT],
@@ -419,7 +418,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(head?.generation).toBe(BigInt(settledSecond));
       } finally {
         releaseFirst?.();
-        await truncateDrizzleTables(controlDb, [users]);
+        await deleteDrizzleRows(controlDb, [users]);
         await Promise.all([firstDb.close(), secondDb.close(), controlDb.close()]);
       }
     });
@@ -498,24 +497,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ],
         });
       } finally {
-        await truncateDrizzleTables(reader, [users]);
+        await deleteDrizzleRows(reader, [users]);
         await Promise.all([reader.close(), writer.close()]);
       }
     });
 
-    it("returns deleted and unavailable Work/project authority from tombstones", async () => {
+    it("keeps archived Work documents available and returns deleted authority tombstones", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
-      await db.update(works).set({ status: "archived" }).where(eq(works.id, WORK));
+      await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
       let result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[0], DOCS[2]] as never },
         { userId: USER },
       );
       expect(result.resolutions).toMatchObject([
         { kind: "deleted", generation },
-        { kind: "authority-unavailable", reason: "work_archived", generation },
+        {
+          kind: "available",
+          generation,
+          authority: { kind: "work", projectId: PROJECT, workId: WORK },
+        },
       ]);
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PROJECT));
       result = await availability.lookup(

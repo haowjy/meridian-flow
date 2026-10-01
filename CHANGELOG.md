@@ -7,8 +7,267 @@
 
 ## [Unreleased]
 
+- Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
+
+- Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
+- Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
+- Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
+- Compaction turns and conversation seeds no longer count as chat, Work, or project activity.
+- Purge M4's thread-owned event journals and turns with an expired Work's chats.
+- Development: M4 migrations follow the Work screen migrations as 0014–0024; reset previously migrated M4 worktree databases with `pnpm db:reset`.
+
+- Shorten model-facing tool definitions and context cards, strip redundant `$schema` metadata, and keep advertised tools on `user` vocabulary.
+- Accept `current` for every conversation reference.
+- Compact `thread_history` dates and cursors; print the complete `next:` call with the inputs needed to continue the page.
+- Format `thread_ls` as compact lineage and conversation rows, marking only live runs awake.
+- Return compact model-facing `thread_report` results without internal IDs and redundant fields.
+
+- Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
+- Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
+- Catalog runtime control, compaction, handoff, and history probes.
+- Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.
+- Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
+
+- Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
+
+- Require an explicit ownership acknowledgment before detaching test database cleanup.
+
+- Run unit tests in worker threads while preserving module isolation.
+
+- Run DB tests on eight isolated workers, with a bounded override for busy shared servers.
+
+- Build the large transcript plan fixture once; restore only the tail each case mutates.
+
+- Prove failed control runs stay sweep-paced at the lease boundary instead of sleeping fifteen seconds.
+
+- Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
+
+- Disable synchronous commit only on runner-owned DB test connections.
+
+- Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
+- Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
+
+- Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed, was stopped, or was interrupted by a restart. Retry shows the new brief's card at once and waits while the chat is replying; a refused or lost Retry and a failed Stop say so on the card. Messages sent meanwhile are answered once the brief ends.
+- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once. A refused or lost Retry says so on the reply.
+- Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
+- Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
+- A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
+- Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
+
+- Always honor manual compaction once the chat has a completed reply, even when little context can be removed. Tell warm summaries not to repeat retained conversation.
+
+- Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
+- Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
+- A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
+- Treat a null spawn source as omitted.
+
+- Preserve bake-gated history guidance in rolling handoff summaries; classify completed and failed briefs as system history.
+
+- Preserve structured inspection errors, including unavailable bound models.
+
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
+- Batch history tool pairs by page, including pairs outside the page.
+
+- Keep model projection cursors out of writer transcript pages.
+
+- Authorize execution reports through the canonical lineage predicate.
+
+- Seed browser-test conversations with their lineage root.
+
+- Find connected conversations and read their history with document pointers and dated edit records.
+
+- Require a lineage root on every conversation; index fork and handoff discovery.
+- Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs follow the shared summary rule at every cutoff without rewriting failed reply history.
+
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
+
+- Acquire the destination run claim before creating a handoff seed; the detached brief releases it through the shared runnable-queue wake without creating a run boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fail handoff when source request preparation fails instead of making a rolling fallback call. Preserve queued skill activations behind pending seeds and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preparation discovers a lost asset; fail the brief without a rolling fallback.
+
+- Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
+
+
+
+
+### Changed
+- Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
+- Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
+- Preserve Work-context delivery while the detached brief holds the destination run claim.
+- A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
+- Validate Agent selections consistently across handoff and thread creation.
+- Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
+- Withdraw a control only before its start; after C records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
+- Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
+- Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
+- Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
+- Handoff requests require a destination id and cutoff; client-written summaries removed.
+
+- Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
+- Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
+- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
+
+
+- Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
+
+### Added
+- Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
+- Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
+- Queue manual compaction at the end of the queue. Withdraw queued requests or stop running dividers.
+- Pass `/compact <instructions>` to the summarizer and show the instructions on the queued row and divider. Offer Fork from a compaction divider.
+- Show "Compacting conversation" on every pending divider and the server's generic failure copy when compaction fails.
+- Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
+- Summarize long chats with cached requests or rolling cheap-model summaries. Give summaries and handoff briefs fixed sections, merge earlier summaries explicitly, and keep story facts and user preferences.
+- Show what each conversation was last asked beneath its `thread_ls` row.
+- Default compaction to the model's usable window or a 400,000-token ceiling.
+- Stop a running compaction and deliver messages queued during its summary afterward.
+- Compact long conversations through durable summary turns and atomic successor replies.
+- Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
+- Persist request sizes and turn-neutral child execution selectors for compaction.
+- Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+
+### Fixed
+- Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
+- Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
+- Keep interrupted compaction metadata parseable across run-start and startup recovery.
+- Read transcript segment cuts with the planned-compaction codec; failed dividers stay ordinary items.
+- Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
+- Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
+- Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
+- Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
+- Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
+- Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
+- Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
+- A queued compact stays at the end of the queue and is not absorbed by automatic compaction. A streaming reply adopts every message sent meanwhile at its tool steps.
+- Stop ends only the current turn; normal queue selection runs waiting messages before a command. Leave a command whose start throws queued like a message.
+- Always send queued-compaction withdrawal to the server so a command cannot run unseen after its local row disappears. When sending a row fails, offer Withdraw beside Retry.
+- Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
+- Follow each compaction summary with an explicit continuation line, and give handoff briefs the same changed-document warnings as compaction.
+- Refer to the human as `the user` throughout model-facing prompts and `thread_history` labels.
+- Advertise defaulted model-tool fields as optional rather than required.
+- Render component model text in `thread_history` instead of raw props or IDs; omit bake hashes from segment headers and revision tokens from reference reads.
+- Fail a warm-summary error once instead of retrying it cold. Give summaries no output limit of their own, leaving provider defaults in place without changing cached thinking; advertise DeepSeek V4 Flash at 65,536 output tokens and Claude Sonnet 4 at 64,000.
+- Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
+- Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
+- Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
+- Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
+- Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
+- Propagate context-window errors when provider fallback is enabled.
+- Roll summaries for cold or known-too-large requests; branch only from warm source requests. A `context_overflow` summary rejection is recorded as `request_too_large` so the next attempt rolls.
+- Allow clients to join chats while compaction is running.
+- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed when its start commits, so neither path replays it for another summary.
+- Include summary requests in the model-request debug capture.
+- Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
+- Leave a compaction pending for recovery when its live failure transaction cannot commit.
+- Development: reset worktree databases that already applied the earlier unreleased 0018 (`cold_lifeguard`, formerly 0014) with `pnpm db:reset`.
+- Bill summary responses on success, failure and cancellation, once per paid call.
+- Include compaction-call costs in child reports and the shared tree budget; estimate CJK text with required tokenizer-family rates (Anthropic 3.0, measured `o200k` 1.1, Gemini 1.2, DeepSeek 0.8), and probe CJK, image, and file estimates against live provider usage.
+- Cache TTL starts at the provider attempt, not response persistence.
+- Saved-report repair preserves fork cutoffs and cross-thread history.
+- Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.
+
+- Add the pure compaction classifier, trigger resolution, retained-tail planner, and active-history projection; project completed summaries before image inclusion and context building.
+- Make forks retain their source Agent and idempotent by client ID. Require fork and handoff to use the selected `originTurnId` exactly; refuse unsettled history with 409 `unsettled_history` and non-actionable turns with 400 `turn_not_actionable` instead of falling back to an earlier settled turn. Refuse fork and handoff from subagent threads.
+- Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
+- Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
+
+- Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
+- Derive prefix-cache warmth from durable bakes, completed compaction and typed image boundaries; record each request prediction on its response row, and share one runtime cache-state service across consumers.
+- Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
+- Work description clamps to three lines; click it to show more, Edit to change it in place.
+- Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
+- Work reopens the last Work opened on this device.
+- Work Chats tab lists that Work's chats from the project chat feed (archived chats hidden). Files tab groups Drafts, Scratch and Uploads with new notes, uploads, rename and delete in place; an opened file shows in the dock.
+- Editing text in place never moves or resizes it. One protocol everywhere: Enter or blur saves, Escape or an empty name cancels, failures stay open with their message. Chat titles rename inside their tab.
+- Confirm/dismiss button pairs sit right-aligned, Cancel first.
+- Deleting a Work never blocks: its chats, drafts, Scratch and Uploads go with it. The Deleted tab lists it for 30 days with Restore, which brings everything back; after that it is purged.
+- Work list shows Active, Archived and Deleted as tabs, one list at a time. The tab lives in the URL (`?view=archived|deleted`), so Back returns to it; Archive and Unarchive move focus to the destination tab.
+- Project URLs name the screen first: `/chats`, `/chats/<id>`, `/works`, `/works/<id>`, `/editor`, `/editor/<scheme>/<path>` and `/editor/browse/…`. The Work is `?work=<id>` (required for Scratch and Uploads, empty for No Work). The bare project URL opens `/chats`. Older URLs show "This destination is unavailable." on desktop as on the phone. A new Work keeps its URL from creation on. Slugs and `@` stay out of browser URLs.
+- Fix: the invalid-character name warning showed a raw "{0}".
+- Archive and Unarchive move a Work to its new tab at once. If the server refuses, the Work returns with an error to retry or dismiss.
+- Fix: restoring an archived Work showed it under Active before it settled under Archived.
+- Fix: a failed Archive stayed silent when another Archive followed it; the Work list and the Work band now show the same failure, and a Work's changes can no longer flicker back while a server read catches up.
+- Fix: an archived Work waiting to be undeleted showed under Archived beside its Undo row.
+- Phone: a failed Archive gets its own line under the top bar instead of squeezing the title.
+- Fix: a finished upload no longer drops out of a Work's Uploads for a moment before the file appears; its row stays until the list has the file.
+- Chat titles rename like Work and project titles: the field closes at once, and a refused rename reopens it with your text and the error under it (no separate Retry row).
+- Fix: deleting a second Work while the first was still deleting lost the first one's Undo row and its failure. Each deleted Work now keeps its own Undo row in the tab it left, and a failed delete or Undo stays on that Work.
+- Fix: a newly created Work briefly vanished from the Work list, the Work picker and the sidebar just after the server confirmed it. A Work being created shows in its list at once and stays there.
+- A refused Restore can be dismissed.
+- Fix: a Work deleted just now could read "Deletes for good in 31 days". The countdown never exceeds the 30-day retention.
+- `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
+
+- Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
+- Show only "Queued" under a writer message the model has not read yet.
+- Keep "needs your answer" on a chat when the writer sends while a question is parked.
+- One chat spacing scale across turns, cards, prose, and composer; non-chat prose keeps its spacing.
+- Finished assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
+- Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
+- Gateway owns provider retries; honor retry-after hints and retry vetoes.
+- Show subagents the same way everywhere: mark with a status ring, agent name, then description. Launch cards stream the child's current tool and expand to the report once finished; a running panel and a Subagents pop-up list every run; finished lines sit inline and merge when runs finish together; reading a report is a folded step that links back to its card; only the chat icon opens a child chat, and child chats show their full path.
+- Only a turn the model finished on its own ends a reply: notifications, mid-stream steers, and turns awaiting background subagents continue it, and Copy takes the final answer's text, reports, and images.
+- Remove the standalone project-less chat route; a chat always lives in a project.
+- Disable ask_user until its rework (#601); no agent is offered the tool.
+- `server`: `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a live `cN`/`pN` thread handle for the project owner; the ref grammar moved to `@meridian/contracts/threads`. `./mf` accepts refs wherever it takes a thread (default project, or `--project`).
+
+- `server`: one explicit debug gate. Model-request capture, `/api/debug/*`, and mock-model scripting now require `APP_DEBUG=1` (set by `pnpm dev`) and never turn on in production; staging can opt in. `MODEL_REQUEST_DEBUG_CAPTURE` is removed.
+
+- `tools`: added `./mf`, a local CLI that drives this worktree's stack through its own API. It creates threads, sends and waits (exit code = run outcome), tails and replays events, prints transcripts and model context, seeds docs and scenarios, and scripts the dev mock model (`/api/debug/mock-model/script`). It replaces `pnpm debug:events` (now `./mf log`) and `pnpm debug:model-context` (now `./mf thread context`).
+
+- Freeze thread prompts at the database boundary.
+- Keep the same Agent and prompt when forking by default.
+- Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
+- Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.
+
+- Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
+- Opening a project is faster: its identity and shell reads run together, library hover or focus and the open New project dialog warm workspace code without loading project data, and route caches seed outside React render.
+
+- Resolve images sent while a reply streams. Share history image limits and keep saved image identities.
+
+- Prevent deadlocks when writer sends race Work switches or Work notices.
+
+- Split steered replies into ordered assistant turns without restarting the run. Keep one child report with terminal text and whole-run cost. Show adopted messages as waiting for response.
+
 ### Changed
 
+- Start fresh databases from one baseline. Existing dev databases require `pnpm db:reset`.
+- Enforce populated-row migration safety from the first migration after the baseline.
+
+- Verify stream deadlines and journal eviction with controlled time. Drain rollback notifications with committed barriers.
+
+- Share runtime and execution-report test scenarios. Exercise rich writer sends and hidden child notifications through real delivery.
+
+- Recover queued messages, child reports, Work updates, and change trails on independent non-overlapping schedules. Drain recovery work before shutdown.
+
+- Deliver Work changes once through the inbox, at idle or between responses, without replacing the frozen prompt. Preserve causal turn order across live Work switches and writer sends.
+
+- Commit inbox delivery and queue status together. Share one run claim. Keep remote Stop effective through the final response.
+
+- Share writer and child run cleanup. Commit admission before generation; release children before publishing reports. Keep admitted children running if parent-card binding fails. Preserve child-subtree lifetime on parent completion.
+
+- Store inbox kind tags once and index pending report publication by its recovery cursor.
+
+- Remove the unused alternate response-accounting API; journal projection remains the accounting owner.
+
+- Share immutable child-report state rules across storage adapters; decode saved captures at storage ingress.
+
+- Replay cold thread subscriptions once; skip journal drains on unobserved replicas.
+- Exercise report-publication rollback after inbox and publication marker writes, then replay recovery.
+
+- Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
+
+- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action.
+- Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 - Chat navigation reopens the chat this browser last had open, or the chat index when there is none. The remembered chat is per device and no longer synced.
 - Opening or starting a chat from Work or Editor keeps the screen and shows it in the right sidebar. A first Send stays in its pane, including across reload.
 - The chat index is the Chat screen's New chat: a centered composer, then search, an All or Favorites filter, and chats grouped by Today, Yesterday, and Earlier in one page scroll. Chats star in place and can be deleted from any list.
@@ -23,8 +282,49 @@
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
 - Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
+### Fixed
+
+- Reject malformed saved report captures without confusing JSON null with an absent capture.
+
+- Keep thread snapshots and replay cursors on one consistent database view.
+
+- Preserve structured run errors in live and replayed thread events.
+- Observe detached run cleanup failures and report them with the assistant execution identity.
+
+- Page wake recovery past blocked threads, batch lease checks, and report failed wakes without losing queued messages.
+
+- Retire a stopped run’s adopted inbox messages with cancellation; preserve later follow-ups for the next turn.
+
+- Bound cancelled provider drains to five seconds, even when provider teardown hangs.
+
+- Cancel only the requested assistant execution, never a newer run on the same thread.
+
+- Keep the inline awaiting-run status current as inbox state changes, serialize delayed queue notifications with adoption and acknowledgement, and swallow run-settlement projection failures at the lock/commit boundary.
+- Classify durable inbox delivery as awaiting-run, waiting, or consuming from one live-lease/adopted-batch projection; show only waiting writer messages in the queued tray.
+- Unified document reads on the explicit `write(command: "read")` command; `edit` policy now gates only document and Work mutations.
+- Distinguish malformed command arguments from disabled tool commands, and state the required `read` invocation explicitly in model instructions.
+- Preserve exact JSONB report payload values across PostgreSQL reads, including JSON-looking scalar strings and present JSON `null`.
+- Keep stale successful thread-snapshot recovery pending through repeated races, coalesce missing-card snapshot fetches, and restore the run controller and listeners after React StrictMode effect replay.
+- Keep addressed block replacements and prunes live for a mounted thread after its run ends, with synchronous first-send projection activation, replay/snapshot freshness fences, and account-epoch cleanup.
+- Prepare durable thread-block projection with a shared counter-free reducer, wire-sequence freshness floor, flush-only run ordering seam, and account-fenced snapshot/cache operations.
+- Preserve exact parent-turn/tool-call/execution/direct-mode correlation on retained child cards across live and persisted protocol order, including authoritative snapshot replacement and late admission binding.
+- Empty failed or cancelled child reports now state that no partial output was returned. Direct cards use the human error message; explicit report rows keep structured reasons in their details without labeling an absent body as a partial result.
+- Keep all inbox provenances in the shared pending read model; writer-only tray filtering remains a client selector.
+- Materialize uncaptured child report text from the exact assistant turn's final persisted model response, for success and partial failure/cancellation alike. Empty final responses do not borrow older prose or a speculative process buffer.
+- Retire body-bearing `background.completed` and `background.failed` event types; the published `agent.run_completed` fact carries outcome metadata only. Unknown historical journal facts continue to replay without a fabricated live frame.
+- Replace competing child completion paths with one saved per-execution terminal report. Background spawn returns after admission; direct spawn/message return the exact saved outcome, including failed or cancelled partial content. Report bodies no longer ride lifecycle events, persisted card props, or inbox notifications.
+- Mark a background child that fails before assistant-turn admission as failed on its existing card and lifecycle hint, without inventing terminal report truth.
+- Recover admitted orphan turns only after acquiring the physical run claim, and retry parent publication from bounded durable pending discovery. Parent publication holds its lock before updating the original card, appending body-free completion metadata, queuing a compact exact `thread_report` reference, and marking the obligation.
+- Remove the obsolete `threads.spawn_result` body column. The child report row is the sole saved result authority; `spawn_status` remains a lifecycle hint.
+- Make return_result capture and its successful tool_result one transaction, and finalize the exact child assistant turn/report together under the final-drain lock. Token exhaustion is failure; natural fallback uses only the final response's public text, and report cost sums that execution's persisted response accounting.
+- Keep the physical child run claim until the outer terminal transaction commits; rollback retains the claim and lease for safe cleanup or retry.
+- Closed the execution-report storage gate: transactional in-memory parity, exact authorized reads, validated invocation correlation, bounded publication discovery, and saved-terminal publication obligations.
 
 ### Added
+
+- Admit a saved execution-report row in the assistant-turn setup transaction for every subagent writer or inbox continuation; bind the running turn to its lease in that same transaction.
+- Added a durable `block.updated` replacement event for in-place historical card changes without splitting active text streams.
+- Added per-assistant-turn execution-report storage and exact lineage-authorized `thread_report({ ref, execution })` reads. The normal ActivityRow expands full text, payload, and artifacts.
 
 - Editor empty state lists the writer's recently opened documents in the current project, grouped by age (Today / Yesterday / Earlier). Opening a document records it to the account's recents list (`user_recent_documents`), and each project shows its own slice of that history; the landing replaces the old "New document / pick a file from the tree" dead end. A control at the tab strip's leading edge returns to it with tabs still open.
 - Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.
@@ -38,13 +338,13 @@
 - Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic child, which binds no Agent revision and inherits the caller's model, tools, skills, effort, and roster with a host-owned default body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
 - `spawn` accepts a per-invocation `append_system_prompt` and `overrides` patch (model, effort, tools, disallowed-tools, subagents, skills). `append_system_prompt` appends to the child's system prompt as an additive layer after its immutable Agent body for that run only. The child's effective configuration is patched for that run only, validated so a patch can never grant authority the caller lacks, and persisted with the raw overlay so later turns reuse it. The saved Agent is unchanged.
 - Generic subagents are agent-less: a generic child binds no Agent revision and inherits the caller's configuration, presented as Subagent. The General baseline sentinel and the helper slug are retired. Agent-less children still get host model-availability checks.
-- Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
-- A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `ArtifactCard` titled Return, with the `return_result` protocol hidden.
-- The parent model can continue an existing child with a `continue` tool (`handle`, `prompt`, `mode`). The child keeps its frozen definition, system prompt, configuration, and history, and returns a second report under a new execution identity. `continue` cannot change the child's model, tools, prompt, or overlay.
-- A background child's report reaches the parent model, not just the writer's card. The report is a system message the model reads; the hidden continuation turn is not a writer message.
-- Durable child-report delivery: the obligation commits the instant `return_result` settles, the card write holds the parent run claim, and a 1s sweep delivers exactly once across crash, restart, replay, and claim-recovery epoch advance.
-- `return_result.artifacts[]` renders on the child Return card and the parent helper card.
-- Every conversation gets a short server-assigned handle from the project's one counter: `cN` for primary chats, `pN` for subagents (one project may read `c1`, `p2`, `p3`). The model addresses a child by its handle (`continue` takes `handle`), so the `spawn`/`continue` tool traffic it re-reads every turn carries `p3` instead of a 36-character UUID. The handle is not the id: the chat URL, local store key, and Open door stay on the client-minted UUID. No writer-facing surface changes.
+- The retained parent invocation card shows child status and an Open door. Foreground `spawn` and `thread_message` expose their settled direct report in that card; a known direct terminal outcome supplies the displayed status while card publication catches up. Background cards carry status only. Hidden tool protocol never adds a second row.
+- `return_result` captures one child report without ending the run immediately. Finalization saves the exact execution outcome and report; the child's Return card renders the captured report when present.
+- The parent model can steer an existing child with `thread_message` (`ref`, `message`, `mode`). Each admitted run has its own execution identity; the child retains its configuration and history.
+- Background completion wakes the parent with a compact status and exact `thread_report({ ref, execution })` reference. The model retrieves the saved body explicitly; it is not inserted into history automatically.
+- Saved terminal reports drive durable parent publication: the original card is patched in place, a body-free completion fact is emitted, and a compact retrieval reference is queued. Pending publication retries after interruption.
+- Saved report artifacts render on the child Return card, foreground direct card, and ordinary expanded `thread_report` row; background cards stay body-free.
+- Every conversation has a project-scoped short ref (`cN` primary, `pN` subagent). `thread_message` and `thread_report` address the child by ref; exact report reads also require its execution UUID. Chat URLs and Open doors retain thread UUIDs.
 
 ### Fixed
 
@@ -58,8 +358,8 @@
 - The tab strip's Recently opened control reaches the list while a local draft is selected. Back returns to that draft. Tabs stay open.
 - Cached document sessions now claim exact legacy handle-less persistence authority and transfer their existing editor session into live collaboration instead of leaving transport on a second hidden Y.Doc.
 - Collaborator carets now cross same-browser document tabs through the local peer channel and return after reconnect.
-- Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
-- A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
+- Child completion emits body-free `agent.run_completed` instead of spawn-named completion; steering an existing child is not a new spawn.
+- A thread that advanced while the writer was elsewhere — a background child's completion waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 
 - Reject `write` (including case variants and payload-scoped forms like `write(x)`) as an authoring permission name; use `edit` for the document-edit capability. `edit` implies `read`; an explicit `disallowed-tools` read denial is a contradiction.
 - The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
@@ -83,13 +383,14 @@
 - User bubbles render picked `/slug` with the same hover name and description as the composer.
 - Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
-- A read-only Agent now advertises a first-class `read` tool, so Critic reads instead of reporting it cannot. Allowing `write` or `edit` implies document read. Mutating Agents advertise both `read` and `write`, and the `write` tool no longer carries `read`/`diff`. The transcript classifies and renders the `read` tool, and agent-edit outline and resync hints now point at `read(command="read", path=...)`.
+- One required-command `write` tool serves document reads, diffs, and edits. The existing `edit` policy governs mutations while all Agents retain `read` and `diff`; advertisement narrows the description as well as the schema to the caller's permitted commands. Read instructions use `write(command="read", path=...)`.
 
 ### Changed
 
+- Thread journal fan-out now waits for commit-aware invalidation and drains committed rows in sequence across local and PostgreSQL notifications. Cold reconnect replay pages through the captured committed head without the 10,000-row cutoff or replay-limit gap signal.
 - Test-only maintenance: pruned the schema, journal, recents, recovery, interrupt, working-set, rename, and billing suites added in #566 down to one owner per durable contract, and deleted the low-value UI/mock files that restated those contracts at the component and mock layers. No product behavior changed.
 - Agent execution configuration has one canonical contract in `@meridian/contracts/agents` (`execution-knobs.ts`): effort value set and `max→xhigh` alias, tool policy, tool-name alias fold, resolved shape, and presence-sensitive patch. The compiler, resolver, invocation patch, and gateway effort mapping are projections, and the patch merge table is compile-time exhaustive so an accepted key cannot be silently dropped.
-- `return_result` records the report and ends this turn; the child chat stays open.
+- `return_result` captures a report while the child run continues to finalization; the child chat stays open.
 - Home/Work chat rows and the chat switcher show the bound Agent name; Work is no longer the row identity.
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.
 - Home Continue/Recent/Favorite, the chat switcher, and Work-associated chats list primary threads only.
@@ -1535,7 +1836,6 @@
   (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
   lifecycle branch.
 - `apps/app`: turn reversal waits for refreshed lineage before settling, so
-  refused Undo attempts immediately replace the stale Undo affordance.
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.

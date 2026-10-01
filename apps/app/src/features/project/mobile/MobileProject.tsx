@@ -1,14 +1,4 @@
-/**
- * MobileProject — phone-class project shell with one active view at a time.
- *
- * This is a sibling of the desktop ProjectShell, not a conditional branch
- * inside it. It reuses the same route-owned ProjectViewProps and inner content
- * components while replacing the desktop grid/rails with top bar + drawer +
- * stacked single-pane navigation. Context drill-in (scheme → folders → file)
- * is entirely route-driven, so the OS/browser back gesture pops levels;
- * up-navigation in the chrome is the top bar's breadcrumb (ancestor taps),
- * not a back button — the drawer trigger stays on every screen.
- */
+/** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Sparkles } from "lucide-react";
@@ -33,6 +23,8 @@ import {
   useDockReveal,
 } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
+import { useWorkChrome } from "../work/useWorkChrome";
+import { useWorkDeletion, type WorkDeletion } from "../work/useWorkDeletion";
 import { WorkScreen } from "../work/WorkScreen";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { folderAncestry, pathLeafName } from "./context-location";
@@ -58,11 +50,11 @@ export function MobileProject(props: MobileProjectProps) {
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = () => {
-    setDockView(props.activeScreen, "chat");
+  const openChatSheet = (view: "chat" | "file" = "chat") => {
+    setDockView(props.activeScreen, view);
     setChatOpen(true);
   };
-  useDockReveal(openChatSheet);
+  useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -79,6 +71,16 @@ export function MobileProject(props: MobileProjectProps) {
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
   const crumbs = contextBreadcrumbSegments(props);
+  const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
+  const work = useWorkChrome(
+    props.projectId,
+    props.routeWork,
+    props.rememberedWork,
+    props.routeCommands,
+    workDeletion,
+    "quiet",
+  );
+  const onWorkDetail = props.activeScreen === "work" && !work.onCollection && Boolean(work.title);
 
   return (
     <div
@@ -93,29 +95,39 @@ export function MobileProject(props: MobileProjectProps) {
         breadcrumb={
           props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
             <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
+          ) : onWorkDetail ? (
+            <MobileBreadcrumb
+              segments={[
+                { label: t`Work`, onSelect: work.openCollection, keep: true },
+                { label: work.name ?? "", current: work.title },
+              ]}
+            />
           ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
+        notice={!props.resultsOpen && onWorkDetail ? work.notice : undefined}
         chatAction={
           props.activeScreen !== "chat" ? (
-            <PhoneIconButton aria-label={t`Open chat`} onClick={openChatSheet}>
+            <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
               <MessageSquare className="size-5" aria-hidden />
             </PhoneIconButton>
           ) : undefined
         }
         actions={
-          props.contextLive
-            ? trailingAction(props, (kind) => {
-                if (!props.activeContextScheme) return;
-                setCreating({
-                  scheme: props.activeContextScheme,
-                  kind,
-                  parentPath: props.activeContextFolder ?? "",
-                  workId: props.editorWorkId,
-                });
-              })
-            : undefined
+          onWorkDetail
+            ? work.actions
+            : props.contextLive
+              ? trailingAction(props, (kind) => {
+                  if (!props.activeContextScheme) return;
+                  setCreating({
+                    scheme: props.activeContextScheme,
+                    kind,
+                    parentPath: props.activeContextFolder ?? "",
+                    workId: props.editorWorkId,
+                  });
+                })
+              : undefined
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -129,7 +141,7 @@ export function MobileProject(props: MobileProjectProps) {
               : undefined)
           }
         >
-          {renderActiveView(props, creating, () => setCreating(null), localTab)}
+          {renderActiveView(props, workDeletion, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
       <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
@@ -178,17 +190,7 @@ export function MobileProject(props: MobileProjectProps) {
   );
 }
 
-/**
- * Top-bar trailing action dispatcher — one slot, screen-dependent identity.
- * Chat is where results get produced, so it carries the Results entry;
- * Results carries the visible way back (edge-swipe works too, but a
- * discoverable affordance shouldn't require knowing the gesture). The Files
- * browser inside a scheme (scheme root or a folder, no file open) carries
- * the `+` create menu — creation lands "where you are", the route's current
- * scheme+folder. The Files root (scheme list) gets no `+`: schemes are
- * sources, not folders, so there is no "here" to create into. All other
- * screens leave the slot empty.
- */
+/** Top-bar trailing action dispatcher — one slot, screen-dependent identity. */
 function trailingAction(
   props: ReviewScopedProjectProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
@@ -221,6 +223,7 @@ function trailingAction(
 
 function renderActiveView(
   props: MobileProjectProps,
+  workDeletion: WorkDeletion,
   creating: TreeCreationRequest | null,
   onCreateDone: () => void,
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
@@ -236,6 +239,7 @@ function renderActiveView(
           projectId={props.projectId}
           routeWork={props.routeWork}
           routeCommands={props.routeCommands}
+          deletion={workDeletion}
         />
       );
     case "chat":
@@ -298,15 +302,6 @@ function renderActiveView(
   }
 }
 
-/**
- * Top-bar breadcrumb for the whole context screen: Files › scheme › folders
- * › file. "Files" is the root crumb and navigates to the scheme list; deeper
- * ancestors navigate to the Files browser at that location (`""` = scheme
- * root). The last segment is the current location and stays non-interactive —
- * at the Files root itself the trail is just a lone "Files". Chat, Work, and
- * routed Results auxiliary state suppresses the trail so the top bar shows its
- * plain centered title instead — Results is not part of the Files hierarchy.
- */
 function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how

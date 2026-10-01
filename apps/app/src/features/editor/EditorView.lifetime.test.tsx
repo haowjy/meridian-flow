@@ -1,14 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Editor lifetime contract: only a change to the editor's mount identity may
- * rebuild it. A rebuild destroys the Yjs UndoManager and drops keystrokes in
- * flight, so query churn (a thread-list refetch) and live surface config
- * (editability, accessible label) must reach the running instance instead of
- * replacing it.
- *
- * Instances are compared through printable tags: a failed `toBe` on an Editor
- * makes the reporter walk the ProseMirror view into jsdom internals.
- */
+/** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 import type { Editor } from "@tiptap/core";
 import { act, StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -122,12 +113,6 @@ const controller = {
   inlineReviewModelAvailable: () => {},
 };
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings.join(""),
-}));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
 }));
@@ -163,35 +148,11 @@ vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
 
 const { EditorView } = await import("./EditorView");
 
-const instanceTags = new WeakMap<object, string>();
-let instanceSequence = 0;
-
-function tagOf(instance: object, prefix: string): string {
-  const existing = instanceTags.get(instance);
-  if (existing) return existing;
-  const tag = `${prefix}-${++instanceSequence}`;
-  instanceTags.set(instance, tag);
-  return tag;
-}
-
 /** The mounted instance, read the way the browser probe reads it. */
 function mountedEditor(): Editor {
   const dom = document.querySelector<HTMLElement & { editor?: Editor }>(".ProseMirror");
   if (!dom?.editor) throw new Error("no mounted editor");
   return dom.editor;
-}
-
-type UndoManager = { undoStack: unknown[] };
-
-/** Collaborative history is plugin state, so find it the way the probe does. */
-function undoManager(editor: Editor): UndoManager {
-  for (const plugin of editor.state.plugins) {
-    const state: unknown = plugin.getState(editor.state);
-    if (state && typeof state === "object" && "undoManager" in state) {
-      return (state as { undoManager: UndoManager }).undoManager;
-    }
-  }
-  throw new Error("no collaborative undo manager");
 }
 
 let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
@@ -298,44 +259,52 @@ describe("editor lifetime", () => {
     );
   });
 
-  it("survives query churn and live surface changes, and rebuilds only for a new room", async () => {
+  it("preserves content and undo through query churn and surface changes without leaking into a new room", async () => {
     const initial = { documentId: "document-1", projectId: "project-1" };
     await withReactRoot(<Harness initial={initial} />, async () => {
-      const original = tagOf(mountedEditor(), "editor");
-      const history = undoManager(mountedEditor());
       await act(async () => {
         mountedEditor().commands.insertContent("words the writer typed");
       });
-      const undoDepth = history.undoStack.length;
-      const historyTag = tagOf(history, "undo-manager");
-      expect(undoDepth).toBeGreaterThan(0);
-
       // A thread-list refetch hands the tree a brand-new array on every turn.
       await act(async () => {
         threadList.current = [{ id: "thread-1", title: "Chapter voice — revised" }];
         applyProps({});
       });
-      expect(tagOf(mountedEditor(), "editor")).toBe(original);
-      expect(tagOf(undoManager(mountedEditor()), "undo-manager")).toBe(historyTag);
+      expect(mountedEditor().getText()).toBe("words the writer typed");
 
-      // Live surface config: editability and chrome apply to the same instance.
+      // Surface changes preserve the pending edit and its undo history.
       await act(async () => {
         applyProps({ editable: false, ariaLabel: "Read-only live document" });
       });
       const afterSurfaceChange = mountedEditor();
-      expect(tagOf(afterSurfaceChange, "editor")).toBe(original);
-      expect(tagOf(undoManager(afterSurfaceChange), "undo-manager")).toBe(historyTag);
-      expect(history.undoStack.length).toBe(undoDepth);
+      expect(afterSurfaceChange.getText()).toBe("words the writer typed");
       expect(afterSurfaceChange.isEditable).toBe(false);
       expect(afterSurfaceChange.view.dom.getAttribute("aria-label")).toBe(
         "Read-only live document",
       );
 
-      // Room identity is the one thing that may replace the editor.
+      await act(async () => {
+        applyProps({ editable: true });
+      });
+      await act(async () => {
+        expect(mountedEditor().commands.undo()).toBe(true);
+      });
+      expect(mountedEditor().getText()).toBe("");
+      await act(async () => {
+        expect(mountedEditor().commands.redo()).toBe(true);
+      });
+      expect(mountedEditor().getText()).toBe("words the writer typed");
+
+      // Navigating to another room must not carry this document's content or undo.
+
       await act(async () => {
         applyProps({ documentId: "document-2" });
       });
-      expect(tagOf(mountedEditor(), "editor")).not.toBe(original);
+      expect(mountedEditor().getText()).toBe("");
+      await act(async () => {
+        expect(mountedEditor().commands.undo()).toBe(false);
+      });
+      expect(mountedEditor().getText()).toBe("");
     });
   });
 
@@ -347,10 +316,9 @@ describe("editor lifetime", () => {
     });
   });
 
-  it("keeps the editor instance and turns it read-only when its session is fenced", async () => {
+  it("preserves typed content and becomes read-only when its session is fenced", async () => {
     const initial = { documentId: "document-fenced", projectId: "project-1" };
     await withReactRoot(<Harness initial={initial} />, async () => {
-      const original = tagOf(mountedEditor(), "editor");
       expect(mountedEditor().isEditable).toBe(true);
       await act(async () => {
         mountedEditor().commands.insertContent("Fenced words");
@@ -360,7 +328,7 @@ describe("editor lifetime", () => {
         raiseSchemaFence("document-fenced", { reason: "client-superseded" });
       });
 
-      expect(tagOf(mountedEditor(), "editor")).toBe(original);
+      expect(mountedEditor().getText()).toBe("Fenced words");
       expect(mountedEditor().isEditable).toBe(false);
       expect(mountedEditor().view.dom.getAttribute("contenteditable")).toBe("false");
       expect(document.querySelector("[data-schema-fence]")?.textContent).toBe(

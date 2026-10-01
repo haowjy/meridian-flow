@@ -88,6 +88,14 @@ describe("Yjs branch handshake route guard", () => {
           discardedStateVector: null,
           schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
+        async commitBranchMutation(input) {
+          await pullBlocked;
+          storedState = input.state;
+          return true;
+        },
+        async resetBranchSnapshot() {
+          return true;
+        },
         async updateBranchSnapshot(input) {
           await pullBlocked;
           storedState = input.state;
@@ -100,6 +108,8 @@ describe("Yjs branch handshake route guard", () => {
       },
     });
     const branchPulls = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
         recover: async () => {},

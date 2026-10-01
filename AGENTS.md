@@ -17,7 +17,7 @@ Scrivener-scale power without its complexity.
 **Trust the LLM.** AI writes merge like any Yjs peer's: marks and receipts
 inform, and undo recovers. Never add approval gates, refusal vetoes, or
 "safety" friction to AI writes; that gates the writer's instruction. See the
-[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/trust-the-llm-mission.md).
+[trust ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md).
 
 ## Engineering principles
 
@@ -70,9 +70,10 @@ hidden constraints, surprising invariants, and workarounds.
 
 **Writer-facing copy.** Separate facts with layout, typography, sentences, or
 parentheses, never `·`, `•`, `—`, or `|`. See the
-[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
+[copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
-**Debugging.** Follow [docs/debugging.md](docs/debugging.md).
+**Debugging.** Follow [docs/debugging.md](docs/debugging.md); use the
+[runtime probe catalog](docs/qa/README.md) for repeatable verification.
 
 ## Knowledge and structure
 
@@ -103,6 +104,10 @@ noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
+Driving or inspecting the running app (threads, docs, mock model, logs): use
+`./mf`, not the browser, unless it is visual. See
+[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
@@ -111,9 +116,19 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 
 Commit often, one self-contained change at a time.
 
-A human merges into `main` or `staging` unless explicitly instructing the agent
-to merge. Merges between working branches need no gate. Docs-only `AGENTS.md`,
-`.context/`, and KB changes may commit directly to `main`.
+A human merges product changes into `main` or `staging` unless explicitly
+instructing the agent to merge. Merges between working branches need no gate.
+Documentation-only changes commit directly to `main`; never open a PR only for
+documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
+docs repository.
+
+Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
+or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
+<work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
+Don't defer this: if the integration branch is later squash-merged, none of
+its side-lane branches remain provable as merged by PR match or by ancestry,
+and only a human who tracked the actual history can confirm by hand that they
+are safe to remove.
 
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its

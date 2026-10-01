@@ -8,7 +8,7 @@
  * state (that's React Query).
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ContextOperationReceipt, ProjectChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
@@ -26,7 +26,6 @@ import {
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
-  apiWorkThreadsPath,
   type CatalogChanges,
   type CatalogLookupResult,
   type CatalogScope,
@@ -44,7 +43,6 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ListWorkThreadsResponse,
   type MoveContextEntryRequest,
   type MoveContextEntryResult,
   type ProjectContextIdentityLookupResult,
@@ -69,11 +67,6 @@ type RequestInitOptions = {
   signal?: AbortSignal;
 };
 
-type ListWorkThreadsOptions = RequestInitOptions & {
-  cursor?: string | null;
-  signal?: AbortSignal;
-};
-
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
@@ -84,9 +77,10 @@ export function getProjectChatFeed(
   signal?: AbortSignal,
   favorite = false,
   search: string | null = null,
+  workId: string | null = null,
 ): Promise<ProjectChatFeedPage> {
   return getJson<ProjectChatFeedPage>(
-    apiProjectChatFeedPath(projectId, { cursor, favorite, search }),
+    apiProjectChatFeedPath(projectId, { cursor, favorite, search, workId }),
     { signal },
   );
 }
@@ -119,19 +113,6 @@ export async function listProjectThreads(
   return response.threads;
 }
 
-export async function listWorkThreads(
-  workId: string,
-  options?: ListWorkThreadsOptions,
-): Promise<ListWorkThreadsResponse> {
-  return getJson<ListWorkThreadsResponse>(
-    urlFor(apiWorkThreadsPath(workId, options?.cursor), options),
-    {
-      headers: options?.headers,
-      signal: options?.signal,
-    },
-  );
-}
-
 export async function listProjectWorks(
   projectId: string,
   options?: RequestInitOptions,
@@ -139,6 +120,7 @@ export async function listProjectWorks(
   const path = apiProjectWorksPath(projectId);
   return getJson<ListWorksResponse>(urlFor(path, options), {
     headers: options?.headers,
+    signal: options?.signal,
   });
 }
 
@@ -149,6 +131,7 @@ export function createProjectWork(
 ): Promise<Work> {
   return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
     headers: init?.headers,
+    signal: init?.signal,
   });
 }
 
@@ -157,16 +140,17 @@ export function updateWork(
   data: UpdateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, { headers: init?.headers });
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, {
+    headers: init?.headers,
+    signal: init?.signal,
+  });
 }
 
 export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
   return postJson<Work>(
     urlFor(`/api/works/${workId}/archive`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 
@@ -174,23 +158,19 @@ export function unarchiveWork(workId: string, init?: RequestInitOptions): Promis
   return postJson<Work>(
     urlFor(`/api/works/${workId}/unarchive`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 
-export function deleteWork(workId: string): Promise<void> {
-  return deleteRequest(`/api/works/${workId}`);
+export function deleteWork(workId: string, init?: RequestInitOptions): Promise<void> {
+  return deleteRequest(urlFor(`/api/works/${workId}`, init), { signal: init?.signal });
 }
 
 export function restoreWork(workId: string, init?: RequestInitOptions): Promise<Work> {
   return postJson<Work>(
     urlFor(`/api/works/${workId}/restore`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 

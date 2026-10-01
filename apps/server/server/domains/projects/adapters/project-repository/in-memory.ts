@@ -31,14 +31,12 @@ export function createInMemoryProjectRepository(options?: {
         id,
         userId: input.userId,
         name: title,
-        title,
         slug: nextProjectSlug(
           title,
           [...rows.values()].filter((row) => row.userId === input.userId).map((row) => row.slug),
         ),
         isPersonal: false,
         systemPrompt: description,
-        description,
         settings: {},
         lastActivityAt: timestamp,
         createdAt: timestamp,
@@ -76,8 +74,8 @@ export function createInMemoryProjectRepository(options?: {
           (p) =>
             p.userId === userId &&
             p.deletedAt === null &&
-            (p.title.toLowerCase().includes(q) ||
-              (p.description?.toLowerCase().includes(q) ?? false)),
+            (p.name.toLowerCase().includes(q) ||
+              (p.systemPrompt?.toLowerCase().includes(q) ?? false)),
         )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map((p) => ({ ...p }));
@@ -87,11 +85,9 @@ export function createInMemoryProjectRepository(options?: {
       const row = rows.get(id);
       if (!row) throw new Error(`Project not found: ${id}`);
       if (input.title !== undefined) {
-        row.title = input.title;
         row.name = input.title;
       }
       if (input.description !== undefined) {
-        row.description = input.description;
         row.systemPrompt = input.description;
       }
       const timestamp = now();

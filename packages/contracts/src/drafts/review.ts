@@ -88,13 +88,7 @@ type ReviewHunkBase = {
     relStart: string;
     relEnd: string;
   };
-  /**
-   * set by the S4 diff pipeline (spec §6.2.1) when this hunk's branch
-   * struct ids interleave with live struct ids in the same text node — a CRDT
-   * merge artifact, not an authorship state. Drives the neutral dashed "Merged"
-   * treatment (manuscript decoration + dock verb). Absent/false = ordinary
-   * hued authorship hunk. Produced by the server/contract lane; consumed here.
-   */
+  /** True when branch and live CRDT structs interleave in one text node; this marks a merge artifact, not authorship. */
   mergeArtifact?: boolean;
 };
 

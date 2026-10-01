@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -24,12 +25,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleContextCatalog } = await import(
       "../../domains/context/adapters/context-catalog.js"
     );
-    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("../../domains/projects/index.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { createDrizzleProjectWorkAuthorityResolver } = await import(
+      "../../domains/projects/index.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
@@ -40,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const CROSS_SCHEME_DOCUMENT_ID = "00000000-0000-4000-8000-000000000935";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
 

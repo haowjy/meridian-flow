@@ -1,178 +1,178 @@
-/** Browser grammar contracts: explicit scope, exact filenames, and lossless raw query parsing. */
+/** Browser grammar contracts: screen-first paths, exact filenames, and lossless raw query parsing. */
 import { describe, expect, it } from "vitest";
 import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
 
+const P = "/p/550e8400-e29b-41d4-a716-446655440000";
+const WORK = "123e4567-e89b-42d3-a456-426614174000";
+const OTHER_WORK = "223e4567-e89b-42d3-a456-426614174000";
+const CHAT = "00000000-0000-4000-8000-000000000000";
+
+function parse(href: string) {
+  const cut = href.indexOf("?");
+  return cut < 0
+    ? parseProjectAddress(href)
+    : parseProjectAddress(href.slice(0, cut), href.slice(cut));
+}
+
 describe("readable project addresses", () => {
-  it("uses a UUID project root as the Chat landing and rejects slug aliases", () => {
-    expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000")).toMatchObject({
+  it("parses the bare project as the chat index whose canonical href names the screen", () => {
+    expect(parse(P)).toMatchObject({
       kind: "valid",
       address: {
         projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "chat-index" },
       },
-      href: "/p/550e8400-e29b-41d4-a716-446655440000",
+      href: `${P}/chats`,
     });
-    expect(parseProjectAddress("/p/serial").kind).toBe("invalid");
-    expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/chats").kind).toBe(
-      "invalid",
-    );
+    expect(parse(`${P}/`)).toMatchObject({ kind: "valid", href: `${P}/chats` });
+    expect(parse("/p/serial").kind).toBe("invalid");
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/browse",
-    "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-    "/p/550e8400-e29b-41d4-a716-446655440000/browse",
-    "/p/550e8400-e29b-41d4-a716-446655440000/browse/manuscript",
-    "/p/550e8400-e29b-41d4-a716-446655440000/browse/manuscript/Volume%201",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/Volume%201/Chapter%20%231.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/kb/%E4%BF%AE%E7%82%BC.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/user/100%25.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/notes.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/browse/uploads",
-    "/p/550e8400-e29b-41d4-a716-446655440000/uploads/reference.pdf",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/literal%252F.md",
-  ])("round trips %s", (path) => {
-    const parsed = parseProjectAddress(path);
-    expect(parsed.kind).toBe("valid");
+    [`${P}/chats`, { kind: "chat-index" }],
+    [`${P}/chats/${CHAT}`, { kind: "chat", chatId: CHAT }],
+    [`${P}/works`, { kind: "works" }],
+    [`${P}/works?view=archived`, { kind: "works" }],
+    [`${P}/works/new`, { kind: "works-new" }],
+    [`${P}/works/${WORK}`, { kind: "work", workId: WORK }],
+    [`${P}/works/${WORK}?view=files`, { kind: "work", workId: WORK }],
+    [`${P}/editor`, { kind: "editor" }],
+    [`${P}/editor/manuscript/Volume%201/Chapter%20%231.md`, { kind: "document" }],
+    [`${P}/editor/manuscript/chapter.md?work=${WORK}`, { kind: "document" }],
+    [`${P}/editor/kb/%E4%BF%AE%E7%82%BC.md`, { kind: "document" }],
+    [`${P}/editor/user/100%25.md`, { kind: "document" }],
+    [`${P}/editor/unfiled/draft.md`, { kind: "document" }],
+    [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
+    [`${P}/editor/scratch/notes.md?work=${WORK}`, { kind: "document", scheme: "scratch" }],
+    [`${P}/editor/scratch/notes.md?work=`, { kind: "document", scheme: "scratch" }],
+    [`${P}/editor/uploads/cover.png?work=${WORK}`, { kind: "document", scheme: "uploads" }],
+    [`${P}/editor/browse`, { kind: "browse", scheme: null, path: "" }],
+    [`${P}/editor/browse/manuscript`, { kind: "browse", scheme: "manuscript", path: "" }],
+    [`${P}/editor/browse/manuscript/Volume%201`, { kind: "browse", path: "Volume 1" }],
+  ])("round trips %s", (href, destination) => {
+    const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
-    expect(projectAddressHref(parsed.address)).toBe(path);
+    expect(parsed.address.destination).toMatchObject(destination);
+    expect(parsed.href).toBe(href);
+    expect(projectAddressHref(parsed.address)).toBe(href);
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision",
-    "/p/550e8400-e29b-41d4-a716-446655440000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/editor",
+    // Representative obsolete shapes: no alias, no redirect.
+    `${P}/manuscript/chapter.md`,
+    `${P}/works/${WORK}/scratch/notes.md`,
+    `${P}/chat/${CHAT}`,
+    `${P}/works/@revision`,
+    // Unknown screens and malformed documents.
+    `${P}/settings`,
+    `${P}/editor/manuscript`,
+    `${P}/editor/nope/leaf.md`,
+    `${P}/editor/manuscript/a%2Fb.md`,
+    `${P}/editor/manuscript/a%5Cb.md`,
+    `${P}/editor/manuscript/a\\b.md`,
+    `${P}/editor/manuscript/%`,
+    `${P}/editor/manuscript/a%3Fb.md`,
+    `${P}/editor/manuscript/..`,
+    `${P}/editor/manuscript/%40draft.md`,
+    `${P}/editor/manuscript//leaf.md`,
+    `${P}/editor/manuscript/%20trimmed.md`,
+  ])("rejects %s", (href) => {
+    expect(parse(href).kind).toBe("invalid");
+  });
+
+  it.each([
+    `${P}/editor/scratch/notes.md`,
+    `${P}/editor/uploads/cover.png`,
+    `${P}/editor/browse/scratch`,
+    `${P}/editor/scratch/notes.md?work=fight-scene`,
+    `${P}/editor/browse/uploads?work=%40revision`,
+  ])("a Work-owned resource requires its Work: rejects %s", (href) => {
+    expect(parse(href)).toMatchObject({ kind: "invalid", reason: "work" });
+  });
+
+  it("names a Work-owned resource's Work in the query, including No Work", () => {
+    expect(parse(`${P}/editor/scratch/notes.md?work=${WORK.toUpperCase()}`)).toMatchObject({
+      address: { destination: { kind: "document", scheme: "scratch" }, work: { id: WORK } },
+      href: `${P}/editor/scratch/notes.md?work=${WORK}`,
+    });
+    expect(parse(`${P}/editor/scratch/notes.md?work=`)).toMatchObject({
+      address: { work: { kind: "none" } },
+      href: `${P}/editor/scratch/notes.md?work=`,
+    });
+    // The same path under two Works is two addresses.
+    expect(parse(`${P}/editor/scratch/notes.md?work=${OTHER_WORK}`)).toMatchObject({
+      href: `${P}/editor/scratch/notes.md?work=${OTHER_WORK}`,
+    });
+  });
+
+  it("normalizes UUID case and trailing slash, never document case", () => {
+    expect(parse(`${P.toUpperCase().replace("/P/", "/p/")}/editor/kb/Chapter.md/`)).toMatchObject({
+      kind: "valid",
+      href: `${P}/editor/kb/Chapter.md`,
+    });
+  });
+
+  it("owns the Work page and list views in the URL and omits their defaults", () => {
+    expect(parse(`${P}/works/${WORK}?view=chats`)).toMatchObject({ href: `${P}/works/${WORK}` });
+    expect(parse(`${P}/works?view=active`)).toMatchObject({ href: `${P}/works` });
+    // Each view value belongs to one destination.
+    expect(parse(`${P}/works?view=files`)).toMatchObject({ href: `${P}/works` });
+    expect(parse(`${P}/works/${WORK}?view=deleted`)).toMatchObject({
+      href: `${P}/works/${WORK}`,
+    });
+    expect(parse(`${P}/works/${WORK}?view=files&view=chats`).kind).toBe("invalid");
+  });
+
+  it("preserves absent, explicitly empty, and malformed editing contexts", () => {
+    expect(parse(`${P}/editor`)).toMatchObject({ address: { work: { kind: "absent" } } });
+    expect(parse(`${P}/editor?work=`)).toMatchObject({
+      href: `${P}/editor`,
+      address: { work: { kind: "none" } },
+    });
+    expect(parse(`${P}/editor/kb/a.md?work=`)).toMatchObject({
+      href: `${P}/editor/kb/a.md`,
+      address: { work: { kind: "none" } },
+    });
+    expect(parse(`${P}/editor?work=revision`)).toMatchObject({
+      address: { work: { kind: "malformed", value: "revision" } },
+    });
+    expect(parse(`${P}/editor?work=bad%2Fwork`)).toMatchObject({
+      address: { work: { kind: "malformed", value: "bad/work" } },
+    });
+  });
+
+  it.each([
+    `${P}/chats`,
+    `${P}/editor`,
   ])("departure selection state is stable after parsing %s", (href) => {
-    const parsed = parseProjectAddress(href);
+    const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
-    const state = projectAddressState({
-      ...parsed.address,
-
-      work: { kind: "none" },
-    });
+    const state = projectAddressState({ ...parsed.address, work: { kind: "none" } });
     const restored = parseProjectAddress(href, "", state);
     if (restored.kind !== "valid") throw new Error(restored.reason);
     expect(projectAddressState(restored.address, state)).toEqual(state);
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a%2Fb.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a%5Cb.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a\\b.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%E0%A4",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a%3Fb.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/..",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%40draft.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript//leaf.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/manuscript/leaf.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/browse/kb",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chat",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chat/fight-scene",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chat/a/b",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chats",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chats/new",
-    "/p/550e8400-e29b-41d4-a716-446655440000/agents",
-    "/p/550e8400-e29b-41d4-a716-446655440000/publish",
-    "/p/550e8400-e29b-41d4-a716-446655440000//",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%20trimmed.md",
-    "/p//editor",
-  ])("rejects invalid or unsupported primary %s", (path) => {
-    expect(parseProjectAddress(path).kind).toBe("invalid");
-  });
-
-  it("normalizes only handles and trailing slash, never document case", () => {
-    expect(
-      parseProjectAddress(
-        "/p/550E8400-E29B-41D4-A716-446655440000/work/ReVision/scratch/Chapter.md/",
-      ),
-    ).toMatchObject({
-      kind: "valid",
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/Chapter.md",
-    });
-  });
-
-  it("preserves absent, explicitly empty, and malformed secondary selections", () => {
-    expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor")).toMatchObject({
-      address: { work: { kind: "absent" } },
-    });
-    expect(
-      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work="),
-    ).toMatchObject({
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      address: { work: { kind: "none" } },
-    });
-    expect(
-      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work=bad%2Fwork"),
-    ).toMatchObject({
-      address: {
-        work: { kind: "malformed", value: "bad/work" },
-      },
-    });
-  });
-
-  it.each([
-    "?work=a&work=",
+    `?work=${WORK}&work=`,
     "?settings=profile&settings=usage",
     "?results=&results=1",
     "?unknown=%FE",
   ])("rejects raw query ambiguity %s", (search) => {
-    expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", search).kind).toBe(
-      "invalid",
-    );
+    expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
   });
 
-  it("keeps document, chat, and independent Editor Work addresses distinct", () => {
+  it("keeps each query key to the screens it belongs to", () => {
     expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md",
-        "?work=Revision&settings=usage&doc=ignored&unknown=1",
+      parse(
+        `${P}/editor/manuscript/chapter.md?work=${WORK.toUpperCase()}&settings=usage&doc=ignored&unknown=1`,
       ),
-    ).toMatchObject({
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision&settings=usage",
-    });
+    ).toMatchObject({ href: `${P}/editor/manuscript/chapter.md?work=${WORK}&settings=usage` });
     expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
-        "?work=revision&doc=ignored&results=&settings=profile",
-      ),
-    ).toMatchObject({
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000?results=&settings=profile",
+      parse(`${P}/chats/${CHAT}?work=${WORK}&doc=ignored&results=&settings=profile`),
+    ).toMatchObject({ href: `${P}/chats/${CHAT}?results=&settings=profile` });
+    expect(parse(`${P}/works/${WORK}?work=${OTHER_WORK}&results=`)).toMatchObject({
+      href: `${P}/works/${WORK}`,
     });
-  });
-
-  it("path-owned Work cannot be overridden by query context", () => {
-    const path = "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/notes.md";
-    expect(parseProjectAddress(path, "?work=Revision")).toMatchObject({
-      kind: "valid",
-      href: path,
-    });
-    expect(parseProjectAddress(path, "?work=")).toMatchObject({
-      kind: "invalid",
-      reason: "conflicting-work",
-    });
-    expect(parseProjectAddress(path, "?work=other")).toMatchObject({
-      kind: "invalid",
-      reason: "conflicting-work",
-    });
-    expect(
-      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md", "?work="),
-    ).toMatchObject({
-      kind: "valid",
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
-    });
-    expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
-        "?work=revision",
-      ).kind,
-    ).toBe("invalid");
   });
 });

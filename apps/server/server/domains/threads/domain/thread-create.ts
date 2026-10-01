@@ -9,14 +9,12 @@ import type { CreateThreadInput } from "../ports/repositories.js";
 export interface NormalizedThreadCreate {
   kind: ThreadKind;
   title: string;
-  /** Raw system prompt at creation; bake output lives in `composedSystemPrompt` only. */
-  systemPrompt: string | null;
   parentThreadId: string | null;
   spawnStatus: SpawnStatus | null;
   spawnDepth: number;
 }
 
-/** Phase 1 only supports root (primary) thread creation; spawn/fork fields are rejected. */
+/** Public thread creation accepts roots only; the spawn coordinator owns child creation. */
 export class ThreadLifecycleNotSupportedError extends Error {
   constructor(detail: string) {
     super(`Thread spawn/fork lifecycle is not supported yet: ${detail}`);
@@ -28,10 +26,7 @@ function rejectNonRootLifecycle(detail: string): never {
   throw new ThreadLifecycleNotSupportedError(detail);
 }
 
-/**
- * Validates and normalizes thread creation input.
- * Phase 1: only root threads — primary kind with no parent or spawn fields.
- */
+/** Validates and normalizes public thread creation input. */
 export function normalizeThreadCreate(input: CreateThreadInput): NormalizedThreadCreate {
   if (input.kind !== undefined && input.kind !== "primary") {
     rejectNonRootLifecycle(`kind "${input.kind}" is not supported`);
@@ -49,7 +44,6 @@ export function normalizeThreadCreate(input: CreateThreadInput): NormalizedThrea
   return {
     kind: "primary",
     title: input.title ?? "",
-    systemPrompt: input.systemPrompt ?? null,
     parentThreadId: null,
     spawnStatus: null,
     spawnDepth: 0,

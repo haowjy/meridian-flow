@@ -4,13 +4,20 @@ import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import {
   isReversibleWorkMutationReceipt,
+  isWorkArchived,
   parseWorkReceipt,
   type Work,
   type WorkMutationReceipt,
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
+import {
+  runWorkLifecycleCommand,
+  setWorkArchived,
+  updateWorkTransition,
+  type WorkContextNotices,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import type {
   BlockRepository,
   ThreadRepository,
@@ -22,7 +29,8 @@ type WorkReceiptReversalDeps = {
   turns: Pick<TurnRepository, "findById">;
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
-  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+  workContextNotices: Pick<WorkContextNotices, "workChanged">;
+  stopThreadRun: (threadId: ThreadId) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -68,42 +76,43 @@ export async function reverseWorkReceipts(
   const context = await reversalContext(deps, input);
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
-  const changedProjects = new Set<string>();
   try {
-    const results = await deps.transaction(async () => {
-      await lockReceiptState(deps, ordered);
-      const plan = await planReceipts(deps, ordered, context.thread, input.direction);
-      const applied: WorkReceiptReversal[] = [];
-      for (const step of plan) {
-        if (!step.executable) {
+    return await runWorkLifecycleCommand(
+      { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
+      async () => {
+        await lockReceiptState(deps, ordered);
+        const plan = await planReceipts(deps, ordered, context.thread, input.direction);
+        const applied: WorkReceiptReversal[] = [];
+        const deletedThreadIds = new Set<ThreadId>();
+        for (const step of plan) {
+          if (!step.executable) {
+            applied.push(
+              result(
+                step.receipt,
+                context.thread.projectId,
+                step.command,
+                "unavailable",
+                step.message,
+              ),
+            );
+            continue;
+          }
+          const appliedStep = await applyStep(deps, step.receipt, input.direction);
+          for (const threadId of appliedStep.threadIds) {
+            deletedThreadIds.add(threadId);
+          }
           applied.push(
             result(
               step.receipt,
               context.thread.projectId,
               step.command,
-              "unavailable",
-              step.message,
+              input.direction === "undo" ? "reversed" : "redone",
             ),
           );
-          continue;
         }
-        await applyStep(deps, step.receipt, input.direction);
-        changedProjects.add(context.thread.projectId);
-        applied.push(
-          result(
-            step.receipt,
-            context.thread.projectId,
-            step.command,
-            input.direction === "undo" ? "reversed" : "redone",
-          ),
-        );
-      }
-      await Promise.all(
-        [...changedProjects].map((projectId) => deps.workContextDelivery.projectChanged(projectId)),
-      );
-      return applied;
-    });
-    return results;
+        return { value: applied, threadIdsToStop: [...deletedThreadIds] };
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
@@ -181,7 +190,10 @@ async function planReceipts(
   thread: Thread,
   direction: Direction,
 ): Promise<PlannedStep[]> {
-  const projectWorks = await deps.works.listByProject(thread.projectId, { includeDeleted: true });
+  const projectWorks = await deps.works.listByProject(thread.projectId, {
+    includeDeleted: true,
+    lifecycle: "all",
+  });
   const works = new Map<WorkId, ShadowWork>(
     projectWorks.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]),
   );
@@ -248,33 +260,73 @@ async function planReceipts(
 }
 
 async function applyStep(
-  deps: Pick<WorkReceiptReversalDeps, "works">,
+  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
   receipt: WorkMutationReceipt,
   direction: Direction,
-): Promise<void> {
+): Promise<{ threadIds: ThreadId[] }> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
-      await deps.works.softDelete(receipt.workId);
+      return {
+        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
+      };
     } else {
       await deps.works.restore(receipt.workId);
+      await deps.workContextNotices.workChanged(receipt.workId);
     }
   } else if (receipt.operation === "update") {
     const state = direction === "undo" ? receipt.before : receipt.after;
     if (!state) throw new Error("Receipt state is incomplete");
-    await applyState(deps.works, receipt.workId, state);
+    await applyState(deps, receipt.workId, state);
+    return { threadIds: [] };
   } else if (receipt.operation === "delete") {
-    if (direction === "undo") await deps.works.restore(receipt.workId);
-    else await deps.works.softDelete(receipt.workId);
+    if (direction === "undo") {
+      await deps.works.restore(receipt.workId);
+      await deps.workContextNotices.workChanged(receipt.workId);
+    } else {
+      return {
+        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
+      };
+    }
   }
+  return { threadIds: [] };
 }
 
-async function applyState(works: WorkRepository, workId: WorkId, state: WorkReceiptState) {
-  await works.update(workId, {
-    name: state.name,
-    goal: state.goal,
-    description: state.description,
-    status: state.status,
-  });
+async function applyState(
+  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
+  workId: WorkId,
+  state: WorkReceiptState,
+) {
+  let current = await deps.works.findById(workId);
+  if (!current) throw new Error(`Work not found: ${workId}`);
+  if (!state.archived && isWorkArchived(current)) {
+    current = (
+      await setWorkArchived(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        false,
+      )
+    ).after;
+  }
+  if (
+    current.name !== state.name ||
+    current.goal !== state.goal ||
+    current.status !== state.status
+  ) {
+    current = (
+      await updateWorkTransition(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        { name: state.name, goal: state.goal, status: state.status },
+      )
+    ).after;
+  }
+  if (state.archived && !isWorkArchived(current)) {
+    await setWorkArchived(
+      { works: deps.works, workContextNotices: deps.workContextNotices },
+      workId,
+      true,
+    );
+  }
 }
 
 function commandFor(
@@ -310,15 +362,15 @@ function result(
 }
 
 function sameState(
-  work: Pick<Work, "name" | "goal" | "description" | "status">,
+  work: Pick<Work, "name" | "goal" | "status" | "archivedAt">,
   state: WorkReceiptState | null,
 ) {
   return (
     !!state &&
     work.name === state.name &&
     work.goal === state.goal &&
-    work.description === state.description &&
-    work.status === state.status
+    work.status === state.status &&
+    isWorkArchived(work) === state.archived
   );
 }
 

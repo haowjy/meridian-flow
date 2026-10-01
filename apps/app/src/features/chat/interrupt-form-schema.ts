@@ -1,25 +1,4 @@
-/**
- * interrupt-form-schema — small JSON-Schema-ish parser for the generic
- * interrupt card's form generator.
- *
- * Purpose: read the `answerSchema` on a `AskRequest`, derive a flat list
- * of form fields the renderer can lay out, and validate user input before
- * submit. The runtime card is domain-agnostic — schema shape supplies all
- * semantics — so this module owns the only place where JSON Schema vocabulary
- * leaks into the frontend.
- *
- * Supported subset (deliberate — comment any new vocabulary you add):
- *   - Root must be `{ type: "object", properties: {...}, required?: string[] }`.
- *   - Each property is either:
- *       * `{ type: "string", enum?: string[], description?, default? }`
- *       * `{ type: "number" | "integer", description?, default?, minimum?, maximum? }`
- *       * `{ type: "boolean", description?, default? }`
- *   - `required` lists property keys that must be present and non-empty.
- *
- * Not supported (and intentionally ignored): nested objects, `oneOf`/`anyOf`,
- * `pattern`, format hints, conditional schemas. The package can extend the
- * subset by raising it back to the contract — comment the addition here.
- */
+/** interrupt-form-schema — small JSON-Schema-ish parser for the generic interrupt card's form generator. */
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
 export type InterruptFieldKind = "string" | "enum" | "number" | "integer" | "boolean";
@@ -180,12 +159,7 @@ function coerceToFieldValue(
 
 export type InterruptFormErrors = Record<string, string>;
 
-/**
- * Validate the form against the field list. Returns the errors map and the
- * answer object the renderer will send when there are no errors. Numeric
- * fields stored as the empty string are treated as "unset" — they fail the
- * required check, but pass when optional.
- */
+/** Validate the form against the field list. */
 export function validateFormValues(
   fields: InterruptField[],
   values: InterruptFormValues,

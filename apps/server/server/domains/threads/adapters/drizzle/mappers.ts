@@ -3,9 +3,16 @@
  * into their @meridian/contracts shapes (decimal/date/seq coercions). Shared by
  * the drizzle repositories so row translation lives in one place.
  */
-import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import type {
+  Block,
+  ModelResponse,
+  PromptBake,
+  Thread,
+  Turn,
+  TurnUsage,
+} from "@meridian/contracts/threads";
 import type * as schema from "@meridian/database/schema";
-import { toIsoString, toSeqString } from "../../domain/contract-serialization.js";
+import { toIsoString } from "../../domain/contract-serialization.js";
 
 function decimalString(value: string | null | undefined): string {
   if (value == null) return "0";
@@ -32,7 +39,6 @@ export function mapThread(
     agentName?: string | null;
   },
 ): Thread {
-  const isFrozen = row.bakedSkillSlugs !== null;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -42,25 +48,22 @@ export function mapThread(
     status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
     ref: row.ref,
-    composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
-    bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
-    workingState: row.workingState as Thread["workingState"],
+    initialPromptBakeId: row.initialPromptBakeId,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
-    nextSeq: toSeqString(row.nextSeq),
+    nextSeq: String(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,
-    originType: (row.originType as Thread["originType"]) ?? null,
-    originTurnId: row.originTurnId ?? null,
-    rootThreadId: row.rootThreadId ?? row.id,
+    originType: row.originType as Thread["originType"],
+    originTurnId: row.originTurnId,
+    rootThreadId: row.rootThreadId,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
-    spawnResult: row.spawnResult as Thread["spawnResult"],
     totalCostUsd: decimalString(row.totalCostUsd),
     turnCount: row.turnCount,
-    historySummary: null,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
+    lastActivityAt: toIsoString(row.lastActivityAt),
     deletedAt: row.deletedAt ? toIsoString(row.deletedAt) : null,
   };
 }
@@ -69,11 +72,15 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
   return {
     id: row.id,
     threadId: row.threadId,
+    position: row.position,
     prevTurnId: row.parentTurnId,
     parentTurnId: row.parentTurnId,
     role: row.role as Turn["role"],
+    origin: row.origin as Turn["origin"],
     writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
+    promptBakeId: row.promptBakeId,
+    compactionModel: row.compactionModel,
     finishReason: row.finishReason as Turn["finishReason"],
     model: row.model,
     provider: row.provider,
@@ -98,6 +105,18 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
   };
 }
 
+export function mapPromptBake(row: typeof schema.promptBakes.$inferSelect): PromptBake {
+  return {
+    id: row.id,
+    ownerThreadId: row.ownerThreadId,
+    composedSystemPrompt: row.composedSystemPrompt,
+    bakedSkillSlugs: row.bakedSkillSlugs,
+    bakedTools: row.bakedTools as PromptBake["bakedTools"],
+    contentHash: row.contentHash,
+    createdAt: toIsoString(row.createdAt),
+  };
+}
+
 export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
   const modelText = row.modelText ?? "";
   const textContent = modelText.length > 0 ? modelText : null;
@@ -111,7 +130,6 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     content: row.content as Block["content"],
     modelText,
     compact: row.compact ?? "",
-    pruned: row.pruned,
     provider: row.provider,
     providerData: row.providerData as Block["providerData"],
     executionSide: row.executionSide as Block["executionSide"],
@@ -128,12 +146,13 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     sequence: row.sequence,
     provider: row.provider,
     model: row.model,
-    providerRequestId: row.providerRequestId ?? null,
+    providerRequestId: row.providerRequestId,
     inputTokens: row.inputTokens ?? 0,
     outputTokens: row.outputTokens ?? 0,
     reasoningTokens: row.reasoningTokens,
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
+    cacheReset: row.cacheReset,
     usageBreakdown: row.usageBreakdown as ModelResponse["usageBreakdown"],
     costUsd: decimalString(row.costUsd),
     millicredits: row.millicredits?.toString(),
@@ -144,7 +163,13 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     requestParams: row.requestParams as ModelResponse["requestParams"],
     responseMetadata: row.responseMetadata as ModelResponse["responseMetadata"],
     latencyMs: row.latencyMs != null ? Number(row.latencyMs) : null,
+    requestMessageCount: row.requestMessageCount,
+    requestStartedAt: row.requestStartedAt?.toISOString() ?? null,
+    timeToFirstTokenMs: row.timeToFirstTokenMs != null ? Number(row.timeToFirstTokenMs) : null,
+    generationMs: row.generationMs != null ? Number(row.generationMs) : null,
     rawUsage: row.usageBreakdown as ModelResponse["rawUsage"],
+    predictedCacheState: row.predictedCacheState,
+    predictedCacheReason: row.predictedCacheReason as ModelResponse["predictedCacheReason"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
   };

@@ -1,4 +1,8 @@
-import type { SendMessageRequest, SendMessageResponse } from "@meridian/contracts/protocol";
+import {
+  meridianErrorFromSystem,
+  type SendMessageRequest,
+  type SendMessageResponse,
+} from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import {
   createError,
@@ -12,6 +16,7 @@ import {
   InvalidAdmissionError,
 } from "../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { throwHttpInterrupt } from "../../../../lib/interrupt-boundary.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event): Promise<SendMessageResponse> => {
@@ -27,13 +32,15 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       text: body.text,
       blocks: body.blocks,
       references: body.references,
-      connectionToken: body.connectionToken,
       activatedSkillSlugs: body.activatedSkillSlugs,
     });
     if (result.kind === "pending") {
       throw createError({ statusCode: 409, message: "admission_pending" });
     }
     if (result.kind === "rejected") {
+      if (result.code === "work_unavailable") {
+        throwHttpInterrupt(meridianErrorFromSystem(result.code, "This Work is unavailable."), 409);
+      }
       throw createError({
         statusCode: result.code === "invalid_message" ? 400 : 409,
         message: result.code,

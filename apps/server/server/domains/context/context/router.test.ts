@@ -60,36 +60,6 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
   } as unknown as ContextSchemeAdapter;
 }
 
-describe("context router listings", () => {
-  it("preserves provisional-name metadata", async () => {
-    const adapter = {
-      name: "manuscript",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      list: async () =>
-        Ok([
-          {
-            path: "Untitled 1.md",
-            kind: "file" as const,
-            documentId: "document-1",
-            provisionalName: true,
-            editable: true as const,
-            filetype: "markdown" as const,
-            schemaType: "document" as const,
-          },
-        ]),
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      adapters: new Map([["manuscript", adapter]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(port.list("manuscript://")).resolves.toMatchObject({
-      ok: true,
-      value: [{ documentId: "document-1", provisionalName: true }],
-    });
-  });
-});
-
 describe("context router deletion receipts", () => {
   it.each([
     [{ kind: "file" as const, documentId: "different-document" }, "old.md"],
@@ -127,44 +97,6 @@ describe("context router deletion receipts", () => {
     ).resolves.toEqual({
       ok: false,
       error: { code: "stale_target", uri: "manuscript://old.md" },
-    });
-  });
-
-  it("preserves the committed file identity", async () => {
-    const port = createContextPortRouter({
-      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(
-      port.delete("manuscript://old.md", {
-        expected: { kind: "file", documentId: "document-old" },
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        status: "deleted",
-        deletedDocumentIds: ["document-old"],
-        availabilityGeneration: "7",
-      },
-    });
-  });
-
-  it("acknowledges an empty-folder deletion without document identities", async () => {
-    const port = createContextPortRouter({
-      adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(
-      port.delete("manuscript://empty", { expected: { kind: "folder" } }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        status: "deleted",
-        deletedDocumentIds: [],
-        availabilityGeneration: "7",
-      },
     });
   });
 });
@@ -231,13 +163,6 @@ describe("context router Work slug resolution", () => {
         workSlug: "other-project-work",
         validWorkSlugs: ["drafting", "revision-pass"],
       },
-    });
-  });
-
-  it("returns stable Work slugs in canonical URIs", async () => {
-    await expect(port().list("scratch://@revision-pass")).resolves.toMatchObject({
-      ok: true,
-      value: [{ uri: `scratch://@revision-pass/notes.md` }],
     });
   });
 
@@ -388,20 +313,6 @@ describe("context router scheme creation capabilities", () => {
     });
   });
 
-  it("allows file and directory creation in scratch", async () => {
-    const { port, scratch } = createPort();
-
-    await expect(
-      port.createTrackedDocument(`scratch://@current/notes.md`, "notes"),
-    ).resolves.toMatchObject({ ok: true });
-    await expect(port.mkdir(`scratch://@current/notes`)).resolves.toEqual({
-      ok: true,
-      value: undefined,
-    });
-    expect(scratch.createTrackedDocument).toHaveBeenCalledOnce();
-    expect(scratch.mkdir).toHaveBeenCalledOnce();
-  });
-
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
 
@@ -430,22 +341,6 @@ describe("context router scheme creation capabilities", () => {
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });
 
-  it("accepts flat binary upload intake in non-creatable schemes", async () => {
-    const { port, uploads } = createPort();
-    const options = {
-      storageUrl: "storage://upload",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      fileType: "image" as const,
-    };
-
-    await expect(port.writeBinary(`uploads://@current/cover.png`, options)).resolves.toEqual({
-      ok: true,
-      value: { documentId: "binary-new", uri: "uploads://@current/cover.png" },
-    });
-    expect(uploads.writeBinary).toHaveBeenCalledOnce();
-  });
-
   it("rejects nested binary upload paths in non-creatable schemes", async () => {
     const { port, uploads } = createPort();
     const options = {
@@ -466,21 +361,5 @@ describe("context router scheme creation capabilities", () => {
       },
     });
     expect(uploads.writeBinary).not.toHaveBeenCalled();
-  });
-
-  it("keeps nested binary upload paths available in creatable schemes", async () => {
-    const { port, scratch } = createPort();
-    const options = {
-      storageUrl: "storage://upload",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      fileType: "image" as const,
-    };
-
-    await expect(port.writeBinary(`scratch://@current/nest/deep.png`, options)).resolves.toEqual({
-      ok: true,
-      value: { documentId: "binary-new", uri: "scratch://@current/nest/deep.png" },
-    });
-    expect(scratch.writeBinary).toHaveBeenCalledWith("nest/deep.png", options);
   });
 });

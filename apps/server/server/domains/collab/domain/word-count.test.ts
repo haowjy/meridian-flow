@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { countWords, wordDeltaBetweenHashlines, wordDeltaBetweenTexts } from "./word-count.js";
+import { wordDeltaBetweenHashlines, wordDeltaBetweenTexts } from "./word-count.js";
 
 describe("word counting", () => {
-  it("uses whitespace-delimited words", () => {
-    expect(countWords("  Ashes\n of\t the Vale  ")).toBe(4);
-    expect(countWords(" \n ")).toBe(0);
-  });
-
   it("diffs whole word tokens rather than character fragments", () => {
     expect(wordDeltaBetweenTexts("The old gate opened.", "The new gate opened.")).toEqual({
       wordsAdded: 1,

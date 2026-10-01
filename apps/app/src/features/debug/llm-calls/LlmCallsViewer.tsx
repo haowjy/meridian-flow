@@ -1,17 +1,27 @@
 /** Pop-out dashboard joining gateway lifecycle events with canonical model requests. */
+
+import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
+import type { ModelResponse } from "@meridian/contracts/threads";
 import { useEffect, useMemo, useState } from "react";
 
 import { getJson, isMeridianApiError } from "@/client/api/http-client";
-import { getThreadModelRequestDebugRecords } from "@/client/api/threads-api";
+import { getThreadModelRequestDebugRecords, getThreadSnapshot } from "@/client/api/threads-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
 import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
 import { JsonTree } from "../JsonTree";
 import { ModelRequestInspector } from "../model-requests/ModelRequestInspector";
-import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
+import type { LlmCallsScope } from "../use-debug-enabled";
+import {
+  deriveLlmCalls,
+  type LlmCallCacheComparison,
+  type LlmCallOutcome,
+  type LlmCallSummary,
+  pairLlmCallResponses,
+} from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
 const POLL_INTERVAL_MS = 3_000;
@@ -46,19 +56,31 @@ export function openLlmCallsViewerWindow(): LlmCallsViewerTarget | null {
 export function LlmCallsViewer({
   target,
   onClose,
+  filter,
+  onShowAll,
 }: {
   target: LlmCallsViewerTarget | null;
   onClose: (target: LlmCallsViewerTarget) => void;
+  filter?: LlmCallsScope;
+  onShowAll?: () => void;
 }) {
   return (
     <DebugPopout target={target} onClose={onClose}>
-      <LlmCallsContent />
+      <LlmCallsContent filter={filter} onShowAll={onShowAll} />
     </DebugPopout>
   );
 }
 
-function LlmCallsContent() {
+function LlmCallsContent({
+  filter,
+  onShowAll,
+}: {
+  filter?: LlmCallsScope;
+  onShowAll?: () => void;
+}) {
+  const { i18n } = useLingui();
   const [state, setState] = useState<CallsState>({ status: "loading" });
+  const [responsesByTurn, setResponsesByTurn] = useState<Record<string, ModelResponse[]>>({});
 
   useEffect(() => {
     let active = true;
@@ -101,9 +123,63 @@ function LlmCallsContent() {
     };
   }, []);
 
-  const calls = useMemo(
+  const allCalls = useMemo(
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
+  );
+  const responseThreadIds = useMemo(
+    () =>
+      filter
+        ? [filter.threadId]
+        : [...new Set(allCalls.flatMap((call) => (call.threadId ? [call.threadId] : [])))],
+    [allCalls, filter],
+  );
+  const responseThreadKey = responseThreadIds.join(",");
+  const responseCallKey = allCalls.map((call) => call.gatewayCallId).join(",");
+  useEffect(() => {
+    let active = true;
+    setResponsesByTurn({});
+    const threadIds = responseThreadKey ? responseThreadKey.split(",") : [];
+    if (threadIds.length === 0) {
+      return () => {
+        active = false;
+      };
+    }
+    void Promise.all(
+      threadIds.map((threadId) => getThreadSnapshot({ data: { threadId } }).catch(() => null)),
+    ).then((snapshots) => {
+      if (!active) return;
+      const responseRows = Object.fromEntries(
+        snapshots
+          .filter((snapshot) => snapshot !== null)
+          .flatMap((snapshot) => snapshot.turns.map((turn) => [turn.id, turn.responses])),
+      );
+      setResponsesByTurn(responseRows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [responseCallKey, responseThreadKey]);
+  const calls = useMemo(
+    () =>
+      filter
+        ? allCalls.filter(
+            (call) =>
+              call.threadId === filter.threadId &&
+              ("turnId" in filter
+                ? call.turnId === filter.turnId
+                : filter.turnIds.includes(call.turnId ?? "")),
+          )
+        : allCalls,
+    [allCalls, filter],
+  );
+  const cacheComparisonByCall = useMemo(
+    () =>
+      pairLlmCallResponses(
+        allCalls.filter((call) => !filter || call.threadId === filter.threadId),
+        responsesByTurn,
+      ),
+    [allCalls, filter, responsesByTurn],
   );
 
   return (
@@ -117,6 +193,23 @@ function LlmCallsContent() {
           <p className="text-meta text-muted-foreground">
             Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
+          {filter ? (
+            <div className="mt-1 flex items-center gap-3">
+              <p className="font-mono text-meta text-muted-foreground">
+                Thread {filter.threadId},{" "}
+                {"turnId" in filter
+                  ? `turn ${filter.turnId}`
+                  : i18n._(t`Turns ${filter.turnIds.join(", ")}`)}
+              </p>
+              <button
+                type="button"
+                className="focus-ring rounded-sm text-meta text-primary underline"
+                onClick={onShowAll}
+              >
+                Show all
+              </button>
+            </div>
+          ) : null}
         </div>
         {state.status === "loaded" ? (
           <div className="flex flex-1 flex-wrap items-center gap-3 text-meta text-muted-foreground">
@@ -139,14 +232,19 @@ function LlmCallsContent() {
         ) : null}
         {state.status === "loaded" && calls.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No gateway calls are retained. Start a generation, then leave this window open to
-            refresh.
+            {filter
+              ? "No calls match this thread and turn. The viewer refreshes while this window is open."
+              : "No gateway calls are retained. Start a generation, then leave this window open to refresh."}
           </p>
         ) : null}
         {calls.length > 0 ? (
           <div className="mx-auto flex max-w-6xl flex-col gap-2">
             {calls.map((call) => (
-              <CallCard key={call.gatewayCallId} call={call} />
+              <CallCard
+                key={call.gatewayCallId}
+                call={call}
+                cacheComparison={cacheComparisonByCall.get(call.gatewayCallId)}
+              />
             ))}
           </div>
         ) : null}
@@ -155,8 +253,15 @@ function LlmCallsContent() {
   );
 }
 
-function CallCard({ call }: { call: LlmCallSummary }) {
+function CallCard({
+  call,
+  cacheComparison,
+}: {
+  call: LlmCallSummary;
+  cacheComparison?: LlmCallCacheComparison;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const response = cacheComparison?.response;
   const correlation = [
     call.threadId ? `thread ${call.threadId}` : null,
     call.turnId ? `turn ${call.turnId}` : null,
@@ -203,6 +308,39 @@ function CallCard({ call }: { call: LlmCallSummary }) {
           <Metric label="duration" value={formatMilliseconds(call.durationMs)} />
           <Metric label="input tokens" value={formatCount(call.inputTokens)} />
           <Metric label="output tokens" value={formatCount(call.outputTokens)} />
+          {response ? (
+            <>
+              <Metric
+                label="cache hit"
+                value={
+                  cacheComparison?.cacheHitPercent == null
+                    ? "Not reported"
+                    : `${cacheComparison.cacheHitPercent.toFixed(1)}%`
+                }
+              />
+              <Metric label="cache reset" value={response.cacheReset ? "Yes" : "No"} />
+              <Metric
+                label="predicted cache"
+                value={predictionLabel(cacheComparison)}
+                detail={
+                  cacheComparison?.predictedReason
+                    ? predictionReasonLabel(cacheComparison.predictedReason)
+                    : undefined
+                }
+              />
+              <Metric
+                label="prediction mismatch"
+                value={
+                  cacheComparison?.predictedState
+                    ? cacheComparison.mismatch
+                      ? "Yes"
+                      : "No"
+                    : "Unavailable"
+                }
+                emphasis={cacheComparison?.mismatch}
+              />
+            </>
+          ) : null}
         </dl>
         {correlation.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 break-all font-mono text-meta text-muted-foreground">
@@ -218,13 +356,57 @@ function CallCard({ call }: { call: LlmCallSummary }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  detail,
+  emphasis,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  emphasis?: boolean;
+}) {
   return (
     <div>
       <dt className="text-meta text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-xs text-foreground">{value}</dd>
+      <dd
+        className={cn(
+          "font-mono text-xs text-foreground",
+          emphasis && "font-semibold text-status-warning",
+        )}
+      >
+        {value}
+      </dd>
+      {detail ? <dd className="text-meta text-muted-foreground">{detail}</dd> : null}
     </div>
   );
+}
+
+function predictionLabel(comparison?: LlmCallCacheComparison): string {
+  if (!comparison?.predictedState) return "Unavailable";
+  return comparison.predictedState === "warm" ? "Warm" : "Cold";
+}
+
+function predictionReasonLabel(
+  reason: NonNullable<LlmCallCacheComparison["predictedReason"]>,
+): string {
+  const labels: Record<typeof reason, string> = {
+    reusable_prefix: "Reusable prefix",
+    uncached: "Uncached model",
+    no_response: "No prior response",
+    model_changed: "Model changed",
+    prompt_epoch: "Prompt changed",
+    image_eviction: "Image prefix changed",
+    compaction: "Compaction boundary",
+    ttl_unknown: "Cache lifetime unknown",
+    summary_transcript: "Separate summary transcript",
+    ttl_expired: "Cache expired",
+    fork_cutoff: "Fork cutoff",
+    fork_bake_changed: "Fork prompt changed",
+    facts_unavailable: "Cache facts unavailable",
+  };
+  return labels[reason];
 }
 
 function CallDetail({ call }: { call: LlmCallSummary }) {

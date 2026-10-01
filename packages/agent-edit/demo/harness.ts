@@ -97,7 +97,10 @@ async function scenarioView(env: DemoEnvironment, docId: string) {
   print("write(read, outline)", outline.text);
   printBlocks("hash index", await blocks(env, docId));
   assert(/^([0-9a-f]{4,})\|# Chapter/m.test(full.text), "full read should include block hashes");
-  assert(outline.text.includes('read(command="read"'), "outline should include drill-down command");
+  assert(
+    outline.text.includes('write(command="read"'),
+    "outline should include drill-down command",
+  );
 }
 
 async function scenarioInsert(env: DemoEnvironment, docId: string) {

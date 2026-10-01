@@ -226,12 +226,13 @@ if (!enabled || !databaseUrl) {
         await cp(sourceMigrations, migrationsDirectory, { recursive: true });
         const journalPath = join(migrationsDirectory, "meta/_journal.json");
         const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
-          entries: Array<Record<string, unknown>>;
+          entries: Array<{ when: number; [key: string]: unknown }>;
         };
+        const lastWhen = journal.entries.at(-1)?.when ?? 0;
         journal.entries.push({
           idx: journal.entries.length,
           version: "7",
-          when: Date.now() + 1,
+          when: Math.max(Date.now(), lastWhen + 1),
           tag: "9999_unapplied_probe",
           breakpoints: true,
         });

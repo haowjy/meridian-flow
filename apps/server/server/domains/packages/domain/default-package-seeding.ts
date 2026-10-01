@@ -42,10 +42,6 @@ export function defaultPackageSeedConfigFromEnv(env: {
   };
 }
 
-export async function resolveLaunchAgentPackageDir(): Promise<string> {
-  return resolvePackageSourceDir(LAUNCH_AGENT_PACKAGE_DIR);
-}
-
 export async function seedDefaultAgentPackages(input: {
   store: AgentRevisionStore;
   fetcher: MarsPackageFetcher;

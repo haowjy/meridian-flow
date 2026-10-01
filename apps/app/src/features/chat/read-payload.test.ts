@@ -69,7 +69,9 @@ describe("readPayloadOutline", () => {
 
   it("reads an outline from a serialized string payload and drops locator lines", () => {
     expect(
-      readPayloadOutline('h1|## Chapter One\nread(command="read", path="x#h1")\nh2|## Chapter Two'),
+      readPayloadOutline(
+        'h1|## Chapter One\nwrite(command="read", path="x#h1")\nh2|## Chapter Two',
+      ),
     ).toEqual([
       { level: 0, text: "Chapter One" },
       { level: 0, text: "Chapter Two" },

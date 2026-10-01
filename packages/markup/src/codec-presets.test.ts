@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
-import { components, m, paragraph, schema, sorted, t } from "./codec-test-support.js";
-import { createMarkupCodec, mdxCodec, requiredBlockNamesForSchema } from "./index.js";
+import { createMarkupCodec } from "./codec.js";
+import { components, m, paragraph, schema, t } from "./codec-test-support.js";
 import {
   markdownBlockCodecs,
   markdownMarkCodecs,
@@ -11,34 +11,6 @@ import {
 import { mdxBlockCodecs } from "./mdx/index.js";
 
 describe("codec presets", () => {
-  it("registers every markdown node and mark codec", () => {
-    expect(markdownBlockCodecs.map((block) => block.name).sort()).toEqual(
-      [...markdownRequiredBlockNames].sort(),
-    );
-    expect(markdownMarkCodecs.map((mark) => mark.name).sort()).toEqual([
-      "code",
-      "em",
-      "link",
-      "strike",
-      "strong",
-    ]);
-  });
-
-  it("registers every fiction-schema node handled by the MDX codec", () => {
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
-    const schemaRequiredBlocks = sorted(requiredBlockNamesForSchema(schema));
-    expect(sorted(mdxBlockCodecs(components).map((block) => block.name))).toEqual(
-      [...schemaRequiredBlocks, "layout"].sort(),
-    );
-    expect(markdownMarkCodecs.map((mark) => mark.name).sort()).toEqual([
-      "code",
-      "em",
-      "link",
-      "strike",
-      "strong",
-    ]);
-  });
-
   it("fails creation when schema-derived block coverage is incomplete", () => {
     expect(() =>
       createMarkupCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })

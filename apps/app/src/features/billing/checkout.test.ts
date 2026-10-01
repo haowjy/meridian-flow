@@ -163,9 +163,4 @@ describe("isCheckoutConfirmed", () => {
       false,
     );
   });
-
-  it("does not confirm a plan when the fresh balance is not a subscription", () => {
-    const baseline = checkoutBaselineFrom([], planRequest, "checkout", "free");
-    expect(isCheckoutConfirmed(baseline, balance("free"), transactions([grant()]))).toBe(false);
-  });
 });

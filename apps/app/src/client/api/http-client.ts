@@ -11,7 +11,7 @@
  */
 import { deserializeTransport } from "@meridian/contracts/protocol";
 
-import { meridianApiErrorFromPayload } from "./meridian-error";
+import { isMeridianApiError, meridianApiErrorFromPayload } from "./meridian-error";
 
 export { isMeridianApiError, MeridianApiError } from "./meridian-error";
 
@@ -25,6 +25,12 @@ export class HttpResponseError extends Error {
   ) {
     super(message);
   }
+}
+
+/** The status a request failed with; undefined when it got no HTTP answer (a lost request). */
+export function httpErrorStatus(error: unknown): number | undefined {
+  if (error instanceof HttpResponseError) return error.status;
+  return isMeridianApiError(error) ? error.status : undefined;
 }
 
 /**
@@ -160,8 +166,8 @@ export async function patchJson<T>(
   return deserializeTransport<T>(payload as T);
 }
 
-export async function deleteRequest(url: string): Promise<void> {
-  const response = await fetch(url, { method: "DELETE" });
+export async function deleteRequest(url: string, init?: { signal?: AbortSignal }): Promise<void> {
+  const response = await fetch(url, { method: "DELETE", signal: init?.signal });
   if (response.status === 204) return;
 
   const payload = await readResponsePayload(response);

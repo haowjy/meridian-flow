@@ -1,127 +1,37 @@
-/** Project creation destination: name a project, then enter its Chat landing. */
-import { Trans } from "@lingui/react/macro";
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { createProject, getProject } from "@/client/api/projects-api";
-import { useProjectActions } from "@/client/stores";
-import { MeridianMark } from "@/components/app/MeridianMark";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+/** /projects/new: the project library with the creation dialog open over it. */
+import { t } from "@lingui/core/macro";
+import { useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useCreateProject } from "@/client/query/useProjectCreation";
+import { CreationDialog } from "@/features/creation/CreationDialog";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
+import { preloadProjectWorkspace } from "@/features/project/preload-project-workspace";
+import { ProjectLibrary } from "./ProjectLibrary";
 
 export function NewProjectView() {
-  const navigate = useNavigate();
+  const userId = useAccountId();
+  const accountSignal = useAccountEpochSignal();
+  const { create } = useCreateProject(userId, accountSignal);
   const router = useRouter();
-  const { ensureProject } = useProjectActions();
-  const [projectId] = useState(() => crypto.randomUUID());
-  const active = useRef(true);
-  const [title, setTitle] = useState("");
-  const [submittedTitle, setSubmittedTitle] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
-
   useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
+    // The destination UUID does not exist yet, so route preloading would run
+    // owner-gated loaders into a 404. Warm only the inevitable workspace code.
+    preloadProjectWorkspace();
   }, []);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (busy || !title.trim()) return;
-    setBusy(true);
-    setError(false);
-    try {
-      let createdId = createdProjectId;
-      if (!createdId) {
-        const name = submittedTitle ?? title.trim();
-        setSubmittedTitle(name);
-        const project = await createProject({ id: projectId, title: name }).catch(() =>
-          getProject(projectId),
-        );
-        ensureProject(project);
-        createdId = project.id;
-        if (active.current) setCreatedProjectId(createdId);
-      }
-      if (active.current && router.history.location.pathname === "/projects/new") {
-        await navigate({ to: "/p/$projectId/$", params: { projectId: createdId, _splat: "" } });
-      }
-    } catch {
-      if (active.current) {
-        setError(true);
-        setBusy(false);
-      }
-    }
-  }
-
   return (
-    <main className="app-scroll h-full bg-background text-foreground">
-      <div className="mx-auto max-w-5xl px-5 pb-14 sm:px-8">
-        <header className="border-b border-border py-4">
-          <Link
-            to="/"
-            className="focus-ring flex w-fit items-center gap-1 rounded-md text-sm font-semibold tracking-tight"
-          >
-            <MeridianMark className="size-7" />
-            Meridian
-          </Link>
-        </header>
-        <div className="mx-auto mt-9 max-w-lg sm:mt-14">
-          <Link
-            to="/"
-            className="focus-ring inline-flex items-center gap-2 rounded-sm text-sm text-jade-text hover:underline"
-          >
-            <ArrowLeft className="size-4" aria-hidden /> <Trans>View projects</Trans>
-          </Link>
-          <h1 className="mt-8 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            <Trans>Create a project</Trans>
-          </h1>
-          <p className="mt-3 text-sm leading-6 text-ink-muted">
-            <Trans>A project can hold one book, a whole series, or a story world.</Trans>
-          </p>
-          <form className="mt-8" onSubmit={(event) => void submit(event)}>
-            <label htmlFor="project-title" className="block text-sm font-medium">
-              <Trans>Project name</Trans>
-            </label>
-            <Input
-              id="project-title"
-              autoFocus
-              autoComplete="off"
-              maxLength={120}
-              value={title}
-              disabled={busy || submittedTitle !== null}
-              onChange={(event) => setTitle(event.target.value)}
-              className="mt-2 h-11 bg-card"
-              required
-            />
-            {error && (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {createdProjectId ? (
-                  <Trans>Project created, but it couldn’t open. Try again.</Trans>
-                ) : (
-                  <Trans>Project wasn’t confirmed. Retry creation.</Trans>
-                )}
-              </p>
-            )}
-            <Button
-              type="submit"
-              size="sm"
-              className="mt-6 [@media(pointer:coarse)]:min-h-11"
-              disabled={busy || !title.trim()}
-            >
-              {busy ? (
-                <Trans>Creating project…</Trans>
-              ) : createdProjectId ? (
-                <Trans>Open project</Trans>
-              ) : (
-                <Trans>Create project</Trans>
-              )}
-            </Button>
-          </form>
-        </div>
-      </div>
-    </main>
+    <>
+      <ProjectLibrary />
+      <CreationDialog
+        title={t`Create a project`}
+        nameLabel={t`What are you writing?`}
+        namePlaceholder={t`Name your project`}
+        submitLabel={t`Create project`}
+        onClose={() => void router.navigate({ to: "/", replace: true })}
+        onCreate={({ name }) => create({ title: name })}
+      />
+    </>
   );
 }

@@ -3,9 +3,9 @@
  * Why independent: Durable thread events are a shared contract between the orchestrator, event journal, thread event hub, and AG-UI projector.
  */
 
-import type { TurnId } from "../ids.js";
+import type { PromptBakeId, TurnId } from "../ids.js";
 import type { AskRequest, MeridianError } from "../interrupt/index.js";
-import type { AgentReport, SpawnResult } from "../spawn/index.js";
+import type { AgentReport, SavedOutcome, SpawnResult } from "../spawn/index.js";
 import type { WorkContextProjectionSignal } from "../works/index.js";
 import type {
   BlockStatus,
@@ -14,8 +14,15 @@ import type {
   JournalEventType,
   JsonValue,
   PriceSource,
+  ThreadActivity,
+  ThreadPendingInbox,
+  ThreadStatus,
   Turn,
 } from "./index.js";
+import type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 
 export interface ModelResponseReceivedRow {
   id: string;
@@ -29,12 +36,20 @@ export interface ModelResponseReceivedRow {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  cacheReset?: boolean;
   costUsd?: string | null;
   millicredits?: string | null;
   priceSource?: PriceSource;
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
+  latencyMs?: number | null;
+  requestMessageCount: number;
+  requestStartedAt?: string | null;
+  timeToFirstTokenMs?: number | null;
+  generationMs?: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
 }
 
 export interface BlockUpsertedRow {
@@ -84,7 +99,23 @@ export type OrchestratorEvent =
     }
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
   | { type: "block.upserted"; block: BlockUpsertedRow }
-  | { type: "block.pruned"; blockId: string }
+  | { type: "block.updated"; block: BlockUpsertedRow }
+  | {
+      type: "image.inclusion_decided";
+      threadId: string;
+      blockId: string;
+      decisionTurnId: TurnId;
+      included: boolean;
+    }
+  | {
+      type: "context.compacted";
+      compactionTurnId: TurnId;
+      compactedThrough: { turnId: TurnId; blockSequence?: number };
+      bakeId: PromptBakeId;
+      model: string;
+      tokensBefore: number;
+      tokensAfter: number;
+    }
   | {
       type: "interrupt.created";
       turnId: string;
@@ -124,6 +155,8 @@ export type OrchestratorEvent =
     }
   | {
       type: "agent.spawn";
+      /** Live UI hint. The durable provenance is the child's thread-reference seed block. */
+      fromThreadId?: string;
       parentThreadId: string;
       parentTurnId: string;
       childThreadId: string;
@@ -133,9 +166,32 @@ export type OrchestratorEvent =
   | {
       type: "agent.run_completed";
       parentThreadId: string;
-      parentTurnId: string;
+      parentTurnId: string | null;
       childThreadId: string;
-      result: SpawnResult;
+      execution: string;
+      handle: string;
+      outcome: SavedOutcome;
+    }
+  | {
+      type: "subagent.activity";
+      /** The child whose create/terminal changed its parent's activity; the event lands on that parent's journal. */
+      childThreadId: string;
+      /** Full recomputed direct-child activity, so the client replaces state with no refetch race. */
+      activity: ThreadActivity;
+    }
+  | {
+      type: "inbox.changed";
+      /** Thread whose pending inbox changed. */
+      threadId: string;
+      /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
+      pending: ThreadPendingInbox;
+    }
+  | {
+      /** Ephemeral full status refresh when non-lease background work starts or settles. */
+      type: "thread.status";
+      threadId: string;
+      status: ThreadStatus;
+      runningTurnId: string | null;
     }
   | {
       type: "background.started";
@@ -146,33 +202,19 @@ export type OrchestratorEvent =
       description?: string;
     }
   | {
-      type: "background.completed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId: string;
-      agentSlug: string;
-      result: SpawnResult;
-    }
-  | {
-      type: "background.failed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId?: string;
-      agentSlug: string;
-      error: string;
-    }
-  | {
       type: "agent.handoff";
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
-      summary: string;
+      originTurnId: string;
     }
   | {
       type: "agent.fork";
+      /** Thread the writer forked, which may differ from the cutoff's owner. */
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
+      /** Normalized settled cutoff retained by the fork. */
       originTurnId: string;
     }
   | { type: "turn.completed"; turn: Turn }

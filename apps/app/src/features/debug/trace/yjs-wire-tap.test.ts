@@ -6,7 +6,7 @@ import * as encoding from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createYjsWireTap, createYjsWireTapState } from "./yjs-wire-tap";
+import { createYjsWireTap } from "./yjs-wire-tap";
 
 function syncUpdateFrame(roomName: string, update: Uint8Array): Uint8Array {
   const encoder = encoding.createEncoder();
@@ -72,57 +72,6 @@ describe("createYjsWireTap", () => {
     expect(JSON.stringify(records[1])).not.toContain("content-never-egresses-through-the-tap");
   });
 
-  it("maps branch identity and infers the sole struct client on incoming updates", () => {
-    const records: EventRecord[] = [];
-    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
-    const bytes = syncUpdateFrame("branch:draft-2:gen:3", insertUpdate());
-    const inspection = inspectFrame(bytes);
-    const structClient = inspection.update?.structSpans[0]?.client;
-
-    tap.onFrame("server_to_client", bytes, 1);
-
-    expect(records[0]).toMatchObject({
-      correlation: {
-        branchId: "draft-2",
-        branchGeneration: 3,
-        yjsClient: structClient,
-        yjsSpans: inspection.update?.spansKey,
-      },
-      stream: {
-        streamId: "yjs:branch:draft-2:gen:3",
-        observerSeq: 1,
-      },
-    });
-  });
-
-  it("never infers an outgoing client when the room attachment is unknown", () => {
-    const records: EventRecord[] = [];
-    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
-    const bytes = syncUpdateFrame("document-1", insertUpdate());
-
-    tap.onFrame("client_to_server", bytes, 1);
-
-    expect(records[0]?.correlation?.yjsSpans).toBeDefined();
-    expect(records[0]?.correlation?.yjsClient).toBeUndefined();
-  });
-
-  it("keeps sequencing and room attribution when HMR replaces the tap", () => {
-    const records: EventRecord[] = [];
-    const state = createYjsWireTapState();
-    const firstTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
-
-    firstTap.onRoomAttached("document-1", 777);
-    firstTap.onSocketOpen(1);
-
-    const replacementTap = createYjsWireTap((record) => records.push(record), vi.fn(), state);
-    replacementTap.onFrame("client_to_server", syncUpdateFrame("document-1", insertUpdate()), 1);
-
-    expect(records[1]).toMatchObject({
-      correlation: { yjsClient: 777 },
-      stream: { observerSeq: 2 },
-    });
-  });
-
   it("uses the socket fallback for unknown frames and keeps sequence across reconnects", () => {
     const records: EventRecord[] = [];
     const tap = createYjsWireTap((record) => records.push(record), vi.fn());
@@ -151,21 +100,6 @@ describe("createYjsWireTap", () => {
       },
     });
     expect(records[3]?.correlation).toBeUndefined();
-  });
-
-  it("normalizes standard close codes and leaves unknown codes numeric-only", () => {
-    const records: EventRecord[] = [];
-    const tap = createYjsWireTap((record) => records.push(record), vi.fn());
-
-    tap.onSocketClose(1, 1000, true);
-    tap.onSocketClose(2, 1006, false);
-    tap.onSocketClose(3, 4403, false);
-
-    expect(records.map((record) => record.payload)).toEqual([
-      { socketEpoch: 1, code: 1000, reason: "normal_closure", wasClean: true },
-      { socketEpoch: 2, code: 1006, reason: "abnormal_closure", wasClean: false },
-      { socketEpoch: 3, code: 4403, wasClean: false },
-    ]);
   });
 
   it("routes sink failures to onError and never propagates either callback", () => {

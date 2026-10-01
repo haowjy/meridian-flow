@@ -1,9 +1,7 @@
 /**
  * relative-time — one shared "Nm / Nh / Nd" formatter for the project
- * workspace. Single source so the thread list, chat dock, and Chats overview
- * render identical relative timestamps (previously duplicated per file, which
- * drifted). Pure: callers pass `nowMs` so the value stays deterministic and the
- * "now" tick policy lives at the call site, not here.
+ * workspace. Callers pass `nowMs` to keep the value deterministic; the "now"
+ * tick policy lives at the call site.
  */
 
 /** Format an ISO timestamp as a compact relative age: `now` / `Nm` / `Nh` / `Nd`. */

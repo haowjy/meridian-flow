@@ -46,9 +46,8 @@ response to the selected target so rapid reselection cannot display stale data.
 Resolve the pill's active thread in this order:
 
 1. `useThreadStore((state) => state.streamingThreadId)`
-2. `/chat/$threadId`
-3. the project route's `?thread=…` search parameter
-4. `null`
+2. the chat in the project address (`/p/$projectId/chats/$chatId`)
+3. `null`
 
 Do not derive active-thread state from the query cache; TanStack Query Devtools
 already exposes that cache.

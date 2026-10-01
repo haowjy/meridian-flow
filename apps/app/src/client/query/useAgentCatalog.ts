@@ -7,6 +7,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>
   ["agent-catalog", accountId, projectId ?? null] as const;
@@ -29,10 +30,11 @@ export function agentCatalogQueryOptions(
 export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalogStatus {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
+  const projectPending = useIsProjectPendingCreation(projectId);
   const result = unwrapListQuery(
     useQuery({
       ...agentCatalogQueryOptions(accountId, accountSignal, projectId),
-      enabled,
+      enabled: enabled && !projectPending,
     }),
   );
   return { ...result, agents: result.data };

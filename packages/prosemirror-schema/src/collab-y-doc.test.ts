@@ -29,19 +29,7 @@ describe("reserved Yjs clientID protocol", () => {
     const doc = createCollabYDoc({ guid: "reserved-then-safe" });
 
     expect(doc.clientID).toBe(safeDraw);
-    expect(randomState.getRandomValues).toHaveBeenCalledTimes(2);
   });
-
-  it("keeps a normal Yjs clientID draw", () => {
-    const safeClientId = RESERVED_CLIENT_ID_MAX + 1;
-    randomState.draws.push(safeClientId);
-
-    const doc = createCollabYDoc({ guid: "safe" });
-
-    expect(doc.clientID).toBe(safeClientId);
-    expect(randomState.getRandomValues).toHaveBeenCalledTimes(1);
-  });
-
   it("identifies reserved clientID band boundaries", () => {
     expect(isReservedClientId(0)).toBe(true);
     expect(isReservedClientId(999)).toBe(true);

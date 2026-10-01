@@ -1,8 +1,6 @@
 /**
  * state-helpers — small pure utilities shared by the session reducer and store.
  *
- * The old frontier fold helpers were deleted with the unified-block collapse;
- * this file now keeps only JSON/block primitives that do not carry live state.
  */
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 

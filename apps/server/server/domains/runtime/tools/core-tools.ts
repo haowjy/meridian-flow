@@ -15,37 +15,73 @@ import {
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
+import {
+  INVALID_WORK_STATUS,
+  normalizeWorkStatus,
+  WORK_STATUS_MAX_LENGTH,
+} from "@meridian/contracts/works";
 import { z } from "zod";
+import { searchDocumentText, writeDocumentText } from "./document-text.js";
+import { writeHistoryPreview } from "./history-previews.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
-const WorkStatusSchema = z.enum(["active", "archived"]);
-const WorkSelectorSchema = z.object({ work: z.string().min(1) });
+const WorkSelectorSchema = z.object({ work: z.string().min(1).describe("Work slug.") });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
-  z.object({ command: z.literal("list"), status: WorkStatusSchema.optional() }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("show") }).strict(),
+  z
+    .object({ command: z.literal("list"), archived: z.boolean().optional() })
+    .strict()
+    .describe("List Works: active, or archived when archived is true."),
+  WorkSelectorSchema.extend({ command: z.literal("show") })
+    .strict()
+    .describe("Show one Work."),
   z
     .object({
       command: z.literal("create"),
       name: z.string().min(1),
       goal: z.string().optional(),
-      description: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .describe("Create a Work."),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
     name: z.string().optional(),
     goal: z.string().optional(),
-    description: z.string().optional(),
-    status: WorkStatusSchema.optional(),
-  }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),
+    status: z
+      .string()
+      .nullable()
+      .superRefine((value, context) => {
+        if (normalizeWorkStatus(value) === INVALID_WORK_STATUS) {
+          context.addIssue({
+            code: "custom",
+            message: `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
+          });
+        }
+      })
+      .optional()
+      .describe(
+        "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current; null clears it.",
+      ),
+  })
+    .strict()
+    .describe("Change a Work's name, goal or status."),
+  WorkSelectorSchema.extend({ command: z.literal("archive") })
+    .strict()
+    .describe("Archive a Work. Its files and goal become read-only; its chats continue."),
+  WorkSelectorSchema.extend({ command: z.literal("unarchive") })
+    .strict()
+    .describe("Unarchive a Work so it can be changed again."),
+  WorkSelectorSchema.extend({ command: z.literal("delete") })
+    .strict()
+    .describe("Delete a Work with its chats and files; restorable for 30 days."),
   z
     .object({
       command: z.literal("switch"),
-      target: z.string().min(1).nullable().optional(),
+      target: z.string().min(1).nullable().optional().describe("Work slug; omit for No Work."),
     })
-    .strict(),
+    .strict()
+    .describe("Move this conversation to another Work."),
 ]);
 
 export type WorkCommand = z.infer<typeof WorkCommandSchema>;
@@ -58,7 +94,7 @@ export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
 }
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -70,11 +106,11 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
 }
 
 function workToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WorkCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WorkCommandSchema));
 }
 
 function formatWriteExecutionError(error: ToolExecutionError) {
@@ -142,26 +178,14 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "read",
-        description:
-          "Document read tool. Returns a document's block-addressed content; path selects a manuscript, knowledge-base, scratch, upload, or user file. Each result block separates hash from exact body and says whether the body is full or a prefix. Use diff to inspect the folded net effect of this turn's edits.",
-        inputSchema: writeToolInputSchema(),
-      },
-      execution: { type: "server", handler: handlers.read },
-      sequential: true,
-      timeoutMs: 30_000,
-      formatExecutionError: formatWriteExecutionError,
-    },
-    {
-      source: "core",
-      definition: {
-        type: "function",
         name: "write",
         description:
-          "Document edit tool. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. Use the read tool for block-addressed content and diff. diff is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread's document writes.",
+          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the user.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
+      documentText: writeDocumentText,
+      historyPreview: writeHistoryPreview,
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
@@ -171,7 +195,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "work",
-        description: "Inspect or change the project Work and this conversation's Work binding.",
+        description: "Manage the project's Works and which Work this conversation is in.",
         inputSchema: workToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.work },
@@ -183,15 +207,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ls",
-        description:
-          "List files and directories under a path or URI. Use bare ls() to inspect mounted roots before reading specific documents with the read tool.",
+        description: "List files and folders.",
         inputSchema: {
           type: "object",
           properties: {
             path: {
               type: "string",
-              description:
-                "Optional directory path or URI to list. Omit for the mount table. Supported schemes include scratch:// for work-item scratch files.",
+              description: "Folder path or context URI; omit to list the roots.",
             },
           },
           required: [],
@@ -206,19 +228,17 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "search",
-        description:
-          "Literal-text search across visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before reading them with the read tool.",
+        description: "Search document text across all context files.",
         inputSchema: {
           type: "object",
           properties: {
             pattern: {
               type: "string",
-              description: "Literal text pattern to search for.",
+              description: "Literal text, not a regex.",
             },
             scope: {
               type: "string",
-              description:
-                "Optional URI prefix scope. Use kb:// to search the knowledge base, or a subtree like kb://protocols to search one folder. When omitted, searches all visible context schemes.",
+              description: "URI prefix to search under, e.g. kb:// or kb://protocols.",
             },
           },
           required: ["pattern"],
@@ -226,6 +246,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         },
       },
       execution: { type: "server", handler: handlers.search },
+      documentText: searchDocumentText,
+      historyPreview: (input) => String(input.pattern ?? ""),
       timeoutMs: 30_000,
     },
     {
@@ -233,8 +255,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ask_user",
-        description:
-          "Pause execution and present a question to the user. Execution suspends until the user responds or the interrupt times out. The user's answer is returned as the tool result.",
+        description: "Ask the user a question and wait for the answer.",
         inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
       },
       execution: { type: "server", handler: handlers.ask_user },

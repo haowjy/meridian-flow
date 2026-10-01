@@ -11,9 +11,10 @@ import type {
   LocalDocumentSessionTransfer,
   TransferredDocumentSessionOwnership,
 } from "@/core/editor/local-document-session-adoption";
-import { DocumentSession, deleteIndexedDb } from "../editor/document-session";
+import { DocumentSession } from "../editor/document-session";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess, type ResourceContentTransfer } from "./resource-content-access";
+import { deleteIndexedDb } from "./test-support/delete-indexed-db";
 
 const accountId = "content-access-account";
 const metadataDatabase = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;

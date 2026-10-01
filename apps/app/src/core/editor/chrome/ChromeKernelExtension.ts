@@ -1,19 +1,4 @@
-/**
- * ChromeKernelExtension — the one place the chrome kernel touches the editor.
- *
- * It creates the per-editor `EditorChrome` store, keeps its resolved context
- * current, routes `contextmenu` through the claim table, watches the pointer
- * for sweeps, runs registered keymap contributions, and performs the Esc chain.
- * Everything it decides is decided by the pure modules beside it; this file
- * only reads the document and dispatches.
- *
- * Priority 1050: above every ordinary extension, below
- * `UndoRedoKeymapExtension` at 1100. Undo is the writer's recovery over LLM
- * writes (ruling 17) and nothing here may shadow it.
- *
- * Access it with `getEditorChrome(editor)`; the extension's own name is the
- * storage key.
- */
+/** Implements the editor chrome kernel and its scoped interactions. */
 
 import { type Editor, Extension } from "@tiptap/core";
 import { keydownHandler } from "@tiptap/pm/keymap";
@@ -51,11 +36,7 @@ declare module "@tiptap/core" {
   }
 }
 
-/**
- * The kernel for this editor, or null on an editor that never mounted it
- * (standalone code surfaces). Surfaces must handle null rather than assume:
- * an editor without chrome is a real state, not a bug.
- */
+/** The kernel for this editor, or null on an editor that never mounted it (standalone code surfaces). */
 export function getEditorChrome(editor: Editor | null | undefined): EditorChrome | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[CHROME_EXTENSION_NAME]?.chrome ?? null;
@@ -64,15 +45,7 @@ export function getEditorChrome(editor: Editor | null | undefined): EditorChrome
 /** Pointer travel that turns a click into a sweep, matching ProseMirror's slop. */
 const SWEEP_SLOP_PX = 4;
 
-/**
- * Marks chrome that lives outside the editor's DOM — a portalled object row, a
- * table grip — as still belonging to one editor, so a right-click on it goes
- * through that editor's claim ladder instead of straight to the browser.
- *
- * It carries the chrome's id rather than standing alone: two documents open
- * side by side are two kernels listening on the same page, and an unqualified
- * mark would hand one editor's overlay row to both.
- */
+/** Marks chrome that lives outside the editor's DOM — a portalled object row, a table grip — as still belonging to one editor, so a right-click on it goes through that editor's claim ladder instead of straight to the browser. */
 const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
 
 /** Spread onto portalled chrome so the kernel's router can still see it. */
@@ -80,14 +53,7 @@ export function editorChromeAttributes(chrome: EditorChrome): Record<string, str
   return { [EDITOR_CHROME_ATTRIBUTE]: chrome.id };
 }
 
-/**
- * Is this element part of THIS editor's portalled chrome?
- *
- * The router asks it to decide whether an event outside the prose is still
- * the editor's, and a claim handler asks it to stand down over a lane's own
- * overlay. Qualified by the chrome's id both times: two documents side by
- * side are two kernels, and an unqualified mark would answer yes for both.
- */
+/** Is this element part of THIS editor's portalled chrome? */
 export function isEditorChromeElement(chrome: EditorChrome, element: Element): boolean {
   return element.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
 }
@@ -175,7 +141,7 @@ export const ChromeKernelExtension = Extension.create({
 
           const readPointer = (event: PointerEvent) => {
             // A finger does not hover. Remember the hand and let the lanes that
-            // follow the selection place their chrome instead (law 8).
+            // follow the selection place their chrome instead ().
             const coarse = event.pointerType !== "mouse";
             controller.setCoarsePointer(coarse);
             if (coarse) {
@@ -285,27 +251,7 @@ export const ChromeKernelExtension = Extension.create({
           },
 
           handleDOMEvents: {
-            /**
-             * A non-primary press is the claim ladder's, and ProseMirror never
-             * hears it.
-             *
-             * Returning true is how a plugin tells ProseMirror it handled a DOM
-             * event — `runCustomHandler` runs before the built-in handler and
-             * skips it — and skipping is the whole point. ProseMirror arms its
-             * click machinery on ANY button (its own class is called
-             * `LeftMouseDown`), and the matching release runs the full click
-             * path: `handleClickOn`, then its own `selectClickedLeaf`. On a
-             * right-click that release lands AFTER the ladder has already
-             * opened the claimed menu, and re-selecting the node there syncs
-             * the selection back into the editor, takes focus out of the menu,
-             * and dismisses it. Whether the release beat the menu's first paint
-             * decided whether the writer saw a menu at all: a quick right-click
-             * on a diagram showed nothing, a held one worked.
-             *
-             * It refuses no default, so the `contextmenu` event still comes —
-             * on the press where Linux and macOS raise it, and on the release
-             * where Windows does. Ruling 11's native menu is untouched.
-             */
+            /** A non-primary press is the claim ladder's, and ProseMirror never hears it. */
             mousedown(_view, event) {
               if (event.button !== 0) return true;
               sweepOrigin = { x: event.clientX, y: event.clientY };
@@ -332,11 +278,7 @@ export const ChromeKernelExtension = Extension.create({
   },
 });
 
-/**
- * The claim decision, synchronous inside the event because `preventDefault`
- * is worthless after it returns. Nobody claiming means the browser keeps its
- * menu — Shift+right-click every time, and anywhere no lane took the rung.
- */
+/** The claim decision, synchronous inside the event because `preventDefault` is worthless after it returns. */
 function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEvent): boolean {
   const element = event.target;
   if (!(element instanceof Element)) return false;
@@ -358,17 +300,7 @@ function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEv
   return true;
 }
 
-/**
- * One step of the walk home, from wherever the key was pressed.
- *
- * `reach` is the same distinction the keymap seam draws, and it decides which
- * steps are the kernel's to take. A gesture is the deepest rung either way: a
- * drag runs with the pointer, and the hand that presses Escape to abandon it
- * may have left focus on the margin handle it grabbed. The two steps that move
- * the CARET are the prose's alone — off the prose the writer is typing
- * somewhere else, and walking the manuscript home under them would spend a key
- * they meant for the surface they are actually in.
- */
+/** One step of the walk home, from wherever the key was pressed. */
 function performEscStep(
   view: EditorView,
   chrome: EditorChrome,

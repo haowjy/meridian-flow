@@ -1,27 +1,38 @@
 /** Shared row lock for serializing Work lifecycle changes with Work-owned mutations. */
-import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
-import { currentDrizzleDb } from "./drizzle-transaction.js";
+import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
-export async function lockWorkLifecycle(
-  db: Database,
-  workId: string,
-): Promise<LockedWorkLifecycle> {
+type LockedWork = { state: LockedWorkLifecycle; slug: string | null };
+
+/** Serialize lifecycle mutations without blocking root collab infrastructure FK references. */
+async function lockWork(db: DrizzleDb, workId: string): Promise<LockedWork> {
   const [work] = await currentDrizzleDb(db)
-    .select({ deletedAt: works.deletedAt, status: works.status })
+    .select({ deletedAt: works.deletedAt, slug: works.slug, archivedAt: works.archivedAt })
     .from(works)
     .where(eq(works.id, workId))
     .limit(1)
-    .for("update");
-  if (!work) return "missing";
-  return work.deletedAt ? "deleted" : work.status === "archived" ? "archived" : "active";
+    .for("no key update");
+  if (!work) return { state: "missing", slug: null };
+  return {
+    state: work.deletedAt ? "deleted" : work.archivedAt !== null ? "archived" : "active",
+    slug: work.slug,
+  };
 }
 
-export async function requireLockedActiveWork(db: Database, workId: string): Promise<void> {
-  const state = await lockWorkLifecycle(db, workId);
-  if (state !== "active") throw new WorkLifecycleUnavailableError(workId, state);
+export async function lockWorkLifecycle(
+  db: DrizzleDb,
+  workId: string,
+): Promise<LockedWorkLifecycle> {
+  return (await lockWork(db, workId)).state;
+}
+
+export async function requireLockedActiveWork(db: DrizzleDb, workId: string): Promise<void> {
+  const work = await lockWork(db, workId);
+  if (work.state !== "active") {
+    throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
+  }
 }

@@ -6,6 +6,25 @@ with a single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus explicit no-Work `@/` authority.
 
+## Revision queries and reads
+
+Runtime uses the context-owned `DocumentRevisions.current` port, never collab
+directly. Its adapter resolves the thread's current primary Work and write mode,
+checks project-final availability, and in draft mode checks the thread's Work
+manifest membership for `manuscript://` sources. It then delegates each
+document to collab's effective reader. A document a re-read would not find
+returns null, even when its Y.Doc remains loaded in Hocuspocus. Draft reads
+pull live changes synchronously before selecting peer, Work draft, or live;
+direct reads use live authority. The port may run inside a thread-locked
+transaction; collab's pull transaction rules make that safe (see the
+[collab contract](../../collab/.context/CONTEXT.md#pull-and-provisioning-transactions)).
+It reports settled authority, not a response's staged overlay.
+
+Search results carry `documentId` and `revision` from the document scanned.
+Tool wiring moves these fields to result metadata, not model-facing search JSON.
+Plain markdown convenience reads and versioned reads share collab serialization.
+
+
 ## What it owns
 
 - **Authoritative metadata catalog** — one normalized catalog beside ContextFS
@@ -96,6 +115,12 @@ router resolves to exact project-scoped Work authority before dispatch.
   object put. The result repository owns same-ID terminal reconciliation;
   compensation occurs only for `definitely_not_committed`, while unknown
   outcomes retain bytes and emit diagnostics.
+- **Work deletion** atomically soft-deletes live Work-owned context sources,
+  documents, and folders with `deletedByWorkId`. Existing catalog and
+  filesystem live-row predicates hide those rows; Work restore clears only
+  those marked by that deletion. Separately deleted content stays deleted.
+  Upload intake metadata is retained through the 30-day restore window, then
+  the projects `work-purge` job removes the Work's upload objects and rows.
 
 ## Contracts
 
@@ -156,10 +181,12 @@ currently available to the request owner in the requested project.
   relative traversal cannot escape its scheme root. Wiki names search durable
   project and authenticated personal files plus the selected Work/no-Work scope,
   never another Work's titles. Canonical qualifiers may explicitly name another
-  available (active) Work in the project. Contextual scratch/uploads use the selected
+  non-deleted Work in the project. Contextual scratch/uploads use the selected
   scope; `@/` always means No Work. Legacy `work://` is not accepted.
-  Archived Work identity still parses/resolves as authority, but the catalog
-  excludes its files from navigation. Zero or multiple matches both resolve to
+  Archived Work identity still parses/resolves as authority and its Work-scoped
+  catalog still lists its files (archive hides a Work from Active, not its
+  contents) and remains an available read target. Only deleted Works hide their
+  files. Zero or multiple matches both resolve to
   `null`; resolution never guesses.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;
@@ -241,6 +268,7 @@ currently available to the request owner in the requested project.
   view: the ws live-room gate checks the live project manifest.
 - Work-scoped source provisioning and tree/content mutations lock and recheck the
   owning Work in their transaction. Work deletion takes the same lifecycle lock,
+  while read paths never provision a missing source and instead return empty/not-found.
   so it cannot commit between authorization and a new scratch/upload mutation.
 - Cross-source moves preserve document identity and therefore preserve the same live
   project-manifest membership; source scope is storage location, not a second

@@ -29,7 +29,7 @@ export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./d
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
-export type { LineageRange, WriterLineageRange } from "./lineage/range-set.js";
+export type { LineageRange } from "./lineage/range-set.js";
 export {
   groupLineageRanges,
   intersectLineageRanges,

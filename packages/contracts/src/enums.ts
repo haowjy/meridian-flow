@@ -12,9 +12,6 @@ export type FileType = z.infer<typeof FileType>;
 export const ThreadKind = z.enum(["primary", "subagent"]);
 export type ThreadKind = z.infer<typeof ThreadKind>;
 
-export const ThreadStatus = z.enum(["active", "archived"]);
-export type ThreadStatus = z.infer<typeof ThreadStatus>;
-
 export const OriginType = z.enum(["spawn", "handoff", "fork"]);
 export type OriginType = z.infer<typeof OriginType>;
 

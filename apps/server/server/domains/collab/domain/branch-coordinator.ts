@@ -89,9 +89,8 @@ export type ResetBranchSnapshotInput = {
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
-  commitBranchMutation?(input: CommitBranchMutationInput): Promise<boolean>;
-  resetBranchSnapshot?(input: ResetBranchSnapshotInput): Promise<boolean>;
-  appendJournal?(input: AppendBranchJournalInput): Promise<void>;
+  commitBranchMutation(input: CommitBranchMutationInput): Promise<boolean>;
+  resetBranchSnapshot(input: ResetBranchSnapshotInput): Promise<boolean>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
   deferUntilCommit(callback: () => void): boolean;
 };
@@ -271,6 +270,7 @@ export function createBranchCoordinator(input: {
     doc: Y.Doc,
     journal?: AppendBranchJournalInput,
     publishUpdate?: Uint8Array,
+    kind: "mutation" | "pull" = "mutation",
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
@@ -284,9 +284,12 @@ export function createBranchCoordinator(input: {
       stateVector,
       ...(journal ? { journal } : {}),
     };
-    const ok = input.store.commitBranchMutation
-      ? await input.store.commitBranchMutation(mutation)
-      : await legacyCommitBranchMutation(mutation);
+    // Replication creates no reviewable edit. Its CAS must not reacquire the
+    // Work lifecycle lock a reader may already hold in another transaction.
+    const ok =
+      kind === "pull"
+        ? await input.store.updateBranchSnapshot(mutation)
+        : await input.store.commitBranchMutation(mutation);
     if (!ok) {
       cached.delete(snapshot.branchId);
       dirtyTransientBranches.delete(snapshot.branchId);
@@ -305,21 +308,11 @@ export function createBranchCoordinator(input: {
     if (!input.store.deferUntilCommit(publish)) publish();
   }
 
-  async function legacyCommitBranchMutation(
-    inputMutation: CommitBranchMutationInput,
-  ): Promise<boolean> {
-    if (inputMutation.journal) await input.store.appendJournal?.(inputMutation.journal);
-    return input.store.updateBranchSnapshot(inputMutation);
-  }
-
   async function persistReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     schemaVersion: CollabSchemaVersion,
   ): Promise<void> {
-    if (!input.store.resetBranchSnapshot) {
-      throw new Error("Branch store does not support branch reset");
-    }
     const resetDoc = createCollabYDoc({ gc: false });
     await replicateFrozenSource(upstream, resetDoc);
     const state = Y.encodeStateAsUpdate(resetDoc);
@@ -352,6 +345,7 @@ export function createBranchCoordinator(input: {
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
     updateToPublish?: (result: T) => Uint8Array,
+    kind: "mutation" | "pull" = "mutation",
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -363,7 +357,7 @@ export function createBranchCoordinator(input: {
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
-          await persist(snapshot, doc, undefined, updateToPublish?.(result));
+          await persist(snapshot, doc, undefined, updateToPublish?.(result), kind);
           return result;
         });
       } catch (cause) {
@@ -491,6 +485,7 @@ export function createBranchCoordinator(input: {
         branchId,
         async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
+        "pull",
       );
     },
 
@@ -592,7 +587,7 @@ export function createBranchCoordinator(input: {
             }
             const { doc: cachedDoc } = await materialize(snapshot);
             const doc = cloneDoc(cachedDoc);
-            const updateData = encodeDeltaUpdate(inputJournal.sourceDoc, doc);
+            const updateData = yjsDeltaUpdate(inputJournal.sourceDoc, doc);
             if (!updateData) return false;
             const semanticIr = inputJournal.semanticEditIr;
             if (inputJournal.source === "agent" && semanticIr) {
@@ -734,8 +729,4 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
     merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
   return Y.encodeStateVector(new Map(merged));
-}
-
-function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
-  return yjsDeltaUpdate(from, to);
 }

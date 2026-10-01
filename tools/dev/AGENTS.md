@@ -10,27 +10,37 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Per-worktree Postgres DB administration (ensure / drop / extensions / reserved guards)
 - Per-run local DB test provisioning, ownership, cleanup, and stale-run GC
 - Schema application via the programmatic Drizzle migrator with file-aware
-  PostgreSQL failures (`migrate-db.ts`, called by `prepare-db.ts`)
+  PostgreSQL failures and function synchronization (`migrate-db.ts`, called by
+  `prepare-db.ts`)
 - `pnpm dev` orchestration (tmux + portless + dev modes + readiness + tailscale)
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
 - Worktree cleanup (`pnpm dev:prune-worktrees`)
 - Migration SQL linting (`migration-lint.ts`, CI/pre-commit gate policy)
+- Frozen-history and ordering checks for repository and applied database migrations
+  (`check-migration-history.ts`, `lib/migration-history.ts`)
 - `pnpm bootstrap` and dev-data seeding
+- `./mf` (`cli/`): the agent-facing dev CLI that wraps this worktree's app API
 
 ## Rules
 
 - **`DEV_DATABASES` (in `lib/dev-env.ts`) is the single source of truth.** To add or change a per-worktree database, edit the registry — never hard-code a second database, env var, or `"web"` special-case in `ensure-db`, `drop-db`, `prepare-db`, `.envrc`, or anywhere else. Every consumer iterates the registry.
-- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. `pnpm db:migrate` resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Its internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the migrator. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
+- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. Both `pnpm db:migrate` and `pnpm db:apply-functions` use the shared `resolveDatabaseAdminTarget` path, which resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Their internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the command. `db:migrate` applies migrations and SQL functions as one operation. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
 - **Use `lib/dev-env.ts` for env loading.** Do not call `process.loadEnvFile` or write a bespoke `loadEnvFromFile`. The canonical entry point is `applyDevEnvToProcess()`.
 - **Use `lib/dev-db.ts` for DB admin.** Do not open a fresh `pg.Client` and run `CREATE`/`DROP`/`CREATE EXTENSION` from a new script — extend the helpers in `lib/dev-db.ts` and add a thin CLI wrapper.
 - **No regex URL surgery.** Transformations on a database URL use `new URL()` and rewrite `pathname` specifically. The worktree name is always `<baseDbName>_<slug>` (derived from the URL's own base name), and the rewrite must stay idempotent.
 - **Silent fallback is forbidden in worktree mode.** If a tool cannot derive the worktree-scoped DB, it must throw/exit loudly. Silent fallback to a shared DB would re-introduce the cross-worktree blast radius.
 - **`drop-db` must always go through `isReservedDatabase`** against the full set of main-checkout DB names. New "main-like" databases get protected by extending `RESERVED_DATABASES` in `lib/dev-db.ts` (or the registry), not by patching the CLI.
-- **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` apply committed migrations via `prepare-db.ts`; `db:push` is for disposable local experiments only and never carries `--force`.
+- **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` ensure the worktree database and extensions through `prepare-db.ts`, then `db:migrate` applies committed migrations and SQL functions; `db:push` is for disposable local experiments only and never carries `--force`.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
+- **The migration runner owns applied history.** Every schema-migration path goes
+  through `runMigrations`; it matches both hash and journal timestamp before it
+  applies anything, serializes concurrent runners with a transaction-scoped
+  advisory lock, and refuses structurally invalid, divergent, or out-of-order
+  history. Only reset a database owned by the current dev checkout. Shared and
+  deployed database history requires human repair, never a reset.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.
@@ -42,14 +52,21 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Failure output points to evidence.** Startup failures must print the repository-relative `logs/portless.log` path; pre-launch port cleanup identifies each signaled holder by PID and command, while discovery failures identify the bound port and inspection error.
 - **Tailscale routes: verified before printed.** External URLs appear in `pnpm dev` output only after `verifyTailscaleExternalRoutes` confirms the expected binding exists. Add a `hasExpectedBinding` check for new shared services. Never print a Tailscale URL before the binding is confirmed.
 - **Worktree cleanup is deliberate and targeted.** Clean one lane at a time with `pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run`; targeted cleanup refuses dirty or locked worktrees before teardown. `--auto` is an advanced batch escape hatch, not yet trusted for routine use. Ref deletion stays bound to the planned branch OID and is revalidated before every action. Keep authorization in `lib/worktree-cleanup-eligibility.ts`, readiness in `lib/worktree-cleanup-readiness.ts`, orchestration in `prune-worktrees.ts`, and actions in `lib/worktree-cleanup.ts`; never infer staleness from branch ancestry or a branch name.
+- **Prune a side-lane branch when it merges into its integration branch, not after.** Automatic eligibility needs live proof: an exact merged-PR match, or ancestry of the base branch. Once the integration branch itself is squash-merged into `main` or `staging`, neither proof survives for the branches that fed it. When automatic proof is gone, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md) to reconstruct concrete evidence, then record it with the targeted `--manually-verified <reason>` path. Manual evidence bypasses only automatic discovery; every structural, readiness, and commit-movement guard still applies.
 - **All TypeScript here stays inside one strict Nx boundary.** `tools/dev/project.json` registers `meridian-dev-tools:typecheck`; `tools/dev/tsconfig.json` includes the directory. Do not add per-script typecheck wrappers or weaken strictness.
 - **Surgical Tailscale cleanup in pruning.** Stale route removal goes through `findStaleTailscaleRoutes` + `tailscaleRouteOffArgs` (per-port `off`). Never call `tailscale serve reset` or `tailscale funnel reset`. Never prune a route with any live listener.
+- **`./mf` wraps the API; it never reimplements it.** Before changing `cli/`, read the `./mf` section of [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
+
+- **DB test concurrency:** eight owned workers by default; `DB_TEST_WORKERS=1..8` lowers concurrency under shared-server load. Do not use CPU-count scaling against the shared 100-connection server.
+- **Test cleanup:** hand off only this invocation’s managed DBs to `cleanup-test-databases.ts`; it checks parent ownership before the runner exits. Drops are detached because PostgreSQL forces a checkpoint. Inspect `.meridian/db-test-cleanup/` for failures; stale-run `dev:gc-dbs` remains the fallback.
+- **Test durability:** only managed worker URLs receive `synchronous_commit=off` as a session startup setting. Never change shared server settings or dev database durability.
+- **DB fixture isolation:** use the shared [test-support reset policy](../../apps/server/server/test-support/AGENTS.md). Never add per-case TRUNCATE; rollback is the default, FK-ordered DELETE the committed-data escape hatch.
 
 ## Do not
 
 - Do not run `tools/dev/*` scripts from production code or app runtime
-- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code
+- Do not import from `apps/`, other `packages/`, or `python/` — these are dev tools, not app code. The deliberate exceptions are `@meridian/contracts` in `cli/` and the database-owned release runner in `migrate-db.ts`; see `.context/CONTEXT.md`.
 - Do not depend on Node modules outside the root `package.json`'s devDependencies
 - Do not print or persist the `executable` command — stdout, logs, and `.meridian/dev-session.json` get `display` (redacted) only
 - Do not build the tmux command before calling `applyDevEnvToProcess`

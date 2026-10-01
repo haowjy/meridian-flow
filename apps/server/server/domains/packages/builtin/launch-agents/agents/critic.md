@@ -3,7 +3,6 @@ name: Critic
 description: Adversarial craft critique. Reads the manuscript; does not edit it.
 mode: primary
 tools:
-  read: allow
   edit: deny
   ask_user: allow
 skills: []

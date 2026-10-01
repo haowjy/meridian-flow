@@ -1,23 +1,4 @@
-/**
- * PassageDoor — a matched passage rendered as the way into it.
- *
- * A sibling of `DocumentName`, and bound by the same rule: linkability and
- * navigation come from the *same* hooks the shell routes with, so a passage
- * can never look clickable and then do nothing. Outside a project shell both
- * are null and the excerpt degrades to what it always was, quoted prose.
- *
- * **The matched term is the handle, not the whole sentence.** Underlining a
- * full excerpt turns the writer's own prose into a link and buries the one
- * word they searched for. So the term carries the door's treatment — the same
- * weight it already had, plus the underline — while the whole row stays the
- * click target. One button, no nested control: the visible affordance is
- * smaller than the target, which is the point.
- *
- * **A passage with no anchor is not a door.** Non-manuscript schemes carry no
- * block hash, so their passages cannot be resolved; they render as prose and
- * the document's own name remains the way in. Promising a destination we
- * cannot reach is the failure the whole ladder exists to refuse.
- */
+/** PassageDoor — a matched passage rendered as the way into it. */
 import { t } from "@lingui/core/macro";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
@@ -37,11 +18,6 @@ export type PassageDoorProps = {
   passage?: ContextPassageAnchor;
 };
 
-/**
- * The matched passage, with the searched words carrying the weight. No
- * coloured ground: this is the writer's prose, and a highlighter across it
- * would read as markup rather than as their sentence.
- */
 export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();

@@ -1,35 +1,17 @@
-/**
- * DocumentIdentityBar — the universal breadcrumb band at the top of the
- * active tab's canvas. One quiet mono path (`Scratch › Untitled 4`) on every
- * document; provisional docs are a *state* of the bar (italic leaf + jade
- * chip), not separate chrome.
- *
- * One affordance: **the chip**. Jade "Choose a home" on provisional docs and
- * quiet outline "Rename" once homed both open the same inline identity field.
- * Device-only words add a quiet status beside it — never in its place:
- * placement commits queue durably offline, so the action stays available
- * exactly when the writer is device-only. The breadcrumb itself is inert,
- * reserved for a future per-segment navigator (see IdentityPath).
- *
- * Keystroke-path contract: at rest the bar renders from tab metadata only.
- * Content observers mount only while a field is open on a provisional doc.
- */
-import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
+/** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { FolderDown, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeIcon, schemeLabel } from "./context-schemes";
+import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
-import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
+import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import {
   type IdentityCommitOwnership,
@@ -41,6 +23,8 @@ export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: ContextTab;
+  /** The document can't be renamed or moved (its Work is archived). */
+  readOnly?: boolean;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -53,6 +37,7 @@ export function DocumentIdentityBar({
   projectId,
   editorWorkId,
   tab,
+  readOnly = false,
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
@@ -86,7 +71,7 @@ export function DocumentIdentityBar({
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = location.scheme !== "uploads";
+  const showChip = !readOnly && location.scheme !== "uploads";
 
   return (
     <div className="@container shrink-0">
@@ -102,7 +87,7 @@ export function DocumentIdentityBar({
           IDENTITY_BAR_BAND_CLASS,
         )}
       >
-        {fieldOpen ? (
+        {fieldOpen && !readOnly ? (
           <IdentityPlacementField
             projectId={projectId}
             editorWorkId={editorWorkId}
@@ -138,14 +123,6 @@ export function DocumentIdentityBar({
   );
 }
 
-/** Rest state: the quiet crumb row. Middle folders collapse to `…`; narrow
- *  containers drop the scheme label (glyph only) and folder names.
- *
- *  The crumbs are deliberately inert — the chip is the only edit entry
- *  point. The breadcrumb is reserved for navigation: the next slice gives
- *  each segment a VS Code-style dropdown (a mini context-tree navigator
- *  anchored at that segment), which is why every segment stays its own
- *  `data-seg` element instead of one flat string. */
 function IdentityPath({ location }: { location: TabLocation }) {
   const SchemeIcon = schemeIcon(location.scheme);
   const separator = (
@@ -193,15 +170,7 @@ function IdentityPath({ location }: { location: TabLocation }) {
   return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
 }
 
-/**
- * Chip slot at the bar's right edge. The device-only status (warning tokens,
- * 2s sustained grace) and the permanent home chip **coexist**: status quiet
- * on the left, action anchored at the right edge. Never let the status
- * replace the action — placement commits queue durably offline, so
- * device-only is exactly when a writer may want to file the document.
- * The status stays visible while the field is open; only the action chip
- * yields (the open field *is* the action).
- */
+/** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   tab,
@@ -225,80 +194,9 @@ function IdentityChipSlot({
   );
 }
 
-const chipClass = cn(
-  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
-  IDENTITY_BAR_BOX_CLASS,
-);
-
-/** The permanent re-home affordance (D4), whose label graduates with the
- *  document: jade "Choose a home" while provisional (an invitation), quiet
- *  outline "Rename" once homed (a tool — rename is the common case; folder
- *  browsing in the same field keeps move discoverable). Same geometry in both states. */
-function HomeChip({ provisional, onClick }: { provisional: boolean; onClick: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          key={provisional ? "invite" : "quiet"}
-          type="button"
-          onClick={onClick}
-          className={cn(
-            "focus-ring",
-            chipClass,
-            provisional
-              ? "border-primary/30 bg-primary/10 text-jade-text"
-              : "border-border bg-transparent text-ink-subtle",
-          )}
-        >
-          <FolderDown aria-hidden className="size-3" />
-          <span className="@max-md:hidden">
-            {provisional ? <Trans>Choose a home</Trans> : <Trans>Rename</Trans>}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4} className="max-w-60">
-        {provisional ? (
-          <Trans>
-            This draft is untitled and lives in your Scratch. Click to name it or move it where it
-            belongs.
-          </Trans>
-        ) : (
-          <Trans>Rename this document or move it somewhere else in your project.</Trans>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function DeviceOnlyChip() {
-  const label = t`Only on this device`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          className={cn(chipClass, "border-warning-border bg-warning-bg text-warning-foreground")}
-        >
-          <TriangleAlert aria-hidden className="size-3" />
-          <span className="@max-md:hidden">{label}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
-/**
- * Device-only with a 2s sustained grace: the warning only claims the slot
- * once unsynced words have persisted for 2 seconds, so a normal quick
- * materialization never flashes warning chrome. The clock is the
- * reconciler's per-document `pendingSince` — remounting the bar (tab
- * switches) cannot restart the window.
- */
+/** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
 function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
   const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>

@@ -9,10 +9,6 @@ export function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-export function toSeqString(value: bigint | number | string): string {
-  return typeof value === "bigint" ? value.toString() : String(value);
-}
-
 export function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }

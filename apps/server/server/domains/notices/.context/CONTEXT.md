@@ -1,19 +1,26 @@
 # notices — durable model-context delivery
 
-Notices are durable queue records injected into model context. They communicate
-runtime outcomes without becoming conversation turns or changing the thread's
-logical head.
+Notices are a durable Postgres queue (`pending_notices`) that `NoticePort`
+peeks into model context. A queue row itself is never conversation history,
+but delivery into a thread's history is durable turn history, not a
+request-only splice — see below.
 
 ## Port contract
 
-`NoticePort` records a typed, thread-scoped `NoticeInput` and destructively
-drains model delivery for that thread.
+`NoticePort` records typed, thread-scoped `NoticeInput`, peeks pending notices
+for a thread, and consumes selected rows by ID during commit.
 
-Results are ordered by creation time and notice ID. The orchestrator drains
-immediately before every `gateway.stream()` call. Pre-turn notices remain on the
-current writer message for the entire tool loop; notices created during the loop
-remain after the causal tool exchange. No notice is stored as a turn or block,
-rendered by `buildContext`, or allowed to own `activeLeafTurnId`.
+Results are ordered by creation time and notice ID. Runtime delivery peeks a
+thread's notices at each boundary before a `gateway.stream()` call and at each
+mid-run inbox adoption. The commit consumes exactly the selected notice IDs
+and folds them into the same durable-turn materialization as an inbox batch
+(`drainInbox`/`noticesTurnFor`, `runtime/loop/inbox-context.ts`): one trailing
+`system`-role turn with `{ kind: "system_update", section: "notices" }`
+metadata, positioned at that boundary (after the writer message pre-turn or
+the preceding tool result mid-run). Preparation failure or cancellation leaves
+the rows pending. The durable turn keeps notice bytes identical on every later
+request, which the frozen prefix's Anthropic cache breakpoints require (thread
+AGENTS.md / runtime CONTEXT.md).
 
 The domain contains only notices that affect a later model call: `undo`,
 `awareness_degraded`, and writer-origin `work_switched`. A Work-switch notice is

@@ -77,20 +77,6 @@ describe("WriteCommandSchema", () => {
       expect(WriteCommandSchema.parse(command)).toMatchObject(command);
     }
   });
-
-  it("keeps resolver-supported positional and tuple scopes", () => {
-    const scoped = WriteCommandSchema.parse({
-      command: "replace",
-      file: "chapter.md",
-      content: "Beta",
-      in: [1, "c3d4"],
-    });
-
-    expect(scoped.command).toBe("replace");
-    if (scoped.command !== "replace") throw new Error("expected replace command");
-    expect(scoped.in).toEqual([1, "c3d4"]);
-  });
-
   it("accepts a pathless turn diff with optional document narrowing", () => {
     expect(WriteCommandSchema.parse({ command: "diff", document_id: "document-1" })).toEqual({
       command: "diff",

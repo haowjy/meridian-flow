@@ -3,16 +3,24 @@ import type {
   EventJournalId,
   ModelResponseId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnBlockId,
   TurnId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { PriceSource } from "@meridian/contracts/threads";
+import type {
+  CurrentToolCall,
+  JsonValue,
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+  PriceSource,
+} from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   foreignKey,
@@ -20,6 +28,7 @@ import {
   integer,
   jsonb,
   numeric,
+  type PgColumn,
   pgTable,
   primaryKey,
   text,
@@ -30,6 +39,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
+import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
 
 export const threads = pgTable(
@@ -48,16 +58,16 @@ export const threads = pgTable(
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    workingState: jsonb("working_state"),
-    composedSystemPrompt: text("composed_system_prompt"),
-    bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
-    systemPromptHash: text("system_prompt_hash"),
+    initialPromptBakeId: uuid("initial_prompt_bake_id")
+      .$type<PromptBakeId>()
+      .references((): PgColumn => promptBakes.id),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
-    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
-    originTurnId: uuid("origin_turn_id").$type<TurnId>(),
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull(),
+    originTurnId: uuid("origin_turn_id")
+      .$type<TurnId>()
+      .references((): PgColumn => turns.id),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
-    spawnResult: jsonb("spawn_result"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
     activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).defaultNow().notNull(),
@@ -68,6 +78,9 @@ export const threads = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
@@ -88,23 +101,23 @@ export const threads = pgTable(
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    index("threads_lineage_derivations")
+      .on(table.rootThreadId)
+      .where(sql`${table.originType} IN ('fork', 'handoff')`),
+    index("threads_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     foreignKey({
       columns: [table.projectId, table.rootThreadId],
       foreignColumns: [table.projectId, table.id],
       name: "threads_spawn_root_same_project_fk",
     }).onDelete("cascade"),
-    check(
-      "threads_spawn_root_required",
-      sql`${table.kind} != 'subagent' OR ${table.rootThreadId} IS NOT NULL`,
-    ),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
-    check(
-      "threads_status_valid",
-      sql`${table.status} IN ('idle', 'active', 'blocked', 'error', 'archived')`,
-    ),
+    // Lifecycle only. Run state is derived from the lease, never stored here.
+    check("threads_status_valid", sql`${table.status} IN ('idle', 'archived')`),
     check(
       "threads_origin_type_valid",
       sql`${table.originType} IS NULL OR ${table.originType} IN ('spawn', 'handoff', 'fork')`,
@@ -118,16 +131,20 @@ export const threads = pgTable(
       sql`${table.originType} != 'spawn' OR (${table.kind} = 'subagent' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL AND ${table.spawnStatus} IS NOT NULL)`,
     ),
     check(
+      "threads_handoff_origin_turn_required",
+      sql`${table.originType} <> 'handoff' OR ${table.originTurnId} IS NOT NULL`,
+    ),
+    check(
       "threads_handoff_fork_primary",
       sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
     ),
+    // A fork/handoff is a SIBLING of its source (shares its parentThreadId,
+    // which is null when the source is itself a root), never the source's
+    // child, so `parentThreadId` is not required here. `threads_handoff_fork_primary`
+    // requires kind='primary' for both; each derivation requires its cutoff.
     check(
       "threads_fork_origin_required_fields",
-      sql`${table.originType} != 'fork' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL)`,
-    ),
-    check(
-      "threads_handoff_origin_required_fields",
-      sql`${table.originType} != 'handoff' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL)`,
+      sql`${table.originType} != 'fork' OR ${table.originTurnId} IS NOT NULL`,
     ),
     check(
       "threads_organic_origin_fields_empty",
@@ -184,43 +201,82 @@ export const threadWorks = pgTable(
   ],
 );
 
-/** Coalesced durable requests to refresh a frozen thread's model-visible Work context. */
-export const workContextDeliveryObligations = pgTable("work_context_delivery_obligations", {
-  threadId: uuid("thread_id")
-    .$type<ThreadId>()
-    .primaryKey()
-    .references(() => threads.id, { onDelete: "cascade" }),
-  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
 /**
- * Durable obligation to surface a background child's terminal report to its
- * parent exactly once: one row per report execution, written atomically with the
- * child's terminal lifecycle and deleted once the parent continuation is
- * durably admitted.
+ * Durable per-thread message queue drained in a batch at the next delivery
+ * boundary. Rows are marked delivered rather than deleted so the idempotency
+ * key and replay facts survive. `seq` is a global bigserial; sequences order
+ * allocation, not commit, so FIFO within a thread rests on the domain `enqueue`
+ * serializing per thread (it holds the per-thread lock): with commits serialized,
+ * `seq` orders them within the thread without a per-thread counter row.
  */
-export const childReportDeliveries = pgTable(
-  "child_report_deliveries",
+export const threadInboxMessages = pgTable(
+  "thread_inbox_messages",
   {
-    reportId: uuid("report_id").$type<TurnId>().primaryKey(),
-    parentThreadId: uuid("parent_thread_id")
+    id: idColumn<string>(),
+    threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
-    childThreadId: uuid("child_thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    agentSlug: text("agent_slug").notNull(),
-    description: text("description"),
-    result: jsonb("result").notNull(),
-    systemTurnId: uuid("system_turn_id").$type<TurnId>(),
-    submissionEpoch: integer("submission_epoch").notNull().default(0),
-    createdAt: createdAt(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    intent: text("intent").notNull(),
+    provenance: jsonb("provenance").$type<JsonValue>().notNull(),
+    body: jsonb("body").$type<JsonValue>().notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   },
   (table) => [
-    index("child_report_deliveries_parent_idx").on(table.parentThreadId),
-    check("child_report_deliveries_epoch_nonneg", sql`${table.submissionEpoch} >= 0`),
+    unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
+    index("thread_inbox_messages_pending")
+      .on(table.threadId, table.seq)
+      .where(sql`${table.deliveredAt} IS NULL`),
+    check(
+      "thread_inbox_messages_intent_valid",
+      sql`${table.intent} IN ('message','notice','control')`,
+    ),
+    check(
+      "thread_inbox_messages_provenance_valid",
+      sql`(${table.provenance}->>'kind' IN ('writer','agent','child','system')) IS TRUE`,
+    ),
+    check(
+      "thread_inbox_messages_body_valid",
+      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+    ),
+  ],
+);
+
+/**
+ * Queryable run lease paired with the cross-process advisory lock. The lock is
+ * the atomic mutex (crash-safe because the DB session dies); this expiring row
+ * is what `holder()`, derived status, and the running-turn read can observe from
+ * another process. `turnId` is bound after the run's assistant turn commits, so
+ * it may be null while a run is mid-setup.
+ */
+export const threadRunLeases = pgTable(
+  "thread_run_leases",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .primaryKey()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    boundTurnIds: uuid("bound_turn_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    turnId: uuid("turn_id").$type<TurnId>(),
+    holderId: text("holder_id").notNull(),
+    phase: text("phase").notNull().default("generating"),
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    currentTool: jsonb("current_tool").$type<CurrentToolCall | null>(),
+    acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
+    renewedAt: timestamp("renewed_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check(
+      "thread_run_leases_phase_valid",
+      sql`${table.phase} IN ('generating','waiting','compacting')`,
+    ),
+    index("thread_run_leases_expiry").on(table.expiresAt),
   ],
 );
 
@@ -231,10 +287,16 @@ export const turns = pgTable(
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
-      .references(() => threads.id, { onDelete: "restrict" }),
+      .references((): PgColumn => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
+    position: integer("position").notNull(),
+    promptBakeId: uuid("prompt_bake_id")
+      .$type<PromptBakeId>()
+      .references((): PgColumn => promptBakes.id),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
+    /** Who authored the turn; independent of `role`. No default: every insert states it. */
+    origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
     finishReason: text("finish_reason"),
@@ -256,15 +318,20 @@ export const turns = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    index("turns_thread_created").on(table.threadId, table.createdAt.desc()),
-    index("turns_recoverable_created")
-      .on(table.createdAt)
-      .where(
-        sql`${table.role} = 'assistant' AND ${table.status} IN ('pending', 'streaming', 'waiting_interrupt')`,
-      ),
-    index("turns_parent_created")
-      .on(table.parentTurnId, table.createdAt.desc())
+    unique("turns_thread_id_id_unique").on(table.threadId, table.id),
+    uniqueIndex("turns_thread_position_unique").on(table.threadId, table.position),
+    index("turns_epoch_boundaries")
+      .on(table.threadId, table.position)
+      .where(sql`${table.promptBakeId} IS NOT NULL`),
+    index("turns_unsettled")
+      .on(table.threadId, table.position)
+      .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
+    index("turns_parent_position")
+      .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
+    index("turns_pending_placeholders")
+      .on(table.id)
+      .where(pendingPlaceholderPredicate({ status: table.status, role: table.role })),
     uniqueIndex("turns_thread_single_root")
       .on(table.threadId)
       .where(sql`${table.parentTurnId} IS NULL`),
@@ -272,7 +339,9 @@ export const turns = pgTable(
       "turns_no_self_parent",
       sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,
     ),
+    check("turns_position_positive", sql`${table.position} > 0`),
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
+    check("turns_origin_valid", sql`${table.origin} IN ('writer', 'assistant', 'system')`),
     check(
       "turns_ai_write_mode_valid",
       sql`${table.aiWriteMode} IS NULL OR ${table.aiWriteMode} IN ('direct', 'draft')`,
@@ -283,9 +352,26 @@ export const turns = pgTable(
     ),
     check(
       "turns_compaction_model_required",
-      sql`${table.role} != 'compaction' OR ${table.compactionModel} IS NOT NULL`,
+      sql`${table.role} != 'compaction' OR ${table.status} != 'complete' OR ${table.compactionModel} IS NOT NULL`,
     ),
   ],
+);
+
+export const promptBakes = pgTable(
+  "prompt_bakes",
+  {
+    id: idColumn<PromptBakeId>(),
+    ownerThreadId: uuid("owner_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references((): PgColumn => threads.id, { onDelete: "cascade" }),
+    composedSystemPrompt: text("composed_system_prompt").notNull(),
+    bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[]>().notNull(),
+    bakedTools: jsonb("baked_tools").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("prompt_bakes_owner_created").on(table.ownerThreadId, table.createdAt)],
 );
 
 export const modelResponses = pgTable(
@@ -307,6 +393,7 @@ export const modelResponses = pgTable(
     reasoningTokens: integer("reasoning_tokens"),
     cacheReadTokens: integer("cache_read_tokens"),
     cacheWriteTokens: integer("cache_write_tokens"),
+    cacheReset: boolean("cache_reset").notNull().default(false),
     usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     millicredits: bigint("millicredits", { mode: "number" }),
@@ -314,6 +401,16 @@ export const modelResponses = pgTable(
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
+    requestMessageCount: integer("request_message_count").notNull(),
+    requestStartedAt: timestamp("request_started_at", { withTimezone: true }),
+    predictedCacheState: text("predicted_cache_state")
+      .$type<PrefixCachePredictionState>()
+      .notNull(),
+    predictedCacheReason: text("predicted_cache_reason")
+      .$type<PrefixCachePredictionReason>()
+      .notNull(),
+    timeToFirstTokenMs: bigint("time_to_first_token_ms", { mode: "number" }),
+    generationMs: bigint("generation_ms", { mode: "number" }),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
@@ -327,6 +424,14 @@ export const modelResponses = pgTable(
     check(
       "model_responses_price_source_valid",
       sql`${table.priceSource} IN ('computed', 'provider_reported', 'configured_rate', 'unknown')`,
+    ),
+    check(
+      "model_responses_predicted_cache_state_valid",
+      sql`${table.predictedCacheState} IN ('warm', 'cold')`,
+    ),
+    check(
+      "model_responses_predicted_cache_reason_valid",
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );
@@ -352,7 +457,6 @@ export const turnBlocks = pgTable(
     modelText: text("model_text"),
     content: jsonb("content"),
     compact: text("compact"),
-    pruned: boolean("pruned").notNull().default(false),
     executionSide: text("execution_side"),
     createdAt: createdAt(),
   },
@@ -363,6 +467,123 @@ export const turnBlocks = pgTable(
     check(
       "turn_blocks_block_type_valid",
       sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
+    ),
+  ],
+);
+
+/** Per-thread decisions keep a fork's request history independent from its source. */
+export const threadImageInclusions = pgTable(
+  "thread_image_inclusions",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    blockId: uuid("block_id")
+      .$type<TurnBlockId>()
+      .notNull()
+      .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    decisionTurnId: uuid("decision_turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    included: boolean("included").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.threadId, table.blockId, table.decisionTurnId] })],
+);
+
+export const threadExecutionReports = pgTable(
+  "thread_execution_reports",
+  {
+    executionTurnId: uuid("execution_turn_id")
+      .$type<TurnId>()
+      .primaryKey()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    terminalTurnId: uuid("terminal_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    childThreadId: uuid("child_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    handle: text("handle").notNull(),
+    origin: text("origin").notNull(),
+    deliveryMode: text("delivery_mode").notNull(),
+    callerThreadId: uuid("caller_thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "set null" }),
+    callerTurnId: uuid("caller_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    toolCallId: text("tool_call_id"),
+    cardBlockId: uuid("card_block_id")
+      .$type<TurnBlockId>()
+      .references(() => turnBlocks.id, { onDelete: "set null" }),
+    agentSlug: text("agent_slug"),
+    description: text("description"),
+    capture: jsonb("capture").$type<JsonValue | null>(),
+    captureToolCallId: text("capture_tool_call_id"),
+    outcome: text("outcome"),
+    reason: text("reason"),
+    source: text("source"),
+    summary: text("summary"),
+    payload: jsonb("payload").$type<JsonValue | null>(),
+    artifacts: jsonb("artifacts").$type<JsonValue | null>(),
+    costMillicredits: bigint("cost_millicredits", { mode: "number" }),
+    terminalAt: timestamp("terminal_at", { withTimezone: true }),
+    publication: text("publication").notNull().default("none"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.childThreadId, table.executionTurnId],
+      foreignColumns: [turns.threadId, turns.id],
+      name: "thread_execution_reports_child_turn_fk",
+    }).onDelete("cascade"),
+    index("thread_execution_reports_pending")
+      .on(table.executionTurnId)
+      .where(sql`${table.publication} = 'pending'`),
+    check(
+      "thread_execution_reports_origin_valid",
+      sql`${table.origin} IN ('spawn','foreground_message','thread_run')`,
+    ),
+    check(
+      "thread_execution_reports_delivery_valid",
+      sql`${table.deliveryMode} IN ('background_notification','direct','none')`,
+    ),
+    check(
+      "thread_execution_reports_origin_delivery_valid",
+      sql`(${table.origin} = 'spawn' AND ${table.deliveryMode} IN ('background_notification','direct')) OR (${table.origin} = 'foreground_message' AND ${table.deliveryMode} = 'direct') OR (${table.origin} = 'thread_run' AND ${table.deliveryMode} = 'none')`,
+    ),
+    check(
+      "thread_execution_reports_capture_call_coherent",
+      sql`(${table.capture} IS NULL AND ${table.captureToolCallId} IS NULL) OR (${table.capture} IS NOT NULL AND ${table.captureToolCallId} IS NOT NULL)`,
+    ),
+    check(
+      "thread_execution_reports_outcome_valid",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','failed','cancelled')`,
+    ),
+    check(
+      "thread_execution_reports_source_valid",
+      sql`${table.source} IS NULL OR ${table.source} IN ('return_result','final_assistant','empty')`,
+    ),
+    check(
+      "thread_execution_reports_publication_valid",
+      sql`${table.publication} IN ('none','pending','published')`,
+    ),
+    check(
+      "thread_execution_reports_pending_has_caller",
+      sql`${table.publication} <> 'pending' OR ${table.callerThreadId} IS NOT NULL`,
+    ),
+    check(
+      "thread_execution_reports_terminal_coherent",
+      sql`(${table.outcome} IS NULL AND ${table.terminalAt} IS NULL) OR (${table.outcome} IS NOT NULL AND ${table.source} IS NOT NULL AND ${table.summary} IS NOT NULL AND ${table.terminalAt} IS NOT NULL)`,
+    ),
+    check(
+      "thread_execution_reports_publication_timestamp_coherent",
+      sql`(${table.publication} IN ('none','pending') AND ${table.publishedAt} IS NULL) OR (${table.publication} = 'published' AND ${table.publishedAt} IS NOT NULL)`,
     ),
   ],
 );
@@ -464,5 +685,5 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
-// Deferred FKs in migration SQL: threads.parent_thread_id, threads.origin_turn_id,
-// threads.active_leaf_turn_id, turns.parent_turn_id.
+// The origin-turn FK is NO ACTION DEFERRABLE INITIALLY IMMEDIATE in migration
+// 0006; deleting a referenced turn fails unless a coordinated delete defers it.

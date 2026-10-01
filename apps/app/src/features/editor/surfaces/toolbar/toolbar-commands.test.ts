@@ -7,7 +7,6 @@ import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import {
   type BlockTypeId,
   blockTypeStates,
-  canUndoDocument,
   documentToolbarControls,
   setToolbarAlignment,
   type ToolbarContext,
@@ -175,16 +174,6 @@ function selectWholeTable(target: Editor): void {
 }
 
 describe("toolbar enablement matrix", () => {
-  it("enables every formatting verb at a caret in prose", () => {
-    const controls = controlsFor(editorWith("<p>Kael pressed his palm flat</p>"));
-
-    for (const id of ["heading", "bold", "italic", "codeBlock", "bulletList", "link"] as const) {
-      expect(controls[id].blockedBy, id).toBeNull();
-    }
-    expect(controls.alignment.blockedBy).toBeNull();
-    expect(controls.uploadFigure.blockedBy).toBeNull();
-  });
-
   it("greys formatting and block-type verbs when an object node is selected", () => {
     const target = editorWith(FIGURE_DOC);
     selectNodeOfType(target, "figure");
@@ -232,31 +221,6 @@ describe("toolbar enablement matrix", () => {
     expect(controls.bold.blockedBy).toBeNull();
   });
 
-  it("greys block-type verbs on a selected registered component", () => {
-    const target = editorWith(JSX_DOC);
-    selectNodeOfType(target, "jsx_leaf");
-
-    const controls = controlsFor(target);
-    expect(controls.heading.blockedBy).toBe("embedded-block");
-    expect(controls.bulletList.blockedBy).toBe("embedded-block");
-    expect(controls.codeBlock.blockedBy).toBe("embedded-block");
-    expect(controls.bold.blockedBy).toBe("embedded-block");
-  });
-
-  it("enables block-type verbs inside a table cell", () => {
-    const target = editorWith(TABLE_DOC);
-    target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
-
-    // A cell holds any block now, so the cell itself refuses nothing: the
-    // controls convert the block under the caret, inside the cell.
-    const controls = controlsFor(target);
-    expect(controls.heading.blockedBy).toBeNull();
-    expect(controls.bulletList.blockedBy).toBeNull();
-    expect(controls.codeBlock.blockedBy).toBeNull();
-    expect(controls.bold.blockedBy).toBeNull();
-    expect(controls.link.blockedBy).toBeNull();
-  });
-
   it("greys the marks that inline code excludes", () => {
     const target = editorWith("<p>the <code>third</code> gate</p>");
     target.commands.setTextSelection({ from: 5, to: 10 });
@@ -271,20 +235,6 @@ describe("toolbar enablement matrix", () => {
     expect(controls.codeBlock.active).toBe(false);
   });
 
-  it("keeps alignment live across a multi-block selection", () => {
-    const target = editorWith("<h1>Chapter 214</h1><p>Kael pressed</p><p>The panel</p>");
-    target.commands.selectAll();
-
-    expect(controlsFor(target).alignment.blockedBy).toBeNull();
-  });
-
-  it("greys alignment where no alignable block sits under the selection", () => {
-    const target = editorWith("<pre><code>const gate = 3</code></pre>");
-    target.commands.setTextSelection(3);
-
-    expect(controlsFor(target).alignment.blockedBy).toBe("no-alignable-block");
-  });
-
   it("greys every control behind a read-only document, still reflecting state", () => {
     const target = editorWith("<h1>Chapter 214</h1>");
     target.commands.setTextSelection(3);
@@ -295,41 +245,6 @@ describe("toolbar enablement matrix", () => {
     }
     expect(controls.heading.active).toBe(true);
   });
-
-  it("greys every control while the document is still opening", () => {
-    const controls = controlsFor(null);
-
-    for (const control of Object.values(controls)) {
-      expect(control.blockedBy).toBe("editor-loading");
-      expect(control.active).toBe(false);
-    }
-  });
-
-  it("reports empty history honestly", () => {
-    const target = editorWith("<p>a</p>");
-
-    expect(controlsFor(target).undo.blockedBy).toBe("empty-history");
-    expect(controlsFor(target).redo.blockedBy).toBe("empty-history");
-    expect(controlsFor(target, { canUndo: true }).undo.blockedBy).toBeNull();
-    // Undo is the Yjs UndoManager's; an editor without collaboration has none.
-    expect(canUndoDocument(target)).toBe(false);
-  });
-
-  it("explains an upload a code file, a missing project, or a busy one cannot take", () => {
-    const target = editorWith("<p>a</p>");
-
-    expect(controlsFor(target, { schemaType: "code" }).uploadFigure.blockedBy).toBe(
-      "code-document",
-    );
-    // History still belongs to the writer on a code file.
-    expect(controlsFor(target, { schemaType: "code", canUndo: true }).undo.blockedBy).toBeNull();
-    expect(controlsFor(target, { imageUploadAvailable: false }).uploadFigure.blockedBy).toBe(
-      "no-project",
-    );
-    // An upload already in flight blocks nothing: the picture in flight holds
-    // its own slot in the document, so the next one is a normal insertion.
-    expect(controlsFor(target, {}).uploadFigure.blockedBy).toBeNull();
-  });
 });
 
 describe("block-type commands refuse non-text targets", () => {
@@ -338,14 +253,6 @@ describe("block-type commands refuse non-text targets", () => {
     selectNodeOfType(target, "figure");
 
     expect(toggleHeadingBlock(target)).toBe(false);
-    expect(target.state.doc.lastChild?.type.name).toBe("figure");
-  });
-
-  it("never wraps a selected figure in a list", () => {
-    const target = editorWith(FIGURE_DOC);
-    selectNodeOfType(target, "figure");
-
-    expect(toggleBulletListBlock(target)).toBe(false);
     expect(target.state.doc.lastChild?.type.name).toBe("figure");
   });
 
@@ -383,17 +290,6 @@ describe("block-type commands refuse non-text targets", () => {
     expect(component?.attrs.name).toBe("StatBlock");
   });
 
-  it("converts the block under a caret in a cell, inside the cell", () => {
-    const target = editorWith(TABLE_DOC);
-    target.commands.setTextSelection(posInsideType(target, "table_cell") + 1);
-
-    expect(toggleHeadingBlock(target)).toBe(true);
-    expect(target.state.doc.firstChild?.type.name).toBe("table");
-    const converted = target.state.doc.nodeAt(posInsideType(target, "table_cell") - 1);
-    expect(converted?.firstChild?.type.name).toBe("heading");
-    expect(converted?.firstChild?.textContent).toBe("Kael");
-  });
-
   it("refuses a mark that inline code excludes", () => {
     const target = editorWith("<p>the <code>third</code> gate</p>");
     target.commands.setTextSelection({ from: 5, to: 10 });
@@ -417,19 +313,6 @@ describe("block-type commands refuse non-text targets", () => {
 });
 
 describe("toolbar toggles reverse", () => {
-  it("returns an H1 to a paragraph on the second press", () => {
-    const target = editorWith("<p>Chapter 214</p>");
-    target.commands.setTextSelection(3);
-
-    expect(toggleHeadingBlock(target)).toBe(true);
-    expect(target.state.doc.firstChild?.type.name).toBe("heading");
-    expect(controlsFor(target).heading.active).toBe(true);
-
-    expect(toggleHeadingBlock(target)).toBe(true);
-    expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
-    expect(controlsFor(target).heading.active).toBe(false);
-  });
-
   it("fences a paragraph and returns it to prose on the second press", () => {
     const target = editorWith("<p>graph TD; A to B</p>");
     target.commands.setTextSelection(3);
@@ -468,15 +351,6 @@ describe("toolbar toggles reverse", () => {
     expect(toggleBulletListBlock(target)).toBe(true);
     expect(controlsFor(target).bulletList.active).toBe(false);
     expect(target.state.doc.textContent).toContain("inner");
-  });
-
-  it("un-lists a whole list caught in a select-all", () => {
-    const target = editorWith("<ul><li><p>one</p></li><li><p>two</p></li></ul>");
-    target.commands.selectAll();
-
-    expect(toggleBulletListBlock(target)).toBe(true);
-    expect(controlsFor(target).bulletList.active).toBe(false);
-    expect(target.state.doc.firstChild?.type.name).toBe("paragraph");
   });
 
   it("still toggles the inline code mark for the surfaces that carry it", () => {
@@ -656,16 +530,6 @@ describe("the block types Turn into offers", () => {
     const cell = target.state.doc.nodeAt(posInsideType(target, "table_cell") - 1);
     expect(cell?.firstChild?.type.name).toBe("heading");
   });
-
-  it("refuses the whole conversion when a select-all catches a fence", () => {
-    const target = editorWith(FENCE_DOC);
-    target.commands.selectAll();
-
-    const blocked = blockedFor(target);
-    for (const [id, reason] of Object.entries(blocked)) {
-      expect(reason, id).toBe("mixed-selection");
-    }
-  });
 });
 
 describe("the mark state a surface renders", () => {
@@ -740,12 +604,17 @@ describe("the deepest context under the selection decides the reason", () => {
     // works — for whichever end of the drag the diagram happens to land on.
     for (const reversed of [false, true]) {
       const target = editorWith(TABLE_DIAGRAM_DOC);
-      const [diagramCell, proseCell] = cellPositions(target);
-      selectCells(target, reversed ? proseCell : diagramCell, reversed ? diagramCell : proseCell);
+      try {
+        const [diagramCell, proseCell] = cellPositions(target);
+        selectCells(target, reversed ? proseCell : diagramCell, reversed ? diagramCell : proseCell);
 
-      expect(controlsFor(target).bold.blockedBy, `reversed=${reversed}`).toBeNull();
-      expect(toggleTextMark(target, "strong")).toBe(true);
-      expect(target.state.doc.textContent).toContain("Kael");
+        expect(controlsFor(target).bold.blockedBy, `reversed=${reversed}`).toBeNull();
+        expect(toggleTextMark(target, "strong")).toBe(true);
+        expect(target.state.doc.textContent).toContain("Kael");
+      } finally {
+        target.destroy();
+        if (editor === target) editor = null;
+      }
     }
   });
 

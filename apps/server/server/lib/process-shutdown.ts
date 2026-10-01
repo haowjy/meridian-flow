@@ -101,7 +101,10 @@ export function installProcessShutdownHooks(eventSink: EventSink): void {
   installed = true;
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = (signal: NodeJS.Signals) => {
-    if (shutdownPromise) return shutdownPromise;
+    if (shutdownPromise) {
+      process.exit(1);
+      return shutdownPromise;
+    }
     shutdownPromise = (async () => {
       const deadlineAt = Date.now() + 25_000;
       const sequence = (async () => {
@@ -138,6 +141,6 @@ export function installProcessShutdownHooks(eventSink: EventSink): void {
     })();
     return shutdownPromise;
   };
-  process.once("SIGTERM", () => void shutdown("SIGTERM"));
-  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }

@@ -30,8 +30,8 @@ export class AccountFeatureLifetime {
     this.registry = this.runtime.registry;
     this.postApplyOwner = new AccountPostApplyDispositionOwner(accountId, {
       replaceExactRoomNames: (roomNames) => {
-        if (roomNames.length === 0) this.registry.releaseBranchRooms?.("post-apply-disposition");
-        else this.registry.retainBranchRooms?.("post-apply-disposition", roomNames);
+        if (roomNames.length === 0) this.registry.releaseBranchRooms("post-apply-disposition");
+        else this.registry.retainBranchRooms("post-apply-disposition", roomNames);
       },
     });
     this.removal = new ContextRemovalCoordinator(accountId, {

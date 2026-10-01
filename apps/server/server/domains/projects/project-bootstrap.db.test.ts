@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -16,19 +17,17 @@ else
     const { eq } = await import("drizzle-orm");
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("./index.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
     );
     const { runInDrizzleTransaction } = await import("../../shared/drizzle-transaction.js");
     const USER_ID = "00000000-0000-4000-8000-000000000751";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     beforeEach(async () => {
@@ -101,7 +100,7 @@ else
           isNoWork: true,
           slug: null,
           name: "No Work",
-          status: "active",
+          status: null,
         }),
       ]);
       const noWorkId = workRows[0]?.id;

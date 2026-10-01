@@ -35,6 +35,8 @@ export interface CreateWriteToolOptions {
   defaultThreadId?: string;
   undoClientId?: number;
   createRuntimeDoc?: () => Y.Doc;
+  /** Host-owned identity, captured synchronously from the document rendered or applied. */
+  documentRevision?: (doc: Y.Doc) => string;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;

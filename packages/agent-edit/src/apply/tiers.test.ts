@@ -8,7 +8,7 @@ import * as Y from "yjs";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
-import { type YProsemirrorDocumentModel, yProsemirrorModel } from "../model/y-prosemirror.js";
+import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import {
   applyConcurrentUpdates,
   computeEcho,
@@ -16,7 +16,7 @@ import {
   truncateSerializedBlock,
 } from "./echo.js";
 import { applyEdits } from "./tiers.js";
-import type { AgentOrigin, ApplyResult, ApplyTier, ResolvedEdit } from "./types.js";
+import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodec(
@@ -26,123 +26,39 @@ const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 
 describe("applyEdits tier routing", () => {
-  it("routes plain text within one mark context to Tier 1", () => {
-    const doc = createDoc("Alpha sword.");
-    const { model, calls } = recordingModel();
-    const [block] = model.getBlocks(doc);
-
-    const result = applyEdits(
-      doc,
-      model,
-      codec,
-      textEdit(block, { start: 6, end: 11 }, "blade"),
-      origin,
-    );
-
-    expectOk(result);
-    expect(calls).toEqual([1]);
-    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
-    expect(model.getText(block)).toBe("Alpha blade.");
-    const blockHash = model.getBlockId(block);
-    expect(result.ok && result.echo).toEqual([
-      { mode: "full", blocks: [`${blockHash}|Alpha blade.`] },
-    ]);
-    expectNoOrphanedElements(doc);
-  });
-
   it("routes text-only edits inside an existing mark run to Tier 1 and preserves marks", () => {
     const doc = createDoc("Alpha **sword**.");
-    const { model, calls } = recordingModel();
-    const [block] = model.getBlocks(doc);
+    const [block] = baseModel.getBlocks(doc);
 
     const result = applyEdits(
       doc,
-      model,
+      baseModel,
       codec,
       textEdit(block, { start: 6, end: 11 }, "blade"),
       origin,
     );
 
     expectOk(result);
-    expect(calls).toEqual([1]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
-    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
-    expectNoOrphanedElements(doc);
-  });
-
-  it("routes formatting changes to Tier 2", () => {
-    const doc = createDoc("Alpha sword.");
-    const { model, calls } = recordingModel();
-    const [block] = model.getBlocks(doc);
-
-    const result = applyEdits(
-      doc,
-      model,
-      codec,
-      textEdit(block, { start: 6, end: 11 }, "**blade**"),
-      origin,
-    );
-
-    expectOk(result);
-    expect(calls).toEqual([2]);
-    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
-    expect(model.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
+    expect(baseModel.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
     expectNoOrphanedElements(doc);
   });
 
   it("routes mark-boundary-crossing text edits to Tier 2", () => {
     const doc = createDoc("A **bold** plain");
-    const { model, calls } = recordingModel();
-    const [block] = model.getBlocks(doc);
+    const [block] = baseModel.getBlocks(doc);
 
     const result = applyEdits(
       doc,
-      model,
+      baseModel,
       codec,
       textEdit(block, { start: 5, end: 8 }, "X"),
       origin,
     );
 
     expectOk(result);
-    expect(calls).toEqual([2]);
     expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
-    expect(model.getText(block)).toBe("A bolXlain");
-    expectNoOrphanedElements(doc);
-  });
-
-  it("routes inserts and deletes to Tier 3", () => {
-    const doc = createDoc("Alpha\n\nBeta");
-    const { model, calls } = recordingModel();
-    const [alpha, beta] = model.getBlocks(doc);
-
-    const insert = applyEdits(
-      doc,
-      model,
-      codec,
-      {
-        documentId: "doc-1",
-        file: "chapter.md",
-        kind: "insert",
-        after: toRef(alpha),
-        newText: "Inserted",
-      },
-      origin,
-    );
-    expectOk(insert);
-
-    const del = applyEdits(
-      doc,
-      model,
-      codec,
-      { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(beta) },
-      origin,
-    );
-    expectOk(del);
-
-    expect(calls).toEqual([3, 3]);
-    expect(insert.ok && insert.appliedEdits?.map((edit) => edit.tier)).toEqual([3]);
-    expect(del.ok && del.appliedEdits?.map((edit) => edit.tier)).toEqual([3]);
-    expect(blockTexts(doc)).toEqual(["Alpha", "Inserted"]);
+    expect(baseModel.getText(block)).toBe("A bolXlain");
     expectNoOrphanedElements(doc);
   });
 });
@@ -152,18 +68,21 @@ describe("applyEdits update fidelity", () => {
     [
       "Tier 1 text",
       "Alpha sword.",
+      "Alpha blade.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
       1,
     ],
     [
       "Tier 2 formatting",
       "Alpha sword.",
+      "Alpha **blade**.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "**blade**"),
       2,
     ],
     [
       "Tier 3 insert",
       "Alpha\n\nBeta",
+      "Alpha\n\nInserted\n\nBeta",
       (doc: Y.Doc): ResolvedEdit => ({
         documentId: "doc-1",
         file: "chapter.md",
@@ -176,6 +95,7 @@ describe("applyEdits update fidelity", () => {
     [
       "Tier 3 delete",
       "Alpha\n\nBeta",
+      "Alpha",
       (doc: Y.Doc): ResolvedEdit => ({
         documentId: "doc-1",
         file: "chapter.md",
@@ -185,8 +105,8 @@ describe("applyEdits update fidelity", () => {
       3,
     ],
   ] satisfies Array<
-    [string, string, (doc: Y.Doc) => ResolvedEdit, ApplyTier]
-  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, makeEdit, tier) => {
+    [string, string, string, (doc: Y.Doc) => ResolvedEdit, number]
+  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit, tier) => {
     const doc = createDoc(markdown, 1);
     doc.clientID = 2;
     const fresh = cloneDoc(doc, 9);
@@ -199,6 +119,9 @@ describe("applyEdits update fidelity", () => {
     const update = Y.encodeStateAsUpdate(doc, prevVector);
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
+    expect(baseModel.serializeBlockBodies(doc, codec, baseModel.getBlocks(doc)).join("\n\n")).toBe(
+      expected,
+    );
     expectNoOrphanedElements(doc);
   });
 
@@ -614,34 +537,6 @@ function textEdit(
     newText,
   };
 }
-
-function recordingModel(): { model: YProsemirrorDocumentModel; calls: ApplyTier[] } {
-  const calls: ApplyTier[] = [];
-  const base = yProsemirrorModel(schema);
-  return {
-    calls,
-    model: {
-      ...base,
-      applyTextEdit(doc, block, span, newText) {
-        calls.push(1);
-        base.applyTextEdit(doc, block, span, newText);
-      },
-      applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
-        calls.push(2);
-        return base.applyInlineReplacement(doc, block, span, replacementMarkup, codec);
-      },
-      insertBlocks(doc, after, parsed) {
-        calls.push(3);
-        return base.insertBlocks(doc, after, parsed);
-      },
-      deleteBlock(doc, block) {
-        calls.push(3);
-        base.deleteBlock(doc, block);
-      },
-    },
-  };
-}
-
 function remoteTextUpdate(
   doc: Y.Doc,
   blockIndex: number,

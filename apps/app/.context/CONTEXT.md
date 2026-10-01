@@ -103,7 +103,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
   locked No Work row as primary.
-  Direct `/p/*` and `/chat/*` authenticated routes mount the project
+  Direct `/p/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
@@ -116,6 +116,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
+
+The server's [durable event journal](../../server/server/domains/threads/.context/CONTEXT.md)
+backs replay across restarts; [live-update guidance](../src/features/chat/.context/thread-live-updates.md)
+covers app catch-up.
 
 These exist so adapter swaps (in-memory → Dexie, Mock → WS), protocol changes,
 and reducer evolution stay contained.
@@ -177,14 +181,11 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-Existing standalone `/chat/<id>` links still render an independent-chat view.
-Their backing projects are hidden from the library by the device-local
-independent-project registry until the writer promotes one through that view.
-Neither the account library nor project entry exposes independent-chat creation.
-`/projects/new` mints a project UUID for an idempotent create request, but
-remains the pending destination until creation is confirmed or reconciled by
-that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
-project screen.
+`/projects/new` mints a UUID, writes its creation record, and navigates to
+`/p/<uuid>/works` before the POST settles. That destination renders the shell
+from the record at once and owns pending, failure, same-identity Retry, and
+Discard; once confirmed, ordinary owner-gated reads authorize its shell. See
+[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md#project-entry-and-route-lifetime).
 
 New-chat Send journals its intent, mints local turns, selects its current chat
 in place (center replaces the URL; dock leaves the destination unchanged), then
@@ -211,10 +212,13 @@ which reconciles server turns against local optimistic state via
 | **HTTP** | Chat route activation (mount/remount), a new run (`RUN_STARTED`), or gap | `useThreadSnapshotSync` (Query fetch) |
 | **WebSocket** | Reconnect/gap recovery | `ThreadRunController.applySnapshot` |
 
-`useThreadSnapshotSync` is always stale and refetches on activation, and it
-subscribes to the thread transport to refetch when a new run starts or a gap
-opens. A thread that advanced while the writer was elsewhere — a background
-child's report waking the parent — therefore appears on return without a
+`useThreadSnapshotSync` is always stale and refetches on activation. Its one
+mounted-thread transport handler also owns addressed `meridian.block.upserted`
+reduction after a run terminates; the run controller
+owns deltas, commands and terminals, and flushes buffered deltas before a
+thread-owned block mutation. The handler refetches on `RUN_STARTED` and gap.
+A thread that advanced while the writer was elsewhere — a background child's
+report waking the parent — therefore appears on return without a
 reload, and the handoff learns of a server-initiated run it did not start.
 Cached turns render first, so navigate-first is preserved. The handoff resumes
 each distinct active run once; see
@@ -232,14 +236,30 @@ head+1; the client stores it directly, no arithmetic). Acknowledgement raises
 the thread's stored snapshot floor to it, so a stale snapshot cannot remove
 the rewritten row while the projector catches up.
 
-**Monotonic sequence guard.** `applyThreadSnapshot` requires a
-`nextSeq` option (the server-assigned journal sequence for the snapshot).
-The store tracks `snapshotNextSeqFloorByThread` and rejects
-any snapshot whose `nextSeq` is strictly less than the stored value
-(BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
-Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
-(no `nextSeq`) is treated as authoritative and always applies -- omitting
-`nextSeq` is intentional only for the handoff/pending-creation path.
+**Wire-sequence freshness.** `applyThreadSnapshot` requires `nextSeq` in the
+same decimal wire-sequence space as WebSocket frames (the server computes it
+from the encoded journal head). The store rejects a snapshot below
+`snapshotNextSeqFloorByThread` before cache or lifecycle effects. A validated
+addressed block frame at sequence `s` advances a separate durable-only cursor
+and raises that floor to at least `s + 1`; a deliberate transport rewind cannot
+restore an older card. Only a snapshot whose history actually reconciled
+advances that cursor through `nextSeq - 1`. The run's resume cursor remains
+independent. Both HTTP acquisition paths pass `nextSeq` and keep stale successful
+responses outstanding at a bounded cadence until fresh history arrives or their
+owner ends; actual request failures keep ordinary error behavior. Missing
+addressed targets invalidate the exact snapshot query without cancelling an
+already-running fetch. The provider activates controller transport listeners in
+its layout effect and releases them on cleanup, so StrictMode replay reopens the
+same controller without admitting callbacks from its prior effect lifetime.
+
+First-send creation stays pending through message admission. Once accepted,
+the handoff activates the mounted projection synchronously at the returned
+replay cursor, before the run controller attaches. Activity, inbox, and
+Work/trail listeners join that subscription only after pending creation clears;
+none subscribe or fetch a missing thread. Ordinary existing-thread mounts
+auto-activate. The shared Query client outlives an account epoch, so account close removes only canonical
+three-part snapshot queries and abort fences reject old responses. The exact
+Work-binding snapshot writer keeps that key and checks its captured epoch.
 
 ## Authenticated layout shell
 
@@ -275,15 +295,15 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Account entry
 
 Authenticated `/` renders the project library from the project-list query,
-never the last-active project. Each cover links directly to `/p/<project-uuid>`;
+never the last-active project. Each cover links directly to `/p/<project-uuid>/chats`;
 its selectable title and edit recency below are not links. The account-home API
 and last-active-project preference are removed; selection comes from the library,
 not a remembered destination.
 
-`/projects/new` is a separate creation destination. Its title form keeps
-network pending and failure there until the server returns the authoritative
-project ID, then enters that project's Chat index. No account-level composer or
-project-less quick-chat entry is exposed. The existing personal-project
+`/projects/new` is the library with the New project `CreationDialog` over it.
+Create enters the new project at once (see Client-led creation patterns).
+No account-level composer or project-less quick-chat entry is exposed; every chat is created and opened from
+its owning project workspace. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.
 
@@ -295,25 +315,31 @@ Slug-shaped project routes are not aliases. The parent loads the owner-gated
 project by ID, mounts `ProjectView` once keyed by that ID, and its `$` catch-all
 selects child destinations.
 There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
-`screen`/`thread`/`scheme`/`folder`/`path` query grammar. `/chat/<thread-UUID>`
-remains the deliberately independent chat route and is outside project-address
-cutover scope.
+`screen`/`thread`/`scheme`/`folder`/`path` query grammar. Chat details stay
+inside the owning project's address space.
 
-Path destinations are the Chat index (`/p/<project>`) and chat detail
-(`/chat/<chat-UUID>`), Work collection/detail
-(`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
-document paths. A Work-scoped context path carries its Work slug in the path;
-project-scoped context can use the explicit `work` query selector. The only
-project-address query keys are `work`, `settings`, and `results`.
-Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
-input; duplicate recognized keys and malformed encodings are invalid rather
-than normalized into another destination. Case and trailing-slash canonical
-replacement use the address serializer. Settings remains the layout-owned
-overlay; Results remains auxiliary state.
+The path names the screen and what is open on it; the query holds context and
+overlays. The first segment after `/p/<project>` is always a screen: `chats`,
+`works`, or `editor` (the bare project URL replaces itself with `/chats`). Chats,
+Works and projects are addressed by UUID; a new Work keeps its UUID address
+from creation on. `@` and Work slugs never appear in browser URLs: writers read
+`@` as a document reference, and slugs remain the model's address space for
+context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
+creation dialog, distinct from every UUID-addressed Work. Documents and folders
+live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
+and for Scratch and Uploads it is required because the Work is the file's
+identity. The recognized query keys are `work`, `settings`, `results`, and
+`view`. Selectors distinguish omitted, explicit no-Work (empty), a Work ID, and
+malformed input; duplicate recognized keys and malformed encodings are invalid
+rather than normalized into another destination. Older shapes have no alias and
+render the unavailable state. Case and trailing-slash canonical replacement use
+the address serializer. Settings remains the layout-owned overlay; Results
+remains auxiliary state. The full grammar is in
+[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. Project identity and Work
-slugs resolve through successful owner/project catalogs. Chat UUIDs resolve by
+`createProjectNavigation` owns history admission. Project and Work identities
+resolve through successful owner/project catalogs. Chat UUIDs resolve by
 snapshot identity, including subagents absent from the primary list. An unavailable or
 malformed explicit target parks/disables its requested host; it never falls
 through to a remembered or catalog-default target. Main-destination navigation
@@ -331,8 +357,8 @@ fences the prior account lifetime immediately. A cross-project pending or error
 replaces the old project subtree with an inert boundary, while a same-project
 child failure parks only the requested host.
 
-The dedicated Work screen presents Active Work first and keeps Archived Work in
-a default-collapsed disclosure. Work management has no project-wide selection
+The dedicated Work screen shows one list at a time under Active, Archived and
+Deleted tabs. Work management has no project-wide selection
 state and never resolves, repairs, or changes a chat binding. The catalog is
 catalog-only and omits No Work. Omitted or null root creation binds locked
 No Work; the catalog never does. The Chat index and Work each own one
@@ -384,7 +410,6 @@ small easing scale in `globals.css`, consume via tokens in TSX.
 
 ## Dev limitations (pilot)
 
-- Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
 - Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`). Its explicit route-owner inventory keeps `/api/auth/callback` and `/api/auth/dev-login` in TanStack Start while forwarding the server-owned auth family, including `/api/auth/me`, to `apps/server`.
 
 ## E2E document fixtures

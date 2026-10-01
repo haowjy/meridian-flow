@@ -1,6 +1,6 @@
 /**
- * Barrel: the public store surface for features — re-exports the independent-
- * projects, project, and thread stores plus announcements. Features
+ * Barrel: the public store surface for features — re-exports editor-workspace,
+ * project, and thread stores plus announcements. Features
  * import from `@/client/stores` only, never store internals.
  */
 
@@ -13,6 +13,8 @@ export {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
   previewReviewOverlayClose,
@@ -25,14 +27,8 @@ export {
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  viewerTabForCatalogFile,
 } from "./context-tabs-store";
-export {
-  markIndependentProject,
-  promoteIndependentProject,
-  useIndependentProjectIds,
-  useIndependentProjectsStore,
-  useIsIndependentProject,
-} from "./independent-projects";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
   loadProjectList,
@@ -46,7 +42,6 @@ export {
 export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
-  useIsProjectPendingCreation,
   useIsThreadPendingCreation,
   useThreadActions,
   useThreadStore,

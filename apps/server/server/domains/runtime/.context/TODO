@@ -1,9 +1,3 @@
-# TODO
+# TODO: must-do follow-ups (runtime)
 
-- A crash after the capture-time child-report enqueue but before the
-  coordinator's terminal write leaves the child thread `spawnStatus = "running"`
-  forever, even though the report is durable and delivered
-  (`apps/server/server/domains/runtime/spawn/child-report-delivery.ts`,
-  `apps/server/server/domains/runtime/spawn/child-run-coordinator.ts`). No
-  child-lifecycle reconciler exists. Add one, or make any future status-pill
-  reader tolerant of a non-terminal status for an already-delivered report.
+- Measure `anthropic` and `gemini` live with `scripts/probe-compaction-estimates.ts` when working API keys are available, then tighten their provisional CJK rates.

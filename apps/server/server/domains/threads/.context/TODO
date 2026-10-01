@@ -1,0 +1,2 @@
+- Extend the thread usage aggregate and Info popover with a compaction count (`modelResponses.sumUsageByThread`, read by `thread-snapshot.ts`).
+- Visibility reads `metadata.kind` (`inbox_message`, `subagent_update`) while turns also carry `origin`: two sources of truth for "machine-delivered". Pick one owner across `domain/visible-conversation-policy.ts`, `adapters/drizzle/visible-conversation-sql.ts`, the baseline `recompute_thread_chat_activity`, and the app's `visible-chat-turns.ts` (see CONTEXT.md for why `origin` can't simply replace the tag today).

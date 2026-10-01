@@ -35,30 +35,3 @@ export function nativeLocks(): CrossContextLockManager | null {
       ) as Promise<never>,
   };
 }
-
-export async function tryAcquireExclusiveLock(
-  locks: CrossContextLockManager,
-  name: string,
-): Promise<{ release(): Promise<void> } | null> {
-  const acquired = deferred<{ release(): Promise<void> } | null>();
-  const release = deferred<void>();
-  const request = locks.request(name, { mode: "exclusive", ifAvailable: true }, async (lock) => {
-    if (!lock) {
-      acquired.resolve(null);
-      return;
-    }
-    let released = false;
-    acquired.resolve({
-      release: async () => {
-        if (!released) {
-          released = true;
-          release.resolve();
-        }
-        await request;
-      },
-    });
-    await release.promise;
-  });
-  void request.catch(acquired.reject);
-  return acquired.promise;
-}

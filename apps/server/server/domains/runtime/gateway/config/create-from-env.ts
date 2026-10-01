@@ -7,6 +7,7 @@
  * composition root may bypass this and call createGateway() directly with
  * secrets from a secret store.
  */
+import { createMockScriptQueue, type MockScriptQueue } from "../adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { createGateway } from "../create-gateway.js";
 import type { ProviderConfig, TraceSpan } from "../domain/index.js";
@@ -16,6 +17,7 @@ import {
   defaultGatewayOptions,
   type GatewayEnvInput,
   mockProviderConfig,
+  parseEnvMs,
 } from "./providers.js";
 
 export interface GatewayFromEnv {
@@ -24,6 +26,8 @@ export interface GatewayFromEnv {
   defaultModel: string;
   /** Closes the in-process mock server when one was started for this instance. */
   cleanup?: () => Promise<void>;
+  /** Scripted-reply queue of the in-process mock server; absent for real providers. */
+  mockScript?: MockScriptQueue;
 }
 
 export interface GatewayStartupInfo {
@@ -79,12 +83,14 @@ export async function createGatewayFromEnv(
   },
 ): Promise<GatewayFromEnv> {
   let cleanup: (() => Promise<void>) | undefined;
+  let mockScript: MockScriptQueue | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
 
   if (providers.length === 0) {
     let baseUrl = options?.mockBaseUrl;
     if (!baseUrl) {
-      const mock = await createMockOpenAICompatibleServer();
+      mockScript = createMockScriptQueue();
+      const mock = await createMockOpenAICompatibleServer({ script: mockScript });
       baseUrl = mock.baseUrl;
       cleanup = mock.close;
     }
@@ -102,9 +108,10 @@ export async function createGatewayFromEnv(
   const gateway = createGateway({
     providers,
     ...gatewayOptions,
-    attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
+    attemptStallMs: parseEnvMs(env.MODEL_CALL_STALL_MS) ?? gatewayOptions.attemptStallMs,
+    attemptCeilingMs: parseEnvMs(env.MODEL_CALL_TIMEOUT_MS) ?? gatewayOptions.attemptCeilingMs,
     onWarning: options?.onWarning,
   });
 
-  return { gateway, defaultModel, cleanup };
+  return { gateway, defaultModel, cleanup, ...(mockScript ? { mockScript } : {}) };
 }

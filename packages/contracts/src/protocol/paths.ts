@@ -52,15 +52,16 @@ export function apiProjectThreadsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/threads`;
 }
 
-export function apiWorkThreadsPath(workId: string, cursor?: string | null): string {
-  const path = `/api/works/${workId}/threads`;
-  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
+/** Resolves a live `cN`/`pN` thread handle within one project. */
+export function apiProjectThreadByRefPath(projectId: string, ref: string): string {
+  return `${apiProjectThreadsPath(projectId)}/by-ref/${encodeURIComponent(ref)}`;
 }
 
 export type ProjectChatFeedRequestOptions = {
   cursor?: string | null;
   favorite?: boolean;
   search?: string | null;
+  workId?: string | null;
 };
 
 export function apiProjectChatFeedPath(
@@ -71,6 +72,7 @@ export function apiProjectChatFeedPath(
   if (opts?.cursor) query.set("cursor", opts.cursor);
   if (opts?.favorite) query.set("favorite", "true");
   if (opts?.search) query.set("q", opts.search);
+  if (opts?.workId) query.set("workId", opts.workId);
   const queryString = query.toString();
   return `${apiProjectPath(projectId)}/chat-feed${queryString ? `?${queryString}` : ""}`;
 }
@@ -237,6 +239,15 @@ export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
+/** Writer `/compact` commands queued on a thread's inbox. */
+export function apiThreadControlsPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/controls`;
+}
+
+export function apiThreadControlWithdrawPath(threadId: string, controlId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/controls/${encodeURIComponent(controlId)}/withdraw`;
+}
+
 export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
   const search = new URLSearchParams();
   if (opts?.limit != null) {
@@ -256,6 +267,11 @@ export function apiThreadContextReversePath(threadId: string): string {
 
 export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
+}
+
+/** POST: retry a latest failed reply under a client-minted assistant-turn id. */
+export function apiThreadTurnRetryPath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/retry`;
 }
 
 export type ModelRequestDebugQuery = {
@@ -297,6 +313,44 @@ export function apiThreadSnapshotPath(
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
 }
 
+/** POST: create-or-get a fork of the thread at a cutoff turn, under a client-minted id. */
+export function apiThreadForkPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/fork`;
+}
+
+/** POST: create-or-get a handoff from the thread at a cutoff turn, under a client-minted id. */
+export function apiThreadHandoffPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/handoff`;
+}
+
+/** POST: retry the pending brief for a handoff destination under a client-minted seed id. */
+export function apiThreadHandoffBriefPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/handoff/brief`;
+}
+
+export type TranscriptPagePathOptions = {
+  order?: "newest_first" | "oldest_first";
+  unit?: "item" | "turn";
+  limit?: number;
+  cursor?: string;
+  range?: "effective" | "inherited";
+};
+
+/** Builds a paged transcript read URL; omitted query values use the server defaults. */
+export function apiThreadTranscriptPath(
+  threadId: string,
+  opts?: TranscriptPagePathOptions,
+): string {
+  const query = new URLSearchParams();
+  if (opts?.order) query.set("order", opts.order);
+  if (opts?.unit) query.set("unit", opts.unit);
+  if (opts?.limit !== undefined) query.set("limit", String(opts.limit));
+  if (opts?.cursor) query.set("cursor", opts.cursor);
+  if (opts?.range) query.set("range", opts.range);
+  const search = query.toString();
+  return `${API_THREADS_PATH}/${threadId}/transcript${search ? `?${search}` : ""}`;
+}
+
 export function apiThreadsWsPath(): string {
   return API_THREADS_WS_PATH;
 }
@@ -315,4 +369,12 @@ export function apiBillingProductsPath(): string {
 
 export function apiBillingCheckoutSessionsPath(): string {
   return `${API_BILLING_PATH}/checkout-sessions`;
+}
+
+export function apiThreadExecutionReportPath(
+  threadId: string,
+  childThreadId: string,
+  execution: string,
+): string {
+  return `${API_THREADS_PATH}/${threadId}/reports/${childThreadId}/${execution}`;
 }

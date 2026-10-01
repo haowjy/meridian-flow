@@ -22,10 +22,8 @@ function mapProject(row: ProjectRow): Project {
   return {
     id: row.id,
     userId: row.userId,
-    title: row.name,
     name: row.name,
     slug: row.slug,
-    description: row.systemPrompt,
     systemPrompt: row.systemPrompt,
     isPersonal: row.isPersonal,
     settings: row.settings,
@@ -37,8 +35,8 @@ function mapProject(row: ProjectRow): Project {
 }
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
-  catalogLifecycle?: ContextCatalogLifecyclePort;
-  ensureNoWork?: (projectId: ProjectId) => Promise<unknown>;
+  catalogLifecycle: ContextCatalogLifecyclePort;
+  ensureNoWork: (projectId: ProjectId) => Promise<unknown>;
 }
 export function createDrizzleProjectRepository(
   deps: DrizzleProjectRepositoryDeps,
@@ -74,8 +72,8 @@ export function createDrizzleProjectRepository(
           .returning();
         if (!row) throw new Error("Failed to create project");
         await ensureProjectManifestSource(db, row.id);
-        await deps.ensureNoWork?.(row.id);
-        await deps.catalogLifecycle?.refreshProject(row.id);
+        await deps.ensureNoWork(row.id);
+        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },
@@ -151,7 +149,7 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle?.refreshProject(row.id);
+        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },
@@ -163,7 +161,7 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle?.refreshProject(row.id);
+        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },

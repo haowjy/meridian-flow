@@ -1,1 +1,0 @@
-CREATE INDEX "document_branches_active_work_draft_by_work" ON "document_branches" USING btree ("work_id","id","generation") WHERE "document_branches"."kind" = 'work_draft' AND "document_branches"."status" = 'active';

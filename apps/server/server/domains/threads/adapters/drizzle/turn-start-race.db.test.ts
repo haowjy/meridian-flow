@@ -32,7 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { TurnStartConflictError } = await import("../../domain/turn-start-transition.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
@@ -42,7 +42,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const secondInstance = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "turn-start-race"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -51,6 +51,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "turn-start-race",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -70,12 +71,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: FIRST_ROOT_ID,
           threadId: THREAD_ID,
           role: "user",
+          origin: "writer",
           status: "complete",
         }),
         secondInstance.turns.create({
           id: SECOND_ROOT_ID,
           threadId: THREAD_ID,
           role: "user",
+          origin: "writer",
           status: "complete",
         }),
       ]);
@@ -104,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: userTurnId,
             threadId: THREAD_ID,
             role: "user",
+            origin: "writer",
             status: "complete",
           });
           return instance.turns.create({
@@ -111,6 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: THREAD_ID,
             prevTurnId: userTurnId,
             role: "assistant",
+            origin: "assistant",
             status: "streaming",
           });
         });

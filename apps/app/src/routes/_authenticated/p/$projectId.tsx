@@ -2,20 +2,27 @@
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { getProject } from "@/client/api/projects-api";
-import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
-import { loadProjectRouteData } from "@/client/query/project-route-data";
+import { loadProjectEntry } from "@/client/query/project-route-data";
+import {
+  readPendingProjectCreation,
+  useProjectCreationState,
+} from "@/client/query/useProjectCreation";
+import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
-import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
+import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { ProjectCreationNotice } from "@/features/project/ProjectCreationNotice";
+import { ProjectRouteBootstrap } from "@/features/project/routing/ProjectRouteBootstrap";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  loader: async ({ params }) => {
-    const project = await getProject(params.projectId, ssrApiRequestInit());
-    return { project, data: await loadProjectRouteData(project.id) };
-  },
+  // A creation this tab started owns the destination until it confirms: the
+  // shell renders from the creation record while the POST is in flight.
+  loader: async ({ params }) =>
+    readPendingProjectCreation(params.projectId)
+      ? { projectId: params.projectId, project: null, data: null }
+      : { projectId: params.projectId, ...(await loadProjectEntry(params.projectId)) },
   pendingMs: 0,
   pendingMinMs: 0,
   pendingComponent: PendingProject,
@@ -51,11 +58,30 @@ function ProjectLoadError() {
 }
 
 function ProjectRoute() {
-  const { project, data } = Route.useLoaderData();
+  const loaderData = Route.useLoaderData();
+  const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
+  const accountSignal = useAccountEpochSignal();
+  const creation = useProjectCreationState(projectId, accountSignal);
+  const project = useProject(projectId, loaderData.project ?? creation.project);
+  // A project being created has no route data yet; the creation stands in.
+  if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;
+
   return (
-    <ProjectIdentityBoundary projectId={project.id}>
-      <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
+    <ProjectIdentityBoundary projectId={projectId}>
+      <div className="flex h-full min-h-0 flex-col">
+        <ProjectCreationNotice creation={creation} />
+        <div className="min-h-0 flex-1">
+          {/* Project-scoped state (navigation, admission, seeding) never carries across projects. */}
+          <ProjectRouteBootstrap
+            key={project.id}
+            project={project}
+            data={loaderData.data}
+            user={user}
+            pending={<PendingProject />}
+          />
+        </div>
+      </div>
     </ProjectIdentityBoundary>
   );
 }

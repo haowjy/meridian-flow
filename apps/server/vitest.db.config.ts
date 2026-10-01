@@ -20,6 +20,8 @@ const expectedSuites = [
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/failed-reply-projection.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/model-response-repository.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-journal.recovery-redo.db.test.ts",
@@ -30,21 +32,21 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/drizzle-turn-diff-query.db.test.ts",
   "apps/server/server/domains/collab/branch-push-projection.db.test.ts",
   "apps/server/server/domains/collab/branch-push-settlement-oracle.db.test.ts",
+  "apps/server/server/domains/collab/branch-push-durable-projection.db.test.ts",
   "apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts",
   "apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/cross-work-merge-probe.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
+  "apps/server/server/domains/collab/document-revisions.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
-  "apps/server/server/domains/context/adapters/context-fs/context-fs-command-owner.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-catalog.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
-  "apps/server/server/domains/context/context/context-tree-mover.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/context/promotion/adapters/drizzle-result-repository.db.test.ts",
   "apps/server/server/domains/notices/adapters/drizzle-notice-port.db.test.ts",
@@ -53,16 +55,33 @@ const expectedSuites = [
   "apps/server/server/domains/projects/provisioning-race.db.test.ts",
   "apps/server/server/domains/projects/slug-routing.db.test.ts",
   "apps/server/server/domains/projects/work-repository.db.test.ts",
+  "apps/server/server/domains/projects/adapters/work-repository/drizzle.adapter-contract.db.test.ts",
   "apps/server/server/domains/projects/work-projection-mutation.db.test.ts",
   "apps/server/server/domains/projects/work-projection-pending-owners.db.test.ts",
   "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts",
-  "apps/server/server/domains/runtime/loop/work-context-delivery.db.test.ts",
-  "apps/server/server/domains/runtime/loop/work-context-delivery-lifecycle.db.test.ts",
-  "apps/server/server/domains/runtime/loop/orphaned-turn-recovery.db.test.ts",
+  "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts",
+  "apps/server/server/domains/runtime/loop/compaction-protocol.db.test.ts",
+  "apps/server/server/domains/runtime/handoff/brief-service.db.test.ts",
+  "apps/server/server/domains/runtime/loop/control-protocol.db.test.ts",
+  "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts",
+  "apps/server/server/domains/runtime/spawn/report-publication.db.test.ts",
+  "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts",
   "apps/server/server/domains/runtime/admission/user-turn-admission.db.test.ts",
-  "apps/server/server/domains/runtime/spawn/child-report-delivery.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-repository-root.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts",
+  "apps/server/server/domains/threads/thread-event-hub.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-activity.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/turn-position.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/transcript-reader.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-ls-requester-plan.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
+  "apps/server/server/domains/threads/domain/transcript-page.db.test.ts",
+  "apps/server/server/domains/runtime/spawn/history-tools.db.test.ts",
+  "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
+  "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
@@ -72,9 +91,10 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
+  "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
   "packages/database/src/release-runner.db.test.ts",
 ] as const;
-const discoveredSuites = globSync("{apps/server,packages/database}/**/*.db.test.ts", {
+const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {
   cwd: root,
 }).sort();
 const missingSuites = expectedSuites.filter((suite) => !discoveredSuites.includes(suite));
@@ -117,10 +137,12 @@ export default defineProject({
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: workerDatabaseUrls.length || 1,
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
-    // timed-out test's async DB work is NOT cancelled — it overlaps the next
-    // test's destructive reset and corrupts it. 30s matches the server/database
-    // unit configs. (#314)
+    // timed-out test or fixture hook's async DB work is NOT cancelled — it
+    // overlaps the next test's destructive reset and corrupts it. Give setup
+    // and cleanup the same 30s budget as test bodies. (#314) Under shared
+    // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
+    hookTimeout: 30_000,
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/db-test-reporter.ts", import.meta.url)),

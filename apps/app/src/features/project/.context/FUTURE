@@ -28,9 +28,6 @@
   role="tablist"/"tab" markup (dock/DockHeader.tsx). Decide whether tabs
   semantics (views of one surface) or a radiogroup/toggle-group better
   matches the interaction, and align keyboard behavior with the choice.
-- Invalid explicit `?thread=` id: useResolvedChatThread trusts the route id
-  without existence-checking it (chat/chat-thread-resolution.ts); behavior
-  for a stale/foreign id is undocumented — decide and document.
 - Bounded live sessions for restored desks (#217 follow-on, research-backed):
   the persisted desk (context-tabs-store/editor-workspace-state.ts) restores
   every open tab, and the document-session registry keeps a live
@@ -45,3 +42,7 @@
   document view per browser tab. A split-view design must first define focus,
   history, tab membership, and session-retention semantics; do not stretch the
   single-selection workspace reducer into two implicit selections.
+- Work page tab search: switching between Chats and Files resets each tab's
+  search (`work/WorkChatsTab.tsx`, `work/WorkFilesTab.tsx` own it as component
+  state). Keeping it means putting the Work chat search in the project address,
+  as the chat index does with `q`.

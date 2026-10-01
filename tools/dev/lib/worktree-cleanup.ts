@@ -235,7 +235,7 @@ function formatWorkItemCandidate(workItem: MeridianWorkItem): string {
 
 function assertSafeTarget(
   context: CleanupContext,
-  target: Pick<CleanupTarget, "worktree" | "branch">,
+  target: Pick<CleanupTarget, "worktree" | "branch" | "eligibility">,
 ): void {
   const normalizedWorktreePath = normalizePath(target.worktree.path);
   if (normalizedWorktreePath === context.primaryWorktreePath) {
@@ -250,31 +250,33 @@ function assertSafeTarget(
   if (target.worktree.locked) {
     throw new CleanupResolverError(`Refusing to remove locked worktree: ${target.worktree.path}`);
   }
-  if (!context.eligibilityByBranch.has(target.branch)) {
+  if (target.eligibility.branch !== target.branch) {
     throw new CleanupResolverError(
-      `Refusing to clean branch '${target.branch}': its current commit is not merged into ` +
-        `'${context.baseBranch}' and has no exact merged pull request.`,
+      `Cleanup evidence for '${target.eligibility.branch}' cannot authorize branch '${target.branch}'.`,
     );
   }
 }
 
-function targetForWorktree(context: CleanupContext, worktree: GitWorktree): CleanupTarget {
+export function createCleanupTarget(
+  context: CleanupContext,
+  worktree: GitWorktree,
+  eligibility: CleanupEligibility,
+): CleanupTarget {
   if (!worktree.branch) {
     throw new CleanupResolverError(
       `Refusing to clean worktree without a local branch: ${worktree.path}`,
     );
   }
-  assertSafeTarget(context, { worktree, branch: worktree.branch });
-  const eligibility = context.eligibilityByBranch.get(worktree.branch);
-  if (!eligibility)
-    throw new CleanupResolverError("Missing cleanup eligibility after safety check.");
-  const target = {
+  const safeTarget = {
     worktree,
     branch: worktree.branch,
-    workItem: findLinkedWorkItem(context, worktree.path),
     eligibility,
-  } satisfies CleanupTarget;
-  return target;
+  };
+  assertSafeTarget(context, safeTarget);
+  return {
+    ...safeTarget,
+    workItem: findLinkedWorkItem(context, worktree.path),
+  };
 }
 
 function dedupeWorktrees(worktrees: readonly GitWorktree[]): GitWorktree[] {
@@ -311,7 +313,10 @@ function resolveDirectMatches(context: CleanupContext, value: string): GitWorktr
   return dedupeWorktrees(matches);
 }
 
-export function resolveTarget(context: CleanupContext, reference: TargetReference): CleanupTarget {
+export function resolveTargetWorktree(
+  context: CleanupContext,
+  reference: TargetReference,
+): GitWorktree {
   const value = reference.kind === "pr" ? reference.headBranch : reference.value;
   const matches = resolveDirectMatches(context, value);
 
@@ -327,7 +332,24 @@ export function resolveTarget(context: CleanupContext, reference: TargetReferenc
     );
   }
 
-  return targetForWorktree(context, matches[0]);
+  return matches[0];
+}
+
+export function resolveTarget(context: CleanupContext, reference: TargetReference): CleanupTarget {
+  const worktree = resolveTargetWorktree(context, reference);
+  if (!worktree.branch) {
+    throw new CleanupResolverError(
+      `Refusing to clean worktree without a local branch: ${worktree.path}`,
+    );
+  }
+  const eligibility = context.eligibilityByBranch.get(worktree.branch);
+  if (!eligibility) {
+    throw new CleanupResolverError(
+      `Refusing to clean branch '${worktree.branch}': its current commit is not merged into ` +
+        `'${context.baseBranch}' and has no exact merged pull request.`,
+    );
+  }
+  return createCleanupTarget(context, worktree, eligibility);
 }
 
 export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
@@ -343,7 +365,7 @@ export function resolveAutoTargets(context: CleanupContext): CleanupTarget[] {
     const readiness = context.autoReadinessByWorktree.get(autoCleanupReadinessKey(worktree.path));
     if (!readiness?.ready) continue;
     targets.push({
-      ...targetForWorktree(context, worktree),
+      ...createCleanupTarget(context, worktree, eligibility),
       autoReadiness: readiness.evidence,
     });
   }

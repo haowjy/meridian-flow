@@ -15,11 +15,10 @@ export default defineEventHandler(async (event) => {
       threadWorks: app.repos.threadWorks,
       projects: app.projectRepo,
       works: app.workRepo,
-      obligations: app.repos.workContextDeliveries,
-      workContextDelivery: app.workContextDelivery,
+      workContextNotices: app.workContextNotices,
       notices: app.notices,
       transaction: app.repos.transaction,
-      runOwnership: app.runOwnership,
+      runClaim: app.runClaim,
     },
     {
       threadId: getRouterParam(event, "threadId") ?? "",

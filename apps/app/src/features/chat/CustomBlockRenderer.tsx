@@ -17,6 +17,7 @@ import { useThreadStore } from "@/client/stores";
 import { interruptResponseKey } from "@/core/session/interrupt-response";
 import { componentBlockContent } from "./component-block-content";
 import { COMPONENT_REGISTRY } from "./component-registry";
+import type { DirectInvocationResult } from "./invocation-direct-result";
 
 export type InterruptRespondRequest = {
   threadId: string;
@@ -30,6 +31,7 @@ export type CustomBlockRendererProps = {
   threadId: string;
   turnStatus?: TurnStatus;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  directResult?: DirectInvocationResult | null;
 };
 
 export function CustomBlockRenderer({
@@ -37,6 +39,7 @@ export function CustomBlockRenderer({
   threadId,
   turnStatus,
   onRespondToInterrupt,
+  directResult,
 }: CustomBlockRendererProps) {
   const content = componentBlockContent(block.content);
   const kind = content?.kind ?? null;
@@ -84,6 +87,8 @@ export function CustomBlockRenderer({
       )}
       responseState={responseEntry ? { status: responseEntry.status } : null}
       retry={retry}
+      invocationResult={kind === "helper-result" ? (directResult ?? null) : undefined}
+      threadId={threadId}
     />
   );
 }
@@ -92,7 +97,7 @@ function UnknownComponentFallback({ block, kind }: { block: Block; kind: string 
   const kindLabel = kind ?? t`missing kind`;
   return (
     <div
-      className="mb-4 rounded-lg border border-subtle bg-muted px-3 py-2 text-xs text-muted-foreground"
+      className="chat-card [--chat-card-radius:var(--radius-lg)] [--chat-card-border:var(--color-border-subtle)] bg-muted text-xs text-muted-foreground"
       data-block-id={block.id}
       data-block-type={block.blockType}
       data-block-seq={block.sequence}

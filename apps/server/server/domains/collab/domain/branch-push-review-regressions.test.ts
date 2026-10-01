@@ -19,6 +19,7 @@ import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
+import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
@@ -255,6 +256,7 @@ function serviceFixture(input: {
   );
   const branches = new Map(input.branches.map((branch) => [branch.branchId, branch]));
   const branchStore: BranchStore = {
+    ...unimplementedBranchMutations(),
     deferUntilCommit(callback) {
       callback();
       return true;

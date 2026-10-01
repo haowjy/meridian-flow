@@ -3,7 +3,7 @@
  * surface (`ProjectStoreState`) vs write surface (`ProjectStoreActions`); the
  * canonical project store vocabulary.
  */
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 
 /** Read surface — subscribe with `useProjectStore((s) => …)`. */
 export type ProjectStoreState = {
@@ -16,5 +16,6 @@ export type ProjectStoreState = {
 
 /** Mutations — use `useProjectActions()` only. Do not call from selectors. */
 export type ProjectStoreActions = {
+  /** Insert a server-confirmed project or reconcile its existing list row. */
   ensureProject(project: Project): void;
 };

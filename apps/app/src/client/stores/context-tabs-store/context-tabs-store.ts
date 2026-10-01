@@ -17,8 +17,11 @@ import {
 export {
   type ContextTab,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type ProjectTabsSlice,
   type ServerContextTab,
+  viewerTabForCatalogFile,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {

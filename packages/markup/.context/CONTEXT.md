@@ -4,12 +4,10 @@
 
 `@meridian/markup` exports:
 
-- `createMarkupCodec({ schema, assetPathResolver })` builder.
-- Preset wrappers: `markdownCodec({ schema, assetPathResolver })` and
+- Presets: `markdownCodec({ schema, assetPathResolver })` and
   `mdxCodec({ schema, components, assetPathResolver })`.
 - `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
   serialize an asset ref) and `createAssetPathResolver(entries)`.
-- Plugin factories: `markdown()` and `mdx({ components })`.
 - `remarkWikiLink`: the same syntax grammar for read-only renderers. Consumers
   own inline presentation and navigation authority; the parser resolves neither.
 - Both presets include the first-class `[[target]]` wikilink extension. It maps
@@ -47,7 +45,7 @@ normalize on first parse; canonical wire spelling then stabilizes.
 - **Prose safety:** literal `<` and `{` in prose round-trip (escaped on ingress,
   no double-escape).
 
-## Builder semantics
+## Internal preset composition
 
 `MarkupPlugin` can provide `blocks`, `marks`, `remarkPlugins`, `preprocess`,
 `postParse`, and `postSerializeBlock` hooks. Markdown autolink demotion is intentionally owned by the

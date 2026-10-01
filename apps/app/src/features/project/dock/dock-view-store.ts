@@ -1,31 +1,23 @@
-/**
- * dock-view-store — which view the right dock shows, per screen, for the session.
- *
- * Purpose: the dock is a tabbed container whose view set depends on which
- * surface occupies it (chat vs the context rail), plus a shared work-scoped
- * Changes view. This store remembers the writer's last *explicit* choice per
- * screen so switching destinations and coming back restores the view they left.
- *
- * Key decision: session-only, no `persist`. The default per screen is the
- * occupant's native view (Context on the chat screen, Chat elsewhere); a fresh
- * reload starts from those defaults rather than a stale view. Placement, width,
- * and collapse stay owned by the surface-prefs store — this store only tracks
- * the view.
- */
+/** Session-only view choices and transient Work file state for the project dock. */
+import { t } from "@lingui/core/macro";
 import { create } from "zustand";
-
+import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 
-/** The three dock views. Which two are offered depends on the screen. */
-export type DockView = "chat" | "context" | "changes";
+/** Dock destinations. File is transient and only offered while a Work file is open. */
+export type DockView = "chat" | "context" | "changes" | "file";
+type StoredDockView = Exclude<DockView, "file">;
+
+export type DockFile = { workId: string; tab: Extract<ContextTab, { kind: "viewer" }> };
+type DockFileSlot = DockFile & { active: boolean };
 
 type DockViewSet = {
   /** Ordered segments for the switch. */
-  views: readonly DockView[];
+  views: readonly StoredDockView[];
   /** Shown when the writer has made no explicit choice this session. */
-  default: DockView;
+  default: StoredDockView;
   /** The occupant's native (non-Changes) view — its content stays mounted. */
-  primary: DockView;
+  primary: StoredDockView;
 };
 
 /**
@@ -39,14 +31,39 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 };
 
 type DockViewState = {
-  byScreen: Partial<Record<ScreenKey, DockView>>;
+  /** Writer-selected non-file view only. A transient file never replaces this choice. */
+  byScreen: Partial<Record<ScreenKey, StoredDockView>>;
+  workFile: DockFileSlot | null;
   setDockView: (screen: ScreenKey, view: DockView) => void;
+  openWorkFile: (file: DockFile) => void;
+  closeWorkFile: () => void;
+  enterWork: (workId: string) => void;
+  leaveWork: () => void;
 };
 
 export const useDockViewStore = create<DockViewState>((set) => ({
   byScreen: {},
+  workFile: null,
   setDockView: (screen, view) =>
-    set((state) => ({ byScreen: { ...state.byScreen, [screen]: view } })),
+    set((state) => {
+      if (view === "file") {
+        if (screen !== "work" || !state.workFile || state.workFile.active) return state;
+        return { workFile: { ...state.workFile, active: true } };
+      }
+      const next = {
+        byScreen: { ...state.byScreen, [screen]: view },
+      };
+      if (screen !== "work" || !state.workFile?.active) return next;
+      return { ...next, workFile: { ...state.workFile, active: false } };
+    }),
+  openWorkFile: (file) => set({ workFile: { ...file, active: true } }),
+  closeWorkFile: () => set({ workFile: null }),
+  enterWork: (workId) =>
+    set((state) => {
+      if (!state.workFile || state.workFile.workId === workId) return state;
+      return { workFile: null };
+    }),
+  leaveWork: () => set((state) => (state.workFile ? { workFile: null } : state)),
 }));
 
 export type ResolvedDockView = {
@@ -54,6 +71,21 @@ export type ResolvedDockView = {
   views: readonly DockView[];
   primaryView: DockView;
 };
+
+/** Resolve the explicit choice/default and include the transient file segment when present. */
+export function resolveDockView(
+  screen: ScreenKey,
+  stored: StoredDockView | undefined,
+  hasFile: boolean,
+): ResolvedDockView {
+  const set = DOCK_VIEW_SETS[screen];
+  const explicit = stored && set.views.includes(stored) ? stored : set.default;
+  const views =
+    hasFile && screen === "work"
+      ? [set.views[0], "file" as const, ...set.views.slice(1)]
+      : set.views;
+  return { view: explicit, views, primaryView: set.primary };
+}
 
 /** Remove the Changes destination when its model is empty. */
 export function withoutEmptyChanges(
@@ -68,25 +100,31 @@ export function withoutEmptyChanges(
   };
 }
 
-/**
- * Pure resolution: the active view is the writer's stored choice when it is
- * still valid for this screen's set, otherwise the screen's default. Kept
- * separate from the hook so the fallback contract is unit-testable.
- */
-export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
-  const set = DOCK_VIEW_SETS[screen];
-  const view = stored && set.views.includes(stored) ? stored : set.default;
-  return { view, views: set.views, primaryView: set.primary };
-}
-
 /** Resolve the active dock view for a screen and bind the switch action. */
 export function useDockView(screen: ScreenKey): ResolvedDockView & {
   setView: (view: DockView) => void;
+  file: DockFile | null;
+  closeFile: () => void;
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
+  const workFile = useDockViewStore((state) => (screen === "work" ? state.workFile : null));
+  const closeFile = useDockViewStore((state) => state.closeWorkFile);
+  const resolved = resolveDockView(screen, stored, workFile !== null);
   return {
-    ...resolveDockView(screen, stored),
+    ...resolved,
+    view: workFile?.active ? "file" : resolved.view,
     setView: (next) => setDockView(screen, next),
+    file: workFile,
+    closeFile,
+  };
+}
+
+/** Localized location chrome for a Scratch or Uploads file in the dock. */
+export function dockFileLocation(tab: DockFile["tab"]): { name: string; folder?: string } {
+  const folders = tab.path.split("/").filter(Boolean).slice(0, -1);
+  return {
+    name: tab.scheme === "scratch" ? t`Scratch` : t`Uploads`,
+    ...(folders.length > 0 ? { folder: folders.join(", ") } : {}),
   };
 }

@@ -1,12 +1,4 @@
-/**
- * The host-independent lifecycle for a menu the writer types underneath.
- *
- * A host opens one session, advances its generation before starting work, and
- * publishes an update only with the returned identity. Arrival order is thus
- * irrelevant: an update from an old generation or closed session is refused.
- * This owner also publishes the external-store snapshot, invokes host callbacks,
- * and keeps selection attached to a stable row ID across catalog refreshes.
- */
+/** The host-independent lifecycle for a menu the writer types underneath. */
 
 export type InternalSuggestionSessionId = string;
 export type InternalSuggestionGeneration = Readonly<{
@@ -69,11 +61,6 @@ export type InternalSuggestionSession<TItem, TMeta = null> = {
 };
 
 export type InternalSuggestionLifecycleCallbacks<TItem, TMeta = null> = {
-  /**
-   * Accepted transitions publish in FIFO order: install their captured
-   * snapshot, invoke their lifecycle callback, then notify menu subscribers.
-   * A synchronous reentrant transition begins only after all three complete.
-   */
   open?: (
     identity: InternalSuggestionGeneration,
     snapshot: SuggestionMenuSnapshot<TItem, TMeta>,

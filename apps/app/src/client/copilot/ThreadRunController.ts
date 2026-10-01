@@ -1,11 +1,4 @@
-/**
- * ThreadRunController — direct run controller for Meridian thread streams.
- *
- * Owns the frontend run lifecycle without AG-UI's client runtime: appends user
- * messages over HTTP, subscribes to `ThreadTransport`, filters stale/cross-run
- * events, applies accepted events directly to ThreadStore, handles deferred
- * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
- */
+/** Owns a thread run from submission through transport recovery. */
 import { EventType } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -22,7 +15,7 @@ import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
+import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
@@ -43,44 +36,19 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
-  /**
-   * Retain the optimistic user row on a proved rejection so the caller can
-   * attach edit/retry recovery to it (existing-thread sends and first-send
-   * Retry). Omit to drop the row on rejection (writer-directed abandonment).
-   */
   keepOptimisticOnFailure?: boolean;
+  /** Install mounted durable projections at the accepted cursor before replay starts. */
+  activateProjection?: (after: string) => boolean;
 };
 
-/**
- * The dispatch fingerprint a submit needs. `ComposerSubmitEnvelope` is
- * assignable; journal recovery replays the persisted fields without a draft.
- */
 export type SubmissionPayload = Pick<
   ComposerSubmitEnvelope,
   "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
 >;
 
-/**
- * Answers whether the session that started a controller operation still owns it
- * when the operation settles.
- */
 type SessionFence = () => boolean;
 
-/**
- * What a dispatch does when the server accepts the POST after this session has
- * already lost ownership (a fence that no longer matches).
- *
- * `bridge-row` (live sends): rename the app-scoped optimistic row onto the
- * persisted server turn before returning `ambiguous`. The caller keeps the
- * journal, and the live-send teardown contract expects the row to reflect the
- * accepted turn (`ThreadRunController.test.ts`).
- *
- * `leave-row` (recovery replays/retries): leave the row under its optimistic
- * id. That recovery session is unmounting; the returning session's
- * `already-accepted` lookup owns the bridge and the journal retire. Renaming
- * the row here strands the journal and makes the return append a fresh pending
- * row that only a successful lookup can collapse.
- */
+/** What a dispatch does when the server accepts the POST after this session has already lost ownership (a fence that no longer matches). */
 type StaleAcceptPolicy = "bridge-row" | "leave-row";
 
 function isAdmissionPending(error: unknown): boolean {
@@ -90,11 +58,7 @@ function isAdmissionPending(error: unknown): boolean {
   );
 }
 
-/**
- * A structured refusal or a 4xx proves the endpoint rejected the write, so the
- * journal entry may be retired. A 5xx, a transport failure, or an unstructured
- * response does not prove the write never landed: keep the witness recoverable.
- */
+/** A structured refusal or a 4xx proves the endpoint rejected the write, so the journal entry may be retired. */
 function isDefinitiveWriteRejection(error: unknown): boolean {
   if (isMeridianApiError(error)) {
     return error.status === undefined || (error.status >= 400 && error.status < 500);
@@ -112,6 +76,8 @@ export type ThreadRunControllerOptions = {
   lookupAdmissionFn?: LookupAdmissionFn;
   retireAdmissionFn?: RetireAdmissionFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
+  accountSignal: AbortSignal;
+  accountId: string;
 };
 
 type ActiveRun = {
@@ -120,17 +86,24 @@ type ActiveRun = {
   turnId?: string;
   unsubscribe?: () => void;
   dispose?: () => void;
+  flush?: () => void;
+  splitBoundaryPending?: boolean;
 };
 
-/**
- * Format an error for the a11y announcer / generic error sink.
- *
- * For `MeridianApiError`, the envelope's `code` is appended in parentheses so
- * the surface text honestly reflects what came over the wire (e.g.
- * "Rate limited (rate_limited)"). Otherwise the bare message is used.
- * Plain non-Error values fall through to `fallback` so we never announce
- * "[object Object]".
- */
+function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 250);
+    signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
+/** Format an error for the a11y announcer / generic error sink. */
 function errorMessage(error: unknown, fallback: string): string {
   if (isMeridianApiError(error)) {
     return error.code ? `${error.message} (${error.code})` : error.message;
@@ -145,6 +118,10 @@ export class ThreadRunController {
   private readonly lookupAdmissionFn: LookupAdmissionFn;
   private readonly retireAdmissionFn: RetireAdmissionFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
+  private readonly accountSignal: AbortSignal;
+  private readonly accountId: string;
+  private disposed = false;
+  private activationGeneration = 0;
 
   private activeRun: ActiveRun | null = null;
   private admissionLease: object | null = null;
@@ -152,9 +129,12 @@ export class ThreadRunController {
   private recoverySessions = new Set<object>();
   private abortRequested = false;
   private runToken = 0;
-  private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
-  private readonly unsubscribeInterruptResponseError: () => void;
-  private readonly unsubscribeSocketGenerationClosed: () => void;
+  private readonly gapSnapshotsByThreadId = new Map<
+    string,
+    { token: number; promise: Promise<void>; abort: AbortController }
+  >();
+  private unsubscribeInterruptResponseError: (() => void) | null = null;
+  private unsubscribeSocketGenerationClosed: (() => void) | null = null;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -163,12 +143,39 @@ export class ThreadRunController {
     this.lookupAdmissionFn = options.lookupAdmissionFn ?? lookupUserMessageAdmission;
     this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
+    this.accountSignal = options.accountSignal;
+    this.accountId = options.accountId;
+  }
+
+  /** Pair provider effect setup with disposal; construction is render-pure. */
+  activate(): void {
+    if (this.accountSignal.aborted || this.unsubscribeInterruptResponseError) return;
+    this.disposed = false;
+    const ownerGeneration = ++this.activationGeneration;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
-      ({ threadId, error }) => this.settleInterruptResponseError(threadId, error),
+      ({ threadId, error }) => {
+        if (
+          !this.accountSignal.aborted &&
+          !this.disposed &&
+          this.activationGeneration === ownerGeneration
+        )
+          this.settleInterruptResponseError(threadId, error);
+      },
     );
-    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed((generation) =>
-      this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
-    );
+    try {
+      this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
+        (generation) =>
+          !this.accountSignal.aborted &&
+          !this.disposed &&
+          this.activationGeneration === ownerGeneration &&
+          this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
+      );
+    } catch (error) {
+      this.unsubscribeInterruptResponseError?.();
+      this.unsubscribeInterruptResponseError = null;
+      this.activationGeneration += 1;
+      throw error;
+    }
   }
 
   submit(
@@ -185,15 +192,7 @@ export class ThreadRunController {
     );
   }
 
-  /**
-   * Re-admit a journal-recovered submission under its owning recovery session.
-   * `submit` is fenced by the admission session, but mounting the sibling
-   * `useChatThreadSession` tears the run session down in the same React commit
-   * that starts recovery (React StrictMode mount → cleanup → re-mount). The
-   * recovery fence must not be invalidated by that sibling teardown. A POST
-   * accepted after this session ends leaves the optimistic row untouched
-   * (`leave-row`): the returning session's lookup owns the bridge and retire.
-   */
+  /** Re-admit a journal-recovered submission under its owning recovery session. */
   recoverSubmission(
     threadId: string,
     payload: SubmissionPayload,
@@ -204,24 +203,20 @@ export class ThreadRunController {
   }
 
   private admissionFence(admissionEpoch: number): SessionFence {
-    return () => this.admissionEpoch === admissionEpoch;
+    return () =>
+      !this.disposed && !this.accountSignal.aborted && this.admissionEpoch === admissionEpoch;
   }
 
   private recoveryFence(session: object): SessionFence {
-    return () => this.recoverySessions.has(session);
+    const ownerGeneration = this.activationGeneration;
+    return () =>
+      !this.disposed &&
+      !this.accountSignal.aborted &&
+      this.activationGeneration === ownerGeneration &&
+      this.recoverySessions.has(session);
   }
 
-  /**
-   * Register the mounted recovery owner for the current account/thread.
-   * Recovery reconciliation and replay are fenced by this token rather than
-   * `admissionEpoch`: the two lifecycles differ, because mounting
-   * `useChatThreadSession` tears the run session down (bumping the admission
-   * epoch) in the same commit that starts recovery. The token is stable across
-   * React StrictMode's mount/cleanup/re-mount for one hook instance, but a
-   * genuinely unmounted owner stops matching, so a stale lookup or replay
-   * cannot acknowledge, start a run, or retire. Multiple mounted recovery
-   * surfaces keep independent tokens.
-   */
+  /** Register the mounted recovery owner for the current account/thread. */
   beginRecoverySession(session: object): void {
     this.recoverySessions.add(session);
   }
@@ -256,18 +251,6 @@ export class ThreadRunController {
     const lease = {};
     this.admissionLease = lease;
     try {
-      let connectionToken: string;
-      try {
-        connectionToken = await this.transport.awaitConnectionToken();
-      } catch (error) {
-        if (!fence()) return outcome("ambiguous");
-        // The POST never started: nothing was written, but the connection-token
-        // fetch can also fail after the user saw the row. Keep it recoverable.
-        announceError(errorMessage(error, "Failed to submit message"));
-        return outcome("ambiguous");
-      }
-      if (!fence()) return outcome("ambiguous");
-
       let result: Awaited<ReturnType<AppendUserMessageFn>>;
       try {
         result = await this.appendUserMessageFn({
@@ -277,7 +260,6 @@ export class ThreadRunController {
             text: envelope.text,
             blocks: envelope.blocks,
             references: envelope.references,
-            connectionToken,
             activatedSkillSlugs: envelope.activatedSkillSlugs,
           },
         });
@@ -324,11 +306,10 @@ export class ThreadRunController {
           result.snapshotFloorNextSeq,
         );
       }
-      const token = this.startRun(threadId, { pruneAbandonedTurn: true });
-      this.attachLiveSubscription(threadId, token, {
-        after: result.resumeAfterSeq,
-        expectedTurnId: result.assistantTurnId,
-      });
+      if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
+        return outcome("ambiguous");
+      }
+      this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
       // An old completion must not release a newer destination's admission lease.
@@ -366,11 +347,7 @@ export class ThreadRunController {
     );
   }
 
-  /**
-   * Reconcile a durable journal entry. The server keys admissions by
-   * `(threadId, submissionId)`, so recovery needs only the identity, not a
-   * reconstructed composer envelope or its draft snapshot.
-   */
+  /** Reconcile a durable journal entry. */
   lookupSubmission(
     threadId: string,
     submissionId: string,
@@ -439,11 +416,10 @@ export class ThreadRunController {
             result.snapshotFloorNextSeq,
           );
         }
-        const token = this.startRun(threadId, { pruneAbandonedTurn: true });
-        this.attachLiveSubscription(threadId, token, {
-          after: result.resumeAfterSeq,
-          expectedTurnId: result.assistantTurnId,
-        });
+        if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
+          return outcome("ambiguous");
+        }
+        this.attachAcceptedRun(threadId, result);
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
@@ -462,6 +438,7 @@ export class ThreadRunController {
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
+    if (this.disposed || this.accountSignal.aborted) return;
     const token = this.startRun(threadId);
     this.attachLiveSubscription(threadId, token, options);
   }
@@ -495,14 +472,6 @@ export class ThreadRunController {
     return { status: "pending" };
   }
 
-  /**
-   * Settle a non-fatal interrupt rejection frame. The wire frame carries only
-   * `threadId`, so it binds to the newest pending response for that thread and
-   * no-ops when none exists. `interrupt_not_pending` after a send means the
-   * first attempt likely landed (ambiguous); a correlation mismatch is positive
-   * evidence this attempt did not land (retryable failure). Neither tears down
-   * the run subscription.
-   */
   private settleInterruptResponseError(threadId: string, error: Error): void {
     const pending = this.actions.pendingInterruptResponseForThread(threadId);
     if (!pending) return;
@@ -534,11 +503,39 @@ export class ThreadRunController {
     this.cleanupActiveRun();
   }
 
+  private attachAcceptedRun(
+    threadId: string,
+    result: { assistantTurnId: string | null; resumeAfterSeq: string },
+  ): void {
+    if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
+    const token = this.startRun(threadId, {
+      pruneAbandonedTurn: result.assistantTurnId == null,
+    });
+    this.attachLiveSubscription(threadId, token, {
+      after: result.resumeAfterSeq,
+      ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
+    });
+  }
+
+  private isAttachedToRun(threadId: string, assistantTurnId: string): boolean {
+    const activeRun = this.activeRun;
+    if (!activeRun || activeRun.threadId !== threadId || !activeRun.unsubscribe) return false;
+    // Before RUN_STARTED the client's turn id is unknown; the subscription will
+    // publish it. Once known, it must match the run the server reports.
+    return activeRun.turnId === undefined || activeRun.turnId === assistantTurnId;
+  }
+
   /** Release controller-lifetime subscriptions (provider unmount). */
   dispose(): void {
+    if (this.disposed) return;
     this.teardown();
-    this.unsubscribeInterruptResponseError();
-    this.unsubscribeSocketGenerationClosed();
+    this.disposed = true;
+    this.activationGeneration += 1;
+    this.recoverySessions.clear();
+    this.unsubscribeInterruptResponseError?.();
+    this.unsubscribeSocketGenerationClosed?.();
+    this.unsubscribeInterruptResponseError = null;
+    this.unsubscribeSocketGenerationClosed = null;
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
@@ -562,14 +559,18 @@ export class ThreadRunController {
     if (!this.isActiveToken(token)) return;
 
     let disposed = false;
+    let awaitingSplitStart = false;
+    let splitFinishTimer: ReturnType<typeof setTimeout> | undefined;
+    let currentExpectedTurnId = expectedTurnId;
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
-      if (disposed || !this.isActiveToken(token)) return;
+      if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
       applyAguiEventToStore(this.actions, threadId, event);
     });
     const markDisposed = () => {
-      coalescer.flush();
+      if (splitFinishTimer) clearTimeout(splitFinishTimer);
+      if (!this.accountSignal.aborted) coalescer.flush();
       disposed = true;
     };
 
@@ -579,13 +580,16 @@ export class ThreadRunController {
       token,
       turnId: expectedTurnId,
       dispose: markDisposed,
+      flush: () => {
+        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
+      },
     };
 
     const unsubscribe = this.transport.subscribe(
       threadId,
       {
         onEvent: ({ event, error, sourceThreadId }) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           if (sourceThreadId && sourceThreadId !== threadId) return;
           const effectiveEvent =
             event.type === EventType.RUN_ERROR && error
@@ -595,24 +599,40 @@ export class ThreadRunController {
           // runId check is intentionally limited to events that carry runId so
           // vocabulary events without run identity still pass through unchanged.
           if (
-            expectedTurnId &&
+            currentExpectedTurnId &&
             "runId" in effectiveEvent &&
-            effectiveEvent.runId !== expectedTurnId
+            effectiveEvent.runId !== currentExpectedTurnId &&
+            !(awaitingSplitStart && effectiveEvent.type === EventType.RUN_STARTED)
           )
             return;
 
-          if (expectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
-            this.actions.ensureAssistantTurn(threadId, expectedTurnId);
+          if (isDurableBlockEvent(effectiveEvent)) return;
+
+          if (currentExpectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
+            this.actions.ensureAssistantTurn(threadId, currentExpectedTurnId);
           }
 
           if (effectiveEvent.type === EventType.RUN_STARTED) {
+            if (awaitingSplitStart) {
+              // A and B are separate assistant turns in one admitted execution.
+              // Flush A before B enters the durable snapshot owner, but retain the
+              // subscription/token and optimistic writer row across the boundary.
+              coalescer.flush();
+              awaitingSplitStart = false;
+              if (splitFinishTimer) clearTimeout(splitFinishTimer);
+            }
+            currentExpectedTurnId = effectiveEvent.runId;
             this.activeRun = {
               ...this.activeRun,
               threadId,
               token,
               turnId: effectiveEvent.runId,
+              splitBoundaryPending: false,
               unsubscribe: this.activeRun?.unsubscribe,
               dispose: markDisposed,
+              flush: () => {
+                if (!disposed && !this.accountSignal.aborted) coalescer.flush();
+              },
             };
             if (this.abortRequested) {
               this.abortRequested = false;
@@ -622,23 +642,29 @@ export class ThreadRunController {
 
           coalescer.push(effectiveEvent);
 
-          if (
-            effectiveEvent.type === EventType.RUN_FINISHED ||
-            effectiveEvent.type === EventType.RUN_ERROR
-          ) {
+          if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
+            // A same-lease steer is journaled as A-finish then B-start. Keep the
+            // mounted owner alive for that transition; an ordinary terminal run
+            // settles after the short boundary window.
+            awaitingSplitStart = true;
+            this.activeRun = { threadId, token, ...this.activeRun, splitBoundaryPending: true };
+            splitFinishTimer = setTimeout(() => {
+              if (awaitingSplitStart && this.isActiveToken(token)) this.cleanupActiveRun();
+            }, 250);
+          } else if (effectiveEvent.type === EventType.RUN_ERROR) {
             this.cleanupActiveRun();
           }
         },
         onError: (error) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
           this.cleanupActiveRun();
           announceError(errorMessage(error, "Thread stream failed"));
         },
         onGap: ({ threadId: gapThreadId }) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
-          void this.replaceFromSnapshot(gapThreadId).catch((error) => {
+          void this.replaceFromSnapshot(gapThreadId, token).catch((error) => {
             if (!this.isActiveToken(token)) return;
             this.cleanupActiveRun();
             announceError(errorMessage(error, "Failed to recover thread snapshot"));
@@ -660,6 +686,9 @@ export class ThreadRunController {
       token,
       unsubscribe,
       dispose: markDisposed,
+      flush: () => {
+        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
+      },
     };
 
     // If submit() received the turn id from HTTP before RUN_STARTED arrives,
@@ -670,30 +699,63 @@ export class ThreadRunController {
     }
   }
 
+  flushPendingDeltas(threadId: string): void {
+    if (this.activeRun?.threadId === threadId && !this.accountSignal.aborted) {
+      this.activeRun.flush?.();
+    }
+  }
+
   private requestCancel(threadId: string, turnId: string): void {
     void this.transport.cancel(threadId, turnId).catch((error) => {
       console.error("Failed to cancel active Meridian turn", error);
     });
   }
 
-  private async replaceFromSnapshot(threadId: string): Promise<void> {
+  private async replaceFromSnapshot(threadId: string, token: number): Promise<void> {
     const existing = this.gapSnapshotsByThreadId.get(threadId);
-    if (existing) return existing;
-
-    const recovery = (async () => {
-      const snapshot = await this.getThreadSnapshotFn({ data: { threadId } });
-      this.applySnapshot(deserializeThreadSnapshot(snapshot));
-    })().finally(() => {
+    if (existing) {
+      if (existing.token === token) return existing.promise;
+      existing.abort.abort();
       this.gapSnapshotsByThreadId.delete(threadId);
-    });
+    }
 
-    this.gapSnapshotsByThreadId.set(threadId, recovery);
+    const abort = new AbortController();
+    const signal = AbortSignal.any([this.accountSignal, abort.signal]);
+    const recovery = (async () => {
+      while (
+        this.isActiveToken(token) &&
+        !signal.aborted &&
+        !this.activeRun?.splitBoundaryPending
+      ) {
+        const snapshot = deserializeThreadSnapshot(
+          await this.getThreadSnapshotFn({ data: { threadId }, signal }),
+        );
+        if (
+          signal.aborted ||
+          !this.isActiveToken(token) ||
+          this.activeRun?.threadId !== threadId ||
+          this.activeRun.splitBoundaryPending
+        )
+          return;
+        if (snapshot.thread.id !== threadId || snapshot.thread.userId !== this.accountId) {
+          await waitForSnapshotRetry(signal);
+          continue;
+        }
+        if (this.applySnapshot(snapshot)) return;
+        await waitForSnapshotRetry(signal);
+      }
+    })().finally(() => {
+      if (this.gapSnapshotsByThreadId.get(threadId)?.promise === recovery) {
+        this.gapSnapshotsByThreadId.delete(threadId);
+      }
+    });
+    this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery, abort });
     return recovery;
   }
 
-  private applySnapshot(snapshot: DeserializedThreadSnapshot): void {
+  private applySnapshot(snapshot: DeserializedThreadSnapshot): boolean {
     const { thread, turns } = snapshot;
-    this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
+    return this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
   }
 
   private cleanupActiveRun(): void {
@@ -703,11 +765,18 @@ export class ThreadRunController {
     // apply is gated on `isActiveToken`, so nulling first would drop the last
     // buffered frame on teardown, run switch, and unmount.
     activeRun?.dispose?.();
+    if (activeRun) {
+      const recovery = this.gapSnapshotsByThreadId.get(activeRun.threadId);
+      if (recovery?.token === activeRun.token) {
+        recovery.abort.abort();
+        this.gapSnapshotsByThreadId.delete(activeRun.threadId);
+      }
+    }
     activeRun?.unsubscribe?.();
     this.activeRun = null;
   }
 
   private isActiveToken(token: number): boolean {
-    return this.activeRun?.token === token;
+    return !this.disposed && !this.accountSignal.aborted && this.activeRun?.token === token;
   }
 }

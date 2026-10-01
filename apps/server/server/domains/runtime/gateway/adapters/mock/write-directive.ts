@@ -5,9 +5,8 @@
  *   `[[write <uri>]]` — create at `<uri>` (default mock path when absent)
  *   `[[write <uri> overwrite]]` — create with `overwrite: true`
  *
- * Directives apply only when the message also triggers a mock write tool call
- * (today: contains "Phase 7 final gate"). Messages without a directive keep the
- * legacy default (`manuscript://chapter-1.md`, create, no overwrite).
+ * Directives apply only when the message triggers a mock write tool call.
+ * Without a directive, writes target `manuscript://chapter-1.md` without overwrite.
  */
 
 export type ParsedWriteDirective = {

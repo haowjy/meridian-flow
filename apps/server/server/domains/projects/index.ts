@@ -28,6 +28,7 @@ import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecy
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
 export { createDrizzleProjectWorkAuthorityResolver } from "./adapters/drizzle-work-authority.js";
+export { createDrizzleWorkPurger } from "./adapters/drizzle-work-purge.js";
 export {
   type ProjectWorkAuthorityResolver,
   resolvedWorkAuthority,
@@ -86,10 +87,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
-  catalogLifecycle?: ContextCatalogLifecyclePort;
+  catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
-  const repairedReadyUsers = new Set<UserId>();
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
 
   async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
@@ -174,7 +174,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         name: NO_WORK_NAME,
         slug: null,
         isNoWork: true,
-        status: "active",
         aiWriteMode: "direct",
       })
       .returning({ id: works.id });
@@ -286,16 +285,15 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         .where(eq(projects.id, projectId))
         .returning({ id: projects.id });
       if (!updated) throw new Error("Failed to mark default bootstrap ready");
-      await deps.catalogLifecycle?.refreshProject(projectId);
+      await deps.catalogLifecycle.refreshProject(projectId);
       return result;
     });
-    repairedReadyUsers.add(userId);
     return bootstrap;
   }
 
   return {
     async ensureDefaultBootstrapReady(userId) {
-      if ((await isDefaultBootstrapReady(userId)) && repairedReadyUsers.has(userId)) return true;
+      if (await isDefaultBootstrapReady(userId)) return true;
       try {
         await attemptDefaultBootstrap(userId);
         return true;
@@ -325,7 +323,7 @@ export {
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
-export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
+export { deleteWorkTransition, restoreWork } from "./delete-work.js";
 export { listWorkCatalog } from "./list-work-catalog.js";
 export type {
   CreateProjectInput,
@@ -343,24 +341,25 @@ export {
   type CreateWorkInput,
   type ListWorksOptions,
   type UpdateWorkInput,
-  WorkDeleteBlockedError,
+  WorkDeleteRetryError,
+  type WorkDeletion,
   WorkLockedError,
   WorkNameConflictError,
   type WorkRepository,
+  type WorkRestoration,
   WorkRestoreConflictError,
+  WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
+export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";
 export {
   normalizeWorkUpdateInput,
+  setWorkArchived,
   type UpdateWorkCommandInput,
-  updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
+  WorkStatusInvalidError,
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export type {
-  DeliveredWorkContextUpdate,
-  WorkContextDelivery,
-  WorkContextPostCommitResult,
-} from "./work-context-delivery.js";
+export type { WorkContextNotices } from "./work-context-notices.js";

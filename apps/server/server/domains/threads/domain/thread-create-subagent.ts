@@ -13,7 +13,7 @@ export interface CreateSubagentThreadInput {
   workId?: WorkId | null;
   parentThreadId: ThreadId;
   rootThreadId: ThreadId;
-  originTurnId?: TurnId;
+  originTurnId: TurnId;
   spawnDepth: number;
   title?: string | null;
   spawnStatus?: SpawnStatus;
@@ -32,23 +32,21 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     status: "idle",
     title: input.title ?? null,
     ref: null,
-    composedSystemPrompt: null,
-    bakedSkillSlugs: null,
-    workingState: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,
     rootThreadId: input.rootThreadId,
+    originTurnId: input.originTurnId,
     spawnDepth: input.spawnDepth,
     spawnStatus: input.spawnStatus ?? "running",
-    spawnResult: null,
     totalCostUsd: "0",
     turnCount: 0,
-    historySummary: null,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }

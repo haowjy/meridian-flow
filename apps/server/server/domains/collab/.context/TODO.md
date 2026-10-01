@@ -1,5 +1,18 @@
 # collab TODO
 
+## Make archived Work documents read-only in live Yjs sessions
+
+Archived Work documents remain readable and therefore pass document access and
+live-room admission. The app mounts the archived surface read-only, but the live
+Yjs writer-ingress path does not consult Work lifecycle, so a direct or already
+connected peer can still submit updates for durable journaling. Add a read-only
+lifecycle fact to live-session admission and fence updates without revoking the
+readable room.
+
+Affected paths: `apps/server/server/lib/document-access.ts`,
+`apps/server/server/lib/yjs-ws-handler.ts`, project document opening, and live
+session availability contracts.
+
 ## Refresh the markdown projection after human Yjs writes
 
 The WebSocket persistence path durably journals and checkpoints human Yjs
@@ -58,3 +71,12 @@ A unified generation scheme or tiered invalidation API is the long-term shape.
 
 Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
 resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.
+
+## Live settlement receipt recovery
+
+`domain/response-write-finalizer.ts` commits the live agent-edit journal before
+calling the host result rewrite. If that callback fails, the edit remains
+applied but the staged result can later be falsely repaired as uncommitted.
+Recover the durable settled receipt on retry instead of inferring failure
+from a pending tool-result block. Branch-mode settlement already shares the
+host transaction; keep that distinction explicit.

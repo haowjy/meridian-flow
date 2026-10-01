@@ -45,17 +45,6 @@ describe("pending Work drafts", () => {
       new Map([[WORK_ID, 1]]),
     );
   });
-
-  it("does not call persistence for an empty Work set", async () => {
-    const countPendingByWorkIds = vi.fn();
-    const pending = createWorkDraftPending({
-      listReviewableEvidenceForWork: vi.fn(),
-      countPendingByWorkIds,
-    });
-
-    await expect(pending.countPendingByWorkIds([])).resolves.toEqual(new Map());
-    expect(countPendingByWorkIds).not.toHaveBeenCalled();
-  });
 });
 
 function workDraft(branchId: string) {

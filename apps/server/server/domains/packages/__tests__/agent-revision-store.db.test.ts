@@ -8,8 +8,9 @@ import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
+import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 import { seedGeneralAgent } from "../domain/default-package-seeding.js";
@@ -37,7 +38,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     const db = createDb(url, { max: 4 });
     const store = createDrizzleAgentRevisionStore(db);
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.agentPackageRevisions]);
+      await deleteDrizzleRows(db, [schema.users, schema.agentPackageRevisions]);
       await db
         .insert(schema.users)
         .values([
@@ -47,9 +48,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       await db
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Agents", slug: "agents" });
-      await db
-        .insert(schema.threads)
-        .values({ id: THREAD, projectId: PROJECT, createdByUserId: USER });
+      await db.insert(schema.threads).values({
+        rootThreadId: THREAD,
+        id: THREAD,
+        projectId: PROJECT,
+        createdByUserId: USER,
+      });
     });
     afterAll(() => db.close());
 
@@ -87,7 +91,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       await store.bindThread(THREAD, first.id, bindingConfiguration, null);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
       expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentDefinitionRevisionId).toBe(first.id);
       expect(updated?.agentName).toBe("Retained Name");
       expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
@@ -104,7 +108,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
       expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentName).toBe("Subagent");
       const feed = await repos.chatFeed.queryPage({
         projectId: PROJECT,
@@ -113,6 +117,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         limit: 10,
         favorite: false,
         search: null,
+        workId: null,
       });
       expect(feed[0]?.agentName).toBe("Subagent");
     });
@@ -133,6 +138,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             limit: 10,
             favorite: false,
             search,
+            workId: null,
           })
         ).map((item) => item.title);
       expect(await titles("sect")).toEqual(["50% Sect trials"]);
@@ -147,22 +153,33 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         const firstThreads = createDrizzleThreadRepository(db);
         const otherThreads = createDrizzleThreadRepository(otherDb);
         const candidates = [
-          { composedSystemPrompt: "First retained prompt", bakedSkillSlugs: ["first-skill"] },
-          { composedSystemPrompt: "Second retained prompt", bakedSkillSlugs: ["second-skill"] },
+          {
+            composedSystemPrompt: "First retained prompt",
+            bakedSkillSlugs: ["first-skill"],
+            bakedTools: [],
+          },
+          {
+            composedSystemPrompt: "Second retained prompt",
+            bakedSkillSlugs: ["second-skill"],
+            bakedTools: [],
+          },
         ];
+        const inputs = candidates.map((candidate) => ({
+          ...candidate,
+          contentHash: hashPromptBakeContent(candidate),
+        }));
         const winners = await Promise.all([
-          firstThreads.bakeComposedSystemPrompt(THREAD, candidates[0]),
-          otherThreads.bakeComposedSystemPrompt(THREAD, candidates[1]),
+          firstThreads.bakeInitialPrompt(THREAD, inputs[0]),
+          otherThreads.bakeInitialPrompt(THREAD, inputs[1]),
         ]);
-        expect(winners[0].composedSystemPrompt).toBe(winners[1].composedSystemPrompt);
-        expect(winners[0].bakedSkillSlugs).toEqual(winners[1].bakedSkillSlugs);
+        expect(winners[0].bake).toEqual(winners[1].bake);
         expect(candidates).toContainEqual({
-          composedSystemPrompt: winners[0].composedSystemPrompt,
-          bakedSkillSlugs: winners[0].bakedSkillSlugs,
+          composedSystemPrompt: winners[0].bake.composedSystemPrompt,
+          bakedSkillSlugs: winners[0].bake.bakedSkillSlugs,
+          bakedTools: winners[0].bake.bakedTools,
         });
         const reloaded = await otherThreads.findById(THREAD);
-        expect(reloaded?.composedSystemPrompt).toBe(winners[0].composedSystemPrompt);
-        expect(reloaded?.bakedSkillSlugs).toEqual(winners[0].bakedSkillSlugs);
+        expect(reloaded?.initialPromptBakeId).toBe(winners[0].bake.id);
       } finally {
         await otherDb.close();
       }

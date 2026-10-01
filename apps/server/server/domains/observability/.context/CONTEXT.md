@@ -49,16 +49,18 @@ pruning runs when the sink rolls segments. External provider policy is deliberat
 not wired into production composition yet; inject another `EventSink` later
 without changing route or domain code.
 
-With the local provider, `NODE_ENV=development|test` also registers the recent
-buffer on `AppServices.eventQuery`. Authenticated `/api/debug/events` and
-`/api/debug/events/stream` routes expose filtered history and live-only SSE;
-both are absent in every other environment and for disabled sink providers.
+With the local provider and the debug gate open (`APP_DEBUG=1`, never in
+production; see `resolveDebugPathsEnabled` in `lib/env.ts`), composition also
+registers the recent buffer on `AppServices.eventQuery`. Authenticated
+`/api/debug/events` and `/api/debug/events/stream` routes expose filtered
+history and live-only SSE; both are absent when the gate is closed and for
+disabled sink providers.
 
 There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit
 adapter choice.
 
-LLM-facing local monitors should use `pnpm debug:events` for bounded authenticated
+LLM-facing local monitors should use `./mf log` for bounded authenticated
 queries, or read the structured JSONL stream for post-restart forensics. Do not
 build dashboards by scraping arbitrary console text.
 
@@ -85,4 +87,4 @@ tracking or analytics. Product events need a separate future seam.
 - `domains/storage/` — same port + adapter layout
 - Provider swap / OTel posture: [KB decision (OTel deferred)][otel-deferred]
 
-[otel-deferred]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/observability-event-records.md
+[otel-deferred]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/observability/observability-event-records.md

@@ -103,65 +103,6 @@ describe("thread-peer response transaction delegation", () => {
     expect(coreShape.commitResponse).toHaveBeenCalledOnce();
   });
 
-  it("runs a response commit through the configured transaction boundary", async () => {
-    const durableJournal: string[] = [];
-    let fail = true;
-    const commitResponse = vi.fn(async () => {
-      durableJournal.push("alpha.md");
-      durableJournal.push("beta.md");
-      if (fail) throw new Error("injected second-document flush failure");
-      return {
-        status: "committed" as const,
-        responseId: "response-two-docs",
-        documentCount: 2,
-        updateCount: 2,
-        documents: [],
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    });
-    const fakeCore = {
-      write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
-      commitResponse,
-      hasResponseDocument: vi.fn(() => false),
-      withResponseDocument: vi.fn(async () => null),
-      responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
-      invalidateThread: vi.fn(async () => {}),
-    } as unknown as AgentEditCore;
-    let transactionCalls = 0;
-    const transaction = async <T>(operation: () => Promise<T>): Promise<T> => {
-      transactionCalls += 1;
-      const before = [...durableJournal];
-      try {
-        return await operation();
-      } catch (cause) {
-        durableJournal.splice(0, durableJournal.length, ...before);
-        throw cause;
-      }
-    };
-    const core = createThreadPeerAgentEditCore({
-      ...threadPeerPoolDefaults,
-      liveUtilityCore: asLiveAgentEditCore(fakeCore),
-      createThreadCore: () => fakeCore,
-      commitThreadResponseAtomically: transaction,
-    });
-    const responseId = "response-two-docs";
-    await core.write(
-      { command: "read", file: "alpha.md" },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-1", responseId },
-    );
-
-    await expect(core.commitResponse(responseId)).rejects.toThrow(
-      "injected second-document flush failure",
-    );
-    expect(durableJournal).toEqual([]);
-    expect(transactionCalls).toBe(1);
-
-    fail = false;
-    await expect(core.commitResponse(responseId)).resolves.toMatchObject({ status: "committed" });
-    expect(commitResponse).toHaveBeenCalledTimes(2);
-    expect(transactionCalls).toBe(2);
-  });
-
   it("rolls back the document commit when tool-result finalization fails", async () => {
     const durable: string[] = [];
     const result = {

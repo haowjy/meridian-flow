@@ -16,11 +16,6 @@ export function isHelperResultBlock(block: Block): boolean {
   return block.blockType === "custom" && blockContentRecord(block).kind === "helper-result";
 }
 
-/** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
-export function isChildReportBlock(block: Block): boolean {
-  return block.blockType === "custom" && blockContentRecord(block).kind === "child-report";
-}
-
 export function isToolDeliveryBlock(block: Block): boolean {
   return block.blockType === "tool_use" || block.blockType === "tool_result";
 }

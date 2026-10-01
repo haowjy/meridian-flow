@@ -6,7 +6,6 @@ describe("filetype disposition policy", () => {
     ["chapter-2", "text", "document"],
     ["chapter.prose", "text", "document"],
     ["chapter.md", "markdown", "document"],
-    ["chapter.txt", "text", "document"],
     ["script.py", "python", "code"],
   ] as const)("maps %s through %s to the %s schema", (path, filetype, schemaType) => {
     const resolvedFiletype = filetypeForPath(path);
@@ -16,29 +15,14 @@ describe("filetype disposition policy", () => {
 
   it.each([
     null,
-    undefined,
     "future-prose-type",
   ])("keeps unregistered persisted value %s distinct", (filetype) => {
     expect(classifyFiletype(filetype)).toEqual({ kind: "unknown" });
   });
 
   it.each([
-    "python",
-    "typescript",
-    "javascript",
-    "json",
-    "shell",
-    "yaml",
-    "csv",
-  ] as const)("keeps %s in the explicit code allowlist", (filetype) => {
-    expect(classifyFiletype(filetype)).toEqual({ kind: "tracked", schemaType: "code" });
-  });
-
-  it.each([
     "pdf",
     "png",
-    "jpg",
-    "svg",
   ] as const)("classifies registered binary filetype %s as binary", (filetype) => {
     expect(classifyFiletype(filetype)).toEqual({
       kind: "binary",

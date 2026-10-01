@@ -27,15 +27,6 @@ read as compact conversational receipts.
 
 Track with GitHub issue: #130.
 
-## `continue` tool rows are not hidden
-
-`tool-view-visibility.ts` hides the protocol rows for `ask_user`, `spawn`, and
-`return_result`, but not `continue`. A model `continue` persists the same
-`helper-result` card as `spawn`, so the writer sees an extra humanized
-"continue" activity row in the Thinking fold beside the card. Add `continue` to
-the hidden set so a continue reads like a spawn (`tool-view-visibility.ts`, with
-the same parity in `partition-turn.ts` and `tool-renderers.tsx`).
-
 ## Composer `@ for reference` rotation hint
 
 When mentions land, append ", @ for reference" to the rotating composer
@@ -59,3 +50,15 @@ step, and read again per row by `useProjectChatUserState`. The cached copy exist
 only for the Favorites filter. Keep feed caches as server truth, hold Favorite
 records in one per-project map, and apply it at read time for rows and filter
 alike.
+
+## Fold labels name documents and outcomes, not step counts
+
+The process fold's digest (`thinking-digest.ts`) reads "Edited 1 document, 3
+steps" or just "2 steps": counts that hide which documents and what happened.
+Owner-approved direction (thread-ux subagent design,
+[mockup](https://claude.ai/artifact/WVkaCxq7uvpvNFumvKDg6y)): name the
+documents and outcomes instead, writes first, then reads, then other tools, at
+most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
+shows in the label without opening the fold; a live fold names the current
+action. Deferred out of the subagent UI change because it rewrites the digest
+contract in `turn-composition.md`.

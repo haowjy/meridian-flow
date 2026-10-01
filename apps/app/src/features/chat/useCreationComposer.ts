@@ -1,5 +1,5 @@
 /** Send a new project chat in the current pane before background persistence. */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useThreadActions } from "@/client/stores";
 import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
@@ -12,10 +12,14 @@ export function useCreationComposer(projectId: string) {
   const accountId = useAccountId();
   const threadActions = useThreadActions();
   const [choices, setChoices] = useState<CreationChoices>({});
+  const updateChoices = useCallback(
+    (next: CreationChoices) => setChoices((current) => ({ ...current, ...next })),
+    [],
+  );
 
   return {
     choices,
-    updateChoices: (next: CreationChoices) => setChoices((current) => ({ ...current, ...next })),
+    updateChoices,
     updateDraft: (_change: ComposerDraftChange) => undefined,
     submit(
       submission: ComposerSubmitEnvelope,

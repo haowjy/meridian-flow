@@ -1,33 +1,18 @@
 /**
  * Filters turns to only those that should render in the chat column.
  *
- * System turns are model-plumbing (commit echoes, agent-swap seeds) —
- * they carry context for the model's next request but are not user-facing
- * prose. Compaction turns are internal bookkeeping. Both are hidden.
+ * System turns are model-plumbing (commit echoes, agent-swap seeds); they carry
+ * context for the model's next request but are not standalone chat bubbles.
+ * Inbox-message turns are machine deliveries, rendered in the preceding
+ * assistant's activity rows rather than as standalone chat bubbles.
  *
- * System turns with `custom` blocks (helper results, component blocks)
- * ARE visible — they carry UI content the user should see.
+ * Other system turns with custom blocks remain visible as UI content.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { classifyTurn } from "./transcript-model";
 
 export function isVisibleChatTurn(turn: Turn): boolean {
-  if (turn.role === "user") {
-    const metadata = turn.metadata;
-    if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "system_update" &&
-      (metadata.section === "work_context" || metadata.section === "child_report")
-    ) {
-      return false;
-    }
-    return true;
-  }
-  if (turn.role === "assistant") return true;
-  if (turn.role === "compaction") return false;
-  // system turns: visible only if they carry at least one custom block
-  return turn.blocks.some((block) => block.blockType === "custom");
+  return classifyTurn(turn) === "bubble";
 }
 
 export function filterVisibleTurns(turns: Turn[]): Turn[] {

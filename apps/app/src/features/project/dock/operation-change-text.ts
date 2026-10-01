@@ -1,22 +1,9 @@
-/**
- * operation-change-text — pure card-body extraction for dock Changes cards.
- *
- * Turns one review operation + the preview hunks into the text a card shows
- * (removed side, added side), richest-first: full passages from the hunks,
- * falling back to the operation's word-bound excerpts. No React, no view
- * concerns — the card module renders whatever this returns.
- */
+/** Formats a review operation as concise change text. */
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 
 export type OperationChangeText = { removed: string | null; added: string | null };
 
-/**
- * The agent operations whose changes share a hunk with the writer's own edits.
- * Under closure=card (spec §5.3) a writer edit inside a proposal's passage joins
- * that closure class; this identifies the agent ops it joined so the card can
- * show the informational "Includes your edits" badge. Returns only agent op ids
- * (the writer's own operations aren't discarded from a card). Never a prompt.
- */
+/** The agent operations whose changes share a hunk with the writer's own edits. */
 export function operationsWithWriterEdits(
   operations: ReviewOperation[],
   hunks: ReviewHunk[],
@@ -39,21 +26,6 @@ export function operationsWithWriterEdits(
   return mixed;
 }
 
-/**
- * The change text for one operation, richest-first. Removed text and whole
- * removed/inserted blocks come from the hunks (`deletedText`, block displays),
- * which carry the full passage; the operation's word-bound excerpts are the
- * fallback. Inline INSERTED text is not on the wire per operation — it lives in
- * the preview document positioned by Yjs anchors the dock can't resolve — so the
- * added side of a text edit stays excerpt-only (`afterExcerpt`).
- */
-/**
- * The change text for a whole closure class (spec §5.3): the richest-first
- * removed/added text pooled across every operation in the class. Hunks are
- * matched when their `operationIds` intersect the class; the class ops'
- * `before/afterExcerpt` are the fallback when no hunk carries prose. A one-op
- * class is the single-operation card body.
- */
 export function changeTextForOperations(
   operations: readonly ReviewOperation[],
   hunks: ReviewHunk[],

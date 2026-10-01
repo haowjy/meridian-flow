@@ -3,6 +3,7 @@ import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
 
 import { requireAppUser } from "../../../lib/auth-gate.js";
+import { projectDto } from "../../../lib/project-dto.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -14,5 +15,5 @@ export default defineEventHandler(async (event) => {
   const projects =
     q.length > 0 ? await projectRepo.search(userId, q) : await projectRepo.listByUser(userId);
 
-  return serializeTransport({ projects });
+  return serializeTransport({ projects: projects.map(projectDto) });
 });

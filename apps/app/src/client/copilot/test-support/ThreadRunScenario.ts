@@ -41,7 +41,6 @@ type AppendRequest = {
     text: string;
     blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
     references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
-    connectionToken?: string;
   };
 };
 
@@ -62,7 +61,6 @@ export function scenarioGate<T>(): ScenarioGate<T> {
 }
 
 class ScenarioThreadTransport implements ThreadTransport {
-  connectionToken: string | undefined = "conn-test";
   subscriptions: Array<{
     threadId: string;
     handlers: ThreadTransportHandlers;
@@ -79,31 +77,6 @@ class ScenarioThreadTransport implements ThreadTransport {
   }>();
 
   private readonly socketClosedListeners = new Set<(generation: number) => void>();
-
-  private readonly connectionWaiters = new Set<{
-    resolve(token: string): void;
-    reject(reason?: unknown): void;
-  }>();
-
-  getConnectionToken(): string | undefined {
-    return this.connectionToken;
-  }
-
-  awaitConnectionToken(): Promise<string> {
-    if (this.connectionToken) return Promise.resolve(this.connectionToken);
-    return new Promise((resolve, reject) => this.connectionWaiters.add({ resolve, reject }));
-  }
-
-  connectWith(token: string): void {
-    this.connectionToken = token;
-    for (const waiter of this.connectionWaiters) waiter.resolve(token);
-    this.connectionWaiters.clear();
-  }
-
-  rejectConnection(reason: unknown): void {
-    for (const waiter of this.connectionWaiters) waiter.reject(reason);
-    this.connectionWaiters.clear();
-  }
 
   connect(): void {}
   subscribeCatalog(): () => void {
@@ -207,6 +180,7 @@ export class ThreadRunScenario {
   readonly transport = new ScenarioThreadTransport();
   readonly appendRequests: AppendRequest[] = [];
   readonly snapshotRequests: string[] = [];
+  readonly snapshotSignals: AbortSignal[] = [];
   readonly lookupRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly retireRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly controller: ThreadRunController;
@@ -234,6 +208,8 @@ export class ThreadRunScenario {
     this.controller = new ThreadRunController({
       transport: this.transport,
       actions: this.store.getState(),
+      accountSignal: new AbortController().signal,
+      accountId: "account-1",
       appendUserMessageFn: async (request) => {
         this.appendRequests.push(request);
         return this.append(request);
@@ -252,11 +228,13 @@ export class ThreadRunScenario {
           }
         );
       },
-      getThreadSnapshotFn: async ({ data }) => {
+      getThreadSnapshotFn: async ({ data, signal }) => {
         this.snapshotRequests.push(data.threadId);
+        if (signal) this.snapshotSignals.push(signal);
         return this.snapshot(data.threadId);
       },
     });
+    this.controller.activate();
   }
 
   setAppend(handler: (request: AppendRequest) => Promise<SendMessageResponse>): void {
@@ -265,18 +243,6 @@ export class ThreadRunScenario {
 
   setSnapshot(handler: (threadId: string) => Promise<ThreadSnapshotResponse>): void {
     this.snapshot = handler;
-  }
-
-  disconnectAdmission(): void {
-    this.transport.connectionToken = undefined;
-  }
-
-  connect(token = "conn-test"): void {
-    this.transport.connectWith(token);
-  }
-
-  rejectConnection(reason: unknown): void {
-    this.transport.rejectConnection(reason);
   }
 
   submit(text: string, options: SubmitOptions = {}, threadId = "thread_1") {

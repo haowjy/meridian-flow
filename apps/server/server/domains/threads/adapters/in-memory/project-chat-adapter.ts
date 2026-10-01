@@ -1,4 +1,4 @@
-/** Focused in-memory adapter for Project/Work Project-chat projections and writer state. */
+/** Focused in-memory adapter for Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
@@ -8,8 +8,10 @@ import {
 import type {
   ProjectChatFeedRepository,
   ThreadUserStateRepository,
-  WorkChatFeedRepository,
 } from "../../ports/repositories.js";
+
+// Match the database lineage cap and stop the nearest-assistant walk early.
+const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
 
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
@@ -38,11 +40,19 @@ export function createInMemoryProjectChatAdapter(
 ) {
   const key = (threadId: string, userId: string) => `${threadId}:${userId}`;
 
-  function conversationalHead(thread: Thread): Turn | null {
+  function activeLineage(thread: Thread): Turn[] {
+    const lineage: Turn[] = [];
     let turn = thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined;
-    const visited = new Set<string>();
-    while (turn && !visited.has(turn.id)) {
-      visited.add(turn.id);
+    while (turn && lineage.length <= MAX_ACTIVE_LINEAGE_DEPTH) {
+      lineage.push(turn);
+      if (turn.role === "assistant") break;
+      turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
+    }
+    return lineage;
+  }
+
+  function conversationalHead(thread: Thread): Turn | null {
+    for (const turn of activeLineage(thread)) {
       const hasCustomBlock = [...source.blocks()].some(
         (block) => block.turnId === turn?.id && block.blockType === "custom",
       );
@@ -55,15 +65,13 @@ export function createInMemoryProjectChatAdapter(
       ) {
         return turn;
       }
-      turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
     }
     return null;
   }
 
-  function actionRequired(head: Turn | null): boolean {
+  function actionRequired(thread: Thread): boolean {
     return isThreadActionRequired({
-      headRole: head?.role ?? null,
-      headStatus: head?.status ?? null,
+      activeLineage: activeLineage(thread),
     });
   }
 
@@ -73,9 +81,7 @@ export function createInMemoryProjectChatAdapter(
     const work = workId ? await source.work(workId) : null;
     const preview = head
       ? [...source.blocks()]
-          .filter(
-            (block) => block.turnId === head.id && block.blockType === "text" && !block.pruned,
-          )
+          .filter((block) => block.turnId === head.id && block.blockType === "text")
           .sort((a, b) => a.sequence - b.sequence)
           .map((block) => block.modelText ?? "")
           .join(" ")
@@ -92,7 +98,7 @@ export function createInMemoryProjectChatAdapter(
       lastActivityAt: exactTimestamp(
         head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
       ),
-      actionRequired: actionRequired(head),
+      actionRequired: actionRequired(thread),
       isFavorite: state?.isFavorite ?? false,
     };
   }
@@ -116,6 +122,9 @@ export function createInMemoryProjectChatAdapter(
       return eligible
         .filter((item) => !input.favorite || item.isFavorite)
         .filter(
+          (item) => !input.workId || source.hasWorkMembership(item.id as ThreadId, input.workId),
+        )
+        .filter(
           (item) => !input.search || item.title.toLowerCase().includes(input.search.toLowerCase()),
         )
         .filter(
@@ -123,37 +132,6 @@ export function createInMemoryProjectChatAdapter(
             !input.after ||
             item.lastActivityAt < input.after.sortAt ||
             (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
-        )
-        .slice(0, input.limit);
-    },
-  };
-
-  const workChatFeed: WorkChatFeedRepository = {
-    async queryPage(input) {
-      const associated: Thread[] = [];
-      for (const thread of source.threads()) {
-        if (
-          thread.kind === "primary" &&
-          thread.projectId === input.projectId &&
-          !thread.deletedAt &&
-          source.hasWorkMembership(thread.id as ThreadId, input.workId) &&
-          (await source.isProjectVisible(thread))
-        ) {
-          associated.push(thread);
-        }
-      }
-      const items = await Promise.all(
-        associated.map((thread) => projectChatItem(thread, input.userId)),
-      );
-      return items
-        .filter(
-          (item) =>
-            !input.after ||
-            item.lastActivityAt < input.after.sortAt ||
-            (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
-        )
-        .sort(
-          (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
         )
         .slice(0, input.limit);
     },
@@ -168,5 +146,5 @@ export function createInMemoryProjectChatAdapter(
     },
   };
 
-  return { chatFeed, workChatFeed, threadUserState, conversationalHead };
+  return { chatFeed, threadUserState, actionRequired };
 }

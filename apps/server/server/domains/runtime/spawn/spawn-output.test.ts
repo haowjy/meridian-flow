@@ -1,130 +1,138 @@
 import { describe, expect, it } from "vitest";
 
-import { spawnHelperCardProps, spawnOutputForTranscript } from "./spawn-output.js";
+import {
+  invocationCardProps,
+  spawnOutputForTranscript,
+  unadmittedInvocationFailure,
+  unadmittedInvocationFailureProps,
+} from "./spawn-output.js";
 
 describe("spawnOutputForTranscript", () => {
-  it("drops cost and threadId from a completed report while keeping the handle", () => {
-    const output = spawnOutputForTranscript({
-      status: "completed",
-      report: {
-        handle: "p1",
-        threadId: "child-1",
-        summary: "Stated that 2+2=4.",
-        payload: { answer: 4 },
-        costMillicredits: 69,
-      },
-    });
+  const correlation = {
+    parentTurnId: "turn-1",
+    toolCallId: "call-1",
+    deliveryMode: "background_notification" as const,
+  };
 
-    expect(output).toEqual({
-      status: "completed",
-      report: {
-        handle: "p1",
-        summary: "Stated that 2+2=4.",
-        payload: { answer: 4 },
-      },
-    });
-    expect(JSON.stringify(output)).not.toContain("cost");
-    expect(JSON.stringify(output)).not.toContain("threadId");
-  });
-
-  it("builds a running helper card then a completed one without cost", () => {
-    const running = spawnHelperCardProps({
-      parentTurnId: "turn-1",
+  it("retains the bound Agent's display name on running and completed cards", () => {
+    const running = invocationCardProps({
+      agent: "critic",
+      agentName: "Critic (harsh)",
       description: "Continuity",
+      correlation,
+      childThreadId: "child-1",
+      execution: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: null,
+      fromThreadId: "source-1",
+      fromThreadRef: "c1",
+      fromThreadTitle: "Source conversation",
     });
     expect(running).toMatchObject({
-      agentName: "Subagent",
-      status: "running",
+      agentName: "Critic (harsh)",
+      execution: null,
+      terminalAt: null,
       title: "Continuity",
+      fromThreadId: "source-1",
+      fromThreadRef: "c1",
+      fromThreadTitle: "Source conversation",
     });
-    expect(running.childThreadId).toBeUndefined();
-    const done = spawnHelperCardProps({
+    const done = invocationCardProps({
       agent: "critic",
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: {
-          threadId: "child-1",
-          summary: "Holds.",
-          payload: { verdict: "ok" },
-          costMillicredits: 9,
-        },
-      },
+      agentName: "Critic (harsh)",
+      correlation,
+      childThreadId: "child-1",
+      execution: "execution-1",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: "2026-01-01T00:01:00.000Z",
+      outcome: "succeeded",
     });
     expect(done).toMatchObject({
-      agentName: "Critic",
-      status: "completed",
-      summary: "Holds.",
-      childThreadId: "child-1",
-      payload: { verdict: "ok" },
+      agentName: "Critic (harsh)",
+      outcome: "succeeded",
+      terminalAt: "2026-01-01T00:01:00.000Z",
     });
+    expect(done).not.toHaveProperty("summary");
+    expect(done).not.toHaveProperty("payload");
+    expect(done).not.toHaveProperty("artifacts");
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 
-  it("carries report artifacts onto the completed card without cost", () => {
-    const done = spawnHelperCardProps({
-      agent: "critic",
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: {
-          threadId: "child-1",
-          summary: "Wrote the outline.",
-          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
-          costMillicredits: 5,
-        },
-      },
-    });
-
-    expect(done.artifacts).toEqual([
-      { type: "object", uri: "scratch://outline.md", label: "Outline" },
-    ]);
-    expect(JSON.stringify(done)).not.toContain("cost");
-  });
-
-  it("omits artifacts when the completed report has none", () => {
-    const done = spawnHelperCardProps({
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: { threadId: "child-1", summary: "No files.", costMillicredits: 2 },
-      },
-    });
-
-    expect(done.artifacts).toBeUndefined();
-  });
-
-  it("keeps childThreadId on a failed card and titles from description", () => {
-    const failed = spawnHelperCardProps({
+  it("stores a writer-readable pre-admission failure without a child link", () => {
+    const running = invocationCardProps({
       agent: "subagent",
+      agentName: "Subagent",
       description: "Check continuity",
-      parentTurnId: "turn-1",
+      correlation,
       childThreadId: "child-9",
-      output: { status: "error", error: { message: "Child run failed" } },
+      execution: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: null,
     });
+    const failed = unadmittedInvocationFailure(running, "The agent is unavailable.");
     expect(failed).toMatchObject({
       agentName: "Subagent",
-      status: "failed",
-      summary: "Child run failed",
-      childThreadId: "child-9",
+      reason: "The agent is unavailable.",
+      terminalAt: expect.any(String),
       title: "Check continuity",
     });
+    expect(failed).not.toHaveProperty("childThreadId");
+    expect(failed).not.toHaveProperty("execution");
   });
 
-  it("leaves an error output untouched and strips threadId from a background output", () => {
+  it("uses the slug verbatim for a pre-resolution failure", () => {
+    expect(
+      unadmittedInvocationFailureProps({
+        agent: "continuity-checker",
+        correlation,
+        reason: "Unavailable.",
+      }),
+    ).toMatchObject({ agentSlug: "continuity-checker", agentName: "continuity-checker" });
+  });
+
+  it("removes internal execution and thread ids from model-facing spawn output", () => {
     const error = { status: "error", error: { code: "spawn_depth_exceeded" } };
     const background = {
       status: "background",
       handle: "p2",
       threadId: "child-2",
+      execution: "private-execution-id",
       agentSlug: "general",
     };
+    const completed = {
+      status: "completed",
+      execution: "private-execution-id",
+      report: { handle: "p2", threadId: "child-2", summary: "Done", costMillicredits: 5 },
+    };
 
-    expect(spawnOutputForTranscript(error)).toBe(error);
+    expect(spawnOutputForTranscript(error)).toEqual(error);
+    expect(spawnOutputForTranscript({ ...error, execution: "private-execution-id" })).toEqual(
+      error,
+    );
     expect(spawnOutputForTranscript(background)).toEqual({
       status: "background",
       handle: "p2",
       agentSlug: "general",
+    });
+    expect(spawnOutputForTranscript(completed)).toEqual({
+      status: "completed",
+      report: { handle: "p2", summary: "Done" },
+    });
+  });
+
+  it("tells the model a queued thread_message has no pushed reply", () => {
+    const background = {
+      status: "background",
+      handle: "c1",
+      threadId: "primary-1",
+      agentSlug: "primary",
+    };
+
+    expect(spawnOutputForTranscript(background, { queuedNoReply: true })).toEqual({
+      status: "background",
+      handle: "c1",
+      agentSlug: "primary",
+      note: "Message queued. No reply is pushed back; the target's response is readable in its transcript.",
     });
   });
 });

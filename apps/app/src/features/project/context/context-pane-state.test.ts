@@ -33,18 +33,6 @@ describe("a route that resolves to nothing", () => {
     });
   });
 
-  it("carries the scheme so the pane can say where it looked", () => {
-    expect(
-      derive({
-        destination: {
-          path: "/elara.md",
-          scheme: "kb",
-          optimisticTab: { id: "optimistic:2", name: "elara.md" },
-        },
-      }),
-    ).toEqual({ kind: "dead-route", destination: { name: "elara", scheme: "kb" } });
-  });
-
   it("stays a route error when the tree could not be read at all", () => {
     // Not knowing is not the same as knowing it is gone.
     expect(derive({ isError: true })).toEqual({ kind: "route-error" });

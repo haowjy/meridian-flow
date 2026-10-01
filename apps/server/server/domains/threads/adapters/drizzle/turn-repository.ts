@@ -12,10 +12,13 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
+import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
+import { turnCountsAsActivity } from "../../domain/turn-activity-policy.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   CreateTurnInput,
@@ -24,16 +27,44 @@ import type {
 } from "../../ports/repositories.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
+import { createDrizzleTranscriptReader } from "./transcript-reader.js";
+
+/** One lateral latest-turn lookup per bounded thread_ls row, followed by its text blocks. */
+export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
+  return sql`
+    SELECT listed.id AS thread_id,
+           request.id AS turn_id,
+           block.sequence,
+           block.model_text
+      FROM ${schema.threads} AS listed
+      JOIN LATERAL (
+        SELECT candidate.id
+          FROM ${schema.turns} AS candidate
+         WHERE candidate.thread_id = listed.id
+           AND candidate.role = 'user'
+           AND CASE
+                 WHEN listed.kind = 'subagent'
+                   THEN candidate.origin = 'system'
+                    AND candidate.metadata->>'kind' = 'inbox_message'
+                 ELSE candidate.origin = 'writer'
+               END
+         ORDER BY candidate.position DESC
+         LIMIT 1
+      ) AS request ON TRUE
+      JOIN ${schema.turnBlocks} AS block
+        ON block.turn_id = request.id
+       AND block.block_type = 'text'
+       AND NULLIF(BTRIM(block.model_text), '') IS NOT NULL
+     WHERE listed.id IN (${sql.join(
+       threadIds.map((threadId) => sql`${threadId}::uuid`),
+       sql`, `,
+     )})
+     ORDER BY listed.id, block.sequence
+  `;
+}
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
-  const [thread] = await currentDrizzleDb(db)
-    .select({
-      id: schema.threads.id,
-      activeLeafTurnId: schema.threads.activeLeafTurnId,
-    })
-    .from(schema.threads)
-    .where(eq(schema.threads.id, threadId))
-    .for("update");
+  const thread = await lockThreadForMutation(db, threadId);
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   return thread;
 }
@@ -90,6 +121,7 @@ export function createDrizzleTurnRepository(
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
 ): TurnRepository {
   return {
+    ...createDrizzleTranscriptReader(db),
     async create(input: CreateTurnInput) {
       return runInDrizzleTransaction(db, async () => {
         await lockThreadForTurnTransition(db, input.threadId);
@@ -119,13 +151,41 @@ export function createDrizzleTurnRepository(
           }
         }
 
+        const [threadContext] = await activeDb
+          .select({
+            originType: schema.threads.originType,
+            originTurnId: schema.threads.originTurnId,
+          })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, input.threadId));
+        const [latest] = await activeDb
+          .select({ position: sql<number | null>`MAX(${schema.turns.position})::int` })
+          .from(schema.turns)
+          .where(eq(schema.turns.threadId, input.threadId));
+        let position = latest?.position == null ? 1 : latest.position + 1;
+        if (latest?.position == null && threadContext?.originType === "fork") {
+          if (!threadContext.originTurnId) {
+            throw new Error(`Fork thread ${input.threadId} has no cutoff turn`);
+          }
+          const [cutoff] = await activeDb
+            .select({ position: schema.turns.position })
+            .from(schema.turns)
+            .where(eq(schema.turns.id, threadContext.originTurnId as TurnId));
+          if (!cutoff) throw new Error(`Fork cutoff turn not found: ${threadContext.originTurnId}`);
+          position = cutoff.position + 1;
+        }
+
         const [row] = await activeDb
           .insert(schema.turns)
           .values({
             id: input.id,
             threadId: input.threadId,
             parentTurnId: input.prevTurnId ?? null,
+            position,
+            promptBakeId: input.promptBakeId ?? null,
+            compactionModel: input.compactionModel ?? null,
             role: input.role,
+            origin: input.origin,
             aiWriteMode: input.writeMode ?? null,
             status: input.status ?? "pending",
             totalInputTokens: 0,
@@ -145,40 +205,43 @@ export function createDrizzleTurnRepository(
           return existing;
         }
         const now = new Date();
+        const countsAsActivity = turnCountsAsActivity(input.origin);
         await activeDb
           .update(schema.threads)
           .set({
             activeLeafTurnId: row.id,
-            updatedAt: now,
+            ...(countsAsActivity ? { updatedAt: now } : {}),
           })
           .where(eq(schema.threads.id, row.threadId));
-        const [thread] = await activeDb
-          .select({
-            projectId: schema.threads.projectId,
-            workId: schema.threadWorks.workId,
-          })
-          .from(schema.threads)
-          .leftJoin(
-            schema.threadWorks,
-            and(
-              eq(schema.threadWorks.threadId, schema.threads.id),
-              eq(schema.threadWorks.isPrimary, true),
-            ),
-          )
-          .where(eq(schema.threads.id, row.threadId))
-          .limit(1);
-        if (thread?.workId) {
-          if (workActivity) await workActivity.touchWorks([thread.workId], now);
-          else {
+        if (countsAsActivity) {
+          const [thread] = await activeDb
+            .select({
+              projectId: schema.threads.projectId,
+              workId: schema.threadWorks.workId,
+            })
+            .from(schema.threads)
+            .leftJoin(
+              schema.threadWorks,
+              and(
+                eq(schema.threadWorks.threadId, schema.threads.id),
+                eq(schema.threadWorks.isPrimary, true),
+              ),
+            )
+            .where(eq(schema.threads.id, row.threadId))
+            .limit(1);
+          if (thread?.workId) {
+            if (workActivity) await workActivity.touchWorks([thread.workId], now);
+            else {
+              await activeDb
+                .update(schema.works)
+                .set({ updatedAt: now })
+                .where(eq(schema.works.id, thread.workId));
+            }
             await activeDb
-              .update(schema.works)
-              .set({ updatedAt: now })
-              .where(eq(schema.works.id, thread.workId));
+              .update(schema.projects)
+              .set({ updatedAt: now, lastActivityAt: now })
+              .where(eq(schema.projects.id, thread.projectId));
           }
-          await activeDb
-            .update(schema.projects)
-            .set({ updatedAt: now, lastActivityAt: now })
-            .where(eq(schema.projects.id, thread.projectId));
         }
         return mapTurn(row);
       });
@@ -190,22 +253,96 @@ export function createDrizzleTurnRepository(
         .where(eq(schema.turns.id, id));
       return row ? mapTurn(row) : null;
     },
+    async findLatestHandoffSeed(threadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            eq(schema.turns.role, "system"),
+            sql`${schema.turns.metadata}->>'kind' = 'derivation_seed'`,
+            sql`${schema.turns.metadata}->>'derivation' = 'handoff'`,
+          ),
+        )
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
+    async findByControlId(threadId, controlId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            sql`${schema.turns.metadata}->>'controlMessageId' = ${controlId}`,
+          ),
+        )
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.turns)
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(asc(schema.turns.createdAt));
+        .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
+    },
+    async listLatestLocalRequesterText(threadIds) {
+      if (threadIds.length === 0) return new Map();
+      const result = await currentDrizzleDb(db).execute(latestLocalRequesterTextSql(threadIds));
+      const textByThread = new Map<ThreadId, string[]>();
+      for (const row of result as unknown as Iterable<Record<string, unknown>>) {
+        const threadId = row.thread_id as ThreadId;
+        const text = String(row.model_text);
+        const parts = textByThread.get(threadId) ?? [];
+        parts.push(text);
+        textByThread.set(threadId, parts);
+      }
+      return new Map([...textByThread].map(([threadId, parts]) => [threadId, parts.join("\n")]));
+    },
+    async listPendingPlaceholders(limit, afterTurnId) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      const rows = await currentDrizzleDb(db)
+        .select({ id: schema.turns.id, threadId: schema.turns.threadId, role: schema.turns.role })
+        .from(schema.turns)
+        .where(
+          and(
+            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
+            ...(afterTurnId ? [gt(schema.turns.id, afterTurnId)] : []),
+          ),
+        )
+        .orderBy(asc(schema.turns.id))
+        .limit(limit);
+      return rows.map((row) => ({ ...row, role: row.role as Turn["role"] }));
     },
     async getLatestByThread(threadId) {
       const [row] = await currentDrizzleDb(db)
         .select()
         .from(schema.turns)
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(desc(schema.turns.createdAt))
+        .orderBy(desc(schema.turns.position))
         .limit(1);
       return row ? mapTurn(row) : null;
+    },
+    async findRunningAssistantId(threadId, options) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ id: schema.turns.id })
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            eq(schema.turns.role, "assistant"),
+            inArray(schema.turns.status, ["pending", "streaming", "waiting_interrupt"]),
+            ...(options?.createdAfter ? [gte(schema.turns.createdAt, options.createdAfter)] : []),
+          ),
+        )
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return (row?.id as TurnId | undefined) ?? null;
     },
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const patch: {
@@ -213,12 +350,18 @@ export function createDrizzleTurnRepository(
         finishReason?: Turn["finishReason"];
         completedAt?: Date | null;
         error?: string | null;
+        promptBakeId?: Turn["promptBakeId"];
+        compactionModel?: string | null;
+        metadata?: Turn["metadata"];
       } = { status: input.status };
       if (input.finishReason !== undefined) patch.finishReason = input.finishReason;
       if (input.completedAt !== undefined) {
         patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
       }
       if (input.error !== undefined) patch.error = input.error;
+      if (input.compactionModel !== undefined) patch.compactionModel = input.compactionModel;
+      if (input.promptBakeId !== undefined) patch.promptBakeId = input.promptBakeId;
+      if (input.metadata !== undefined) patch.metadata = input.metadata;
       const [row] = await currentDrizzleDb(db)
         .update(schema.turns)
         .set(patch)

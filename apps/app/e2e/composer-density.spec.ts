@@ -33,8 +33,8 @@ test("compact root preserves text lanes and follows the document safe area", asy
     const blockId = randomUUID();
     await db.begin(async (tx) => {
       await tx`
-        INSERT INTO turns (id, thread_id, parent_turn_id, role, status, finish_reason, created_at, completed_at)
-        VALUES (${turnId}, ${threadId}, NULL, 'user', 'complete', NULL, now(), now())
+        INSERT INTO turns (id, thread_id, parent_turn_id, position, role, status, finish_reason, created_at, completed_at)
+        VALUES (${turnId}, ${threadId}, NULL, 1, 'user', 'complete', NULL, now(), now())
       `;
       await tx`
         INSERT INTO turn_blocks (id, turn_id, block_type, sequence, content, model_text, compact, status, created_at)
@@ -45,7 +45,7 @@ test("compact root preserves text lanes and follows the document safe area", asy
       `;
     });
 
-    await page.goto(`/project/${fixture.projectId}?thread=${threadId}`, {
+    await page.goto(`/p/${fixture.projectId}/chats/${threadId}`, {
       waitUntil: "domcontentloaded",
     });
     await page.setViewportSize({ width: 240, height: 800 });

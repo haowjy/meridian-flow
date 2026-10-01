@@ -5,7 +5,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres, { type Sql, type TransactionSql } from "postgres";
 
 interface MigrationJournal {
-  entries: Array<{ tag: string; when: number }>;
+  entries: Array<{ idx: number; tag: string; when: number }>;
 }
 
 export type SchemaStatus = "current" | "ahead" | "behind" | "divergent";
@@ -15,6 +15,37 @@ function readReleaseMigrations(migrationsDirectory: string) {
   const journal = JSON.parse(
     readFileSync(path.join(migrationsDirectory, "meta/_journal.json"), "utf8"),
   ) as MigrationJournal;
+  const sqlFiles = readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql"));
+  const journalFiles = new Set(journal.entries.map((entry) => `${entry.tag}.sql`));
+  const seenTags = new Set<string>();
+  const seenTimestamps = new Set<number>();
+  const issues: string[] = [];
+  for (const [index, entry] of journal.entries.entries()) {
+    if (entry.idx !== index) {
+      issues.push(`journal entry ${entry.tag} has idx ${entry.idx}; expected ${index}`);
+    }
+    const previous = journal.entries[index - 1];
+    if (previous && entry.when <= previous.when) {
+      issues.push(
+        `journal entry ${entry.tag} has when ${entry.when}; it must be newer than ${previous.when}`,
+      );
+    }
+    if (seenTags.has(entry.tag)) issues.push(`journal tag ${entry.tag} is duplicated`);
+    if (seenTimestamps.has(entry.when)) issues.push(`journal when ${entry.when} is duplicated`);
+    seenTags.add(entry.tag);
+    seenTimestamps.add(entry.when);
+    if (!sqlFiles.includes(`${entry.tag}.sql`)) {
+      issues.push(`journal entry ${entry.idx} (${entry.tag}) is missing ${entry.tag}.sql`);
+    }
+  }
+  for (const file of sqlFiles) {
+    if (!journalFiles.has(file)) issues.push(`${file} is not listed in meta/_journal.json`);
+  }
+  if (issues.length > 0) {
+    throw new Error(
+      `Refused inconsistent migration files\n${issues.map((issue) => `  - ${issue}`).join("\n")}`,
+    );
+  }
   const migrations = readMigrationFiles({ migrationsFolder: migrationsDirectory });
   if (journal.entries.length !== migrations.length) {
     throw new Error("Migration journal does not match the committed migration files");

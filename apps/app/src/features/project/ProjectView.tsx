@@ -13,34 +13,34 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { updateProject } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { useRenameProject } from "@/client/query/useRenameProject";
+import { type AddressableWork, useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
   patchAccountRecentsFromTabs,
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { useContextTabs, useContextTabsStore } from "@/client/stores";
+import { isEditorTab, useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
+import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -93,11 +93,13 @@ import {
   type ChatDisplay,
   chatSurfaceThreadId,
   displayedChatThreadId,
+  useChatNavigation,
   useDockReveal,
 } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
+import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -129,21 +131,21 @@ export type ProjectViewProps = {
   projectId: string;
   /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
-  workingSet: ProjectRouteData["workingSet"];
-  workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
   /** What the Chat screen or the dock currently shows for chat. */
   chatDisplay: ChatDisplay;
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
+  /** Validated browser-local Work offered as the collection's return destination. */
+  rememberedWork: AddressableWork | null;
   editorRouteWork?: RouteWorkResolution;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
-  onDisplayedSelection?: (selection: { editorWorkId: string | null }) => void;
+  onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
   /** Browser route adapter for atomic removal repairs. */
@@ -169,54 +171,17 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
+  const enterWork = useDockViewStore((state) => state.enterWork);
+  const leaveWork = useDockViewStore((state) => state.leaveWork);
+  useLayoutEffect(() => {
+    const workId = props.activeScreen === "work" ? routeWorkId(props.routeWork) : null;
+    if (workId) enterWork(workId);
+    else leaveWork();
+  }, [props.activeScreen, props.routeWork, enterWork, leaveWork]);
   const queryClient = useQueryClient();
-  const cachedProject = useProject(props.projectId);
+  const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
-  const renameProject = useMutation({
-    mutationKey: projectQueryKeys.rename(props.projectId),
-    mutationFn: (title: string) => updateProject(props.projectId, { title }),
-    onMutate: async (title) => {
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.list }),
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.detail(props.projectId) }),
-      ]);
-      const list = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      const detail = queryClient.getQueryData<Project>(projectQueryKeys.detail(props.projectId));
-      const previousRow = list?.find((project) => project.id === props.projectId);
-      const optimistic = (project: Project): Project => ({ ...project, title, name: title });
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
-        (current ?? [props.project]).map((project) =>
-          project.id === props.projectId ? optimistic(project) : project,
-        ),
-      );
-      if (detail)
-        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), optimistic(detail));
-      return { previousRow, detail };
-    },
-    onError: (_error, _title, previous) => {
-      if (!previous) return;
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
-        current?.flatMap((project) =>
-          project.id === props.projectId
-            ? previous.previousRow
-              ? [previous.previousRow]
-              : []
-            : [project],
-        ),
-      );
-      if (previous.detail)
-        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), previous.detail);
-    },
-    onSuccess: async (project) => {
-      // A list read started while the mutation was pending may return an old
-      // title after PATCH succeeds. Fence it before publishing confirmation.
-      await queryClient.cancelQueries({ queryKey: projectQueryKeys.list });
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
-        list?.map((item) => (item.id === project.id ? project : item)),
-      );
-      queryClient.setQueryData(projectQueryKeys.detail(props.projectId), project);
-    },
-  });
+  const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
@@ -290,8 +255,13 @@ export function ProjectView(props: ProjectViewProps) {
       lease.release();
     };
   }, [accountId, availability, props.projectId, queryClient, removal]);
-  const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
-  const workingSetHydration = retriedHydration ?? props.entryHydration;
+  // A retry answers the entry plan it retried; new route data brings a new one.
+  const [retriedHydration, setRetriedHydration] = useState<{
+    entry: WorkingSetHydrationPlan;
+    plan: WorkingSetHydrationPlan;
+  } | null>(null);
+  const workingSetHydration =
+    retriedHydration?.entry === props.entryHydration ? retriedHydration.plan : props.entryHydration;
   const { threads: projectThreads } = useProjectThreads(props.projectId);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
@@ -303,8 +273,10 @@ export function ProjectView(props: ProjectViewProps) {
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
     : null;
   const chatWorkId = chatWork?.id ?? null;
-  const editorScope = resolveEditorWorkScope(props.editorRouteWork ?? props.routeWork);
+  const editorRouteWork = props.editorRouteWork ?? props.routeWork;
+  const editorScope = resolveEditorWorkScope(editorRouteWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
+  const editorWork = editorRouteWork.status === "present" ? editorRouteWork.work : null;
   useLayoutEffect(() => {
     props.onDisplayedSelection?.({ editorWorkId });
   }, [props.onDisplayedSelection, editorWorkId]);
@@ -316,12 +288,15 @@ export function ProjectView(props: ProjectViewProps) {
   });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
+    const entry = props.entryHydration;
     const retry = () => {
-      void retryWorkingSetHydration(props.projectId).then(setRetriedHydration);
+      void retryWorkingSetHydration(props.projectId).then((plan) =>
+        setRetriedHydration({ entry, plan }),
+      );
     };
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
-  }, [props.projectId, workingSetHydration.status]);
+  }, [props.projectId, props.entryHydration, workingSetHydration.status]);
 
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
@@ -346,6 +321,7 @@ export function ProjectView(props: ProjectViewProps) {
     availableWorks: works ?? [],
     editorScope,
     editorWorkId,
+    editorWork,
     retryEditorWork: worksQuery.refetch,
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
@@ -367,12 +343,7 @@ export function ProjectView(props: ProjectViewProps) {
           <HydratedReviewProject
             {...resolvedProps}
             projectTitle={projectTitle}
-            titleEdit={{
-              pending: renameProject.isPending,
-              error: renameProject.error,
-              onStart: () => renameProject.reset(),
-              onSave: (title) => renameProject.mutateAsync(title),
-            }}
+            titleEdit={{ projectId: props.projectId, onSave: renameProject }}
           />
         </>
       ) : null}
@@ -394,6 +365,8 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   availableWorks: readonly Work[];
   editorScope: EditorWorkScope;
   editorWorkId: string | null;
+  /** The Editor's Work, when the route names one the project has. */
+  editorWork: Work | null;
   retryEditorWork: () => void;
   contextLive: boolean;
 };
@@ -414,13 +387,16 @@ type MobileEditorPresentation = Pick<
 > & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
+  const { openChat } = useChatNavigation();
   return (
-    <EditorReviewHandoffProvider
-      projectId={props.projectId}
-      openContextRoute={props.onOpenContextTarget}
-    >
-      <HydratedReviewScopes {...props} />
-    </EditorReviewHandoffProvider>
+    <ChatThreadNavigationProvider onOpenThread={openChat}>
+      <EditorReviewHandoffProvider
+        projectId={props.projectId}
+        openContextRoute={props.onOpenContextTarget}
+      >
+        <HydratedReviewScopes {...props} />
+      </EditorReviewHandoffProvider>
+    </ChatThreadNavigationProvider>
   );
 }
 
@@ -489,15 +465,9 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const desktopHostDocumentIds =
     usePhone || props.editorScope.status !== "ready" || !props.contextLive
       ? []
-      : tabs.flatMap((tab) => {
-          if (tab.kind !== "tracked") return [];
-          if (
-            isWorkScopedProjectContextScheme(tab.scheme) &&
-            (tab.workId ?? null) !== props.editorWorkId
-          )
-            return [];
-          return [tab.documentId];
-        });
+      : tabs.flatMap((tab) =>
+          tab.kind === "tracked" && isEditorTab(tab, props.editorWorkId) ? [tab.documentId] : [],
+        );
   const inlineDocumentIds = [
     inlineReviewFromState(chatReviewState.state)?.documentId,
     inlineReviewFromState(editorReviewState.state)?.documentId,
@@ -567,16 +537,13 @@ function expandToggle(
   return { open, onExpand: () => onSetCollapsed(surfaceId, false), label };
 }
 
-/**
- * Desktop layout for every destination. Persistent shell state lives on stable
- * surfaces; per-screen rendering is delegated to pane controllers that receive
- * only the props they need.
- */
+/** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
   const priorEditor = useRef<Pick<
     ReviewScopedProjectProps,
     | "editorReview"
     | "editorWorkId"
+    | "editorWork"
     | "activeContextScheme"
     | "activeContextPath"
     | "activeLocalDocumentId"
@@ -605,9 +572,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
   const setDockView = useDockViewStore((state) => state.setDockView);
 
-  useDockReveal(() => {
+  useDockReveal((view) => {
     setDockCollapsed(false);
-    setDockView(props.activeScreen, "chat");
+    setDockView(props.activeScreen, view);
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
@@ -698,6 +665,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               <ContextViewerSurfaceController
                 projectId={props.projectId}
                 editorWorkId={mountedEditor.editorWorkId}
+                editorWork={mountedEditor.editorWork}
                 activeContextScheme={mountedEditor.activeContextScheme}
                 activeContextPath={mountedEditor.activeContextPath}
                 localDocumentId={mountedEditor.activeLocalDocumentId}
@@ -719,7 +687,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "chat",
       children: (
-        <ProjectRouteBoundary destinationKey={props.routeLocationKey}>
+        // Centered, the chat surface owns the main column, so it carries the main issue.
+        <ProjectRouteBoundary
+          destinationKey={props.routeLocationKey}
+          issue={chatPlacement === "center" ? props.routeIssues?.main : undefined}
+        >
           <div
             className="flex min-h-0 flex-1 flex-col"
             role={chatIndexShowing ? undefined : chatPlacement === "center" ? "main" : undefined}
@@ -811,6 +783,7 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
         <WorkPaneController
           projectId={props.projectId}
           routeWork={props.routeWork}
+          rememberedWork={props.rememberedWork}
           routeCommands={props.routeCommands}
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
@@ -823,11 +796,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
   }
 }
 
-/**
- * Collapse chrome once when entering compact desktop widths. The listener only
- * runs on mount/media-boundary changes, so a user can re-expand rails without
- * the effect immediately fighting that preference.
- */
 function useCompactDesktopAutoCollapse(
   setDockCollapsed: (collapsed: boolean) => void,
   setSurfaceCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,

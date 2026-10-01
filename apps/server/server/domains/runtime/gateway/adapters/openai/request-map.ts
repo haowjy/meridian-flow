@@ -17,6 +17,15 @@
  * - `include: ["reasoning.encrypted_content"]` is always requested so reasoning
  *   items can be carried across turns in stateless mode (per OpenAI reasoning
  *   guide).
+ * - Prompt caching is automatic for prompts >=1024 tokens and needs no
+ *   explicit breakpoints, so this mapper only forwards `GenerateRequest.
+ *   promptCacheKey` as `prompt_cache_key` (a stable per-thread routing hint
+ *   that improves cache-affinity — OpenAI's own docs recommend one per
+ *   thread/session). The installed `openai` SDK (6.45.0) has no
+ *   `prompt_cache_options`/ttl field for the Responses API — only the
+ *   documented `prompt_cache_retention: "in_memory" | "24h"`, neither of
+ *   which is the owner-chosen 1h default, so retention is left unset
+ *   (defers to the account's own default) rather than guessing.
  */
 import type OpenAI from "openai";
 
@@ -370,5 +379,6 @@ export function toOpenAIResponsesParams(
     ...(mapResponseFormat(request.responseFormat)
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),
+    ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
   };
 }

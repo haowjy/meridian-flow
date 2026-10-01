@@ -224,6 +224,16 @@ export function createOrchestratorEventProjector() {
         return [];
       }
 
+      case "block.updated":
+        if (event.block.blockType !== "custom") return [];
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.block.upserted",
+            value: { block: event.block },
+          }),
+        ];
+
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
         if (event.block.blockType !== "custom") return [];
@@ -418,6 +428,50 @@ export function createOrchestratorEventProjector() {
               turnId: event.turnId,
               version: event.version,
               shell: event.shell,
+            },
+          }),
+        ];
+
+      case "agent.spawn":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.agent.spawn",
+            value: event,
+          }),
+        ];
+
+      // The producer recomputed the parent's direct children, so this frame is
+      // a bounded replace of the client's activity state with no refetch race.
+      case "subagent.activity":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.subagent.activity",
+            value: event.activity,
+          }),
+        ];
+
+      // Same full-replace contract as activity: the producer read the current
+      // pending rows, so the tray state is replaced wholesale.
+      case "inbox.changed":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.inbox.changed",
+            value: event.pending,
+          }),
+        ];
+
+      case "thread.status":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.thread.status",
+            value: {
+              threadId: event.threadId,
+              status: event.status,
+              runningTurnId: event.runningTurnId,
             },
           }),
         ];

@@ -1,14 +1,10 @@
 /**
- * Composed system prompt assembly and freeze detection.
+ * Composed system prompt assembly and prompt-bake detection.
  *
  * Key decisions:
- * - Freeze sentinel is persisted bake state: `bakedSkillSlugs !== null`. Prompt
- *   text is never sniffed for markers.
- * - The gateway system message is frozen at the first turn attempt (context
- *   assembly), even if the gateway send then fails or is cancelled; autoprune is
- *   the only future re-bake trigger.
- * - `rebakeComposedSystemPrompt` is the only re-bake entry point today (first
- *   attempt). A future autoprune event should call it from exactly one place.
+ * - The initial bake pointer is the freeze sentinel. Prompt text is never
+ *   sniffed for markers.
+ * - Frozen at first context assembly, even if the gateway send fails or is cancelled.
  */
 
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
@@ -57,15 +53,7 @@ function inventorySection(
   ].join("\n\n");
 }
 
-/** Frozen threads have a persisted bake (`bakedSkillSlugs` is non-null). */
-export function isThreadPromptFrozen(thread: { bakedSkillSlugs?: string[] | null }): boolean {
-  return thread.bakedSkillSlugs != null;
-}
-
-/**
- * Re-bake the composed system prompt. Today only first-attempt assembly calls
- * this; future autoprune should be the other caller.
- */
-export function rebakeComposedSystemPrompt(input: AssembleComposedSystemPromptInput): string {
-  return assembleComposedSystemPrompt(input);
+/** Frozen threads have an immutable first-bake pointer. */
+export function isThreadPromptFrozen(thread: { initialPromptBakeId?: string | null }): boolean {
+  return thread.initialPromptBakeId != null;
 }

@@ -9,7 +9,6 @@ export type LineageRange = {
 };
 
 /** Kept as a vocabulary alias for callers that describe safety provenance. */
-export type WriterLineageRange = LineageRange;
 
 export function normalizeLineageRanges(ranges: readonly ContentLineage[]): LineageRange[] {
   const sorted = ranges.map(validateRange).sort(compareRanges);

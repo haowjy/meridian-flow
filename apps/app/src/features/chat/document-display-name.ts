@@ -37,6 +37,12 @@ export function documentDisplayName(uriOrPath: string): string {
   return documentTitleFromUri(path) ?? t`Untitled document`;
 }
 
+/** Exact file target for tool activity, retaining the extension to disambiguate it. */
+export function documentFileName(uriOrPath: string): string {
+  const { path } = parseContextLocation(uriOrPath);
+  return path.split("/").filter(Boolean).at(-1) ?? t`Untitled document`;
+}
+
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
   const segments = path.split("/").filter(Boolean);

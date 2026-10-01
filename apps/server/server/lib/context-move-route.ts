@@ -274,7 +274,7 @@ export async function handleContextMoveRequest(
   );
   const primaryWorkId =
     resolvedMove.source.scope === "work" ? resolvedMove.source.authority.workId : [...workIds][0];
-  const works = await deps.workRepo.listByProject(input.projectId);
+  const works = await deps.workRepo.listByProject(input.projectId, { lifecycle: "all" });
   const port = await contextPortForProjectAuthorities({
     deps: {
       contextPorts: deps.contextPorts,

@@ -1,19 +1,21 @@
 /**
- * useProjectList — React Query hook for the account project library, merged with
- * optimistic and independent-project state.
+ * useProjectList — React Query hook for the account project library, merged
+ * with optimistic project state.
  *
- * Exposes the loading/empty/ready/error list status plus the visible-project
- * derivation. The single read path for the project list across the shell.
+ * Exposes loading/empty/ready/error status and the single project-list read
+ * path across the shell.
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listProjects } from "@/client/api/projects-api";
-import { mergeApiProjects, useIndependentProjectIds } from "@/client/stores";
+import { getProject, listProjects } from "@/client/api/projects-api";
+import { mergeApiProjects } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
+import { pendingProjectTitles } from "./useRenameProject";
 
 function useProjectListQuery() {
   const queryClient = useQueryClient();
@@ -22,19 +24,7 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      const pendingTitles = new Map(
-        queryClient
-          .getMutationCache()
-          .findAll({ mutationKey: projectQueryKeys.renamePrefix })
-          .filter((mutation) => mutation.state.status === "pending")
-          .flatMap((mutation) => {
-            const projectId = mutation.options.mutationKey?.[2];
-            const title = mutation.state.variables;
-            return typeof projectId === "string" && typeof title === "string"
-              ? [[projectId, title] as const]
-              : [];
-          }),
-      );
+      const pendingTitles = pendingProjectTitles(queryClient);
       const reconciled = apiProjects.map((project) => {
         const title = pendingTitles.get(project.id);
         return title ? { ...project, title, name: title } : project;
@@ -66,21 +56,19 @@ export function useProjectList(): Project[] | null {
   return useProjectListStatus().projects;
 }
 
-export function useProject(projectId: string): Project | undefined {
+export function useProject(
+  projectId: string,
+  initialProject?: Project | null,
+): Project | undefined {
   const projects = useProjectList();
-  return projects?.find((p) => p.id === projectId);
-}
-
-/**
- * Project list for *display* surfaces (account library) —
- * excludes un-promoted independent chats, which are project-backed but hidden
- * until the user promotes them. Use `useProjectList` (unfiltered) when you need
- * to resolve a specific project by id, including hidden ones.
- */
-export function useVisibleProjects(): Project[] | null {
-  const projects = useProjectList();
-  const independentIds = useIndependentProjectIds();
-  if (projects === null) return null;
-  if (independentIds.size === 0) return projects;
-  return projects.filter((p) => !independentIds.has(p.id));
+  const listProject = projects?.find((project) => project.id === projectId);
+  const isCreating = useIsProjectPendingCreation(projectId);
+  const detail = useQuery<Project>({
+    queryKey: projectQueryKeys.detail(projectId),
+    queryFn: () => getProject(projectId),
+    enabled: !isCreating,
+    initialData: initialProject ?? listProject,
+    staleTime: 30_000,
+  });
+  return listProject ?? detail.data ?? initialProject ?? undefined;
 }

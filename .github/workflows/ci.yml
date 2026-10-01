@@ -6,9 +6,11 @@ on:
   # `ready_for_review` is included so marking a draft ready triggers a run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on the durable trunk verifies the post-merge result.
+  # Push CI on main verifies the post-merge result. Staging invokes this workflow
+  # from Deploy Staging, so listing it here would run the full workflow twice.
   push:
     branches: [main]
+  workflow_call:
 
 concurrency:
   # PR updates supersede one another. Every non-PR run gets its own group so a
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   quality:
     name: quality
-    # Skip draft PRs; push runs always execute.
+    # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +41,7 @@ jobs:
 
   migration-checks:
     name: migration-checks
-    # Skip draft PRs; push runs always execute.
+    # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
@@ -59,6 +61,27 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meridian/database exec drizzle-kit check
+      - name: Guard frozen migration history (pull request)
+        if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'staging')
+        run: |
+          pnpm db:migration-history -- --base HEAD^1
+      - name: Guard frozen migration history (non-PR)
+        if: github.event_name != 'pull_request'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Skipping migration history guard: this event has no prior revision to compare against; db:migrate's runtime guard still refuses divergent database history."
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration history guard: no prior revision is available."
+          else
+            git fetch origin "$BEFORE" || true
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "Migration history guard failed: prior tip $BEFORE is unavailable (force push?); main and staging history must not be rewritten." >&2
+              exit 1
+            fi
+            pnpm db:migration-history -- --base "$BEFORE"
+          fi
       # PRs: lint only migrations this branch introduces. Warnings block merges
       # to main/staging (production-bound); feature-branch PRs block errors only.
       - name: Migration lint (pull request)
@@ -116,7 +139,7 @@ jobs:
 
   app-dev-transform:
     name: app-dev-transform
-    # Skip draft PRs; push runs always execute.
+    # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -135,7 +158,7 @@ jobs:
 
   prod-boot:
     name: prod-boot
-    # Skip draft PRs; push runs always execute.
+    # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:

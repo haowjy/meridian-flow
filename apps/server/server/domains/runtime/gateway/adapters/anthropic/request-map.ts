@@ -21,9 +21,15 @@
  *   is repaired earlier in context-builder `completeToolResultGroups`.
  * - Thinking budget is computed as a percentage of max_tokens, scaled by the
  *   effort level (low=25%, medium=50%, high=75%, max=100%).
+ * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
+ *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
+ *   explicit `cache_control` on that part. Its TTL comes from the registry
+ *   descriptor; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see the
+ *   registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
+ *   never marked directly: Anthropic renders tools before system before
+ *   messages, so the system-message breakpoint already covers them.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-
 import type {
   ContentPart,
   FunctionTool,
@@ -31,7 +37,21 @@ import type {
   Message,
   Tool,
 } from "../../domain/index.js";
+import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+
+type CacheControl = Anthropic.Messages.CacheControlEphemeral;
+
+function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
+  switch (ttlMs) {
+    case 5 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "5m" };
+    case 60 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "1h" };
+    default:
+      return undefined;
+  }
+}
 
 // ── Content part mapping ──────────────────────────────────────────
 //
@@ -63,19 +83,18 @@ function mapContentPartToAnthropicBlock(
   part: ContentPart,
   targetProviderId: string,
   targetModelId: string,
+  cacheControl: CacheControl | undefined,
 ): AnthropicContentBlock | null {
+  if (part.cacheBreakpoint && !cacheControl) {
+    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
+  }
   switch (part.type) {
     case "text":
       if (part.text.length === 0) return null;
       return {
         type: "text" as const,
         text: part.text,
-        ...(part.providerOptions?.anthropic?.cacheControl
-          ? {
-              cache_control: part.providerOptions.anthropic
-                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
-            }
-          : {}),
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "image": {
       const data = part.data instanceof URL ? part.data.href : part.data;
@@ -100,6 +119,7 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "tool_result":
       return {
@@ -107,6 +127,7 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
@@ -169,6 +190,7 @@ function mapMessage(
   message: Message,
   targetProviderId: string,
   targetModelId: string,
+  cacheControl: CacheControl | undefined,
 ): Anthropic.Messages.MessageParam | null {
   // system messages are extracted separately
   if (message.role === "system") return null;
@@ -179,7 +201,7 @@ function mapMessage(
   if (message.role === "tool") {
     const blocks = message.content
       .filter((p) => p.type === "tool_result")
-      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId))
+      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId, cacheControl))
       .filter((p): p is AnthropicContentBlock => p !== null);
     return blocks.length > 0 ? { role: "user", content: blocks as any } : null;
   }
@@ -189,17 +211,16 @@ function mapMessage(
   if (hasOnlyText && message.content.length > 0) {
     const text = textFromParts(message.content);
     if (text.length === 0) return null;
-    // Check for cache control on any part
-    const hasCacheControl = message.content.some(
-      (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
-    );
-    if (!hasCacheControl) {
+    const hasCacheBreakpoint = message.content.some((p) => p.cacheBreakpoint);
+    if (!hasCacheBreakpoint) {
       return { role, content: text };
     }
   }
 
   const blocks = message.content
-    .map((part) => mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId))
+    .map((part) =>
+      mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId, cacheControl),
+    )
     .filter((p): p is AnthropicContentBlock => p !== null);
   return blocks.length > 0 ? { role, content: orderedAnthropicBlocks(blocks) as any } : null;
 }
@@ -274,33 +295,28 @@ function mergeConsecutiveSameRole(
 
 function extractSystem(
   messages: Message[],
+  cacheControl: CacheControl | undefined,
 ): string | Anthropic.Messages.TextBlockParam[] | undefined {
   const systemMessages = messages.filter((m) => m.role === "system");
   if (systemMessages.length === 0) return undefined;
 
   const systemParts = systemMessages.flatMap((m) => m.content);
-  const hasCacheControl = systemParts.some(
-    (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
-  );
+  const hasCacheBreakpoint = systemParts.some((p) => p.cacheBreakpoint);
 
-  if (!hasCacheControl) {
+  if (!hasCacheBreakpoint) {
     const system = textFromParts(systemParts);
     return system.length > 0 ? system : undefined;
   }
+  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
 
   const systemBlocks = systemParts
     .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
     .filter((p) => p.text.length > 0)
-    .map((p) => {
-      const cacheControl = p.providerOptions?.anthropic?.cacheControl;
-      return {
-        type: "text" as const,
-        text: p.text,
-        ...(cacheControl
-          ? { cache_control: cacheControl as Anthropic.Messages.CacheControlEphemeral }
-          : {}),
-      };
-    });
+    .map((p) => ({
+      type: "text" as const,
+      text: p.text,
+      ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
+    }));
 
   return systemBlocks.length > 0 ? systemBlocks : undefined;
 }
@@ -309,7 +325,9 @@ function extractSystem(
 //
 // Canonical Tool[] → Anthropic ToolUnion[]. Function tools map to Anthropic
 // tools with input_schema; hosted tools map to web_search_20250305 or
-// code_execution_20250522. Cache_control from providerOptions is forwarded.
+// code_execution_20250522. Tools are never cache-marked directly: Anthropic
+// renders tools before system before messages, so the system message's own
+// breakpoint already covers them (see the file header).
 //
 
 function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | undefined {
@@ -323,12 +341,6 @@ function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | u
         name: ft.name,
         description: ft.description,
         input_schema: ft.inputSchema as Anthropic.Messages.Tool.InputSchema,
-        ...(ft.providerOptions?.anthropic?.cacheControl
-          ? {
-              cache_control: ft.providerOptions.anthropic
-                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
-            }
-          : {}),
       });
     } else if (tool.type === "hosted") {
       if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
@@ -364,43 +376,13 @@ function mapToolChoice(
   return undefined;
 }
 
-// ── Thinking / reasoning config ───────────────────────────────────
-//
-// Canonical reasoning → Anthropic thinking config.
-// Budget is computed as a percentage of max_tokens (low=25%, medium=50%,
-// high=75%, max=100%) with floor values to ensure useful thinking space.
-// `adaptive` uses medium budget.
-//
-
-function mapThinking(
-  reasoning: GenerateRequest["reasoning"],
-  maxTokens: number,
-): Anthropic.Messages.ThinkingConfigParam | undefined {
-  if (!reasoning || reasoning === "disabled") return undefined;
-
-  // Budget tokens for thinking — give a generous allocation
-  const budgetMap: Record<string, number> = {
-    low: Math.max(1024, Math.floor(maxTokens * 0.25)),
-    medium: Math.max(2048, Math.floor(maxTokens * 0.5)),
-    high: Math.max(4096, Math.floor(maxTokens * 0.75)),
-    max: maxTokens,
-  };
-
-  if (reasoning === "adaptive") {
-    return { type: "enabled", budget_tokens: Math.max(2048, Math.floor(maxTokens * 0.5)) };
-  }
-
-  const effort = typeof reasoning === "object" ? reasoning.effort : "medium";
-  const budget = budgetMap[effort] ?? Math.max(2048, Math.floor(maxTokens * 0.5));
-  return { type: "enabled", budget_tokens: budget };
-}
-
 // ── Public: build Anthropic params ────────────────────────────────
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
 // GenerateRequest. Always sets stream:true. Passes through any extra
-// providerOptions.anthropic keys (excluding cacheControl which is handled
-// per-part).
+// providerOptions.anthropic keys verbatim; prompt-cache marks are canonical
+// `ContentPart.cacheBreakpoint`, not a providerOptions key, so nothing needs
+// excluding here.
 //
 
 export function toAnthropicMessageParams(
@@ -408,16 +390,20 @@ export function toAnthropicMessageParams(
   modelId: string,
   maxOutputTokens: number,
   providerId = "anthropic",
+  promptCacheTtlMs?: number | null,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
+  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
   const maxTokens = request.maxTokens ?? maxOutputTokens;
-  const system = extractSystem(request.messages);
+  const system = extractSystem(request.messages, cacheControl);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, modelId))
+      .map((message) => mapMessage(message, providerId, modelId, cacheControl))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
-  const thinking = mapThinking(request.reasoning, maxTokens);
+  // Effort is model-relative: capping output must not change the cached thinking prefix.
+  const budget = thinkingBudgetTokens(request, maxOutputTokens);
+  const thinking = budget ? { type: "enabled" as const, budget_tokens: budget } : undefined;
   const repaired =
     thinking || providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
 
@@ -435,12 +421,6 @@ export function toAnthropicMessageParams(
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
     ...(thinking ? { thinking } : {}),
-    ...(request.providerOptions?.anthropic
-      ? Object.fromEntries(
-          Object.entries(request.providerOptions.anthropic).filter(
-            ([k]) => !["cacheControl"].includes(k),
-          ),
-        )
-      : {}),
+    ...(request.providerOptions?.anthropic ?? {}),
   };
 }

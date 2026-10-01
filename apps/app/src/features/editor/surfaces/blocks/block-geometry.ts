@@ -1,21 +1,4 @@
-/**
- * Where the chrome goes: the margin the handle sits in, and the seam a
- * dragging pointer is asking for.
- *
- * The document half of block movement is positions (`block-targets.ts`); this
- * is the half that has to look at what the browser actually drew. Both the
- * handle and the drop line are overlays measured from the rendered boxes, never
- * elements inside the prose — law 7 forbids chrome that moves a line of the
- * manuscript, and a widget decoration between two blocks would inherit the
- * manuscript's own block spacing and push the page down by exactly its height.
- *
- * **Everything drawn is in the manuscript overlay's coordinates**
- * (`features/editor/chrome/manuscript-overlay.ts`); everything READ from a
- * pointer stays in the viewport's, because a pointer event speaks no other
- * language. Placed against the viewport instead, the handle was a frame behind
- * every scroll and had nothing clipping it: measured mid-scroll at the top of
- * the WINDOW, fully opaque, over the app's breadcrumb.
- */
+/** Measures manuscript blocks and drop seams. */
 
 import type { EditorView } from "@tiptap/pm/view";
 
@@ -31,54 +14,16 @@ import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";
 export const BLOCK_HANDLE_WIDTH = 22;
 export const BLOCK_HANDLE_HEIGHT = 24;
 
-/**
- * How far the handle's right edge sits inside the text edge.
- *
- * The left margin is shared with the table's row grips, and the two used to
- * overlap by 10px — whichever painted on top took the right-click for both.
- * The ruling splits the band: the handle keeps the OUTER part and the grips the
- * inner one, because a grip belongs beside the row it serves while the handle
- * is a document-level control (M6's `table/.context/CONTEXT.md` records the
- * same split from the other side).
- *
- * 22 is what makes the split true: a row grip starts `ROW_GRIP_GAP` + its own
- * 15px width inside the frame, so 21, and the handle's right edge lands one
- * pixel clear of it. Measured against the text edge rather than the viewport
- * so it holds at every column width. Growing it moves the handle further from
- * the text, which is allowed; shrinking it walks back into the grip band,
- * which is the bug.
- */
+/** How far the handle's right edge sits inside the text edge. */
 const HANDLE_CLEARANCE = 22;
 
-/**
- * How much gutter the prose column has to leave left of its text edge.
- *
- * The handle is drawn IN the manuscript's pane and the pane clips what leaves
- * it, so the gutter stopped being a matter of taste the moment the portal
- * moved: a gutter narrower than the handle reaches is a control the writer can
- * see part of and grab part of. A 32px base-breakpoint gutter left 10px of a
- * 22px grip — on the phone editor, and in any desktop window under 640px.
- *
- * 44 of this is the band itself (`HANDLE_CLEARANCE` plus the grip's own
- * width). The remaining 4 is deliberate slack rather than rounding: a rounded
- * control with a hover background, flush against a clip edge, reads as cut off
- * rather than as a control, and the reserve is what keeps the next change to
- * either number from landing back on an exact fit.
- *
- * `editor-column.ts` owns the gutter and `editor-column.test.ts` holds the two
- * together — Tailwind class strings are literal, so nothing here can read
- * them.
- */
+/** How much gutter the prose column has to leave left of its text edge. */
 export const MARGIN_GUTTER_MIN = HANDLE_CLEARANCE + BLOCK_HANDLE_WIDTH + 4;
 
 /** How far the drop line floats off the outer edges of the document. */
 const END_SEAM_OFFSET = 6;
 
-/**
- * Slack around a block's box when deciding whether the pointer is on it, so a
- * pointer crossing the gap between two paragraphs does not fall into nothing
- * and blink the handle off. Half the manuscript's own block spacing.
- */
+/** Slack around a block's box when deciding whether the pointer is on it, so a pointer crossing the gap between two paragraphs does not fall into nothing and blink the handle off. */
 const BLOCK_HOVER_SLACK_PX = 8;
 
 type ColumnEdges = { left: number; right: number };
@@ -89,16 +34,7 @@ export function blockElement(view: EditorView, pos: number): HTMLElement | null 
   return dom instanceof HTMLElement ? dom : null;
 }
 
-/**
- * The prose column's left and right text edges: inside the ProseMirror node's
- * own padding. The drop line spans them and the handle hangs off the left, so
- * both agree with the column rather than with whichever block happens to be
- * adjacent (a centered table is narrower than the paragraph above it).
- *
- * Horizontal only, deliberately. The prose node reserves half a viewport of
- * padding under the last line so a writer can keep typing mid-screen, so its
- * box says nothing useful about where the manuscript ends.
- */
+/** The prose column's left and right text edges: inside the ProseMirror node's own padding. */
 function proseColumnEdges(view: EditorView, overlay: HTMLElement): ColumnEdges | null {
   const rect = overlayRect(overlay, view.dom);
   if (!rect) return null;
@@ -109,13 +45,7 @@ function proseColumnEdges(view: EditorView, overlay: HTMLElement): ColumnEdges |
   };
 }
 
-/**
- * Where the handle for `block` sits, in the overlay's coordinates.
- *
- * Vertically it aligns with the block's first LINE rather than its box, so it
- * reads as belonging to the sentence beside it: a heading's line is taller
- * than a paragraph's and a code fence's text starts below its own padding.
- */
+/** Where the handle for `block` sits, in the overlay's coordinates. */
 export function blockHandlePosition(
   view: EditorView,
   overlay: HTMLElement,
@@ -140,16 +70,7 @@ export function blockHandlePosition(
   };
 }
 
-/**
- * The block the pointer is on, or null when it is on none.
- *
- * Two corrections to `posAtCoords`, both about approach chrome rather than
- * carets. X is pulled into the column first, because the pointer spends the
- * whole approach in the margin where the prose node has nothing to say. And
- * the answer is checked against the block's own box, because the prose node
- * keeps answering far below the last line (it reserves half a viewport of
- * padding there) and a handle floating beside blank page belongs to nothing.
- */
+/** The block the pointer is on, or null when it is on none. */
 export function blockUnderPointer(
   view: EditorView,
   clientX: number,
@@ -171,31 +92,10 @@ export function blockUnderPointer(
     : null;
 }
 
-/**
- * Controls a node view puts inside its own body: a figure's alt and caption
- * fields, an image's retry button. A press on one of those is about the
- * control, and it is still not a drag the browser may run away with.
- */
+/** Controls a node view puts inside its own body: a figure's alt and caption fields, an image's retry button. */
 const OBJECT_BODY_CONTROLS = "input, textarea, select, button, a[href]";
 
-/**
- * The block a press on an object's body should drag, or null when the press
- * starts no block drag (§5.8).
- *
- * `posAtCoords` reports `inside`: the innermost node the coordinates landed in,
- * which for a picture is the picture and for a sentence is its paragraph. The
- * registry then says which drag that body starts, so prose, table cells, and
- * the objects that land inline all decline by being what they are, without a
- * node name here.
- *
- * The pointer's own x, not the column-corrected x `blockUnderPointer` uses: a
- * press in the margin beside a picture is a press on the margin.
- *
- * What moves is the object's top-level block, the same unit the margin handle
- * points at — so the object has to BE that block. A figure inside a list item
- * beside a paragraph is not, and grabbing it would carry prose nobody took
- * hold of; the margin handle still moves that whole line.
- */
+/** The block a press on an object's body should drag, or null when the press starts no block drag. */
 export function objectBodyDragTarget(view: EditorView, event: PointerEvent): BlockTarget | null {
   if (!(event.target instanceof Element)) return null;
   if (onEditableText(event.target) || event.target.closest(OBJECT_BODY_CONTROLS)) return null;
@@ -205,35 +105,13 @@ export function objectBodyDragTarget(view: EditorView, event: PointerEvent): Blo
   return blockAt(view.state.doc, object);
 }
 
-/**
- * True when the browser's own drag would carry a BLOCK object off.
- *
- * ProseMirror's drag is the right one for an object that lands inline: it
- * carries an inline slice, the dropcursor draws the caret between characters,
- * and the drop is one transaction that undo takes back in a step. It is the
- * wrong one for a block object, which shows no block drop line under it and
- * travels by serialize-and-reparse — the route that once brought a figure back
- * as a bare paragraph.
- *
- * A wider question than where a block drag may begin, and deliberately so: a
- * press on a figure's caption field belongs to the field, but a native drag
- * out of it still takes the whole figure. Text the writer selected inside a
- * source fence is the one thing still theirs to drag.
- */
+/** True when the browser's own drag would carry a BLOCK object off. */
 export function nativeDragCarriesObject(view: EditorView, event: DragEvent): boolean {
   if (event.target instanceof Element && onEditableText(event.target)) return false;
   return objectAtPointer(view, event.clientX, event.clientY, "block-drag") !== null;
 }
 
-/**
- * True when the element is text the writer can type into, rather than the
- * inert surface a node view draws in front of its own content.
- *
- * This is what keeps a mermaid fence honest. The same node is a diagram when
- * it renders and its own source when the caret is inside it, and one
- * registration cannot say which — but the DOM can: ProseMirror owns that
- * text, and everything standing in for it is `contenteditable="false"`.
- */
+/** True when the element is text the writer can type into, rather than the inert surface a node view draws in front of its own content. */
 function onEditableText(element: Element): boolean {
   return element.closest("[contenteditable]")?.getAttribute("contenteditable") !== "false";
 }
@@ -254,12 +132,7 @@ function objectAtPointer(
   return node && objectBody(node) === body ? at.inside : null;
 }
 
-/**
- * Which seam the pointer is asking for: the nearest edge of the block it is
- * over, above or below its middle. Off the top of the document it is the first
- * seam and off the bottom the last, so a pointer dragged past the end still
- * has an answer rather than losing the line.
- */
+/** Which seam the pointer is asking for: the nearest edge of the block it is over, above or below its middle. */
 export function seamIndexAtPointer(view: EditorView, clientY: number): number {
   const { doc } = view.state;
   let pos = 0;
@@ -310,13 +183,7 @@ function blockRectAtIndex(
   return element ? overlayRect(overlay, element) : null;
 }
 
-/**
- * The same two edges the pointer is compared against, in the pointer's space.
- *
- * A pointer event carries viewport coordinates and nothing else, so the one
- * reading this module takes FROM the writer stays there. Everything it hands
- * back to be drawn is in the overlay's coordinates instead.
- */
+/** The same two edges the pointer is compared against, in the pointer's space. */
 function proseColumnEdgesInViewport(view: EditorView): ColumnEdges {
   const rect = view.dom.getBoundingClientRect();
   const style = window.getComputedStyle(view.dom);
