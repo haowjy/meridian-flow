@@ -1,7 +1,8 @@
 /**
- * The link surfaces (§5.5, mockup 06): the destination hint and the state of
- * an unresolved target. The external link's outbound arrow and the internal
- * link chip are shared with chat and live in `components/app/link-chip/`.
+ * The link surfaces (§5.5, mockup 06): the destination hint. How a link
+ * itself looks (the internal link chip in every state, and the external
+ * link's outbound arrow) is shared with chat and lives in
+ * `components/app/link-chip/`.
  *
  * The hint is approach chrome — it fades both ways and never takes the
  * pointer — and is portalled into the manuscript's scroll pane, hence the
@@ -53,18 +54,4 @@
 
 .meridian-link-hint[data-state="open"] {
   opacity: 1;
-}
-
-/* An internal link with nothing behind it yet. NOT an error state: serial
-   writers link chapters and characters before they write them, so this is
-   quiet ink and a dashed underline (mockup 06 state A), never a warning.
-
-   The state lives on a decoration, and ProseMirror renders an inline
-   decoration as a span INSIDE the mark's own `<a>`. The underline belongs to
-   the anchor and a descendant cannot call it off, so the anchor reads its
-   child's state through `:has()`. */
-.meridian-editor .ProseMirror a:has([data-link-state="unresolved"]) {
-  color: var(--color-ink-subtle);
-  text-decoration-style: dashed;
-  text-decoration-color: color-mix(in oklab, var(--color-ink-subtle) 55%, transparent);
 }

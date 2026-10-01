@@ -16,7 +16,11 @@ Three pieces, one owner each:
   `linkChipAttributes()` onto the element and does nothing else.
 - **The look** is `link-chip.css`, keyed by `data-link-chip` and
   `data-link-chip-icon`, imported once by `styles/globals.css`. Unlayered, so
-  it beats `.prose-tokens a` wherever a chip is an anchor in prose.
+  it beats `.prose-tokens a` wherever a chip is an anchor in prose. A chip has
+  two forms: the element carrying the attributes (transcript, composer), or an
+  `<a>` whose descendants carry `data-link-chip-part` (the Editor, where the
+  link mark is one `<a>` around a label its decorations split per text node).
+  Every rule names both.
 - **The icons** are `family-icons.ts`: lucide `IconNode` data held once.
   `schemeIcon()` (sidebar, menus, identity bar) builds React components from
   it, and `LINK_CHIP_ICON_CSS` derives one mask-image rule per family, which
@@ -24,7 +28,10 @@ Three pieces, one owner each:
 
 The icon is a CSS mask on `::before`, never a React icon, because the Editor
 cannot mount React inside marked prose; a mask keeps every surface
-pixel-identical and keeps the icon out of copies and accessible names.
+pixel-identical and keeps the icon out of copies and accessible names. The
+`::before` is an empty inline box sized by padding, not an inline-block: an
+atomic inline is a line-break opportunity, and the icon would end one line
+with the name starting the next.
 
 Core names families and never imports icons (`core` must not import
 `features/` or `components/`); the family-to-image map exists only here.

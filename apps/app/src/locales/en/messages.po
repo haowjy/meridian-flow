@@ -2388,6 +2388,7 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
+#: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "More than one document carries that name"
 msgstr "More than one document carries that name"

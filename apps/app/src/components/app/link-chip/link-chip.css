@@ -3,11 +3,16 @@
  * surface (transcript, composer, Editor) draws the same thing by emitting the
  * same attributes and never restyles it locally.
  *
- * Internal links are a tag chip (`linkChipAttributes()` in
- * `core/editor/links/link-chip.ts`): `data-link-chip` is filled or dashed, and
- * `data-link-chip-icon` names the document family. Each family's mask image
- * arrives as `--link-chip-icon` from `family-icons.ts`, injected once into the
- * document head, so the shapes are defined in one place.
+ * Internal links are a tag chip (`core/editor/links/link-chip.ts`). A chip is
+ * either an element carrying `data-link-chip` (filled or dashed) and
+ * `data-link-chip-icon` (the document family), or an `<a>` whose descendants
+ * carry `data-link-chip-part` and the icon: the Editor, where the link mark is
+ * one `<a>` around the whole label but its state rides decoration spans inside
+ * it, one per text node. Drawing the box on the `<a>` keeps a label with mixed
+ * formatting one chip, and leaves the marked text, the caret, and the Yjs
+ * document exactly as they were. Each family's mask image arrives as
+ * `--link-chip-icon` from `family-icons.ts`, injected once into the document
+ * head, so the shapes are defined in one place.
  *
  * External links keep their underline and wear the outbound arrow, the one
  * thing that tells a writer a link leaves the app before they press it.
@@ -16,7 +21,8 @@
  * chip is an anchor inside rendered prose.
  */
 
-[data-link-chip] {
+/* `:is()` lists the two forms of one chip; every rule below names both. */
+:is([data-link-chip], a:has([data-link-chip-part])) {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background-color: var(--color-muted);
@@ -29,44 +35,55 @@
   transition: background-color 150ms ease;
 }
 
-/* Drawn in the mask rather than as an element, so it is never in a copy or in
-   a screen reader's reading of the sentence. */
-[data-link-chip]::before {
-  display: inline-block;
-  width: 0.95em;
-  height: 0.95em;
+/* Drawn in the mask rather than as an element, so it is never in a copy, in
+   a screen reader's reading of the sentence, or in the Editor's document.
+
+   An empty INLINE box whose left padding is the icon's width, not an
+   inline-block: an atomic inline is a line-break opportunity, so the icon
+   could end one line and the name start the next. An inline box glued to the
+   first word cannot be separated from it. */
+:is([data-link-chip], a:has([data-link-chip-part]))::before {
+  padding-left: 0.95em;
   margin-right: 0.25em;
   background-color: var(--color-muted-foreground);
   content: "";
-  vertical-align: -0.14em;
   mask-image: var(--link-chip-icon);
   mask-position: center;
   mask-repeat: no-repeat;
-  mask-size: contain;
+  mask-size: 0.95em 0.95em;
 }
 
 /* Nothing at that address yet. Not an error: serial writers link chapters
    before they write them, so this is quiet ink and an outline, never a
    warning. */
-[data-link-chip="dashed"] {
+:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"])) {
   border-color: var(--color-border);
   border-style: dashed;
   background-color: transparent;
   color: var(--color-ink-subtle);
 }
 
+/* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
+:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"])) strong {
+  color: inherit;
+}
+
 /* Only a chip that goes somewhere answers the pointer. */
-[data-link-chip][role="link"]:not([aria-disabled="true"]):hover {
+:is([data-link-chip], a:has([data-link-chip-part]))[role="link"]:not([aria-disabled="true"]):hover {
   background-color: var(--color-sidebar-accent);
 }
 
-[data-link-chip="dashed"][role="link"]:not([aria-disabled="true"]):hover {
+:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"]))[role="link"]:not(
+  [aria-disabled="true"]
+):hover {
   background-color: var(--color-muted);
 }
 
-[data-link-chip]:focus-visible {
+/* The outline replaces prose links' focus glow, which would ring the box twice. */
+:is([data-link-chip], a:has([data-link-chip-part])):focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* The outbound arrow: the Editor's external mark (`data-link-kind`) and the

@@ -9,9 +9,11 @@
  * answer lands.
  *
  * ProseMirror puts an inline decoration's attributes on a span INSIDE the link
- * mark's `<a>`, so the CSS reaches the anchor through `:has()`. That is a fact
- * about how marks and decorations nest, not a choice — see the link
- * surface's `link-surfaces.css`.
+ * mark's `<a>`, one span per text node, so a label with bold in it carries
+ * several. The `<a>` is one element around the whole label (the link mark
+ * renders outermost), and the link chip stylesheet
+ * (`components/app/link-chip/link-chip.css`) draws the chip on it through
+ * `:has()`. That is a fact about how marks and decorations nest, not a choice.
  */
 
 import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
@@ -20,6 +22,7 @@ import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
+import { linkChip, linkChipPartAttributes } from "./link-chip";
 import type { LinkResolution } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
@@ -171,11 +174,15 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
     const href = linkTargetHref(target);
     hrefs.add(href);
     const entry = resolution.read(href);
-    if (entry) {
-      decorations.push(
-        Decoration.inline(pos, pos + node.nodeSize, { "data-link-state": entry.state }),
-      );
-    }
+    // Every internal link is drawn, answered or not: a failed or unasked one
+    // is a filled chip in its own family, never a missing one.
+    const chip = linkChip(target, entry, resolution.baseUri);
+    decorations.push(
+      Decoration.inline(pos, pos + node.nodeSize, {
+        ...(entry ? { "data-link-state": entry.state } : {}),
+        ...(chip ? linkChipPartAttributes(chip) : {}),
+      }),
+    );
     return false;
   });
 

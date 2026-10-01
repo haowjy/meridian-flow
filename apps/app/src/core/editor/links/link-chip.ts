@@ -4,7 +4,7 @@
  *
  * Pure presentation rules, shared by every surface that shows a link (the
  * transcript, the composer, the Editor). A surface emits the two attributes
- * from `linkChipAttributes` and nothing else; the one look keyed by them is
+ * from `linkChipAttributes` (or `linkChipPartAttributes`) and nothing else; the one look keyed by them is
  * the app's link-chip stylesheet, and the icon images keyed by the icon
  * attribute come from the app's family icon data. Core names the family and
  * never draws it, so it imports no icons.
@@ -65,6 +65,20 @@ export function linkChip(
  */
 export function referenceChip(uri: string, available = true): LinkChip {
   return { state: available ? "filled" : "dashed", icon: uriFamily(uri) ?? "file" };
+}
+
+/**
+ * For a chip whose box is an ancestor the surface cannot attribute: the
+ * Editor's link mark renders one `<a>` around the whole label, while its
+ * resolution decorations are spans inside it, one per text node. Each span
+ * carries the part; the stylesheet draws the chip on the `<a>` through
+ * `:has()`, so mixed formatting inside a label is still one chip.
+ */
+export function linkChipPartAttributes(chip: LinkChip): {
+  "data-link-chip-part": LinkChip["state"];
+  "data-link-chip-icon": LinkChipIcon;
+} {
+  return { "data-link-chip-part": chip.state, "data-link-chip-icon": chip.icon };
 }
 
 /** The rendered-only attributes the link-chip stylesheet is keyed by. */

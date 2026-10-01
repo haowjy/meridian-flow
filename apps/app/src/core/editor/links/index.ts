@@ -19,6 +19,7 @@ export {
   type LinkChipIcon,
   linkChip,
   linkChipAttributes,
+  linkChipPartAttributes,
   referenceChip,
 } from "./link-chip";
 export {

@@ -132,8 +132,9 @@ owns what is shown. With nothing registered, `dismissFollow()` just clears.
 classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
 ask once between them. Four states are answers (`pending`, `resolved`,
 `unresolved`, `ambiguous`) and a fifth outcome is not: a request that THROWS
-caches nothing and renders nothing, because a link the editor could not ask
-about must never be drawn as a link that does not exist.
+caches nothing, and the link draws as a filled chip in its own family, because
+a link the editor could not ask about must never be drawn as a link that does
+not exist.
 
 Ambiguity resolves to no document rather than to a guess, and it is not
 unresolved: `unresolved` draws as "nothing here yet", which is false of a name
@@ -215,22 +216,24 @@ for. Both halves matter:
   update is the one ProseMirror refuses to apply. The delay also coalesces a
   burst of answers into one redraw.
 
-ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
-`surfaces/link/link-surfaces.css` reaches the anchor through
-`a:has([data-link-state="unresolved"])`
-— the underline belongs to the anchor and a descendant cannot call it off.
-That nesting is load-bearing: a change to it is a silently unstyled unresolved
-link.
+ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`,
+one span per text node, while the link mark (priority 1000, outermost) renders
+one `<a>` around the whole label. The chip is drawn on the `<a>`: each span
+carries `data-link-chip-part` and `data-link-chip-icon`, and the link chip
+stylesheet reaches the anchor through `a:has([data-link-chip-part])`. So
+`[Lin **Feng**]` is one chip with a bold word in it, not two. That nesting is
+load-bearing: a mark ranked above the link would split the `<a>`, and a change
+to the decoration shape is a silently undrawn chip.
 
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
 zero extra attributes, and no peer ever receives a resolution.
 
 ## Which chip a link draws
 
-`link-chip.ts` is the one presentation rule for internal links. The transcript
-and the composer draw chips from it; the Editor's decorations still emit only
-`data-link-state`, drawn by `link-surfaces.css`, until the Editor adopts the
-chip.
+`link-chip.ts` is the one presentation rule for internal links, and every
+surface draws from it: the transcript and the composer on their own element
+(`linkChipAttributes`), the Editor on the decoration spans inside its `<a>`
+(`linkChipPartAttributes`).
 
 | Answer | Chip | Icon |
 |---|---|---|
@@ -239,16 +242,25 @@ chip.
 | pending, ambiguous, failed, not asked | filled | the target's own family; a wikilink gets `file` |
 
 A scheme URI knows its family from its prefix and a relative path from the
-holder's `baseUri`, so neither waits on an answer for its icon. An exact
+holder's `baseUri` (the registration states it: `registerResolver(resolve,
+{ baseUri })`, read back as `resolution.baseUri`), so neither waits on an
+answer for its icon. An exact
 reference (`referenceChip`) is its URI's family, dashed once its document is
 gone. External targets get no chip.
 
-The seam: core emits `data-link-chip` and `data-link-chip-icon`, never an
-image. The app owns the icon data and turns each family into a
-`--link-chip-icon` mask image keyed by the icon attribute
+The seam: core emits the chip attributes, never an image. The app owns the
+icon data and turns each family into a `--link-chip-icon` mask image keyed by
+the icon attribute, on the element or on the `<a>` holding it
 (`components/app/link-chip/`). The alternatives were an image passed into
-core (core would import app icon data) or a per-element inline style (the
-Editor's decorations could not carry it without a second hook).
+core (core would import app icon data), a per-element inline style (the
+Editor's decorations could not carry it without a second hook), and a link
+mark view writing state onto its own `<a>` (a second drawing path beside the
+decorations, and attribute writes ProseMirror's DOM observer would see).
+
+Drawing changes nothing about editing. The label stays ordinary marked text;
+the icon is a pseudo-element, so it is not in the document, the clipboard, or
+the caret's path; `inclusive: false` still keeps typing at either edge out of
+the link (`link-chip-editing.test.ts`).
 
 ## Where the mark's own fences are
 
