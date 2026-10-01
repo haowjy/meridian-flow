@@ -71,6 +71,7 @@ the batch endpoint in [`FUTURE`](FUTURE).
 | an address (scheme or relative) nothing matched | "No document at that address", no Create |
 | several matched, proven by a complete index | "More than one document carries that name", up to 5 candidates with where each lives, no Create; choosing one opens it through the surface's `open` |
 | the request failed | "That link could not be checked", with Try again |
+| several matched, but the index moved and no longer lists them | the same failure, never missing or Create |
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
 Ambiguity comes from the scope's index, not the server: the resolver answers

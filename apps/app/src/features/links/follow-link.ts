@@ -120,10 +120,15 @@ export async function followProjectLink({
     return;
   }
   const several = candidates(target);
+  if (several.length > 1) {
+    reporter.report({ state: "ambiguous", target, candidates: several });
+    return;
+  }
+  // The cache proved several matches, but the index no longer lists them (it
+  // moved under the follow before the scope re-registered). That is not a
+  // name nothing carries, so it never offers Create; Try again asks afresh.
   reporter.report(
-    several.length > 1
-      ? { state: "ambiguous", target, candidates: several }
-      : { state: "missing", target },
+    entry.state === "ambiguous" ? { state: "failed", target } : { state: "missing", target },
   );
 }
 

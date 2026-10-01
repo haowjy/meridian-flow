@@ -107,6 +107,16 @@ describe("followProjectLink", () => {
     expect(events).toEqual(["report:ambiguous"]);
   });
 
+  it("never reports a name the cache found ambiguous as missing", async () => {
+    // The index moved under the follow and no longer lists the candidates.
+    register(async () => "ambiguous");
+    candidates = () => [KAEL];
+
+    await follow();
+
+    expect(events).toEqual(["report:failed"]);
+  });
+
   it("reports a request that could not be made as failed, not missing", async () => {
     register(async () => {
       throw new Error("offline");
