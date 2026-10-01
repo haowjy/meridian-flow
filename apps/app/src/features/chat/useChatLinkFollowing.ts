@@ -25,13 +25,21 @@
  *
  * Drawing: the chat owns one resolution cache and hands it to the follower and
  * to the transcript, so a syntax link's chip and a click on it read the same
- * answer. One requester asks about every link the transcript shows, batched. Created once and never destroyed, as the follower's own would be:
- * `destroy()` drops listeners, and a StrictMode remount keeps the instance.
+ * answer. One requester asks about every link the transcript shows, batched.
+ * The cache is created once and never destroyed, as the follower's own would
+ * be: `destroy()` drops listeners, and a StrictMode remount keeps the
+ * instance.
+ *
+ * Exact `@` references in writer messages ask by identity rather than through
+ * the resolver, from the chat's `ReferenceAvailability` store. The catalog
+ * revision that re-registers the resolver also refreshes that store, so a
+ * deleted document turns its references dashed without a reload.
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
-import { type ComponentProps, useCallback, useMemo, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkRequester, createLinkResolution } from "@/core/editor/links";
 import {
@@ -44,6 +52,8 @@ import {
 } from "@/features/links";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
+
+import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
 /** What a chat link is resolved against, or pending while that is still loading. */
 export function chatLinkScope({
@@ -80,6 +90,7 @@ export function useChatLinkFollowing({
   active: boolean;
 }): {
   navigation: TranscriptLinkNavigation;
+  references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
 } {
   const { status: worksStatus, noWork } = useWorks(projectId);
@@ -116,6 +127,21 @@ export function useChatLinkFollowing({
   const [requester] = useState(() => createLinkRequester(resolution));
   const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
 
+  // Exact `@` references ask by identity, not through the resolver, but the
+  // same catalog change is what makes their answers stale: a revision change
+  // (a document created, renamed, moved, or deleted) asks again about every
+  // reference shown, in one batch.
+  const references = useMemo(
+    () => createReferenceAvailability((ids) => lookupProjectContextAvailability(projectId, ids)),
+    [projectId],
+  );
+  const seenRevision = useRef(index.revision);
+  useEffect(() => {
+    if (seenRevision.current === index.revision) return;
+    seenRevision.current = index.revision;
+    references.refresh();
+  }, [index.revision, references]);
+
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
       follow: (target) => follower.follow(target),
@@ -128,6 +154,7 @@ export function useChatLinkFollowing({
 
   return {
     navigation,
+    references,
     dialog: {
       outcome,
       projectId,

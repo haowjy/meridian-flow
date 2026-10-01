@@ -72,6 +72,7 @@ import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-v
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
+import { ReferenceAvailabilityContext } from "./reference-availability";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
@@ -492,89 +493,91 @@ export function ChatView({
 
   return (
     <TranscriptLinkNavigationContext.Provider value={links.navigation}>
-      <ChatSurface
-        title={pageTitle}
-        surfaceRef={chatSurfaceRef}
-        footer={
-          <div data-debug-composer={threadId}>
-            {composerStrip ? (
-              // The composer's own border and radius, open at the bottom: the
-              // composer's top border is the strip's lower edge, so the two
-              // read as one unit. Inset like the draft dock below it.
-              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                {composerStrip}
-              </div>
-            ) : null}
-            {/* The dock strip sits BEHIND (below) the composer — narrower via
+      <ReferenceAvailabilityContext.Provider value={links.references}>
+        <ChatSurface
+          title={pageTitle}
+          surfaceRef={chatSurfaceRef}
+          footer={
+            <div data-debug-composer={threadId}>
+              {composerStrip ? (
+                // The composer's own border and radius, open at the bottom: the
+                // composer's top border is the strip's lower edge, so the two
+                // read as one unit. Inset like the draft dock below it.
+                <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                  {composerStrip}
+                </div>
+              ) : null}
+              {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
-            <DraftDock dock={dock} />
-            <Composer
-              onOpenReference={(reference) => {
-                void openReferenceDocument({
-                  documentId: reference.documentId,
-                  disposition: "current",
-                });
-              }}
-              ref={composerRef}
-              variant="pinned"
-              running={run !== null}
-              referenceCatalog={referenceCatalog}
-              availableSkills={availableSkills.skills}
-              commands={chatCommands}
-              uploadPort={uploadIntakePort}
-              uploadScope={
-                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-              }
-              onSubmit={handleSubmit}
-              onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-              onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
-              onStop={handleStop}
-              toolbarLeft={
-                activeWork ? (
-                  <ChatComposerToolbar
-                    projectId={projectId}
+              <DraftDock dock={dock} />
+              <Composer
+                onOpenReference={(reference) => {
+                  void openReferenceDocument({
+                    documentId: reference.documentId,
+                    disposition: "current",
+                  });
+                }}
+                ref={composerRef}
+                variant="pinned"
+                running={run !== null}
+                referenceCatalog={referenceCatalog}
+                availableSkills={availableSkills.skills}
+                commands={chatCommands}
+                uploadPort={uploadIntakePort}
+                uploadScope={
+                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+                }
+                onSubmit={handleSubmit}
+                onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
+                onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
+                onStop={handleStop}
+                toolbarLeft={
+                  activeWork ? (
+                    <ChatComposerToolbar
+                      projectId={projectId}
+                      threadId={threadId}
+                      work={activeWork}
+                      agentName={composerAgentName}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
+          }
+        >
+          <TurnDerivationProvider value={turnDerivation}>
+            <SubagentDisclosureProvider>
+              <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                  <RunningSubagentsStrip threadId={threadId} />
+                  <TurnList
                     threadId={threadId}
-                    work={activeWork}
-                    agentName={composerAgentName}
+                    turns={turns}
+                    awaitingSubagents={runningBackgroundSubagents.length > 0}
+                    historySettled={historySettled}
+                    tailFollowRevision={tailFollowRevision}
+                    ariaLabel={t`Chat`}
+                    onRespondToInterrupt={handleRespondToInterrupt}
+                    failedSendRetry={failedSendRetry}
+                    changeTrails={changeTrails.byId}
+                    submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                    queuedWriterTurnIds={queuedWriterTurnIds}
+                    controls={controls}
+                    brief={brief}
+                    replyRetry={replyRetry}
+                    busy={liveStatus.kind === "awake" || run !== null}
+                    inherited={inheritedView}
+                    onRetryInherited={inherited.failed ? inherited.retry : null}
+                    threadUsage={snapshotThreadUsage}
                   />
-                ) : undefined
-              }
-            />
-          </div>
-        }
-      >
-        <TurnDerivationProvider value={turnDerivation}>
-          <SubagentDisclosureProvider>
-            <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-              <div className="relative flex min-h-0 flex-1 flex-col">
-                <RunningSubagentsStrip threadId={threadId} />
-                <TurnList
-                  threadId={threadId}
-                  turns={turns}
-                  awaitingSubagents={runningBackgroundSubagents.length > 0}
-                  historySettled={historySettled}
-                  tailFollowRevision={tailFollowRevision}
-                  ariaLabel={t`Chat`}
-                  onRespondToInterrupt={handleRespondToInterrupt}
-                  failedSendRetry={failedSendRetry}
-                  changeTrails={changeTrails.byId}
-                  submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-                  queuedWriterTurnIds={queuedWriterTurnIds}
-                  controls={controls}
-                  brief={brief}
-                  replyRetry={replyRetry}
-                  busy={liveStatus.kind === "awake" || run !== null}
-                  inherited={inheritedView}
-                  onRetryInherited={inherited.failed ? inherited.retry : null}
-                  threadUsage={snapshotThreadUsage}
-                />
-              </div>
-            </SubagentActivityProvider>
-          </SubagentDisclosureProvider>
-        </TurnDerivationProvider>
-      </ChatSurface>
-      <LinkFollowDialog {...links.dialog} />
+                </div>
+              </SubagentActivityProvider>
+            </SubagentDisclosureProvider>
+          </TurnDerivationProvider>
+        </ChatSurface>
+        <LinkFollowDialog {...links.dialog} />
+      </ReferenceAvailabilityContext.Provider>
     </TranscriptLinkNavigationContext.Provider>
   );
 }

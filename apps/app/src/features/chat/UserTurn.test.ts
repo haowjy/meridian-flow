@@ -1,7 +1,8 @@
 /** User-turn projection keeps skill `/slug` ranges in the transcript source. */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { projectUserTurn, transcriptReferenceResolutions } from "./UserTurn";
+import { transcriptReferenceResolutions } from "./reference-availability";
+import { projectUserTurn } from "./UserTurn";
 
 describe("projectUserTurn", () => {
   it("places a skill range on the concatenated user text", () => {
