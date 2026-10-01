@@ -53,12 +53,14 @@ export const TranscriptLinkNavigationContext = createContext<TranscriptLinkNavig
   undefined,
 );
 
-export type TranscriptReferenceResolution = {
-  documentId: string;
-  uri: string;
-  label: string;
-  available: boolean;
-};
+/**
+ * What the host knows about an exact reference's document. Available carries
+ * where it lives now; a gone document has nowhere, so it matches on identity
+ * alone and draws dashed.
+ */
+export type TranscriptReferenceResolution =
+  | { documentId: string; available: true; uri: string; label: string }
+  | { documentId: string; available: false };
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpen?: (documentId: string) => void;
@@ -82,8 +84,15 @@ export function TranscriptReference({
   const target = targetHref ? classifyLinkTarget(targetHref) : null;
   const trigger = useRef<HTMLSpanElement>(null);
   const candidate = documentId ? resolutions?.get(documentId) : null;
+  // An available answer counts only at the URI the writer referenced: a
+  // document that has moved since is not settled for this occurrence, so it
+  // stays filled and does not follow from here.
   const resolution =
-    candidate?.documentId === documentId && candidate?.uri === uri ? candidate : null;
+    candidate &&
+    candidate.documentId === documentId &&
+    (!candidate.available || candidate.uri === uri)
+      ? candidate
+      : null;
   const syntax = !documentId && target ? target : null;
   const syntaxFollowable = Boolean(syntax && navigation?.canFollow(syntax));
   const follow = documentId
@@ -93,7 +102,7 @@ export function TranscriptReference({
     : navigation && syntax && syntaxFollowable
       ? () => navigation.follow(syntax)
       : undefined;
-  const label = authoredLabel === "true" ? children : (resolution?.label ?? children);
+  const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
   const unfollowable = Boolean(navigation && syntax && !syntaxFollowable);
   const answer = useLinkAnswer(
     syntax && !unfollowable ? (navigation?.resolution ?? null) : null,

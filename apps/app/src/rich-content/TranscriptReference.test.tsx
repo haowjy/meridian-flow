@@ -73,13 +73,13 @@ function render(href: string, label: string) {
   return find(label);
 }
 
-function renderExact(resolved: TranscriptReferenceResolution, label: string) {
+function renderExact(resolved: TranscriptReferenceResolution, uri: string, label: string) {
   act(() =>
     root.render(
       <TranscriptReferenceContext.Provider
         value={{ resolutions: new Map([[resolved.documentId, resolved]]), onOpen: vi.fn() }}
       >
-        <TranscriptReference data-document-id={resolved.documentId} data-uri={resolved.uri}>
+        <TranscriptReference data-document-id={resolved.documentId} data-uri={uri}>
           {label}
         </TranscriptReference>
       </TranscriptReferenceContext.Provider>,
@@ -173,7 +173,8 @@ describe("TranscriptReference", () => {
 
   it("dashes an exact reference whose document is gone, and does not follow it", () => {
     const reference = renderExact(
-      { documentId: "doc-map", uri: "uploads://@/map.png", label: "map.png", available: false },
+      { documentId: "doc-map", available: false },
+      "uploads://@/map.png",
       "map.png",
     );
 
@@ -181,9 +182,21 @@ describe("TranscriptReference", () => {
     expect(reference.getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("keeps a moved document filled and unfollowed at the URI the writer referenced", () => {
+    const reference = renderExact(
+      { documentId: "doc-style", uri: "kb://style.md", label: "style", available: true },
+      "user://style.md",
+      "style",
+    );
+
+    expect(chip(reference)).toEqual({ state: "filled", icon: "user" });
+    expect(reference.getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("names an exact reference's family by its URI", () => {
     const reference = renderExact(
       { documentId: "doc-style", uri: "user://style.md", label: "style", available: true },
+      "user://style.md",
       "style",
     );
 

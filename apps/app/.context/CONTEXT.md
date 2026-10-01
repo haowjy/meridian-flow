@@ -147,13 +147,22 @@ grammar for presentation and `reference-occurrences.ts` for submitted-reference
 authority. Those are separate decisions: grammar may make syntax readable, but
 only an exact submitted `(documentId, uri)` match grants occurrence navigation.
 Syntax-only navigation goes through the hosting surface's link follower
-(`TranscriptLinkNavigationContext`: `{ follow, canFollow }`, built by
-`features/chat/useChatLinkFollowing.ts` over
+(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution }`, built
+by `features/chat/useChatLinkFollowing.ts` over
 [`features/links`](../src/features/links/AGENTS.md)) and must
-never inherit attachment authority. A syntax reference `canFollow` rejects (a
-relative path in chat, which has no base URI) renders as plain text with its
-href as a tooltip: no link role, no tab stop, no context menu. Exact references,
-available or not, keep their own rendering.
+never inherit attachment authority. `resolution` is the cache those follows
+use; a syntax link draws its chip state from it, so what it shows and what a
+click finds agree. A syntax reference `canFollow` rejects (a relative path in
+chat, which has no base URI) renders as plain text with its href as a tooltip:
+no link role, no tab stop, no context menu.
+
+Every other reference is a link chip
+([`components/app/link-chip`](../src/components/app/link-chip/AGENTS.md)). An
+exact reference draws in its URI's family from the host's
+`TranscriptReferenceResolution` map (`UserTurn`'s
+`transcriptReferenceResolutions` over the availability lookup): dashed and
+unfollowable once its document is gone for this writer, filled while the
+answer is out, indeterminate, or for a document that has moved since.
 
 Occurrence coordinates are offsets in the original serialized message, not in
 decoded mdast text. Keep authorized content in one source block, use
