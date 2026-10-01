@@ -34,6 +34,13 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
 };
 
 function markdownLinkDestination(href: string): string {
-  if (!href.includes("\t")) return href;
-  return `<${href.replace(/[\\<>]/g, "\\$&")}>`;
+  let depth = 0;
+  for (const character of href) {
+    if (character === "(") depth += 1;
+    else if (character === ")") depth -= 1;
+    if (depth < 0) break;
+  }
+  const unbalancedParentheses = depth !== 0;
+  if (!/[\s]/.test(href) && !unbalancedParentheses) return href;
+  return `<${href.replace(/[<>]/g, "\\$&")}>`;
 }

@@ -8,6 +8,7 @@
  * single match is the only match.
  */
 
+import { resolveDocumentHref } from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -99,10 +100,14 @@ function localMatches(
   }
   const base = parseContextUri(target.kind === "scheme" ? target.uri : target.baseUri);
   if (!base.ok || !base.value.path) return [];
-  const requestedPath =
-    target.kind === "relative"
-      ? relativeDocumentPath(base.value.path, target.path)
-      : base.value.path;
+  let requestedPath = base.value.path;
+  if (target.kind === "relative") {
+    const resolved = resolveDocumentHref(target.path, target.baseUri);
+    if (!resolved) return [];
+    const parsed = parseContextUri(resolved.uri);
+    if (!parsed.ok) return [];
+    requestedPath = parsed.value.path;
+  }
   if (!requestedPath) return [];
   return documents.filter((document) => {
     const candidate = parseContextUri(document.uri);
@@ -133,18 +138,4 @@ function sameDocumentPath(candidate: string, requested: string): boolean {
     (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
       candidate.slice(0, candidate.lastIndexOf(".")) === requested)
   );
-}
-
-function relativeDocumentPath(base: string, relative: string): string | null {
-  if (!relative || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) return null;
-  const segments = base.split("/");
-  segments.pop();
-  for (const part of relative.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (segments.length === 0) return null;
-      segments.pop();
-    } else segments.push(part);
-  }
-  return segments.length > 0 ? segments.join("/") : null;
 }
