@@ -8,6 +8,7 @@
 @import "@meridian/design-tokens/ink-jade.css";
 @import "@meridian/design-tokens/themes.css";
 @import "tw-animate-css";
+@import "../components/app/link-chip/link-chip.css";
 
 /* Components' `dark:` utilities key off the UI-theme attribute the boot
    script stamps on <html> — one switch for tokens and variants alike. */
@@ -219,13 +220,13 @@
   summary {
     cursor: pointer;
   }
-  [data-composer-reference],
+  /* Composer references are link chips (`link-chip.css`); a skill is not a
+     document link and keeps its quiet underline. */
   [data-composer-skill] {
     text-decoration: underline;
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-reference]:focus-visible,
   [data-composer-skill]:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
@@ -616,8 +617,11 @@
     @apply border-0 border-t border-border-subtle;
     margin-block: var(--prose-space-rule);
   }
-  & a {
+  /* Streamdown draws a transcript's external link as a button (it asks before
+     leaving), so the anchor look is applied to it too. */
+  & :is(a, [data-streamdown="link"]) {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
+    font-weight: inherit;
   }
 
   /* Streamdown ships className strings only (its styles.css is keyframes we

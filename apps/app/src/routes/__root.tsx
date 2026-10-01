@@ -1,8 +1,9 @@
 /**
  * __root route — Meridian app document shell.
  *
- * Renders the global CSS link, head/meta, i18n provider, tooltip provider,
- * AuthKit client provider, global announcement region, and router Outlet.
+ * Renders the global CSS link, the link chip's icon rules, head/meta, i18n
+ * provider, tooltip provider, AuthKit client provider, global announcement
+ * region, and router Outlet.
  */
 import { I18nProvider } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -12,6 +13,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
+import { LINK_CHIP_ICON_CSS } from "@/components/app/link-chip/family-icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
 import { IOS_FOCUS_ZOOM_BOOT_SCRIPT } from "@/lib/ios-focus-zoom";
@@ -86,6 +88,9 @@ function RootDocument({ children, lang }: Readonly<{ children: ReactNode; lang: 
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
         <HeadContent />
+        {/* Generated from the family icon data, so the link chip's images and
+            the scheme icons share one source. */}
+        <style dangerouslySetInnerHTML={{ __html: LINK_CHIP_ICON_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>
       <body className="paper-grain">

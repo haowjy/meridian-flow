@@ -10,9 +10,8 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
-import { Library, NotebookPen, Upload, User } from "lucide-react";
 
-import { ScrollQuill } from "./scroll-quill-icon";
+import { familyIcon } from "@/components/app/link-chip/family-icons";
 
 /** Complete vocabulary for references and tools, including chat resources. */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
@@ -47,19 +46,10 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   }
 }
 
-/** Icons distinguish the current project-context resource families. */
+/**
+ * Icons distinguish the current project-context resource families. The same
+ * shapes mark a link chip's family; both read `family-icons.ts`.
+ */
 export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
-  switch (scheme) {
-    case "manuscript":
-      return ScrollQuill;
-    case "kb":
-      return Library;
-    case "user":
-      return User;
-    case "unfiled":
-    case "scratch":
-      return NotebookPen;
-    case "uploads":
-      return Upload;
-  }
+  return familyIcon(scheme);
 }
