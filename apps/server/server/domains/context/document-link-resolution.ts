@@ -4,6 +4,7 @@ import {
   documentTitleFromUri,
   isProjectScopedScheme,
   parseContextUri,
+  resolveDocumentHref,
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
@@ -76,7 +77,14 @@ export function createDocumentLinkResolver({
       }
       const base = await location(input, target.kind === "scheme" ? target.uri : target.baseUri);
       if (!base) return null;
-      const path = target.kind === "relative" ? relativePath(base.path, target.path) : base.path;
+      let path = base.path;
+      if (target.kind === "relative") {
+        const resolved = resolveDocumentHref(target.path, target.baseUri);
+        if (!resolved) return null;
+        const parsed = parseContextUri(resolved.uri);
+        if (!parsed.ok || parsed.value.scheme !== base.scheme) return null;
+        path = parsed.value.path;
+      }
       if (!path) return null;
       return unique(
         (await files(base.scope)).filter((file) => {
@@ -112,18 +120,4 @@ function pathMatches(candidate: string, requested: string): boolean {
     (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
       candidate.slice(0, candidate.lastIndexOf(".")) === requested)
   );
-}
-
-function relativePath(base: string, relative: string): string | null {
-  if (!relative || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) return null;
-  const segments = base.split("/");
-  segments.pop();
-  for (const part of relative.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (!segments.length) return null;
-      segments.pop();
-    } else segments.push(part);
-  }
-  return segments.length ? segments.join("/") : null;
 }
