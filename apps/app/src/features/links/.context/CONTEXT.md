@@ -15,7 +15,7 @@ resolution.registerResolver(createProjectLinkResolver(scope, index));
 const request = documentLinkTarget(target, baseUri);     // the projection, not a translation
 const local = projectLinkAnswer(index, request);         // complete index only
 if (local.kind === "resolved") return local.document;
-if (local.kind === "ambiguous") return null;             // drawn unresolved
+if (local.kind === "ambiguous") return "ambiguous";      // drawn filled, never dashed
 const { document } = await resolveDocumentLink(projectId, { workId, target: request });
 return document;                                         // null = unresolved OR ambiguous
 ```
@@ -74,10 +74,11 @@ the batch endpoint in [`FUTURE`](FUTURE).
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
 Ambiguity comes from the scope's index, not the server: the resolver answers
-several matches as unresolved, and `followProjectLink`'s `candidates` (the
-follower's `projectLinkAnswer` over the latest index) tells the two apart. While
-the index is incomplete nothing can be proven, so several matches read as
-missing until it completes.
+several local matches as `"ambiguous"` (so the link draws as one that leads
+somewhere), and `followProjectLink`'s `candidates` (the follower's
+`projectLinkAnswer` over the latest index) names them. The server answers
+several matches as null, so while the index is incomplete nothing can be
+proven, and several matches draw and follow as missing until it completes.
 
 An aborted follow never reports and never opens. An abort only stops a follow
 before it opens: `LinkDestination` takes no signal, so once the procedure decides

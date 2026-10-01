@@ -55,7 +55,12 @@ export function projectLinkAnswer(
   return document ? { kind: "resolved", document } : UNKNOWN;
 }
 
-/** Local answer first, then `resolveDocumentLink`. Ambiguous resolves to null (drawn unresolved). */
+/**
+ * Local answer first, then `resolveDocumentLink`. Several local matches answer
+ * `"ambiguous"`, which draws as a link that leads somewhere, not as a missing
+ * one. The server answers several matches as null, which cannot be told from
+ * none, so an incomplete index draws them unresolved until it completes.
+ */
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
@@ -74,7 +79,7 @@ export function createProjectLinkResolver(
     }
     const local = projectLinkAnswer(index, request);
     if (local.kind === "resolved") return local.document;
-    if (local.kind === "ambiguous") return null;
+    if (local.kind === "ambiguous") return "ambiguous";
     const { document } = await resolveDocumentLink(projectId, { workId, target: request });
     return document;
   };

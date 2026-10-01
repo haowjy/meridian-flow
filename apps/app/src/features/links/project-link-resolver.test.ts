@@ -132,11 +132,11 @@ describe("createProjectLinkResolver", () => {
     server.mockResolvedValue({ document: null });
   });
 
-  it("draws a name two local documents carry as unresolved, without asking the server", async () => {
+  it("answers a name two local documents carry as ambiguous, without asking the server", async () => {
     const kbKael = document("doc-kb-kael", "kb://Kael.md");
     const resolve = createProjectLinkResolver(scope, index([kael, kbKael]));
 
-    await expect(resolve({ kind: "wikilink", name: "Kael" })).resolves.toBeNull();
+    await expect(resolve({ kind: "wikilink", name: "Kael" })).resolves.toBe("ambiguous");
     expect(server).not.toHaveBeenCalled();
   });
 
