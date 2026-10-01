@@ -1,7 +1,7 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
 - Chat's document doors (transcript link follows in `useChatLinkFollowing.ts`,
-  exact-reference pills, tool-row document names, composer `onOpenReference`)
+  exact-reference chips, tool-row document names, composer `onOpenReference`)
   each open the Editor with no Work. Whether the Editor should adopt the
   chat's Work is one decision for all of them, with one open command (#625).
 
@@ -9,6 +9,12 @@
   (`useChatLinkFollowing.ts`), so Ctrl/Cmd-click and middle click have no
   background-tab follow as they do in the Editor. Revisit with #625's
   destinations, when chat's `open` stops being the Editor's pane.
+
+- Sent `@` reference chips re-check availability only on the chat's own
+  catalog revision (`reference-availability.ts`, "Known limit"). A delete in
+  another Work's Scratch, a Work deletion, or a visibility change stays filled
+  until the next catalog change or a reload. Refresh on a document lifecycle
+  event instead of the catalog projection when one exists.
 
 - `chatLinkScope`'s `worksSettled` in `useChatLinkFollowing.ts` misreads two
   `useWorks` statuses. `disabled` (the project's creation is pending or
