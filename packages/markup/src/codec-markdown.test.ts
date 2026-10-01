@@ -55,6 +55,33 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, "Intro with **bold *em*** tail");
   });
 
+  it.each([
+    "chapter 1.md",
+    "a(b.md",
+    "(balanced).md",
+    "folder\\notes.md",
+    "folder\\ notes.md",
+    "a\\<b> c.md",
+    "a\\) b.md",
+  ])("carries destination %j through the wire unchanged", (href) => {
+    const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
+    const wire = codec.serialize(doc);
+    expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
+    expectStable(codec, wire);
+  });
+
+  it("encloses a destination with spaces rather than escaping them", () => {
+    const doc = [paragraph(t("x", [m("link", { href: "../volume 1/chapter 1.md", title: null })]))];
+    expect(codec.serialize(doc)).toBe("[x](<../volume 1/chapter 1.md>)\n");
+  });
+
+  it("never lets a destination span lines", () => {
+    const doc = [paragraph(t("x", [m("link", { href: "a\nb\r\nc.md", title: null })]))];
+    const wire = codec.serialize(doc);
+    expect(wire).toBe("[x](a%0Ab%0D%0Ac.md)\n");
+    expect(codec.parse(wire).blocks[0]?.firstChild?.marks[0]?.attrs.href).toBe("a%0Ab%0D%0Ac.md");
+  });
+
   it("stabilizes link labels containing closing brackets", () => {
     expectStable(codec, "[a\\]b](https://x.test)");
   });
