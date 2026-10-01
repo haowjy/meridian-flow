@@ -1,13 +1,27 @@
 /**
  * Chat's half of link following: the scope, destination, and outcome host a
  * transcript's links follow through, over the shared `features/links` follower.
+ * `ChatView` provides the returned navigation to transcript references and
+ * renders the returned dialog props.
  *
- * The scope is the thread's Work. While the snapshots that name it are still
- * loading the scope is pending, so a click waits and shows checking instead of
- * being answered from a guessed Work. Once they have loaded, the scope is
- * always known: a thread whose Work the snapshot no longer has (deleted, or not
- * visible) asks with its own binding and lets the server answer, which comes
- * back as nothing found. Neither case is ever treated as No Work.
+ * Scope: the thread's Work, with no base URI (so relative links are text). It
+ * is pending only while the thread or the Works snapshot is loading; a click
+ * then waits, showing checking, and is never answered from a guessed Work.
+ * Once loaded the scope is always known. A No Work thread's Work is the No
+ * Work row, by id whichever snapshot names it first, so the scope does not
+ * change identity mid-load and drop a click. A thread whose Work the loaded
+ * snapshot does not have (deleted, or not visible) asks with its own binding,
+ * and the server answers. Known gap: the server answers null once that Work is
+ * gone, so existing names read as missing; the thread normally disappears with
+ * its Work, and the fix is the server's.
+ *
+ * Destination: the Editor, opened the way chat's other document doors open it
+ * (exact-reference pills, tool-row names), with no Work. Having the Editor
+ * adopt the chat's Work is a decision for all of chat's doors at once (#625).
+ *
+ * Visibility: `active` is the chat's visibility, so hiding the dock or opening
+ * Settings aborts a follow and dismisses its dialog. ChatView remounts per
+ * thread, so switching threads aborts too.
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
@@ -31,6 +45,7 @@ export function chatLinkScope({
   activeWork,
   thread,
   worksSettled,
+  noWorkId,
 }: {
   projectId: string;
   /** The thread's Work from the Works snapshot; null when unknown or missing. */
@@ -38,10 +53,12 @@ export function chatLinkScope({
   thread: Pick<Thread, "workId"> | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
+  /** The project's No Work row, once the Works snapshot has it. */
+  noWorkId: string | null;
 }): LinkResolutionScope | "pending" {
   if (activeWork) return { projectId, workId: activeWork.id, baseUri: null };
   if (!worksSettled || !thread) return "pending";
-  return { projectId, workId: thread.workId, baseUri: null };
+  return { projectId, workId: thread.workId ?? noWorkId, baseUri: null };
 }
 
 export function useChatLinkFollowing({
@@ -59,35 +76,33 @@ export function useChatLinkFollowing({
   navigation: TranscriptLinkNavigation;
   dialog: ComponentProps<typeof LinkFollowDialog>;
 } {
-  const { status: worksStatus } = useWorks(projectId);
+  const { status: worksStatus, noWork } = useWorks(projectId);
+  const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
+  const noWorkId = noWork?.id ?? null;
   const scope = useMemo(
     () =>
       chatLinkScope({
         projectId,
         activeWork,
-        thread: activeThread ? { workId: threadWorkId } : null,
+        thread: threadKnown ? { workId: threadWorkId } : null,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
+        noWorkId,
       }),
-    [activeThread, activeWork, projectId, threadWorkId, worksStatus],
+    [activeWork, noWorkId, projectId, threadKnown, threadWorkId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
-  // The Editor adopts the chat's Work, so the document opens where the model
-  // was working. The No Work row opens as explicit No Work, never as a Work id,
-  // and a Work the snapshot does not have is not a place the Editor can go.
   const openReferenceDocument = useOpenProjectDocument(projectId);
-  const destinationWorkId = activeWork && !activeWork.isNoWork ? activeWork.id : null;
   const open = useCallback<LinkDestination>(
     (document, gesture) =>
       openReferenceDocument({
         documentId: document.documentId,
-        workId: destinationWorkId,
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
-    [destinationWorkId, openReferenceDocument],
+    [openReferenceDocument],
   );
 
   const { outcome, reporter } = useFollowOutcomeState();
@@ -103,12 +118,8 @@ export function useChatLinkFollowing({
     dialog: {
       outcome,
       projectId,
-      // Cancel and Escape while checking stop the follow; on any other
-      // outcome there is nothing left to stop.
-      onClose: () => (outcome?.state === "checking" ? follower.cancel() : reporter.clear()),
-      onRetry: () => {
-        if (outcome) follower.follow(outcome.target);
-      },
+      onClose: follower.dismiss,
+      onRetry: follower.retry,
       onOpen: (document) => open(document, "current"),
     },
   };

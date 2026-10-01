@@ -31,12 +31,6 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   // one button.
   if (!surface || !follow) return null;
 
-  // Cancel (and dismissing) while checking stops the follow, so the answer
-  // landing later neither opens the document nor brings the dialog back. Any
-  // other outcome is already settled, and dismissing it only clears.
-  const close = () =>
-    follow.state === "checking" ? surface.cancelFollow() : surface.clearFollow();
-
   return (
     <EditorDialog
       // One dialog per link: following a second link must not open wearing the
@@ -47,7 +41,7 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
       id="link-follow-outcome"
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) surface.dismissFollow();
       }}
       showTitle
       className="sm:max-w-md"
@@ -56,8 +50,8 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
       <FollowOutcomeContent
         outcome={follow}
         projectId={projectId}
-        onClose={close}
-        onRetry={() => surface.navigator?.({ target: follow.target, disposition: "current" })}
+        onClose={() => surface.dismissFollow()}
+        onRetry={() => surface.retryFollow()}
         onOpen={(document) => open(document, "current")}
       />
     </EditorDialog>

@@ -155,17 +155,53 @@ describe("useLinkFollower", () => {
     ]);
   });
 
-  it("cancels everything in flight and clears the outcome", async () => {
+  it("dismisses only the follow whose checking is shown, leaving a background follow to open", async () => {
     render({ scope, index: catalog("a") });
-    act(() => follower.follow(wikilink("Pane")));
     act(() => follower.follow(wikilink("Tab"), "new-tab"));
+    act(() => follower.follow(wikilink("Pane")));
     await elapse(CHECKING_DELAY_MS);
 
-    act(() => follower.cancel());
-    await answer("Pane", doc("pane"));
+    act(() => follower.dismiss());
     await answer("Tab", doc("tab"));
+    await answer("Pane", doc("pane"));
 
-    expect(events).toEqual(["report:checking", "report:checking", "clear"]);
+    expect(events).toEqual(["report:checking", "report:checking", "clear", "open:doc-tab:new-tab"]);
+  });
+
+  it("clears a failure when a fast retry opens the document", async () => {
+    render({ scope, index: catalog("a") });
+    server.mockImplementationOnce(() => Promise.reject(new Error("offline")));
+    act(() => follower.follow(wikilink("Kael")));
+    await elapse(0);
+    expect(events).toEqual(["report:failed"]);
+
+    act(() => follower.retry());
+    await answer("Kael", doc("kael"));
+
+    expect(events).toEqual(["report:failed", "clear", "open:doc-kael:current"]);
+  });
+
+  it("dismisses a settled outcome when the surface hides", async () => {
+    render({ scope, index: catalog("a") });
+    act(() => follower.follow(wikilink("Kael")));
+    await answer("Kael", null);
+
+    render({ scope, index: catalog("a"), active: false });
+
+    expect(events).toEqual(["report:missing", "clear"]);
+  });
+
+  it("says a link is followable from the target and base alone", () => {
+    const relative: LinkTarget = { kind: "relative", path: "./cast.md" };
+    render({ scope: null, index: catalog("a") });
+    expect(follower.canFollow(wikilink("Kael"))).toBe(false);
+
+    render({ scope: "pending", index: catalog("a") });
+    expect(follower.canFollow(wikilink("Kael"))).toBe(true);
+    expect(follower.canFollow(relative)).toBe(false);
+
+    render({ scope: { ...scope, baseUri: "manuscript://chapters/one.md" }, index: catalog("a") });
+    expect(follower.canFollow(relative)).toBe(true);
   });
 
   it("takes its checking outcome down and opens nothing once unmounted", async () => {

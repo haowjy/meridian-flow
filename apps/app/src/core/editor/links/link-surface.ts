@@ -90,6 +90,9 @@ export type LinkFollowOutcome =
   /** Several documents answer to the link; the writer chooses, nothing is created. */
   | { state: "ambiguous"; target: LinkTarget; candidates: readonly ResolvedDocumentLink[] };
 
+/** What the app's follower does when the writer acts on a follow's outcome. */
+export type FollowHandlers = { dismiss: () => void; retry: () => void };
+
 export type LinkSurfaceState = {
   hint: LinkHint | null;
   form: LinkFormRequest | null;
@@ -117,13 +120,15 @@ export type LinkSurface = {
   reportFollow: (outcome: LinkFollowOutcome) => void;
   clearFollow: () => void;
   /**
-   * Stop the follow in flight and clear what it said: the writer pressed
-   * Cancel. Clearing alone would let the answer land later and open the
-   * document or bring the dialog back. Without a registered canceller it only
-   * clears.
+   * The writer closed what a follow said (Close, Cancel, Escape). The follower
+   * that answered decides what that means: a still-asking follow is stopped,
+   * so its answer can neither open the document nor bring the dialog back.
+   * Without a registered follower it only clears.
    */
-  cancelFollow: () => void;
-  registerFollowCancel: (cancel: () => void) => () => void;
+  dismissFollow: () => void;
+  /** Try again: the follower follows the shown link anew, as the dialog's owner. */
+  retryFollow: () => void;
+  registerFollowHandlers: (handlers: FollowHandlers) => () => void;
 
   /**
    * Where an internal link goes. Absent is a real state, not a bug: until the
@@ -142,7 +147,7 @@ export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
   let state = EMPTY_STATE;
   let navigator: InternalLinkNavigator | null = null;
-  let followCancel: (() => void) | null = null;
+  let followHandlers: FollowHandlers | null = null;
   let sequence = 0;
 
   const set = (next: Partial<LinkSurfaceState>) => {
@@ -202,14 +207,17 @@ export function createLinkSurface(): LinkSurface {
     clearFollow() {
       set({ follow: null });
     },
-    cancelFollow() {
-      if (followCancel) followCancel();
+    dismissFollow() {
+      if (followHandlers) followHandlers.dismiss();
       else set({ follow: null });
     },
-    registerFollowCancel(cancel) {
-      followCancel = cancel;
+    retryFollow() {
+      followHandlers?.retry();
+    },
+    registerFollowHandlers(handlers) {
+      followHandlers = handlers;
       return () => {
-        if (followCancel === cancel) followCancel = null;
+        if (followHandlers === handlers) followHandlers = null;
       };
     },
 
@@ -226,7 +234,7 @@ export function createLinkSurface(): LinkSurface {
     destroy() {
       listeners.clear();
       navigator = null;
-      followCancel = null;
+      followHandlers = null;
       state = EMPTY_STATE;
     },
   };

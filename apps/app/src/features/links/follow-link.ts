@@ -25,7 +25,7 @@ import {
  */
 export const CHECKING_DELAY_MS = 250;
 
-export type LinkDocumentRef = { documentId: string; workId?: string | null };
+export type LinkDocumentRef = { documentId: string };
 
 /**
  * Where a found document goes. The calling surface's policy, never this
@@ -125,6 +125,6 @@ export async function followProjectLink({
   );
 }
 
-function documentRef(document: { documentId: string; workId: string | null }): LinkDocumentRef {
-  return { documentId: document.documentId, workId: document.workId };
+function documentRef(document: { documentId: string }): LinkDocumentRef {
+  return { documentId: document.documentId };
 }

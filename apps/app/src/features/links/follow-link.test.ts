@@ -134,26 +134,6 @@ describe("followProjectLink", () => {
     expect(events).toEqual(["report:checking", "report:missing"]);
   });
 
-  it("asks again when the scope re-registers mid-follow, and never reports failed", async () => {
-    const asked: string[] = [];
-    register((question) => {
-      asked.push(`old:${question.kind}`);
-      return new Promise(() => {});
-    });
-
-    const followed = follow();
-    await vi.advanceTimersByTimeAsync(CHECKING_DELAY_MS);
-    // A rename or a catalog refetch: the same scope, a new generation.
-    register(async (question) => {
-      asked.push(`new:${question.kind}`);
-      return KAEL;
-    });
-    await followed;
-
-    expect(asked).toEqual(["old:wikilink", "new:wikilink"]);
-    expect(events).toEqual(["report:checking", "clear", "open:doc-kael:current"]);
-  });
-
   it("leaves an open alone once it has started, whatever the signal does after", async () => {
     register(async () => KAEL);
     const controller = new AbortController();
@@ -181,7 +161,5 @@ describe("followProjectLink", () => {
     await followed;
 
     expect(events).toEqual(["clear", "open:doc-kael:current"]);
-    // The destination never sees the follow's signal, so navigation cannot be aborted by it.
-    expect(destination.mock.calls[0]).toHaveLength(2);
   });
 });

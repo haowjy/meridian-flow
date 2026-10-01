@@ -250,6 +250,10 @@ msgstr "{hidden, plural, one {# more document carries this name.} other {# more 
 msgid "{hours}h"
 msgstr "{hours}h"
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "{label} ({folder})"
+msgstr "{label} ({folder})"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr "{matches} results in {inDocuments}"
@@ -1958,6 +1962,10 @@ msgstr "Invoking a skill…"
 msgid "Invoking the {skill} skill…"
 msgstr "Invoking the {skill} skill…"
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "It may have moved or been removed."
+msgstr "It may have moved or been removed."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -3533,8 +3541,8 @@ msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
 
 #: src/features/links/FollowOutcomeContent.tsx
-msgid "The project has nothing at this address. It may have moved or been removed."
-msgstr "The project has nothing at this address. It may have moved or been removed."
+#~ msgid "The project has nothing at this address. It may have moved or been removed."
+#~ msgstr "The project has nothing at this address. It may have moved or been removed."
 
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "The removed text could not be recovered."
