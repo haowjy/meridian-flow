@@ -4,8 +4,9 @@ For when `pnpm dev:prune-worktrees -- --target <x> --dry-run` refuses a
 branch you believe is safe to remove. The tool only acts on proof: an exact
 merged-PR match, or the commit's ancestry of the base branch
 ([`tools/dev/AGENTS.md`](AGENTS.md)). When neither holds, it refuses — correctly,
-on the evidence it has. This guide is for building better evidence by hand,
-not for overriding the tool's judgment.
+on the evidence it has. This guide is for building better evidence by hand and
+recording that evidence in a manually verified cleanup plan, not for using a
+bare force override.
 
 ## When this applies
 
@@ -59,17 +60,19 @@ branch and its worktree, including an unmerged commit if you're wrong.
 
 ## Clean up
 
-Once you have the evidence, do by hand exactly what the tool would:
+Once you have the evidence, pass a concrete summary of what you checked and
+the commits you checked it against. Inspect the plan first:
 
 ```bash
-(cd <worktree-path> && pnpm dev --stop)
-(cd <worktree-path> && pnpm dev:db:drop --yes)
-git worktree remove <worktree-path>
-git branch -D <branch>
+pnpm dev:prune-worktrees -- --target <branch> \
+  --manually-verified "<reason citing the evidence and commits above>" --dry-run
+pnpm dev:prune-worktrees -- --target <branch> \
+  --manually-verified "<reason citing the evidence and commits above>"
 ```
 
-`dev:db:drop` is a no-op (prints a notice, not an error) when the worktree
-never had a scoped database — safe to run unconditionally.
+Manual verification replaces only the automatic ancestry or PR proof; the tool
+still refuses primary, current, base, locked, dirty, or live worktrees and
+still revalidates the branch OID and readiness before destructive actions.
 
 ## Don't
 
