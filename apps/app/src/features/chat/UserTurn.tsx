@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import {
+  type ProjectContextIdentityResolution,
   referenceOccurrenceContent,
   skillOccurrenceContent,
   type Turn,
@@ -80,6 +81,42 @@ export function projectUserTurn(turn: Turn): {
   return { text, references, skills };
 }
 
+/**
+ * What each exact reference in a writer message draws, from the availability
+ * lookup. A document that is gone for this writer (deleted, its Work or project
+ * deleted, or no longer visible) is unavailable: a dashed chip that does not
+ * follow. An indeterminate answer is left out, like a lookup still out or
+ * failed: not settled, so the chip stays filled and does not follow.
+ */
+export function transcriptReferenceResolutions(
+  resolutions: readonly ProjectContextIdentityResolution[],
+): ReadonlyMap<string, TranscriptReferenceResolution> {
+  const projected = new Map<string, TranscriptReferenceResolution>();
+  for (const resolution of resolutions) {
+    switch (resolution.kind) {
+      case "available":
+        projected.set(resolution.documentId, {
+          documentId: resolution.documentId,
+          uri: resolution.entry.uri,
+          label: resolution.entry.name,
+          available: true,
+        });
+        break;
+      case "deleted":
+      case "authority-unavailable":
+      case "not-visible":
+        projected.set(resolution.documentId, {
+          documentId: resolution.documentId,
+          available: false,
+        });
+        break;
+      case "indeterminate":
+        break;
+    }
+  }
+  return projected;
+}
+
 function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -99,26 +136,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
     let current = true;
     void lookupProjectContextAvailability(projectId, ids)
       .then((result) => {
-        if (!current) return;
-        setResolutions(
-          new Map(
-            result.resolutions.flatMap((resolution) =>
-              resolution.kind === "available"
-                ? [
-                    [
-                      resolution.documentId,
-                      {
-                        documentId: resolution.documentId,
-                        uri: resolution.entry.uri,
-                        label: resolution.entry.name,
-                        available: true,
-                      },
-                    ] as const,
-                  ]
-                : [],
-            ),
-          ),
-        );
+        if (current) setResolutions(transcriptReferenceResolutions(result.resolutions));
       })
       .catch(() => {
         if (current) setResolutions(new Map());
