@@ -135,12 +135,21 @@ export function useChatLinkFollowing({
     () => createReferenceAvailability((ids) => lookupProjectContextAvailability(projectId, ids)),
     [projectId],
   );
-  const seenRevision = useRef(index.revision);
+  // The revision this store last answered for. Seeded from the first COMPLETE
+  // index, because the catalogs loading is not a change: counting it would ask
+  // about every reference twice on opening a chat. A new store (project
+  // change) starts over.
+  const seen = useRef<{ store: ReferenceAvailability; revision: string } | null>(null);
   useEffect(() => {
-    if (seenRevision.current === index.revision) return;
-    seenRevision.current = index.revision;
+    if (!index.complete) return;
+    if (seen.current?.store !== references) {
+      seen.current = { store: references, revision: index.revision };
+      return;
+    }
+    if (seen.current.revision === index.revision) return;
+    seen.current.revision = index.revision;
     references.refresh();
-  }, [index.revision, references]);
+  }, [index.complete, index.revision, references]);
 
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
