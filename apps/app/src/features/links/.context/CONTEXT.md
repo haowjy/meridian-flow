@@ -89,7 +89,10 @@ What aborts a follow (`useLinkFollower`):
 - a newer `current` follow aborts the previous `current` one, because the pane
   can only go one place;
 - a `new-tab` follow is never aborted by a newer follow and aborts nothing;
-- a project or Work change, unmount, and `cancel()` abort everything in flight.
+- dismissing a follow's checking dialog aborts that follow only;
+- unmount, a different cache, a project or Work change, and the surface hiding
+  (`active: false`, or a null scope) abort everything in flight; hiding also
+  dismisses what is shown.
 
 A follower with no scope does nothing on `follow`: no resolver is registered, and
 asking anyway would report a failure about a question nobody could ask. A
@@ -98,23 +101,31 @@ click waits (`scopeReady`), shows checking 250ms after the click like any slow
 answer, and is asked once the real scope registers. A pending scope becoming
 known does not abort; a known Work changing does.
 
-Follows on one surface share its reporter, so each follow reports through an
-owned wrapper: `report` records the follow as the owner of the shown outcome,
-and `clear` is a no-op unless that follow still owns it. Without this, a
+Follows on one surface share its reporter, so the follower records which
+follow owns the shown outcome. A follow's `report` makes it the owner, and its
+`clear` is a no-op unless it still owns what is shown. Without this, a
 background follow opening would wipe the pane follow's checking dialog, and a
 pane follow opening would wipe a background follow's missing offer before the
-writer could press Create. Aborting a follow takes down the outcome it owns;
-`cancel()` clears whatever is shown.
+writer could press Create. Aborting a follow takes down the outcome it owns.
 
-Cancel, and dismissing the dialog while it is checking, call `cancel()` on both
-surfaces: chat's `LinkFollowDialog` directly, the Editor through the link
-store's `cancelFollow()`, which `ProjectLinkRuntime` registers. The answer
-landing later neither opens the document nor brings the dialog back. Dismissing
-any settled outcome only clears it. A cancel is never inferred from the store
-clearing, because the procedure itself clears right before it opens.
+A host acts on what is shown through two verbs, with no branching on the
+outcome's state:
 
-`gesture` comes from the click: `current` or `new-tab` (middle click, Ctrl/Cmd+click). The Editor maps
-`new-tab` to a background tab on its strip. There is no browser-tab disposition:
+- `dismiss()` (Close, Cancel, Escape) aborts the owner if it is still asking,
+  then clears. The answer landing later neither opens the document nor brings
+  the dialog back, and a background follow that owns nothing keeps going.
+- `retry()` (Try again) follows the shown link again, with the same gesture,
+  and makes the new follow the owner before it says anything, so a fast answer
+  clears the failure it replaces.
+
+Chat's `LinkFollowDialog` calls them directly. The Editor's chrome-hosted
+dialog reaches them through the link store's `dismissFollow()` and
+`retryFollow()`, which `ProjectLinkRuntime` registers. A dismissal is never
+inferred from the store clearing, because the procedure clears right before it
+opens.
+
+`gesture` comes from the click: `current` or `new-tab` (middle click,
+Ctrl/Cmd+click). The Editor maps `new-tab` to a background tab on its strip. There is no browser-tab disposition:
 the pane holds a live collaborative session, and a second window costs the
 writer their place to reach a document that was one tab away.
 
@@ -161,28 +172,3 @@ on remount and claim a change that never happened.
 
 Catalog URIs remain canonical. Nothing here rewrites schemes or derives identity
 from a path or label.
-
-## Chat
-
-`useChatLinkFollowing` (in `features/chat`) follows the links the model wrote
-through `useLinkFollower`, and `ChatView` only provides its navigation and
-renders its dialog:
-
-- the scope is the thread's Work with no base URI (`chatLinkScope`), and
-  `"pending"` only while the thread or the Works snapshot is loading. Once the
-  snapshot has loaded without the thread's Work (deleted, or not visible), the
-  scope is the thread's own binding and the server answers, as nothing found.
-  A No Work thread's Work is the No Work row, and an unknown Work is never read
-  as No Work;
-- the follower owns its resolution cache, created once and never destroyed;
-- the index is `useLinkableDocuments` for that Work, asked only once it is
-  known;
-- the destination opens in the Editor with the thread's Work, and the No Work
-  row as explicit No Work rather than as a Work id (a Work the snapshot does not
-  have is not somewhere the Editor can go, so it opens with no Work);
-- `active` is the chat's visibility, so hiding the dock or Settings aborts a
-  follow; ChatView remounts per thread, so switching threads aborts too.
-
-`TranscriptLinkNavigationContext` hands transcript references `{ follow,
-canFollow }`. A relative link has no base in chat, so `canFollow` rejects it and
-the reference renders as plain text with its href as a tooltip.

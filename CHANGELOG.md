@@ -8,7 +8,7 @@
 ## [Unreleased]
 
 - Links in the Editor and chat: a name more than one document carries lists those documents so you can choose one, instead of offering to create another. Cancel on "Opening the link" now stops the link from opening. A link to an address with nothing there says "No document at that address".
-- Links in chat: a link with nothing behind it now says so and offers to create the document, which opens in the Editor in the chat's Work. A link that could not be checked offers Try again, and Cancel stops a slow one. Relative links in chat are plain text.
+- Links in chat: a link with nothing behind it now says so and offers to create the document, which opens in the Editor. A link that could not be checked offers Try again, and Cancel stops a slow one. Relative links in chat are plain text.
 - Links: the `[[` menu under a named Work now offers Unfiled documents. With no Work selected, it offers Scratch notes and Uploads. Clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
