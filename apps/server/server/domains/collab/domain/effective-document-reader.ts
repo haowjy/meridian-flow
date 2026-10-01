@@ -16,6 +16,7 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { AutoBranchPushPort } from "./branch-push-contracts.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
+import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 
@@ -32,7 +33,7 @@ export function createEffectiveDocumentReader(input: {
   branchPush: AutoBranchPushPort;
   liveCoordinator: DocumentCoordinator;
   agentEdit: ThreadPeerAgentEditCore;
-  documents: Pick<MarkdownDocumentEngine, "readAsMarkdown" | "serializeDocument">;
+  documents: Pick<MarkdownDocumentEngine, "readVersionedMarkdown" | "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -102,6 +103,7 @@ export function createEffectiveDocumentReader(input: {
       } catch (cause) {
         if (!(cause instanceof BranchNotFoundError)) throw cause;
       }
+      await input.branchPulls.flushLivePull(command.documentId);
       try {
         const workDraft = await input.branches.resolveWorkDraftBranchForThread(
           command.documentId,
@@ -146,6 +148,21 @@ export function createEffectiveDocumentReader(input: {
   }
 
   return {
+    async readEffectiveRevision(command) {
+      try {
+        const result = await readEffective(
+          command,
+          async (doc) => documentRevision(unwrapDoc(doc)),
+          () =>
+            input.liveCoordinator.withDocument(command.documentId, async (doc) =>
+              Ok(documentRevision(doc)),
+            ),
+        );
+        return result.ok ? result.value : null;
+      } catch {
+        return null;
+      }
+    },
     pullThreadPeer(command) {
       return input.branchPulls.pullThreadPeer(command);
     },
@@ -155,35 +172,44 @@ export function createEffectiveDocumentReader(input: {
     readEffectiveMarkdown(command) {
       return readEffective(
         command,
-        (doc) => input.documents.serializeDocument(command.documentId, unwrapDoc(doc)),
-        () => input.documents.readAsMarkdown(command.documentId),
-      ) as Promise<Result<string, SyncError>>;
+        (doc) => input.documents.serializeVersionedDocument(command.documentId, unwrapDoc(doc)),
+        () => input.documents.readVersionedMarkdown(command.documentId),
+      ) as Promise<Result<{ content: string; revision: string | null }, SyncError>>;
     },
     readEffectiveHashlines(command) {
       return readEffective(
         command,
-        async (doc) => input.model.serializeBlockLines(doc, input.codec),
+        async (doc) =>
+          versioned(unwrapDoc(doc), (doc) =>
+            input.model.serializeBlockLines(toDocHandle(doc), input.codec),
+          ),
         () =>
           input.liveCoordinator.withDocument(command.documentId, async (doc) =>
-            Ok(input.model.serializeBlockLines(toDocHandle(doc), input.codec)),
+            Ok(
+              versioned(doc, (doc) =>
+                input.model.serializeBlockLines(toDocHandle(doc), input.codec),
+              ),
+            ),
           ),
-      ) as Promise<Result<string[], SyncError>>;
+      ) as Promise<Result<{ content: string[]; revision: string | null }, SyncError>>;
     },
     async resolveManifestMembership(command) {
-      const manifest = await input.branches.ensureProjectManifest({
-        projectId: command.projectId,
-      });
-      try {
-        if (command.threadId) {
-          await input.branchPulls.pullThreadPeer({
-            documentId: manifest.documentId,
-            threadId: command.threadId,
-          });
-        } else if (command.workId) {
-          await input.branchPulls.flushLivePull(manifest.documentId);
+      if (command.threadId || command.workId) {
+        const manifest = await input.branches.ensureProjectManifest({
+          projectId: command.projectId,
+        });
+        try {
+          if (command.threadId) {
+            await input.branchPulls.pullThreadPeer({
+              documentId: manifest.documentId,
+              threadId: command.threadId,
+            });
+          } else if (command.workId) {
+            await input.branchPulls.flushLivePull(manifest.documentId);
+          }
+        } finally {
+          manifest.doc.destroy();
         }
-      } finally {
-        manifest.doc.destroy();
       }
       const membership = await input.branches.resolveManifestMembership(command);
       if (!command.responseId || !command.threadId) return membership;

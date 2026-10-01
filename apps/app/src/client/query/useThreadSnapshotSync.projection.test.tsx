@@ -664,6 +664,134 @@ describe("stale acquisition and missing targets", () => {
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
 
+  it("revalidates as a run ends, on every inbox frame, and on every status frame", async () => {
+    vi.useFakeTimers();
+    harness.snapshotRequest.mockReset().mockImplementation(async () => ({
+      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+      turns: [],
+      nextSeq: "1000",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    }));
+    const scenario = mountThreadProjectionScenario();
+    const { bus } = scenario;
+    function Probe() {
+      useThreadSnapshotSync("thread-1");
+      return null;
+    }
+    await scenario.mount(<Probe />);
+    await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
+    const inbox = (items: unknown[]) =>
+      ({ type: EventType.CUSTOM, name: "meridian.inbox.changed", value: { items } }) as AGUIEvent;
+    const settle = async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+    };
+    act(() =>
+      bus.emit(
+        inbox([
+          {
+            id: "k",
+            seq: 1,
+            intent: "control",
+            control: { kind: "compact" },
+            provenance: { kind: "writer", actorId: "w" },
+            deliveryState: "awaiting_run",
+            summary: "Compact conversation",
+            enqueuedAt: "2026-09-28T00:00:00.000Z",
+          },
+        ]),
+        "1000",
+      ),
+    );
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
+    // Frames inside one debounce window share a single refresh.
+    act(() => {
+      bus.emit(inbox([]), "2000");
+      bus.emit(inbox([]), "2001");
+    });
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(3);
+    act(() =>
+      bus.emit(
+        { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "a" } as AGUIEvent,
+        "3000",
+      ),
+    );
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(4);
+    // A handoff brief starts and ends with no run: only its status frame says so.
+    act(() =>
+      bus.emit(
+        {
+          type: EventType.CUSTOM,
+          name: "meridian.thread.status",
+          value: { threadId: "thread-1", status: { kind: "asleep" }, runningTurnId: null },
+        } as AGUIEvent,
+        "4000",
+      ),
+    );
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(5);
+  });
+
+  it("settles a stopped autocompaction from the empty inbox frame its lease release sends", async () => {
+    // A cancelled autocompaction has no writer control and projects no
+    // RUN_FINISHED; the lease release's inbox frame is its only signal.
+    vi.useFakeTimers();
+    const compaction = (status: "pending" | "cancelled") => ({
+      id: "c",
+      threadId: "thread-1",
+      role: "compaction",
+      status,
+      position: 3,
+      blocks: [],
+      metadata: { kind: "compaction", trigger: "auto" },
+    });
+    harness.snapshotRequest
+      .mockReset()
+      .mockResolvedValueOnce({
+        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+        turns: [compaction("pending")],
+        nextSeq: "1000",
+        actionRequired: false,
+        liveState: { runningTurnId: null },
+      })
+      .mockResolvedValue({
+        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+        turns: [compaction("cancelled")],
+        nextSeq: "2000",
+        actionRequired: false,
+        liveState: { runningTurnId: null },
+      });
+    const scenario = mountThreadProjectionScenario();
+    const { bus } = scenario;
+    let status: string | null = null;
+    function Probe() {
+      status = useThreadSnapshotSync("thread-1").snapshot?.turns[0]?.status ?? null;
+      return null;
+    }
+    await scenario.mount(<Probe />);
+    await vi.waitFor(() => expect(status).toBe("pending"));
+    act(() =>
+      bus.emit(
+        {
+          type: EventType.CUSTOM,
+          name: "meridian.inbox.changed",
+          value: { items: [] },
+        } as AGUIEvent,
+        "2000",
+      ),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(status).toBe("cancelled"));
+  });
+
   it("invalidates a missing addressed target without making a streaming turn", async () => {
     let invalidations = 0;
     const scenario = mountThreadProjectionScenario({

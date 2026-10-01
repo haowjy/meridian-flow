@@ -2,18 +2,25 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
+import {
+  ChildCompletionMetadataCodec,
+  ChildCompletionMetadataTagCodec,
+} from "../../threads/index.js";
+import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
+import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  /** Immutable bake read by the assembler when the thread already has a pointer. */
+  frozenSystemPrompt?: string;
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
@@ -45,15 +52,15 @@ export function buildContext(input: BuildContextInput): {
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
-  const composed = input.thread.composedSystemPrompt;
-  if (composed && isThreadPromptFrozen(input.thread)) {
-    messages.push(system(composed));
+  if (isThreadPromptFrozen(input.thread)) {
+    if (input.frozenSystemPrompt === undefined)
+      throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
+    messages.push(system(input.frozenSystemPrompt));
   } else {
-    const systemPrompt = input.unfrozenBasePrompt ?? composed;
     messages.push(
       system(
         assembleComposedSystemPrompt({
-          basePrompt: systemPrompt,
+          basePrompt: input.unfrozenBasePrompt,
           appendPrompt: input.appendPrompt,
           workContext: input.workContext,
           availableSkills: input.availableSkills,
@@ -66,76 +73,18 @@ export function buildContext(input: BuildContextInput): {
 
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
-    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
     blocksByTurn.set(key, list);
   }
-  for (const list of blocksByTurn.values()) {
-    list.sort((a, b) => a.sequence - b.sequence);
-  }
 
-  for (const turn of input.turns) {
+  for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
-    if (turn.role === "user") {
-      const parts = userTurnContentParts(turnBlocks);
-      if (parts.length > 0) {
-        messages.push({ role: "user", content: parts });
-      }
-      continue;
-    }
-    if (turn.role === "system") {
-      const textParts = turnBlocks
-        .flatMap((b) =>
-          b.blockType === "text" && b.textContent
-            ? [b.textContent]
-            : b.blockType === "custom"
-              ? [componentModelText(b.content as ComponentBlockContent)].filter(
-                  (v): v is string => !!v,
-                )
-              : [],
-        )
-        .join("\n");
-      if (textParts) {
-        const update =
-          textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
-            ? textParts
-            : `<system_update>\n${textParts}\n</system_update>`;
-        messages.push({ role: "user", content: [text(update)] });
-      }
-      continue;
-    }
-
-    if (turn.role === "assistant") {
-      const assistantParts: ContentPart[] = [];
-      for (const block of turnBlocks) {
-        if (block.blockType === "tool_result") {
-          if (assistantParts.length > 0) {
-            const message = assistant(assistantParts.slice());
-            messages.push(message);
-            sourceTurnStatusByMessage.set(message, turn.status);
-            assistantParts.length = 0;
-          }
-          const content = block.content as {
-            toolCallId?: string;
-            output?: JsonValue;
-            isError?: boolean;
-          } | null;
-          const toolCallId = content?.toolCallId ?? "";
-          messages.push(
-            toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
-          );
-          continue;
-        }
-        const part = blockToContentPart(block);
-        if (part) assistantParts.push(part);
-      }
-      if (assistantParts.length > 0) {
-        const message = assistant(assistantParts.slice());
-        messages.push(message);
-        sourceTurnStatusByMessage.set(message, turn.status);
-      }
+    const rendered = turnContextMessages(turn, turnBlocks);
+    for (const message of rendered) {
+      messages.push(message);
+      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
     }
   }
 
@@ -147,17 +96,79 @@ export function buildContext(input: BuildContextInput): {
   };
 }
 
+/** One model-visible turn, shared by live requests and cold summary transcripts. */
+export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
+  const messages: Message[] = [];
+  const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
+  if (turn.role === "user") {
+    const parts = userTurnContentParts(turnBlocks);
+    if (parts.length > 0) {
+      messages.push({ role: "user", content: parts });
+    }
+    return messages;
+  }
+  if (turn.role === "system") {
+    const textParts = turnBlocks
+      .flatMap((b) =>
+        b.blockType === "text" && b.textContent
+          ? [b.textContent]
+          : b.blockType === "custom"
+            ? [componentModelText(b.content as ComponentBlockContent)].filter(
+                (v): v is string => !!v,
+              )
+            : [],
+      )
+      .join("\n");
+    if (textParts) {
+      const update =
+        textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
+          ? textParts
+          : `<system_update>\n${textParts}\n</system_update>`;
+      messages.push({ role: "user", content: [text(update)] });
+    }
+    return messages;
+  }
+
+  if (turn.role === "assistant") {
+    const assistantParts: ContentPart[] = [];
+    for (const block of turnBlocks) {
+      if (block.blockType === "tool_result") {
+        if (assistantParts.length > 0) {
+          const message = assistant(assistantParts.slice());
+          messages.push(message);
+          assistantParts.length = 0;
+        }
+        const content = block.content as {
+          toolCallId?: string;
+          output?: JsonValue;
+          isError?: boolean;
+        } | null;
+        const toolCallId = content?.toolCallId ?? "";
+        messages.push(
+          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+        );
+        continue;
+      }
+      const part = blockToContentPart(block);
+      if (part) assistantParts.push(part);
+    }
+    if (assistantParts.length > 0) {
+      const message = assistant(assistantParts.slice());
+      messages.push(message);
+    }
+  }
+
+  return messages;
+}
+
 function reportPersistedContractFailures(input: BuildContextInput): void {
   if (!input.eventSink) return;
   const threadId = input.thread.id as string;
   for (const turn of input.turns) {
     const metadata = turn.metadata;
     if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "subagent_update" &&
-      !parseSubagentUpdateMetadata(metadata)
+      ChildCompletionMetadataTagCodec.safeParse(metadata).success &&
+      !ChildCompletionMetadataCodec.safeParse(metadata).success
     ) {
       emitEvent(input.eventSink, {
         level: "warn",
@@ -170,7 +181,7 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
     }
   }
   for (const block of input.blocks) {
-    if (block.pruned || block.blockType !== "custom") continue;
+    if (block.blockType !== "custom") continue;
     const content = block.content;
     if (
       !content ||
@@ -263,6 +274,13 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
   for (const block of blocks) {
+    if (block.blockType === "custom") {
+      const content = block.content as ComponentBlockContent;
+      if (content.kind === "thread-reference") {
+        const modelText = componentModelText(content);
+        if (modelText) parts.push(text(`\n\n${modelText}`));
+      }
+    }
     const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;
     const key = `${reference.documentId}\0${reference.uri}`;
@@ -275,17 +293,6 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
     );
   }
   return parts;
-}
-
-// Pre-admission failures are model context; saved run reports remain transcript UI.
-export function componentModelText(content: ComponentBlockContent): string | null {
-  if (content.kind !== "helper-result") return null;
-  const props = parseInvocationCard(content);
-  if (!props || props.terminalAt === null) return null;
-  if ("reason" in props) {
-    return `Subagent "${props.agentName}" could not start: ${props.reason}`;
-  }
-  return null;
 }
 
 // Unsupported or empty blocks have no gateway content part.
@@ -373,7 +380,7 @@ function formatNotice(notice: Notice): string {
       : [];
     const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
     const noun = documentNames.length > 1 ? "documents" : "document";
-    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
+    return `The system could not verify whether concurrent user content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
   }
   return notice.message;
 }
@@ -413,7 +420,7 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   );
   return lines.length > 0
     ? [
-        "The writer reversed the following edits before this message:",
+        "The user reversed the following edits before this message:",
         ...lines,
         "They are signaling these changes were unwanted.",
       ].join("\n")

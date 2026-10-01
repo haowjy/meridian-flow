@@ -1,20 +1,25 @@
-/**
- * The drain-woken run activity emitter, used at both the start and settle of a
- * subagent's own run: it must emit the root activity frame so the live strip
- * reads `awake` during the run and never stays frozen there after release. A
- * non-subagent thread and any failure are no-ops.
- */
+/** Subagent activity producer and direct-parent run-refresh behavior. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
-import { createInMemoryEventSink } from "../../observability/index.js";
-import type { EventJournalWriter } from "../../threads/index.js";
+import { createInMemoryEventSink, createNoopEventSink } from "../../observability/index.js";
 import {
+  createInMemoryEventJournalWriter,
+  createInMemoryRepositories,
+  createThreadEventHub,
+  type EventJournalWriter,
+  readThreadActivity,
+} from "../../threads/index.js";
+import { buildThreadSnapshot } from "../../threads/thread-snapshot.js";
+import {
+  appendSubagentActivity,
   appendSubagentActivityBestEffort,
   appendSubagentActivityForToolChangeBestEffort,
+  createSubagentActivityRefresher,
   emitRunActivityBestEffort,
 } from "./activity-event.js";
 
 const ROOT = "root-thread" as ThreadId;
+const PARENT = "parent-thread" as ThreadId;
 const CHILD = "child-thread" as ThreadId;
 
 function recordingWriter() {
@@ -28,27 +33,89 @@ function recordingWriter() {
   return { appended, eventWriter };
 }
 
-const readActivity = async () => ({ descendants: [] });
+const readActivity = async () => ({ children: [] });
+
+describe("appendSubagentActivity", () => {
+  it("journals the same activity as the live read and thread snapshot", async () => {
+    const repos = createInMemoryRepositories();
+    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const originTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id,
+      rootThreadId: parent.id,
+      originTurnId: originTurn.id,
+      spawnDepth: 1,
+      title: "Critic",
+    });
+    const journal = createInMemoryEventJournalWriter();
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: journal,
+      eventSink: createNoopEventSink(),
+    });
+    const statusReader = {
+      async read() {
+        return { kind: "asleep" as const };
+      },
+      async readRunningTurnId() {
+        return null;
+      },
+      async readMany() {
+        return new Map();
+      },
+      async readPending() {
+        return { items: [] };
+      },
+    };
+    const readParentActivity = (threadId: ThreadId) =>
+      readThreadActivity(
+        { threads: repos.threads, executionReports: repos.executionReports, statusReader },
+        threadId,
+      );
+
+    await appendSubagentActivity({
+      eventWriter: hub,
+      readActivity: readParentActivity,
+      parentThreadId: parent.id as ThreadId,
+      childThreadId: child.id,
+    });
+
+    const event = journal.getEvents(parent.id).at(-1)?.event;
+    expect(event?.type).toBe("subagent.activity");
+    if (event?.type !== "subagent.activity") throw new Error("Expected activity journal event");
+    const liveRead = await readParentActivity(parent.id as ThreadId);
+    const snapshot = await buildThreadSnapshot(repos, hub, statusReader, parent.id as ThreadId);
+    expect(event.activity).toEqual(liveRead);
+    expect(event.activity).toEqual(snapshot.liveState.activity);
+  });
+});
 
 describe("emitRunActivityBestEffort", () => {
-  it("emits the root frame for a subagent drain run", async () => {
+  it("emits the frame to the direct parent's journal for a subagent drain run", async () => {
     const { appended, eventWriter } = recordingWriter();
     await emitRunActivityBestEffort({
-      findThread: async () => ({ id: CHILD, kind: "subagent", rootThreadId: ROOT }),
+      findThread: async () => ({ id: CHILD, kind: "subagent", parentThreadId: PARENT }),
       threadId: CHILD,
       eventWriter,
       readActivity,
       eventSink: createInMemoryEventSink(),
     });
     expect(appended).toHaveLength(1);
-    expect(appended[0]?.threadId).toBe(ROOT);
+    expect(appended[0]?.threadId).toBe(PARENT);
     expect((appended[0]?.event as { type: string }).type).toBe("subagent.activity");
   });
 
   it("does nothing for a non-subagent thread", async () => {
     const { appended, eventWriter } = recordingWriter();
     await emitRunActivityBestEffort({
-      findThread: async () => ({ id: ROOT, kind: "primary", rootThreadId: ROOT }),
+      findThread: async () => ({ id: ROOT, kind: "primary", parentThreadId: null }),
       threadId: ROOT,
       eventWriter,
       readActivity,
@@ -75,6 +142,70 @@ describe("emitRunActivityBestEffort", () => {
       true,
     );
   });
+
+  it("refreshes a drain-woken nested subagent on its direct parent's journal", async () => {
+    const repos = createInMemoryRepositories();
+    const root = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const rootTurn = await repos.turns.create({
+      threadId: root.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const parent = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: root.id,
+      rootThreadId: root.id,
+      originTurnId: rootTurn.id,
+      spawnDepth: 1,
+    });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const nested = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id,
+      rootThreadId: root.id,
+      originTurnId: parentTurn.id,
+      spawnDepth: 2,
+    });
+    const { appended, eventWriter } = recordingWriter();
+    const refreshSubagentActivity = createSubagentActivityRefresher({
+      findThread: (threadId) => repos.threads.findById(threadId),
+      eventWriter,
+      readActivity: (threadId) =>
+        readThreadActivity(
+          {
+            threads: repos.threads,
+            executionReports: repos.executionReports,
+            statusReader: {
+              async readMany() {
+                return new Map();
+              },
+            },
+          },
+          threadId,
+        ),
+      eventSink: createInMemoryEventSink(),
+    });
+
+    await refreshSubagentActivity(nested.id as ThreadId);
+
+    expect(appended).toHaveLength(1);
+    expect(appended[0]?.threadId).toBe(parent.id);
+    expect(appended[0]?.event).toMatchObject({
+      type: "subagent.activity",
+      childThreadId: nested.id,
+      activity: {
+        children: [{ threadId: nested.id, parentThreadId: parent.id }],
+      },
+    });
+  });
 });
 
 describe("appendSubagentActivityBestEffort", () => {
@@ -89,7 +220,7 @@ describe("appendSubagentActivityBestEffort", () => {
       appendSubagentActivityBestEffort({
         eventWriter,
         readActivity,
-        rootThreadId: ROOT,
+        parentThreadId: PARENT,
         childThreadId: CHILD,
         eventSink,
       }),
@@ -109,7 +240,7 @@ describe("appendSubagentActivityForToolChangeBestEffort", () => {
       currentTool: { toolCallId: "call-1", toolName: "spawn", input: { prompt: "Research" } },
       eventWriter,
       readActivity,
-      rootThreadId: ROOT,
+      parentThreadId: PARENT,
       childThreadId: CHILD,
       eventSink,
     };
@@ -132,7 +263,7 @@ describe("appendSubagentActivityForToolChangeBestEffort", () => {
     });
 
     expect(appended).toHaveLength(1);
-    expect(appended[0]?.threadId).toBe(ROOT);
+    expect(appended[0]?.threadId).toBe(PARENT);
     expect((appended[0]?.event as { type: string }).type).toBe("subagent.activity");
   });
 
@@ -148,9 +279,9 @@ describe("appendSubagentActivityForToolChangeBestEffort", () => {
         eventWriter: recordingWriter().eventWriter,
         readActivity: async () => {
           reads++;
-          return { descendants: [] };
+          return { children: [] };
         },
-        rootThreadId: ROOT,
+        parentThreadId: PARENT,
         childThreadId: CHILD,
         eventSink,
       }),

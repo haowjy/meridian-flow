@@ -40,3 +40,16 @@ The `optimistic-updates` work item owns the profiles and verification specificat
   highlighting is currently inert. Read-only *documents* already match the editor
   (they reuse it). `Markdown.tsx`, `globals.css`, `editor.css`,
   `design-tokens/ink-jade.css`.
+
+## E2E harness drift
+
+- `e2e/composer-density.spec.ts` seeds a user turn without required `origin`.
+  Set the fixture origin to `writer`; rerun the composer spec.
+- `e2e/image-frame.spec.ts` seeds successfully but its `/project/<id>` navigation
+  never mounts `.ProseMirror`. Update the legacy project/document URL to the
+  current route before treating this visual spec as a working smoke gate.
+- `e2e/support/e2e-db.ts` `resetUserProjects` deletes turns before document Yjs
+  updates release their model-response references. With existing authored
+  documents, `phase5.spec.ts` fails on
+  `document_yjs_updates_authoring_response_id_model_responses_id_f` during setup.
+  Reconcile reset ordering with the current document/response FK graph.

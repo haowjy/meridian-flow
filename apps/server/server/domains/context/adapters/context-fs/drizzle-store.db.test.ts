@@ -5,8 +5,10 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../../shared/result.js";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
@@ -42,7 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 

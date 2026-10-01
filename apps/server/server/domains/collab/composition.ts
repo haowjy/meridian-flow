@@ -8,6 +8,8 @@ import {
   deferUntilDrizzleRollback,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { NoticePort } from "../notices/index.js";
@@ -153,6 +155,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
+    outsideTransaction: runOutsideDrizzleTransaction,
+    rootTransaction: (operation) => runInRootDrizzleTransaction(deps.db, operation),
     liveCoordinator,
     branchCoordinator,
     branches,
@@ -440,6 +444,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     documents: {
       ensureDocument: persistence.lifecycle.ensureDocument,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
       editDocument: runtime.markdownDocuments.editDocument,

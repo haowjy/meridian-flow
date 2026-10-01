@@ -12,12 +12,24 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
-import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import {
+  CompactionFailureOutcomeCodec,
+  CompactionFailureReasonCodec,
+  compactionFailureMetadata,
+  type EventJournalWriter,
+  type ThreadRepositories,
+  turnFailedCopy,
+} from "../../threads/index.js";
+import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
-  | { kind: "failed"; reason: string; error: MeridianError | string }
+  | {
+      kind: "failed";
+      reason: string;
+      error: MeridianError | string;
+    }
   | { kind: "cancelled"; reason: string };
 
 export type FinalizedExecution = {
@@ -28,55 +40,139 @@ export type FinalizedExecution = {
 
 function publicText(blocks: Block[], responseId: string | null): string {
   return blocks
-    .filter(
-      (block) => block.responseId === responseId && block.blockType === "text" && !block.pruned,
-    )
+    .filter((block) => block.responseId === responseId && block.blockType === "text")
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
+}
+
+async function resolveReportContent(
+  input: {
+    turnId: TurnId;
+    responseId: string | null;
+    capture: SavedExecutionReport["capture"];
+    empty: boolean;
+  },
+  deps: Pick<ThreadRepositories, "blocks">,
+) {
+  if (input.empty) return { source: "empty" as const, summary: "", artifacts: null };
+
+  const text = input.capture
+    ? ""
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId);
+  return {
+    source: input.capture
+      ? ("return_result" as const)
+      : text
+        ? ("final_assistant" as const)
+        : ("empty" as const),
+    summary: input.capture?.summary ?? text,
+    ...(input.capture?.payload === undefined ? {} : { payload: input.capture.payload }),
+    artifacts: input.capture?.artifacts ?? null,
+  };
 }
 
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
   if (cause.kind === "success") return { type: "turn.completed", turn };
   if (cause.kind === "cancelled") return { type: "turn.cancelled", turn };
+  if (turn.role === "compaction") {
+    return {
+      type: "turn.error",
+      turn,
+      error: compactionFailureMeridianError(
+        compactionFailureForFinalizer(cause),
+        typeof cause.error === "string" ? cause.error : cause.error.message,
+      ),
+    };
+  }
   const error =
     typeof cause.error === "string"
       ? meridianErrorFromSystem("runtime_error", cause.error)
       : cause.error;
-  return { type: "turn.error", turn, error };
+  const existingDetails = error.details;
+  return {
+    type: "turn.error",
+    turn,
+    error: {
+      ...error,
+      details: {
+        ...(existingDetails &&
+        typeof existingDetails === "object" &&
+        !Array.isArray(existingDetails)
+          ? existingDetails
+          : existingDetails === undefined
+            ? {}
+            : { errorDetails: existingDetails }),
+        reason: cause.reason,
+      },
+    },
+  };
 }
 
-/** Call under the child final-drain lock; nested persistence joins its transaction. */
+function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
+  if (cause.reason === "orphaned" || cause.reason === "shutdown")
+    return { reason: "interrupted" as const, phase: "recovery" as const };
+  if (typeof cause.error !== "string") {
+    const details = CompactionFailureOutcomeCodec.safeParse(cause.error.details);
+    if (details.success) return details.data;
+  }
+  const reason = CompactionFailureReasonCodec.safeParse(cause.reason);
+  return {
+    reason: reason.success ? reason.data : ("compaction_failed" as const),
+    phase: "delivery" as const,
+  };
+}
+
+/**
+ * Finalize one execution under the thread lock; nested persistence joins its transaction.
+ * Failed turns derive generic writer copy from their role; `cause.error` remains diagnostic data.
+ */
 export async function finalizeExecution(
   deps: {
     repos: Pick<
       ThreadRepositories,
+      | "promptBakes"
       | "threads"
       | "turns"
       | "blocks"
+      | "imageInclusions"
       | "modelResponses"
       | "transaction"
       | "executionReports"
       | "runTurnStartTransition"
     >;
     eventWriter: EventJournalWriter;
+    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   },
-  input: { threadId: ThreadId; assistantTurnId: TurnId; cause: TerminalCause },
+  input: {
+    threadId: ThreadId;
+    turnId: TurnId;
+    /** A crash on a placeholder has no report content, even if a candidate was captured earlier. */
+    reportContent?: "empty";
+    cause: TerminalCause;
+  },
 ): Promise<FinalizedExecution> {
   let report: SavedExecutionReport | null = null;
   const persisted = await persistAndAppendEvents(
     deps,
     input.threadId,
     async () => {
-      const turn = await deps.repos.turns.findById(input.assistantTurnId);
-      if (!turn || turn.threadId !== input.threadId || turn.role !== "assistant") {
-        throw new Error("Terminal assistant turn is unavailable");
+      const turn = await deps.repos.turns.findById(input.turnId);
+      if (
+        !turn ||
+        turn.threadId !== input.threadId ||
+        (turn.role !== "assistant" &&
+          !(turn.role === "compaction" && input.cause.kind !== "success"))
+      ) {
+        throw new Error("Terminal turn is unavailable");
       }
-      const existingReport = await deps.repos.executionReports.findByTurn(
+      const ancestorReport = await deps.repos.executionReports.findByTurn(
         input.threadId,
-        input.assistantTurnId,
+        input.turnId,
       );
+      const existingReport =
+        turn.role === "compaction" && ancestorReport?.outcome !== null ? null : ancestorReport;
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
-      if (thread?.kind === "subagent" && !existingReport) {
+      if (thread?.kind === "subagent" && !existingReport && turn.role === "assistant") {
         throw new Error("Subagent execution was not admitted");
       }
       if (isTerminalTurnStatus(turn.status)) {
@@ -86,14 +182,29 @@ export async function finalizeExecution(
         return { result: turn, events: [] };
       }
       const completedAt = toIsoString(new Date());
-      const error =
-        input.cause.kind === "failed"
-          ? typeof input.cause.error === "string"
-            ? input.cause.error
-            : input.cause.error.message
-          : null;
+      const error = input.cause.kind === "failed" ? turnFailedCopy(turn) : null;
       const updated: Turn = {
         ...turn,
+        ...(turn.role === "assistant" && input.cause.kind === "failed"
+          ? {
+              metadata: {
+                ...(turn.metadata &&
+                typeof turn.metadata === "object" &&
+                !Array.isArray(turn.metadata)
+                  ? turn.metadata
+                  : {}),
+                reason: input.cause.reason,
+              },
+            }
+          : {}),
+        ...(turn.role === "compaction" && input.cause.kind === "failed"
+          ? {
+              metadata: compactionFailureMetadata(
+                turn.metadata,
+                compactionFailureForFinalizer(input.cause),
+              ),
+            }
+          : {}),
         status:
           input.cause.kind === "success"
             ? "complete"
@@ -116,11 +227,8 @@ export async function finalizeExecution(
     },
     {
       async afterEvents(turn) {
-        const admitted = await deps.repos.executionReports.findByTurn(
-          input.threadId,
-          input.assistantTurnId,
-        );
-        if (!admitted) return;
+        const admitted = await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
+        if (!admitted || (turn.role === "compaction" && admitted.outcome !== null)) return;
         if (admitted.outcome !== null) {
           report = admitted;
           return;
@@ -134,20 +242,25 @@ export async function finalizeExecution(
               : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
         const finalResponseId = responses.at(-1)?.id ?? null;
-        const text = capture
-          ? ""
-          : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
-        const source = capture ? "return_result" : text ? "final_assistant" : "empty";
+        const content = await resolveReportContent(
+          {
+            turnId: turn.id,
+            responseId: finalResponseId,
+            capture,
+            empty: input.reportContent === "empty",
+          },
+          deps.repos,
+        );
         let cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
         let ancestor = turn;
-        while (ancestor.id !== admitted.assistantTurnId) {
+        while (ancestor.id !== admitted.executionTurnId) {
           const parent = ancestor.parentTurnId
             ? await deps.repos.turns.findById(ancestor.parentTurnId)
             : null;
           if (!parent || parent.threadId !== input.threadId)
             throw new Error("Execution terminal is outside its admitted turn chain");
           ancestor = parent;
-          if (ancestor.role === "assistant") {
+          if (ancestor.role === "assistant" || ancestor.role === "compaction") {
             const priorResponses = await deps.repos.modelResponses.listByTurn(ancestor.id);
             cost += priorResponses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
           }
@@ -157,14 +270,11 @@ export async function finalizeExecution(
         }
         report = await deps.repos.executionReports.finalizeOnce({
           childThreadId: input.threadId,
-          assistantTurnId: admitted.assistantTurnId,
-          terminalAssistantTurnId: turn.id as TurnId,
+          executionTurnId: admitted.executionTurnId,
+          terminalTurnId: turn.id as TurnId,
           outcome,
           reason: input.cause.kind === "success" ? null : input.cause.reason,
-          source,
-          summary: capture?.summary ?? text,
-          ...(capture && capture.payload !== undefined ? { payload: capture.payload } : {}),
-          artifacts: capture?.artifacts ?? null,
+          ...content,
           costMillicredits: Number(cost),
         });
         if (admitted.origin === "spawn") {

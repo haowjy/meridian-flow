@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 /** A chat in an archived Work keeps its composer, with the archived notice above it. */
 import type { Work } from "@meridian/contracts/protocol";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
+import { ThreadStoreProvider } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ChatScreen } from "./ChatScreen";
+
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useAccountId: () => "account-1",
+  useAccountEpochSignal: () => undefined,
+  useOptionalAccountEpochSignal: () => undefined,
+}));
 
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [] }),
@@ -21,7 +29,7 @@ vi.mock("@/client/query/useThreadSnapshotSync", () => ({
   }),
 }));
 vi.mock("@/features/chat/useThreadActivity", () => ({
-  useThreadActivity: () => ({ activity: { descendants: [] } }),
+  useThreadActivity: () => ({ activity: { children: [] } }),
 }));
 vi.mock("../routing/chat-navigation", () => ({
   useChatNavigation: () => ({ openChat: vi.fn() }),
@@ -57,7 +65,16 @@ const WORK = {
 
 function renderChat(work: Work) {
   return (
-    <ChatScreen projectId="project-1" threadId="thread-1" activeWork={work} availableWorks={[]} />
+    <QueryClientProvider client={new QueryClient()}>
+      <ThreadStoreProvider now={0}>
+        <ChatScreen
+          projectId="project-1"
+          threadId="thread-1"
+          activeWork={work}
+          availableWorks={[]}
+        />
+      </ThreadStoreProvider>
+    </QueryClientProvider>
   );
 }
 

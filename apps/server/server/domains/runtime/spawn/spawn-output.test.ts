@@ -24,12 +24,18 @@ describe("spawnOutputForTranscript", () => {
       execution: null,
       startedAt: "2026-01-01T00:00:00.000Z",
       terminalAt: null,
+      fromThreadId: "source-1",
+      fromThreadRef: "c1",
+      fromThreadTitle: "Source conversation",
     });
     expect(running).toMatchObject({
       agentName: "Critic (harsh)",
       execution: null,
       terminalAt: null,
       title: "Continuity",
+      fromThreadId: "source-1",
+      fromThreadRef: "c1",
+      fromThreadTitle: "Source conversation",
     });
     const done = invocationCardProps({
       agent: "critic",

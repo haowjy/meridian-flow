@@ -64,6 +64,8 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
     "spawn",
     "thread_message",
     "thread_report",
+    "thread_ls",
+    "thread_history",
     "write",
     "ls",
     "search",

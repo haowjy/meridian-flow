@@ -6,8 +6,10 @@ import { contextSources, documentYjsCheckpoints, projects, users } from "@meridi
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentAccess } from "../../../../lib/document-access.js";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../../collab/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
@@ -28,7 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000914";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 

@@ -4,13 +4,19 @@
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
 
+import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
+import type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
   ArtifactId,
   BlockId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnId,
   UserId,
@@ -41,7 +47,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ThreadLifecycleStatus = "idle" | "archived";
 
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
-export type ThreadPhase = "generating" | "waiting";
+export type ThreadPhase = "generating" | "waiting" | "compacting";
 
 /**
  * Derived run status: awake iff a live lease exists, with the phase the holder
@@ -69,6 +75,24 @@ export type CurrentToolCall = {
   input: JsonValue;
 };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
+
+/** Roles that can reserve a pending placeholder turn before its work completes. */
+export const PENDING_PLACEHOLDER_ROLES = [
+  "compaction",
+  "system",
+] as const satisfies readonly TurnRole[];
+export type PendingPlaceholderRole = (typeof PENDING_PLACEHOLDER_ROLES)[number];
+
+export function isPlaceholderRole(role: TurnRole): role is PendingPlaceholderRole {
+  return PENDING_PLACEHOLDER_ROLES.some((placeholderRole) => placeholderRole === role);
+}
+
+export function isPendingPlaceholder<T extends Pick<Turn, "role" | "status">>(
+  turn: T,
+): turn is T & { role: PendingPlaceholderRole; status: "pending" } {
+  return turn.status === "pending" && isPlaceholderRole(turn.role);
+}
+
 /**
  * Who authored a turn, independent of `role`: `writer` is any human send
  * (idle send or mid-run steer), `assistant` is model output, `system` is
@@ -95,14 +119,11 @@ export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
 
-/** One live-or-recent descendant thread in a thread's spawn subtree. Derived; never persisted as a block. */
+/** One live-or-recent direct child thread. Derived; never persisted as a block. */
 export type ThreadActivityNode = {
   threadId: string;
-  /** Immediate spawner in this subtree. */
+  /** Immediate spawner. */
   parentThreadId: string | null;
-  rootThreadId: string;
-  /** threads.spawn_depth. */
-  depth: number;
   /** Server-assigned `pN` handle. */
   ref: string | null;
   title: string | null;
@@ -124,16 +145,29 @@ export type ThreadActivityNode = {
   originTurnId: string | null;
 };
 
-/** Recursive activity read: the full subtree of one viewed thread, ordered (depth, createdAt). */
+/** Direct-child activity read for one viewed thread, ordered by createdAt. */
 export type ThreadActivity = {
-  descendants: ThreadActivityNode[];
+  children: ThreadActivityNode[];
 };
 
 /**
  * Durable inbox message intent. A directed `message` wakes the thread; a
- * `notice` supplies context without starting a run.
+ * `notice` supplies context without starting a run; a `control` is a writer
+ * command (never chat text) that wakes the thread and executes at a run boundary.
  */
-export type MessageIntent = "message" | "notice";
+export type MessageIntent = "message" | "notice" | "control";
+
+/** Runtime commands take their transcript position at execution, not enqueue. */
+export type ControlBody = { kind: "compact"; instructions?: string };
+export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
+export type EnqueueThreadControlResponse = {
+  id: string;
+  pending: PendingInboxItem | null;
+  turnId: string | null;
+};
+export type WithdrawThreadControlResponse = {
+  outcome: "withdrawn" | "already_started";
+};
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
 export type MessageProvenance =
@@ -157,6 +191,7 @@ export type PendingInboxItem = {
   id: string;
   seq: number;
   intent: MessageIntent;
+  control?: ControlBody;
   provenance: MessageProvenance;
   deliveryState: "awaiting_run" | "waiting";
   /** Body text, or a report/notice summary. */
@@ -199,6 +234,7 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
+  | "image.inclusion_decided"
   | "block.updated"
   | "block.delta"
   | "tool.invoked"
@@ -210,9 +246,9 @@ export type JournalEventType =
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
-  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
+  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
-  | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
+  | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -248,19 +284,8 @@ export interface Thread {
   title: string | null;
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;
-  /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
-  composedSystemPrompt?: string | null;
-  /**
-   * Model-invocable skill slugs frozen with `composedSystemPrompt` at first attempt
-   * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
-   */
-  bakedSkillSlugs?: string[] | null;
-  /**
-   * Advertised Tool[] payload frozen with `composedSystemPrompt` at first
-   * attempt (or subagent creation): opaque JSON, shaped by the runtime
-   * gateway's `Tool` type. `null` = not yet baked.
-   */
-  bakedTools?: JsonValue | null;
+  /** First immutable bake for this thread; null until the first request is assembled. */
+  initialPromptBakeId: PromptBakeId | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;
@@ -294,9 +319,9 @@ export interface Thread {
   spawnStatus: SpawnStatus | null;
   totalCostUsd: string;
   turnCount: number;
-  historySummary?: string | null;
   createdAt: string;
   updatedAt: string;
+  lastActivityAt: string;
   deletedAt: string | null;
 }
 
@@ -316,6 +341,8 @@ export type TurnUsage = {
 export interface Turn {
   id: string;
   threadId: string;
+  /** Write-once insertion order within its thread, assigned by persistence. */
+  position: number;
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
@@ -324,6 +351,9 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
+  /** Set once on a completed prompt-epoch boundary. */
+  promptBakeId: PromptBakeId | null;
+  compactionModel?: string | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;
@@ -347,6 +377,17 @@ export interface Turn {
   responses: ModelResponse[];
 }
 
+/** Immutable system prompt and advertised tools for one prompt epoch. */
+export interface PromptBake {
+  id: PromptBakeId;
+  ownerThreadId: ThreadId;
+  composedSystemPrompt: string;
+  bakedSkillSlugs: string[];
+  bakedTools: JsonValue;
+  contentHash: string;
+  createdAt: string;
+}
+
 export interface Block {
   id: string;
   turnId: string;
@@ -357,7 +398,6 @@ export interface Block {
   content: JsonValue;
   modelText?: string;
   compact?: string;
-  pruned?: boolean;
   provider?: string | null;
   providerData?: JsonValue | null;
   executionSide?: ExecutionSide | null;
@@ -398,11 +438,16 @@ export interface ModelResponse {
   responseMetadata?: JsonValue | null;
   /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: number | null;
+  /** Wall-clock start of the successful provider attempt; null means unknown. */
+  requestMessageCount: number;
+  requestStartedAt: string | null;
   /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
   timeToFirstTokenMs: number | null;
   /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
   generationMs: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
   createdAt: string;
   completedAt?: string | null;
 }
@@ -429,6 +474,10 @@ export type {
   OrchestratorEvent,
   WorkContextChangedEvent,
 } from "./orchestrator-events.js";
+export type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 export * from "./project-chat-feed.js";
 export type { ThreadListItem, ThreadListWork } from "./projections.js";
 export type {

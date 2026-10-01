@@ -39,6 +39,9 @@ describe("buildThreadSnapshot ancestors", () => {
       provider: "test",
       model: "m",
       priceSource: "unknown",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
       inputTokens: 100,
       cacheReadTokens: 40,
       cacheWriteTokens: 10,
@@ -80,6 +83,9 @@ describe("buildThreadSnapshot ancestors", () => {
       provider: "test",
       model: "m",
       priceSource: "unknown",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
       inputTokens: 300,
       cacheReadTokens: 40,
       outputTokens: 20,
@@ -92,6 +98,9 @@ describe("buildThreadSnapshot ancestors", () => {
       provider: "provider-without-cache-reporting",
       model: "m",
       priceSource: "unknown",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
       inputTokens: 100,
       outputTokens: 4,
       cacheReadTokens: null,
@@ -113,6 +122,7 @@ describe("buildThreadSnapshot ancestors", () => {
       rootThreadId: thread.id as ThreadId,
       spawnDepth: 1,
       title: "Child",
+      originTurnId: branchedTurn.id,
     });
     const childTurn = await repos.turns.create({
       threadId: child.id as ThreadId,
@@ -127,6 +137,9 @@ describe("buildThreadSnapshot ancestors", () => {
       provider: "test",
       model: "m",
       priceSource: "unknown",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
       inputTokens: 50,
       cacheReadTokens: 20,
       outputTokens: 5,
@@ -170,19 +183,33 @@ describe("buildThreadSnapshot ancestors", () => {
       projectId: "project-1",
       title: "Muse chat",
     });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const child = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: parent.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
       title: "Critic",
+    });
+    const childTurn = await repos.turns.create({
+      threadId: child.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
     });
     const nested = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: child.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: childTurn.id,
       spawnDepth: 2,
       title: "Helper",
     });
@@ -225,6 +252,9 @@ describe("buildThreadSnapshot ancestors", () => {
       provider: "test-provider",
       model: "test-model",
       priceSource: "unknown",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
       latencyMs: 100,
       timeToFirstTokenMs: 27,
       generationMs: 73,
@@ -289,5 +319,69 @@ describe("buildThreadSnapshot ancestors", () => {
     );
 
     expect(snapshot.actionRequired).toBe(true);
+  });
+
+  it("snapshots direct children without grandchildren or lineage-only fields", async () => {
+    const repos = createInMemoryRepositories();
+    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id as ThreadId,
+      rootThreadId: parent.id as ThreadId,
+      originTurnId: parentTurn.id,
+      spawnDepth: 1,
+      title: "Critic",
+    });
+    const childTurn = await repos.turns.create({
+      threadId: child.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: child.id as ThreadId,
+      rootThreadId: parent.id as ThreadId,
+      originTurnId: childTurn.id,
+      spawnDepth: 2,
+      title: "Helper",
+    });
+
+    const snapshot = await buildThreadSnapshot(
+      repos,
+      stubHub(),
+      {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+      },
+      parent.id as ThreadId,
+    );
+
+    expect(snapshot.liveState.activity.children).toEqual([
+      {
+        threadId: child.id,
+        parentThreadId: parent.id,
+        ref: child.ref,
+        title: "Critic",
+        agentName: child.agentName,
+        spawnStatus: "running",
+        status: { kind: "asleep" },
+        originTurnId: parentTurn.id,
+        deliveryMode: null,
+        runStartedAt: null,
+        runEndedAt: null,
+        currentTool: null,
+      },
+    ]);
   });
 });

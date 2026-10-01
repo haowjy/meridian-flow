@@ -17,9 +17,18 @@ else
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const ids = THREAD_WORK_RACE;
+    let originTurnId = "";
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);
+      originTurnId = (
+        await repos.turns.create({
+          threadId: ids.threadId,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+      ).id;
     });
     afterAll(() => db.close());
 
@@ -30,44 +39,6 @@ else
         .where(eq(schema.threads.id, threadId));
       return row?.rootThreadId ?? null;
     }
-
-    it("freezes all three bake fields at the database boundary, including an empty skill list", async () => {
-      const bakedTools = [{ type: "function", name: "write" }];
-      await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
-        composedSystemPrompt: "Frozen prompt",
-        bakedSkillSlugs: [],
-        bakedTools,
-      });
-      for (const patch of [
-        { composedSystemPrompt: "Changed prompt" },
-        { composedSystemPrompt: null },
-        { bakedSkillSlugs: ["new-skill"] },
-        { bakedSkillSlugs: null },
-        { bakedTools: [] },
-        { bakedTools: null },
-      ]) {
-        await expect(
-          db.update(schema.threads).set(patch).where(eq(schema.threads.id, ids.threadId)),
-        ).rejects.toThrow();
-      }
-      await db
-        .update(schema.threads)
-        .set({
-          title: "Ordinary updates still work",
-          composedSystemPrompt: "Frozen prompt",
-          bakedSkillSlugs: [],
-          bakedTools,
-        })
-        .where(eq(schema.threads.id, ids.threadId));
-      const frozen = await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
-        composedSystemPrompt: "Losing CAS",
-        bakedSkillSlugs: ["ignored"],
-        bakedTools: [{ type: "function", name: "ignored" }],
-      });
-      expect(frozen.composedSystemPrompt).toBe("Frozen prompt");
-      expect(frozen.bakedSkillSlugs).toEqual([]);
-      expect(frozen.bakedTools).toEqual(bakedTools);
-    });
 
     it("roots an organic primary at itself", async () => {
       const created = await repos.threads.create({
@@ -80,33 +51,43 @@ else
 
     it("a fork/handoff of an organic root shares that root and has no parent", async () => {
       // The source (`ids.threadId`) is itself a root: null parent, self root.
-      const derived = await repos.threads.createDerivedPrimary({
+      const { thread: derived } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
         source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
+        originTurnId: originTurnId as never,
       });
       expect(derived.parentThreadId).toBeNull();
       expect(await persistedRoot(derived.id)).toBe(ids.threadId);
     });
 
-    it("a fork of a subagent becomes its sibling: same parent and root, same depth", async () => {
+    it("persists a derived primary with the source's sibling lineage", async () => {
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
+        originTurnId: originTurnId as never,
         spawnDepth: 2,
       });
-      const fork = await repos.threads.createDerivedPrimary({
+      const sourceTurn = await repos.turns.create({
+        threadId: subagent.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const { thread: fork } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
         source: subagent,
         originType: "fork",
-        originTurnId: crypto.randomUUID(),
+        originTurnId: sourceTurn.id,
       });
       expect(fork.parentThreadId).toBe(subagent.parentThreadId);
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
@@ -120,6 +101,7 @@ else
         workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
+        originTurnId: originTurnId as never,
         spawnDepth: 1,
       });
       expect(await persistedRoot(subagent.id)).toBe(ids.threadId);

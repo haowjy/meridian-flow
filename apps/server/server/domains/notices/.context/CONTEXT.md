@@ -1,27 +1,26 @@
 # notices — durable model-context delivery
 
-Notices are a durable Postgres queue (`pending_notices`, drained by
-`NoticePort`) injected into model context. A queue row itself is never
-conversation history and never accumulates state across drains, but delivery
-into a thread's history is durable turn history, not a request-only splice —
-see below.
+Notices are a durable Postgres queue (`pending_notices`) that `NoticePort`
+peeks into model context. A queue row itself is never conversation history,
+but delivery into a thread's history is durable turn history, not a
+request-only splice — see below.
 
 ## Port contract
 
-`NoticePort` records a typed, thread-scoped `NoticeInput` and destructively
-drains model delivery for that thread.
+`NoticePort` records typed, thread-scoped `NoticeInput`, peeks pending notices
+for a thread, and consumes selected rows by ID during commit.
 
-Results are ordered by creation time and notice ID. `runtime`'s `adopt()`
-(`adapters/runtime-delivery.ts`) drains a thread's notices at most once per
-delivery boundary — before every `gateway.stream()` call and at every mid-run
-inbox drain — and folds the result into the same durable-turn materialization
-as an inbox batch (`drainInbox`/`noticesTurnFor`, `runtime/loop/inbox-context.ts`):
-one trailing `system`-role turn with `{ kind: "system_update", section:
-"notices" }` metadata, positioned exactly where the drain happened (after the
-writer message pre-turn, after the preceding tool result mid-run), forcing the
-same turn-completing split a Work refresh already does. This keeps the notice
-byte-identical on every later request, which the frozen prefix's Anthropic
-cache breakpoints require (thread AGENTS.md / runtime CONTEXT.md).
+Results are ordered by creation time and notice ID. Runtime delivery peeks a
+thread's notices at each boundary before a `gateway.stream()` call and at each
+mid-run inbox adoption. The commit consumes exactly the selected notice IDs
+and folds them into the same durable-turn materialization as an inbox batch
+(`drainInbox`/`noticesTurnFor`, `runtime/loop/inbox-context.ts`): one trailing
+`system`-role turn with `{ kind: "system_update", section: "notices" }`
+metadata, positioned at that boundary (after the writer message pre-turn or
+the preceding tool result mid-run). Preparation failure or cancellation leaves
+the rows pending. The durable turn keeps notice bytes identical on every later
+request, which the frozen prefix's Anthropic cache breakpoints require (thread
+AGENTS.md / runtime CONTEXT.md).
 
 The domain contains only notices that affect a later model call: `undo`,
 `awareness_degraded`, and writer-origin `work_switched`. A Work-switch notice is

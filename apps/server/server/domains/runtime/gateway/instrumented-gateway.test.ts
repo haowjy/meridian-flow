@@ -5,6 +5,7 @@ import { createInstrumentedGateway } from "./instrumented-gateway.js";
 import type { Gateway } from "./ports/gateway.js";
 
 const TIMING = {
+  requestStartedAt: "2026-09-27T12:00:00.000Z",
   latencyMs: 240,
   timeToFirstTokenMs: 80,
   generationMs: 160,

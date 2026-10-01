@@ -18,6 +18,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
+import { documentRevision } from "./document-revision.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
@@ -65,6 +66,7 @@ export function createAgentEditRuntime(input: {
   const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
+      documentRevision,
       journal: input.journal,
       coordinator: input.coordinator,
       lifecycle: input.lifecycle,

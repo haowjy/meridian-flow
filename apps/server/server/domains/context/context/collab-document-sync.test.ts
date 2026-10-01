@@ -12,6 +12,7 @@ describe("collab document sync", () => {
       throw new DocumentMutationRejectedError({
         command: "create",
         status: "invalid_write",
+        revision: null,
         isError: true,
         text: "status: invalid_write",
         result: modelResult({ command: "create", status: "invalid_write" }),

@@ -2,7 +2,7 @@
  * Purpose: JSON-natural preview of the next turn's model context — system prompt,
  * advertised function tools, and gateway params. Dev-only; no side effects.
  * Key decisions: mirrors gateway FunctionTool shape; `baked` reflects persisted
- * first-attempt freeze (`bakedSkillSlugs !== null`), not a would-be bake preview.
+ * first-attempt bake pointer, not a would-be bake preview.
  */
 import type { JsonValue } from "./index.js";
 
@@ -20,7 +20,7 @@ export type TurnContextPreview = {
   agentSlug: string | null;
   /** Primary gateway system prompt (frozen bake or would-be first-attempt bake). */
   systemPrompt: string;
-  /** True when the thread has completed first-attempt bake (`bakedSkillSlugs !== null`). */
+  /** True when the thread has a persisted first-attempt bake pointer. */
   baked: boolean;
   tools: TurnContextPreviewFunctionTool[];
   gatewayParams: {

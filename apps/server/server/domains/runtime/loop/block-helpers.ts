@@ -37,7 +37,7 @@ export function contentForBlockInput(
 }
 
 // Converts a persisted `BlockUpsertedRow` into the full `Block` contract shape
-// for in-memory accumulation. New blocks are never pruned.
+// for in-memory accumulation.
 export function localBlockFromEvent(block: BlockUpsertedRow): Block {
   return {
     id: block.id,
@@ -49,7 +49,6 @@ export function localBlockFromEvent(block: BlockUpsertedRow): Block {
     content: block.content,
     provider: block.provider ?? null,
     status: block.status,
-    pruned: false,
     createdAt: toIsoString(new Date()),
   };
 }

@@ -13,17 +13,39 @@ export {
   createActiveDocumentResolver,
 } from "./domain/active-document-resolver.js";
 export { createBoundConversation } from "./domain/bound-conversation.js";
+export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
+  DerivedSourceNotFoundError,
+  DerivedThreadConflictError,
+  ForkCutoffError,
+  type ForkCutoffErrorCode,
   forkThreadAgent,
+  HandoffInProgressError,
   handoffThreadAgent,
+  SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "./domain/derive-conversation.js";
 export { ExecutionReportConflictError } from "./domain/execution-report-conflict.js";
+export {
+  compactionFailedCopy,
+  handoffBriefFailedCopy,
+  replyFailedCopy,
+  turnFailedCopy,
+} from "./domain/failure-copy.js";
 export { isInSubtree, type LineageThread, sameLineage } from "./domain/lineage.js";
 export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,
 } from "./domain/orchestrator-event-projector.js";
+export { hashPromptBakeContent } from "./domain/prompt-bake-hash.js";
+export {
+  bakeAt,
+  bakeIdAt,
+  bakeInEffect,
+  PromptBakeNotFoundError,
+  PromptBakeTurnNotFoundError,
+  type PromptEpochReader,
+} from "./domain/prompt-epochs.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
   RebindThreadWorkError,
@@ -36,6 +58,13 @@ export {
   type ThreadActivityReadDeps,
 } from "./domain/thread-activity.js";
 export {
+  loadThreadConversationContext,
+  type ThreadConversationContext,
+  type ThreadConversationContextDeps,
+  ThreadConversationContextError,
+  type ThreadConversationContextErrorCode,
+} from "./domain/thread-conversation-context.js";
+export {
   requireWorkDraftOwner,
   threadExecutionContext,
   WorkRequiredError,
@@ -47,9 +76,81 @@ export {
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
+  cursorAfter,
+  InvalidTranscriptCursorError,
+  readTranscriptItem,
+  readTranscriptPage,
+  readTranscriptPageForProjection,
+  resolveTranscriptSpans,
+  type TranscriptOrder,
+  type TranscriptOwner,
+  type TranscriptPage,
+  type TranscriptPageInput,
+  type TranscriptRange,
+  type TranscriptSegment,
+  type TranscriptSpanResolution,
+  type TranscriptUnit,
+} from "./domain/transcript-page.js";
+export type {
+  AgentRequestOrigin,
+  AgentRequestSource,
+  CompactionFailureOutcome,
+  CompactionFailurePhase,
+  CompactionFailureReason,
+  CompactionMetadata,
+  CompactionPlanMetadata,
+  HistoryItemClass,
+  ImageContextBreak,
+  ImageInclusionMetadata,
+} from "./domain/turn-metadata.js";
+export {
+  activeCompaction,
+  agentRequestMetadata,
+  ChildCompletionMetadataCodec,
+  ChildCompletionMetadataTagCodec,
+  CompactionFailureOutcomeCodec,
+  CompactionFailurePhaseCodec,
+  CompactionFailureReasonCodec,
+  CompactionMetadataCodec,
+  CompactionPlanMetadataCodec,
+  childCompletionMetadata,
+  childSeedMetadata,
+  classifyHistoryItem,
+  compactionFailureMetadata,
+  compactionSummaryMetadata,
+  compactionTurnMetadata,
+  DerivationSeedMetadataCodec,
+  decodeImageInclusionMetadata,
+  derivationSeedMetadata,
+  encodeImageInclusionMetadata,
+  foregroundMessageMetadata,
+  type HandoffFailureOutcome,
+  HandoffFailureOutcomeCodec,
+  HandoffSeedMetadataCodec,
+  handoffSeedMetadata,
+  ImageContextBreakCodec,
+  ImageInclusionMetadataCodec,
+  InboxMessageMetadataCodec,
+  inboxMessageMetadata,
+  isPromptEpochMetadata,
+  isSystemUpdateMetadata,
+  noticesMetadata,
+  PromptEpochMetadataCodec,
+  promptEpochMetadata,
+  SavedSubagentReportMetadataCodec,
+  SteerMetadataCodec,
+  SystemUpdateMetadataCodec,
+  savedSubagentReportMetadata,
+  skillBodyMetadata,
+  steerMetadata,
+  workUpdateMetadata,
+  writerSendMetadata,
+} from "./domain/turn-metadata.js";
+export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
+export type { HandoffBriefHold, HandoffBriefLauncher } from "./ports/handoff-brief-launcher.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {

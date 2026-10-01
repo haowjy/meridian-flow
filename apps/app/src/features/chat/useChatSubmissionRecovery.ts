@@ -11,6 +11,7 @@ import {
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitOutcome } from "@/components/app/composer";
+import { whenDerived } from "./derivation/derive-conversation";
 
 export type RecoveredChatSubmission = {
   submissionId: string;
@@ -250,6 +251,13 @@ export function useChatSubmissionRecovery(
       replayingRef.current.add(optimisticTurnId);
       const epoch = getChatSubmissionEpoch();
       try {
+        if (!(await whenDerived(threadId))) {
+          if (unmountedRef.current) return ambiguous;
+          if (getChatSubmissionAccountId() !== accountId) return ambiguous;
+          if (getChatSubmissionEpoch() !== epoch) return ambiguous;
+          reject(entry, optimisticTurnId, draftRetained);
+          return { ...ambiguous, kind: "rejected" };
+        }
         const outcome = await controllerRef.current.recoverSubmission(
           threadId,
           {
@@ -292,6 +300,21 @@ export function useChatSubmissionRecovery(
       draftRetained: boolean,
     ): Promise<void> => {
       const epoch = getChatSubmissionEpoch();
+      // A fork or handoff reloaded mid-creation: the server has no thread to
+      // look the send up in until creation lands. If it never does, the send
+      // fails with it, as a live send does.
+      const threadExists = await whenDerived(threadId);
+      if (unmountedRef.current) return;
+      if (getChatSubmissionAccountId() !== accountId) return;
+      if (getChatSubmissionEpoch() !== epoch) return;
+      if (!threadExists) {
+        if (operation === "lookup") reject(entry, optimisticTurnId, draftRetained);
+        else {
+          retireChatSubmission(accountId, entry.submissionId, epoch);
+          forget(entry.submissionId);
+        }
+        return;
+      }
       const outcome = await (operation === "retire"
         ? controllerRef.current.retireSubmission(
             threadId,
@@ -435,6 +458,9 @@ export function useChatSubmissionRecovery(
     async (optimisticTurnId: string) => {
       const retained = findRetainedRejection(accountId, optimisticTurnId);
       if (!retained || retained.entry.threadId !== threadId) return;
+      // A send that failed with its fork's creation stays failed until the
+      // fork exists; retrying creation is the destination's own Retry.
+      if (!(await whenDerived(threadId)) || unmountedRef.current) return;
       const entry = retained.entry;
       const turns = actionsRef.current.turns(threadId) ?? [];
       if (!turns.some((turn) => turn.id === optimisticTurnId)) {

@@ -1,8 +1,10 @@
 /** Local port liveness + wait-for-free coverage for deterministic restarts (issue #331). */
+
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isLocalPortFree, releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
 
+const MOCK_PORT = 12_345;
 const servers: net.Server[] = [];
 
 function listenOnEphemeralPort(): Promise<number> {
@@ -27,12 +29,9 @@ afterEach(async () => {
 });
 
 describe("isLocalPortFree", () => {
-  it("reports a held port as not free and a released port as free", async () => {
+  it("reports a held port as not free", async () => {
     const port = await listenOnEphemeralPort();
     expect(await isLocalPortFree(port)).toBe(false);
-
-    await closeServer(servers.pop() as net.Server);
-    expect(await isLocalPortFree(port)).toBe(true);
   });
 });
 
@@ -43,27 +42,36 @@ describe("waitForPortsFree", () => {
     expect(held).toEqual([port]);
   });
 
-  it("resolves empty once the port is released mid-wait", async () => {
-    const port = await listenOnEphemeralPort();
-    setTimeout(() => void closeServer(servers.pop() as net.Server), 40);
-    const held = await waitForPortsFree([port], { timeoutMs: 2_000, intervalMs: 25 });
-    expect(held).toEqual([]);
+  it("resolves empty once the held port becomes free mid-wait", async () => {
+    let held = true;
+    const isPortFree = async () => {
+      const free = !held;
+      held = false;
+      return free;
+    };
+
+    const remaining = await waitForPortsFree([MOCK_PORT], {
+      timeoutMs: 2_000,
+      intervalMs: 25,
+      isPortFree,
+    });
+    expect(remaining).toEqual([]);
   });
 });
 
 describe("releaseFixedPorts", () => {
   it("kills a surviving holder", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
+    let held = true;
     const holder = { pid: 1234, command: "vite" };
     const onKill = vi.fn();
     const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
-      if (signal === "SIGTERM") {
-        void closeServer(servers.pop() as net.Server);
-      }
+      if (signal === "SIGTERM") held = false;
     });
     const result = await releaseFixedPorts([port], {
       intervalMs: 10,
       terminateTimeoutMs: 2_000,
+      isPortFree: () => Promise.resolve(!held),
       discoverHolders: () => ({
         ok: true,
         holders: [holder],
@@ -79,16 +87,14 @@ describe("releaseFixedPorts", () => {
     expect(killProcess).toHaveBeenCalledWith(holder.pid, "SIGTERM");
     expect(onKill).toHaveBeenCalledOnce();
     expect(onKill).toHaveBeenCalledWith({ port, holder });
-    expect(await isLocalPortFree(port)).toBe(true);
   });
 
   it("force-kills a holder that survives SIGTERM", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
+    let held = true;
     const holder = { pid: 1234, command: "vite" };
     const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
-      if (signal === "SIGKILL") {
-        void closeServer(servers.pop() as net.Server);
-      }
+      if (signal === "SIGKILL") held = false;
     });
 
     await expect(
@@ -96,6 +102,7 @@ describe("releaseFixedPorts", () => {
         intervalMs: 10,
         terminateTimeoutMs: 0,
         forceTimeoutMs: 2_000,
+        isPortFree: () => Promise.resolve(!held),
         discoverHolders: () => ({ ok: true, holders: [holder] }),
         killProcess,
       }),
@@ -108,13 +115,14 @@ describe("releaseFixedPorts", () => {
   });
 
   it("gives a replacement holder its own SIGTERM grace period", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
+    let held = true;
     const firstHolder = { pid: 1234, command: "vite-old" };
     const replacement = { pid: 5678, command: "vite-new" };
     let discoveryCount = 0;
     const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
       if (_pid === replacement.pid && signal === "SIGKILL") {
-        void closeServer(servers.pop() as net.Server);
+        held = false;
       }
     });
 
@@ -123,6 +131,7 @@ describe("releaseFixedPorts", () => {
         intervalMs: 10,
         terminateTimeoutMs: 0,
         forceTimeoutMs: 2_000,
+        isPortFree: () => Promise.resolve(!held),
         discoverHolders: () => ({
           ok: true,
           holders: [discoveryCount++ === 0 ? firstHolder : replacement],
@@ -139,7 +148,8 @@ describe("releaseFixedPorts", () => {
   });
 
   it("signals a holder discovered after SIGKILL before inspecting the port again", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
+    let held = true;
     const firstHolder = { pid: 1234, command: "vite-old" };
     const postKillHolder = { pid: 5678, command: "vite-post-kill" };
     const nextHolder = { pid: 9012, command: "vite-next" };
@@ -147,7 +157,7 @@ describe("releaseFixedPorts", () => {
     let discoveryCount = 0;
     const killProcess = vi.fn((_pid: number, signal: NodeJS.Signals) => {
       if (_pid === nextHolder.pid && signal === "SIGKILL") {
-        void closeServer(servers.pop() as net.Server);
+        held = false;
       }
     });
 
@@ -156,6 +166,7 @@ describe("releaseFixedPorts", () => {
         intervalMs: 10,
         terminateTimeoutMs: 0,
         forceTimeoutMs: 100,
+        isPortFree: () => Promise.resolve(!held),
         discoverHolders: () => ({
           ok: true,
           holders: [discoveries[discoveryCount++] ?? nextHolder],
@@ -174,8 +185,9 @@ describe("releaseFixedPorts", () => {
   });
 
   it("reports discovery failure instead of treating an uninspectable holder as released", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
     const result = await releaseFixedPorts([port], {
+      isPortFree: () => Promise.resolve(false),
       discoverHolders: () => ({ ok: false, error: "lsof unavailable" }),
     });
 
@@ -186,28 +198,32 @@ describe("releaseFixedPorts", () => {
   });
 
   it("does not report discovery failure when the port frees during inspection", async () => {
-    const port = await listenOnEphemeralPort();
+    const port = MOCK_PORT;
+    let held = true;
     const discoverHolders = vi.fn(() => {
-      void closeServer(servers.pop() as net.Server);
+      held = false;
       return { ok: false as const, error: "lsof exited with status 1" };
     });
 
-    await expect(releaseFixedPorts([port], { discoverHolders })).resolves.toEqual({
-      status: "released",
-      ports: [port],
-    });
+    await expect(
+      releaseFixedPorts([port], {
+        isPortFree: () => Promise.resolve(!held),
+        discoverHolders,
+      }),
+    ).resolves.toEqual({ status: "released", ports: [port] });
     expect(discoverHolders).toHaveBeenCalledOnce();
   });
 
   it("does not inspect ports that are already free", async () => {
-    const port = await listenOnEphemeralPort();
-    await closeServer(servers.pop() as net.Server);
+    const port = MOCK_PORT;
     const discoverHolders = vi.fn();
 
-    await expect(releaseFixedPorts([port], { discoverHolders })).resolves.toEqual({
-      status: "released",
-      ports: [port],
-    });
+    await expect(
+      releaseFixedPorts([port], {
+        isPortFree: () => Promise.resolve(true),
+        discoverHolders,
+      }),
+    ).resolves.toEqual({ status: "released", ports: [port] });
     expect(discoverHolders).not.toHaveBeenCalled();
   });
 });

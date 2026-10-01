@@ -14,8 +14,8 @@ import { useThreadActivity } from "./useThreadActivity";
 
 const THREAD = `remount-${crypto.randomUUID()}`;
 function Consumer() {
-  const { activity } = useThreadActivity({ threadId: THREAD, rootThreadId: THREAD, seed: null });
-  return <span>{activity.descendants.length}</span>;
+  const { activity } = useThreadActivity({ threadId: THREAD, seed: null });
+  return <span>{activity.children.length}</span>;
 }
 
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -47,7 +47,7 @@ describe("shared thread activity", () => {
     await act(async () => root.render(<Consumer />));
     await act(async () =>
       onLiveState({
-        activity: { descendants: [{ threadId: "child" }] } as never,
+        activity: { children: [{ threadId: "child" }] } as never,
         status: { kind: "asleep" },
         threadId: THREAD,
         runningTurnId: null,

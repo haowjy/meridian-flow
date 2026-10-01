@@ -5,7 +5,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { projectResults, projects, threads, turns, users } from "@meridian/database/schema";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../../test-support/drizzle-reset.js";
 import type { CreateProjectResultInput } from "../ports/result-repository.js";
 import { createDrizzleResultRepository } from "./drizzle-result-repository.js";
 
@@ -47,7 +47,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     };
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [users]);
+      await deleteDrizzleRows(db, [users]);
       await db.insert(users).values(conformanceUserValues(USER_ID, "result-reconciliation"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -56,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "result-reconciliation",
       });
       await db.insert(threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -63,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
       });

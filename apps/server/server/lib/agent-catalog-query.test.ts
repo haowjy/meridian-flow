@@ -1,4 +1,5 @@
 /** Query bounds and exact cursor/selection parsing at the HTTP boundary. */
+import { handoffThreadRequestSchema } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { parseAgentCatalogQuery } from "./agent-catalog-query.js";
 import { requireAgentSelection } from "./request-id.js";
@@ -16,6 +17,20 @@ describe("Agent catalog transport", () => {
       catalogEntryId: ID,
       definitionRevisionId: ID,
     });
+  });
+  it("uses the same canonical selection grammar for handoff and other routes", () => {
+    const selection = {
+      catalogEntryId: "ABCDEFAB-0000-0000-0000-000000000871",
+      definitionRevisionId: ID,
+    };
+    const parsed = handoffThreadRequestSchema.parse({
+      id: ID,
+      originTurnId: ID,
+      agentSelection: selection,
+    });
+    expect(parsed.agentSelection).toEqual(requireAgentSelection(selection));
+    expect(parsed.agentSelection.catalogEntryId).toBe(selection.catalogEntryId.toLowerCase());
+    expect(() => requireAgentSelection({ ...selection, summary: "unexpected" })).toThrow();
   });
   it.each([
     { limit: "0" },

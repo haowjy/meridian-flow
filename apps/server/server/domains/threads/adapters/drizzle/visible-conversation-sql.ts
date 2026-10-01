@@ -61,7 +61,7 @@ export function projectChatPreviewLateral(headTurnId: SQL): SQL {
       '[[:space:]]+', ' ', 'g')), 240), '') AS last_message_preview
     FROM turn_blocks block
     WHERE block.turn_id = ${headTurnId}
-      AND block.block_type = 'text' AND block.pruned = false
+      AND block.block_type = 'text'
   ) AS conversation_preview`;
 }
 

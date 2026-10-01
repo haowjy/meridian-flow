@@ -34,6 +34,7 @@ export interface MutationCommitRuntime {
 }
 
 export interface SyncedMutationSummary {
+  revision?: string | null;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   reconciled: boolean;
@@ -101,6 +102,7 @@ export interface DestructiveSweepReport {
 }
 
 export interface ApplyWithRecheckResult {
+  revision: string | null;
   concurrent: CapturedConcurrentDetection;
   lateSweep?: DestructiveSweepReport;
 }
@@ -112,6 +114,7 @@ export type JournalBatchCommit = {
 type MutationSubmissionResult = (
   | {
       ok: true;
+      revision: string | null;
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
@@ -161,6 +164,7 @@ export interface MutationCommit {
 }
 
 export function createMutationCommit(deps: {
+  documentRevision?: (doc: Y.Doc) => string;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
@@ -235,6 +239,7 @@ export function createMutationCommit(deps: {
   }
 
   async function submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult> {
+    let revision: string | null = null;
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
@@ -255,6 +260,7 @@ export function createMutationCommit(deps: {
               journalCommitKind = accepted;
             },
           });
+          revision = applied.revision;
           captured = applied.concurrent;
           lateSweep = applied.lateSweep;
           return null;
@@ -268,6 +274,7 @@ export function createMutationCommit(deps: {
     if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
     return {
       ok: true,
+      revision,
       summary: summarizeMutationEcho(
         {
           runtime: input.runtime,
@@ -310,6 +317,7 @@ export function createMutationCommit(deps: {
       preflight,
     });
     return {
+      revision: applied.revision,
       concurrent: applied.concurrent,
       ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
     };
@@ -337,10 +345,12 @@ export function createMutationCommit(deps: {
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+    const revision = deps.documentRevision?.(liveDoc) ?? null;
     const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
       const lateSweep = await destructiveReport(input, current, beforeApplyDoc, afterApplyDoc);
       return {
+        revision,
         concurrent: current,
         journalCommitKind,
         ...(lateSweep ? { lateSweep } : {}),
@@ -361,7 +371,7 @@ export function createMutationCommit(deps: {
     const afterRecovery = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
       const lateSweep = await destructiveReport(input, concurrent, beforeRecovery, afterRecovery);
-      return { concurrent, ...(lateSweep ? { lateSweep } : {}) };
+      return { revision: null, concurrent, ...(lateSweep ? { lateSweep } : {}) };
     } finally {
       beforeRecovery.destroy();
       afterRecovery.destroy();

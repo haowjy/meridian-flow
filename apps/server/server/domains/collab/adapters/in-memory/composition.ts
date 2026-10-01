@@ -1,4 +1,5 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
+
 import {
   type AgentEditCodec,
   toDocHandle,
@@ -26,6 +27,7 @@ import {
   createDocumentProjectionRefresher,
   createDocumentWriteHookRunner,
 } from "../../domain/document-projection-refresher.js";
+import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
@@ -168,6 +170,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     documents: {
       ensureDocument: lifecycle.ensureDocument,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
       editDocument: runtime.markdownDocuments.editDocument,
@@ -217,10 +220,10 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
 
 function createInMemoryBranchPeerStub(
   documents: {
-    readAsMarkdown(
+    readVersionedMarkdown(
       documentId: string,
     ): ReturnType<
-      import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
+      import("../../domain/markdown-document.js").MarkdownDocumentEngine["readVersionedMarkdown"]
     >;
   },
   coordinator: {
@@ -230,12 +233,16 @@ function createInMemoryBranchPeerStub(
   codec: AgentEditCodec,
 ): BranchPeerShadowAccess {
   return {
+    async readEffectiveRevision(input) {
+      const read = await documents.readVersionedMarkdown(input.documentId);
+      return read.ok ? read.value.revision : null;
+    },
     async pullThreadPeer() {},
     async flushBranchLivePull() {},
-    readEffectiveMarkdown: (input) => documents.readAsMarkdown(input.documentId),
+    readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) =>
-        Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
+        Ok(versioned(doc, (doc) => model.serializeBlockLines(toDocHandle(doc), codec))),
       ),
     async resolveManifestMembership() {
       return { documentId: "" as DocumentId, members: [] };

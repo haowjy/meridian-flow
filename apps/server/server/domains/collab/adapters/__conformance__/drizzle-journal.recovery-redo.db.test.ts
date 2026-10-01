@@ -73,15 +73,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { asc, eq } = await import("drizzle-orm");
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -108,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       await db.insert(threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -119,6 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_A,
           threadId: THREAD_ID,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
@@ -126,6 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_B,
           threadId: THREAD_ID,
+          position: 2,
           parentTurnId: TURN_A,
           role: "assistant",
           origin: "assistant",
@@ -134,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_C,
           threadId: THREAD_ID,
+          position: 3,
           parentTurnId: TURN_B,
           role: "assistant",
           origin: "assistant",
@@ -142,6 +145,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_D,
           threadId: THREAD_ID,
+          position: 4,
           parentTurnId: TURN_C,
           role: "assistant",
           origin: "assistant",
@@ -150,14 +154,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_E,
           threadId: THREAD_ID,
+          position: 5,
           parentTurnId: TURN_D,
           role: "assistant",
           origin: "assistant",
           status: "complete",
         },
-        ...CONCURRENT_TURNS.map((id) => ({
+        ...CONCURRENT_TURNS.map((id, index) => ({
           id,
           threadId: THREAD_ID,
+          position: index + 6,
           parentTurnId: TURN_E,
           role: "assistant" as const,
           origin: "assistant" as const,
@@ -171,6 +177,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sequence: 1,
           provider: "test",
           model: "test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
         })),
       );
     }

@@ -10,7 +10,6 @@ export interface DevDatabase {
   readonly migrateScript: string;
   readonly label: string;
   readonly extensions?: readonly string[];
-  readonly postMigrateScript?: string;
   readonly optional?: boolean;
   /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
   readonly migrationsDir?: string;
@@ -30,11 +29,10 @@ export const DEV_DATABASES: readonly DevDatabase[] = [
   {
     envVar: "DATABASE_URL",
     migrateScript: "pnpm db:migrate",
-    postMigrateScript: "pnpm db:apply-functions",
     label: "Meridian local Postgres",
     extensions: ["pg_trgm"],
     migrationsDir: "packages/database/src/migrations",
-    catchUpHint: "pnpm db:migrate && pnpm db:apply-functions",
+    catchUpHint: "pnpm db:migrate",
     resetHint: "pnpm db:reset",
   },
 ];
@@ -139,10 +137,13 @@ export function ensureDirenvAllowed(repoRoot: string): void {
   }
 }
 
-export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void {
+export function applyDevEnvToProcess(
+  repoRoot = resolveCurrentRepoRoot(),
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   const mainEnv = loadMainEnvFile(repoRoot);
   for (const [key, value] of Object.entries(mainEnv)) {
-    if (process.env[key] === undefined) process.env[key] = value;
+    if (env[key] === undefined) env[key] = value;
   }
 
   // The dev stack owns the structured-event mirror location. Pin it here rather
@@ -151,12 +152,12 @@ export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void 
   // their own package cwd via `pnpm --filter`, so a relative path scatters the
   // JSONL mirror away from repo-root `logs/events/` (where `logs/portless.log`
   // and probe tooling look). resolveDevLogDir keeps only an absolute override.
-  process.env.LOG_DIR = resolveDevLogDir(repoRoot, process.env.LOG_DIR);
+  env.LOG_DIR = resolveDevLogDir(repoRoot, env.LOG_DIR);
 
   for (const db of DEV_DATABASES) {
-    const baseUrl = mainEnv[db.envVar] ?? process.env[db.envVar];
+    const baseUrl = mainEnv[db.envVar] ?? env[db.envVar];
     if (!baseUrl) continue;
-    process.env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
+    env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
   }
 }
 

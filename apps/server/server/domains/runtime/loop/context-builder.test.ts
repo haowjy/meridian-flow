@@ -25,8 +25,7 @@ function thread(): Thread {
     status: "idle",
     title: null,
     ref: null,
-    composedSystemPrompt: "system prompt",
-    bakedSkillSlugs: [],
+    initialPromptBakeId: "bake-1" as never,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,
@@ -38,6 +37,7 @@ function thread(): Thread {
     turnCount: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
     deletedAt: null,
   };
 }
@@ -46,12 +46,14 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
   return {
     id,
     threadId: THREAD_ID,
+    position: 1,
     prevTurnId: null,
     parentTurnId: null,
     role,
     origin: role === "assistant" ? "assistant" : role === "user" ? "writer" : "system",
     writeMode: null,
     status: "complete",
+    promptBakeId: null,
     finishReason: "end_turn",
     inputTokens: 0,
     outputTokens: 0,
@@ -96,6 +98,40 @@ function userMessageTexts(messages: ReturnType<typeof buildContext>["messages"])
 }
 
 describe("buildContext system-turn history projection", () => {
+  it("assembles user history in turn-position order", () => {
+    const newer = { ...turn("user", "newer"), position: 2 };
+    const older = { ...turn("user", "older"), position: 1 };
+    const { messages } = buildContext({
+      thread: thread(),
+      turns: [newer, older],
+      blocks: [
+        {
+          id: "newer-block",
+          turnId: "newer",
+          responseId: null,
+          blockType: "text",
+          sequence: 0,
+          content: { text: "second" },
+          textContent: "second",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "older-block",
+          turnId: "older",
+          responseId: null,
+          blockType: "text",
+          sequence: 0,
+          content: { text: "first" },
+          textContent: "first",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      frozenSystemPrompt: "system prompt",
+    });
+
+    expect(userMessageTexts(messages)).toEqual(["first", "second"]);
+  });
+
   const correlation = {
     parentTurnId: "turn-0",
     toolCallId: "spawn-1",
@@ -126,6 +162,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toContain(
@@ -146,6 +183,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual([]);
@@ -158,6 +196,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual([]);
@@ -178,6 +217,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("assistant")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
@@ -197,6 +237,7 @@ describe("buildContext system-turn history projection", () => {
       turns: [invalidNotification],
       blocks: [invalidCard],
       eventSink: sink,
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(sink.events.map((event) => event.payload.field).sort()).toEqual([
@@ -257,11 +298,17 @@ describe("buildContext system-turn history projection", () => {
       block("writer-1", "writer-1", "text", "Writer message 1"),
       block("writer-2", "writer-2", "text", "Writer message 2"),
     ];
-    const before = buildContext({ thread: thread(), turns: [], blocks: [] });
+    const before = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      frozenSystemPrompt: "system prompt",
+    });
     const messages = buildContext({
       thread: thread(),
       turns,
       blocks,
+      frozenSystemPrompt: "system prompt",
     }).messages;
     expect(messages.map((message) => message.role)).toEqual([
       "system",
@@ -282,4 +329,52 @@ describe("buildContext system-turn history projection", () => {
     });
     expect(systemMessageTexts(messages)).toEqual(systemMessageTexts(before.messages));
   });
+});
+
+it("keeps document revision metadata out of model request bytes", () => {
+  const documentId = "33333333-3333-4333-8333-333333333333";
+  const uri = "manuscript://chapter.md";
+  const user = turn("user", "user-turn");
+  const assistant = { ...turn("assistant"), position: 2 };
+  const reference = (revision: string | null): Block => ({
+    ...customBlock({
+      type: "reference",
+      text: "@chapter",
+      documentId,
+      uri,
+      read: { result: { body: "Current chapter." }, revision },
+    }),
+    turnId: user.id,
+    blockType: "text",
+  });
+  const call: Block = {
+    ...customBlock({ toolCallId: "read-1", name: "write", input: { command: "read", path: uri } }),
+    id: "call",
+    blockType: "tool_use",
+  };
+  const result = (revision?: string): Block => ({
+    ...customBlock({
+      toolCallId: "read-1",
+      output: { body: "Current chapter." },
+      ...(revision ? { metadata: { documentRevisions: [{ documentId, uri, revision }] } } : {}),
+    }),
+    id: "result",
+    blockType: "tool_result",
+    sequence: 1,
+  });
+  const bytes = (revision?: string) =>
+    JSON.stringify(
+      buildContext({
+        thread: thread(),
+        turns: [user, assistant],
+        blocks: [reference(revision ?? null), call, result(revision)],
+        frozenSystemPrompt: "Frozen system.",
+      }).messages,
+    );
+  const withEvidence = bytes("y1:read-revision");
+  expect(withEvidence).toBe(bytes());
+  expect(withEvidence).not.toContain("y1:");
+  expect(withEvidence).not.toContain('"revision"');
+  expect(bytes("y1:another-revision")).toBe(bytes());
+  expect(bytes()).toContain("Current chapter.");
 });

@@ -9,9 +9,9 @@ import {
   type EventQuery,
   type EventSink,
 } from "../domains/observability/index.js";
+import { PROCESS_SHUTDOWN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
-
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
     sink: DeferredEventSink;
@@ -19,6 +19,7 @@ type ObservabilityGlobal = typeof globalThis & {
     eventQuery?: EventQuery;
     delegateBound: boolean;
     shutdownInstalled: boolean;
+    shutdownPromise?: Promise<void>;
     shutdownCallbacks: Array<() => Promise<void> | void>;
   };
 };
@@ -65,16 +66,40 @@ export function registerProcessShutdownCallback(callback: () => Promise<void> | 
   state().shutdownCallbacks.push(callback);
 }
 
-export function installObservabilityShutdownHooks(): void {
+function shutdownProcessResources(deadlineMs: number): Promise<void> {
+  const current = state();
+  if (!current.shutdownPromise) {
+    let deadline: ReturnType<typeof setTimeout>;
+    const work = (async () => {
+      await Promise.allSettled(
+        current.shutdownCallbacks.map((callback) => Promise.resolve().then(callback)),
+      );
+      await current.sink.flush().catch(() => undefined);
+    })();
+    const expired = new Promise<void>((resolve) => {
+      deadline = setTimeout(resolve, deadlineMs);
+      deadline.unref();
+    });
+    current.shutdownPromise = Promise.race([work, expired]).finally(() => clearTimeout(deadline));
+  }
+  return current.shutdownPromise;
+}
+
+export function installObservabilityShutdownHooks(options: { deadlineMs?: number } = {}): void {
   const current = state();
   if (current.shutdownInstalled) return;
   current.shutdownInstalled = true;
-  const flush = async () => {
-    for (const callback of current.shutdownCallbacks) {
-      await Promise.resolve(callback()).catch(() => undefined);
+  let signalReceived = false;
+  const shutdown = () => {
+    if (signalReceived) {
+      process.exit(1);
+      return;
     }
-    await current.sink.flush().catch(() => undefined);
+    signalReceived = true;
+    void shutdownProcessResources(options.deadlineMs ?? PROCESS_SHUTDOWN_DEADLINE_MS).finally(() =>
+      process.exit(0),
+    );
   };
-  process.once("SIGTERM", () => void flush().finally(() => process.exit(0)));
-  process.once("SIGINT", () => void flush().finally(() => process.exit(0)));
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }

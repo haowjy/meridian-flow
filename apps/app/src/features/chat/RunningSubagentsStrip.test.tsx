@@ -33,8 +33,6 @@ const AWAKE: ThreadStatus = { kind: "awake", phase: "generating", cancelRequeste
 function node(overrides: Partial<ThreadActivityNode> & { threadId: string }): ThreadActivityNode {
   return {
     parentThreadId: "thread-1",
-    rootThreadId: "thread-1",
-    depth: 1,
     ref: null,
     title: null,
     agentName: null,

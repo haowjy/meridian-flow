@@ -57,6 +57,7 @@ pnpm dev
 | `pnpm dev:infra` | Shared — start once if Postgres is not already running |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
+| Nx task cache | Shared with the main checkout. A cache hit replays output that can name another worktree's paths; the hit still means identical inputs. `NX_SKIP_NX_CACHE=true pnpm typecheck` forces a fresh run |
 
 **First browser load after `pnpm install`** in a fresh worktree can hit a
 stale-Vite-deps crash: Vite's pre-bundled dependency cache may hold a
@@ -90,10 +91,13 @@ else's database or a shared deployment; deployment rebuilds need separate
 coordination. Legacy users will arrive through a separate ETL, not this migration.
 
 Against local Postgres, `pnpm test:db` creates and migrates a uniquely named
-template owned by that invocation, clones four isolated worker databases from
-it, then drops the workers and template on exit. If the process is killed
-before cleanup, `pnpm dev:gc-dbs -- --yes` recognizes every managed name and
-drops it only after its owner process has stopped. Manually named test
+template owned by that invocation and clones eight isolated worker databases
+from it. Set `DB_TEST_WORKERS=1..8` to lower concurrency on a busy server. After
+Vitest exits, an ownership-validated detached child drops the workers and
+template without making the test command wait for PostgreSQL checkpoints.
+Cleanup logs live in `.meridian/db-test-cleanup/<owner-pid>.log`.
+`pnpm dev:gc-dbs -- --yes` recognizes managed names and can reclaim leftovers
+(or in-flight cleanup) only after the owning test process has stopped. Manually named test
 databases that must survive GC use `<base>_test-manual-<label>`; test lifecycle
 prefixes are reserved from worktree slugs.
 

@@ -16,8 +16,10 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createDocumentAddressResolver } from "../../document-address.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
@@ -48,7 +50,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 

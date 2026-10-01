@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 
-import type { MeridianError } from "../interrupt/index.js";
+import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
 import { type AGUIEvent, EventSchemas } from "./agui";
 import type { ThreadLiveState } from "./http-types";
 
@@ -19,14 +19,6 @@ const jsonValueSchema: z.ZodType<import("../threads/index.js").JsonValue> = z.la
     z.record(z.string(), jsonValueSchema),
   ]),
 );
-
-const meridianErrorSchema: z.ZodType<MeridianError> = z.object({
-  code: z.string().min(1),
-  message: z.string(),
-  retryable: z.boolean(),
-  source: z.enum(["gateway", "tool", "child-agent", "system"]),
-  details: jsonValueSchema.optional(),
-});
 
 const wsEventSeqSchema = z.string().regex(/^(0|[1-9]\d*)$/);
 
@@ -110,7 +102,7 @@ const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> 
   z.object({ kind: z.literal("asleep") }),
   z.object({
     kind: z.literal("awake"),
-    phase: z.enum(["generating", "waiting"]),
+    phase: z.enum(["generating", "waiting", "compacting"]),
     cancelRequested: z.boolean(),
   }),
 ]);
@@ -119,8 +111,6 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
   z.object({
     threadId: z.string().min(1),
     parentThreadId: z.string().min(1).nullable(),
-    rootThreadId: z.string().min(1),
-    depth: z.number().int(),
     ref: z.string().min(1).nullable(),
     title: z.string().nullable(),
     agentName: z.string().nullable(),
@@ -140,7 +130,7 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
   });
 
 const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivity> = z.object({
-  descendants: z.array(threadActivityNodeSchema),
+  children: z.array(threadActivityNodeSchema),
 });
 
 const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessageProvenance> = z.union(
@@ -162,7 +152,8 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
 const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInboxItem> = z.object({
   id: z.string().min(1),
   seq: z.number().int(),
-  intent: z.enum(["message", "notice"]),
+  intent: z.enum(["message", "notice", "control"]),
+  control: z.object({ kind: z.literal("compact"), instructions: z.string().optional() }).optional(),
   provenance: messageProvenanceSchema,
   deliveryState: z.enum(["awaiting_run", "waiting"]),
   summary: z.string(),

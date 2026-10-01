@@ -455,7 +455,7 @@ export function createResponseCommitter(deps: {
         return {
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
-          receipts: settledWriteReceipts(docBuffer),
+          receipts: settledWriteReceipts(docBuffer, applied.revision),
           ...(applied.concurrent.detection.info
             ? { concurrentEdits: applied.concurrent.detection.info }
             : {}),
@@ -574,7 +574,7 @@ export function createResponseCommitter(deps: {
           docBuffers,
           documents,
           liveResponseState(responseId),
-          settledWriteReceipts,
+          (docBuffer) => settledWriteReceipts(docBuffer, null),
         );
         applyDiscardedClaims(buffer, result);
         finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
@@ -614,7 +614,7 @@ export function createResponseCommitter(deps: {
           docBuffers,
           recheckedDocuments ?? documents,
           liveResponseState(responseId),
-          settledWriteReceipts,
+          (docBuffer) => settledWriteReceipts(docBuffer, null),
           awarenessDegraded ? { awarenessDegraded: true } : {},
         );
         assertRecoveryResultHonest(result, journalCommitKind);
@@ -667,7 +667,7 @@ export function createResponseCommitter(deps: {
       const current = documentsById.get(docBuffer.docId) ?? {
         documentId: docBuffer.docId,
         updateCount: docBuffer.updates.length,
-        receipts: settledWriteReceipts(docBuffer),
+        receipts: settledWriteReceipts(docBuffer, null),
       };
       documentsById.set(docBuffer.docId, {
         ...current,
@@ -686,6 +686,7 @@ export function createResponseCommitter(deps: {
 
   function settledWriteReceipts(
     docBuffer: ResponseDocumentBuffer,
+    revision: string | null,
   ): ResponseCommitDocumentResult["receipts"] {
     const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, deps.codec);
     return docBuffer.updates.map((update) => {
@@ -719,6 +720,7 @@ export function createResponseCommitter(deps: {
         return {
           writeId: update.writeId,
           settlementId: update.durableWriteId,
+          revision,
           result: modelResult({
             command: update.commandName,
             status: "success",

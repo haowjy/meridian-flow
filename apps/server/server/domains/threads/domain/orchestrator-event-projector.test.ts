@@ -10,17 +10,6 @@ import {
 } from "./orchestrator-event-projector.js";
 
 describe("orchestrator event projector", () => {
-  it("maps a pruned block to the client prune frame", () => {
-    const events = projectOrchestratorEvents([{ type: "block.pruned", blockId: "block-1" }]);
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: EventType.CUSTOM,
-      name: "meridian.block.pruned",
-      value: { blockId: "block-1" },
-    });
-  });
-
   it("maps the pending inbox to the client inbox.changed frame", () => {
     const pending = {
       items: [

@@ -108,6 +108,8 @@ describe("Yjs branch handshake route guard", () => {
       },
     });
     const branchPulls = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
         recover: async () => {},

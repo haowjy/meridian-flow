@@ -75,6 +75,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
+    documentRevision: options.documentRevision,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,
@@ -119,6 +120,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
+      documentRevision: options.documentRevision,
       semanticProvenance: options.semanticProvenance,
     },
     threadOrigins,

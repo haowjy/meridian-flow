@@ -20,8 +20,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../test-support/rollback-test-database.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
@@ -58,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "00000000-0000-4000-8000-000000000926",
     ] as const;
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     async function seed(db: Database = database.current) {
@@ -368,7 +367,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         releaseFirst = resolve;
       });
       try {
-        await truncateDrizzleTables(controlDb, [users]);
+        await deleteDrizzleRows(controlDb, [users]);
         await seed(controlDb);
         await createDrizzleProjectContextAvailability(controlDb).advance({
           projectIds: [PROJECT],
@@ -419,7 +418,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(head?.generation).toBe(BigInt(settledSecond));
       } finally {
         releaseFirst?.();
-        await truncateDrizzleTables(controlDb, [users]);
+        await deleteDrizzleRows(controlDb, [users]);
         await Promise.all([firstDb.close(), secondDb.close(), controlDb.close()]);
       }
     });
@@ -498,7 +497,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ],
         });
       } finally {
-        await truncateDrizzleTables(reader, [users]);
+        await deleteDrizzleRows(reader, [users]);
         await Promise.all([reader.close(), writer.close()]);
       }
     });

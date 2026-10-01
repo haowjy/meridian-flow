@@ -117,9 +117,10 @@ export const works = pgTable(
       "works_slug_valid",
       sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
     ),
+    // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
     check(
       "works_status_length",
-      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${WORK_STATUS_MAX_LENGTH}`,
+      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
     ),
     check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),

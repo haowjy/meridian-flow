@@ -5,8 +5,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { documents, projects, uploadIntakes, users, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../test-support/rollback-test-database.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
@@ -29,7 +28,7 @@ if (!RUN) {
     const WORK = "00000000-0000-4000-8000-000000000a03";
     const NO_WORK = "00000000-0000-4000-8000-000000000a04";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     async function seed(db: Database = database.current) {

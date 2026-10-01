@@ -61,7 +61,11 @@ import { matchDocument } from "./match.js";
 export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
-  documentSync: MarkdownDocumentStore;
+  documentSync: MarkdownDocumentStore &
+    Pick<
+      BranchPeerShadowAccess,
+      "readEffectiveHashlines" | "readEffectiveMarkdown" | "resolveManifestMembership"
+    >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -164,7 +168,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
-  private readonly documentSync: MarkdownDocumentStore;
+  private readonly documentSync: ContextFSDeps["documentSync"];
   private readonly documentCreation: DocumentCreationAggregate;
   private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   private readonly manifestView?: ContextFSDeps["manifestView"];
@@ -812,7 +816,12 @@ export class ContextFS implements ContextSchemeAdapter {
         hashlines: read.value.hashlines,
       });
       if (!match) continue;
-      hits.push({ path: row.path, ...match });
+      hits.push({
+        path: row.path,
+        documentId: row.document.id,
+        revision: read.value.revision,
+        ...match,
+      });
     }
     return Ok(hits);
   }
@@ -835,18 +844,13 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
-    const effective = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "readEffectiveMarkdown">;
-    if (
-      this.name === "manuscript" &&
-      this.manifestView?.threadId &&
-      effective.readEffectiveMarkdown
-    ) {
-      return effective.readEffectiveMarkdown({
+    if (this.name === "manuscript" && this.manifestView?.threadId) {
+      const read = await this.documentSync.readEffectiveMarkdown({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
       });
+      return read.ok ? Ok(read.value.content) : read;
     }
     return this.documentSync.readAsMarkdown(documentId);
   }
@@ -860,23 +864,31 @@ export class ContextFS implements ContextSchemeAdapter {
    */
   private async searchableLines(
     documentId: string,
-  ): Promise<Result<{ entries: string[]; hashlines: boolean }, SyncError>> {
-    const effective = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "readEffectiveHashlines">;
-    if (
-      this.name === "manuscript" &&
-      this.manifestView?.threadId &&
-      effective.readEffectiveHashlines
-    ) {
-      const hashlines = await effective.readEffectiveHashlines({
+  ): Promise<
+    Result<{ entries: string[]; hashlines: boolean; revision: string | null }, SyncError>
+  > {
+    if (this.name === "manuscript" && this.manifestView?.threadId) {
+      const hashlines = await this.documentSync.readEffectiveHashlines({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
       });
-      return hashlines.ok ? Ok({ entries: hashlines.value, hashlines: true }) : hashlines;
+      return hashlines.ok
+        ? Ok({
+            entries: hashlines.value.content,
+            hashlines: true,
+            revision: hashlines.value.revision,
+          })
+        : hashlines;
     }
-    const read = await this.readVisibleMarkdown(documentId);
-    return read.ok ? Ok({ entries: read.value.split("\n"), hashlines: false }) : read;
+    const read = await this.documentSync.readVersionedMarkdown(documentId);
+    return read.ok
+      ? Ok({
+          entries: read.value.content.split("\n"),
+          hashlines: false,
+          revision: read.value.revision,
+        })
+      : read;
   }
 
   private async isVisibleDocument(documentId: string): Promise<boolean> {
@@ -886,11 +898,8 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async resolveVisibleMembership(): Promise<Set<string> | null> {
     if (this.name !== "manuscript" || !this.manifestView) return null;
-    const resolver = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
-    if (!resolver.resolveManifestMembership) return null;
     try {
-      const membership = await resolver.resolveManifestMembership({
+      const membership = await this.documentSync.resolveManifestMembership({
         projectId: this.manifestView.projectId as never,
         workId: this.manifestView.workId as never,
         threadId: this.manifestView.threadId as never,

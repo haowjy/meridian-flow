@@ -86,7 +86,7 @@ export type UserTurnAdmissionResult =
 
 /** Server-generated snapshot; never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue };
+  read?: { result: JsonValue; revision: string | null };
 };
 
 export function referenceOccurrenceContent(block: {
@@ -123,9 +123,11 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).length !== 1 ||
+      Object.keys(read).length !== 2 ||
       !("result" in read) ||
-      read.result === undefined
+      read.result === undefined ||
+      !("revision" in read) ||
+      (read.revision !== null && typeof read.revision !== "string")
     )
       return null;
   }

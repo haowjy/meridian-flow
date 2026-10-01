@@ -3,8 +3,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documents, projects, users, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../test-support/rollback-test-database.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
@@ -22,7 +21,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const b = "00000000-0000-4000-8000-000000000904";
     const noWork = "00000000-0000-4000-8000-000000000905";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     beforeEach(async () => {
       const db = database.current;

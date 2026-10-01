@@ -34,7 +34,7 @@ else
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { readThreadReport } = await import("../../../runtime/spawn/read-thread-report.js");
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -42,7 +42,7 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
     });
     async function seedOwnershipGraph() {
       await executionScenario(db, ids);
@@ -53,13 +53,30 @@ else
         .insert(schema.projects)
         .values({ id: ids.otherProject, userId: ids.otherUser, name: "Other", slug: "other" });
       await db.insert(schema.threads).values([
-        { id: ids.otherRoot, projectId: ids.project, createdByUserId: ids.user, ref: "c2" },
         {
+          rootThreadId: ids.otherRoot,
+          id: ids.otherRoot,
+          projectId: ids.project,
+          createdByUserId: ids.user,
+          ref: "c2",
+        },
+        {
+          rootThreadId: ids.otherProjectRoot,
           id: ids.otherProjectRoot,
           projectId: ids.otherProject,
           createdByUserId: ids.otherUser,
           ref: "c1",
         },
+      ]);
+      await db.insert(schema.turns).values({
+        id: ids.otherProjectRootTurn,
+        threadId: ids.otherProjectRoot,
+        position: 1,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await db.insert(schema.threads).values([
         {
           id: ids.otherChild,
           projectId: ids.project,
@@ -87,15 +104,9 @@ else
       ]);
       await db.insert(schema.turns).values([
         {
-          id: ids.otherProjectRootTurn,
-          threadId: ids.otherProjectRoot,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-        {
           id: ids.otherProjectChildUserTurn,
           threadId: ids.otherProjectChild,
+          position: 1,
           role: "user",
           // The child's seed turn is the spawning caller's prompt, not a writer send.
           origin: "system",
@@ -106,6 +117,7 @@ else
         {
           id: ids.execution2,
           threadId: ids.child,
+          position: 3,
           parentTurnId: ids.childUserTurn,
           role: "assistant",
           origin: "assistant",
@@ -115,6 +127,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.otherProjectExecution,
         threadId: ids.otherProjectChild,
+        position: 2,
         parentTurnId: ids.otherProjectChildUserTurn,
         role: "assistant",
         origin: "assistant",
@@ -122,7 +135,7 @@ else
       });
       await repos.executionReports.admit({
         childThreadId: ids.otherProjectChild,
-        assistantTurnId: ids.otherProjectExecution,
+        executionTurnId: ids.otherProjectExecution,
         handle: "p9",
         origin: "spawn",
         deliveryMode: "background_notification",
@@ -133,7 +146,7 @@ else
       });
       await repos.executionReports.finalizeOnce({
         childThreadId: ids.otherProjectChild,
-        assistantTurnId: ids.otherProjectExecution,
+        executionTurnId: ids.otherProjectExecution,
         outcome: "succeeded",
         reason: null,
         source: "return_result",
@@ -158,7 +171,7 @@ else
               capture: sql`${JSON.stringify(value)}::jsonb`,
               captureToolCallId: "malformed",
             })
-            .where(eq(schema.threadExecutionReports.assistantTurnId, ids.otherProjectExecution));
+            .where(eq(schema.threadExecutionReports.executionTurnId, ids.otherProjectExecution));
           await expect(
             repos.executionReports.findByExecution(
               ids.otherProjectChild,
@@ -171,7 +184,7 @@ else
       it("reads only finished reports by child run", async () => {
         const input = {
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "thread_run" as const,
           deliveryMode: "none" as const,
@@ -212,7 +225,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         const { eq } = await import("drizzle-orm");
         await db.update(schema.threads).set({ ref: "p5" }).where(eq(schema.threads.id, ids.caller));
         await expect(
@@ -222,7 +235,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.caller));
         await expect(
           readThreadReport({
@@ -245,7 +258,7 @@ else
       it("rejects mismatched existing child, caller turn, handle and card identities", async () => {
         const input = {
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "spawn" as const,
           deliveryMode: "background_notification" as const,
@@ -259,7 +272,7 @@ else
           repos.executionReports.admit({ ...input, childThreadId: ids.otherChild }),
         ).rejects.toThrow();
         await expect(
-          repos.executionReports.admit({ ...input, assistantTurnId: ids.childUserTurn }),
+          repos.executionReports.admit({ ...input, executionTurnId: ids.childUserTurn }),
         ).rejects.toThrow();
         await expect(
           repos.executionReports.admit({ ...input, callerTurnId: ids.childUserTurn }),
@@ -281,6 +294,7 @@ else
         await db.insert(schema.turns).values({
           id: foreignTurn,
           threadId: foreignCaller,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
@@ -302,12 +316,12 @@ else
         expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
       });
 
-      it("discovers live obligations beyond parked callers and retains child output after caller deletion", async () => {
+      it("discovers live obligations and prevents deleting a pending caller", async () => {
         const { eq } = await import("drizzle-orm");
         await repos.executionReports.markPublished(
           ids.otherProjectChild,
           ids.otherProjectExecution,
-          "skipped",
+          "published",
         );
         const sibling = "00000000-0000-4000-8000-0000000009d1" as ThreadId;
         const siblingTurn = "00000000-0000-4000-8000-0000000009d2" as TurnId;
@@ -329,6 +343,7 @@ else
           {
             id: siblingTurn,
             threadId: sibling,
+            position: 1,
             role: "assistant",
             origin: "assistant",
             status: "complete",
@@ -336,6 +351,7 @@ else
           {
             id: third,
             threadId: ids.child,
+            position: 4,
             parentTurnId: ids.childUserTurn,
             role: "assistant",
             origin: "assistant",
@@ -348,7 +364,7 @@ else
         for (const execution of [ids.execution, ids.execution2]) {
           await repos.executionReports.admit({
             childThreadId: ids.child,
-            assistantTurnId: execution,
+            executionTurnId: execution,
             handle: "p1",
             origin: "spawn",
             deliveryMode: "background_notification",
@@ -359,7 +375,7 @@ else
           });
           await repos.executionReports.finalizeOnce({
             childThreadId: ids.child,
-            assistantTurnId: execution,
+            executionTurnId: execution,
             outcome: "succeeded",
             reason: null,
             source: "return_result",
@@ -368,7 +384,7 @@ else
         }
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: third,
+          executionTurnId: third,
           handle: "p1",
           origin: "spawn",
           deliveryMode: "background_notification",
@@ -379,7 +395,7 @@ else
         });
         await repos.executionReports.finalizeOnce({
           childThreadId: ids.child,
-          assistantTurnId: third,
+          executionTurnId: third,
           outcome: "succeeded",
           reason: null,
           source: "return_result",
@@ -392,7 +408,7 @@ else
         expect(await repos.executionReports.listPendingPublication(1)).toEqual([
           {
             childThreadId: ids.child,
-            assistantTurnId: third,
+            executionTurnId: third,
             callerThreadId: ids.caller,
           },
         ]);
@@ -402,20 +418,24 @@ else
           .where(eq(schema.threads.id, sibling));
         expect(
           (await repos.executionReports.listPendingPublication(3)).map(
-            (row) => row.assistantTurnId,
+            (row) => row.executionTurnId,
           ),
         ).toEqual(expect.arrayContaining([ids.execution, ids.execution2, third]));
         await db.delete(schema.turns).where(eq(schema.turns.id, siblingTurn));
-        await db.delete(schema.threads).where(eq(schema.threads.id, sibling));
+        await expect(
+          db.delete(schema.threads).where(eq(schema.threads.id, sibling)),
+        ).rejects.toMatchObject({
+          cause: { constraint_name: "thread_execution_reports_pending_has_caller" },
+        });
         expect(
           await repos.executionReports.findByExecution(ids.child, ids.execution),
         ).toMatchObject({
-          callerThreadId: null,
+          callerThreadId: sibling,
           callerTurnId: null,
           cardBlockId: null,
           summary: `saved-${ids.execution}`,
         });
-        expect(await repos.executionReports.listPendingPublication(1)).toHaveLength(1);
+        expect(await repos.executionReports.listPendingPublication(3)).toHaveLength(3);
       });
 
       it("does not reveal an authorized sibling's report through a mismatched ref or another owner", async () => {
@@ -449,7 +469,7 @@ else
         ]);
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "thread_run",
           deliveryMode: "none",
@@ -460,7 +480,7 @@ else
         });
         await repos.executionReports.finalizeOnce({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           outcome: "succeeded",
           reason: null,
           source: "return_result",
@@ -481,13 +501,13 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
       });
 
       it("uses a fresh authorized root snapshot instead of the caller's uncommitted transaction", async () => {
         const input = {
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "thread_run" as const,
           deliveryMode: "none" as const,
@@ -519,7 +539,7 @@ else
       it("serializes competing capture and finalization contenders without replacing a winner", async () => {
         const input = {
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "spawn" as const,
           deliveryMode: "direct" as const,
@@ -540,7 +560,7 @@ else
         const terminals = await Promise.allSettled([
           repos.executionReports.finalizeOnce({
             childThreadId: ids.child,
-            assistantTurnId: ids.execution,
+            executionTurnId: ids.execution,
             outcome: "succeeded",
             reason: null,
             source: "return_result",
@@ -548,7 +568,7 @@ else
           }),
           repos.executionReports.finalizeOnce({
             childThreadId: ids.child,
-            assistantTurnId: ids.execution,
+            executionTurnId: ids.execution,
             outcome: "failed",
             reason: "error",
             source: "return_result",
@@ -583,7 +603,6 @@ else
         releaseFirst();
         const [, losingLock] = await Promise.all([publisherA, publisherB]);
         expect(losingLock).toBeNull();
-        await repos.executionReports.markPublished(ids.child, ids.execution, "skipped");
         expect(
           (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
         ).toBe("published");
@@ -592,7 +611,7 @@ else
       it("authorizes the latest report behind live caller, target, project and turn ownership", async () => {
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "thread_run",
           deliveryMode: "none",
@@ -603,7 +622,7 @@ else
         });
         await repos.executionReports.finalizeOnce({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           outcome: "succeeded",
           reason: null,
           source: "return_result",
@@ -624,7 +643,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
@@ -632,7 +651,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
@@ -640,7 +659,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.threads)
           .set({ deletedAt: new Date() })
@@ -652,7 +671,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         expect(
           (await repos.executionReports.findByExecution(ids.child, ids.execution))?.summary,
         ).toBe("kept");
@@ -679,7 +698,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.threads)
           .set({ deletedAt: null })
@@ -695,7 +714,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.projects)
           .set({ deletedAt: null })
@@ -709,7 +728,7 @@ else
       it("returns the latest child run and allows reading an earlier run", async () => {
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           handle: "p1",
           origin: "thread_run",
           deliveryMode: "none",
@@ -720,7 +739,7 @@ else
         });
         await repos.executionReports.finalizeOnce({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution,
+          executionTurnId: ids.execution,
           outcome: "succeeded",
           reason: null,
           source: "empty",
@@ -736,7 +755,7 @@ else
         ).toMatchObject({ ref: "p1", run: 1, outcome: "succeeded", source: "empty", summary: "" });
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution2,
+          executionTurnId: ids.execution2,
           handle: "p1",
           origin: "thread_run",
           deliveryMode: "none",
@@ -747,7 +766,7 @@ else
         });
         await repos.executionReports.finalizeOnce({
           childThreadId: ids.child,
-          assistantTurnId: ids.execution2,
+          executionTurnId: ids.execution2,
           outcome: "failed",
           reason: "budget",
           source: "empty",
