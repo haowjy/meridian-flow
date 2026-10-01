@@ -52,6 +52,8 @@ them back. A new surface whose tone is the recess does the same.
   on every surface (`--color-muted-foreground`).
 - **A new family is a new scheme in contracts plus a node here.** The
   `Record<LinkChipIcon, …>` makes a missing image a type error.
-- **Hover is for chips that go somewhere** (`role="link"` without
-  `aria-disabled`). Skills (`/slug` atoms) are not document links and keep
-  their own underline.
+- **Hover is for chips that go somewhere.** A transcript or composer chip
+  goes somewhere when it is an enabled `role="link"`; an Editor chip always
+  does (a plain click follows it), so the anchor form (`a:has(...)`) hovers
+  on its own. Do not make Editor hover depend on a role on the `<a>`. Skills
+  (`/slug` atoms) are not document links and keep their own underline.
