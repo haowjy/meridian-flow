@@ -197,6 +197,17 @@ describe("TranscriptReference", () => {
     expect(resolver).toHaveBeenCalledTimes(1);
     expect(chip(find("Kael"))).toEqual({ state: "filled", icon: "kb" });
     expect(chip(find("the warden"))).toEqual({ state: "filled", icon: "kb" });
+
+    // The double effect unwatched and watched again; the requester must still
+    // be listening, so a new generation is asked, once.
+    const next = vi.fn(async () => null);
+    act(() => {
+      resolution.registerResolver(next);
+    });
+    await settle();
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(chip(find("Kael")).state).toBe("dashed");
   });
 
   it("dashes an exact reference whose document is gone, and does not follow it", () => {
