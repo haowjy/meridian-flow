@@ -118,6 +118,14 @@ export function TranscriptReference({
   const chip = documentId
     ? referenceChip(uri ?? "", resolution?.available ?? true)
     : syntax && linkChip(syntax, answer);
+  // The dashed outline says "nothing here yet" to the eye; this says it to a
+  // screen reader, in the words the Editor's hint and the follow already use.
+  const missing =
+    chip?.state === "dashed"
+      ? syntax?.kind === "wikilink"
+        ? t`No document with this name yet`
+        : t`No document at that address`
+      : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -127,6 +135,7 @@ export function TranscriptReference({
           role="link"
           tabIndex={0}
           aria-disabled={!follow}
+          aria-description={missing}
           {...(chip ? linkChipAttributes(chip) : {})}
           onClick={follow}
           onKeyDown={(event) => {

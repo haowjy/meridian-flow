@@ -144,6 +144,7 @@ describe("TranscriptReference", () => {
 
     expect(chip(reference)).toEqual({ state: "dashed", icon: "file-plus" });
     expect(reference.getAttribute("aria-disabled")).toBe("false");
+    expect(reference.getAttribute("aria-description")).toBe("No document with this name yet");
   });
 
   it("draws a name several documents carry filled, never dashed", async () => {
@@ -152,6 +153,7 @@ describe("TranscriptReference", () => {
     await settle();
 
     expect(chip(reference)).toEqual({ state: "filled", icon: "file" });
+    expect(reference.hasAttribute("aria-description")).toBe(false);
   });
 
   it("shows an address's family while it is still being asked", async () => {
@@ -206,6 +208,7 @@ describe("TranscriptReference", () => {
 
     expect(chip(reference)).toEqual({ state: "dashed", icon: "uploads" });
     expect(reference.getAttribute("aria-disabled")).toBe("true");
+    expect(reference.getAttribute("aria-description")).toBe("No document at that address");
   });
 
   it("keeps a moved document filled and unfollowed at the URI the writer referenced", () => {

@@ -2552,12 +2552,14 @@ msgid "No document answers to this name. A document can be created for it once t
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/rich-content/TranscriptReference.tsx
 msgid "No document at that address"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/rich-content/TranscriptReference.tsx
 msgid "No document with this name yet"
 msgstr ""
 
