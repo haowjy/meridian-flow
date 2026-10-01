@@ -20,7 +20,7 @@ describe("createLinkResolution across generations", () => {
   it("drops a question only the decorations asked, leaving the next scan to ask it", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    resolution.request(["[[Kael]]"]);
+    resolution.request(["manuscript://Kael.md"]);
 
     const asked: string[] = [];
     resolution.registerResolver(async (target) => {
@@ -30,24 +30,24 @@ describe("createLinkResolution across generations", () => {
     await Promise.resolve();
 
     expect(asked).toEqual([]);
-    expect(resolution.read("[[Kael]]")).toBeNull();
+    expect(resolution.read("manuscript://Kael.md")).toBeNull();
   });
 
   it("carries a waited-on question into the new generation", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    const answer = resolution.resolve("[[Kael]]");
+    const answer = resolution.resolve("manuscript://Kael.md");
 
     resolution.registerResolver(async () => KAEL);
 
     await expect(answer).resolves.toEqual({ state: "resolved", document: KAEL });
-    expect(resolution.read("[[Kael]]")).toEqual({ state: "resolved", document: KAEL });
+    expect(resolution.read("manuscript://Kael.md")).toEqual({ state: "resolved", document: KAEL });
   });
 
   it("answers a waited-on question null when the port goes away", async () => {
     const resolution = createLinkResolution();
     const unregister = resolution.registerResolver(never);
-    const answer = resolution.resolve("[[Kael]]");
+    const answer = resolution.resolve("manuscript://Kael.md");
 
     unregister();
 
@@ -57,7 +57,7 @@ describe("createLinkResolution across generations", () => {
   it("answers a carried question null when it fails in the new generation", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    const answer = resolution.resolve("[[Kael]]");
+    const answer = resolution.resolve("manuscript://Kael.md");
 
     resolution.registerResolver(async () => {
       throw new Error("offline");
@@ -69,7 +69,7 @@ describe("createLinkResolution across generations", () => {
   it("carries through registrations that land back to back", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    const answer = resolution.resolve("[[Kael]]");
+    const answer = resolution.resolve("manuscript://Kael.md");
 
     resolution.registerResolver(never);
     resolution.registerResolver(async () => KAEL);
@@ -80,7 +80,7 @@ describe("createLinkResolution across generations", () => {
   it("answers a carried question null when the cache is destroyed", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    const answer = resolution.resolve("[[Kael]]");
+    const answer = resolution.resolve("manuscript://Kael.md");
     resolution.registerResolver(never);
 
     resolution.destroy();
@@ -91,8 +91,8 @@ describe("createLinkResolution across generations", () => {
   it("carries a click that joined a question the decorations asked first", async () => {
     const resolution = createLinkResolution();
     resolution.registerResolver(never);
-    resolution.request(["[[Kael]]"]);
-    const answer = resolution.resolve("[[Kael]]");
+    resolution.request(["manuscript://Kael.md"]);
+    const answer = resolution.resolve("manuscript://Kael.md");
 
     resolution.registerResolver(async () => KAEL);
 
@@ -105,7 +105,7 @@ describe("createLinkResolution across generations", () => {
     let newAnswer: (document: ResolvedDocumentLink | null) => void = () => {};
     resolution.registerResolver(() => new Promise((done) => (oldAnswer = done)));
     let settled: unknown = "waiting";
-    void resolution.resolve("[[Kael]]").then((entry) => (settled = entry));
+    void resolution.resolve("manuscript://Kael.md").then((entry) => (settled = entry));
     resolution.registerResolver(() => new Promise((done) => (newAnswer = done)));
 
     oldAnswer(null);

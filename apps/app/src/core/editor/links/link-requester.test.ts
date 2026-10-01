@@ -20,7 +20,10 @@ describe("createLinkRequester", () => {
 
     // One batched question for the set; the pass its own publish triggers
     // asks nothing new, which is where the loop ends.
-    expect([...(request.mock.calls[0]?.[0] ?? [])]).toEqual(["[[Kael]]", "[[Ilsever]]"]);
+    expect([...(request.mock.calls[0]?.[0] ?? [])]).toEqual([
+      "manuscript://Kael.md",
+      "manuscript://Ilsever.md",
+    ]);
     expect(request.mock.calls.length).toBeLessThanOrEqual(2);
     expect(resolver).toHaveBeenCalledTimes(2);
   });
@@ -30,7 +33,7 @@ describe("createLinkRequester", () => {
     const requester = createLinkRequester(cache);
     const first = vi.fn(async () => null);
     cache.registerResolver(first);
-    const stop = requester.watch("[[Kael]]");
+    const stop = requester.watch("manuscript://Kael.md");
     await tick();
     expect(first).toHaveBeenCalledTimes(1);
 

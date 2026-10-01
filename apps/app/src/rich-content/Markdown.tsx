@@ -9,7 +9,6 @@
  * stream settles.
  */
 
-import { remarkWikiLink } from "@meridian/markup";
 import { type ComponentType, useMemo } from "react";
 import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
 
@@ -95,7 +94,6 @@ export function Markdown({
   const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = useMemo(
     () => [
       ...Object.values(defaultRemarkPlugins),
-      remarkWikiLink,
       [remarkReferenceOccurrences, { occurrences: references, skills }],
       ...(breaks ? [remarkLineBreaks] : []),
     ],

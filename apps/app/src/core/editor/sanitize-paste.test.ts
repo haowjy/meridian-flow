@@ -75,9 +75,9 @@ describe("sanitizePastedHTML", () => {
 it("preserves only validated internal metadata through the live paste sanitizer", () => {
   expect(
     sanitizePastedHTML(
-      '<span data-meridian-link="[[scratch://@/notes.md]]" onclick="bad()">My <b>notes</b></span>',
+      '<span data-meridian-link="scratch://@/notes.md" onclick="bad()">My <b>notes</b></span>',
     ),
-  ).toBe('<a data-meridian-link="[[scratch://@/notes.md]]">My <strong>notes</strong></a>');
+  ).toBe('<a data-meridian-link="scratch://@/notes.md">My <strong>notes</strong></a>');
   expect(
     sanitizePastedHTML(
       '<a data-meridian-link="javascript:alert(1)" href="https://safe.example">safe</a>',
