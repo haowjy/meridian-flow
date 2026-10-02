@@ -149,7 +149,7 @@ describe("dispatchToolCall thread_message routing", () => {
     const { deps, ctx, runChild } = harness();
     const result = await dispatchToolCall(
       deps,
-      spawnCall({ agent: "", prompt: "go", mode: "background" }),
+      spawnCall({ prompt: "go", mode: "background" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");

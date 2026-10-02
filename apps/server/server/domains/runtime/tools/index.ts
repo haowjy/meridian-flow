@@ -35,7 +35,7 @@ export {
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,
-  parseSpawnToolArgs,
+  SpawnInputSchema,
   type SpawnToolArgs,
   type ThreadMessageArgs,
   ThreadMessageInputSchema,
