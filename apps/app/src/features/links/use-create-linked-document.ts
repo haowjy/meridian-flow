@@ -21,6 +21,7 @@
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
+import type { ResourceWorkAuthority } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 
@@ -187,7 +188,7 @@ export function scratchWork(
   surfaceWorkId: string | null,
   works: WorkList | null,
   noWorkId: string | null,
-): { workId: string | null; workSlug?: string } | "unknown" {
+): ResourceWorkAuthority | "unknown" {
   if (target.scheme !== "scratch" || target.authority.kind === "none") return { workId: null };
   const { authority } = target;
   if (authority.kind === "contextual" && (!surfaceWorkId || surfaceWorkId === noWorkId))

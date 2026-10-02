@@ -111,7 +111,7 @@ it("preserves viewer classification while projecting its namespace", () => {
 
 it("projects No Work's Scratch as a tab of the No Work Editor, and a named Work's as that Work's", () => {
   const scratchTab: ContextTab = { ...serverTab, scheme: "scratch", path: "/a.md", name: "a.md" };
-  const scratch = (location: { workId: string; workSlug?: string }): ResourceRecord => {
+  const scratch = (location: { workId: string; workSlug: string | null }): ResourceRecord => {
     const base = record();
     return {
       ...base,
@@ -121,7 +121,9 @@ it("projects No Work's Scratch as a tab of the No Work Editor, and a named Work'
       },
     };
   };
-  const noWork = projectResourceTab("project", scratchTab, [scratch({ workId: "no-work-row" })]);
+  const noWork = projectResourceTab("project", scratchTab, [
+    scratch({ workId: "no-work-row", workSlug: null }),
+  ]);
   expect(noWork.kind === "projected" && noWork.tab).not.toHaveProperty("workId");
   const named = projectResourceTab("project", scratchTab, [
     scratch({ workId: "work-a", workSlug: "drafting" }),
