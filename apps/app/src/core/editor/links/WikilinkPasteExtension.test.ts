@@ -214,3 +214,32 @@ it("leaves an Editor without the extension exactly as Markdown reads an escape",
   paste(plain, { "text/plain": "- \\[[x]]\n- y" });
   expect(plain.state.doc.textContent).toBe("[[x]]y");
 });
+
+const menuPaste = () => new Event("paste") as ClipboardEvent;
+
+it("keeps the characters of an HTML-only clipboard pasted into code, by key or from the menu", () => {
+  const keyed = editor(DOCUMENTS, "<pre><code>x</code></pre>");
+  keyed.commands.setTextSelection(2);
+  paste(keyed, { "text/html": "<p>see [[Lin Feng]] here</p>" });
+  expect(links(keyed)).toEqual([]);
+  expect(keyed.state.doc.textContent).toContain("see [[Lin Feng]] here");
+
+  // The menu's Paste has no clipboard event: it calls pasteHTML on the view
+  // (`clipboard-commands.ts`). The event passed here only stands in for the
+  // one ProseMirror would construct, which jsdom cannot.
+  const menu = editor(DOCUMENTS, "<pre><code>x</code></pre>");
+  menu.commands.setTextSelection(2);
+  menu.view.pasteHTML("<p>see [[Lin Feng]] here</p>", menuPaste());
+  expect(links(menu)).toEqual([]);
+  expect(menu.state.doc.textContent).toContain("see [[Lin Feng]] here");
+});
+
+it("carries nothing from a paste ProseMirror abandons into the next one", () => {
+  const target = editor(DOCUMENTS, "<pre><code>x</code></pre><p>y</p>");
+  target.commands.setTextSelection(2);
+  // A files-only clipboard in code: ProseMirror parses nothing and stops.
+  paste(target, { Files: "" });
+  target.commands.setTextSelection(target.state.doc.content.size - 1);
+  target.view.pasteHTML("<p>see [[Lin Feng]]</p>", menuPaste());
+  expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+});
