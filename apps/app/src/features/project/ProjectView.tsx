@@ -71,6 +71,8 @@ import { useDockViewStore } from "./dock/dock-view-store";
 import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
+  useOpenEditorReview,
+  usePendingEditorReviewDraftId,
 } from "./dock/editor-review-handoff";
 import { ProjectDraftApplyRecoveryExecutor } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
@@ -156,6 +158,8 @@ export type ProjectViewProps = {
   activeContextFolder: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
+  /** Draft identity persisted by an Editor document address. */
+  reviewDraftId?: string;
   /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -166,6 +170,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
+  onSetEditorReviewDraftId: (draftId: string | null) => void;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };
@@ -541,7 +546,81 @@ function HydratedReviewControllers({
     threadId: null,
   });
   const scopedProps = { ...props, chatReview, editorReview, mobileDocumentRoute };
-  return usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />;
+  return (
+    <>
+      <EditorReviewAddressOwner
+        review={editorReview}
+        requestedDraftId={props.reviewDraftId}
+        activePath={props.activeContextPath}
+        onSetDraftId={props.onSetEditorReviewDraftId}
+      />
+      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+    </>
+  );
+}
+
+/** Keeps the address and the Editor review owner on the same validated draft. */
+function EditorReviewAddressOwner({
+  review,
+  requestedDraftId,
+  activePath,
+  onSetDraftId,
+}: {
+  review: DraftReviewContextValue;
+  requestedDraftId?: string;
+  activePath: string | null;
+  onSetDraftId: (draftId: string | null) => void;
+}) {
+  const openReview = useOpenEditorReview();
+  const pendingDraftId = usePendingEditorReviewDraftId();
+  const restoring = useRef<string | null>(null);
+  const ownedReview = useRef(false);
+
+  useEffect(() => {
+    const inline = review.controller.inlineReview;
+    if (inline) {
+      ownedReview.current = true;
+      restoring.current = null;
+      if (requestedDraftId !== inline.draftId) onSetDraftId(inline.draftId);
+      return;
+    }
+    if (ownedReview.current) {
+      ownedReview.current = false;
+      restoring.current = null;
+      if (requestedDraftId) onSetDraftId(null);
+      return;
+    }
+    if (!requestedDraftId) {
+      restoring.current = null;
+      return;
+    }
+    if (pendingDraftId === requestedDraftId) return;
+    if (review.drafts.status !== "ready" && review.drafts.status !== "empty") return;
+    const group = review.groups.find((candidate) =>
+      candidate.drafts.some((draft) => draft.draftId === requestedDraftId),
+    );
+    const draft = group?.drafts.find((candidate) => candidate.draftId === requestedDraftId);
+    if (!group?.contextPath || !draft || group.contextPath !== activePath) {
+      restoring.current = null;
+      onSetDraftId(null);
+      return;
+    }
+    if (restoring.current === requestedDraftId) return;
+    restoring.current = requestedDraftId;
+    void openReview({
+      workId: review.controller.workId,
+      documentId: group.documentId,
+      draftId: requestedDraftId,
+      contextPath: group.contextPath,
+      documentName: group.documentName ?? undefined,
+      isNewDocument: draft.isNewDocument === true,
+    }).catch((error) => {
+      restoring.current = null;
+      console.error("[editor-review] address restore failed", error);
+    });
+  }, [activePath, onSetDraftId, openReview, pendingDraftId, requestedDraftId, review]);
+
+  return null;
 }
 
 /** A PaneHeader expand control derived from a stable surface id. */

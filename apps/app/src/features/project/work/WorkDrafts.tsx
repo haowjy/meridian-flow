@@ -5,9 +5,9 @@ import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { fileKindIcon } from "../context/context-file-icon";
+import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import { RowIcon, RuledList } from "../RuledList";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkFileGroup } from "./WorkFileGroup";
 import { workFileRowClass } from "./WorkFileRows";
 import type { WorkFileSearch } from "./work-files-model";
@@ -15,14 +15,13 @@ import type { WorkFileSearch } from "./work-files-model";
 export function WorkDrafts({
   projectId,
   workId,
-  commands,
   matchesSearch,
 }: {
   projectId: string;
   workId: ParsedRequestId;
-  commands: ProjectRouteCommands;
   matchesSearch: WorkFileSearch;
 }) {
+  const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
   const groups = activeWorkDraftGroups(
     usePostApplyDraftGroupProjections(query.groups, projectId, workId).commandEligibleGroups,
@@ -53,11 +52,16 @@ export function WorkDrafts({
                   className={workFileRowClass}
                   disabled={!path}
                   onClick={() => {
-                    if (path)
-                      void commands.openWorkContext(
-                        { kind: "work-context", workId, scheme: "manuscript", path },
-                        { replace: false },
-                      );
+                    const draft = group.drafts[0];
+                    if (path && draft)
+                      openAiDraft({
+                        workId,
+                        documentId: group.documentId,
+                        draftId: draft.draftId,
+                        contextPath: path,
+                        documentName: group.documentName ?? undefined,
+                        isNewDocument: draft.isNewDocument === true,
+                      });
                   }}
                 >
                   <RowIcon icon={fileKindIcon(group.documentName || path || "")} />

@@ -8,6 +8,8 @@ import type { ContextRouteTarget } from "./project-route";
 export type OpenContextOptions = {
   replace?: boolean;
   tab?: ContextTab;
+  /** Persist an inline review in this Editor history entry. Omission opens live. */
+  draftId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
 };

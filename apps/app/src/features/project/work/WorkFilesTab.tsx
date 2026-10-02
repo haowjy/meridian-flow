@@ -2,20 +2,11 @@
 import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { SearchField } from "../SearchField";
 import { useWorkFiles, WorkFilesActions, WorkFilesView } from "./WorkFilesView";
 import { WorkToolbarTools } from "./WorkToolbarSlot";
 
-export function WorkFilesTab({
-  projectId,
-  work,
-  commands,
-}: {
-  projectId: string;
-  work: AddressableWork;
-  commands: ProjectRouteCommands;
-}) {
+export function WorkFilesTab({ projectId, work }: { projectId: string; work: AddressableWork }) {
   // Filtering is local to loaded rows, so it follows every keystroke.
   const [search, setSearch] = useState("");
   const files = useWorkFiles(projectId, work);
@@ -25,13 +16,7 @@ export function WorkFilesTab({
         <SearchField label={t`Search files`} value={search} onChange={setSearch} />
         <WorkFilesActions files={files} />
       </WorkToolbarTools>
-      <WorkFilesView
-        projectId={projectId}
-        work={work}
-        commands={commands}
-        search={search}
-        files={files}
-      />
+      <WorkFilesView projectId={projectId} work={work} search={search} files={files} />
     </>
   );
 }

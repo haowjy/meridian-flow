@@ -37,6 +37,8 @@ export type ProjectAddress = {
   workView?: "files";
   /** The Work list's Active tab is the default and is omitted from the address. */
   worksView?: "archived" | "deleted";
+  /** Pending draft projected by the current manuscript Editor address. */
+  draftId?: string;
   settings?: SettingsSection;
   results: boolean;
 };
@@ -46,7 +48,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "draft", "settings", "results", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -158,12 +160,14 @@ export function parseProjectAddress(
   const view = query.get("view");
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
+  const draftId = destination.kind === "document" ? query.get("draft") || undefined : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
     ...(workView ? { workView } : {}),
     ...(worksView ? { worksView } : {}),
+    ...(draftId ? { draftId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
@@ -223,6 +227,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
+  if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
