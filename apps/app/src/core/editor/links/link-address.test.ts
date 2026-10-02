@@ -24,6 +24,17 @@ describe("linkAheadAddress", () => {
     expect(linkAheadAddress("unfiled://Untitled 2.md", "Lin Mei")).toBe("manuscript://Lin Mei.md");
   });
 
+  it("puts a name with folders at that path from the holder's area root", () => {
+    expect(linkAheadAddress("manuscript://volume-2/chapter-1.md", "Kael", ["Arc 1"])).toBe(
+      "manuscript://Arc 1/Kael.md",
+    );
+    expect(linkAheadAddress("scratch://@revision/side/plan.md", "Gate", ["places"])).toBe(
+      "scratch://@revision/places/Gate.md",
+    );
+    expect(linkAheadAddress(null, "Kael", ["Arc 1"])).toBe("manuscript://Arc 1/Kael.md");
+    expect(linkAheadAddress("manuscript://chapter.md", "Kael", ["bad:folder"])).toBeNull();
+  });
+
   it("offers nothing for a name that cannot be a filename", () => {
     for (const name of ["", "a/b", "@slug", "bad:name", "..", "map.png"]) {
       expect(linkAheadAddress("manuscript://chapter.md", name)).toBeNull();
