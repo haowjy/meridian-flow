@@ -9,10 +9,13 @@
  * loading) nothing converts, rather than every link turning dashed.
  */
 
-import { Extension } from "@tiptap/core";
+import { type Editor, Extension } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
+import type { PluggableList } from "unified";
+
+import { remarkKeepWikilinkEscapes } from "./wikilink-escape";
 import { linkPastedWikilinks, type WikilinkPasteCatalog } from "./wikilink-paste";
 
 export type WikilinkPasteOptions = {
@@ -20,13 +23,36 @@ export type WikilinkPasteOptions = {
   catalog: () => WikilinkPasteCatalog | null;
 };
 
-const wikilinkPastePluginKey = new PluginKey("wikilinkPaste");
+const WIKILINK_PASTE_NAME = "wikilinkPaste";
+const wikilinkPastePluginKey = new PluginKey(WIKILINK_PASTE_NAME);
 
-export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions>({
-  name: "wikilinkPaste",
+type WikilinkPasteStorage = { markdownPastePlugins: PluggableList };
+
+declare module "@tiptap/core" {
+  interface Storage {
+    wikilinkPaste: WikilinkPasteStorage;
+  }
+}
+
+/**
+ * The parse extensions this extension contributes to the Markdown paste door:
+ * the one that keeps an escaped `\[[` visible to the transform below. Empty
+ * where it is not mounted, so the door can never keep a backslash that
+ * nothing spells out again.
+ */
+export function wikilinkPasteParsePlugins(editor: Editor): PluggableList {
+  return editor.storage[WIKILINK_PASTE_NAME]?.markdownPastePlugins ?? [];
+}
+
+export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, WikilinkPasteStorage>({
+  name: WIKILINK_PASTE_NAME,
 
   addOptions() {
     return { catalog: () => null };
+  },
+
+  addStorage() {
+    return { markdownPastePlugins: [remarkKeepWikilinkEscapes] };
   },
 
   addProseMirrorPlugins() {
@@ -67,8 +93,9 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions>({
             // A drag inside the editor moves text it already holds, which
             // stays as written.
             if (keep || view.dragging) return slice;
-            const catalog = read();
-            return catalog ? linkPastedWikilinks(slice, view.state.schema, catalog) : slice;
+            // A catalog still loading links nothing, but the escapes the door
+            // kept are spelled out all the same.
+            return linkPastedWikilinks(slice, view.state.schema, read());
           },
         },
       }),

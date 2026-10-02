@@ -191,3 +191,26 @@ it("links a paste into a table cell", () => {
   expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
   expect(target.state.doc.textContent).toBe("xsee Lin Feng");
 });
+
+it("spells out every escape the Markdown door kept, with the catalog loading or the link unclosed", () => {
+  const loading = editor(null);
+  paste(loading, { "text/plain": "- one \\[[Lin Feng]]\n- two \\[\\[Lin Feng]]" });
+  expect(loading.state.doc.textContent).toBe("one [[Lin Feng]]two [[Lin Feng]]");
+
+  const unclosed = editor(DOCUMENTS);
+  paste(unclosed, { "text/plain": "- open \\[\\[ only\n- two" });
+  expect(unclosed.state.doc.textContent).toBe("open [[ onlytwo");
+
+  const multiline = editor(DOCUMENTS);
+  paste(multiline, { "text/plain": "- \\[[a\nb]]\n- two" });
+  expect(multiline.state.doc.textContent).not.toContain("\\");
+  expect(multiline.state.doc.textContent).toContain("[[a");
+  expect(links(multiline)).toEqual([]);
+});
+
+it("leaves an Editor without the extension exactly as Markdown reads an escape", () => {
+  const plain = new Editor({ extensions: createStandaloneEditorExtensions(), content: "<p></p>" });
+  live.push(plain);
+  paste(plain, { "text/plain": "- \\[[x]]\n- y" });
+  expect(plain.state.doc.textContent).toBe("[[x]]y");
+});

@@ -22,6 +22,7 @@ import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 
 import { resolveAnchorIn } from "../anchors";
+import { wikilinkPasteParsePlugins } from "../links";
 import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
 import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
@@ -207,7 +208,9 @@ export const ImageIngressExtension = Extension.create({
           // Assets travel as stable refs inside the editor and as
           // project-relative paths on the clipboard, so an id never escapes
           // into another surface.
-          clipboardTextParser: markdownClipboardParser(undefined, assetIndex),
+          clipboardTextParser: markdownClipboardParser(undefined, assetIndex, () =>
+            wikilinkPasteParsePlugins(editor),
+          ),
           clipboardTextSerializer: markdownClipboardSerializer,
           transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetIndex),
           transformPasted: (slice, view) => {
