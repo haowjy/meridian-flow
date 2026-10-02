@@ -35,7 +35,7 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   reconciliation aborts and preserves its last good tree. Mutation-triggered
   Manuscript reconciliation reserves an availability generation, then publishes
   the catalog commit and generation atomically after the aggregate commit; a
-  failed deferred repair is retried and never exposes its reserved generation. Other
+  failed deferred repair is retried and never publishes its reserved generation. Other
   project and Work sources retain their source-specific visibility. `ContextFS` owns result-aware single-source transactions;
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after
