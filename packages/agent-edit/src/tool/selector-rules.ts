@@ -98,3 +98,53 @@ export function selectorIssues(
   }
   return issues;
 }
+
+export interface ReversalSelectorFields {
+  to?: string;
+  since?: string;
+  last?: number;
+  all?: boolean;
+}
+
+export interface ReversalSelectorIssue {
+  field: keyof ReversalSelectorFields;
+  message: string;
+}
+
+const WRITE_HANDLE = /^w[1-9]\d*$/;
+
+/** `undo`/`redo` take one of `to` (with optional `since`), `last` or `all`, or none. */
+export function reversalSelectorIssues(fields: ReversalSelectorFields): ReversalSelectorIssue[] {
+  const issues: ReversalSelectorIssue[] = [];
+  const given = [
+    fields.to !== undefined || fields.since !== undefined,
+    fields.last !== undefined,
+    fields.all === true,
+  ].filter(Boolean).length;
+  if (given > 1) {
+    const field = fields.all === true ? "all" : "last";
+    issues.push({ field, message: "Use one of to, last or all" });
+  }
+  if (fields.since !== undefined && fields.to === undefined) {
+    issues.push({ field: "since", message: "since starts a range; add to" });
+  }
+  for (const field of ["to", "since"] as const) {
+    const handle = fields[field];
+    if (handle !== undefined && !WRITE_HANDLE.test(handle)) {
+      issues.push({
+        field,
+        message: `expected a write handle such as w3, got ${JSON.stringify(handle)}`,
+      });
+    }
+  }
+  if (
+    fields.to !== undefined &&
+    fields.since !== undefined &&
+    WRITE_HANDLE.test(fields.to) &&
+    WRITE_HANDLE.test(fields.since) &&
+    Number(fields.since.slice(1)) > Number(fields.to.slice(1))
+  ) {
+    issues.push({ field: "since", message: "since must not come after to" });
+  }
+  return issues;
+}

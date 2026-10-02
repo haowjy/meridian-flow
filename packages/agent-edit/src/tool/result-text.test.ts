@@ -115,13 +115,13 @@ describe("renderAgentEditResult", () => {
     );
   });
 
-  it("renders a reversal count and an error message", () => {
+  it("renders the reversed write handles and an error message", () => {
     const undo = modelResult({
       command: "undo",
       status: "reversed",
-      payload: { path: "chapter.md", reversal: { direction: "undo", count: 2 } },
+      payload: { path: "chapter.md", reversal: { direction: "undo", writes: ["w2", "w3"] } },
     });
-    expect(renderAgentEditResult(undo)).toBe("status: reversed; path: chapter.md; undo: 2 edit(s)");
+    expect(renderAgentEditResult(undo)).toBe("status: reversed; path: chapter.md; undo: w2, w3");
     const missing: AgentEditResultV1 = modelResult({
       command: "remove",
       status: "not_found",

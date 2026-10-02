@@ -183,6 +183,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`13465`);
+    expect(characters).toMatchInlineSnapshot(`13481`);
   });
 });

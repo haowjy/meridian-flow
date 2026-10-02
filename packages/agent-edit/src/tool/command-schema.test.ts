@@ -48,7 +48,8 @@ const validWrites = [
   { command: "replace", file: "chapter.md#scene", content: "Beta" },
   { command: "undo", file: "chapter.md" },
   { command: "redo", file: "chapter.md", to: "w3" },
-  { command: "redo", file: "chapter.md", from: "w1" },
+  { command: "undo", file: "chapter.md", since: "w1", to: "w3" },
+  { command: "redo", file: "chapter.md", since: "w2", to: "w2" },
   { command: "redo", file: "chapter.md", last: 1 },
   { command: "redo", file: "chapter.md", all: true },
   { command: "insert", file: "chapter.md", content: "x", documentId: "d", tool_use_id: "c" },
@@ -212,6 +213,24 @@ describe("the selector rule", () => {
     expect(parsed.error?.issues.map((issue) => issue.path)).toEqual([["path"]]);
     const read = ReadToolInputSchema.safeParse({ path: "c.md#s", in: 1 });
     expect(read.error?.issues.map((issue) => issue.message)).toEqual([ONE_SCOPE]);
+  });
+});
+
+describe("the undo and redo selector rule", () => {
+  it.each([
+    ["the old from range start", { to: "w3", from: "w1" }, "", 'Unrecognized key: "from"'],
+    ["since without to", { since: "w1" }, "since", "since starts a range; add to"],
+    ["to with last", { to: "w3", last: 2 }, "last", "Use one of to, last or all"],
+    ["last with all", { last: 2, all: true }, "all", "Use one of to, last or all"],
+    ["a malformed handle", { to: "3" }, "to", 'expected a write handle such as w3, got "3"'],
+    ["since after to", { since: "w4", to: "w2" }, "since", "since must not come after to"],
+  ] as const)("refuses %s", (_label, selector, field, message) => {
+    for (const command of ["undo", "redo"] as const) {
+      const parsed = WriteCommandSchema.safeParse({ command, file: "c.md", ...selector });
+      expect(parsed.error?.issues.map((issue) => [issue.path.join("."), issue.message])).toEqual([
+        [field, message],
+      ]);
+    }
   });
 });
 

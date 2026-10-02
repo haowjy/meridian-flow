@@ -92,6 +92,15 @@ describe("read and write selectors", () => {
     ]);
   });
 
+  it("refuse undo's old from range start and a since without to", async () => {
+    await expectRefused("write", { command: "undo", path: "c.md", from: "w1", to: "w3" }, [
+      "from: unknown argument",
+    ]);
+    await expectRefused("write", { command: "redo", path: "c.md", since: "w1" }, [
+      "since: since starts a range; add to",
+    ]);
+  });
+
   it("refuse block number zero and empty insert content", async () => {
     await expectRefused("read", { path: "c.md", in: 0 }, ["in: must be greater than 0"]);
     await expectRefused("write", { command: "insert", path: "c.md", content: "" }, [

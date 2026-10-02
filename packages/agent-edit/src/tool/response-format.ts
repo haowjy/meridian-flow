@@ -37,7 +37,8 @@ export interface ApplySuccessResponseInput {
 export interface ReversalSuccessResponseInput {
   direction: "undo" | "redo";
   status: UndoRedoOutcome;
-  targetCount?: number;
+  /** Write handles actually reversed, oldest first. */
+  writeIds: readonly string[];
   sync: SyncedMutationSummary;
 }
 
@@ -85,7 +86,7 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
     model: {
       reversal: {
         direction: input.direction,
-        count: input.targetCount ?? 0,
+        writes: [...input.writeIds],
       },
       ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.sync.concurrentEdits

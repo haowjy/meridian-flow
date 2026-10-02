@@ -32,8 +32,8 @@ function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.path) facts.push(`path: ${result.path}`);
   if (result.write?.id) facts.push(`write: ${result.write.id}`);
-  if (result.reversal && result.reversal.count > 0) {
-    facts.push(`${result.reversal.direction}: ${result.reversal.count} edit(s)`);
+  if (result.reversal && result.reversal.writes.length > 0) {
+    facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
   }
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
