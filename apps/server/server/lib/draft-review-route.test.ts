@@ -1,8 +1,10 @@
 /** Route-core checks for draft disposition catalog reconciliation. */
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryEventSink } from "../domains/observability/index.js";
 import {
   handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
+  scheduleDraftCatalogRefresh,
 } from "./draft-review-route.js";
 
 const input = {
@@ -14,7 +16,6 @@ const input = {
 } as const;
 
 function dependencies() {
-  const refreshProject = vi.fn(async () => {});
   const applyWorkDraft = vi.fn(async () => ({
     status: "applied" as const,
     draftId: input.draftId,
@@ -24,7 +25,6 @@ function dependencies() {
     draftId: input.draftId,
   }));
   return {
-    refreshProject,
     deps: {
       projects: {
         findById: async () => ({ userId: input.userId, deletedAt: null }),
@@ -37,31 +37,54 @@ function dependencies() {
         canAccessProjectDocument: async () => true,
       },
       documentSync: { draftReview: { applyWorkDraft, discardWorkDraft } },
-      catalog: { refreshProject },
     },
   };
 }
 
 describe("draft review route catalog reconciliation", () => {
-  it("refreshes the project catalog after Apply publishes live membership", async () => {
-    const { deps, refreshProject } = dependencies();
+  it("returns a committed Apply without waiting for catalog reconciliation", async () => {
+    const { deps } = dependencies();
 
     await expect(handleApplyWorkDraftRequest(deps as never, input as never)).resolves.toMatchObject(
       {
         status: "applied",
       },
     );
-
-    expect(refreshProject).toHaveBeenCalledWith(input.projectId);
   });
 
-  it("refreshes the project catalog after Discard removes draft membership", async () => {
-    const { deps, refreshProject } = dependencies();
+  it("returns a committed Discard without waiting for catalog reconciliation", async () => {
+    const { deps } = dependencies();
 
     await expect(
       handleDiscardWorkDraftRequest(deps as never, input as never),
     ).resolves.toMatchObject({ status: "discarded" });
+  });
 
-    expect(refreshProject).toHaveBeenCalledWith(input.projectId);
+  it("schedules the narrow project refresh and logs failure without rejecting", async () => {
+    const refreshProjectDocuments = vi.fn(async () => {
+      throw new Error("catalog unavailable");
+    });
+    const eventSink = createInMemoryEventSink();
+    let task: (() => Promise<void>) | undefined;
+
+    scheduleDraftCatalogRefresh(
+      { contextCatalogRefresh: { refreshProjectDocuments }, eventSink } as never,
+      input.projectId as never,
+      (scheduled) => {
+        task = scheduled;
+      },
+    );
+
+    expect(refreshProjectDocuments).not.toHaveBeenCalled();
+    await expect(task?.()).resolves.toBeUndefined();
+    expect(refreshProjectDocuments).toHaveBeenCalledWith(input.projectId);
+    expect(eventSink.events).toEqual([
+      expect.objectContaining({
+        level: "error",
+        source: "draft-review",
+        name: "CatalogRefreshFailure",
+        payload: expect.objectContaining({ projectId: input.projectId }),
+      }),
+    ]);
   });
 });
