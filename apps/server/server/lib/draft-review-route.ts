@@ -9,6 +9,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
@@ -21,7 +22,6 @@ type DraftRouteServices = {
     "canAccessDocument" | "canAccessProjectDocument"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview">;
-  catalog: Pick<AppServices["contextCatalog"], "refreshProject">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
@@ -30,8 +30,27 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
     works: app.workRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
-    catalog: app.contextCatalog,
   };
+}
+
+export function scheduleDraftCatalogRefresh(
+  app: Pick<AppServices, "contextCatalogRefresh" | "eventSink">,
+  projectId: ProjectId,
+  schedule: (task: () => Promise<void>) => void,
+): void {
+  if (!app.contextCatalogRefresh) return;
+  schedule(async () => {
+    try {
+      await app.contextCatalogRefresh?.refreshProjectDocuments(projectId);
+    } catch (cause) {
+      emitEvent(app.eventSink, {
+        level: "error",
+        source: "draft-review",
+        name: "CatalogRefreshFailure",
+        payload: { projectId, ...unknownToEventPayload(cause) },
+      });
+    }
+  });
 }
 
 export async function requireDraftWorkAccess(
@@ -122,10 +141,7 @@ export async function handleApplyWorkDraftRequest(
 ): Promise<DraftApplyResponse> {
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
-  if (result.status === "applied") {
-    await deps.catalog.refreshProject(input.projectId);
-    return result;
-  }
+  if (result.status === "applied") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
@@ -142,7 +158,6 @@ export async function handleDiscardWorkDraftRequest(
 ): Promise<DraftDiscardResponse> {
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
-  await deps.catalog.refreshProject(input.projectId);
   return result;
 }
 
