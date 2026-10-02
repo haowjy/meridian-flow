@@ -95,9 +95,11 @@ jobs:
         run: |
           set -euo pipefail
           for service in $(node tools/deploy/release-identity.ts services); do
+            dockerfile=
             case "$service" in
               server|app|www) dockerfile="apps/$service/Dockerfile" ;;
               ingress) dockerfile=tools/deploy/ingress/Dockerfile ;;
+              *) echo "::error::No Dockerfile is configured for release service '$service'"; exit 1 ;;
             esac
             image=$(node tools/deploy/release-identity.ts image-repository "$service")
             metadata="$RUNNER_TEMP/$service-metadata.json"
