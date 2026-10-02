@@ -148,6 +148,12 @@ describe("wikilinkResolver", () => {
     );
   });
 
+  it("keeps each unmatched link's own casing within one paste", () => {
+    const resolve = wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", []));
+    expect(resolve(occurrence("[[kael]]"))).toBe("kael.md");
+    expect(resolve(occurrence("[[Kael]]"))).toBe("Kael.md");
+  });
+
   it("links a name no document has beside the holder, and a path from its area root", () => {
     const holder = "manuscript://volume-1/chapter-2.md";
     expect(wikilinkResolver(catalog(holder, []))(kael)).toBe("Kael.md");
