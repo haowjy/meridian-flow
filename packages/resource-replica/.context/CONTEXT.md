@@ -35,6 +35,16 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
+A Work-scoped location (Scratch, Uploads) names its Work by id. A named Work
+also carries its slug; No Work carries its row id and no slug, which is how the
+catalog spells `@/`. Catalog installation, canonical refresh and
+`authorityMatches` accept both shapes. Namespace requests do not: `requestFor`
+returns no request for a source or destination with a Work id and no slug, and
+the records policy rejects such an attempt. So a No Work Scratch document
+cannot be placed, moved or deleted through the replica, and creating one
+(a link's Create, the Scratch tree's New file) asks the server directly.
+Accepting the shape on the request side is issue #648.
+
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted
 work, and records exact local-content cleanup. Submitted or acknowledged resources
