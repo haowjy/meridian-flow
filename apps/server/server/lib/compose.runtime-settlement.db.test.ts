@@ -121,10 +121,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
         );
+        // The refusal keeps its typed shape beside the rendered text.
         expect(result).toMatchObject({
           isError: true,
-          output: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+          result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
         });
+        expect(result.output).toContain('"code":"model_unavailable"');
       } finally {
         await unloadRuntime(runtime.hocuspocus);
       }
