@@ -133,6 +133,28 @@ item is a skip reason, mark it done before `--auto`; auto cleanup then runs four
 actions (stop dev, drop database, remove worktree, delete branch) rather than the
 targeted path's optional fifth `meridian work done` action.
 
+### Orphan dev sessions
+
+Deleting a checkout directly can leave its tmux session and dev servers running.
+`pnpm dev` sweeps these orphan sessions before starting or reusing a dev stack.
+`--print` and `--stop` do not sweep other sessions. To inspect or run the sweep
+without starting a stack:
+
+```bash
+pnpm dev:prune-worktrees -- --orphans --dry-run
+pnpm dev:prune-worktrees -- --orphans          # confirm interactively; --yes skips the prompt
+```
+
+The sweep requires a managed `meridian-…-<path-hash>` session, a missing checkout,
+and every pane still under that checkout. Unregistered paths must be immediate
+children of this repo's sibling `<repo>.worktrees/` directory. Live checkouts,
+locked registrations, other repositories, and unrelated tmux sessions are left
+alone. Captured same-user descendants get SIGTERM, then remaining processes get
+SIGKILL after tmux teardown; detached children are included while still descended
+from a pane. Already-reparented processes with no remaining session ancestry are
+not guessed at. The sweep prunes Portless routes but never deletes branches,
+databases, or work items.
+
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
 ## Git hooks (lefthook)

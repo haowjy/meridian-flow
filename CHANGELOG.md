@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Reclaim managed tmux sessions and child processes for deleted worktrees on dev startup or `dev:prune-worktrees -- --orphans`; keep live checkouts and unrelated sessions.
+
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.

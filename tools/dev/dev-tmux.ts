@@ -15,6 +15,7 @@ import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
   type ExpectedServiceName,
@@ -421,6 +422,8 @@ async function main(): Promise<void> {
     console.log(`stopped · ${identity.sessionName}`);
     return;
   }
+
+  await stopOrphanDevSessions(repoRoot, collectOrphanDevSessions(repoRoot));
 
   applyDevEnvToProcess(repoRoot);
   const devCommand = createDevSessionCommand({

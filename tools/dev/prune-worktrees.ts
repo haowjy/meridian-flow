@@ -30,6 +30,7 @@ import {
   type PullRequestDiscovery,
   validateCleanupEligibility,
 } from "./lib/worktree-cleanup-eligibility";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import {
   type AutoCleanupReadinessDecision,
   autoCleanupReadinessKey,
@@ -38,7 +39,7 @@ import {
 } from "./lib/worktree-cleanup-readiness";
 
 interface CliOptions {
-  readonly mode: "auto" | "target" | "help";
+  readonly mode: "auto" | "target" | "orphans" | "help";
   readonly target?: string;
   readonly manuallyVerified?: string;
   readonly dryRun: boolean;
@@ -48,10 +49,12 @@ interface CliOptions {
 const USAGE = `Usage:
   pnpm dev:prune-worktrees -- --target <value> [--manually-verified <reason>] [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk [--dry-run] [--yes]
+  pnpm dev:prune-worktrees -- --orphans [--dry-run] [--yes]
   pnpm dev:prune-worktrees -- -h|--help
 
 Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).
-Batch cleanup via --auto is advanced and not yet trusted for routine use.`;
+Batch cleanup via --auto is advanced and not yet trusted for routine use.
+--orphans stops managed dev sessions for missing checkouts; it never deletes branches or databases.`;
 
 const AUTO_NOTICE = `Batch cleanup via --auto is advanced and not yet trusted for routine use.
 Clean up one lane at a time with --target <work-id|path|branch|pr>.
@@ -59,6 +62,7 @@ To proceed anyway, add --acknowledge-batch-risk.`;
 
 function parseArgs(argv: readonly string[]): CliOptions {
   let auto = false;
+  let orphans = false;
   let acknowledgeBatchRisk = false;
   let target: string | undefined;
   let manuallyVerified: string | undefined;
@@ -69,6 +73,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
     const arg = argv[i];
     if (arg === "--") continue;
     if (arg === "-h" || arg === "--help") return { mode: "help", dryRun, yes };
+    if (arg === "--orphans") {
+      orphans = true;
+      continue;
+    }
     if (arg === "--auto") {
       auto = true;
       continue;
@@ -104,7 +112,11 @@ function parseArgs(argv: readonly string[]): CliOptions {
   }
 
   if (auto && target) throw new Error(`Use either --auto or --target, not both.\n\n${USAGE}`);
-  if (!auto && !target) throw new Error(`Missing --auto or --target.\n\n${USAGE}`);
+  if (orphans && (auto || target || manuallyVerified || acknowledgeBatchRisk)) {
+    throw new Error(`--orphans cannot be combined with worktree cleanup options.\n\n${USAGE}`);
+  }
+  if (orphans) return { mode: "orphans", dryRun, yes };
+  if (!auto && !target) throw new Error(`Missing --auto, --target, or --orphans.\n\n${USAGE}`);
   if (acknowledgeBatchRisk && !auto) {
     throw new Error(`--acknowledge-batch-risk requires --auto.\n\n${USAGE}`);
   }
@@ -187,13 +199,11 @@ function printPlan(plan: CleanupPlan): void {
   }
 }
 
-async function confirm(plan: CleanupPlan, yes: boolean): Promise<boolean> {
+async function confirm(description: string, yes: boolean): Promise<boolean> {
   if (yes) return true;
   const rl = readline.createInterface({ input, output });
   try {
-    const answer = await rl.question(
-      `\nProceed with cleanup of ${plan.targets.length} worktree(s)? [y/N] `,
-    );
+    const answer = await rl.question(`\nProceed with cleanup of ${description}? [y/N] `);
     return ["y", "yes"].includes(answer.trim().toLowerCase());
   } finally {
     rl.close();
@@ -685,6 +695,35 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (options.mode === "orphans") {
+    const cwd = process.cwd();
+    const orphans = collectOrphanDevSessions(cwd);
+    if (orphans.length === 0) {
+      console.log("No orphan dev sessions found.");
+      return;
+    }
+    console.log(`Orphan dev session cleanup plan (${orphans.length} sessions):`);
+    for (const orphan of orphans) {
+      console.log(`\n- session: ${orphan.sessionName} (${orphan.sessionId})`);
+      console.log(`  missing checkout: ${orphan.worktreePath}`);
+      console.log(`  pane PIDs: ${orphan.panePids.join(", ")}`);
+      console.log(
+        "  actions: terminate owned process trees; kill tmux session; force-kill survivors; prune portless routes",
+      );
+    }
+    if (options.dryRun) {
+      console.log("\nDry run only; no changes made.");
+      return;
+    }
+    if (!(await confirm(`${orphans.length} orphan dev session(s)`, options.yes))) {
+      console.log("Aborted. No changes made.");
+      return;
+    }
+    await stopOrphanDevSessions(cwd, orphans);
+    console.log("\nOrphan dev session cleanup complete.");
+    return;
+  }
+
   let plan: CleanupPlan;
   let ancestryRef: string;
   try {
@@ -707,7 +746,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (!(await confirm(plan, options.yes))) {
+  if (!(await confirm(`${plan.targets.length} worktree(s)`, options.yes))) {
     console.log("Aborted. No changes made.");
     return;
   }

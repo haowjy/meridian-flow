@@ -14,7 +14,7 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Session planning** — `dev-session-plan.ts` (canonical env, redacted commands, internal API origin)
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
-- **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
+- **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown); `lib/worktree-cleanup-orphans.ts` reclaims managed dev sessions for missing checkouts
 - **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
   shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
   never reads Postgres and holds no business logic; when the API cannot answer a
@@ -68,6 +68,7 @@ tools/dev/
 │   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
 │   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
+│   ├── worktree-cleanup-orphans.ts  Missing-checkout tmux/process reclamation
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
@@ -190,6 +191,32 @@ tools/dev/
 - **Safety gates:** refuses primary worktree, current or locked worktrees, the base branch, branches that lack mode-appropriate commit evidence, detached worktrees, dirty targets, and auto targets with ownership or liveness evidence.
 - **Confirmation:** dry-run prints every planned action and target; destructive cleanup requires interactive `[y/N]` or `--yes`.
 - **`--dry-run`** prints the plan without executing it.
+
+### Missing-checkout sessions
+
+`lib/worktree-cleanup-orphans.ts` discovers from tmux rather than Git alone, so
+unregistered/deleted worktrees remain visible. `pnpm dev` runs this sweep before
+start/reuse, but not for `--print` or `--stop`. The independent `--orphans` cleanup
+mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
+branch-merge evidence, database access, or Meridian work-item discovery.
+
+A candidate must have a managed session name with the SHA-256 path hash from
+`session-identity.ts`, a missing session creation directory, and every pane cwd
+still under that directory. A registered locked checkout is protected.
+Unregistered candidates must be immediate children of the primary checkout's
+sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
+ownership. Existing directories, dangling symlinks, and inspection failures are
+not deletion evidence.
+
+Execution revalidates the session ID/name/path/pane PIDs and missing directory,
+captures same-user descendants, sends SIGTERM, waits briefly, kills the exact tmux
+session ID if it remains, and sends SIGKILL to captured survivors. PID, UID,
+start time, and command are rechecked before escalation so reparented/setsid
+children stay owned without signalling a reused PID. Zombies count as exited.
+Portless routes are pruned after successful teardown. No branch, worktree,
+database, or work-item state is deleted. Processes already reparented before
+capture cannot be proven owned by a pane and are left alone; cwd alone is never
+permission to kill.
 
 ## WS 426 noise suppression (server-side)
 
