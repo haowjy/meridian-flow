@@ -182,8 +182,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const read = await runtime.app.toolExecutor.executeTool(
         {
           id: "00000000-0000-4000-8000-000000000910",
-          name: "write",
-          arguments: { command: "read", path: "manuscript://runtime-settlement.md" },
+          name: "read",
+          arguments: { path: "manuscript://runtime-settlement.md" },
         },
         toolContext,
       );

@@ -1,9 +1,9 @@
 # @meridian/agent-edit
 
-Reusable Yjs agent-edit core: model-facing document read/write, response-scoped
-commit buffering, write handles, and cold undo/redo over host-provided ports.
-`write(command: "diff")` reads the current turn's folded trail through a
-host-provided read-only query port.
+Reusable Yjs agent-edit core: model-facing document `read` and `write`,
+response-scoped commit buffering, write handles, and cold undo/redo over
+host-provided ports. `read()` and `write()` are separate entry points; every
+`write` command changes a document.
 
 ## Mental model
 
@@ -25,7 +25,8 @@ immediate writes use the journal kind returned by submission to restore or recov
 
 ## Rules
 
-- Public mutations go through `write()` / `reverse()` / response lifecycle APIs.
+- Public reads go through `read()`; mutations go through `write()` / `reverse()` /
+  response lifecycle APIs.
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.

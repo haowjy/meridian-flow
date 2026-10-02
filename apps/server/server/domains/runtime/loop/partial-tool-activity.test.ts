@@ -52,14 +52,21 @@ describe("partial tool activity input", () => {
 
   it("waits for a write's command before naming its target", () => {
     const pathOnly = parsePartialToolActivityInput("write", '{"path":"scratch://notes.md","comm');
-    const read = parsePartialToolActivityInput(
+    const remove = parsePartialToolActivityInput(
       "write",
-      '{"path":"scratch://notes.md","command":"read"',
+      '{"path":"scratch://notes.md","command":"remove"',
     );
 
     expect(hasPartialToolActivityTarget("write", pathOnly)).toBe(false);
-    expect(hasPartialToolActivityTarget("write", read)).toBe(true);
+    expect(hasPartialToolActivityTarget("write", remove)).toBe(true);
     expect(showsPartialToolActivityBeforeTarget("write")).toBe(false);
+  });
+
+  it("labels a read as soon as its path streams in", () => {
+    const read = parsePartialToolActivityInput("read", '{"path":"scratch://notes.md","form');
+
+    expect(hasPartialToolActivityTarget("read", read)).toBe(true);
+    expect(showsPartialToolActivityBeforeTarget("read")).toBe(true);
     expect(showsPartialToolActivityBeforeTarget("search")).toBe(true);
   });
 });

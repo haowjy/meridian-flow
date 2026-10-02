@@ -348,7 +348,7 @@ it("keeps document revision metadata out of model request bytes", () => {
     blockType: "text",
   });
   const call: Block = {
-    ...customBlock({ toolCallId: "read-1", name: "write", input: { command: "read", path: uri } }),
+    ...customBlock({ toolCallId: "read-1", name: "read", input: { path: uri } }),
     id: "call",
     blockType: "tool_use",
   };

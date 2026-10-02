@@ -391,8 +391,8 @@ describe("conversation summarizer", () => {
           sequence: i * 2,
           content: {
             toolCallId: `read${i}`,
-            toolName: "write",
-            input: { command: "read", path: `manuscript://chapter-${i}.md` },
+            toolName: "read",
+            input: { path: `manuscript://chapter-${i}.md` },
           },
         },
         {
