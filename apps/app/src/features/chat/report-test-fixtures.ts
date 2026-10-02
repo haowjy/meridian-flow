@@ -41,6 +41,7 @@ export function toolView({
     toolName,
     input,
     output,
+    result: null,
     status: "complete",
     isError: false,
     message,

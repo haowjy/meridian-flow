@@ -787,8 +787,8 @@ msgid "Check submission status"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checked recent changes"
-msgstr ""
+#~ msgid "Checked recent changes"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -799,8 +799,8 @@ msgid "Checking pending changes…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checking recent changes…"
-msgstr ""
+#~ msgid "Checking recent changes…"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Checking whether Apply finished."
@@ -1080,8 +1080,8 @@ msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't check recent changes"
-msgstr ""
+#~ msgid "Couldn't check recent changes"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -3451,6 +3451,14 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while making that change."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Something went wrong while reading {name}."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Something went wrong while reading that document."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts

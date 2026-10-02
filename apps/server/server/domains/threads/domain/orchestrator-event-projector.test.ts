@@ -37,6 +37,35 @@ describe("orchestrator event projector", () => {
   });
 });
 
+describe("tool results", () => {
+  it("sends the typed result beside the model's text", () => {
+    const projector = createOrchestratorEventProjector();
+    projector.project({
+      type: "turn.created",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: "direct",
+      } as never,
+    });
+    const result = { schema: "meridian.agent-edit.v1", command: "read", status: "success" };
+    const events = projector.project({
+      type: "tool.result",
+      toolCallId: "call-1",
+      output: "status: success; path: ch1.md",
+      result,
+    });
+
+    expect(events.find((event) => event.type === EventType.TOOL_CALL_RESULT)).toMatchObject({
+      toolCallId: "call-1",
+      content: "status: success; path: ch1.md",
+      result,
+    });
+  });
+});
+
 describe("historical card replacement", () => {
   it("projects a replacement without closing active text or advancing its frontier", () => {
     const projector = createOrchestratorEventProjector();

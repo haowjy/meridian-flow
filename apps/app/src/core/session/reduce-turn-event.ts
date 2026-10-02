@@ -162,6 +162,9 @@ function toolBlock(args: {
   input?: JsonValue;
   status: "complete" | "partial";
   output?: JsonValue;
+  // The tool's typed result beside the model-facing `output` text; mirrors the
+  // durable block's `content.result`.
+  result?: JsonValue;
   message?: string | null;
   isError?: boolean;
   // Live, append-only interleaved stdout/stderr buffer streamed via the
@@ -185,6 +188,7 @@ function toolBlock(args: {
       toolName: args.toolName,
       input: args.input ?? null,
       output: args.output ?? null,
+      result: args.result ?? null,
       message: typeof args.message === "string" ? args.message : null,
       isError: args.isError ?? false,
       streamedOutput: typeof args.streamedOutput === "string" ? args.streamedOutput : null,
@@ -203,6 +207,7 @@ function toolIsErrorFromContent(content: Record<string, JsonValue>): boolean {
 function preservedToolFields(content: Record<string, JsonValue>): {
   input: JsonValue;
   output: JsonValue;
+  result: JsonValue;
   message: string | null;
   isError: boolean;
   // Carried across every tool-block upsert so TOOL_CALL_ARGS/END/RESULT and
@@ -215,6 +220,7 @@ function preservedToolFields(content: Record<string, JsonValue>): {
   return {
     input: content.input ?? null,
     output: content.output ?? null,
+    result: content.result ?? null,
     message: typeof content.message === "string" ? content.message : null,
     isError: toolIsErrorFromContent(content),
     streamedOutput: typeof content.streamedOutput === "string" ? content.streamedOutput : null,
@@ -230,6 +236,11 @@ function recordContentField(
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, JsonValue>)
     : null;
+}
+
+/** The typed result the server sends beside the model-facing text, when the tool has one. */
+function toolResultEventResult(event: object): JsonValue {
+  return ((event as Record<string, unknown>).result as JsonValue | undefined) ?? null;
 }
 
 function toolResultEventMetadata(event: object): Record<string, JsonValue> | null {
@@ -939,6 +950,7 @@ export function applyAguiEventToStore(
           ...preservedToolFields(content),
           status: "complete",
           output: parseToolOutput(event.content),
+          result: toolResultEventResult(event),
           isError: toolIsErrorFromContent(content),
           ...(resultMetadata ? { metadata: resultMetadata } : {}),
         }),

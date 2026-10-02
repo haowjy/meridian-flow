@@ -14,7 +14,14 @@ export type ToolView = {
   toolCallId: string | null;
   toolName: string;
   input: JsonValue | null;
+  /** What the model saw. For `read` and `write` this is text rendered from `result`. */
   output: JsonValue | null;
+  /**
+   * The tool's typed result, kept beside `output` when the tool renders its
+   * output from one (`read` and `write`). Renderers read fields here, never
+   * the model's text. `null` for other tools and for rows older than it.
+   */
+  result: JsonValue | null;
   status: "partial" | "complete";
   isError: boolean;
   message: string | null;
@@ -47,6 +54,7 @@ type ToolFields = {
   toolName: string | null;
   input: JsonValue | null;
   output: JsonValue | null;
+  result: JsonValue | null;
   isError: boolean;
   message: string | null;
   streamedOutput: string | null;
@@ -95,6 +103,7 @@ function toToolView(block: Block): ToolView {
     toolName: fields.toolName ?? "tool",
     input: fields.input,
     output: fields.output,
+    result: fields.result,
     status: fields.isError || block.status !== "partial" ? "complete" : "partial",
     isError: fields.isError,
     message: fields.message,
@@ -156,6 +165,7 @@ function pairToolViews(blocks: Block[]): ToolView[] {
 function mergeToolResult(view: ToolView, resultBlock: Block): void {
   const fields = readToolFields(blockContentRecord(resultBlock));
   view.output = fields.output;
+  view.result = fields.result;
   view.isError = fields.isError;
   view.status = "complete";
   // Prefer the most-complete non-empty buffer: the live `tool_use` block
@@ -174,6 +184,7 @@ function toolResultOnlyView(block: Block): ToolView {
     toolName: fields.toolName ?? "tool",
     input: null,
     output: fields.output,
+    result: fields.result,
     status: "complete",
     isError: fields.isError,
     message: fields.message,
@@ -193,6 +204,7 @@ function readToolFields(content: Record<string, JsonValue>): ToolFields {
     toolName: stringField(content, "toolName"),
     input: jsonField(content, "input"),
     output: jsonField(content, "output"),
+    result: jsonField(content, "result"),
     isError: booleanField(content, "isError") ?? false,
     message: stringField(content, "message"),
     streamedOutput: stringField(content, "streamedOutput"),
