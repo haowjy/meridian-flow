@@ -150,8 +150,7 @@ function hasSkipTrailer(message: string): boolean {
 
 export async function resolveBatch(git: GitPort, github: GitHubPort) {
   const history = git.firstParent();
-  const hasBoundary = history.some(isReleaseBoundary);
-  const shas = uncoveredCommits(history, hasBoundary ? null : git.workflowIntroduction());
+  const shas = uncoveredCommits(history, git.workflowIntroduction());
   const commits: BatchCommit[] = [];
   for (const sha of shas) {
     const skipTrailer = hasSkipTrailer(git.message(sha));
