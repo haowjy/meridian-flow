@@ -72,11 +72,12 @@ export {
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
+  countTranscriptTurnsBefore,
   cursorAfter,
   InvalidTranscriptCursorError,
-  readTranscriptItem,
   readTranscriptPage,
   readTranscriptPageForProjection,
+  readTranscriptTurn,
   resolveTranscriptSpans,
   type TranscriptOrder,
   type TranscriptOwner,

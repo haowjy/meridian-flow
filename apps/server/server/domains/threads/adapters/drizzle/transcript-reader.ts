@@ -97,6 +97,19 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
   `;
 }
 
+function transcriptTurnBranches(spans: readonly TranscriptSpan[], beforePosition?: number) {
+  return spans.map(
+    (span) => sql`(
+      SELECT t.id, t.position
+      FROM turns t
+      WHERE t.thread_id = ${span.threadId}::uuid
+        AND t.position > ${span.afterPosition}
+        ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
+        ${beforePosition === undefined ? sql`` : sql`AND t.position < ${beforePosition}`}
+    )`,
+  );
+}
+
 /** SQL shape used by the first-unsettled lookup and its partial index plan. */
 export function transcriptUnsettledTurnsSql(spans: readonly TranscriptSpan[]) {
   const branches = spans.map(
@@ -138,6 +151,8 @@ export function createDrizzleTranscriptReader(
 ): Pick<
   TurnRepository,
   | "readTranscriptItems"
+  | "countTranscriptTurns"
+  | "findTranscriptTurnByOrdinal"
   | "findFirstUnsettledTranscriptTurn"
   | "listUnsettledForThread"
   | "listTranscriptBoundaries"
@@ -197,6 +212,24 @@ export function createDrizzleTranscriptReader(
           },
         ];
       });
+    },
+    async countTranscriptTurns(spans, beforePosition) {
+      if (spans.length === 0) return 0;
+      const result = await turns().execute(
+        sql`SELECT count(*)::int AS count FROM (${sql.join(transcriptTurnBranches(spans, beforePosition), sql` UNION ALL `)}) counted`,
+      );
+      const [row] = Array.from(result as unknown as Iterable<{ count: number }>);
+      return row?.count ?? 0;
+    },
+    async findTranscriptTurnByOrdinal(spans, ordinal) {
+      if (spans.length === 0 || !Number.isSafeInteger(ordinal) || ordinal < 1) return null;
+      const result = await turns().execute(
+        sql`SELECT id FROM (${sql.join(transcriptTurnBranches(spans), sql` UNION ALL `)}) ordered ORDER BY position ASC OFFSET ${ordinal - 1} LIMIT 1`,
+      );
+      const [row] = Array.from(result as unknown as Iterable<{ id: string }>);
+      if (!row) return null;
+      const [turn] = await turns().select().from(schema.turns).where(eq(schema.turns.id, row.id));
+      return turn ? mapTurn(turn) : null;
     },
     async findFirstUnsettledTranscriptTurn(spans) {
       if (spans.length === 0) return null;

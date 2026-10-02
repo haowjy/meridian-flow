@@ -753,6 +753,30 @@ export function createInMemoryRepositories(
       }
       return items.slice(0, input.limit + 1);
     },
+    async countTranscriptTurns(spans, beforePosition) {
+      return [...turns.values()].filter(
+        (turn) =>
+          turn.position < beforePosition &&
+          spans.some(
+            (span) =>
+              turn.threadId === span.threadId &&
+              turn.position > span.afterPosition &&
+              (span.throughPosition === null || turn.position <= span.throughPosition),
+          ),
+      ).length;
+    },
+    async findTranscriptTurnByOrdinal(spans, ordinal) {
+      if (!Number.isSafeInteger(ordinal) || ordinal < 1) return null;
+      const matches = [...turns.values()].filter((turn) =>
+        spans.some(
+          (span) =>
+            turn.threadId === span.threadId &&
+            turn.position > span.afterPosition &&
+            (span.throughPosition === null || turn.position <= span.throughPosition),
+        ),
+      );
+      return orderTurnsByPosition(matches)[ordinal - 1] ?? null;
+    },
     async findFirstUnsettledTranscriptTurn(spans) {
       const matches = spans.flatMap((span) =>
         [...turns.values()].filter(

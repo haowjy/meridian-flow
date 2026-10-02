@@ -5,6 +5,7 @@ import type { Thread } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
+import { renderThreadHistoryOutput } from "../spawn/history-result.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
@@ -31,6 +32,7 @@ export function createInspectionToolRegistrations(deps: {
       input: ThreadLsInputSchema,
       sequential: true,
       historyPreview: threadLsHistoryPreview,
+      historyKind: "routine",
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -60,7 +62,9 @@ export function createInspectionToolRegistrations(deps: {
       input: ThreadHistoryInputSchema,
       sequential: true,
       historyPreview: threadHistoryPreview,
+      historyKind: "routine",
       documentText: historyDocumentText,
+      renderResult: renderThreadHistoryOutput,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
