@@ -21,25 +21,15 @@ export function workHistoryPreview(input: JsonObject): string {
   const target = input.work ?? input.target ?? input.name;
   return `${input.command ?? ""}${typeof target === "string" ? ` ${target}` : ""}`;
 }
-export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
-  const outputRef =
-    typeof output === "string"
-      ? /^Conversation ([cp]\d+)\b/u.exec(output)?.[1]
-      : typeof (output as JsonObject | undefined)?.ref === "string"
-        ? String((output as JsonObject).ref)
-        : undefined;
+/** The conversation a thread tool resolved, from its typed result (`ref`), never its text. */
+function resolvedRef(input: JsonObject, result?: JsonValue): string {
   if (input.ref !== undefined && input.ref !== "current") return String(input.ref);
-  return outputRef ?? String(input.ref ?? "current");
+  const ref = (result as JsonObject | null | undefined)?.ref;
+  return typeof ref === "string" ? ref : String(input.ref ?? "current");
 }
-
-export function threadLsHistoryPreview(input: JsonObject, output?: JsonValue): string {
-  if (input.ref !== undefined && input.ref !== "current") return String(input.ref);
-  const targetRef =
-    typeof output === "string"
-      ? output
-          .split("\n")
-          .find((line) => !line.includes(" › "))
-          ?.match(/^([cp]\d+)\b/u)?.[1]
-      : undefined;
-  return targetRef ?? String(input.ref ?? "current");
+export function threadHistoryPreview(input: JsonObject, result?: JsonValue): string {
+  return resolvedRef(input, result);
+}
+export function threadLsHistoryPreview(input: JsonObject, result?: JsonValue): string {
+  return resolvedRef(input, result);
 }

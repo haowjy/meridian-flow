@@ -1,18 +1,29 @@
 /** Read-only connected-conversation tools wired with repositories at composition. */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
+import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
-import { renderThreadHistoryOutput } from "../spawn/history-result.js";
+import { renderRefusal, renderThreadHistoryOutput } from "../spawn/history-result.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
-import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
+import {
+  listReadableThreads,
+  ThreadLsInputSchema,
+  type ThreadLsResult,
+} from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
 import { threadHistoryPreview, threadLsHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
+
+/** `thread_ls` text: the listing itself, or the refusal. */
+function renderThreadLsOutput(value: JsonValue): string {
+  const result = value as Partial<ThreadLsResult> | null;
+  return typeof result?.listing === "string" ? result.listing : renderRefusal(value);
+}
+
 export function createInspectionToolRegistrations(deps: {
   repos: ThreadRepositories;
   statusReader: ThreadStatusReader;
@@ -33,6 +44,7 @@ export function createInspectionToolRegistrations(deps: {
       sequential: true,
       historyPreview: threadLsHistoryPreview,
       historyKind: "routine",
+      renderResult: renderThreadLsOutput,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -47,7 +59,7 @@ export function createInspectionToolRegistrations(deps: {
             caller,
             input: input as z.output<typeof ThreadLsInputSchema>,
           });
-          return typeof result !== "string" ? toolFailureResult(result) : result;
+          return "ok" in result ? toolFailureResult(result) : result;
         },
       },
     },
