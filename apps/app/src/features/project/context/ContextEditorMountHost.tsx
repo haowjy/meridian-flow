@@ -1,5 +1,6 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
@@ -12,7 +13,7 @@ import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
 import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
-import { useAccountResourceReplica } from "./account-feature-context";
+import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 
@@ -62,6 +63,7 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -92,6 +94,10 @@ export function ContextEditorMountHost({
     <div className="relative min-h-0 flex-1">
       {trackedTabs.map((tab) => {
         const resourceHandle = tab.resourceHandle;
+        const availabilityRevision = resourceAvailabilityRevision(
+          resourceProjection,
+          tab.documentId,
+        );
         const isMounted = mounted.has(tab.documentId);
         const isActive = tab.documentId === activeTabId;
         const selectedReviewDraftId =
@@ -107,6 +113,7 @@ export function ContextEditorMountHost({
           session: DocumentSession | null,
           failed = false,
           localContentReady = false,
+          retry?: () => void,
         ): ReactNode => {
           if (!isMounted) return null;
           let bindingKey: string | undefined;
@@ -131,8 +138,17 @@ export function ContextEditorMountHost({
               aria-busy={!failed && !session}
             >
               {failed ? (
-                <div className="grid h-full place-items-center text-destructive text-sm">
-                  <Trans>Couldn't open this document.</Trans>
+                <div className="grid h-full place-items-center">
+                  <div className="space-y-3 text-center">
+                    <p className="text-destructive text-sm">
+                      <Trans>Couldn't open this document.</Trans>
+                    </p>
+                    {retry ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={retry}>
+                        <Trans>Retry</Trans>
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
               {!failed && !session ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
@@ -225,6 +241,8 @@ export function ContextEditorMountHost({
             projectId={projectId}
             documentId={tab.documentId}
             resourceHandle={resourceHandle}
+            availabilityRevision={availabilityRevision}
+            claimLiveAdmission={!tab.draftOnly}
             active={active && isActive}
           >
             {renderEditor}
@@ -240,24 +258,29 @@ export function ContextTabSessionBoundary({
   projectId,
   documentId,
   resourceHandle,
+  availabilityRevision,
+  claimLiveAdmission = true,
   children,
   active = true,
 }: {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
+  availabilityRevision: string;
+  /** Draft-only tabs still host the draft branch. They graduate only after
+   * the recovery verifier proves the published live document is ready. */
+  claimLiveAdmission?: boolean;
   active?: boolean;
   children: (
     session: DocumentSession | null,
     failed: boolean,
     localContentReady: boolean,
+    retry: () => void,
   ) => ReactNode;
 }) {
   const resources = useAccountResourceReplica();
-  const generation = useRef(++serverHostGeneration);
+  const generation = useMemo(() => ++serverHostGeneration, [availabilityRevision]);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
-  const currentDocumentId = useRef(documentId);
-  currentDocumentId.current = documentId;
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
     () =>
@@ -270,7 +293,7 @@ export function ContextTabSessionBoundary({
     identity: string;
     documentId: string;
     handle: ResourceContentHandle | null;
-    phase: "probing" | "cached" | "server" | "failed";
+    phase: "probing" | "cached" | "server";
   }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
   const currentLocal =
     local.identity === resourceIdentity
@@ -294,21 +317,9 @@ export function ContextTabSessionBoundary({
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {
-      const requestedDocumentId = currentDocumentId.current;
-      const settleUnavailable = async () => {
-        try {
-          const remote = await resources.canAcquireRemoteDocument(projectId, requestedDocumentId);
-          if (!abort.signal.aborted)
-            setLocal({
-              identity: resourceIdentity,
-              documentId,
-              handle: null,
-              phase: remote ? "server" : "failed",
-            });
-        } catch {
-          if (!abort.signal.aborted)
-            setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "failed" });
-        }
+      const settleUnavailable = () => {
+        if (!abort.signal.aborted)
+          setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "server" });
       };
       try {
         const key =
@@ -332,28 +343,40 @@ export function ContextTabSessionBoundary({
           return;
         }
         if (result.kind !== "opened") {
-          await settleUnavailable();
+          settleUnavailable();
           return;
         }
         retained = result.handle;
         setLocal({ identity: resourceIdentity, documentId, handle: retained, phase: "cached" });
       } catch {
-        await settleUnavailable();
+        settleUnavailable();
       }
     })();
     return () => {
       abort.abort();
       retained?.release();
     };
-  }, [projectId, resourceIdentity, resourceLookup, resources]);
-  const serverDocumentId = currentLocal.phase === "server" ? documentId : null;
+  }, [availabilityRevision, projectId, resourceIdentity, resourceLookup, resources]);
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId: serverDocumentId,
+    documentId,
     owner: "desktop-server-tab",
+    connect: currentLocal.phase === "server",
+    locallyReadySession: currentLocal.handle?.session ?? null,
   });
-  useLiveBindingAcknowledgementHost(projectId, active ? serverDocumentId : null, binding);
-  usePostApplyHostWake(projectId, serverDocumentId, generation.current);
+  const automaticRetryRevision = useRef(availabilityRevision);
+  useEffect(() => {
+    if (binding.state.kind !== "failed" || automaticRetryRevision.current === availabilityRevision)
+      return;
+    automaticRetryRevision.current = availabilityRevision;
+    binding.retry();
+  }, [availabilityRevision, binding.retry, binding.state.kind]);
+  useLiveBindingAcknowledgementHost(
+    projectId,
+    active && claimLiveAdmission ? documentId : null,
+    binding,
+  );
+  usePostApplyHostWake(projectId, active ? documentId : null, generation);
   const state = binding.state;
   useEffect(() => {
     if (state.kind !== "opened" || state.documentId !== documentId) return;
@@ -362,15 +385,48 @@ export function ContextTabSessionBoundary({
       .catch(() => undefined);
   }, [documentId, projectId, resources, state]);
   const localSession = currentLocal.handle?.session ?? null;
+  const liveSession =
+    state.kind === "opened" && state.documentId === documentId ? state.session : null;
+  const selectedSession = liveSession ?? localSession;
   return children(
-    localSession ??
-      (state.kind === "opened" && state.documentId === documentId ? state.session : null),
-    currentLocal.phase === "failed" || (state.kind === "failed" && state.documentId === documentId),
-    localSession !== null,
+    selectedSession,
+    state.kind === "failed" && state.documentId === documentId,
+    selectedSession !== null && selectedSession === localSession,
+    binding.retry,
   );
 }
 
 let serverHostGeneration = 0;
+
+export function resourceAvailabilityRevision(
+  snapshot: ResourceProjectionSnapshot | null,
+  documentId: string,
+): string {
+  if (!snapshot) return "pending";
+  const resource = snapshot.records.find(
+    (record) => record.resource.identity.documentId === documentId,
+  )?.resource;
+  const catalogs = snapshot.catalogs
+    .map((catalog) =>
+      JSON.stringify([
+        catalog.scope,
+        catalog.generation,
+        catalog.revision,
+        catalog.appliedRevision,
+        catalog.observedHeadRevision,
+      ]),
+    )
+    .sort();
+  return JSON.stringify([
+    resource?.revision ?? null,
+    resource?.lifecycle.kind === "acknowledged"
+      ? resource.lifecycle.availabilityGeneration
+      : resource?.lifecycle.kind === "terminal"
+        ? resource.lifecycle.generation
+        : null,
+    catalogs,
+  ]);
+}
 
 function ActiveEditorProjection({
   documentId,
