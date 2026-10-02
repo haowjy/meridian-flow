@@ -2,6 +2,7 @@
  * `thread_history`'s structured result (D8) and the pure text rendering the
  * model reads (D10). Code mode would return `HistoryResult` itself.
  */
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ThreadHistoryInput } from "./thread-history.js";
@@ -155,7 +156,26 @@ function singleItem(turn: HistoryTurn, item: HistoryItem) {
   return `${key} ${itemLabel(item)}\n${item.text ?? ""}${truncated}`;
 }
 
-function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedReportView) {
+/** A saved report's body: the summary, then any payload and artifacts. */
+export function reportContent(
+  summary: string,
+  payload?: JsonValue | null,
+  artifacts?: readonly ArtifactRef[] | null,
+): string {
+  return [
+    summary,
+    ...(payload !== undefined && payload !== null ? [`payload: ${JSON.stringify(payload)}`] : []),
+    ...(artifacts ?? []).map(
+      (artifact) =>
+        `artifact: ${"uri" in artifact ? artifact.uri : artifact.url}${"label" in artifact && artifact.label ? ` (${artifact.label})` : ""}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** `Report (<outcome>)`, a reason line when there is one, then the body: shared by history and `thread_report`. */
+export function renderReportBlock(report: SavedReportView, truncated?: string): string {
   const outcome = report.outcome === "succeeded" ? "completed" : report.outcome;
   const source = report.source === "return_result" ? "" : `, ${report.source}`;
   const notes = [
@@ -166,10 +186,17 @@ function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedRepo
     `Report (${outcome}${source})`,
     ...(notes.length ? [notes.join("; ")] : []),
     ...(report.content ? [report.content] : []),
-    ...(report.truncated && turn.number !== undefined
-      ? [`(report truncated: ${call({ ref: result.ref, expand: turn.number })})`]
-      : []),
+    ...(truncated ? [truncated] : []),
   ].join("\n");
+}
+
+function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedReportView) {
+  return renderReportBlock(
+    report,
+    report.truncated && turn.number !== undefined
+      ? `(report truncated: ${call({ ref: result.ref, expand: turn.number })})`
+      : undefined,
+  );
 }
 
 function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): string {
@@ -231,7 +258,16 @@ export function renderHistoryResult(result: HistoryResult): string {
   return blocks.join("\n\n");
 }
 
-/** The tool-result boundary: a history result renders as text; a refusal stays its JSON. */
+/** A tool refusal (a `MeridianError`) as the model reads it: its message and code. */
+export function renderRefusal(value: JsonValue): string {
+  const error =
+    typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+  return typeof error?.message === "string"
+    ? `${error.message}${typeof error.code === "string" ? ` (${error.code})` : ""}`
+    : JSON.stringify(value);
+}
+
+/** The tool-result boundary: a history result or a refusal, rendered as text. */
 export function renderThreadHistoryOutput(value: JsonValue): string {
   const isResult =
     typeof value === "object" &&
@@ -239,5 +275,5 @@ export function renderThreadHistoryOutput(value: JsonValue): string {
     !Array.isArray(value) &&
     typeof value.view === "string" &&
     Array.isArray(value.turns);
-  return isResult ? renderHistoryResult(value as unknown as HistoryResult) : JSON.stringify(value);
+  return isResult ? renderHistoryResult(value as unknown as HistoryResult) : renderRefusal(value);
 }

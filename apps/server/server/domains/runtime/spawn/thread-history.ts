@@ -37,7 +37,13 @@ import {
   loadHistoryToolPairs,
   toolPairMap,
 } from "./history-item.js";
-import type { HistoryItem, HistoryResult, HistoryTurn, SavedReportView } from "./history-result.js";
+import {
+  type HistoryItem,
+  type HistoryResult,
+  type HistoryTurn,
+  reportContent,
+  type SavedReportView,
+} from "./history-result.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
 
 const INCLUDES = [
@@ -163,14 +169,7 @@ function capper(tokenizer: TokenizerFamily) {
 
 function reportView(report: SavedExecutionReport, lines?: number): SavedReportView | undefined {
   if (report.outcome === null) return undefined;
-  const content = [
-    report.summary,
-    ...(report.payload !== undefined && report.payload !== null
-      ? [`payload: ${JSON.stringify(report.payload)}`]
-      : []),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const content = reportContent(report.summary, report.payload, report.artifacts);
   const kept = lines === undefined ? content : content.split("\n").slice(0, lines).join("\n");
   return {
     outcome: report.outcome,

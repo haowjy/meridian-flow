@@ -46,7 +46,11 @@ describe("thread_report capability plumbing", () => {
       { ...executionBase, agentSlug: null, threadReport: threadReportFn },
     );
     expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
-    expect(result.output).toEqual({ ref: "p1", status: "unavailable" });
+    // The model reads text; the typed result rides beside it.
+    expect(result.result).toEqual({ ref: "p1", status: "unavailable" });
+    expect(result.output).toBe(
+      "p1 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
+    );
   });
 });
 
@@ -60,7 +64,8 @@ it("marks a structured thread-report refusal as an error result", async () => {
     },
   );
   expect(result.isError).toBe(true);
-  expect(result.output).toMatchObject({ code: "thread_not_connected" });
+  expect(result.result).toMatchObject({ code: "thread_not_connected" });
+  expect(result.output).toBe("Not connected (thread_not_connected)");
 });
 
 describe("input parsing before dispatch", () => {

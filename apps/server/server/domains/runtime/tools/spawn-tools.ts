@@ -11,6 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
+import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
@@ -143,6 +144,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "thread_report",
+      renderResult: renderThreadReportOutput,
       historyPreview: threadHistoryPreview,
       historyKind: "routine",
       advertise: true,

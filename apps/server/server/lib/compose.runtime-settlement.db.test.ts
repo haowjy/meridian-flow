@@ -126,7 +126,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           isError: true,
           result: { code: "model_unavailable", message: "Model not found: removed-history-model" },
         });
-        expect(result.output).toContain('"code":"model_unavailable"');
+        expect(result.output).toBe("Model not found: removed-history-model (model_unavailable)");
       } finally {
         await unloadRuntime(runtime.hocuspocus);
       }

@@ -206,8 +206,8 @@ More: thread_history({"ref":"c2","cursor":"c2:n37@40~abcdef12","include":["think
 4.3 read ch11 (5,120 tokens)`);
   });
 
-  it("keeps a refusal as its JSON at the tool-result boundary", () => {
+  it("renders a refusal as its message and code, not JSON", () => {
     const refusal = { code: "item_not_found", message: "Turn 9 not found in c2" };
-    expect(renderThreadHistoryOutput(refusal)).toBe(JSON.stringify(refusal));
+    expect(renderThreadHistoryOutput(refusal)).toBe("Turn 9 not found in c2 (item_not_found)");
   });
 });
