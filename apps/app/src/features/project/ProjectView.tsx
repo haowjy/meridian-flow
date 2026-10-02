@@ -404,7 +404,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const chatReviewState = useDraftReviewStateOwner();
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
-  const { tabs } = useContextTabs(props.projectId);
+  const { tabs, selectedTabIdByWork } = useContextTabs(props.projectId);
   const requestedMobileDocumentRoute = useMobileDocumentRoute({
     enabled:
       usePhone === true &&
@@ -462,16 +462,33 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     [props.availableWorks],
   );
   if (usePhone === null) return null;
+  const activeDesktopDocumentId =
+    props.activeLocalDocumentId ?? selectedTabIdByWork[props.editorWorkId ?? ""] ?? null;
   const desktopHostDocumentIds =
-    usePhone || props.editorScope.status !== "ready" || !props.contextLive
+    usePhone ||
+    props.activeScreen !== "context" ||
+    props.editorScope.status !== "ready" ||
+    !props.contextLive ||
+    props.routeIssues?.editor
       ? []
       : tabs.flatMap((tab) =>
-          tab.kind === "tracked" && isEditorTab(tab, props.editorWorkId) ? [tab.documentId] : [],
+          tab.documentId === activeDesktopDocumentId &&
+          (tab.kind === "tracked" || tab.kind === "new") &&
+          !("draftOnly" in tab && tab.draftOnly) &&
+          isEditorTab(tab, props.editorWorkId)
+            ? [tab.documentId]
+            : [],
         );
   const inlineDocumentIds = [
     inlineReviewFromState(chatReviewState.state)?.documentId,
     inlineReviewFromState(editorReviewState.state)?.documentId,
-  ].filter((documentId): documentId is string => Boolean(documentId));
+  ].filter(
+    (documentId): documentId is string =>
+      Boolean(documentId) &&
+      !tabs.some(
+        (tab) => tab.documentId === documentId && "draftOnly" in tab && Boolean(tab.draftOnly),
+      ),
+  );
   return (
     <ProjectDraftApplyRecoveryExecutor
       projectId={props.projectId}

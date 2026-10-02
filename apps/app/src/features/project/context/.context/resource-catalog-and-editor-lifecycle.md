@@ -89,6 +89,18 @@ first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
+An active resource-backed host also claims a post-Apply live admission. It
+atomically installs the admitted live binding before acknowledging recovery and
+then presents that session in place of the cached one. A local cache-open
+failure falls through to exact server availability instead of terminalizing the
+tab from stale metadata. Genuine server failure remains retryable explicitly
+and retries when the resource/catalog authority revision advances. Only the
+active desktop editor is advertised as required recovery-host demand; warm and
+persisted tabs are not hosts until they have a claim path. A draft-only tab does
+not claim the live admission while it still hosts the draft branch; the recovery
+verifier proves the published document is ready before settlement graduates the
+tab.
+
 ## Unfiled materialization and recovery
 
 A new document is an account resource exposed to its creating project before it
