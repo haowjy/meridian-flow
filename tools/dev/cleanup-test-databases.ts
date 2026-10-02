@@ -28,7 +28,11 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
       console.log(`Dropped ${result.targetDb}.`);
       return result;
     });
-    throwSettledFailures("DB test cleanup", [...workerResults, ...templateResult]);
+    throwSettledFailures(
+      "DB test cleanup",
+      [...workerResults, ...templateResult],
+      [...workerUrls, message.databaseUrl].map((url) => parseTargetDatabase(url).targetDb),
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

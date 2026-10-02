@@ -187,7 +187,11 @@ async function main(): Promise<void> {
           console.log(`Dropped ${result.targetDb}.`);
           return result;
         });
-        throwSettledFailures("DB test cleanup", cleanupResults);
+        throwSettledFailures(
+          "DB test cleanup",
+          cleanupResults,
+          workerDatabaseUrls.map((url) => new URL(url).pathname.slice(1)),
+        );
       }
     } finally {
       await admission?.release();

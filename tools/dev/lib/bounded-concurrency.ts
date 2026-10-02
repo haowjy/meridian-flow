@@ -27,13 +27,20 @@ export async function mapConcurrentSettled<T, R>(
 export function throwSettledFailures(
   action: string,
   results: readonly PromiseSettledResult<unknown>[],
+  labels: readonly string[] = [],
 ): void {
-  const failures = results.filter(
-    (result): result is PromiseRejectedResult => result.status === "rejected",
+  const failures = results.flatMap((result, index) =>
+    result.status === "rejected" ? [{ result, index }] : [],
   );
   if (failures.length === 0) return;
   throw new AggregateError(
-    failures.map((failure) => failure.reason),
-    `${action} failed for ${failures.length} item(s).`,
+    failures.map(({ result }) => result.reason),
+    `${action} failed for ${failures.length} item(s): ${failures
+      .map(({ result, index }) => {
+        const reason =
+          result.reason instanceof Error ? result.reason.message : String(result.reason);
+        return `${labels[index] ?? `item ${index + 1}`} (${reason})`;
+      })
+      .join(", ")}.`,
   );
 }

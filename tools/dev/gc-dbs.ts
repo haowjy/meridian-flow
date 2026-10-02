@@ -174,7 +174,7 @@ async function main(): Promise<void> {
     console.log(`Dropped ${result.targetDb}.`);
     return result;
   });
-  throwSettledFailures("Database GC", results);
+  throwSettledFailures("Database GC", results, droppable);
 }
 
 main().catch((error: unknown) => {

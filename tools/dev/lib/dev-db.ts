@@ -279,7 +279,7 @@ export async function dropDatabaseForUrl(
     max: 1,
     connection: {
       lock_timeout: 5_000,
-      statement_timeout: 15_000,
+      statement_timeout: 60_000,
     },
   });
   try {

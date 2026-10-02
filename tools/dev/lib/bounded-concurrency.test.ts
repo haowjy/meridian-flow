@@ -25,6 +25,8 @@ describe("mapConcurrentSettled", () => {
       "fulfilled",
       "fulfilled",
     ]);
-    expect(() => throwSettledFailures("drop", results)).toThrow("drop failed for 1 item(s)");
+    expect(() => throwSettledFailures("drop", results, ["one", "two"])).toThrow(
+      "drop failed for 1 item(s): two (stuck)",
+    );
   });
 });
