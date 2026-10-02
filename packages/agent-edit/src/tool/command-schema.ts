@@ -4,6 +4,7 @@
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
 import { z } from "zod";
+import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
 
 /**
  * `in` publishes as one compact JSON Schema instead of zod's nested projection.
@@ -24,22 +25,29 @@ const BLOCK_SELECTOR_JSON_SCHEMA = {
 
 const BlockPositionSchema = z.union([z.string().min(1), z.int().positive()]);
 
-const BlockSelectorSchema = z
-  .union([BlockPositionSchema, z.tuple([BlockPositionSchema, BlockPositionSchema])])
-  .meta({
-    description:
-      "Block hash, 1-based block number, or an inclusive [start, end] range of either. Not with `around` or a `#fragment`.",
-    modelJsonSchema: BLOCK_SELECTOR_JSON_SCHEMA,
-  });
+const BLOCK_SELECTOR_DESCRIPTION =
+  "Block hash, 1-based block number, or an inclusive [start, end] range of either. Not with `around` or a `#fragment`.";
+
+function blockSelector(description: string) {
+  return z
+    .union([BlockPositionSchema, z.tuple([BlockPositionSchema, BlockPositionSchema])])
+    .meta({ description, modelJsonSchema: BLOCK_SELECTOR_JSON_SCHEMA });
+}
+
+const BlockSelectorSchema = blockSelector(BLOCK_SELECTOR_DESCRIPTION);
 
 const FindAroundSchema = z
   .string()
+  .min(1)
   .describe("Block hash; search for `find` only near this block. Needs `find`.");
+
+const FindAllSchema = z.boolean().describe("Every match of `find`. Needs `find`.");
 
 const READ_FIELDS = {
   in: BlockSelectorSchema.optional(),
   around: z
     .string()
+    .min(1)
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
   format: z.enum(["full", "outline"]).optional(),
@@ -64,13 +72,17 @@ const MUTATION_BRANCHES = {
   insert: {
     description: "Insert content.",
     fields: {
-      content: z.string(),
-      after: z.string().optional().describe("Block hash to insert after."),
-      before: z.string().optional().describe("Block hash to insert before."),
-      find: z.string().optional().describe("Exact text to insert right after."),
-      in: BlockSelectorSchema.optional(),
+      content: z.string().min(1),
+      after: z.string().min(1).optional().describe("Block hash to insert after. Not with `find`."),
+      before: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Block hash to insert before. Not with `find`."),
+      find: z.string().min(1).optional().describe("Exact text to insert right after."),
+      in: blockSelector(`${BLOCK_SELECTOR_DESCRIPTION} Needs \`find\`.`).optional(),
       around: FindAroundSchema.optional(),
-      all: z.boolean().optional(),
+      all: FindAllSchema.optional(),
     },
   },
   replace: {
@@ -78,9 +90,13 @@ const MUTATION_BRANCHES = {
     fields: {
       content: z.string(),
       in: BlockSelectorSchema.optional(),
-      find: z.string().optional().describe("Exact text to replace; an empty `content` removes it."),
+      find: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Exact text to replace; an empty `content` removes it."),
       around: FindAroundSchema.optional(),
-      all: z.boolean().optional().describe("Every match of find."),
+      all: FindAllSchema.optional(),
     },
   },
   remove: {
@@ -98,7 +114,32 @@ const MUTATION_BRANCHES = {
   },
 } as const;
 
-function mutationUnion<Target extends z.ZodRawShape>(target: Target) {
+type TargetKey = "file" | "path";
+
+/** Reports the selector rule's issues on the argument each one names. */
+function addSelectorIssues(
+  ctx: z.RefinementCtx,
+  command: SelectorCommand,
+  value: SelectorFields & Record<TargetKey, string | undefined>,
+  targetKey: TargetKey,
+): void {
+  for (const issue of selectorIssues(command, value, value[targetKey] ?? "")) {
+    const path =
+      issue.field === "arguments" ? [] : [issue.field === "target" ? targetKey : issue.field];
+    ctx.addIssue({ code: "custom", path, message: issue.message, input: value });
+  }
+}
+
+function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
+  return z
+    .object({ ...target, ...READ_FIELDS })
+    .strict()
+    .superRefine((value, ctx) =>
+      addSelectorIssues(ctx, "read", value as Parameters<typeof addSelectorIssues>[2], targetKey),
+    );
+}
+
+function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
   const branch = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
     z
       .object({
@@ -108,14 +149,22 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target) {
       })
       .strict()
       .describe(MUTATION_BRANCHES[command].description);
-  return z.discriminatedUnion("command", [
-    branch("create"),
-    branch("insert"),
-    branch("replace"),
-    branch("remove"),
-    branch("undo"),
-    branch("redo"),
-  ]);
+  return z
+    .discriminatedUnion("command", [
+      branch("create"),
+      branch("insert"),
+      branch("replace"),
+      branch("remove"),
+      branch("undo"),
+      branch("redo"),
+    ])
+    .superRefine((value, ctx) => {
+      const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
+      const command = fields.command;
+      if (command === "insert" || command === "replace" || command === "remove") {
+        addSelectorIssues(ctx, command, fields, targetKey);
+      }
+    });
 }
 
 const ENGINE_TARGET = {
@@ -142,14 +191,14 @@ const WRITE_TARGET = {
 };
 
 /** Engine read input: the document and which of its blocks to render. */
-export const ReadCommandSchema = z.object({ ...ENGINE_TARGET, ...READ_FIELDS }).strict();
+export const ReadCommandSchema = readInput(ENGINE_TARGET, "file");
 /** Engine mutation input: every `write` command changes a document. */
-export const WriteCommandSchema = mutationUnion(ENGINE_TARGET);
+export const WriteCommandSchema = mutationUnion(ENGINE_TARGET, "file");
 
 /** The `read` tool's published input. */
-export const ReadToolInputSchema = z.object({ ...READ_TARGET, ...READ_FIELDS }).strict();
+export const ReadToolInputSchema = readInput(READ_TARGET, "path");
 /** The `write` tool's published input. */
-export const WriteToolInputSchema = mutationUnion(WRITE_TARGET);
+export const WriteToolInputSchema = mutationUnion(WRITE_TARGET, "path");
 
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;

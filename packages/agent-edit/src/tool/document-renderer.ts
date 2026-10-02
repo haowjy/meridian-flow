@@ -62,13 +62,6 @@ export function createDocumentRenderer(deps: {
     address: DocumentRenderAddress,
   ): ReadBlockSelection {
     const scopeContext = { doc, model };
-    if (address.fragment && (command.in !== undefined || command.around !== undefined)) {
-      return {
-        ok: false,
-        code: "invalid_write",
-        message: "Use either file #fragment, in, or around for read scope, not multiple.",
-      };
-    }
     if (address.fragment) {
       const result = resolveScope(scopeContext, `#${address.fragment}`);
       return scopeSelection(result);

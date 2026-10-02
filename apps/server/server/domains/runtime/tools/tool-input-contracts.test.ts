@@ -71,6 +71,35 @@ async function expectDelivered(name: string, args: Record<string, unknown>, deli
   expect(handler).toHaveBeenCalledWith(delivered, expect.anything());
 }
 
+describe("read and write selectors", () => {
+  it("refuse competing selectors and modifiers without find before the handler", async () => {
+    await expectRefused("read", { path: "c.md#scene", in: 1 }, [
+      "in: Use one of in, around or a #fragment",
+    ]);
+    await expectRefused(
+      "write",
+      { command: "replace", path: "c.md", content: "x", in: 1, all: true },
+      ["all: all applies to find matches"],
+    );
+    await expectRefused("write", { command: "insert", path: "c.md", content: "x", in: 2 }, [
+      "in: insert positions with after, before or find",
+    ]);
+    await expectRefused("write", { command: "remove", path: "c.md" }, [
+      "path: remove needs exactly one of `in` or a #heading-slug in path",
+    ]);
+    await expectRefused("write", { command: "replace", path: "c.md", content: "x" }, [
+      "arguments: replace needs `in`, `find` or a #heading-slug in path",
+    ]);
+  });
+
+  it("refuse block number zero and empty insert content", async () => {
+    await expectRefused("read", { path: "c.md", in: 0 }, ["in: must be greater than 0"]);
+    await expectRefused("write", { command: "insert", path: "c.md", content: "" }, [
+      "content: must not be empty",
+    ]);
+  });
+});
+
 describe("ls", () => {
   it("delivers an omitted or supplied path", async () => {
     await expectDelivered("ls", {}, {});

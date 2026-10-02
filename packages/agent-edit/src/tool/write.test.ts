@@ -478,7 +478,7 @@ describe("write tool dispatch", () => {
     );
     expect(outcomeText(invalid)).toContain("status: invalid_write");
     expectOutcome(invalid, "invalid_write", true);
-    expect(outcomeText(invalid)).toContain("insert requires non-empty content");
+    expect(outcomeText(invalid)).toContain("content:");
   });
 
   it("maps typed missing documents differently from transient coordinator failures", async () => {

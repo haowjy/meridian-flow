@@ -202,7 +202,7 @@ describe("resolveWrite", () => {
     expect(edits[0]).toMatchObject({ kind: "text", block: beta, newText: "Gamma" });
   });
 
-  it("removes exactly one of `in` or a path fragment", () => {
+  it("removes the blocks selected by `in` or a path fragment", () => {
     const doc = createDoc("Alpha\n\nBeta");
     const [, beta] = model.getBlocks(doc);
     const hash = model.getBlockId(beta);
@@ -223,15 +223,6 @@ describe("resolveWrite", () => {
 
     for (const removed of [remove(hash, undefined), remove(undefined, hash)]) {
       expect(expectOk(removed).map((edit) => edit.kind)).toEqual(["delete"]);
-    }
-    for (const invalid of [remove(hash, hash), remove(undefined, undefined)]) {
-      expect(invalid).toMatchObject({
-        ok: false,
-        error: {
-          code: "invalid_write",
-          message: "remove needs exactly one of `in` or a #heading-slug in path",
-        },
-      });
     }
   });
 
