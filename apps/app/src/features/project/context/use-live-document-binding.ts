@@ -33,7 +33,6 @@ export function useLiveDocumentBinding({
   documentId,
   owner,
   connect = true,
-  locallyReadySession = null,
 }: {
   projectId: string;
   documentId: string | null;
@@ -41,13 +40,9 @@ export function useLiveDocumentBinding({
   /** A resource-backed host can wait for an Apply admission without opening a
    * second ordinary server binding. */
   connect?: boolean;
-  /** Exact resource content already mounted by this host. */
-  locallyReadySession?: DocumentSession | null;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
-  const locallyReadySessionRef = useRef(locallyReadySession);
-  locallyReadySessionRef.current = locallyReadySession;
   const desiredRef = useRef({ projectId, documentId, generation: 0, mounted: true });
   const currentRef = useRef<InstalledBinding | null>(null);
   const pendingRef = useRef<PendingBinding | null>(null);
@@ -113,8 +108,7 @@ export function useLiveDocumentBinding({
           return { kind: "unusable" };
         }
         if (requireCurrentSync) {
-          if (candidate.session !== locallyReadySessionRef.current)
-            await waitForCurrentSyncOrAbort(candidate.session, timeoutMs, abort.signal);
+          await waitForCurrentSyncOrAbort(candidate.session, timeoutMs, abort.signal);
           const snapshot = candidate.session.getSnapshot();
           if (snapshot.status !== "synced" || snapshot.schemaFence !== null) {
             return { kind: "unusable" };

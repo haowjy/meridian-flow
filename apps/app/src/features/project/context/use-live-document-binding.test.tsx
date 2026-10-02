@@ -47,18 +47,15 @@ function admission(
 function Host({
   expose,
   connect = true,
-  locallyReadySession = null,
 }: {
   expose(binding: LiveDocumentHostBinding): void;
   connect?: boolean;
-  locallyReadySession?: DocumentSession | null;
 }) {
   const binding = useLiveDocumentBinding({
     projectId: "project-a",
     documentId: "document-a",
     owner: "desktop-server-tab",
     connect,
-    locallyReadySession,
   });
   useEffect(() => expose(binding), [binding, expose]);
   return null;
@@ -99,10 +96,18 @@ describe("useLiveDocumentBinding", () => {
     expect(releases[0]).toHaveBeenCalledOnce();
   });
 
-  it("acknowledges the admitted cached session without waiting for redundant server sync", async () => {
+  it("waits for an admitted cached session to reconnect before binding it", async () => {
+    const snapshot = { status: "syncing", schemaFence: null };
+    let finishSync!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      finishSync = () => {
+        snapshot.status = "synced";
+        resolve();
+      };
+    });
     const cached = session(
-      undefined,
-      vi.fn(async () => Promise.reject(new Error("not live"))),
+      snapshot,
+      vi.fn(async () => waiting),
     );
     const owners: string[] = [];
     const releases: Array<ReturnType<typeof vi.fn>> = [];
@@ -113,7 +118,6 @@ describe("useLiveDocumentBinding", () => {
       <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
         <Host
           connect={false}
-          locallyReadySession={cached}
           expose={(value) => {
             host = value;
           }}
@@ -121,14 +125,20 @@ describe("useLiveDocumentBinding", () => {
       </ProjectDocumentLiveOpenerContext.Provider>,
       async () => {
         await act(async () => undefined);
+        const acknowledgement = host.adoptAndAcknowledge(admission("2", cached, owners, releases), {
+          signal: new AbortController().signal,
+        });
+        await act(async () => undefined);
+        expect(cached.waitForCurrentSync).toHaveBeenCalledOnce();
+        expect(host.state).toEqual({ kind: "absent" });
+
         let result: unknown;
         await act(async () => {
-          result = await host.adoptAndAcknowledge(admission("2", cached, owners, releases), {
-            signal: new AbortController().signal,
-          });
+          finishSync();
+          result = await acknowledgement;
         });
         expect(result).toMatchObject({ kind: "acknowledged", generation: "2" });
-        expect(cached.waitForCurrentSync).not.toHaveBeenCalled();
+        expect(host.state).toMatchObject({ kind: "opened", session: cached });
       },
     );
   });
