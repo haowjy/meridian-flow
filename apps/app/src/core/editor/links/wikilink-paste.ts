@@ -52,9 +52,11 @@ export type WikilinkPasteCatalog = {
 // be told apart; `\[\[` (how Meridian's own Markdown escapes brackets) is an
 // escape too. The brackets hold no bracket and no line break.
 const WIKILINK = /(\\|!)?\[(\\)?\[([^[\]\n]+)\]\]/g;
+// Every escaped opening, closed or not: `\[[` and `\[\[`.
+const ESCAPE = /\\\[\\?\[/g;
 
-/** An escaped `\[[…]]`: text, spelled as the literal brackets without the backslash. */
-type EscapedWikilink = { from: number; to: number; literal: string };
+/** An escaped opening: text, spelled as the literal brackets without the backslash. */
+type EscapedWikilink = { from: number; to: number; literal: "[[" };
 
 /**
  * Every convertible `[[…]]` in a run of text, in order. A backtick code span
@@ -65,19 +67,24 @@ export function parseWikilinks(text: string): WikilinkOccurrence[] {
   return scanWikilinks(text).filter((found): found is WikilinkOccurrence => "target" in found);
 }
 
-/** Links and escapes, in order; embeds and code are neither. */
+/**
+ * Links and escaped openings, in order; embeds and code are neither. Every
+ * escaped opening outside code is found, closed or not, so the backslash the
+ * Markdown door kept never reaches the document.
+ */
 function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
-  const found: (WikilinkOccurrence | EscapedWikilink)[] = [];
   const code = codeSpans(text);
+  const inCode = (at: number) => code.some(([from, to]) => at >= from && at < to);
+  const found: (WikilinkOccurrence | EscapedWikilink)[] = [];
+  for (const match of text.matchAll(ESCAPE)) {
+    const start = match.index ?? 0;
+    if (!inCode(start)) found.push({ from: start, to: start + match[0].length, literal: "[[" });
+  }
   for (const match of text.matchAll(WIKILINK)) {
     const start = match.index ?? 0;
-    if (code.some(([from, to]) => start >= from && start < to)) continue;
+    // An escape (or `[\[`) is no link; an embed stays text.
+    if (inCode(start) || match[1] || match[2]) continue;
     const inner = match[3] ?? "";
-    if (match[1] === "\\") {
-      found.push({ from: start, to: start + match[0].length, literal: `[[${inner}]]` });
-      continue;
-    }
-    if (match[1] || match[2]) continue;
     // Inside a table Obsidian escapes the alias bar as `\|`.
     const bar = inner.search(/\\?\|/);
     const destination = bar < 0 ? inner : inner.slice(0, bar);
@@ -102,7 +109,7 @@ function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
       label: alias || name.replace(/\.md$/i, ""),
     });
   }
-  return found;
+  return found.sort((left, right) => left.from - right.from);
 }
 
 type Located = { uri: string; area: string; scheme: string; segments: string[] };
@@ -216,11 +223,12 @@ export function wikilinkResolver(
 export function linkPastedWikilinks(
   slice: Slice,
   schema: Schema,
-  catalog: WikilinkPasteCatalog,
+  catalog: WikilinkPasteCatalog | null,
 ): Slice {
   const link = schema.marks.link;
   if (!link) return slice;
-  const resolve = wikilinkResolver(catalog);
+  // With no catalog yet, nothing links, but escapes are still spelled out.
+  const resolve = catalog ? wikilinkResolver(catalog) : () => null;
   const convert = (fragment: Fragment): Fragment => {
     let changed = false;
     const nodes: PMNode[] = [];
@@ -251,7 +259,9 @@ function linkText(
   resolve: (occurrence: WikilinkOccurrence) => string | null,
 ): PMNode[] {
   const text = node.text ?? "";
-  if (node.marks.some((mark) => mark.type.spec.code || mark.type.name === "link")) return [node];
+  if (node.marks.some((mark) => mark.type.spec.code)) return [node];
+  // A link's own text never becomes another link, but its escapes are spelled out.
+  const linked = node.marks.some((mark) => mark.type.name === "link");
   const pieces: PMNode[] = [];
   let cursor = 0;
   const { schema } = node.type;
@@ -259,7 +269,7 @@ function linkText(
     let piece: PMNode | null;
     if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
     else {
-      const href = resolve(occurrence);
+      const href = linked ? null : resolve(occurrence);
       piece = href
         ? schema.text(occurrence.label, link.create({ href, title: null }).addToSet(node.marks))
         : null;
