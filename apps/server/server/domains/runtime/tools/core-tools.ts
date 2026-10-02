@@ -13,6 +13,7 @@ import {
   type AgentEditResultCommand,
   type AgentEditResultV1,
   agentEditResultCommand,
+  DocumentVersionSchema,
   modelResult,
   ReadToolInputSchema,
   renderAgentEditResult,
@@ -142,6 +143,7 @@ export const LsToolInputSchema = z
       .min(1)
       .describe("Folder path or context URI; omit to list the roots.")
       .optional(),
+    version: DocumentVersionSchema.optional(),
   })
   .strict();
 export type LsToolInput = z.output<typeof LsToolInputSchema>;
@@ -154,6 +156,7 @@ export const SearchToolInputSchema = z
       .min(1)
       .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
       .optional(),
+    version: DocumentVersionSchema.optional(),
   })
   .strict();
 export type SearchToolInput = z.output<typeof SearchToolInputSchema>;

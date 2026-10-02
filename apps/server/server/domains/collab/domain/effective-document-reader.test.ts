@@ -45,7 +45,7 @@ describe("effective document reader manifest publication", () => {
 });
 
 describe("effective document reader destinations (D40)", () => {
-  function reader() {
+  function reader(staged?: { destination: "live" | "draft" }) {
     const branches = {
       resolveThreadBranch: vi.fn(),
       resolveWorkDraftBranchForThread: vi.fn(),
@@ -63,7 +63,11 @@ describe("effective document reader destinations (D40)", () => {
       liveCoordinator: {} as never,
       agentEdit: {
         responseDocuments: () => ({ staged: [], created: [] }),
-        hasResponseDocument: () => false,
+        hasResponseDocument: () => staged !== undefined,
+        responseDestination: () =>
+          staged?.destination === "draft"
+            ? { kind: "draft", workId: "work-a", workSlug: "a" }
+            : staged && { kind: "live" },
       } as never,
       documents: { readVersionedMarkdown } as never,
       model: {} as never,
@@ -87,5 +91,19 @@ describe("effective document reader destinations (D40)", () => {
     expect(branches.resolveWorkDraftBranchForThread).not.toHaveBeenCalled();
     expect(branchPulls.pullThreadPeer).not.toHaveBeenCalled();
     expect(branchPulls.flushLivePull).not.toHaveBeenCalled();
+  });
+
+  it("leaves out this reply's drafted writes when it reads live", async () => {
+    const { effective, readVersionedMarkdown } = reader({ destination: "draft" });
+
+    const read = await effective.readEffectiveMarkdown({
+      documentId: "00000000-0000-4000-8000-000000000358" as never,
+      threadId: "00000000-0000-4000-8000-000000000357" as never,
+      responseId: "response-1",
+      destination: "live",
+    });
+
+    expect(read).toEqual({ ok: true, value: { content: "Live text.", revision: "y1:live" } });
+    expect(readVersionedMarkdown).toHaveBeenCalledOnce();
   });
 });

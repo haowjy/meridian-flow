@@ -7,6 +7,7 @@ import type {
   AgentEditResultCommand,
   ConcurrentEditInfo,
   DocumentCommandName,
+  DocumentVersion,
   ReadToolInput,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
@@ -192,6 +193,7 @@ async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
   responseId?: string,
+  version?: DocumentVersion,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
     {
@@ -204,7 +206,10 @@ async function resolveContextPort(
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
-    port: contextPortForThread(deps.contextPorts, resolution, { responseId }),
+    port: contextPortForThread(deps.contextPorts, resolution, {
+      responseId,
+      ...(version ? { version } : {}),
+    }),
     primaryWorkId: resolution.primaryWorkId,
   };
 }
@@ -472,15 +477,23 @@ function withDestination(outcome: WriteOutcome, destination: AgentEditDestinatio
 
 /**
  * The one server read path (D18). The `read` tool's handler and reference
- * loading both call it; nothing builds tool arguments to reach it.
+ * loading both call it; nothing builds tool arguments to reach it. Omitted
+ * `version` reads where this thread's writes go; `live` never touches a
+ * draft (D3, D14).
  */
 async function readDocument(
   deps: Pick<ToolWiringDeps, "documentSync">,
   execution: ThreadExecutionContext,
   address: ResolvedDocumentAddress,
-  options: { selection?: ReadSelection; format?: ReadToolInput["format"] },
+  options: {
+    selection?: ReadSelection;
+    format?: ReadToolInput["format"];
+    version?: DocumentVersion;
+  },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
 ): Promise<WriteOutcome> {
+  const destination: AgentEditDestination =
+    options.version === "live" ? { kind: "live" } : documentDestination(execution, address);
   return deps.documentSync.agentEdit().read(
     {
       ...options.selection,
@@ -492,7 +505,8 @@ async function readDocument(
       sessionId: ctx.threadId,
       threadId: ctx.threadId,
       turnId: ctx.turnId,
-      destination: documentDestination(execution, address),
+      destination,
+      ...(options.version === "live" ? { published: true } : {}),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },
@@ -655,15 +669,22 @@ function documentRevisionMetadata(address: ResolvedDocumentAddress, outcome: Wri
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
-    const { path, format, ...selection } = input as ReadToolInput;
+    const { path, format, version, ...selection } = input as ReadToolInput;
     const execution = await resolveExecutionContext(deps, ctx.threadId);
     if ("isError" in execution) return writeToolError("read", execution.output.message);
-    const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
+    // A live read resolves the path against live membership too.
+    const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
     if ("isError" in context) return writeToolError("read", context.output.message);
     const address = await resolveDocumentAddress(context, "read", path);
     if (isToolError(address)) return address;
 
-    const outcome = await readDocument(deps, execution, address, { selection, format }, ctx);
+    const outcome = await readDocument(
+      deps,
+      execution,
+      address,
+      { selection, format, ...(version ? { version } : {}) },
+      ctx,
+    );
     if (outcome.isError) return { isError: true, output: outcome.result };
     recordTouchInBackground(deps, address.documentId, ctx);
     return { output: outcome.result, metadata: documentRevisionMetadata(address, outcome) };
@@ -970,16 +991,16 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path } = input as LsToolInput;
-      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
+      const { path, version } = input as LsToolInput;
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.list(path);
       if (!result.ok) return modelContextError(result.error, portOrError);
       return modelContextResults(result.value, portOrError);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { pattern, scope } = input as SearchToolInput;
-      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
+      const { pattern, scope, version } = input as SearchToolInput;
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.search(pattern, scope);
       if (!result.ok) return modelContextError(result.error, portOrError);
