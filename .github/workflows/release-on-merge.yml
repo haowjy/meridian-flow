@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   release:
-    if: "${{ !startsWith(github.event.head_commit.message, 'release: v') }}"
     concurrency:
       group: release-on-main
       cancel-in-progress: false
@@ -23,18 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.17.0
-      - name: Resolve all unreleased first-parent merges
-        id: batch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TRIGGER_SHA: ${{ github.sha }}
-          REPOSITORY: ${{ github.repository }}
-        run: tools/release/resolve-batch.sh
-      - name: Publish versioned release
+      - name: Publish all unreleased first-parent merges
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TRIGGER_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RELEASE_BATCH_JSON: ${{ steps.batch.outputs.batch }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: tools/release/publish.sh
+        run: node tools/release/release.ts run
