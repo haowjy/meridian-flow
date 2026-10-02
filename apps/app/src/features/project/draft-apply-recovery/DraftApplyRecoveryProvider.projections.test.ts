@@ -18,13 +18,11 @@ describe("projectPostApplyDraftGroups", () => {
         documentId: identity.documentId,
         documentName: "Chapter",
         contextPath: "chapter.md",
-        drafts: [
-          {
-            ...identity,
-            status: "active",
-            updatedAt: "2026-08-30T00:00:00.000Z",
-          },
-        ],
+        draft: {
+          ...identity,
+          status: "active",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+        },
       },
     ] as unknown as ThreadDraftGroup[];
     const snapshot: PostApplySnapshot = {

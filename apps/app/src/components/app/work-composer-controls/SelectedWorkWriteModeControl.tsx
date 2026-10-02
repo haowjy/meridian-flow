@@ -61,7 +61,7 @@ export function useSelectedWorkWriteModeToolbarControl({
         (a.documentName ?? a.documentId).localeCompare(b.documentName ?? b.documentId),
       )
       .at(0) ?? null;
-  const firstDraft = firstGroup?.drafts[0] ?? null;
+  const firstDraft = firstGroup?.draft ?? null;
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const reviewRef = useRef<HTMLButtonElement | null>(null);

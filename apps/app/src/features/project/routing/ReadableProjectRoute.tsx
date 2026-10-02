@@ -385,6 +385,24 @@ export function ReadableProjectRoute({
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
       const next = contextDestination(target, options?.tab, options?.draftId);
+      const alreadyOnDocument =
+        current.address.destination.kind === "document" &&
+        next.address.destination.kind === "document" &&
+        current.address.destination.scheme === next.address.destination.scheme &&
+        current.address.destination.path === next.address.destination.path;
+      if (
+        options?.replace === undefined &&
+        options?.replaceIfSameDocument === true &&
+        alreadyOnDocument
+      ) {
+        const replacement = await current.navigation.replaceIfCurrent(
+          current.navigation.capture(),
+          next.address,
+        );
+        if (replacement.kind === "replaced") return { kind: "applied" };
+        if (replacement.kind === "failed") return replacement;
+        return { kind: "superseded" };
+      }
       const workspace = getContextTabs(projectId);
       const tab = target.documentId
         ? workspace.tabs.find((tab) => tab.documentId === target.documentId)
@@ -393,7 +411,11 @@ export function ReadableProjectRoute({
           );
       const result = await current.navigation.transition(
         next.address,
-        { replace: options?.replace ?? false, state: next.state },
+        {
+          replace:
+            options?.replace ?? (options?.replaceIfSameDocument === true && alreadyOnDocument),
+          state: next.state,
+        },
         {
           isCurrent: () =>
             options?.canCommit?.() !== false &&
@@ -421,10 +443,11 @@ export function ReadableProjectRoute({
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
     if (!current.navigation) return;
-    void current.navigation.navigate(
-      { ...current.address, draftId: draftId ?? undefined },
-      { replace: true },
-    );
+    const ticket = current.navigation.capture();
+    void current.navigation.replaceIfCurrent(ticket, {
+      ...current.address,
+      draftId: draftId ?? undefined,
+    });
   }, []);
   const closeDestination = useCallback(
     (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {

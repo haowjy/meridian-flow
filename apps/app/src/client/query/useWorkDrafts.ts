@@ -21,24 +21,16 @@ export type ThreadDraftGroup = {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  drafts: ThreadDraftListItem[];
+  /** The server permits one active Work-draft branch per (document, Work). */
+  draft: ThreadDraftListItem;
 };
 
 /** The newest active draft with reviewable content for one document. */
 export function pendingReviewDraft(
   group: ThreadDraftGroup | null | undefined,
 ): ThreadDraftListItem | null {
-  return pendingReviewDrafts(group)[0] ?? null;
-}
-
-/** Active drafts with reviewable content, newest first. */
-export function pendingReviewDrafts(
-  group: ThreadDraftGroup | null | undefined,
-): ThreadDraftListItem[] {
-  if (!group) return [];
-  return group.drafts
-    .filter((draft) => draft.status === "active" && draftHasReviewContent(draft))
-    .sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0));
+  if (group?.draft.status !== "active" || !draftHasReviewContent(group.draft)) return null;
+  return group.draft;
 }
 
 /** Document groups that still carry an active, reviewable draft. */
@@ -47,15 +39,11 @@ export function activeWorkDraftGroups(
 ): ThreadDraftGroup[] {
   if (!groups?.length) return [];
   return groups
-    .flatMap((group) => {
-      const drafts = pendingReviewDrafts(group);
-      return drafts.length > 0 ? [{ ...group, drafts }] : [];
-    })
-    .sort((left, right) => newestUpdatedAt(right) - newestUpdatedAt(left));
-}
-
-function newestUpdatedAt(group: ThreadDraftGroup): number {
-  return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
+    .filter((group) => pendingReviewDraft(group) !== null)
+    .sort(
+      (left, right) =>
+        (Date.parse(right.draft.updatedAt) || 0) - (Date.parse(left.draft.updatedAt) || 0),
+    );
 }
 
 function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
@@ -71,27 +59,26 @@ function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
 }
 
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
-  const groups = new Map<string, ThreadDraftListItem[]>();
+  const groups = new Map<string, ThreadDraftListItem>();
   const seenDraftIds = new Set<string>();
   for (const draft of drafts) {
     if (seenDraftIds.has(draft.draftId)) continue;
     seenDraftIds.add(draft.draftId);
-    const group = groups.get(draft.documentId);
-    if (group) {
-      group.push(draft);
-    } else {
-      groups.set(draft.documentId, [draft]);
-    }
+    const current = groups.get(draft.documentId);
+    if (!current || compareDraftRecency(draft, current) < 0) groups.set(draft.documentId, draft);
   }
 
-  return Array.from(groups, ([documentId, groupDrafts]) => ({
+  return Array.from(groups, ([documentId, draft]) => ({
     documentId,
-    documentName: groupDrafts[0]?.documentName ?? null,
-    contextPath: groupDrafts[0]?.contextPath ?? null,
-    drafts: groupDrafts.sort(
-      (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
-    ),
+    documentName: draft.documentName,
+    contextPath: draft.contextPath,
+    draft,
   }));
+}
+
+function compareDraftRecency(left: ThreadDraftListItem, right: ThreadDraftListItem): number {
+  const updated = (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
+  return updated || left.draftId.localeCompare(right.draftId);
 }
 
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
