@@ -63,4 +63,16 @@ describe("resolveRouteWork", () => {
       workId: null,
     });
   });
+
+  it("resolves the No Work row's id, as a No Work chat or Scratch address names it", () => {
+    const noWorkId = id("00000000-0000-4000-8000-000000000009");
+    const noWork = { id: noWorkId, name: "No Work", isNoWork: true } as AddressableWork;
+    expect(resolveRouteWork({ kind: "id", id: noWorkId }, { ...catalog("ready"), noWork })).toEqual(
+      { status: "present", workId: noWorkId, work: noWork },
+    );
+    // Before the row is known it is not claimed, nor called unavailable.
+    expect(
+      resolveRouteWork({ kind: "id", id: noWorkId }, { ...catalog("loading"), noWork: null }),
+    ).toEqual({ status: "unresolved", reason: "loading", workId: noWorkId });
+  });
 });
