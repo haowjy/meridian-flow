@@ -20,6 +20,7 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
+import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /**
  * Registered context URI schemes.
@@ -204,6 +205,8 @@ export interface ContextWriteOptions {
    * the live Y.Doc before committed content is applied.
    */
   deferDocumentSync?: boolean;
+  /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
+  metadata?: DocumentCreationMetadata;
 }
 
 export interface ContextLocationOptions extends ContextWriteOptions {

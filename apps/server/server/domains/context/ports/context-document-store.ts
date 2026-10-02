@@ -9,6 +9,7 @@
  * `parentId`/`folderId` of `null` denotes the source root.
  */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
@@ -55,6 +56,7 @@ export interface UpsertDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  metadata?: DocumentCreationMetadata;
 }
 
 /** Input for creating a binary (storage-backed) document in the context tree. */
@@ -67,6 +69,7 @@ export interface CreateBinaryDocumentInput {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  metadata?: DocumentCreationMetadata;
 }
 
 /** Input for creating or overwriting a binary document at the same path. */

@@ -256,6 +256,7 @@ export class ContextFS implements ContextSchemeAdapter {
             markdown: "",
             filetype: input.filetype,
             provisionalName: input.provisionalName,
+            ...(input.options?.metadata ? { metadata: input.options.metadata } : {}),
           });
           return document !== null;
         },
@@ -749,6 +750,7 @@ export class ContextFS implements ContextSchemeAdapter {
         storageUrl: options.storageUrl,
         mimeType: options.mimeType,
         sizeBytes: options.sizeBytes,
+        ...(options.metadata ? { metadata: options.metadata } : {}),
       });
       return Ok({ documentId: doc.id });
     });
