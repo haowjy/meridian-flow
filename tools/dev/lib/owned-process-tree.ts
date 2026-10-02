@@ -199,6 +199,9 @@ export async function stopOwnedProcessTree(options: ShutdownOptions): Promise<vo
       owned = refresh(owned, options.cwd);
     }
 
+    // Deadline expiry during signaling must not skip the final identity census
+    // while the session still exists and can support a newly inspected plan.
+    owned = refresh(owned, options.cwd);
     options.assertOwnership();
     options.teardown();
     // tmux resumes stopped pane leaders. Remove the authorized session first,
