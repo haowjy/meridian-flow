@@ -1,19 +1,37 @@
-/** Owns ordered process shutdown stages, their deadlines, and process exit. */
+/** Owns the ordered process shutdown plan, deadlines, and process exit. */
 import {
   type EventSink,
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 
-export { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
+export const PROCESS_SHUTDOWN_DEADLINE_MS = 25_000;
+export const OBSERVABILITY_FLUSH_BUDGET_MS = 4_000;
+export const SRVX_FORCE_CLOSE_SECONDS = 29;
+export const WEBSOCKET_DRAIN_RESERVED_MS = 4_000;
 
+export const SHUTDOWN_PLAN = [
+  { stage: "websocket-admission", budgetMs: 500 },
+  { stage: "polling-loops", budgetMs: 3_000 },
+  { stage: "application-drain", budgetMs: 10_000 },
+  { stage: "http-drain", budgetMs: 2_000 },
+  { stage: "websocket-drain", budgetMs: WEBSOCKET_DRAIN_RESERVED_MS },
+  { stage: "database-close", budgetMs: 500 },
+] as const;
+
+export type ShutdownStage = (typeof SHUTDOWN_PLAN)[number]["stage"];
 export type ShutdownStep = {
-  name: string;
+  stage: ShutdownStage;
   callback: () => Promise<void> | void;
-  timeoutMs?: number;
 };
 
-export const POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS = 3_000;
+const plannedBudgetMs = SHUTDOWN_PLAN.reduce((total, step) => total + step.budgetMs, 0);
+if (plannedBudgetMs + OBSERVABILITY_FLUSH_BUDGET_MS > PROCESS_SHUTDOWN_DEADLINE_MS) {
+  throw new Error("Shutdown stage and observability budgets exceed the process deadline");
+}
+if (PROCESS_SHUTDOWN_DEADLINE_MS >= SRVX_FORCE_CLOSE_SECONDS * 1_000) {
+  throw new Error("srvx force-close must remain later than the process shutdown deadline");
+}
 
 export type DeadlineResult<T> =
   | { status: "completed"; value: T }
@@ -43,6 +61,12 @@ export async function withDeadline<T>(
   return result;
 }
 
+function budgetFor(stage: ShutdownStage): number {
+  const planned = SHUTDOWN_PLAN.find((step) => step.stage === stage);
+  if (!planned) throw new Error(`Shutdown stage is not in the plan: ${stage}`);
+  return planned.budgetMs;
+}
+
 export async function runShutdownSteps(
   steps: readonly ShutdownStep[],
   input: { eventSink: EventSink; signal: NodeJS.Signals },
@@ -52,17 +76,16 @@ export async function runShutdownSteps(
     emitEvent(input.eventSink, {
       level: "info",
       source: "process.shutdown",
-      name: `shutdown.${step.name}.started`,
+      name: `shutdown.${step.stage}.started`,
       payload: { signal: input.signal },
     });
-    const stageDeadline = Date.now() + (step.timeoutMs ?? 25_000);
-    const result = await withDeadline(step.callback, stageDeadline);
+    const result = await withDeadline(step.callback, Date.now() + budgetFor(step.stage));
     if (result.status === "deadline") {
       failed = true;
       emitEvent(input.eventSink, {
         level: "error",
         source: "process.shutdown",
-        name: `shutdown.incomplete.${step.name}`,
+        name: `shutdown.incomplete.${step.stage}`,
         payload: { signal: input.signal, reason: "deadline" },
       });
       continue;
@@ -72,7 +95,7 @@ export async function runShutdownSteps(
       emitEvent(input.eventSink, {
         level: "error",
         source: "process.shutdown",
-        name: `shutdown.step_failed.${step.name}`,
+        name: `shutdown.step_failed.${step.stage}`,
         payload: { signal: input.signal, ...unknownToEventPayload(result.error) },
       });
       continue;
@@ -80,25 +103,29 @@ export async function runShutdownSteps(
     emitEvent(input.eventSink, {
       level: "info",
       source: "process.shutdown",
-      name: `shutdown.${step.name}.completed`,
+      name: `shutdown.${step.stage}.completed`,
       payload: { signal: input.signal },
     });
   }
   return failed;
 }
 
-const shutdownSteps: ShutdownStep[] = [];
 let installed = false;
 
-export function registerProcessShutdownCallback(
-  name: string,
-  callback: () => Promise<void> | void,
-  options: { timeoutMs?: number } = {},
-): void {
-  shutdownSteps.push({ name, callback, ...options });
+export function assertShutdownStepOrder(steps: readonly ShutdownStep[]): void {
+  const order = new Map(SHUTDOWN_PLAN.map((step, index) => [step.stage, index]));
+  for (let index = 1; index < steps.length; index += 1) {
+    if ((order.get(steps[index - 1].stage) ?? -1) >= (order.get(steps[index].stage) ?? -1)) {
+      throw new Error("Shutdown steps must be unique and follow SHUTDOWN_PLAN order");
+    }
+  }
 }
 
-export function installProcessShutdownHooks(eventSink: EventSink): void {
+export function installProcessShutdownHooks(
+  eventSink: EventSink,
+  steps: readonly ShutdownStep[],
+): void {
+  assertShutdownStepOrder(steps);
   if (installed) return;
   installed = true;
   let shutdownPromise: Promise<void> | undefined;
@@ -108,13 +135,13 @@ export function installProcessShutdownHooks(eventSink: EventSink): void {
       return shutdownPromise;
     }
     shutdownPromise = (async () => {
-      const deadlineAt = Date.now() + 25_000;
+      const deadlineAt = Date.now() + PROCESS_SHUTDOWN_DEADLINE_MS;
       const sequence = (async () => {
-        let failed = await runShutdownSteps(shutdownSteps, {
-          eventSink,
-          signal,
-        });
-        const flush = await withDeadline(() => eventSink.flush(), Date.now() + 4_000);
+        let failed = await runShutdownSteps(steps, { eventSink, signal });
+        const flush = await withDeadline(
+          () => eventSink.flush(),
+          Date.now() + OBSERVABILITY_FLUSH_BUDGET_MS,
+        );
         if (flush.status !== "completed") {
           failed = true;
           const reason = flush.status === "deadline" ? "deadline" : String(flush.error);

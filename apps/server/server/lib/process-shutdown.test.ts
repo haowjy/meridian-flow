@@ -1,11 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventRecord, EventSink } from "../domains/observability/index.js";
 import {
-  APP_DRAIN_DEADLINE_MS,
-  POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS,
+  assertShutdownStepOrder,
+  OBSERVABILITY_FLUSH_BUDGET_MS,
+  PROCESS_SHUTDOWN_DEADLINE_MS,
   runShutdownSteps,
+  SHUTDOWN_PLAN,
+  SRVX_FORCE_CLOSE_SECONDS,
+  WEBSOCKET_DRAIN_RESERVED_MS,
   withDeadline,
 } from "./process-shutdown.js";
+
+function budget(stage: (typeof SHUTDOWN_PLAN)[number]["stage"]): number {
+  const planned = SHUTDOWN_PLAN.find((step) => step.stage === stage);
+  if (!planned) throw new Error(`Missing shutdown stage ${stage}`);
+  return planned.budgetMs;
+}
 
 function testEventSink(events: EventRecord[]): EventSink {
   return {
@@ -28,12 +38,11 @@ describe("process shutdown", () => {
     const failed = await runShutdownSteps(
       [
         {
-          name: "websocket-admission",
-          timeoutMs: 1,
+          stage: "websocket-admission",
           callback: () => new Promise<void>(() => {}),
         },
         {
-          name: "database-close",
+          stage: "database-close",
           callback: () => {
             visited.push("database-close");
           },
@@ -54,18 +63,17 @@ describe("process shutdown", () => {
     const failed = await runShutdownSteps(
       [
         {
-          name: "polling-loops",
-          timeoutMs: POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS,
+          stage: "polling-loops",
           callback: () => new Promise<void>(() => {}),
         },
         {
-          name: "websocket-drain",
+          stage: "websocket-drain",
           callback: () => {
             visited.push("websocket-drain");
           },
         },
         {
-          name: "database-close",
+          stage: "database-close",
           callback: () => {
             visited.push("database-close");
           },
@@ -74,7 +82,7 @@ describe("process shutdown", () => {
       { eventSink: testEventSink(events), signal: "SIGTERM" },
     );
 
-    expect(POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS).toBe(3_000);
+    expect(budget("polling-loops")).toBe(3_000);
     expect(failed).toBe(true);
     expect(visited).toEqual(["websocket-drain", "database-close"]);
     expect(events.map(({ name }) => name)).toContain("shutdown.incomplete.polling-loops");
@@ -87,8 +95,7 @@ describe("process shutdown", () => {
     const shutdown = runShutdownSteps(
       [
         {
-          name: "application-drain",
-          timeoutMs: APP_DRAIN_DEADLINE_MS,
+          stage: "application-drain",
           callback: () =>
             new Promise<void>((resolve) =>
               setTimeout(() => {
@@ -98,7 +105,7 @@ describe("process shutdown", () => {
             ),
         },
         {
-          name: "database-close",
+          stage: "database-close",
           callback: () => {
             visited.push("database-close");
           },
@@ -110,7 +117,7 @@ describe("process shutdown", () => {
     await vi.advanceTimersByTimeAsync(3_500);
 
     await expect(shutdown).resolves.toBe(false);
-    expect(APP_DRAIN_DEADLINE_MS).toBe(10_000);
+    expect(budget("application-drain")).toBe(10_000);
     expect(visited).toEqual(["settled", "database-close"]);
   });
 
@@ -121,12 +128,11 @@ describe("process shutdown", () => {
     const shutdown = runShutdownSteps(
       [
         {
-          name: "application-drain",
-          timeoutMs: APP_DRAIN_DEADLINE_MS,
+          stage: "application-drain",
           callback: () => new Promise<void>(() => {}),
         },
         {
-          name: "database-close",
+          stage: "database-close",
           callback: () => {
             visited.push("database-close");
           },
@@ -135,11 +141,37 @@ describe("process shutdown", () => {
       { eventSink: testEventSink(events), signal: "SIGTERM" },
     );
 
-    await vi.advanceTimersByTimeAsync(APP_DRAIN_DEADLINE_MS);
+    await vi.advanceTimersByTimeAsync(budget("application-drain"));
 
     await expect(shutdown).resolves.toBe(true);
     expect(visited).toEqual(["database-close"]);
     expect(events.map(({ name }) => name)).toContain("shutdown.incomplete.application-drain");
+  });
+
+  it("reserves every stage and flush inside the global deadline", () => {
+    expect(SHUTDOWN_PLAN.map(({ stage }) => stage)).toEqual([
+      "websocket-admission",
+      "polling-loops",
+      "application-drain",
+      "http-drain",
+      "websocket-drain",
+      "database-close",
+    ]);
+    expect(budget("websocket-drain")).toBe(WEBSOCKET_DRAIN_RESERVED_MS);
+    expect(
+      SHUTDOWN_PLAN.reduce((total, step) => total + step.budgetMs, 0) +
+        OBSERVABILITY_FLUSH_BUDGET_MS,
+    ).toBeLessThanOrEqual(PROCESS_SHUTDOWN_DEADLINE_MS);
+    expect(PROCESS_SHUTDOWN_DEADLINE_MS).toBeLessThan(SRVX_FORCE_CLOSE_SECONDS * 1_000);
+  });
+
+  it("rejects shutdown callbacks outside the declared stage order", () => {
+    expect(() =>
+      assertShutdownStepOrder([
+        { stage: "database-close", callback() {} },
+        { stage: "application-drain", callback() {} },
+      ]),
+    ).toThrow("follow SHUTDOWN_PLAN order");
   });
 
   it("reports completed, failed, and expired deadline work consistently", async () => {

@@ -39,7 +39,7 @@ export function inFlightHttpRequestCount(): number {
   return inFlight.size;
 }
 
-export async function waitForHttpRequestDrain(timeoutMs: number): Promise<void> {
+export async function waitForHttpRequestDrain(timeoutMs?: number): Promise<void> {
   if (inFlight.size === 0) return;
 
   let onDrained: (() => void) | undefined;
@@ -47,6 +47,10 @@ export async function waitForHttpRequestDrain(timeoutMs: number): Promise<void> 
     onDrained = () => resolve();
     drainWaiters.add(onDrained);
   });
+  if (timeoutMs === undefined) {
+    await drained;
+    return;
+  }
   const result = await withDeadline(() => drained, Date.now() + timeoutMs);
   if (onDrained) drainWaiters.delete(onDrained);
   if (result.status === "deadline") {
