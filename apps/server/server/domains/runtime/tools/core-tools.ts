@@ -14,7 +14,7 @@ import {
   modelResult,
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
-import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
+import { askUserToolInputSchema } from "@meridian/contracts/components";
 import {
   INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
@@ -286,8 +286,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ask_user",
         description: "Ask the user a question and wait for the answer.",
-        inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
+        inputSchema: modelToolSchema(askUserToolInputSchema),
       },
+      input: askUserToolInputSchema,
       execution: { type: "server", handler: handlers.ask_user },
       capability: "interrupt",
     },

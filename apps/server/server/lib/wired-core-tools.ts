@@ -19,13 +19,15 @@ import {
   splitDocumentFile,
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
-import { interruptResolvedPropsFromAnswer } from "@meridian/contracts/components";
+import {
+  type AskUserToolInput,
+  interruptResolvedPropsFromAnswer,
+} from "@meridian/contracts/components";
 import {
   askRequestFromAskUser,
   type MeridianError,
   meridianErrorFromStructuredToolOutput,
   meridianErrorFromTool,
-  parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -613,10 +615,7 @@ export function createAgentEditResponseWriteLifecycle(
 }
 
 async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) {
-  const parsed = parseAskUserToolInput(input);
-  if (!parsed.ok) return toolError({ message: parsed.message });
-
-  const args = parsed.value;
+  const args = input as AskUserToolInput;
   const timeoutMs = args.timeoutMs ?? ctx.interruptTimeoutMs;
   const request = askRequestFromAskUser(args, crypto.randomUUID());
 
