@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
-    "declaration": false
+    "declaration": false,
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "../release/*.ts"]
 }
