@@ -131,6 +131,7 @@ function LinkFields({
   const fieldId = useId();
   const textInputRef = useRef<HTMLInputElement>(null);
   const hrefInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [hrefInput, setHrefInput] = useState<HTMLInputElement | null>(null);
   const attachHrefInput = useCallback((node: HTMLInputElement | null) => {
     hrefInputRef.current = node;
@@ -177,6 +178,9 @@ function LinkFields({
         if (linkInputStepsAsideFromReferences(value)) return null;
         return { query: value, text: value, triggerRange: { from: 0, to: value.length } };
       },
+      // Below the whole form, not at the caret: the field sits above Save, and
+      // a menu hanging from the caret covered it and swallowed its click.
+      anchorRect: () => formRef.current?.getBoundingClientRect() ?? null,
     });
     transport.sync();
     return transport.destroy;
@@ -228,7 +232,7 @@ function LinkFields({
   };
 
   return (
-    <form className="flex flex-col gap-2" onSubmit={submit}>
+    <form ref={formRef} className="flex flex-col gap-2" onSubmit={submit}>
       <LinkField
         id={`${fieldId}-text`}
         ref={textInputRef}
