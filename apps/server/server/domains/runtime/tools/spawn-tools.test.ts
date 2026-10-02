@@ -1,11 +1,7 @@
 /** Spawn/thread_message tool argument parsing and the advertised JSON schema. */
 import { describe, expect, it, vi } from "vitest";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
-import {
-  createSpawnToolRegistrations,
-  parseSpawnToolArgs,
-  parseThreadMessageArgs,
-} from "./spawn-tools.js";
+import { createSpawnToolRegistrations, parseSpawnToolArgs } from "./spawn-tools.js";
 
 describe("parseSpawnToolArgs", () => {
   it("keeps append_system_prompt and overrides when present and drops malformed values", () => {
@@ -70,36 +66,6 @@ describe("parseSpawnToolArgs", () => {
     );
     expect(result).toMatchObject({ ok: false, error: { code: "spawn_invocation_patch_invalid" } });
     expect(spawn).not.toHaveBeenCalled();
-  });
-});
-
-describe("parseThreadMessageArgs", () => {
-  it("keeps ref and message and defaults mode to background", () => {
-    const args = parseThreadMessageArgs({ ref: "p1", message: "keep going" });
-    expect(args).toEqual({
-      ref: "p1",
-      message: "keep going",
-      mode: "background",
-    });
-    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "foreground" }).mode).toBe(
-      "foreground",
-    );
-    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "sideways" }).mode).toBe(
-      "background",
-    );
-  });
-
-  it("drops malformed non-string fields", () => {
-    expect(parseThreadMessageArgs({ ref: 7, message: 42 })).toEqual({
-      ref: "",
-      message: "",
-      mode: "background",
-    });
-    expect(parseThreadMessageArgs(null)).toEqual({
-      ref: "",
-      message: "",
-      mode: "background",
-    });
   });
 });
 

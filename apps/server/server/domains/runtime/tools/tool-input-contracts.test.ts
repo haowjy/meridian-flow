@@ -152,3 +152,38 @@ describe("thread_report", () => {
     await expectRefused("thread_report", { ref: "" }, ["ref: must not be empty"]);
   });
 });
+
+describe("thread_message", () => {
+  it("delivers background mode only when mode is omitted", async () => {
+    await expectDelivered(
+      "thread_message",
+      { ref: "p3", message: "Keep going" },
+      { ref: "p3", message: "Keep going", mode: "background" },
+    );
+    await expectDelivered(
+      "thread_message",
+      { ref: "p3", message: "Keep going", mode: "foreground" },
+      { ref: "p3", message: "Keep going", mode: "foreground" },
+    );
+  });
+
+  it("refuses the inputs it used to fill with empty strings or background", async () => {
+    await expectRefused("thread_message", { ref: "p3" }, ["message: required; expected a string"]);
+    await expectRefused("thread_message", { ref: "p3", message: "Task", mode: "invalid" }, [
+      'mode: expected "foreground" or "background", got "invalid"',
+    ]);
+    await expectRefused("thread_message", { ref: 7, message: 42 }, [
+      "ref: expected a string, got 7",
+      "message: expected a string, got 42",
+    ]);
+    await expectRefused("thread_message", { ref: "p3", message: "" }, [
+      "message: must not be empty",
+    ]);
+  });
+
+  it("refuses current with a message naming the fix", async () => {
+    await expectRefused("thread_message", { ref: "current", message: "Task" }, [
+      "ref: Name the thread to message, e.g. p12",
+    ]);
+  });
+});
