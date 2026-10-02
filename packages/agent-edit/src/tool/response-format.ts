@@ -3,7 +3,6 @@ import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
-import { splitHashline } from "../model/hashline.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
