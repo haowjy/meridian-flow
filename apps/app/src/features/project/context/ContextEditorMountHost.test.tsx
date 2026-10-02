@@ -243,4 +243,49 @@ describe("ContextTabSessionBoundary", () => {
     });
     expect(secondRelease).toHaveBeenCalledOnce();
   });
+
+  it("releases a warm cached editor when its availability becomes terminal", async () => {
+    const cachedSession = session();
+    const release = vi.fn();
+    resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
+    resourceReplica.openDocument
+      .mockResolvedValueOnce({
+        kind: "opened",
+        handle: { session: cachedSession, release },
+      })
+      .mockResolvedValueOnce({ kind: "unavailable", reason: "terminal" });
+    const opener = { open: vi.fn(async () => ({ kind: "unavailable" })) };
+    let advanceAvailability!: () => void;
+    const observed: Array<DocumentSession | null> = [];
+
+    function Harness() {
+      const [revision, setRevision] = useState("document-1");
+      advanceAvailability = () => setRevision("document-2");
+      return (
+        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+          <ContextTabSessionBoundary
+            projectId="project-a"
+            documentId="document-a"
+            availabilityRevision={revision}
+          >
+            {(value) => {
+              observed.push(value);
+              return null;
+            }}
+          </ContextTabSessionBoundary>
+        </ProjectDocumentLiveOpenerContext.Provider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => undefined);
+      expect(observed.at(-1)).toBe(cachedSession);
+
+      await act(async () => advanceAvailability());
+      await act(async () => undefined);
+
+      expect(release).toHaveBeenCalledOnce();
+      expect(observed.at(-1)).toBeNull();
+    });
+  });
 });

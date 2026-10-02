@@ -317,12 +317,17 @@ export function ContextTabSessionBoundary({
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {
-      const settleUnavailable = () => {
+      const settleUnavailable = (releaseCachedHandle = false) => {
         if (!abort.signal.aborted) {
+          if (releaseCachedHandle) {
+            installedHandle.current?.release();
+            installedHandle.current = null;
+          }
           setLocal((prior) => ({
             identity: resourceIdentity,
             documentId,
-            handle: prior.identity === resourceIdentity ? prior.handle : null,
+            handle:
+              !releaseCachedHandle && prior.identity === resourceIdentity ? prior.handle : null,
             phase: "server",
           }));
         }
@@ -349,7 +354,10 @@ export function ContextTabSessionBoundary({
           return;
         }
         if (result.kind !== "opened") {
-          settleUnavailable();
+          settleUnavailable(
+            result.kind === "unavailable" &&
+              ["terminal", "deleted", "schema-mismatch"].includes(result.reason),
+          );
           return;
         }
         const previous = installedHandle.current;
@@ -381,7 +389,6 @@ export function ContextTabSessionBoundary({
     documentId,
     owner: "desktop-server-tab",
     connect: currentLocal.phase === "server",
-    locallyReadySession: currentLocal.handle?.session ?? null,
   });
   const automaticRetryRevision = useRef(availabilityRevision);
   useEffect(() => {
