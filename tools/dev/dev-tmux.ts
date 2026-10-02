@@ -11,6 +11,7 @@ import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
 import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import {
@@ -256,6 +257,8 @@ async function main(): Promise<void> {
     console.log(`stopped · ${session.sessionName}`);
     return;
   }
+  await stopOrphanDevSessions(repoRoot, collectOrphanDevSessions(repoRoot));
+
   if (!active) {
     await assertDevInfraReady();
     checkRouteConflicts(store, plan, options.restart);
