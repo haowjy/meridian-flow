@@ -787,8 +787,8 @@ msgid "Check submission status"
 msgstr "Check submission status"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checked recent changes"
-msgstr "Checked recent changes"
+#~ msgid "Checked recent changes"
+#~ msgstr "Checked recent changes"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -799,8 +799,8 @@ msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Checking recent changes…"
-msgstr "Checking recent changes…"
+#~ msgid "Checking recent changes…"
+#~ msgstr "Checking recent changes…"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Checking whether Apply finished."
@@ -1080,8 +1080,8 @@ msgid "Couldn't apply. Check your connection and try again."
 msgstr "Couldn't apply. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't check recent changes"
-msgstr "Couldn't check recent changes"
+#~ msgid "Couldn't check recent changes"
+#~ msgstr "Couldn't check recent changes"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
