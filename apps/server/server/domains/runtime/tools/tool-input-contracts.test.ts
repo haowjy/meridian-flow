@@ -285,3 +285,62 @@ describe("return_result", () => {
     ]);
   });
 });
+
+describe("work", () => {
+  it("strips one leading @ and surrounding space from Work refs", async () => {
+    await expectDelivered(
+      "work",
+      { command: "show", work: " @arc " },
+      { command: "show", work: "arc" },
+    );
+    await expectDelivered(
+      "work",
+      { command: "switch", target: "@arc" },
+      { command: "switch", target: "arc" },
+    );
+    await expectDelivered(
+      "work",
+      { command: "switch", target: null },
+      { command: "switch", target: null },
+    );
+    await expectRefused("work", { command: "show", work: "@" }, [
+      'work: must name a Work slug, e.g. "arc" or "@arc"',
+    ]);
+  });
+
+  it("normalizes metadata by the shared clearing rule", async () => {
+    await expectDelivered(
+      "work",
+      { command: "create", name: "  Arc  ", goal: "   " },
+      { command: "create", name: "Arc", goal: null },
+    );
+    await expectDelivered(
+      "work",
+      { command: "update", work: "arc", goal: null, status: "  Needs\n outline " },
+      { command: "update", work: "arc", goal: null, status: "Needs outline" },
+    );
+    await expectDelivered(
+      "work",
+      { command: "update", work: "arc", status: "" },
+      { command: "update", work: "arc", status: null },
+    );
+  });
+
+  it("refuses blank or null names, long statuses, unknown keys and commands", async () => {
+    await expectRefused("work", { command: "create", name: "   ", goal: "   " }, [
+      "name: must not be blank",
+    ]);
+    await expectRefused("work", { command: "update", work: "arc", name: null }, [
+      "name: expected a string, got null",
+    ]);
+    await expectRefused("work", { command: "update", work: "arc", status: "x".repeat(33) }, [
+      "status: must be one to three words and 32 characters or fewer",
+    ]);
+    await expectRefused("work", { command: "update", work: "arc", extra: true }, [
+      "extra: unknown argument",
+    ]);
+    await expectRefused("work", { command: "rename", work: "arc" }, [
+      'command: expected "list", "show", "create", "update", "archive", "unarchive", "delete" or "switch", got "rename"',
+    ]);
+  });
+});

@@ -35,6 +35,13 @@ describe("WorkCommandSchema", () => {
       WorkCommandSchema.safeParse({ command: "update", work: "arc", status: "one two three four" })
         .success,
     ).toBe(false);
+    expect(
+      WorkCommandSchema.safeParse({
+        command: "update",
+        work: "arc",
+        status: "  one   two  three ",
+      }).success,
+    ).toBe(true);
     expect(WorkCommandSchema.safeParse({ command: "list", archived: true }).success).toBe(true);
   });
 });
