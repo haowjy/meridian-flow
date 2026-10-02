@@ -243,11 +243,12 @@ it("keeps a server-acquired session through navigation until the editor binds it
   await initialize(record);
   const key = await install(metadata, record);
   if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const databaseName = record.resource.content.databaseName;
   const session = createFactory().createDetached({
     accountId,
     projectId: "project",
     documentId: record.resource.identity.documentId,
-    persistenceKey: record.resource.content.databaseName,
+    persistenceKey: databaseName,
   });
   await session.whenLocalPersistenceSynced();
   const { access } = openAccess(metadata);
@@ -260,7 +261,7 @@ it("keeps a server-acquired session through navigation until the editor binds it
       generation: "7",
     },
     persistenceGeneration: "7",
-    exactDatabaseName: record.resource.content.databaseName,
+    exactDatabaseName: databaseName,
     release,
   });
 
@@ -292,6 +293,49 @@ it("keeps a server-acquired session through navigation until the editor binds it
   expect(editor.handle.session).toBe(session);
   editor.handle.release();
   expect(release).toHaveBeenCalledOnce();
+  await session.destroy();
+});
+
+it("replaces stale same-project registry ownership when availability advances", async () => {
+  const metadata = openMetadata();
+  const record = resource("refreshed-server-ownership");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const databaseName = record.resource.content.databaseName;
+  const session = createFactory().createDetached({
+    accountId,
+    projectId: "project",
+    documentId: record.resource.identity.documentId,
+    persistenceKey: databaseName,
+  });
+  await session.whenLocalPersistenceSynced();
+  const { access } = openAccess(metadata);
+  const releaseOld = vi.fn();
+  const releaseCurrent = vi.fn();
+  const ownership = (generation: string, release: () => void) => ({
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation,
+    },
+    persistenceGeneration: generation,
+    exactDatabaseName: databaseName,
+    release,
+  });
+
+  await access.adoptRegistrySession("project", key, session, ownership("7", releaseOld));
+  await access.adoptRegistrySession("project", key, session, ownership("8", releaseCurrent));
+
+  expect(releaseOld).toHaveBeenCalledOnce();
+  expect(releaseCurrent).not.toHaveBeenCalled();
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected acquired editor content");
+  editor.handle.release();
+  expect(releaseCurrent).toHaveBeenCalledOnce();
   await session.destroy();
 });
 

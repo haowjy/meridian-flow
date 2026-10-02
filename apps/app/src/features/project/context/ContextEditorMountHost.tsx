@@ -279,7 +279,7 @@ export function ContextTabSessionBoundary({
   ) => ReactNode;
 }) {
   const resources = useAccountResourceReplica();
-  const generation = useMemo(() => ++serverHostGeneration, [availabilityRevision]);
+  const [generation] = useState(() => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
@@ -295,6 +295,7 @@ export function ContextTabSessionBoundary({
     handle: ResourceContentHandle | null;
     phase: "probing" | "cached" | "server";
   }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
+  const installedHandle = useRef<ResourceContentHandle | null>(null);
   const currentLocal =
     local.identity === resourceIdentity
       ? local
@@ -309,17 +310,22 @@ export function ContextTabSessionBoundary({
         };
   useEffect(() => {
     const abort = new AbortController();
-    let retained: ResourceContentHandle | null = null;
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
-      handle: null,
+      handle: prior.identity === resourceIdentity ? prior.handle : null,
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {
       const settleUnavailable = () => {
-        if (!abort.signal.aborted)
-          setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "server" });
+        if (!abort.signal.aborted) {
+          setLocal((prior) => ({
+            identity: resourceIdentity,
+            documentId,
+            handle: prior.identity === resourceIdentity ? prior.handle : null,
+            phase: "server",
+          }));
+        }
       };
       try {
         const key =
@@ -328,7 +334,7 @@ export function ContextTabSessionBoundary({
             : await resources.keyForDocument(projectId, resourceLookup.documentId);
         if (abort.signal.aborted) return;
         if (!key) {
-          setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "server" });
+          settleUnavailable();
           return;
         }
         const result = await resources.openDocument(
@@ -346,17 +352,30 @@ export function ContextTabSessionBoundary({
           settleUnavailable();
           return;
         }
-        retained = result.handle;
-        setLocal({ identity: resourceIdentity, documentId, handle: retained, phase: "cached" });
+        const previous = installedHandle.current;
+        installedHandle.current = result.handle;
+        setLocal({
+          identity: resourceIdentity,
+          documentId,
+          handle: result.handle,
+          phase: "cached",
+        });
+        previous?.release();
       } catch {
         settleUnavailable();
       }
     })();
     return () => {
       abort.abort();
-      retained?.release();
     };
   }, [availabilityRevision, projectId, resourceIdentity, resourceLookup, resources]);
+  useEffect(
+    () => () => {
+      installedHandle.current?.release();
+      installedHandle.current = null;
+    },
+    [],
+  );
   const binding = useLiveDocumentBinding({
     projectId,
     documentId,
@@ -396,8 +415,6 @@ export function ContextTabSessionBoundary({
   );
 }
 
-let serverHostGeneration = 0;
-
 export function resourceAvailabilityRevision(
   snapshot: ResourceProjectionSnapshot | null,
   documentId: string,
@@ -406,17 +423,6 @@ export function resourceAvailabilityRevision(
   const resource = snapshot.records.find(
     (record) => record.resource.identity.documentId === documentId,
   )?.resource;
-  const catalogs = snapshot.catalogs
-    .map((catalog) =>
-      JSON.stringify([
-        catalog.scope,
-        catalog.generation,
-        catalog.revision,
-        catalog.appliedRevision,
-        catalog.observedHeadRevision,
-      ]),
-    )
-    .sort();
   return JSON.stringify([
     resource?.revision ?? null,
     resource?.lifecycle.kind === "acknowledged"
@@ -424,7 +430,6 @@ export function resourceAvailabilityRevision(
       : resource?.lifecycle.kind === "terminal"
         ? resource.lifecycle.generation
         : null,
-    catalogs,
   ]);
 }
 
