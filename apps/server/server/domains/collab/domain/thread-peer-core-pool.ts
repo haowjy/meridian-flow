@@ -27,6 +27,7 @@ import {
   type LiveAgentEditCore,
   type RefusedResponseDocument,
   type ResponseSaveResult,
+  type RoutedReadContext,
   type RoutedWriteContext,
   sameDestination,
   type ThreadPeerAgentEditCore,
@@ -330,20 +331,27 @@ export function createThreadPeerCorePool(input: {
     };
   }
 
-  async function read(command: ReadCommand, routed: RoutedWriteContext): Promise<WriteOutcome> {
-    const { destination: requested, ...context } = routed;
+  async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
+    const { destination: requested, published, ...context } = routed;
     const documentId = documentIdFromCommand(command);
     const pinned =
-      documentId && context.responseId
+      documentId && context.responseId && !published
         ? responses.get(context.responseId)?.documents.get(documentId)
         : undefined;
-    const destination = pinned?.destination ?? requested;
+    const destination = published
+      ? ({ kind: "live" } as const)
+      : (pinned?.destination ?? requested);
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
     const outcome = await core.read(command, await threadPeerContext(core, documentId, context));
-    if (!outcome.isError && documentId && context.threadId) {
+    if (outcome.isError) return outcome;
+    if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), destination);
     }
-    return outcome;
+    const read = outcome.result.read;
+    // Results name the version actually read, which a reply's pin can choose.
+    return read
+      ? { ...outcome, result: { ...outcome.result, read: { ...read, version: destination.kind } } }
+      : outcome;
   }
 
   async function write(command: WriteCommand, routed: RoutedWriteContext): Promise<WriteOutcome> {
@@ -472,6 +480,9 @@ export function createThreadPeerCorePool(input: {
         },
         input.responseTransactionSettlement,
       );
+    },
+    responseDestination(responseId, docId) {
+      return responses.get(responseId)?.documents.get(docId as DocumentId)?.destination;
     },
     hasResponseDocument(responseId, docId) {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);

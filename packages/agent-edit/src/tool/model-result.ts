@@ -71,6 +71,8 @@ export interface AgentEditModelPayload {
   };
   read?: {
     format: "full" | "outline";
+    /** The version actually read; the host fills it in, since only it knows drafts. */
+    version?: "draft" | "live";
   };
   blocks?: AgentEditBlockGroup[];
   concurrent?: {
