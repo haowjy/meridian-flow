@@ -3453,6 +3453,14 @@ msgstr "Something went wrong while changing {name}."
 msgid "Something went wrong while making that change."
 msgstr "Something went wrong while making that change."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Something went wrong while reading {name}."
+msgstr "Something went wrong while reading {name}."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Something went wrong while reading that document."
+msgstr "Something went wrong while reading that document."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr "Split cell"
