@@ -343,14 +343,16 @@ function ActiveSessionEditorView({
   // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
   // names nothing (with folders, for a path link). Dashed until a follow's
   // Create makes the document.
+  const occupied = useMemo(
+    () => new Set(linkableDocuments.documents.map((document) => document.uri)),
+    [linkableDocuments],
+  );
   const linkAhead = useCallback(
     (name: string, folders?: readonly string[]) => {
       const uri = linkAheadAddress(holderUri, name, folders);
-      return uri && !linkableDocuments.documents.some((document) => document.uri === uri)
-        ? { uri }
-        : null;
+      return uri && !occupied.has(uri) ? { uri } : null;
     },
-    [holderUri, linkableDocuments],
+    [holderUri, occupied],
   );
   // Read when the `@` menu opens.
   const atReferenceCatalog = useCallback(() => {

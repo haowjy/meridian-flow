@@ -10,7 +10,7 @@ import {
   parseWikilinks,
   pickWikilinkTarget,
   type WikilinkPasteCatalog,
-  wikilinkHref,
+  wikilinkResolver,
 } from "./wikilink-paste";
 
 const bare = (name: string) => ({ folders: [], name });
@@ -117,7 +117,7 @@ describe("pickWikilinkTarget", () => {
   });
 });
 
-describe("wikilinkHref", () => {
+describe("wikilinkResolver", () => {
   const catalog = (holderUri: string | null, targets: string[]): WikilinkPasteCatalog => ({
     holderUri,
     targets,
@@ -137,22 +137,22 @@ describe("wikilinkHref", () => {
 
   it("spells a match from the holder: relative within its area, a full URI across", () => {
     const targets = ["kb://characters/Lin Feng.md", "manuscript://volume-1/Kael.md"];
-    expect(wikilinkHref(lin, catalog("manuscript://volume-1/chapter-2.md", targets))).toBe(
+    expect(wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", targets))(lin)).toBe(
       "kb://characters/Lin Feng.md#Past",
     );
-    expect(wikilinkHref(lin, catalog("kb://places/Gate.md", targets))).toBe(
+    expect(wikilinkResolver(catalog("kb://places/Gate.md", targets))(lin)).toBe(
       "../characters/Lin Feng.md#Past",
     );
-    expect(wikilinkHref(kael, catalog("manuscript://volume-1/chapter-2.md", targets))).toBe(
+    expect(wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", targets))(kael)).toBe(
       "Kael.md",
     );
   });
 
   it("links a name no document has beside the holder, and a path from its area root", () => {
     const holder = "manuscript://volume-1/chapter-2.md";
-    expect(wikilinkHref(kael, catalog(holder, []))).toBe("Kael.md");
-    expect(wikilinkHref(path, catalog(holder, []))).toBe("../Arc 1/Kael.md");
-    expect(wikilinkHref(path, catalog(null, []))).toBe("manuscript://Arc 1/Kael.md");
+    expect(wikilinkResolver(catalog(holder, []))(kael)).toBe("Kael.md");
+    expect(wikilinkResolver(catalog(holder, []))(path)).toBe("../Arc 1/Kael.md");
+    expect(wikilinkResolver(catalog(null, []))(path)).toBe("manuscript://Arc 1/Kael.md");
   });
 });
 
