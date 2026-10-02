@@ -57,42 +57,46 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
 
   addProseMirrorPlugins() {
     const read = this.options.catalog;
-    // Whether the paste or drop in flight keeps its characters. Set where the
-    // gesture starts, before ProseMirror parses it; read and cleared by the
-    // transform, which has no destination of its own to look at.
-    let keepCharacters = false;
+    // ProseMirror's paste-without-formatting flag, ORed with "the destination
+    // is code", from `transformPastedText`. That hook and `transformPasted`
+    // run as a synchronous pair inside one parse of clipboard text, so the
+    // flag never outlives the paste that set it.
+    let plainOrCode = false;
+    // Where a drop from outside lands, which the transform cannot see. Cleared
+    // after the event: ProseMirror handles a drop synchronously, and a drop it
+    // abandons must not leave a destination for a later paste.
+    let pendingDrop: ResolvedPos | null = null;
     return [
       new Plugin({
         key: wikilinkPastePluginKey,
         props: {
           handleDOMEvents: {
-            // Code is literal characters: a link mark cannot live there, so
-            // converting would drop the brackets and keep only the label.
-            paste: (view) => {
-              keepCharacters = isCode(view.state.selection.$from);
-              return false;
-            },
-            // A drop lands where ProseMirror resolves the pointer (`$mouse`).
             drop: (view, event) => {
               const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
-              keepCharacters = at ? isCode(view.state.doc.resolve(at.pos)) : false;
+              pendingDrop = at ? view.state.doc.resolve(at.pos) : null;
+              queueMicrotask(() => {
+                pendingDrop = null;
+              });
               return false;
             },
           },
-          // ProseMirror's own paste-without-formatting flag (Ctrl/Cmd+Shift+V),
-          // the one the Markdown door reads as `plain`, arrives here ORed with
-          // "the destination is code"; either way the writer gets the
-          // characters, which is also how they paste literal brackets.
-          transformPastedText: (text, plainOrCode) => {
-            if (plainOrCode) keepCharacters = true;
+          // Paste without formatting (Ctrl/Cmd+Shift+V) is the flag the
+          // Markdown door reads as `plain`: the writer asked for the
+          // characters, and it is how they paste literal brackets.
+          transformPastedText: (text, plain) => {
+            plainOrCode = plain;
             return text;
           },
           transformPasted: (slice, view) => {
-            const keep = keepCharacters;
-            keepCharacters = false;
-            // A drag inside the editor moves text it already holds, which
-            // stays as written.
-            if (keep || view.dragging) return slice;
+            const keep = plainOrCode;
+            plainOrCode = false;
+            // The destination as every paste path resolves it (a keyed paste,
+            // the menu's pasteHTML and pasteText): the drop's pointer, or the
+            // selection. Code is literal characters; a link mark cannot live
+            // there, so converting would keep only the label. A drag inside
+            // the editor moves text it already holds, as written.
+            const destination = pendingDrop ?? view.state.selection.$from;
+            if (keep || view.dragging || isCode(destination)) return slice;
             // A catalog still loading links nothing, but the escapes the door
             // kept are spelled out all the same.
             return linkPastedWikilinks(slice, view.state.schema, read());
