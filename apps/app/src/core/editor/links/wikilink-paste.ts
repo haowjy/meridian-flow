@@ -125,13 +125,18 @@ export function pickWikilinkTarget(
   target: WikilinkTarget,
   holderUri: string | null,
 ): string | null {
-  const wanted = [...target.folders, documentName(target.name)].map(lower);
-  const matches = candidates.flatMap((uri) => {
-    const located = locate(uri);
-    return located && endsWith(located.segments, wanted) ? [located] : [];
-  });
+  const located = candidates.flatMap((uri) => locate(uri) ?? []);
+  return rankWikilinkMatches(located, target, holderUri ? locate(holderUri) : null);
+}
+
+function rankWikilinkMatches(
+  candidates: readonly Located[],
+  target: WikilinkTarget,
+  holder: Located | null,
+): string | null {
+  const wanted = wantedPath(target);
+  const matches = candidates.filter((candidate) => endsWith(candidate.segments, wanted));
   if (!matches.length) return null;
-  const holder = holderUri ? locate(holderUri) : null;
   const inHolderArea = (candidate: Located) => candidate.area === holder?.area;
   const isPath = (candidate: Located, path: readonly string[]) =>
     candidate.segments.length === path.length && endsWith(candidate.segments, path);
@@ -166,17 +171,40 @@ export function pickWikilinkTarget(
 }
 
 /**
- * The href a pasted `[[…]]` becomes, spelled from the holder: the document it
- * names, or the link-ahead address when it names none. Null leaves it text.
+ * The href each pasted `[[…]]` becomes, spelled from the holder: the document
+ * it names, or the link-ahead address when it names none; null leaves it
+ * text. Built once per paste: the candidates are located once and bucketed by
+ * filename, so a link only ranks the documents that share its name, and a
+ * target seen twice is answered once.
  */
-export function wikilinkHref(
-  occurrence: WikilinkOccurrence,
+export function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
-): string | null {
-  const uri =
-    pickWikilinkTarget(catalog.targets, occurrence.target, catalog.holderUri) ??
-    catalog.linkAhead(occurrence.target.name, occurrence.target.folders)?.uri;
-  return uri ? spellDocumentHref(catalog.holderUri, uri) + occurrence.suffix : null;
+): (occurrence: WikilinkOccurrence) => string | null {
+  const byName = new Map<string, Located[]>();
+  for (const uri of catalog.targets) {
+    const located = locate(uri);
+    const name = located?.segments.at(-1);
+    if (!located || name === undefined) continue;
+    const bucket = byName.get(name);
+    if (bucket) bucket.push(located);
+    else byName.set(name, [located]);
+  }
+  const holder = catalog.holderUri ? locate(catalog.holderUri) : null;
+  const answers = new Map<string, string | null>();
+  return (occurrence) => {
+    const { target } = occurrence;
+    const wanted = wantedPath(target);
+    const key = wanted.join("/");
+    let uri = answers.get(key);
+    if (uri === undefined) {
+      uri =
+        rankWikilinkMatches(byName.get(wanted.at(-1) ?? "") ?? [], target, holder) ??
+        catalog.linkAhead(target.name, target.folders)?.uri ??
+        null;
+      answers.set(key, uri);
+    }
+    return uri ? spellDocumentHref(catalog.holderUri, uri) + occurrence.suffix : null;
+  };
 }
 
 /**
@@ -190,6 +218,7 @@ export function linkPastedWikilinks(
 ): Slice {
   const link = schema.marks.link;
   if (!link) return slice;
+  const resolve = wikilinkResolver(catalog);
   const convert = (fragment: Fragment): Fragment => {
     let changed = false;
     const nodes: PMNode[] = [];
@@ -204,7 +233,7 @@ export function linkPastedWikilinks(
         nodes.push(content === node.content ? node : node.copy(content));
         return;
       }
-      const linked = linkText(node, link, catalog);
+      const linked = linkText(node, link, resolve);
       if (linked.length !== 1 || linked[0] !== node) changed = true;
       nodes.push(...linked);
     });
@@ -214,7 +243,11 @@ export function linkPastedWikilinks(
   return content === slice.content ? slice : new Slice(content, slice.openStart, slice.openEnd);
 }
 
-function linkText(node: PMNode, link: MarkType, catalog: WikilinkPasteCatalog): PMNode[] {
+function linkText(
+  node: PMNode,
+  link: MarkType,
+  resolve: (occurrence: WikilinkOccurrence) => string | null,
+): PMNode[] {
   const text = node.text ?? "";
   if (node.marks.some((mark) => mark.type.spec.code || mark.type.name === "link")) return [node];
   const pieces: PMNode[] = [];
@@ -224,7 +257,7 @@ function linkText(node: PMNode, link: MarkType, catalog: WikilinkPasteCatalog): 
     let piece: PMNode | null;
     if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
     else {
-      const href = wikilinkHref(occurrence, catalog);
+      const href = resolve(occurrence);
       piece = href
         ? schema.text(occurrence.label, link.create({ href, title: null }).addToSet(node.marks))
         : null;
@@ -267,6 +300,11 @@ function locate(uri: string): Located | null {
     scheme: parsed.value.scheme,
     segments: parsed.value.path.split("/").map(lower),
   };
+}
+
+/** The lowercased path a target's candidates end with, `.md` implied. */
+function wantedPath(target: WikilinkTarget): string[] {
+  return [...target.folders, documentName(target.name)].map(lower);
 }
 
 /** A name as a filename: `.md` implied when it names no known extension. */
