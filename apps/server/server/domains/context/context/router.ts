@@ -106,6 +106,7 @@ function toSearchResult(
     uri: uriFor(scheme, hit.path, authority),
     documentId: hit.documentId,
     revision: hit.revision,
+    version: hit.version,
     matches: hit.matches,
     matchCount: hit.matchCount,
     score: hit.score,

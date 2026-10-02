@@ -18,6 +18,7 @@ const success = {
   status: "success",
   phase: "committed",
   isError: false,
+  result: { command: "read", status: "success", read: { format: "full" } },
 } as unknown as WriteOutcome;
 
 function stubCore(name: string) {
@@ -146,6 +147,30 @@ describe("thread-peer pool read versions (D41)", () => {
       status: "success",
     });
     expect(threadCore.write).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports the version a read actually used", async () => {
+    const { pool } = createPool();
+    const read = await pool.read(readCh12, context(draftA));
+    expect(read.result.read).toEqual({ format: "full", version: "draft" });
+  });
+
+  it("reads a document this reply drafted as published when the read asks for live", async () => {
+    const { pool, liveCore, threadCore } = createPool();
+    await pool.write(insertCh12, context(draftA, "response-1"));
+    expect(pool.responseDestination("response-1", "ch12")).toEqual(draftA);
+
+    // A default read follows the reply's pin even after the Work left draft mode.
+    const pinned = await pool.read(readCh12, context(live, "response-1"));
+    expect(pinned.result.read?.version).toBe("draft");
+    expect(threadCore.read).toHaveBeenCalledOnce();
+
+    const published = await pool.read(readCh12, {
+      ...context(live, "response-1"),
+      published: true,
+    });
+    expect(published.result.read?.version).toBe("live");
+    expect(liveCore.read).toHaveBeenCalledOnce();
   });
 
   it("never checks undo and redo against the last read", async () => {

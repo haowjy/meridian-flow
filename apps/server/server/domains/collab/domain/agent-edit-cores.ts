@@ -22,6 +22,13 @@ export type AgentEditDestination =
 /** A core call's context with the destination the caller computed. */
 export type RoutedWriteContext = WriteContext & { destination: AgentEditDestination };
 
+/**
+ * A read's context. `published` marks a `version: "live"` read (D3): it reads
+ * the live document even when this reply already drafted it, where a default
+ * read follows the reply's pinned destination.
+ */
+export type RoutedReadContext = RoutedWriteContext & { published?: boolean };
+
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument = {
   documentId: DocumentId;
@@ -48,8 +55,10 @@ export type LiveAgentEditCore = AgentEditCore & {
 };
 
 export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "commitResponse"> & {
-  read(command: ReadCommand, context: RoutedWriteContext): Promise<WriteOutcome>;
+  read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<WriteOutcome>;
+  /** Where this reply's writes to a document go, once it has written there. */
+  responseDestination(responseId: string, documentId: string): AgentEditDestination | undefined;
   commitResponse(
     responseId: string,
     options?: ResponseTransactionOptions,

@@ -218,6 +218,152 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("reads, searches and lists the version your writes change in a draft-mode Work", async () => {
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.works.id, WORK_ID));
+      const runtime = await composeRuntime();
+      try {
+        await runtime.ports.documentSync.writeDocument({
+          documentId: DOC_ID,
+          markdown: "Writer live content.\n\nWriter aside.",
+          origin: { type: "user", actorUserId: USER_ID },
+          threadId: THREAD_ID,
+        });
+        await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
+          projectId: PROJECT_ID,
+        });
+        await db.insert(schema.modelResponses).values({
+          id: RESPONSE_ID,
+          turnId: TURN_ID,
+          sequence: 1,
+          provider: "runtime-test",
+          model: "runtime-test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        const toolContext = {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: RESPONSE_ID as string,
+          agentSlug: null,
+        };
+        let callCount = 930;
+        const call = (name: string, args: Record<string, unknown>) => {
+          callCount += 1;
+          return runtime.app.toolExecutor.executeTool(
+            { id: `00000000-0000-4000-8000-000000000${callCount}`, name, arguments: args },
+            toolContext,
+          );
+        };
+        const chapterPath = "manuscript://runtime-settlement.md";
+        const text = (result: { output: unknown }) =>
+          typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+
+        const liveBefore = await call("read", { path: chapterPath, version: "live" });
+        const asideLine = text(liveBefore)
+          .split("\n")
+          .find((line: string) => line.endsWith("|Writer aside."));
+        const liveHash = splitHashline(asideLine ?? "")?.hash;
+        expect(liveHash).toBeTruthy();
+        await call("read", { path: chapterPath });
+        const removed = await call("write", { command: "remove", path: chapterPath, in: liveHash });
+        expect(removed.isError).toBeFalsy();
+        const drafted = await call("write", {
+          command: "replace",
+          path: chapterPath,
+          find: "Writer live content.",
+          content: "Model draft content.",
+          all: true,
+        });
+        expect(drafted.output).toMatch(/\(drafted in @runtime-settlement\)/);
+        // Scratch is live in every Work (D9); a search in the same reply sees the new notes.
+        const notes = await call("write", {
+          command: "create",
+          path: "scratch://notes.md",
+          content: "Scratch needle notes.",
+        });
+        expect(notes.result).toMatchObject({ destination: "live" });
+        const scratchHits = await call("search", { pattern: "Scratch needle" });
+        expect(text(scratchHits)).toContain("scratch://@runtime-settlement/notes.md");
+        expect(text(scratchHits)).toContain('"version":"live"');
+        const qualifiedHits = await call("search", {
+          pattern: "Scratch needle",
+          scope: "scratch://@runtime-settlement",
+        });
+        expect(text(qualifiedHits)).toContain('"version":"live"');
+        const qualifiedList = await call("ls", { path: "scratch://@runtime-settlement" });
+        expect(text(qualifiedList)).toContain("notes.md");
+
+        await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        });
+        const nextResponseId = "00000000-0000-4000-8000-000000000929";
+        await db.insert(schema.modelResponses).values({
+          id: nextResponseId,
+          turnId: TURN_ID,
+          sequence: 2,
+          provider: "runtime-test",
+          model: "runtime-test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        toolContext.responseId = nextResponseId;
+
+        const draftRead = await call("read", { path: chapterPath });
+        expect(draftRead.output).toContain("version: draft");
+        expect(draftRead.output).toContain("Model draft content.");
+        expect(draftRead.result).toMatchObject({ read: { version: "draft" } });
+        const liveRead = await call("read", { path: chapterPath, version: "live" });
+        expect(liveRead.output).toContain("version: live");
+        expect(liveRead.output).toContain("Writer live content.");
+        expect(liveRead.output).toContain("Writer aside.");
+        expect(liveRead.output).not.toContain("Model draft content.");
+
+        // The last read was the draft, so the stale live hash reaches the resolver.
+        await call("read", { path: chapterPath });
+        const stale = await call("write", {
+          command: "replace",
+          path: chapterPath,
+          in: liveHash,
+          content: "Never lands.",
+        });
+        expect(stale.isError).toBe(true);
+        expect(text(stale)).toContain(
+          `Block hash "${liveHash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it; read again without \`version\`.`,
+        );
+
+        const draftHits = await call("search", { pattern: "Model draft" });
+        expect(text(draftHits)).toContain('"version":"draft"');
+        expect(text(draftHits)).toContain(chapterPath);
+        const liveHits = await call("search", { pattern: "Model draft", version: "live" });
+        expect(text(liveHits)).not.toContain(chapterPath);
+        const publishedHits = await call("search", { pattern: "Writer live", version: "live" });
+        expect(text(publishedHits)).toContain('"version":"live"');
+
+        const lore = await call("write", {
+          command: "create",
+          path: "kb://lore.md",
+          content: "Drafted lore needle.",
+        });
+        expect(lore.isError).toBeFalsy();
+        expect(lore.output).toMatch(/\(drafted in @runtime-settlement\)/);
+        const loreHits = await call("search", { pattern: "lore needle" });
+        expect(text(loreHits)).toContain("kb://lore.md");
+        expect(text(loreHits)).toContain('"version":"draft"');
+        const listed = await call("ls", { path: "kb://" });
+        expect(text(listed)).toContain("kb://lore.md");
+        const listedLive = await call("ls", { path: "kb://", version: "live" });
+        expect(text(listedLive)).not.toContain("kb://lore.md");
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,

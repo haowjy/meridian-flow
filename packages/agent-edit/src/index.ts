@@ -51,6 +51,7 @@ export {
 } from "./model/navigation-target.js";
 export type {
   DocumentCommandName,
+  DocumentVersion,
   ReadCommand,
   ReadToolInput,
   WriteCommand,
@@ -58,6 +59,7 @@ export type {
   WriteToolInput,
 } from "./tool/command-schema.js";
 export {
+  DocumentVersionSchema,
   ReadCommandSchema,
   ReadToolInputSchema,
   WriteCommandSchema,
