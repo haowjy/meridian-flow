@@ -70,7 +70,7 @@ jobs:
           gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
           node tools/deploy/manifest.ts validate "$RUNNER_TEMP/release/release-manifest.json" "v${VERSION}"
       - name: Install pinned Railway CLI
-        run: pnpm add --global @railway/cli@5.62.1
+        run: pnpm add --global "@railway/cli@$(node tools/deploy/release-identity.ts railway-version)"
       - name: Deploy digest-pinned images
         id: deploy
         env:

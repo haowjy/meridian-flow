@@ -32,13 +32,10 @@ jobs:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           sha="$RELEASE_SHA"
-          mapfile -t tags < <(git tag --points-at "$sha" 'v*')
-          [[ ${#tags[@]} -eq 1 ]] || { echo "::error::Expected exactly one v* tag on $sha; found ${#tags[@]}: ${tags[*]}"; exit 1; }
-          tag=${tags[0]}
+          tag=$(node tools/deploy/manifest.ts resolve-tag "$sha")
           version=${tag#v}
           package_version=$(node -p "require('./package.json').version")
           [[ "$package_version" == "$version" ]] || { echo "::error::Tag $tag does not match root package.json version $package_version"; exit 1; }
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Invalid release version $version"; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -74,12 +71,12 @@ jobs:
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: |
           set -euo pipefail
-          for service in server app www ingress; do
+          for service in $(node tools/deploy/release-identity.ts services); do
             case "$service" in
               server|app|www) dockerfile="apps/$service/Dockerfile" ;;
               ingress) dockerfile=tools/deploy/ingress/Dockerfile ;;
             esac
-            image="ghcr.io/haowjy/meridian-flow-$service"
+            image=$(node tools/deploy/release-identity.ts image-repository "$service")
             metadata="$RUNNER_TEMP/$service-metadata.json"
             docker buildx build --push --metadata-file "$metadata" \
               --file "$dockerfile" --tag "$image:v$VERSION" \

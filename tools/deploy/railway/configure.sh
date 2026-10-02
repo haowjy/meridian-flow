@@ -5,10 +5,12 @@ set -euo pipefail
 usage() { echo "Usage: bash tools/deploy/railway/configure.sh <staging|production>" >&2; exit 2; }
 [[ $# == 1 && ( "$1" == staging || "$1" == production ) ]] || usage
 environment=$1
-command -v railway >/dev/null || { echo "Railway CLI 5.62.1 is required; install it with pnpm add -g @railway/cli@5.62.1" >&2; exit 1; }
+root=$(git rev-parse --show-toplevel)
+cli_version=$(node "$root/tools/deploy/release-identity.ts" railway-version)
+command -v railway >/dev/null || { echo "Railway CLI $cli_version is required; install it with pnpm add -g @railway/cli@$cli_version" >&2; exit 1; }
 [[ -n ${RAILWAY_TOKEN:-} ]] || { echo "RAILWAY_TOKEN is required; authenticate for the $environment environment before configuring it." >&2; exit 1; }
 version=$(railway --version)
-[[ $version == *5.62.1* ]] || { echo "Railway CLI 5.62.1 required, found: $version" >&2; exit 1; }
+[[ $version == *"$cli_version"* ]] || { echo "Railway CLI $cli_version required, found: $version" >&2; exit 1; }
 
 # Keep a single environment edit/commit so configuration cannot trigger a series of partial deploys.
 args=(environment edit -e "$environment")
