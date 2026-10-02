@@ -1,5 +1,10 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
+import {
+  type AgentEditResultV1,
+  isAgentEditResultEnvelope,
+  renderAgentEditResult,
+} from "@meridian/agent-edit/integration";
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
@@ -288,7 +293,7 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
     included.add(key);
     parts.push(
       text(
-        `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
+        `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
       ),
     );
   }
@@ -444,4 +449,12 @@ function filenameFromUri(uri: string): string {
     return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
   }
   return uri;
+}
+
+/** A reference read reaches the model as the same text a `read` call returns (D43). */
+function referenceReadText(result: JsonValue): string {
+  if (typeof result === "string") return result;
+  return isAgentEditResultEnvelope(result)
+    ? renderAgentEditResult(result as AgentEditResultV1)
+    : JSON.stringify(result);
 }

@@ -298,6 +298,7 @@ export async function dispatchToolCall(
       : execResult.output;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
+  const persistedResult = execResult.result;
 
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
@@ -311,6 +312,7 @@ export async function dispatchToolCall(
         content: {
           toolCallId: execResult.toolCallId,
           output: persistedOutput,
+          ...(persistedResult !== undefined ? { result: persistedResult } : {}),
           ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
@@ -324,6 +326,7 @@ export async function dispatchToolCall(
             type: "tool.result",
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
+            ...(persistedResult !== undefined ? { result: persistedResult } : {}),
             isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },

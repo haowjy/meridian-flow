@@ -4,7 +4,7 @@ import * as Y from "yjs";
 
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
-import { blockTexts } from "./test-support/assertions.js";
+import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { cloneDoc, context, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
@@ -506,7 +506,7 @@ describe("write reversal under concurrent edits", () => {
     });
 
     expect(undo.status).toBe("reconciled");
-    expect(undo.text).toContain("undo: 3 edit(s)");
+    expect(outcomeText(undo)).toContain("undo: 3 edit(s)");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
     await expectMutationStatuses(scenario, {
       w1: "reversed",

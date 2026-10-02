@@ -1,4 +1,5 @@
 /** Core catalogue stays policy-free. */
+import { modelResult } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import {
   createCoreToolRegistrations,
@@ -7,7 +8,9 @@ import {
 } from "../tools/index.js";
 
 function coreExecutor() {
-  const write = vi.fn(async () => ({ ok: true }));
+  const write = vi.fn(async () => ({
+    output: modelResult({ command: "remove", status: "success", phase: "staged" }),
+  }));
   const noop = async () => ({ ok: true });
   return {
     write,
@@ -38,6 +41,15 @@ describe("core catalogue without policy", () => {
       { threadId: "thread-1" as never, turnId: "turn-1" as never, agentSlug: "agent" },
     );
     expect(write).toHaveBeenCalledOnce();
-    expect(result).toEqual({ toolCallId: "call-remove", output: { ok: true } });
+    expect(result).toEqual({
+      toolCallId: "call-remove",
+      output: "status: success",
+      result: {
+        schema: "meridian.agent-edit.v1",
+        command: "remove",
+        status: "success",
+        phase: "staged",
+      },
+    });
   });
 });

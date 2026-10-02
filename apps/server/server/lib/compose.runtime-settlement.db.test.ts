@@ -1,7 +1,7 @@
 /** Production-composition regression for response credit and staged-push completion. */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import { splitHashline } from "@meridian/agent-edit";
+import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -317,7 +317,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           responseId: RESPONSE_ID,
         },
       );
-      if (insert.status !== "success") throw new Error(insert.text);
+      if (insert.status !== "success") throw new Error(renderAgentEditResult(insert.result));
       const write = await ports.documentSync.agentEdit().write(
         {
           command: "replace",
@@ -334,7 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           responseId: RESPONSE_ID,
         },
       );
-      if (write.status !== "success") throw new Error(write.text);
+      if (write.status !== "success") throw new Error(renderAgentEditResult(write.result));
       await ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
         threadId: THREAD_ID,
         turnId: TURN_ID,

@@ -105,6 +105,11 @@ export interface ToolExecutionResult {
   metadata?: JsonObject;
   /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
   returnResult?: ReturnResultOutcome;
+  /**
+   * The handler's typed result when the registration renders it (`renderResult`);
+   * `output` is then that rendering. Kept beside the text, never parsed from it.
+   */
+  result?: JsonValue;
 }
 
 /**
@@ -268,6 +273,11 @@ export interface ToolRegistration {
   capability?: "interrupt" | "spawn" | "thread_message" | "thread_report" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
+  /**
+   * Renders the handler's typed result, success or error, into the text the
+   * model sees (D43). The executor stores the typed result beside the text.
+   */
+  renderResult?: (result: JsonValue) => string;
 }
 
 export interface ToolExecutionError {

@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { blockTexts, expectOutcome, hashAt, humanText } from "./test-support/assertions.js";
+import {
+  blockTexts,
+  expectOutcome,
+  hashAt,
+  humanText,
+  outcomeText,
+} from "./test-support/assertions.js";
 import { context, harness, type WriteToolHarness } from "./test-support/write-tool-harness.js";
 
 const DOC_ID = "chapter.md";
@@ -73,7 +79,7 @@ describe("immediate destructive reporting", () => {
     );
 
     expectOutcome(outcome, "success");
-    expect(outcome.text).toContain(`swept: ${deletedHash}|Writer: Alpha.`);
+    expect(outcomeText(outcome)).toContain(`swept: ${deletedHash}|Writer: Alpha.`);
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Gamma."]);
   });

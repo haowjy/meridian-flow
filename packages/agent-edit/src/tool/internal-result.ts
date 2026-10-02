@@ -1,6 +1,6 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
-import type { AgentEditModelPayload } from "./model-result.js";
+import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
 import type {
   DocumentCommandName,
   WriteErrorDetail,
@@ -12,7 +12,6 @@ export type InternalWriteResult = InternalWriteResultBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
 
 interface InternalWriteResultBase {
-  text: string;
   revision?: string | null;
   model?: AgentEditModelPayload;
   writeId?: string;
@@ -38,15 +37,17 @@ export function isInternalWriteResult(value: unknown): value is InternalWriteRes
     typeof value === "object" &&
     value !== null &&
     "status" in value &&
-    "text" in value &&
-    typeof (value as InternalWriteResult).text === "string"
+    isWriteStatus((value as { status: unknown }).status)
+  );
+}
+
+/** An internal failure that must abort the caller, carrying the model-facing message. */
+export function internalResultError(result: InternalWriteResult): Error {
+  return new Error(
+    result.model?.message ? `${result.status}: ${result.model.message}` : result.status,
   );
 }
 
 function status(code: Exclude<WriteStatus, "success">, message?: string): InternalWriteResult {
-  return {
-    status: code,
-    text: message ? `status: ${code}\n\n${message}` : `status: ${code}`,
-    ...(message ? { model: { message } } : {}),
-  };
+  return { status: code, ...(message ? { model: { message } } : {}) };
 }

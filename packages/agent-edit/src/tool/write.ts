@@ -168,7 +168,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return toOutcome(commandName, status("invalid_write", writeSchemaError(error)));
   }
 
-  async function execute<Command extends { documentId?: string; tool_use_id?: string }>(
+  async function execute<
+    Command extends { file: string; documentId?: string; tool_use_id?: string },
+  >(
     commandName: DocumentCommandName,
     validCommand: Command,
     context: WriteContext,
@@ -208,7 +210,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
       result = writeError(cause);
     }
-    const outcome = toOutcome(commandName, result);
+    const outcome = toOutcome(commandName, result, validCommand.file);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
     return outcome;

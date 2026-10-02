@@ -45,12 +45,14 @@
  */
 
 import {
+  type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   isAgentEditResultEnvelope,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
+  renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
 import {
   type MeridianError,
@@ -64,6 +66,7 @@ import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/sp
 import type {
   Block,
   JsonObject,
+  JsonValue,
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
@@ -811,13 +814,13 @@ async function reconcileOrphanedPendingWrites(
   for (const block of blocks) {
     if (block.blockType !== "tool_result") continue;
     const content = block.content as {
-      output?: unknown;
+      result?: unknown;
       metadata?: { stagedWrite?: unknown };
     } | null;
-    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.output)) {
+    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.result)) {
       continue;
     }
-    if (content.output.phase !== "staged") continue;
+    if (content.result.phase !== "staged") continue;
     await persistUncommittedWriteResult({
       deps,
       threadId,
@@ -1077,6 +1080,17 @@ async function persistToolRejection(input: {
   };
 }
 
+/** A staged write block's typed result, kept beside its rendered text. */
+function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
+  const result = (block.content as { result?: unknown } | null)?.result;
+  return isAgentEditResultEnvelope(result) ? (result as AgentEditResultV1) : undefined;
+}
+
+/** A write's tool-result fields: the model's text and the typed result beside it (D43). */
+function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
+  return { output: renderAgentEditResult(result), result: toJsonValue(result) };
+}
+
 async function persistUncommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -1085,13 +1099,13 @@ async function persistUncommittedWriteResult(input: {
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
-  const priorOutput = (input.block.content as { output?: unknown } | null)?.output;
+  const staged = stagedWriteResult(input.block);
   const message = ["Write did not land.", input.text].join("\n\n");
-  const output = toJsonValue(
+  const { output, result } = writeResultContent(
     modelResult({
-      command: isAgentEditResultEnvelope(priorOutput) ? priorOutput.command : "unknown",
+      command: staged?.command ?? "unknown",
       status: "internal_error",
-      payload: { message },
+      payload: { ...(staged?.path ? { path: staged.path } : {}), message },
     }),
   );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1101,7 +1115,7 @@ async function persistUncommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: { toolCallId, output, isError: true },
+      content: { toolCallId, output, result, isError: true },
       provider: input.block.provider,
       status: "complete",
     });
@@ -1109,7 +1123,7 @@ async function persistUncommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, isError: true },
+        { type: "tool.result", toolCallId, output, result, isError: true },
       ],
     };
   });
@@ -1120,7 +1134,7 @@ async function persistCommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
-  output: unknown;
+  result: AgentEditResultV1;
   documentRevision: DocumentRevisionEvidence;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
@@ -1130,6 +1144,9 @@ async function persistCommittedWriteResult(input: {
   const metadata = { ...content?.metadata };
   metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
+  // The settled receipt describes the same document the staged result named.
+  const path = stagedWriteResult(input.block)?.path;
+  const { output, result } = writeResultContent({ ...input.result, ...(path ? { path } : {}) });
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,
@@ -1137,7 +1154,7 @@ async function persistCommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output: input.output, metadata }),
+      content: toJsonValue({ toolCallId, output, result, metadata }),
       provider: input.block.provider,
       status: "complete",
     });
@@ -1145,7 +1162,7 @@ async function persistCommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output: toJsonValue(input.output) },
+        { type: "tool.result", toolCallId, output, result },
       ],
     };
   });
@@ -1405,7 +1422,7 @@ function createResponseScope(input: {
                         revision: settledReceipt(settled.receipts, documentId, write.settlementId)
                           .revision,
                       },
-                      output: settledReceipt(settled.receipts, documentId, write.settlementId)
+                      result: settledReceipt(settled.receipts, documentId, write.settlementId)
                         .result,
                     })
                   : await persistUncommittedWriteResult({
@@ -1440,23 +1457,13 @@ function createResponseScope(input: {
         const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
         const block = writes.get(documentId)?.at(-1)?.block;
         if (!block) continue;
-        const content = block.content as {
-          toolCallId?: string;
-          output?: unknown;
-          isError?: boolean;
-        } | null;
-        if (!content?.output) continue;
+        const content = block.content as JsonObject | null;
+        const staged = stagedWriteResult(block);
+        if (!content || !staged) continue;
 
-        const output = content.output;
-        if (!isAgentEditResultEnvelope(output)) continue;
-
-        const updatedOutput = {
-          ...output,
-          concurrent: modelConcurrentResult(boundedEdits),
-        };
         const updatedContent = {
           ...content,
-          output: updatedOutput,
+          ...writeResultContent({ ...staged, concurrent: modelConcurrentResult(boundedEdits) }),
         };
         const updatedBlockRow = contentForBlockInput({
           id: block.id,

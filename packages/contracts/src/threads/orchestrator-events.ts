@@ -92,7 +92,10 @@ export type OrchestratorEvent =
   | {
       type: "tool.result";
       toolCallId: string;
+      /** What the model sees; for `read` and `write`, the rendering of `result`. */
       output: JsonValue;
+      /** The tool's typed result, when the tool renders `output` from one. */
+      result?: JsonValue;
       isError?: boolean;
       /** Host-only result metadata delivered beside, never inside, model-visible output. */
       metadata?: JsonValue;

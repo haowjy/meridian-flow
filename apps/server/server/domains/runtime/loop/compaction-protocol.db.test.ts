@@ -327,7 +327,7 @@ else
         metadata: { elisions: expect.any(Array) },
       });
       expect(c!.promptBakeId).not.toBeNull();
-      expect((c!.metadata as JsonObject).elisions).toHaveLength(6);
+      expect((c!.metadata as JsonObject).elisions).toHaveLength(5);
       const first = rig.gateway.requests[0];
       const before = rig.summarizer.calls[0].requestInHand!;
       expect(first.messages[0]).toEqual(before.messages[0]);

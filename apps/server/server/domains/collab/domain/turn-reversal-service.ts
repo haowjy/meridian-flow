@@ -12,6 +12,7 @@ import type { BranchStore } from "./branch-coordinator.js";
 import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-contracts.js";
 import {
   aggregateStatus,
+  documentReversalOutcome,
   documentReversalResult,
   isSuccessfulReversal,
   type ReverseTurnDeps,
@@ -175,7 +176,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       const documents = [
         await documentReversalResult({
           documentId: document.documentId,
-          outcome,
+          outcome: documentReversalOutcome(outcome),
           resolveDocumentUri: async () => document.uri,
         }),
       ];

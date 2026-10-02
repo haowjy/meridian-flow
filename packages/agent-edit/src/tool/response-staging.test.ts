@@ -64,7 +64,7 @@ describe("response staging", () => {
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
     expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
-      'status: document_not_found\n\nFile not found. Check the path, or use write(command="create", path="new.md") to make a new one.',
+      'status: document_not_found; path: new.md\n\nFile not found. Check the path, or use write(command="create", path="new.md") to make a new one.',
     );
   });
 

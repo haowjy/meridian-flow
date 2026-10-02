@@ -2,6 +2,7 @@
 import { expect } from "vitest";
 import * as Y from "yjs";
 
+import { renderAgentEditResult } from "../result-text.js";
 import type { WriteOutcome, WriteStatus } from "../types.js";
 import { codec, model } from "./write-tool-harness.js";
 
@@ -15,8 +16,9 @@ export function blockTexts(doc: Y.Doc): string[] {
   return model.getBlocks(doc).map((block) => model.getText(block));
 }
 
+/** The text the model sees for an outcome. */
 export function outcomeText(output: string | WriteOutcome): string {
-  return typeof output === "string" ? output : output.text;
+  return typeof output === "string" ? output : renderAgentEditResult(output.result);
 }
 
 export function expectOutcome(outcome: WriteOutcome, status: WriteStatus, isError = false): void {
@@ -31,10 +33,9 @@ export function expectNoInternalIds(text: string): void {
   expect(text).not.toContain("turn-");
 }
 
-export function renderedBlockBodies(output: string | WriteOutcome): string[] {
-  const rendered = outcomeText(output);
-  if (!rendered) return [];
-  return rendered.split("\n").map((line) => line.replace(/^[0-9a-f]{4,}\|/, ""));
+/** The block bodies a result carries, without hashes. */
+export function renderedBlockBodies(output: WriteOutcome): string[] {
+  return output.result.blocks?.flatMap((group) => group.items.map((item) => item.body)) ?? [];
 }
 
 export function humanText(

@@ -11,9 +11,11 @@
  */
 import {
   type AgentEditResultCommand,
+  type AgentEditResultV1,
   agentEditResultCommand,
   modelResult,
   ReadToolInputSchema,
+  renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
 import { askUserToolInputSchema } from "@meridian/contracts/components";
@@ -168,6 +170,11 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
+/** The document tools' handlers and error formatter return only agent-edit results. */
+function renderDocumentResult(result: unknown): string {
+  return renderAgentEditResult(result as AgentEditResultV1);
+}
+
 /** Executor-owned failures in the document tools' own result protocol. */
 function documentExecutionError(command: (error: ToolExecutionError) => AgentEditResultCommand) {
   return (error: ToolExecutionError) =>
@@ -197,6 +204,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
+      renderResult: renderDocumentResult,
     },
     {
       source: "core",
@@ -216,6 +224,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),
       ),
+      renderResult: renderDocumentResult,
     },
     {
       source: "core",

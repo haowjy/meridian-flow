@@ -1,6 +1,6 @@
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
-import { toDocHandle } from "@meridian/agent-edit/integration";
+import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -120,7 +120,7 @@ async function fixture(mode: "direct" | "draft") {
       },
       { ...context, responseId, createdDocument: false },
     );
-    expect(outcome.isError, outcome.text).toBe(false);
+    expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
   return { ...f, core, read, current, stage, writerDelete, revisions, effective };
@@ -368,7 +368,7 @@ describe("document revisions (postgres and collab)", () => {
     await rolledBack;
     await f.branchPulls.flushLivePull(ALPHA_ID);
     expect(observed).toBe(1);
-    expect((await f.read()).text).not.toContain("Opening paragraph");
+    expect(renderAgentEditResult((await f.read()).result)).not.toContain("Opening paragraph");
   });
 
   it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {

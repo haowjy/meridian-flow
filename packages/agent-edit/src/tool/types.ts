@@ -43,11 +43,8 @@ interface WriteOutcomeBase {
   settlementId?: string;
   /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
   error?: WriteErrorDetail;
-  /** Canonical versioned JSON result presented to the model. */
+  /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
-  /** Host-facing diagnostic text; models receive only `result`. */
-  text: string;
-  /** Host metadata; never rendered independently of the tool result. */
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";

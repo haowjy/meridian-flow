@@ -276,7 +276,7 @@ describe("runtime store", () => {
     await secondRestart.read({ file: "chapter.md" }, context);
 
     const doubleRedo = await secondRestart.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo");
+    expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo; path: chapter.md");
     expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
     expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
   });
@@ -332,7 +332,7 @@ describe("runtime store", () => {
     );
     expect(outcomeText(redoA)).toContain("status: reconciled");
     const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redoB)).toBe("status: nothing_to_redo");
+    expect(outcomeText(redoB)).toBe("status: nothing_to_redo; path: chapter.md");
 
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
     expect(
