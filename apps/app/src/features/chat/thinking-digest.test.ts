@@ -35,18 +35,29 @@ function tool(args: {
 }
 
 describe("countFoldTools", () => {
-  it("does not count a diff review as an edit", () => {
+  it("counts read calls as reads and write calls as edits, by document", () => {
     const counts = countFoldTools([
-      // A diff carries no `path` on the wire; the writer-facing classification
-      // must hold regardless, including the document identity the old branch
-      // consumed.
-      tool({ toolName: "write", input: { command: "diff", document_id: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "diff", path: "ch1.md" } }),
+      tool({ toolName: "read", input: { path: "ch1.md" } }),
+      tool({ toolName: "read", input: { path: "ch1.md", format: "outline" } }),
+      tool({ toolName: "read", input: { path: "ch2.md#scene" } }),
+      tool({ toolName: "write", input: { command: "replace", path: "ch1.md" } }),
+      tool({ toolName: "write", input: { command: "remove", path: "ch3.md" } }),
+      tool({ toolName: "write", input: { command: "undo", path: "ch3.md" } }),
     ]);
 
-    expect(counts.editedDocuments.size).toBe(0);
+    expect(counts.readDocuments.size).toBe(2);
+    expect(counts.editedDocuments.size).toBe(2);
+    expect(counts.steps).toBe(0);
+  });
+
+  it("counts an old row's write(command: read) as a step, not a read or an edit", () => {
+    const counts = countFoldTools([
+      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
+    ]);
+
     expect(counts.readDocuments.size).toBe(0);
-    expect(counts.steps).toBe(2);
+    expect(counts.editedDocuments.size).toBe(0);
+    expect(counts.steps).toBe(1);
   });
 
   it("counts non-document tools and failed operations as steps", () => {
@@ -54,7 +65,7 @@ describe("countFoldTools", () => {
       tool({ toolName: "search" }),
       tool({ toolName: "ls" }),
       tool({ toolName: "work" }),
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" }, isError: true }),
+      tool({ toolName: "read", input: { path: "ch1.md" }, isError: true }),
     ]);
 
     expect(counts.steps).toBe(4);
