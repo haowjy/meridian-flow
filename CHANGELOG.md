@@ -1,5 +1,6 @@
 # Changelog
 
+- Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
 
