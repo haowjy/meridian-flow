@@ -226,8 +226,10 @@ SIGSTOP and repeated descendant censuses until the stopped set is stable, then
 force-killed. Quiescence must follow session closure because tmux resumes stopped
 pane leaders. On refusal/error, this invocation's paused survivors receive
 SIGCONT; processes already stopped by someone else are not resumed. Zombies count
-as exited. A present PID whose UID/start/command identity changed refuses cleanup,
-rather than being silently dropped; this includes exec during shutdown. A fresh
+as exited. A final identity/descendant census always runs before tmux teardown,
+even if signaling/logging crossed the grace deadline. A present PID whose
+UID/start/command identity changed refuses cleanup, rather than being silently
+dropped; this includes exec during shutdown. A fresh
 plan may authorize its replacement only while session ownership remains provable.
 Resumption skips changed identities without stranding other matching survivors.
 Processes that fork and reparent before an identity or ancestry can be captured
