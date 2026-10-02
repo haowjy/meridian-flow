@@ -21,6 +21,7 @@ type DraftRouteServices = {
     "canAccessDocument" | "canAccessProjectDocument"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview">;
+  catalog: Pick<AppServices["contextCatalog"], "refreshProject">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
@@ -29,6 +30,7 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
     works: app.workRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
+    catalog: app.contextCatalog,
   };
 }
 
@@ -120,7 +122,10 @@ export async function handleApplyWorkDraftRequest(
 ): Promise<DraftApplyResponse> {
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
-  if (result.status === "applied") return result;
+  if (result.status === "applied") {
+    await deps.catalog.refreshProject(input.projectId);
+    return result;
+  }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
@@ -136,7 +141,9 @@ export async function handleDiscardWorkDraftRequest(
   },
 ): Promise<DraftDiscardResponse> {
   await requireDraftWorkAccess(deps, input);
-  return callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
+  const result = await callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
+  await deps.catalog.refreshProject(input.projectId);
+  return result;
 }
 
 function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(

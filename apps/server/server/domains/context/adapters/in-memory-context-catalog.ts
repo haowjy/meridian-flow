@@ -9,7 +9,11 @@ import type {
   CatalogSnapshot,
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
-import { type ContextCatalog, normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
+import {
+  type ContextCatalog,
+  type ContextCatalogMutationPort,
+  normalizeCatalogChangesLimit,
+} from "../ports/context-catalog.js";
 
 type State = {
   generation: string;
@@ -24,10 +28,16 @@ type UnorderedCatalogChange = CatalogChange extends infer Change
     : never
   : never;
 
-export class InMemoryContextCatalog implements ContextCatalog {
+export class InMemoryContextCatalog implements ContextCatalog, ContextCatalogMutationPort {
   private readonly states = new Map<string, State>();
 
   constructor(private readonly retainedCommits = 1_000) {}
+
+  async refreshSources(): Promise<string> {
+    return crypto.randomUUID();
+  }
+
+  async refreshProject(): Promise<void> {}
 
   private state(scope: CatalogScope): State {
     const key = catalogScopeKey(scope);
