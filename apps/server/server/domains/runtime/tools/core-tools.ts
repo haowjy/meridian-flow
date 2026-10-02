@@ -193,7 +193,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "read",
         description:
-          "Read a document, or part of it. `path` is a document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` to target one section. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
+          "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
         inputSchema: modelToolSchema(ReadToolInputSchema),
       },
       input: ReadToolInputSchema,
@@ -212,7 +212,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Change documents. `path` is the document the command creates or changes: a document path or context URI, optionally with `#heading-slug` for one section. `from` is always the source. In a draft-mode Work your changes go to the draft, except `scratch://`, which is always edited directly. `copy` copies a whole document.",
+          "Change documents. In a draft-mode Work your changes go to the draft, except `scratch://`, which is always edited directly.",
         inputSchema: modelToolSchema(WriteToolInputSchema),
       },
       input: WriteToolInputSchema,
