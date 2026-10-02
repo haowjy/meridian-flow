@@ -246,3 +246,42 @@ describe("spawn", () => {
     ]);
   });
 });
+
+describe("return_result", () => {
+  it("delivers artifact URIs as object refs and keeps an explicit null payload", async () => {
+    await expectDelivered(
+      "return_result",
+      { summary: "done", payload: null, artifacts: ["scratch://the-lamplighters-arithmetic.md"] },
+      {
+        summary: "done",
+        payload: null,
+        artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
+      },
+    );
+  });
+
+  it("refuses artifacts that aren't Meridian document URI strings", async () => {
+    await expectRefused(
+      "return_result",
+      { summary: "done", artifacts: ["https://example.test/cover.png"] },
+      [
+        'artifacts[0]: Expected a Meridian document URI, received "https://example.test/cover.png".',
+      ],
+    );
+    await expectRefused("return_result", { summary: "done", artifacts: ["not a Meridian URI"] }, [
+      'artifacts[0]: Expected a Meridian document URI, received "not a Meridian URI".',
+    ]);
+    await expectRefused(
+      "return_result",
+      { summary: "done", artifacts: [{ type: "object", uri: "scratch://draft.md" }] },
+      ['artifacts[0]: expected a string, got {"type":"object","uri":"scratch://draft.md"}'],
+    );
+  });
+
+  it("refuses a missing summary and unknown keys", async () => {
+    await expectRefused("return_result", {}, ["summary: required; expected a string"]);
+    await expectRefused("return_result", { summary: "done", outcome: "ok" }, [
+      "outcome: unknown argument",
+    ]);
+  });
+});

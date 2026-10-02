@@ -284,8 +284,8 @@ describe("inbox drain", () => {
     expect(toolResult?.content).toMatchObject({
       isError: true,
       output: {
-        code: "tool_error",
-        message: expect.stringContaining("artifacts[0]"),
+        error: "invalid_arguments",
+        message: expect.stringContaining("- artifacts[0]: Expected a Meridian document URI"),
       },
     });
     expect(JSON.stringify(toolResult?.content)).toContain(artifact);

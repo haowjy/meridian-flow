@@ -1,16 +1,16 @@
 /**
  * Spawn primitive tools: spawn (create a child), thread_message (put a message
  * into a thread), and return_result (child-side). Handlers are thin —
- * ChildRunCoordinator owns lifecycle; these only validate input.
+ * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
+ * the executor before its handler runs.
  */
 import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
 import {
-  meridianErrorFromSystem,
-  meridianErrorFromTool,
-  meridianErrorToJson,
-} from "@meridian/contracts/interrupt";
-import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
-import { type ZodError, z } from "zod";
+  type ReturnResultCapture,
+  returnResultCaptureSchema,
+  type SpawnResult,
+} from "@meridian/contracts/spawn";
+import { z } from "zod";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
@@ -82,30 +82,18 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
-function returnResultInputError(error: ZodError): string {
-  const issue = error.issues[0];
-  const field = issue?.path.length
-    ? issue.path.reduce<string>(
-        (path, part) =>
-          typeof part === "number"
-            ? `${path}[${part}]`
-            : path
-              ? `${path}.${String(part)}`
-              : String(part),
-        "",
-      )
-    : "input";
-  if (issue?.path[0] === "artifacts") {
-    return `Invalid return_result input at ${field}: expected a Meridian document URI string. ${issue.message}`;
-  }
-  if (issue?.path[0] === "summary") {
-    return `Invalid return_result input at ${field}: expected a string.`;
-  }
-  if (issue?.path[0] === "payload") {
-    return `Invalid return_result input at ${field}: expected a JSON value.`;
-  }
-  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of Meridian document URI strings.`;
-}
+/**
+ * The canonical capture schema with model-facing copy. Tool arguments arrive
+ * as parsed JSON, so `payload` is published as any value: the canonical
+ * recursive JSON-value schema would add a self-referencing `$defs` entry.
+ */
+export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
+  summary: returnResultCaptureSchema.shape.summary.describe("Terminal summary for the parent."),
+  payload: z.unknown().describe("Package-defined structured result.").optional(),
+  artifacts: returnResultCaptureSchema.shape.artifacts.describe(
+    "Meridian document URIs produced by this child.",
+  ),
+});
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
@@ -214,37 +202,13 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "return_result",
         description: "Record the report and end this turn. The child chat stays open.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            summary: { type: "string", description: "Terminal summary for the parent." },
-            payload: { description: "Package-defined structured result." },
-            artifacts: {
-              type: "array",
-              description: "Meridian document URIs produced by this child.",
-              items: {
-                type: "string",
-              },
-            },
-          },
-          required: ["summary"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ReturnResultInputSchema),
       },
+      input: ReturnResultInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) => {
-          const parsed = returnResultCaptureSchema.safeParse(input);
-          if (!parsed.success) {
-            return {
-              isError: true,
-              output: meridianErrorToJson(
-                meridianErrorFromTool(returnResultInputError(parsed.error)),
-              ),
-            };
-          }
-          return ctx.returnResult(parsed.data);
-        },
+        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) =>
+          ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
       advertise: false,
