@@ -364,6 +364,251 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("copies into the draft for manuscript and live for scratch in a draft-mode Work", async () => {
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.works.id, WORK_ID));
+      const runtime = await composeRuntime();
+      try {
+        await runtime.ports.documentSync.writeDocument({
+          documentId: DOC_ID,
+          markdown: "Writer live content.\n\nWriter aside.",
+          origin: { type: "user", actorUserId: USER_ID },
+          threadId: THREAD_ID,
+        });
+        await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
+          projectId: PROJECT_ID,
+        });
+        const responseValues = (id: string, sequence: number) => ({
+          id,
+          turnId: TURN_ID,
+          sequence,
+          provider: "runtime-test",
+          model: "runtime-test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
+        });
+        await db.insert(schema.modelResponses).values(responseValues(RESPONSE_ID, 1));
+        const toolContext = {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: RESPONSE_ID as string,
+          agentSlug: null,
+        };
+        let callCount = 950;
+        const call = (name: string, args: Record<string, unknown>) => {
+          callCount += 1;
+          return runtime.app.toolExecutor.executeTool(
+            { id: `00000000-0000-4000-8000-000000000${callCount}`, name, arguments: args },
+            toolContext,
+          );
+        };
+        const chapterPath = "manuscript://runtime-settlement.md";
+
+        const draftCopy = await call("write", {
+          command: "copy",
+          from: { path: chapterPath },
+          path: "manuscript://chapter-copy.md",
+        });
+        expect(draftCopy.isError).toBeFalsy();
+        expect(draftCopy.output).toMatch(
+          /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+ \(drafted in @runtime-settlement\); copied: 2 blocks from manuscript:\/\/runtime-settlement\.md$/,
+        );
+        expect(draftCopy.result).toMatchObject({ destination: "draft", command: "copy" });
+
+        const scratchCopy = await call("write", {
+          command: "copy",
+          from: { path: chapterPath },
+          path: "scratch://chapter-copy.md",
+        });
+        expect(scratchCopy.isError).toBeFalsy();
+        expect(scratchCopy.result).toMatchObject({ destination: "live" });
+        expect(scratchCopy.output).not.toContain("Writer live content.");
+
+        // Block copies: from the scratch copy staged in this reply into the drafted chapter,
+        // and from the chapter into scratch.
+        await call("read", { path: chapterPath });
+        const intoChapter = await call("write", {
+          command: "insert",
+          path: chapterPath,
+          from: { path: "scratch://chapter-copy.md", in: 2 },
+        });
+        expect(intoChapter.isError).toBeFalsy();
+        expect(intoChapter.output).toMatch(
+          /\(drafted in @runtime-settlement\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
+        );
+        const intoScratch = await call("write", {
+          command: "insert",
+          path: "scratch://chapter-copy.md",
+          from: { path: chapterPath, in: 1, version: "live" },
+        });
+        expect(intoScratch.isError).toBeFalsy();
+        expect(intoScratch.result).toMatchObject({ destination: "live" });
+
+        await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        });
+        const nextResponseId = "00000000-0000-4000-8000-000000000949";
+        await db.insert(schema.modelResponses).values(responseValues(nextResponseId, 2));
+        toolContext.responseId = nextResponseId;
+
+        const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
+        expect(live.ok && live.value.trim()).toBe("Writer live content.\n\nWriter aside.");
+        const draftChapter = await call("read", { path: chapterPath });
+        expect(draftChapter.output).toMatch(/Writer aside\.\n[0-9a-f]+\|Writer aside\.$/);
+        const copiedDraft = await call("read", { path: "manuscript://chapter-copy.md" });
+        expect(copiedDraft.output).toContain("version: draft");
+        expect(copiedDraft.output).toContain("Writer aside.");
+        const copiedLive = await call("read", {
+          path: "manuscript://chapter-copy.md",
+          version: "live",
+        });
+        expect(copiedLive.isError).toBe(true);
+        const scratchRead = await call("read", { path: "scratch://chapter-copy.md" });
+        expect(scratchRead.output).toContain("blocks: 3; version: live");
+
+        const copies = await db
+          .select({ name: schema.documents.name, metadata: schema.documents.metadata })
+          .from(schema.documents)
+          .where(eq(schema.documents.name, "chapter-copy"));
+        expect(copies).toHaveLength(2);
+        for (const copy of copies) {
+          expect(copy.metadata).toMatchObject({
+            copiedFrom: {
+              uri: chapterPath,
+              version: "draft",
+              revision: expect.any(String),
+            },
+          });
+        }
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
+    it("rolls a copy back with its reply", async () => {
+      const runtime = await composeRuntime();
+      try {
+        await runtime.ports.documentSync.writeDocument({
+          documentId: DOC_ID,
+          markdown: "Writer live content.",
+          origin: { type: "user", actorUserId: USER_ID },
+          threadId: THREAD_ID,
+        });
+        await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
+          projectId: PROJECT_ID,
+        });
+        await db.insert(schema.modelResponses).values({
+          id: RESPONSE_ID,
+          turnId: TURN_ID,
+          sequence: 1,
+          provider: "runtime-test",
+          model: "runtime-test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        const copied = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000960",
+            name: "write",
+            arguments: {
+              command: "copy",
+              from: { path: "manuscript://runtime-settlement.md" },
+              path: "manuscript://rolled-back.md",
+            },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: RESPONSE_ID, agentSlug: null },
+        );
+        expect(copied.isError).toBeFalsy();
+        const documentId = (copied.metadata as { documentId?: string } | undefined)?.documentId;
+        expect(documentId).toBeTruthy();
+
+        const rolledBack = await runtime.ports.documentSync.finalizeResponseRollback(RESPONSE_ID, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        });
+
+        expect(rolledBack.stagedCreates.discarded).toContain(documentId);
+        const content = await runtime.ports.documentSync.readAsMarkdown(documentId as string);
+        expect(content.ok ? content.value.trim() : "").toBe("");
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
+    it("copies a binary file as a new stored object with its provenance", async () => {
+      const runtime = await composeRuntime();
+      try {
+        const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
+        const put = await runtime.ports.objectStore.put(
+          `uploads/${PROJECT_ID}/scan`,
+          bytes,
+          "application/pdf",
+        );
+        if (!put.ok) throw new Error(put.error.message);
+        const written = await runtime.ports.contextPorts
+          .forProject(PROJECT_ID, USER_ID, new Map())
+          .writeBinary("manuscript://scan.pdf", {
+            fileType: "pdf",
+            storageUrl: put.value.storageUrl,
+            mimeType: "application/pdf",
+            sizeBytes: bytes.byteLength,
+          });
+        if (!written.ok) throw new Error(JSON.stringify(written.error));
+
+        const copied = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000970",
+            name: "write",
+            arguments: {
+              command: "copy",
+              from: { path: "manuscript://scan.pdf" },
+              path: "scratch://scan-copy.pdf",
+            },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+
+        expect(copied.isError).toBeFalsy();
+        expect(copied.output).toBe(
+          "status: success; path: scratch://scan-copy.pdf; copied from manuscript://scan.pdf",
+        );
+        const [copy] = await db
+          .select()
+          .from(schema.documents)
+          .where(eq(schema.documents.name, "scan-copy"));
+        expect(copy?.storageUrl).toBeTruthy();
+        expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
+        expect(copy?.metadata).toEqual({
+          copiedFrom: { uri: "manuscript://scan.pdf", version: "live", revision: null },
+        });
+        const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
+        const stored = await runtime.ports.objectStore.get(key);
+        expect(stored.ok && [...stored.value.bytes]).toEqual([...bytes]);
+
+        const again = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000971",
+            name: "write",
+            arguments: {
+              command: "copy",
+              from: { path: "manuscript://scan.pdf" },
+              path: "scratch://scan-copy.pdf",
+            },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(again.isError).toBe(true);
+        expect(again.output).toContain("A binary copy can't replace an existing file.");
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,

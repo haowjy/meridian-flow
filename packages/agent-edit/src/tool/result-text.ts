@@ -36,8 +36,14 @@ function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.path) facts.push(`path: ${result.path}`);
   if (result.write?.id) facts.push(`write: ${result.write.id}${draftedSuffix(result)}`);
-  if (result.copied)
-    facts.push(`copied: ${blockCount(result.copied.blocks)} from ${result.copied.from}`);
+  if (result.copied) {
+    const count = result.copied.blocks;
+    facts.push(
+      count === undefined
+        ? `copied from ${result.copied.from}`
+        : `copied: ${blockCount(count)} from ${result.copied.from}`,
+    );
+  }
   if (result.reversal && result.reversal.writes.length > 0) {
     facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
   }
