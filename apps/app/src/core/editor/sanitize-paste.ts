@@ -1,6 +1,11 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
-import { internalClipboardTarget, normalizeLinkHref } from "./links";
+import {
+  clipboardLinkAddress,
+  internalClipboardTarget,
+  LINK_ADDRESS_ATTRIBUTE,
+  normalizeLinkHref,
+} from "./links";
 
 const DANGEROUS_ELEMENTS = new Set(["script", "style", "iframe", "embed", "object", "form"]);
 
@@ -86,6 +91,10 @@ function copyLinkHref(source: Element, target: Element): void {
   const internal = internalClipboardTarget(source.getAttribute("data-meridian-link"));
   if (internal) {
     target.setAttribute("data-meridian-link", internal);
+    // The document it named where it was copied; the link transform after
+    // this spells it for the document it lands in.
+    const address = clipboardLinkAddress(source.getAttribute(LINK_ADDRESS_ATTRIBUTE));
+    if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
     return;
   }
   const rawHref = source.getAttribute("href");

@@ -24,6 +24,11 @@ export {
   referenceChip,
 } from "./link-chip";
 export {
+  clipboardLinkAddress,
+  LINK_ADDRESS_ATTRIBUTE,
+  linksAsAddresses,
+} from "./link-clipboard";
+export {
   anchorLinkRange,
   commitLinkDraft,
   type LinkAnchor,

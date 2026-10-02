@@ -13,6 +13,7 @@
 - Links to your documents show as tags in the Editor, chat and the composer: an icon for where the document lives, then its name. Formatting inside a link stays one tag, and the name stays editable text. A link with nothing behind it yet, or a reference to a document that was deleted, has a dashed outline. Links to websites are underlined with an arrow, in chat as in the Editor.
 - Links: the `[[` picker under a named Work offers Unfiled documents. With no Work selected, it offers Scratch notes and Uploads. Clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
 - A reference sent from the composer reads to the AI, and copies, as a standard link to the document's address.
+- Links copied from the Editor keep pointing at the same document wherever they are pasted: into a document in another folder or area, into chat, or into another app as text.
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.

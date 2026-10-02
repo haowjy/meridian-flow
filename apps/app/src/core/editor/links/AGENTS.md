@@ -78,6 +78,10 @@ pointer, and calls into it.
   landing. The exception is a remote write: mapping across the whole-document
   replace reports every position deleted and would erase the drawing, so
   `isRemoteDocumentRebuild` rebuilds instead.
+- **A copied link keeps its document.** The clipboard records each internal
+  link's address beside its href, and every paste target spells it for itself
+  (`link-clipboard.ts`); never paste a relative href into a different holder
+  as written.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 
