@@ -2,7 +2,9 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ModelThreadReportResult } from "@meridian/contracts/spawn";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
+import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
 import { readThreadReport } from "./read-thread-report.js";
 
 export const runningAgainCopy = (ref: string) =>
@@ -34,4 +36,25 @@ export async function readModelThreadReport(input: {
     ...(report.source !== "return_result" ? { source: report.source } : {}),
     ...(running ? { running: true as const, message: runningAgainCopy(ref) } : {}),
   };
+}
+
+/**
+ * The model's text for a `thread_report` result (D8): the report as history
+ * shows it, then the running or unavailable line. The typed result stays
+ * beside it for the app and code mode.
+ */
+export function renderThreadReportOutput(value: JsonValue): string {
+  const result = value as ModelThreadReportResult | null;
+  if (!result || typeof result !== "object" || !("ref" in result)) return renderRefusal(value);
+  if ("status" in result) return result.message ?? reportUnavailableCopy(result.ref);
+  return [
+    renderReportBlock({
+      outcome: result.outcome,
+      source: result.source ?? "return_result",
+      reason: result.reason ?? null,
+      partial: result.partial === true,
+      content: reportContent(result.summary, result.payload, result.artifacts),
+    }),
+    ...(result.message ? [result.message] : []),
+  ].join("\n\n");
 }
