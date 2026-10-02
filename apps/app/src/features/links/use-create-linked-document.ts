@@ -17,17 +17,21 @@
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
-import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useState } from "react";
 
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
-import { documentFileName } from "@/core/editor/links";
+import { acquireWorksSnapshot } from "@/client/query/works-projection-acquisition";
+import {
+  type CreatableLinkScheme,
+  documentFileName,
+  isCreatableLinkScheme,
+} from "@/core/editor/links";
 import { useAccountResourceReplica } from "@/features/project/context/account-feature-context";
 
-const CREATABLE_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
-type CreatableScheme = (typeof CREATABLE_SCHEMES)[number];
-
 export type LinkCreationTarget = {
-  scheme: CreatableScheme;
+  scheme: CreatableLinkScheme;
   folderPath: string;
   name: string;
   authority: ParsedContextAuthority;
@@ -39,13 +43,14 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
   const parsed = parseContextUri(address);
   if (!parsed.ok) return null;
   const { scheme, path, authority } = parsed.value;
-  if (!(CREATABLE_SCHEMES as readonly string[]).includes(scheme)) return null;
+  if (!isCreatableLinkScheme(scheme)) return null;
   const folders = path.split("/");
   const leaf = folders.pop();
   if (!leaf) return null;
   const name = documentFileName(leaf);
+  if (!name) return null;
   if (![...folders, name].every((segment) => validateContextEntryName(segment).ok)) return null;
-  return { scheme: scheme as CreatableScheme, folderPath: folders.join("/"), name, authority };
+  return { scheme, folderPath: folders.join("/"), name, authority };
 }
 
 export type CreateLinkedDocument = {
@@ -54,6 +59,8 @@ export type CreateLinkedDocument = {
   creating: boolean;
   failed: boolean;
 };
+
+type WorkList = readonly { id: string; slug: string | null }[];
 
 /**
  * `workId` is the surface's Work (a named Work or the No Work row, null for No
@@ -64,22 +71,37 @@ export function useCreateLinkedDocument(
   workId: string | null,
 ): CreateLinkedDocument {
   const resources = useAccountResourceReplica();
+  const queryClient = useQueryClient();
   const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const [creating, setCreating] = useState(false);
   const [failed, setFailed] = useState(false);
+  // State lands a render late; a second press in the same tick must not
+  // reserve a second document.
+  const inFlight = useRef(false);
 
   const create = useCallback(
     async (target: LinkCreationTarget) => {
-      if (!projectId) return null;
+      if (!projectId || inFlight.current) return null;
+      inFlight.current = true;
       setFailed(false);
       setCreating(true);
       let documentId: string | null = null;
+      let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        const work = scratchWork(target, workId, works, noWork?.id ?? null);
+        let work = scratchWork(target, workId, works, noWork?.id ?? null);
+        // The Works list is still loading: a slug it will name is not missing.
+        if (work === "unknown" && works === null) {
+          const snapshot = await queryClient.ensureQueryData({
+            queryKey: projectQueryKeys.works(projectId),
+            queryFn: () => acquireWorksSnapshot(queryClient, projectId),
+          });
+          work = scratchWork(target, workId, snapshot.works, snapshot.noWork.id);
+        }
         if (work === "unknown") throw new Error("The address names no Work this project has");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
+        reserved = { key: reservation.key };
         documentId = reservation.content.handle.documentId;
         try {
           await resources.setLocation(projectId, reservation.key, {
@@ -93,13 +115,18 @@ export function useCreateLinkedDocument(
         }
       } catch {
         documentId = null;
+        // A reservation that never reached its address is discarded, not left
+        // in the tree as "Untitled N". It was never submitted, so the delete
+        // settles locally.
+        if (reserved) await resources.deleteDocument(projectId, reserved.key).catch(() => {});
       } finally {
+        inFlight.current = false;
         setCreating(false);
       }
       if (!documentId) setFailed(true);
       return documentId;
     },
-    [noWork?.id, projectId, resources, workId, works],
+    [noWork?.id, projectId, queryClient, resources, workId, works],
   );
 
   return { create, creating, failed };
@@ -108,12 +135,13 @@ export function useCreateLinkedDocument(
 /**
  * The Work a Scratch document is created in. No Work travels as a null Work id
  * (the server resolves the locked row); a named Work needs its slug too, or the
- * move can never validate its canonical address.
+ * move can never validate its canonical address. "unknown" when the list does
+ * not name the Work (or has not loaded).
  */
 export function scratchWork(
   target: LinkCreationTarget,
   surfaceWorkId: string | null,
-  works: readonly { id: string; slug: string | null }[] | null,
+  works: WorkList | null,
   noWorkId: string | null,
 ): { workId: string | null; workSlug?: string } | "unknown" {
   if (target.scheme !== "scratch" || target.authority.kind === "none") return { workId: null };

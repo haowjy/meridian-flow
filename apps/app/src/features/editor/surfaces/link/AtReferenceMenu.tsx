@@ -105,10 +105,9 @@ export function ReferenceSuggestionMenu({
           row.kind === "link-ahead" ? (
             <>
               <FilePlus2 aria-hidden />
-              <span className="truncate">{t`Create “${row.label}”`}</span>
-              <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">
-                {t`links now, page later`}
-              </span>
+              {/* It writes a link, not a document: Create is offered when the
+                  link is followed. */}
+              <span className="truncate">{t`Link to “${row.label}” (not written yet)`}</span>
             </>
           ) : (
             <>

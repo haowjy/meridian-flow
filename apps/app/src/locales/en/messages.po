@@ -1328,11 +1328,6 @@ msgstr "Couldn't withdraw. Try again."
 msgid "Couldn't write"
 msgstr "Couldn't write"
 
-#. placeholder {0}: row.label
-#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
-msgid "Create “{0}”"
-msgstr "Create “{0}”"
-
 #: src/features/home/NewProjectView.tsx
 msgid "Create a project"
 msgstr "Create a project"
@@ -2137,9 +2132,10 @@ msgstr "Link a file"
 msgid "Link text"
 msgstr "Link text"
 
+#. placeholder {0}: row.label
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
-msgid "links now, page later"
-msgstr "links now, page later"
+msgid "Link to “{0}” (not written yet)"
+msgstr "Link to “{0}” (not written yet)"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "list"

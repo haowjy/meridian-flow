@@ -1328,11 +1328,6 @@ msgstr ""
 msgid "Couldn't write"
 msgstr ""
 
-#. placeholder {0}: row.label
-#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
-msgid "Create “{0}”"
-msgstr ""
-
 #: src/features/home/NewProjectView.tsx
 msgid "Create a project"
 msgstr ""
@@ -2137,8 +2132,9 @@ msgstr ""
 msgid "Link text"
 msgstr ""
 
+#. placeholder {0}: row.label
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
-msgid "links now, page later"
+msgid "Link to “{0}” (not written yet)"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
