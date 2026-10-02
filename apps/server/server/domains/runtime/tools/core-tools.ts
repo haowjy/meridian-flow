@@ -93,6 +93,17 @@ export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
   return "mutate";
 }
 
+export const LsToolInputSchema = z
+  .object({
+    path: z
+      .string()
+      .min(1)
+      .describe("Folder path or context URI; omit to list the roots.")
+      .optional(),
+  })
+  .strict();
+export type LsToolInput = z.output<typeof LsToolInputSchema>;
+
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
 
@@ -202,18 +213,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ls",
         description: "List files and folders.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Folder path or context URI; omit to list the roots.",
-            },
-          },
-          required: [],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(LsToolInputSchema),
       },
+      input: LsToolInputSchema,
       execution: { type: "server", handler: handlers.ls },
       timeoutMs: 30_000,
     },
