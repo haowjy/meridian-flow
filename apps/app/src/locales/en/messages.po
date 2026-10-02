@@ -100,8 +100,8 @@ msgstr "{0, plural, one {# call} other {# calls}}"
 
 #. placeholder {0}: group.drafts.length
 #: src/features/project/work/WorkDrafts.tsx
-msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
-msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
+#~ msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
+#~ msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -2812,6 +2812,10 @@ msgstr "Partial result"
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
 msgstr "Paste"
+
+#: src/features/project/work/WorkDrafts.tsx
+msgid "Pending draft"
+msgstr "Pending draft"
 
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
