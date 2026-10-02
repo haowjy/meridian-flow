@@ -339,6 +339,8 @@ export type BranchPeerShadowAccess = {
   readEffectiveRevision(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
+    /** The version the caller's writes change; `live` never touches a draft (D40). */
+    destination: "live" | "draft";
   }): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
