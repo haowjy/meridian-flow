@@ -116,6 +116,19 @@ it("takes a copied Editor link's recorded address, since chat has no folder", ()
   }
 });
 
+it("keeps a `#` in a pasted address part of the document's name", () => {
+  const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
+  try {
+    editor.view.pasteHTML(
+      '<a data-meridian-link="ch%233.md" data-meridian-address="manuscript://a/ch%233.md">Chapter #3</a>',
+      new Event("paste") as ClipboardEvent,
+    );
+    expect(editor.state.doc.textContent).toBe("[Chapter #3](manuscript://a/ch%233.md)");
+  } finally {
+    editor.destroy();
+  }
+});
+
 it.each(['{"label":"broken"}', "not JSON"])("ignores malformed reference metadata %s", (raw) => {
   const element = document.createElement("span");
   element.setAttribute("data-composer-reference", raw);

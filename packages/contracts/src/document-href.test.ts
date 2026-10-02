@@ -133,6 +133,18 @@ describe("spellDocumentHref", () => {
     expect(resolveDocumentHref(href, "manuscript://other/base.md")?.uri).toBe(target);
   });
 
+  it("encodes `%`, `#` and `?` in a full URI too, so it reads back as the same document", () => {
+    for (const [holder, target, href] of [
+      [null, "manuscript://a/ch#3.md", "manuscript://a/ch%233.md"],
+      ["manuscript://a/b.md", "kb://100%.md", "kb://100%25.md"],
+      [null, "scratch://@revision/x?#1.md", "scratch://@revision/x%3F%231.md"],
+      [null, "scratch://@/Lin Feng.md", "scratch://@/Lin Feng.md"],
+    ] as const) {
+      expect(spellDocumentHref(holder, target)).toBe(href);
+      expect(resolveDocumentHref(href, holder)?.uri).toBe(target);
+    }
+  });
+
   it("rejects a target that is not a document Context URI", () => {
     expect(() => spellDocumentHref(null, "https://example.com/a.md")).toThrow(RangeError);
     expect(() => spellDocumentHref(null, "manuscript://")).toThrow(RangeError);
