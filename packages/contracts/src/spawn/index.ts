@@ -142,19 +142,26 @@ export type ThreadReportResult =
     }
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
+/**
+ * The model's `thread_report` result: the child's latest finished report. It
+ * has no run number (D6, D17); `running` marks a newer run still in progress,
+ * and `message` carries the line the model reads about it.
+ */
 export type ModelThreadReportResult =
   | Extract<ThreadReportResult, { ok: false }>
   | {
       ref: string;
-      run: number;
       outcome: SavedOutcome;
       summary: string;
       payload?: JsonValue;
       artifacts?: ArtifactRef[];
       reason?: string;
+      partial?: true;
       source?: ExecutionReportSource;
+      running?: true;
+      message?: string;
     }
-  | { ref: string; status: "not_ready" | "unavailable" };
+  | { ref: string; status: "not_ready" | "unavailable"; message?: string };
 
 const threadReportResultSchema = z.union([
   z.object({ ok: z.literal(false), error: meridianErrorSchema }),
@@ -178,17 +185,20 @@ const threadReportResultSchema = z.union([
   }),
   z.object({
     ref: z.string(),
-    run: z.number().int().positive(),
     outcome: z.enum(["succeeded", "failed", "cancelled"]),
     summary: z.string(),
     payload: jsonValueSchema.optional(),
     artifacts: z.array(artifactRefSchema).optional(),
     reason: z.string().optional(),
+    partial: z.literal(true).optional(),
     source: z.enum(["return_result", "final_assistant", "empty"]).optional(),
+    running: z.literal(true).optional(),
+    message: z.string().optional(),
   }),
   z.object({
     ref: z.string(),
     status: z.enum(["not_ready", "unavailable"]),
+    message: z.string().optional(),
   }),
 ]);
 
@@ -218,7 +228,7 @@ export function toReportContentValue(
     summary: report.summary,
     ...(report.payload === undefined ? {} : { payload: report.payload }),
     artifacts: report.artifacts ?? [],
-    partial: "partial" in report ? report.partial : report.outcome !== "succeeded",
+    partial: report.partial ?? report.outcome !== "succeeded",
     outcome: report.outcome,
     reason: "reason" in report ? (report.reason ?? null) : null,
   };

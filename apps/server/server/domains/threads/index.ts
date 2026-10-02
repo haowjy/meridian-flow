@@ -72,11 +72,12 @@ export {
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
+  countConversationTurnsBefore,
   cursorAfter,
   InvalidTranscriptCursorError,
-  readTranscriptItem,
   readTranscriptPage,
   readTranscriptPageForProjection,
+  readTranscriptTurn,
   resolveTranscriptSpans,
   type TranscriptOrder,
   type TranscriptOwner,
@@ -128,6 +129,7 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
+  isConversationTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   noticesMetadata,
