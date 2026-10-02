@@ -59,10 +59,13 @@ elides document copies before token trimming, using each tool's `history`
 treatment ([document text](document-text.md)). Component blocks use their
 model text when they define it; raw component props are never serialized.
 
-- **Numbers.** A turn's number is its ordinal in the effective transcript.
-  After the walk, `countTranscriptTurns` over the spans before the page's
-  first turn gives the base; the walk covered a contiguous run, so the rest
-  follow. `expand: N` maps back through `findTranscriptTurnByOrdinal`. Cursors
+- **Numbers.** Only conversation turns are numbered, with no gaps.
+  `isConversationTurn` (threads domain: role, origin and `metadata.kind`)
+  is the one rule; the walk, `countConversationTurns` (in SQL, the same
+  predicate) and `findConversationTurnByOrdinal` all apply it, so they can't
+  drift. The count before the page's first walked turn gives the base; the
+  walk covered a contiguous run, so the rest follow. System turns get no
+  number and can't be expanded. Cursors
   still encode storage keys; storage `position.sequence` never reaches the
   model.
 - **Visibility.** One classifier reads the registration's `historyKind`
@@ -89,7 +92,10 @@ a segment. Internal bake hashes are not model-facing.
 root repeatable-read snapshot) and then checks `listLatestByChildren`: an
 admitted execution with no terminal truth means the child is running again,
 reported as `running: true` with a line. `unavailable` says to wait for the
-completion notice. The writer-facing
+completion notice. `renderThreadReportOutput` turns the typed result into the
+model's text with the same `renderReportBlock` history uses; nothing parses
+it back. History previews read the resolved `ref` from typed results
+(`thread_ls` returns `{ ref, listing }`). The writer-facing
 `GET .../reports/[childThreadId]/[execution]` route resolves `execution` to a
 `run` index and calls `readThreadReport` with it; that execution-addressed
 path is not on the model tool (D17). Report admission and publication are in
