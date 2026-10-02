@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
+import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
 import type { ToolRegistration } from "./types.js";
@@ -28,6 +29,7 @@ function registrations(): ToolRegistration[] {
       registry: {} as never,
       tokenizer: async () => "anthropic",
     }),
+    ...createSpawnToolRegistrations(),
   ];
 }
 
@@ -133,5 +135,20 @@ describe("thread_history", () => {
     ]);
     await expectRefused("thread_history", { expand: 2 }, ["expand: expected a string, got 2"]);
     await expectRefused("thread_history", { turn: 3 }, ["turn: unknown argument"]);
+  });
+});
+
+describe("thread_report", () => {
+  it("delivers a ref", async () => {
+    await expectDelivered("thread_report", { ref: "p3" }, { ref: "p3" });
+    await expectDelivered("thread_report", { ref: "current" }, { ref: "current" });
+  });
+
+  it("refuses run, which used to fall back to the latest report, and a missing ref", async () => {
+    for (const run of [0, 1.5, "2", 2]) {
+      await expectRefused("thread_report", { ref: "p3", run }, ["run: unknown argument"]);
+    }
+    await expectRefused("thread_report", {}, ["ref: required; expected a string"]);
+    await expectRefused("thread_report", { ref: "" }, ["ref: must not be empty"]);
   });
 });

@@ -13,6 +13,7 @@ import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts
 import { ZodError, z } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type {
   ReturnResultToolHandlerContext,
@@ -114,17 +115,12 @@ export type ThreadMessageArgs = {
   mode: ThreadMessageMode;
 };
 
-export type ThreadReportArgs = { ref: string; run?: number };
-export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ref: typeof rec.ref === "string" ? rec.ref : "",
-    ...(Number.isInteger(rec.run) && Number(rec.run) > 0 ? { run: Number(rec.run) } : {}),
-  };
-}
+export const ThreadReportInputSchema = z
+  .object({
+    ref: z.string().min(1).describe('Subagent ref such as p3, or "current".'),
+  })
+  .strict();
+export type ThreadReportArgs = z.output<typeof ThreadReportInputSchema>;
 
 /** One parse for thread_message arguments; omitted mode is background. */
 export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
@@ -147,24 +143,13 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "thread_report",
         description: "Read a subagent's latest finished report. Does not wait for a running one.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            ref: { type: "string", description: "Subagent ref such as p3." },
-            run: {
-              type: "integer",
-              minimum: 1,
-              description: "An earlier run, counting from 1.",
-            },
-          },
-          required: ["ref"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ThreadReportInputSchema),
       },
+      input: ThreadReportInputSchema,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
-          const result = await ctx.threadReport(parseThreadReportArgs(input));
+          const result = await ctx.threadReport(input as ThreadReportArgs);
           if ("ok" in result) return toolFailureResult(result);
           if ("status" in result) return { ref: result.ref, status: result.status };
           return {

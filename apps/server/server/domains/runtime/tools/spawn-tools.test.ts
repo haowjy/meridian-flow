@@ -5,7 +5,6 @@ import {
   createSpawnToolRegistrations,
   parseSpawnToolArgs,
   parseThreadMessageArgs,
-  parseThreadReportArgs,
 } from "./spawn-tools.js";
 
 describe("parseSpawnToolArgs", () => {
@@ -105,19 +104,23 @@ describe("parseThreadMessageArgs", () => {
 });
 
 describe("thread_report tool contract", () => {
-  it("selects the latest report by ref or an earlier run", () => {
-    expect(parseThreadReportArgs({ ref: "p3" })).toEqual({ ref: "p3" });
-    expect(parseThreadReportArgs({ ref: "p3", run: 2 })).toEqual({ ref: "p3", run: 2 });
+  it("reads the latest report by ref, with no run argument", () => {
     const registration = createSpawnToolRegistrations().find(
       (entry) => entry.definition.name === "thread_report",
     );
     expect(registration?.capability).toBe("thread_report");
     expect(registration?.advertise).toBe(true);
-    expect(registration?.definition).toMatchObject({
-      inputSchema: { required: ["ref"], additionalProperties: false },
-    });
-    expect(registration?.definition).toMatchObject({
-      inputSchema: { properties: { ref: { type: "string" }, run: { type: "integer" } } },
+    expect(registration?.definition.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        ref: {
+          type: "string",
+          minLength: 1,
+          description: 'Subagent ref such as p3, or "current".',
+        },
+      },
+      required: ["ref"],
+      additionalProperties: false,
     });
     expect(registration?.definition.description).toContain("Does not wait");
   });
@@ -142,7 +145,7 @@ describe("thread_report tool contract", () => {
     }));
 
     await expect(
-      registration.execution.handler({ ref: "p3", run: 2 }, { threadReport } as never),
+      registration.execution.handler({ ref: "p3" }, { threadReport } as never),
     ).resolves.toEqual({
       ref: "p3",
       run: 2,
