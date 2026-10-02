@@ -92,8 +92,6 @@ export type RebindThreadWorkError =
   | { code: "target_work_unavailable"; workId: WorkId }
   | { code: "project_mismatch"; workId: WorkId };
 
-export type WorkRequiredError = { code: "work_required"; operation: string };
-
 export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */

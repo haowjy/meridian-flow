@@ -80,12 +80,11 @@ describe("model tool schemas", () => {
           "required": [
             "$.oneOf[0]: path, command",
             "$.oneOf[1]: path, command",
-            "$.oneOf[2]: command",
+            "$.oneOf[2]: path, command, content",
             "$.oneOf[3]: path, command, content",
-            "$.oneOf[4]: path, command, content",
-            "$.oneOf[5]: path, command, in",
+            "$.oneOf[4]: path, command, in",
+            "$.oneOf[5]: path, command",
             "$.oneOf[6]: path, command",
-            "$.oneOf[7]: path, command",
           ],
         },
         {
@@ -181,6 +180,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`12661`);
+    expect(characters).toMatchInlineSnapshot(`12338`);
   });
 });

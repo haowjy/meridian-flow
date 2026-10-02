@@ -64,11 +64,7 @@ export {
   ThreadConversationContextError,
   type ThreadConversationContextErrorCode,
 } from "./domain/thread-conversation-context.js";
-export {
-  requireWorkDraftOwner,
-  threadExecutionContext,
-  WorkRequiredError,
-} from "./domain/thread-execution-context.js";
+export { threadExecutionContext } from "./domain/thread-execution-context.js";
 export {
   type ThreadTrashState,
   type ThreadTrashTransition,

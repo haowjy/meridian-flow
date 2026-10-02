@@ -4,7 +4,6 @@ import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
 import { splitHashline } from "../model/hashline.js";
-import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
@@ -40,55 +39,6 @@ export interface ReversalSuccessResponseInput {
   status: UndoRedoOutcome;
   targetCount?: number;
   sync: SyncedMutationSummary;
-}
-
-export function formatTurnDiff(diff: TurnDiffResult | null): InternalWriteResult {
-  if (diff?.changes.length === 0 && diff.sharedEffects) {
-    const provisional =
-      diff.trailState !== "settled"
-        ? "\nResults are provisional until the thread-shared change trail settles."
-        : "";
-    return result(
-      "success",
-      `status: success\n\nNo turn-owned changes; thread-shared effects exist for this turn's documents.${provisional}`,
-      { phase: "committed", model: { diff } },
-    );
-  }
-  if (!diff || diff.changes.length === 0) {
-    const provisional =
-      diff?.trailState !== "settled"
-        ? "\nResults are provisional until the turn's change trail settles."
-        : "";
-    return result(
-      "success",
-      `status: success\n\nNo settled changes for this turn yet.${provisional}`,
-      { phase: "committed", model: { diff } },
-    );
-  }
-
-  const lines = ["status: success", `trail state: ${diff.trailState}`];
-  if (diff.trailState !== "settled") {
-    lines.push("Results are provisional until the turn's change trail settles.");
-  }
-  lines.push(
-    diff.sharedEffects
-      ? "Thread-shared effects also exist for these documents; they are not attributed to this turn."
-      : "Thread-shared effects: none for these documents.",
-  );
-
-  for (const [index, change] of diff.changes.entries()) {
-    lines.push("", `Change ${index + 1}: ${change.kind} in document ${change.documentId}`);
-    lines.push("Before:", change.before ?? "[no content]");
-    lines.push("After:", change.after ?? "[no content]");
-    for (const merged of change.mergedOver) {
-      lines.push(
-        merged.writerAuthored ? "Merged over user-authored content:" : "Merged over agent content:",
-        merged.body,
-      );
-    }
-  }
-
-  return result("success", lines.join("\n"), { phase: "committed", model: { diff } });
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {

@@ -77,13 +77,6 @@ describe("WriteCommandSchema", () => {
       expect(WriteCommandSchema.parse(command)).toMatchObject(command);
     }
   });
-  it("accepts a pathless turn diff with optional document narrowing", () => {
-    expect(WriteCommandSchema.parse({ command: "diff", document_id: "document-1" })).toEqual({
-      command: "diff",
-      document_id: "document-1",
-    });
-  });
-
   it("rejects only the intended strict-schema tightenings", () => {
     for (const [, command] of intendedTightenings) {
       expect(WriteCommandSchema.safeParse(command).success).toBe(false);

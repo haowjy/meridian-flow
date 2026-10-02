@@ -14,7 +14,6 @@ export type {
 } from "./model-result.js";
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
 export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
-export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
 export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;

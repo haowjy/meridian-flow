@@ -42,17 +42,6 @@ const ReadCommandSchema = BaseCommandSchema.extend({
   .strict()
   .describe("Read a document, or part of one with in or around.");
 
-const DiffCommandSchema = z
-  .object({
-    command: z.literal("diff"),
-    document_id: z.string().optional().describe("Limit to one document."),
-    tool_use_id: z.string().optional(),
-  })
-  .strict()
-  .describe(
-    "Show the net effect of this turn's writes, provisional until they settle. Needs a Work in draft write mode.",
-  );
-
 const InsertCommandSchema = BaseCommandSchema.extend({
   command: z.literal("insert"),
   content: z.string(),
@@ -101,7 +90,6 @@ const RedoCommandSchema = BaseCommandSchema.extend({
 export const WriteCommandSchema = z.discriminatedUnion("command", [
   CreateCommandSchema,
   ReadCommandSchema,
-  DiffCommandSchema,
   InsertCommandSchema,
   ReplaceCommandSchema,
   DeleteCommandSchema,
@@ -117,7 +105,6 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
   const command = (input as { command?: unknown }).command;
   switch (command) {
     case "read":
-    case "diff":
     case "create":
     case "insert":
     case "replace":

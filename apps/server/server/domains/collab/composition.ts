@@ -52,7 +52,6 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
-import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
@@ -169,10 +168,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const documentPresentation = createDocumentPresentationResolver(documentUriResolver);
   const lookups = createDrizzleCollabLookups(deps.db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(deps.db);
-  const turnDiffQuery = createDrizzleTurnDiffQuery(
-    deps.db,
-    persistence.journal.documentsForTurn.bind(persistence.journal),
-  );
   const projectionEffects = createDrizzleDocumentProjectionEffects(
     deps.db,
     deps.workProjectionMutation,
@@ -282,7 +277,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: runtime.model,
     codec: runtime.codec,
     semanticProvenance: runtime.semanticProvenance,
-    turnDiffQuery,
     observability,
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
     responseTransactionSettlement: {

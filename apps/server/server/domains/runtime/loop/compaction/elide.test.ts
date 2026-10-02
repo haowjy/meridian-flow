@@ -85,7 +85,7 @@ function pair(command: string, extra: JsonObject = {}, toolName = "write") {
 }
 
 describe("document text elisions", () => {
-  for (const command of ["read", "diff", "create", "insert", "replace", "delete", "undo", "redo"]) {
+  for (const command of ["read", "create", "insert", "replace", "delete", "undo", "redo"]) {
     it(`elides stale ${command} without changing pairing or reasoning`, () => {
       const blocks = pair(command);
       const before = JSON.stringify(blocks);
@@ -117,11 +117,6 @@ describe("document text elisions", () => {
     expect(plan([...pair("read"), ...duplicate], new Map([[evidence.documentId, "old"]]))).toEqual(
       [],
     );
-  });
-  it("diff is always stale even if a recorded token happens to match", () => {
-    expect(
-      plan(pair("diff"), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
-    ).toHaveLength(1);
   });
   it.each([null, undefined, "different"])("fails closed for current %s", (token) => {
     expect(

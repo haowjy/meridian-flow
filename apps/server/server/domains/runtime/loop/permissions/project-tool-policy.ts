@@ -15,7 +15,6 @@ export interface EffectiveToolPolicy {
 
 const ALL_WRITE_COMMANDS = [
   "read",
-  "diff",
   "create",
   "insert",
   "replace",
@@ -23,9 +22,7 @@ const ALL_WRITE_COMMANDS = [
   "undo",
   "redo",
 ] as const satisfies readonly WriteCommandName[];
-const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter(
-  (command) => command !== "read" && command !== "diff",
-);
+const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter((command) => command !== "read");
 const WORK_NAV_COMMANDS = ["list", "show", "switch"] as const satisfies readonly WorkCommandName[];
 const WORK_MUTATE_COMMANDS = [
   "archive",
@@ -46,7 +43,6 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
 
   const writeCommands = new Set<WriteCommandName>([
     "read",
-    "diff",
     ...(mutate ? WRITE_MUTATE_COMMANDS : []),
   ]);
   const workCommands = new Set<WorkCommandName>([

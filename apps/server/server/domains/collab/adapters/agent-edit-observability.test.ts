@@ -45,7 +45,6 @@ describe("agent-edit unexpected write diagnostics", () => {
   it.each<WriteCommandName>([
     "create",
     "read",
-    "diff",
     "insert",
     "replace",
     "delete",
