@@ -16,7 +16,6 @@ import type {
   CollabDomain,
   CollabDrafts,
 } from "../../contracts.js";
-import { asThreadPeerAgentEditCore } from "../../domain/agent-edit-cores.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
@@ -30,7 +29,12 @@ import {
 import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
+import {
+  enlistResponseParticipant,
+  runResponseTransaction,
+} from "../../domain/response-transaction.js";
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
+import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
@@ -78,7 +82,20 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
   });
-  const agentEdit = asThreadPeerAgentEditCore(runtime.liveUtilityCore);
+  // No Work drafts exist in memory, so the pool routes both destinations to the live core.
+  const agentEdit = createThreadPeerCorePool({
+    liveUtilityCore: runtime.liveUtilityCore,
+    createThreadCore: () => runtime.liveUtilityCore,
+    shouldUseLiveReversal: async () => true,
+    discardThreadPeerBranches: async () => {},
+    pullThreadPeer: async () => undefined,
+    commitThreadResponseAtomically: (operation) => operation(),
+    responseTransactionSettlement: {
+      deferUntilCommit: () => false,
+      deferUntilRollback: () => false,
+    },
+    responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
+  });
   const projections = createDocumentProjectionRefresher({
     documents: runtime.markdownDocuments,
     runDocumentWriteHook,
@@ -147,7 +164,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     authorityHeads,
     agentEdit: {
-      agentEdit: (context) => (context?.draftOwner === null ? runtime.liveUtilityCore : agentEdit),
+      agentEdit: () => agentEdit,
     },
     reversal: {
       reverseTurn: (input) =>

@@ -20,6 +20,8 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
+const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
+
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
@@ -438,6 +440,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      destination: DRAFT_DESTINATION,
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -521,6 +524,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      destination: DRAFT_DESTINATION,
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,

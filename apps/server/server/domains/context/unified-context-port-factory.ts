@@ -69,6 +69,8 @@ export interface UnifiedContextPortFactory {
     workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
     threadId?: string | null,
     responseId?: string | null,
+    /** Whether the thread's Work drafts AI writes; reads follow the same destination (D40). */
+    draftMode?: boolean,
   ): ContextPort;
 }
 
@@ -77,6 +79,7 @@ type ManifestView = {
   workId?: string | null;
   threadId?: string | null;
   responseId?: string | null;
+  draftMode?: boolean;
 };
 
 interface ContextStoreResolvers {
@@ -233,6 +236,7 @@ type ContextPortBuildScope =
       workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
       threadId?: string | null;
       responseId?: string | null;
+      draftMode?: boolean;
     };
 
 function buildUnifiedContextPort(input: {
@@ -255,6 +259,7 @@ function buildUnifiedContextPort(input: {
           workId: scope.authority.workId,
           threadId: scope.threadId,
           responseId: scope.responseId,
+          draftMode: scope.draftMode === true,
         }
       : { projectId: scope.projectId },
     input.documentCreation,
@@ -435,7 +440,7 @@ export function createInMemoryUnifiedContextPortFactory(
         documentSync,
       });
     },
-    forWork(authority, projectId, userId, workAuthorities, threadId, responseId) {
+    forWork(authority, projectId, userId, workAuthorities, threadId, responseId, draftMode) {
       return buildUnifiedContextPort({
         scope: {
           kind: "work",
@@ -445,6 +450,7 @@ export function createInMemoryUnifiedContextPortFactory(
           workAuthorities,
           threadId,
           responseId,
+          draftMode,
         },
         storeResolvers,
         documentSync,
@@ -491,7 +497,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         },
       });
     },
-    forWork(authority, projectId, userId, workAuthorities, threadId, responseId) {
+    forWork(authority, projectId, userId, workAuthorities, threadId, responseId, draftMode) {
       return buildUnifiedContextPort({
         scope: {
           kind: "work",
@@ -501,6 +507,7 @@ export function createProductionUnifiedContextPortFactory(options: {
           workAuthorities,
           threadId,
           responseId,
+          draftMode,
         },
         storeResolvers,
         documentSync: options.documentSync,
