@@ -6,7 +6,8 @@
  * the paste door, plain prose, HTML) reaches once, after parsing, so it sees
  * nodes and can leave code alone. Only the Editor mounts it, with a catalog
  * read at paste time; while that catalog is null (the link index still
- * loading) nothing converts, rather than every link turning dashed.
+ * loading) nothing links, rather than every link turning dashed, though
+ * escapes are still spelled out.
  */
 
 import { type Editor, Extension } from "@tiptap/core";

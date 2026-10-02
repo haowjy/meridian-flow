@@ -17,8 +17,8 @@ one behavior — and are exactly the server's `DocumentLinkTarget`, so
 client's alone and never crosses the resolution port. There are no wikilinks:
 `[[name]]` is text. Only a paste into an Editor document converts it, to a
 standard link (`WikilinkPasteExtension`, which the Editor alone mounts); paste
-without formatting, a destination in code, and an escaped `\[[` keep the
-characters.
+without formatting and a destination in code keep the characters, and an
+escaped `\[[` stays the literal brackets.
 
 **Following is a decision, then a destination.** `linkClickIntent` decides
 whether a press follows or places the caret, and where a follow goes;
