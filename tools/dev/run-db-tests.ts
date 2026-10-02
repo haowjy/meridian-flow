@@ -4,9 +4,15 @@ import { execFile, fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { mapConcurrentSettled, throwSettledFailures } from "./lib/bounded-concurrency";
 import { acquireDatabaseTestAdmission } from "./lib/db-test-admission";
 import { effectiveDbTestWorkerCount, parseDbTestWorkerCount } from "./lib/db-test-workers";
-import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
+import {
+  cloneDatabaseForUrl,
+  dropDatabaseForUrl,
+  ensureDatabaseForUrl,
+  isLocalDevPostgres,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -75,6 +81,7 @@ async function main(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
   const mainDatabaseNames = resolveMainDatabaseNames(repoRoot);
   const local = isLocalDevPostgres(sourceDatabaseUrl);
+  const clonesEnabled = process.env.DB_TEST_CLONES === "1";
   const mainDatabaseName = mainDatabaseNames[0];
   if (local && !mainDatabaseName) {
     throw new Error("Local DB tests require a registered main database in .env.");
@@ -86,7 +93,7 @@ async function main(): Promise<void> {
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
   const configuredWorkerCount = parseDbTestWorkerCount(process.env.DB_TEST_WORKERS);
-  const admission = local
+  const admission = clonesEnabled
     ? await acquireDatabaseTestAdmission(sourceDatabaseUrl, configuredWorkerCount)
     : undefined;
   let workerDatabaseUrls: string[] = [];
@@ -100,7 +107,7 @@ async function main(): Promise<void> {
     console.log(
       `DB tests: ${selectedSuiteCount} suite(s) selected; using ${workerCount} of ${configuredWorkerCount} configured worker(s).`,
     );
-    workerDatabaseUrls = local
+    workerDatabaseUrls = clonesEnabled
       ? Array.from({ length: workerCount }, (_, index) =>
           managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
         )
@@ -115,9 +122,13 @@ async function main(): Promise<void> {
       );
       if (migrationExit !== 0)
         throw new Error(`DB migrations exited with status ${migrationExit}.`);
+    }
+    if (clonesEnabled) {
       await Promise.all(
         workerDatabaseUrls.map(async (workerDatabaseUrl) => {
-          const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl);
+          const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl, {
+            allowNonDevEndpoint: !local,
+          });
           console.log(`DB tests: cloned worker database ${workerDb}.`);
         }),
       );
@@ -168,6 +179,15 @@ async function main(): Promise<void> {
         });
         cleanup.unref();
         console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
+      } else if (clonesEnabled) {
+        const cleanupResults = await mapConcurrentSettled(workerDatabaseUrls, 4, async (url) => {
+          const result = await dropDatabaseForUrl(url, mainDatabaseNames, {
+            allowNonDevEndpoint: true,
+          });
+          console.log(`Dropped ${result.targetDb}.`);
+          return result;
+        });
+        throwSettledFailures("DB test cleanup", cleanupResults);
       }
     } finally {
       await admission?.release();

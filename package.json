@@ -41,7 +41,7 @@
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
-    "test:db": "tsx tools/dev/run-db-tests.ts"
+    "test:db": "DB_TEST_CLONES=1 tsx tools/dev/run-db-tests.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
