@@ -167,8 +167,7 @@ export function createEffectiveDocumentReader(input: {
     async readEffectiveRevision(command) {
       try {
         const result = await readEffective(
-          // Revision callers pass a thread only for a draft-mode Work.
-          { ...command, destination: command.threadId ? "draft" : "live" },
+          command,
           async (doc) => documentRevision(unwrapDoc(doc)),
           () =>
             input.liveCoordinator.withDocument(command.documentId, async (doc) =>
