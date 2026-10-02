@@ -42,7 +42,8 @@ export type AgentEditBlockGroup =
     }
   | {
       extent: "prefix";
-      relation: "context";
+      /** `copied`: the first and last block a block copy wrote, by their opening words. */
+      relation: "context" | "copied";
       items: AgentEditBlockItem[];
     };
 
@@ -63,6 +64,11 @@ export interface AgentEditModelPayload {
   write?: {
     id?: string;
     deletedHashes?: string[];
+  };
+  /** A copy's receipt: how many blocks it wrote and the source as the model named it. */
+  copied?: {
+    from: string;
+    blocks: number;
   };
   reversal?: {
     direction: "undo" | "redo";

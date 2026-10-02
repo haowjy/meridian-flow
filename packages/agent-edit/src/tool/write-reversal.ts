@@ -78,6 +78,10 @@ export interface WriteReversal {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
 }
 
+export function emptyAfterUndoMessage(path: string): string {
+  return `The document at ${path} is empty but still exists until document delete ships.`;
+}
+
 export interface WriteReversalRunInput {
   docId: string;
   session: ActorSession;
@@ -86,6 +90,8 @@ export interface WriteReversalRunInput {
   selection: ReversalSelection;
   actor?: ReversalActor;
   interactionContext?: InteractionContext;
+  /** The document as the model named it, for the note an undo that empties it carries. */
+  filePath?: string;
 }
 
 export interface WriteReversalEndpointInput {
@@ -267,6 +273,7 @@ export function createWriteReversal(deps: {
     selection: ReversalSelection;
     actor: ReversalActor;
     interactionContext: InteractionContext;
+    filePath?: string;
   }): Promise<InternalWriteResult> {
     const prepared = await prepareReversals(input);
     if (!prepared.ok) return prepared.response;
@@ -276,12 +283,28 @@ export function createWriteReversal(deps: {
     if (!reversal.ok) return reversal.response;
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
     const sync = reversal.sync ?? { echo: [], reconciled: false };
-    return formatReversalSuccess({
+    const result = formatReversalSuccess({
       direction: input.direction,
       status: reversal.status,
       writeIds: reversal.writeIds,
       sync,
     });
+    // Undoing a create or copy leaves the document in place; say so, so the
+    // model doesn't report it gone. Removed with this note when delete ships.
+    if (input.direction === "undo" && input.filePath && isEmptyDocument(input.runtime.doc)) {
+      return {
+        ...result,
+        model: { ...result.model, message: emptyAfterUndoMessage(input.filePath) },
+      };
+    }
+    return result;
+  }
+
+  function isEmptyDocument(doc: Y.Doc): boolean {
+    const handle = toDocHandle(doc);
+    return model
+      .getBlocks(handle)
+      .every((block) => model.getBlockType(block) === "paragraph" && model.getText(block) === "");
   }
 
   type PreparedReversal = {

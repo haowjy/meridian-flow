@@ -1,6 +1,7 @@
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { Block } from "../codec-types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type {
@@ -23,6 +24,7 @@ export type {
   WriteSuccessPhase,
 } from "./model-result.js";
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
+export type CopyCommand = Extract<WriteCommand, { command: "copy" }>;
 export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type RemoveCommand = Extract<WriteCommand, { command: "remove" }>;
@@ -45,6 +47,8 @@ interface WriteOutcomeBase {
   error?: WriteErrorDetail;
   /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
+  /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
+  nodes?: readonly Block[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -189,6 +193,13 @@ export interface WriteContext {
   interactionContext?: InteractionContext;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
+  /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */
+  includeNodes?: boolean;
+  /**
+   * The blocks a `from` or `copy` write copies, read by the host from the
+   * source (D23, D24). They become the command's content as nodes.
+   */
+  copiedNodes?: readonly Block[];
 }
 
 export type MutationActor =

@@ -16,6 +16,7 @@ export function createWriteDispatch(input: {
   ): Promise<InternalWriteResult> {
     switch (command.command) {
       case "create":
+      case "copy":
         return input.commands.create(command, session, context);
       case "insert":
       case "replace":

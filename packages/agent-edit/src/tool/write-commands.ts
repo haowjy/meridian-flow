@@ -3,14 +3,17 @@ import * as Y from "yjs";
 
 import { snapshotBlocks } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
-import { toDocHandle } from "../handles.js";
+import type { AppliedEditSummary } from "../apply/types.js";
+import type { Block } from "../codec-types.js";
+import { type BlockRef, toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
-import type { DocumentRenderer } from "./document-renderer.js";
+import { copyEdgeLines, copySummary } from "./copy-receipt.js";
+import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
@@ -107,11 +110,30 @@ export function createWriteCommands(deps: {
         ),
       ),
       revision: options.documentRevision?.(runtime.doc) ?? null,
+      ...(context.includeNodes ? { nodes: selectedNodes(runtime.doc, selection.blocks) } : {}),
     };
   }
 
+  /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
+  function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
+    const handle = toDocHandle(doc);
+    const nodes = options.model.projectBlocks(handle);
+    const indexByBlock = new Map(
+      options.model.getBlocks(handle).map((block, index) => [block, index]),
+    );
+    return selected.flatMap((block) => {
+      const index = indexByBlock.get(block);
+      const node = index === undefined ? undefined : nodes[index];
+      return node ? [node] : [];
+    });
+  }
+
+  /**
+   * `create`, and `copy`, which is a create whose content is the source's
+   * blocks as nodes (D24): same write handle, rollback, undo and drafting.
+   */
   async function create(
-    command: Extract<WriteCommand, { command: "create" }>,
+    command: Extract<WriteCommand, { command: "create" | "copy" }>,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -120,8 +142,13 @@ export function createWriteCommands(deps: {
     const actor = mutationActor(session, address.documentId, context);
     const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
-      return status("invalid_write", "create does not accept a #fragment in file.");
+      return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
+    const copiedNodes = command.command === "copy" ? context.copiedNodes : undefined;
+    if (command.command === "copy" && !copiedNodes) {
+      return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
+    }
+    const content = command.command === "create" ? (command.content ?? "") : "";
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -136,7 +163,9 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const parsed = renderer.parseForCommand(command.content ?? "");
+    const parsed: ParseForCommandResult = copiedNodes
+      ? { ok: true, parsed: { blocks: [...copiedNodes] } }
+      : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
@@ -211,12 +240,13 @@ export function createWriteCommands(deps: {
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
     let deletedHashes = new Set<string>();
+    let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
-      const replacement = command.content ?? "";
+      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-        replacement.length === 0
+        empty
           ? {
               command: "remove",
               documentAddress: address,
@@ -225,7 +255,7 @@ export function createWriteCommands(deps: {
           : {
               command: "replace",
               documentAddress: address,
-              content: replacement,
+              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
               in: [1, existingBlocks.length],
             },
       );
@@ -249,11 +279,19 @@ export function createWriteCommands(deps: {
       writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
       touchedHashes = new Set(applied.changedBlocks ?? []);
       deletedHashes = new Set(applied.deletedBlocks ?? []);
+      insertedHashes = insertedBlockIds(applied.appliedEdits);
     } else {
       runtime.doc.transact(() => {
-        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
+        insertedHashes = options.model
+          .insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed)
+          .map((block) => options.model.getBlockId(block));
       }, origin);
     }
+    const copied = copiedNodes
+      ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
+          edges: false,
+        })
+      : undefined;
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
@@ -279,6 +317,7 @@ export function createWriteCommands(deps: {
           deletedHashes,
           preOwnSnapshot: preWriteSnapshot,
           ...(semanticEditIr ? { semanticEditIr } : {}),
+          ...(copied ? { copied } : {}),
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -312,6 +351,7 @@ export function createWriteCommands(deps: {
                 },
               ],
         concurrentEdits: summary.concurrentEdits,
+        ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
       });
     }
 
@@ -377,6 +417,7 @@ export function createWriteCommands(deps: {
         : {}),
       ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
       ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
     });
   }
 
@@ -416,9 +457,20 @@ export function createWriteCommands(deps: {
       synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
+    const from = command.command === "remove" ? undefined : command.from;
+    const copiedNodes = from ? context.copiedNodes : undefined;
+    if (from && !copiedNodes) return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
+    if (copiedNodes?.length === 0) {
+      return status("invalid_write", `from selected no blocks in ${from?.path}.`);
+    }
+    const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const resolved = resolveWrite(
       { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-      { ...command, documentAddress: address },
+      {
+        ...selectors,
+        documentAddress: address,
+        ...(copiedNodes ? { blocks: copiedNodes } : {}),
+      },
     );
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
@@ -457,6 +509,22 @@ export function createWriteCommands(deps: {
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
     }
     writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
+    const copied =
+      from && copiedNodes
+        ? copySummary(from.path, insertedBlockIds(applied.appliedEdits), { edges: true })
+        : undefined;
+    const copiedEcho = () =>
+      copied
+        ? {
+            copied: {
+              summary: copied,
+              edges: copyEdgeLines(
+                copied,
+                snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec),
+              ),
+            },
+          }
+        : {};
 
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
@@ -489,6 +557,7 @@ export function createWriteCommands(deps: {
           echo: summary.echo,
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
+          ...copiedEcho(),
         });
         const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
@@ -509,6 +578,7 @@ export function createWriteCommands(deps: {
           deletedHashes: new Set(applied.deletedBlocks ?? []),
           preOwnSnapshot,
           semanticEditIr: resolved.ir,
+          ...(copied ? { copied } : {}),
           ...(interactionContext ? { interactionContext } : {}),
         });
         if (rejected) {
@@ -588,6 +658,7 @@ export function createWriteCommands(deps: {
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
       ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      ...copiedEcho(),
     });
   }
 
@@ -701,6 +772,13 @@ export function createWriteCommands(deps: {
       throw error;
     }
   }
+}
+
+const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
+
+/** Hashes of the blocks the edits inserted, in document order of insertion. */
+function insertedBlockIds(applied: readonly AppliedEditSummary[] | undefined): string[] {
+  return (applied ?? []).filter((edit) => edit.kind === "insert").flatMap((edit) => edit.blockIds);
 }
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {

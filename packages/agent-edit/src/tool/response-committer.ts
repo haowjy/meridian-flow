@@ -11,6 +11,7 @@ import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { withLiveDocument } from "./coordinator.js";
+import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
@@ -101,6 +102,8 @@ export interface ResponseStageUpdateInput {
   preOwnSnapshot: Uint8Array;
   interactionContext?: InteractionContext;
   semanticEditIr?: SemanticEditIRV1;
+  /** A copy's receipt, which its settled receipt repeats instead of echoing the text. */
+  copied?: CopySummary;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -115,6 +118,7 @@ interface StagedResponseUpdate extends JournaledUpdate {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot: Uint8Array;
+  copied?: CopySummary;
 }
 
 interface ResponseDocumentBuffer {
@@ -716,6 +720,11 @@ export function createResponseCommitter(deps: {
           writeId: update.writeId,
           echo,
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
+          ...(update.copied
+            ? {
+                copied: { summary: update.copied, edges: copyEdgeLines(update.copied, after) },
+              }
+            : {}),
         });
         return {
           writeId: update.writeId,
@@ -990,6 +999,7 @@ export function createResponseCommitter(deps: {
       touchedHashes: new Set(input.touchedHashes),
       deletedHashes: new Set(input.deletedHashes),
       preOwnSnapshot: input.preOwnSnapshot,
+      ...(input.copied ? { copied: input.copied } : {}),
     });
     buffer.nextStageSeq += 1;
     const stagedState = responses.get(input.responseId);
