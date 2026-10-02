@@ -7,9 +7,9 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 
-import { createStandaloneEditorExtensions } from "../../config";
-import { linkAheadAddress } from "../../links/link-address";
-import type { AtReferenceCatalog } from "./AtReferenceExtension";
+import { createStandaloneEditorExtensions } from "../config";
+import { linkAheadAddress } from "./link-address";
+import type { WikilinkPasteCatalog } from "./wikilink-paste";
 
 const HOLDER = "manuscript://volume-1/chapter-2.md";
 const DOCUMENTS = [
@@ -25,18 +25,19 @@ afterEach(() => {
   for (const editor of live.splice(0)) editor.destroy();
 });
 
-function editor(targets: readonly string[] | null): Editor {
-  const catalog = {
+/** An Editor whose link index holds `targets`, or is still loading (null). */
+function editor(targets: readonly string[] | null, content = "<p></p>"): Editor {
+  const catalog: WikilinkPasteCatalog | null = targets && {
     holderUri: HOLDER,
-    linkAhead: (name: string, folders?: readonly string[]) => {
+    targets,
+    linkAhead: (name, folders) => {
       const uri = linkAheadAddress(HOLDER, name, folders);
       return uri && !DOCUMENTS.includes(uri) ? { uri } : null;
     },
-    linkTargets: () => targets,
-  } as unknown as AtReferenceCatalog;
+  };
   const created = new Editor({
-    extensions: createStandaloneEditorExtensions({ atReferences: { catalog: () => catalog } }),
-    content: "<p></p>",
+    extensions: createStandaloneEditorExtensions({ wikilinkPaste: { catalog: () => catalog } }),
+    content,
   });
   live.push(created);
   return created;
