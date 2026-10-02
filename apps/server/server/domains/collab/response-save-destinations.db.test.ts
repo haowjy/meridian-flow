@@ -346,6 +346,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await draftText(collab, KB_ID)).not.toContain("Agent lore.");
     });
 
+    it("leaves out a document whose Work was archived before the save and commits the rest", async () => {
+      const collab = createTestCollab();
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.works.id, WORK_ID));
+      await seed(collab);
+      const agentEdit = collab.agentEdit();
+      for (const [file, documentId, content] of [
+        ["notes.md", SCRATCH_ID, "Agent notes."],
+        ["lore.md", KB_ID, "Agent lore."],
+      ] as const) {
+        await expect(
+          agentEdit.write(
+            { command: "insert", file, documentId, content },
+            { ...context(live), responseId: RESPONSE_ID },
+          ),
+        ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      }
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+
+      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+
+      expect(committed).toMatchObject({
+        status: "committed",
+        refused: [{ documentId: SCRATCH_ID, reason: "work_archived", workSlug: "rewrite" }],
+      });
+      expect(committed.documents.map((document) => document.documentId)).toEqual([KB_ID]);
+      expect(await liveText(collab, KB_ID)).toContain("Agent lore.");
+      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
+      expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
+    });
+
     it("refuses a write after a switch to auto-apply until the document is read again", async () => {
       const collab = createTestCollab();
       await seed(collab);

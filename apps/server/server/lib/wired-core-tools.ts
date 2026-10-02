@@ -163,6 +163,8 @@ export type ResponseWriteLifecycleCommitResult =
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** Documents the save left out, with the copy their writes' results now carry (D29). */
+      refused: Array<{ documentId: string; message: string }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -393,6 +395,13 @@ function contextErrorMessage(error: ContextError): string {
   return `${error.code}: ${error.uri}`;
 }
 
+/** D29: the reply's Work was archived before its save, so this file's change was left out. */
+function archivedBeforeSaveMessage(workSlug: string | null): string {
+  if (workSlug === null)
+    return "This chat's Work was archived before this reply was saved, so this change wasn't saved.";
+  return `Work @${workSlug} was archived before this reply was saved, so this change wasn't saved. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing its files.`;
+}
+
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
@@ -552,6 +561,10 @@ export function createAgentEditResponseWriteLifecycle(
               ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
               : [],
           ),
+          refused: result.refused.map((refusal) => ({
+            documentId: refusal.documentId,
+            message: archivedBeforeSaveMessage(refusal.workSlug),
+          })),
         };
       };
       const result = await deps.documentSync.finalizeResponseCommit(
