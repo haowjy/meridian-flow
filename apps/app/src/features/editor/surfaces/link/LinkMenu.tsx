@@ -107,7 +107,7 @@ export function LinkMenu({
         </EditorMenuLabel>
       ) : null}
       {resolution?.state === "unresolved" ? (
-        <EditorMenuLabel>{t`No document with this name yet`}</EditorMenuLabel>
+        <EditorMenuLabel>{t`No document at that address`}</EditorMenuLabel>
       ) : null}
       {followable ? (
         <EditorMenuItem

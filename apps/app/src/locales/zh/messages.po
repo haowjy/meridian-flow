@@ -89,7 +89,7 @@ msgid "'.' and '..' cannot be used as names"
 msgstr ""
 
 #. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
 msgid "(also {0})"
 msgstr ""
 
@@ -205,11 +205,6 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
-#. placeholder {0}: work.name
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "{0}, Archived"
-#~ msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -221,10 +216,6 @@ msgstr ""
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
-#~ msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -246,17 +237,9 @@ msgstr ""
 msgid "{full}, summary"
 msgstr ""
 
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "{hidden, plural, one {# more document carries this name.} other {# more documents carry this name.}}"
-msgstr ""
-
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
-
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "{label} ({folder})"
-msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -365,10 +348,6 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
-
-#: src/features/project/work/WorkCollection.tsx
-#~ msgid "A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI what you’re after."
-#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -548,18 +527,10 @@ msgstr ""
 msgid "Archived"
 msgstr ""
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "Archived Work"
-#~ msgstr ""
-
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Asleep"
-#~ msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -779,11 +750,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Chats you start here stay with this Work."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Check again"
@@ -849,10 +815,6 @@ msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
-msgstr ""
-
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "Choose the one to open. Once only one document carries the name, the link opens it directly."
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -1372,7 +1334,7 @@ msgid "Couldn't write"
 msgstr ""
 
 #. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
 msgid "Create “{0}”"
 msgstr ""
 
@@ -1431,7 +1393,6 @@ msgstr ""
 msgid "Creating project…"
 msgstr ""
 
-#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr ""
@@ -1520,14 +1481,6 @@ msgstr ""
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
-#~ msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deletes for good within a day"
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -1763,10 +1716,6 @@ msgstr ""
 msgid "epigraph"
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Errored."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
 msgstr ""
@@ -1905,10 +1854,6 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Generating"
-#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -2201,7 +2146,7 @@ msgstr ""
 msgid "Link text"
 msgstr ""
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
+#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
 msgid "links now, page later"
 msgstr ""
 
@@ -2388,11 +2333,6 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
-#: src/features/editor/surfaces/link/LinkHint.tsx
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "More than one document carries that name"
-msgstr ""
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -2547,20 +2487,12 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "No document answers to this name. A document can be created for it once the name works as a filename."
-msgstr ""
-
-#: src/features/links/FollowOutcomeContent.tsx
-#: src/rich-content/TranscriptReference.tsx
-msgid "No document at that address"
-msgstr ""
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/rich-content/TranscriptReference.tsx
-msgid "No document with this name yet"
+msgid "No document at that address"
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -2650,10 +2582,6 @@ msgstr "未找到"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
-
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "Nothing carries that name yet"
-msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
@@ -3260,10 +3188,6 @@ msgstr ""
 msgid "Save changes"
 msgstr ""
 
-#: src/features/project/work/WorkMetadata.tsx
-#~ msgid "Save failed"
-#~ msgstr ""
-
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save goal changes?"
 msgstr ""
@@ -3482,11 +3406,6 @@ msgstr ""
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr ""
-
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Start a chat in this Work"
-#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
@@ -4116,10 +4035,6 @@ msgstr ""
 msgid "Turns {0}"
 msgstr "轮次 {0}"
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-msgid "two documents share this name"
-msgstr ""
-
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr ""
@@ -4275,10 +4190,6 @@ msgstr ""
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Waiting"
-#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
