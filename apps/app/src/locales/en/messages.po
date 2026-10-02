@@ -2813,6 +2813,10 @@ msgstr "Partial result"
 msgid "Paste"
 msgstr "Paste"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Paused to reread"
+msgstr "Paused to reread"
+
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
