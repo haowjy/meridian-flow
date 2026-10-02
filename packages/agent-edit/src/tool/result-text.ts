@@ -31,7 +31,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
 function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.path) facts.push(`path: ${result.path}`);
-  if (result.write?.id) facts.push(`write: ${result.write.id}`);
+  if (result.write?.id) facts.push(`write: ${result.write.id}${draftedSuffix(result)}`);
   if (result.reversal && result.reversal.count > 0) {
     facts.push(`${result.reversal.direction}: ${result.reversal.count} edit(s)`);
   }
@@ -41,6 +41,12 @@ function statusLine(result: AgentEditResultV1): string {
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
+}
+
+function draftedSuffix(result: AgentEditResultV1): string {
+  return result.destination === "draft" && result.draftWork !== undefined
+    ? ` (drafted in @${result.draftWork})`
+    : "";
 }
 
 function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {

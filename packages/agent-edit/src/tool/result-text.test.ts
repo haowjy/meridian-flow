@@ -115,6 +115,27 @@ describe("renderAgentEditResult", () => {
     );
   });
 
+  it("names the Work draft a drafted write landed in", () => {
+    const write = (destination: "live" | "draft", draftWork?: string) =>
+      renderAgentEditResult(
+        modelResult({
+          command: "insert",
+          status: "success",
+          phase: "staged",
+          payload: {
+            path: "kb://notes.md",
+            write: { id: "w2" },
+            destination,
+            ...(draftWork === undefined ? {} : { draftWork }),
+          },
+        }),
+      );
+    expect(write("draft", "rewrite")).toBe(
+      "status: success; path: kb://notes.md; write: w2 (drafted in @rewrite)",
+    );
+    expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2");
+  });
+
   it("renders a reversal count and an error message", () => {
     const undo = modelResult({
       command: "undo",
