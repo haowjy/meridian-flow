@@ -24,16 +24,12 @@ describe("agent definition support", () => {
     expect(agentExecutionUnavailableReasons(writer, gateway, "model-a")).toEqual([]);
   });
 
-  it("refuses nonempty skill load", () => {
+  it("allows nonempty skill load", () => {
     const loaded = definition({
       skills: { load: ["writing-principles"], available: ["creative-writing-modes"] },
     });
-    expect(agentDefinitionUnsupportedReasons(loaded)).toEqual([
-      "Bound skill load is not available yet.",
-    ]);
-    expect(agentExecutionUnavailableReasons(loaded, gateway, "model-a")).toEqual([
-      "Bound skill load is not available yet.",
-    ]);
+    expect(agentDefinitionUnsupportedReasons(loaded)).toEqual([]);
+    expect(agentExecutionUnavailableReasons(loaded, gateway, "model-a")).toEqual([]);
   });
 
   it("allows compiled tools and disallowed-tools", () => {

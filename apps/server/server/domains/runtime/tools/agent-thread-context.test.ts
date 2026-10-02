@@ -1,4 +1,5 @@
 /** Writer vs Critic metadata advertise one shared, command-narrowed document tool. */
+
 import {
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
@@ -18,7 +19,7 @@ import {
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { createSkillToolRegistrations } from "./skill-tool.js";
-import { createSpawnToolRegistrations } from "./spawn-tools.js";
+import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
 const WRITER_MAP = {
@@ -228,10 +229,8 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
       tools: WRITER_MAP,
       namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
     });
-    expect(spawnDescription(empty.tools)).toContain("spawn only when the user asks");
-    expect(spawnDescription(rostered.tools)).not.toContain("spawn only when the user asks");
-    expect(spawnDescription(rostered.tools)).toContain("Prefer a named subagent");
-    expect(spawnDescription(rostered.tools)).not.toContain("Named subagents: critic.");
+    expect(spawnDescription(empty.tools)).toBe(spawnToolDescription(false));
+    expect(spawnDescription(rostered.tools)).toBe(spawnToolDescription(true));
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
   });
 

@@ -33,8 +33,8 @@ import type { FunctionTool, Gateway, GenerateRequest, ModelInfo, Tool } from "..
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
-  type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
+  resolveThreadPreloadedSkills,
 } from "./available-skills.js";
 import {
   type ProjectedActiveHistory,
@@ -125,6 +125,10 @@ export async function composeLivePromptBake(
     thread,
     agentRevisions: input.agentRevisions,
   });
+  const preloadedSkills = await resolveThreadPreloadedSkills({
+    thread,
+    agentRevisions: input.agentRevisions,
+  });
   const namedSubagents = await resolveNamedSubagentListings({
     thread,
     agentRevisions: input.agentRevisions,
@@ -135,6 +139,7 @@ export async function composeLivePromptBake(
     appendPrompt: agentContext.appendPrompt,
     workContext,
     availableSkills,
+    preloadedSkills,
     namedSubagents,
     subagentGuidance: agentContext.subagentGuidance,
   });
@@ -164,12 +169,6 @@ export async function assembleNextTurnContext(
   });
 
   let tools = agentContext.tools;
-  let workContextSection: string | undefined;
-  let unfrozenBasePrompt: string | null | undefined;
-  let appendPromptForUnfrozen: string | undefined;
-  let availableSkillsForUnfrozen: AvailableSkillListing[] | undefined;
-  let namedSubagentsForUnfrozen: PromptInventoryListing[] | undefined;
-  let subagentGuidanceForUnfrozen: string | undefined;
   let systemPrompt: string;
   let pendingBake: PromptBakeContent | undefined;
   const baked = thread.initialPromptBakeId != null;
@@ -188,8 +187,7 @@ export async function assembleNextTurnContext(
     systemPrompt = bake.composedSystemPrompt;
     tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
   } else {
-    const { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext } =
-      await composeLivePromptBake(input, agentContext);
+    const { bakeContent, bakedPrompt } = await composeLivePromptBake(input, agentContext);
     if (input.persistBake && input.bakeInitialPrompt) {
       const result = await input.bakeInitialPrompt(thread.id as ThreadId, {
         ...bakeContent,
@@ -203,12 +201,6 @@ export async function assembleNextTurnContext(
     } else {
       pendingBake = bakeContent;
       systemPrompt = bakedPrompt;
-      unfrozenBasePrompt = agentContext.agentBody;
-      appendPromptForUnfrozen = agentContext.appendPrompt;
-      workContextSection = workContext;
-      availableSkillsForUnfrozen = availableSkills;
-      namedSubagentsForUnfrozen = namedSubagents;
-      subagentGuidanceForUnfrozen = agentContext.subagentGuidance;
     }
   }
 
@@ -259,14 +251,8 @@ export async function assembleNextTurnContext(
   const built = buildContext({
     thread,
     ...modelHistory,
-    frozenSystemPrompt: isThreadPromptFrozen(thread) ? systemPrompt : undefined,
+    systemPrompt,
     tools,
-    unfrozenBasePrompt,
-    appendPrompt: appendPromptForUnfrozen,
-    workContext: workContextSection,
-    availableSkills: availableSkillsForUnfrozen,
-    namedSubagents: namedSubagentsForUnfrozen,
-    subagentGuidance: subagentGuidanceForUnfrozen,
     eventSink: input.eventSink,
   });
   const contextTools = built.tools;

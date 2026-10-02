@@ -12,7 +12,7 @@ export function writeHistoryPreview(input: JsonObject): string {
 }
 export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): string {
   const result = output as JsonObject | undefined;
-  return `→ ${result?.handle ?? (result?.report as JsonObject | undefined)?.handle ?? ""} ${JSON.stringify(input.description ?? "")}`;
+  return `→ ${result?.handle ?? (result?.report as JsonObject | undefined)?.handle ?? ""} ${JSON.stringify(input.name ?? "")}`;
 }
 export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
   const run = input.run ?? (output as JsonObject | undefined)?.run;

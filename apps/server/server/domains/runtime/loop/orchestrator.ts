@@ -421,7 +421,7 @@ async function admitRunExecution(
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
-      description: input.executionReport?.description ?? null,
+      name: input.executionReport?.name ?? null,
     });
   }
 }
