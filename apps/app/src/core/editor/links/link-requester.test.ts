@@ -15,7 +15,7 @@ describe("createLinkRequester", () => {
     const request = vi.spyOn(resolution, "request");
     const requester = createLinkRequester(resolution);
 
-    for (const name of ["Kael", "Ilsever", "Kael"]) requester.watch(`[[${name}]]`);
+    for (const name of ["Kael", "Ilsever", "Kael"]) requester.watch(`manuscript://${name}.md`);
     await tick();
 
     // One batched question for the set; the pass its own publish triggers
