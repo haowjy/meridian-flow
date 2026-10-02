@@ -26,6 +26,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
   createContextUploadContentPort,
@@ -230,7 +231,7 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog;
+  contextCatalog: ContextCatalog & ContextCatalogMutationPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -302,7 +303,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog;
+  contextCatalog: ContextCatalog & ContextCatalogMutationPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -413,8 +414,12 @@ export async function createProductionAppPorts(input: {
   const db = input.db;
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
+  let documentSync: CollabDomain;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
+    manifestMembership: {
+      resolveManifestMembership: (input) => documentSync.resolveManifestMembership(input),
+    },
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
@@ -444,7 +449,7 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
-  const documentSync = createCollabDomain({
+  documentSync = createCollabDomain({
     db,
     assetPathResolver,
     documentAccess,
