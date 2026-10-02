@@ -144,8 +144,11 @@ passes as `workId`. A named Work travels with its slug, or the background move
 could never validate its canonical address. An address that is not a legal
 path gets the dialog without the button.
 
-It is the reservation and `setLocation` primitive: both commit locally, so the
-dialog closes and the document opens through the host's `onOpen` at once,
+It is the reservation and `setLocation` primitive (except No Work's Scratch,
+which the local replica cannot place: it names a Scratch Work by slug and No
+Work has none, so there Create asks the server first, as the Scratch tree's New
+file does). Both steps commit locally, so the dialog closes and the document
+opens through the host's `onOpen` at once,
 while the server's move (which creates any missing folders) catches up in the
 background. A local failure stays on the dialog ("The document could not be
 created"); a sync failure lands on the document. Nothing about the link
