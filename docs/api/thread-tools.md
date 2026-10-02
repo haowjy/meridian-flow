@@ -13,7 +13,8 @@ a fork still reads the inherited prefix of a trashed source.
 
 Input: `{ ref?, depth?: 1 | 2 | 3, cursor? }`. Default depth is 1.
 
-The text result includes the path to the root (up to 16 hops), current thread,
+The typed result is `{ ref, listing }`: the resolved conversation and the
+listing the model reads. The listing includes the path to the root (up to 16 hops), current thread,
 and up to 50 descendant nodes. Trashed path hops are labelled; trashed nodes
 are omitted. Spawn edges use the parent. Fork and handoff edges use the cutoff
 turn's owner, including inherited cutoffs. Nodes are selected newest first per
@@ -70,11 +71,13 @@ In progress
 [4] spawn "Summarize conversation test"
 ```
 
-- **Turn numbers** are ordinals over every turn of the effective transcript,
-  counted from 1. One count query gives the page's first number; the walk
-  numbers the rest. A number never changes across pages, `order` or
-  compaction, so an `expand` written earlier still names the same turn.
-  Hidden system turns keep their number, so the default view can skip one.
+- **Turn numbers** count conversation turns only (writer and agent requests
+  and assistant replies), from 1, with no gaps (D10). One count query gives
+  the page's first number; the walk numbers the rest by the same rule. A
+  number never changes across pages, `order` or compaction, so an `expand`
+  written earlier still names the same turn. System turns (completion
+  notices, Work updates, seeds, compaction) have no number; with
+  `system_messages` they show under their label and can't be expanded.
 - **Visibility** comes from each registration's `historyKind`. Routine calls
   (`read`, `ls`, `search`, `work` list/show, `thread_ls`, `thread_history`,
   `thread_report`, `skill`, and a child's `return_result`) are hidden and
@@ -127,6 +130,12 @@ When a newer run is in progress the result adds `running: true` and a
 You'll be notified when it finishes." With no finished report it is
 `{ ref, status: "unavailable", message }`, telling the model to wait for the
 completion notice instead of calling `thread_report` again.
+
+The model reads a text rendering of that typed result (D8), never JSON: the
+report as history shows it (`Report (completed)`, a `reason:` line when there
+is one, then the summary with real newlines, `payload:` and `artifact:`
+lines), then the running-again line; an unavailable result is just its line.
+Refusals from the thread tools render as `<message> (<code>)`.
 
 The app's report route (`GET .../reports/[childThreadId]/[execution]`) keeps
 addressing one execution through `readThreadReport`, so each spawn card shows
