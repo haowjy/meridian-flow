@@ -202,7 +202,7 @@ export type OrchestratorEvent =
       parentTurnId: string;
       childThreadId: string;
       agentSlug: string;
-      description?: string;
+      name?: string;
     }
   | {
       type: "agent.handoff";

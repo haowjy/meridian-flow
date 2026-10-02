@@ -49,7 +49,7 @@ export function spawnOutputForTranscript(
 type InvocationCardInput = {
   agent?: string;
   agentName: string;
-  description?: string;
+  name?: string;
   correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
   childThreadId: ThreadId;
   execution: TurnId | null;
@@ -83,7 +83,7 @@ export function invocationCardProps(input: InvocationCardInput & { outcome?: Sav
     deliveryMode: input.correlation.deliveryMode,
     childThreadId: input.childThreadId,
     startedAt: input.startedAt,
-    ...(input.description !== undefined ? { title: input.description } : {}),
+    ...(input.name !== undefined ? { title: input.name } : {}),
     ...(input.fromThreadId !== undefined ? { fromThreadId: input.fromThreadId } : {}),
     ...(input.fromThreadRef !== undefined ? { fromThreadRef: input.fromThreadRef } : {}),
     ...(input.fromThreadTitle !== undefined ? { fromThreadTitle: input.fromThreadTitle } : {}),
@@ -124,7 +124,7 @@ export function unadmittedInvocationFailure(
 export function unadmittedInvocationFailureProps(input: {
   agent?: string;
   agentName?: string;
-  description?: string;
+  name?: string;
   correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
   reason: string;
 }): InvocationCardProps {
@@ -137,7 +137,7 @@ export function unadmittedInvocationFailureProps(input: {
     deliveryMode: input.correlation.deliveryMode,
     startedAt: new Date().toISOString(),
     terminalAt: new Date().toISOString(),
-    ...(input.description !== undefined ? { title: input.description } : {}),
+    ...(input.name !== undefined ? { title: input.name } : {}),
     reason: input.reason,
   };
 }
