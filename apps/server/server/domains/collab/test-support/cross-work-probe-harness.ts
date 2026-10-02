@@ -12,6 +12,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_ID,
 } from "./change-trail-postgres-harness.js";
 
 type CrossWorkProbeFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
@@ -122,12 +123,14 @@ export async function runCrossWorkProbe(
     });
   });
   const contextA = {
+    destination: { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const,
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseId: undefined,
   };
   const contextB = {
+    destination: { kind: "draft", workId: WORK_B_ID, workSlug: "work-b" } as const,
     sessionId: THREAD_B_ID,
     threadId: THREAD_B_ID,
     turnId: TURN_B_ID,

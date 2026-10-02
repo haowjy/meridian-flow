@@ -3,6 +3,7 @@
  * the generic omitted/empty-agent subagent inheriting caller config, and the
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -29,6 +30,10 @@ import {
 } from "../adapters/in-memory/loop-ports.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
+import {
+  resolveThreadModelAvailableSkills,
+  resolveThreadPreloadedSkills,
+} from "../loop/available-skills.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
@@ -91,7 +96,7 @@ function stubOrchestrator(
           cardBlockId: null,
         }),
         agentSlug: input.executionReport?.agentSlug ?? null,
-        description: input.executionReport?.description ?? null,
+        name: input.executionReport?.name ?? null,
       });
       return {
         userTurnId: userTurn.id,
@@ -163,6 +168,10 @@ async function fixture(
         { name: "Hidden", model: "hidden-model", "model-invocable": false },
         "",
       ),
+      "skills/continuity/SKILL.md":
+        "---\nname: continuity\ndescription: Check facts against canon.\n---\n\ncontinuity body.\n",
+      "skills/story-review/SKILL.md":
+        "---\nname: story-review\ndescription: Review drafts after prose exists.\n---\n\nstory-review body.\n",
     },
     dependencies: {},
   });
@@ -722,6 +731,44 @@ describe("ChildRunCoordinator invocation overlay", () => {
     });
     expect(composed).toContain("You are Critic.");
     expect(composed).toContain("Custom child prompt");
+  });
+
+  it("binds skill overrides on the child so its own catalog and preload read them", async () => {
+    const { coordinator, parent, revisions, repos } = await fixture();
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        overrides: { skills: { load: ["continuity"], available: ["story-review"] } },
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.configuration.skills.load.map((skill) => skill.path)).toEqual([
+      "skills/continuity/SKILL.md",
+    ]);
+    expect(binding?.configuration.skills.available.map((skill) => skill.path)).toEqual([
+      "skills/story-review/SKILL.md",
+    ]);
+
+    const child = await repos.threads.findById(result.report.threadId);
+    if (!child) throw new Error("Missing spawned child thread");
+    expect(
+      (await resolveThreadModelAvailableSkills({ thread: child, agentRevisions: revisions })).map(
+        (skill) => skill.slug,
+      ),
+    ).toEqual(["story-review"]);
+    expect(
+      (await resolveThreadPreloadedSkills({ thread: child, agentRevisions: revisions })).map(
+        (skill) => skill.body,
+      ),
+    ).toEqual(["continuity body.\n"]);
   });
 
   it("rejects an out-of-scope tool grant before creating the child", async () => {

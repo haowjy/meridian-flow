@@ -49,7 +49,7 @@ describe("single cancel exit", () => {
       },
       responseWrites: {
         async commitResponse() {
-          return { status: "committed", receipts: [], concurrentEdits: [] };
+          return { status: "committed", receipts: [], concurrentEdits: [], refused: [] };
         },
         async rollbackResponse() {
           rollback();

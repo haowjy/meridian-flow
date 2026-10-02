@@ -489,7 +489,7 @@ describe("write reversal under concurrent edits", () => {
     expect(undo.status).toBe("reconciled");
     expect(undo.result).toMatchObject({
       command: "undo",
-      reversal: { direction: "undo", count: 1 },
+      reversal: { direction: "undo", writes: ["w1"] },
     });
     expect(scenario.blockTexts()).toEqual(["Beta bright shield."]);
   });
@@ -506,7 +506,7 @@ describe("write reversal under concurrent edits", () => {
     });
 
     expect(undo.status).toBe("reconciled");
-    expect(outcomeText(undo)).toContain("undo: 3 edit(s)");
+    expect(outcomeText(undo)).toContain("undo: w1, w2, w3");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
     await expectMutationStatuses(scenario, {
       w1: "reversed",

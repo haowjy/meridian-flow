@@ -332,7 +332,7 @@ end-to-end as one suite.
 - **Steps:** seed a distinctive source sentinel, then script a foreground spawn:
 
   ```bash
-  ./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","description":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."},{"text":"Parent answer."}]' --json
+  ./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","name":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."},{"text":"Parent answer."}]' --json
   ./mf thread view "$T" --json
   ./mf thread context "$CHILD" --all --view raw --json
   ```

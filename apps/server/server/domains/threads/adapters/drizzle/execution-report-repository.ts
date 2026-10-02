@@ -47,7 +47,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
     toolCallId: row.toolCallId,
     cardBlockId: row.cardBlockId,
     agentSlug: row.agentSlug,
-    description: row.description,
+    name: row.name,
     capture: row.capture === null ? null : decodeReportCapture(JSON.parse(row.capture)),
     captureToolCallId: row.captureToolCallId,
     ...reportTerminalSchema.parse({ ...row, terminalAt: row.terminalAt?.toISOString() ?? null }),

@@ -521,7 +521,7 @@ export const threadExecutionReports = pgTable(
       .$type<TurnBlockId>()
       .references(() => turnBlocks.id, { onDelete: "set null" }),
     agentSlug: text("agent_slug"),
-    description: text("description"),
+    name: text("name"),
     capture: jsonb("capture").$type<JsonValue | null>(),
     captureToolCallId: text("capture_tool_call_id"),
     outcome: text("outcome"),

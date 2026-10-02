@@ -216,15 +216,11 @@ function ListingRows({ results }: { results: ToolResultRows }) {
   );
 }
 
-function documentFailureStatus(output: JsonValue | null): string | null {
-  if (output == null) return null;
-  if (typeof output === "object" && !Array.isArray(output)) {
-    const status = asString((output as Record<string, JsonValue>).status);
-    if (status) return status;
-  }
-  const message =
-    typeof output === "string" ? output : meridianErrorFromStructuredToolOutput(output).message;
-  return /^status:\s*([a-z_]+)/i.exec(message.trim())?.[1]?.toLowerCase() ?? null;
+/** The agent-edit status of a failed `read` or `write`, from its typed result. */
+function documentFailureStatus(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.status) ?? null;
 }
 
 function documentFailureDocumentName(tool: ToolView): string | null {
@@ -236,7 +232,8 @@ function documentFailureDocumentName(tool: ToolView): string | null {
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
 export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
-  switch (documentFailureStatus(tool.output)) {
+  const status = documentFailureStatus(tool);
+  switch (status) {
     case "not_found":
     case "document_not_found":
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
@@ -244,6 +241,14 @@ export function documentToolFailureCopy(tool: ToolView): string {
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
         : t`The requested passage wasn't specific enough.`;
+  }
+  // A read changes nothing, so the change-shaped copy below never fits it.
+  if (tool.toolName === "read") {
+    return name
+      ? t`Something went wrong while reading ${name}.`
+      : t`Something went wrong while reading that document.`;
+  }
+  switch (status) {
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
     case "partial_failure":
@@ -280,8 +285,8 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
   none: () => null,
   renderer: () => null,
-  "output-preview": outputPreview,
-  "output-outline": outputOutline,
+  "result-preview": resultPreview,
+  "result-outline": resultOutline,
   "submitted-content": submittedContent,
 };
 
@@ -298,23 +303,23 @@ function readPath(tool: ToolView): string | undefined {
   return asString(inputObject(tool).path);
 }
 
-function outputPreview(tool: ToolView): ToolExpand | null {
-  const markup = readPayloadMarkup(tool.output);
+function resultPreview(tool: ToolView): ToolExpand | null {
+  const markup = readPayloadMarkup(tool.result);
   if (!markup) return null;
   const path = readPath(tool);
   return () => <QuotedPreview markup={markup} path={path} />;
 }
 
-function outputOutline(tool: ToolView): ToolExpand | null {
-  const headings = readPayloadOutline(tool.output);
+function resultOutline(tool: ToolView): ToolExpand | null {
+  const headings = readPayloadOutline(tool.result);
   // A document with no headings falls back to whole blocks server-side, so the
-  // payload really is prose and the row should show it as prose.
-  if (!headings) return outputPreview(tool);
+  // result really is prose and the row should show it as prose.
+  if (!headings) return resultPreview(tool);
   const outline = capList(headings, LISTING_CAP);
   return () => <OutlineRows outline={outline} />;
 }
 
-/** What the model submitted, read from the tool *input*: the output carries formatted status and diagnostics, and only the input holds the exact content. */
+/** What the model submitted, read from the tool *input*: the result reports what changed, and only the input holds the exact content. */
 function submittedContent(tool: ToolView): ToolExpand | null {
   const content = asString(inputObject(tool).content);
   if (!content) return null;
@@ -420,6 +425,7 @@ const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
 };
 
 const RENDERERS: Record<string, ToolRenderer> = {
+  read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
     title: phraseTitle,

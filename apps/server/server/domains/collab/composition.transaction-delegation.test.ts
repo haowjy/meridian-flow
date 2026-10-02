@@ -1,6 +1,6 @@
 /** Unit contract for thread-peer response transaction delegation and ownership settlement. */
 import type { AgentEditCore } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { asLiveAgentEditCore } from "./domain/agent-edit-cores.js";
 import {
@@ -10,6 +10,7 @@ import {
 import { createThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
+const DRAFT = { kind: "draft", workId: "work-1" as WorkId, workSlug: "work" } as const;
 const threadPeerPoolDefaults = {
   shouldUseLiveReversal: async () => false,
   discardThreadPeerBranches: async () => {},
@@ -52,7 +53,7 @@ describe("thread-peer response transaction delegation", () => {
 
     await core.write(
       { command: "undo", file: "alpha.md", all: true },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-post-apply" },
+      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-post-apply", destination: DRAFT },
     );
 
     expect(shouldUseLiveReversal).toHaveBeenCalledWith({
@@ -72,7 +73,14 @@ describe("thread-peer response transaction delegation", () => {
     const liveWrite = vi.fn(async () => ({ status: "reconciled", isError: false, text: "" }));
     const threadWrite = vi.fn(async () => ({ status: "success", isError: false, text: "" }));
     const coreShape = {
-      commitResponse: vi.fn(async () => ({ status: "committed" })),
+      commitResponse: vi.fn(async (responseId: string) => ({
+        status: "committed",
+        responseId,
+        documentCount: 0,
+        updateCount: 0,
+        documents: [],
+        stagedCreates: { committed: [], discarded: [] },
+      })),
       hasResponseDocument: vi.fn(() => false),
       withResponseDocument: vi.fn(async () => null),
       responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
@@ -92,6 +100,7 @@ describe("thread-peer response transaction delegation", () => {
       sessionId: THREAD_ID,
       turnId: "turn-live-then-draft",
       responseId: "response-live-then-draft",
+      destination: DRAFT,
     };
 
     await core.write({ command: "undo", file: "alpha.md", all: true }, context);
@@ -139,13 +148,14 @@ describe("thread-peer response transaction delegation", () => {
         }
       },
     });
-    await core.read(
-      { file: "alpha.md" },
+    await core.write(
+      { command: "insert", file: "alpha.md", content: "Draft content." },
       {
         threadId: THREAD_ID,
         sessionId: THREAD_ID,
         turnId: "turn-finalize",
         responseId: result.responseId,
+        destination: DRAFT,
       },
     );
 
@@ -209,9 +219,15 @@ describe("thread-peer response transaction delegation", () => {
       commitThreadResponseAtomically: async (operation) => operation(),
     });
     const responseId = "response-rollback";
-    await core.read(
-      { file: "alpha.md" },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-rollback", responseId },
+    await core.write(
+      { command: "insert", file: "alpha.md", content: "Draft content." },
+      {
+        threadId: THREAD_ID,
+        sessionId: THREAD_ID,
+        turnId: "turn-rollback",
+        responseId,
+        destination: DRAFT,
+      },
     );
 
     await expect(core.rollbackResponse(responseId)).resolves.toMatchObject({

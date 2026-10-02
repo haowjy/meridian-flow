@@ -3,7 +3,7 @@
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
@@ -18,7 +18,6 @@ import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
-import { threadExecutionContext } from "../threads/index.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
@@ -38,10 +37,15 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 
 beforeEach(resetDatabase);
+const harnesses: Array<ReturnType<typeof createHarness>> = [];
+afterEach(() => {
+  for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+});
 afterAll(closeDatabase);
 
 async function fixture(mode: "direct" | "draft") {
   const harness = createHarness();
+  harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
   await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
@@ -79,8 +83,16 @@ async function fixture(mode: "direct" | "draft") {
     }),
     threadWorks: createDrizzleThreadWorksRepository(db),
   });
-  const core = mode === "direct" ? f.runtime.liveUtilityCore : f.collab.agentEdit();
-  const context = { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: TURN_ID };
+  const core = f.collab.agentEdit();
+  const context = {
+    threadId: THREAD_ID,
+    sessionId: THREAD_ID,
+    turnId: TURN_ID,
+    destination:
+      mode === "direct"
+        ? ({ kind: "live" } as const)
+        : ({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const),
+  };
   const read = (responseId?: string) =>
     core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
   const current = async () =>
@@ -177,11 +189,7 @@ describe("document revisions (postgres and collab)", () => {
     const receipts: Array<string | null> = [];
     await f.collab.finalizeResponseCommit(
       responseId,
-      {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        execution: threadExecutionContext({ id: WORK_ID, slug: null, aiWriteMode: "direct" }),
-      },
+      { threadId: THREAD_ID, turnId: TURN_ID },
       async (result) => {
         if (result.status === "committed")
           receipts.push(
@@ -196,22 +204,15 @@ describe("document revisions (postgres and collab)", () => {
     const f = await fixture("direct");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
-    const original = f.liveCoordinator.withDocument.bind(f.liveCoordinator);
     let injected = false;
-    f.liveCoordinator.withDocument = (id, callback, options) =>
-      original(
-        id,
-        async (doc) => {
-          const result = await callback(doc);
-          if (!injected && result && typeof result === "object" && "revision" in result) {
-            injected = true;
-            await f.writerDelete();
-          }
-          return result;
-        },
-        options,
-      );
-    const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893");
+    // The live apply runs on a private copy inside the save transaction (D42);
+    // a writer edit after it and before commit must not move the receipt.
+    const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893", {
+      beforeTransactionCommit: async () => {
+        injected = true;
+        await f.writerDelete();
+      },
+    });
     expect(injected).toBe(true);
     const receipt = committed.documents[0]?.receipts[0];
     expect(receipt?.revision).toMatch(/^y1:/);
@@ -320,6 +321,7 @@ describe("document revisions (postgres and collab)", () => {
       const hit = await f.effective.readEffectiveHashlines({
         documentId: ALPHA_ID,
         threadId: THREAD_ID,
+        destination: "draft",
       });
       if (!hit.ok) throw new Error("Search failed");
       await f.writerDelete();

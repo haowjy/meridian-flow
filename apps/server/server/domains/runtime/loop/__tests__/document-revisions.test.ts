@@ -74,6 +74,7 @@ describe("document revision settlement", () => {
               },
             ],
             concurrentEdits: [],
+            refused: [],
           };
           await beforeCommit?.(result);
           return result;
@@ -95,5 +96,79 @@ describe("document revision settlement", () => {
     expect(gateway.requests).toHaveLength(2);
     expect(JSON.stringify(gateway.requests)).not.toContain("y1:");
     expect(JSON.stringify(gateway.requests)).not.toContain("documentRevisions");
+  });
+
+  it("replaces a write's result with the refusal when the save left its document out (D29)", async () => {
+    const documentId = "44444444-4444-4444-8444-444444444444";
+    const uri = "scratch://notes.md";
+    const message = "Work @rewrite was archived before this reply was saved.";
+    const gateway = scriptedGateway({
+      usage: { inputTokens: 10, outputTokens: 1 },
+      results: [
+        {
+          content: [
+            {
+              type: "tool_use",
+              toolCallId: "write-1",
+              toolName: "write",
+              input: { command: "create", path: uri, content: "Notes" },
+            },
+          ],
+          toolCalls: [],
+          finishReason: "tool_use",
+          usage: { inputTokens: 10, outputTokens: 1 },
+          model: "gpt-4.1-mini",
+          provider: "openai",
+        },
+      ],
+    });
+    const { orchestrator, repos, thread } = await runtimeScenario({
+      gateway,
+      toolExecutor: {
+        async executeTool(call) {
+          const staged = modelResult({
+            command: "create",
+            status: "success",
+            phase: "staged",
+            payload: { path: uri },
+          });
+          return {
+            toolCallId: call.id,
+            output: renderAgentEditResult(staged),
+            result: JSON.parse(JSON.stringify(staged)),
+            metadata: {
+              stagedWrite: true,
+              documentId,
+              writeId: "w1",
+              settlementId: "settlement-1",
+              documentRevisions: [{ documentId, uri, revision: null }],
+            },
+          };
+        },
+      },
+      responseWrites: {
+        async commitResponse(_responseId, _ctx, beforeCommit) {
+          const result = {
+            status: "committed" as const,
+            receipts: [],
+            concurrentEdits: [],
+            refused: [{ documentId, message }],
+          };
+          await beforeCommit?.(result);
+          return result;
+        },
+        async rollbackResponse() {},
+      },
+    });
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "Write." });
+    expect((await run.execute()).status).toBe("complete");
+    const [block] = (await repos.blocks.listByThread(thread.id)).filter(
+      (candidate) => candidate.blockType === "tool_result",
+    );
+    expect(block?.content).toMatchObject({
+      isError: true,
+      output: `status: invalid_write; path: ${uri}\n\nWrite did not land.\n\n${message}`,
+      result: { status: "invalid_write", path: uri },
+    });
   });
 });

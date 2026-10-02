@@ -115,13 +115,34 @@ describe("renderAgentEditResult", () => {
     );
   });
 
-  it("renders a reversal count and an error message", () => {
+  it("names the Work draft a drafted write landed in", () => {
+    const write = (destination: "live" | "draft", draftWork?: string) =>
+      renderAgentEditResult(
+        modelResult({
+          command: "insert",
+          status: "success",
+          phase: "staged",
+          payload: {
+            path: "kb://notes.md",
+            write: { id: "w2" },
+            destination,
+            ...(draftWork === undefined ? {} : { draftWork }),
+          },
+        }),
+      );
+    expect(write("draft", "rewrite")).toBe(
+      "status: success; path: kb://notes.md; write: w2 (drafted in @rewrite)",
+    );
+    expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2");
+  });
+
+  it("renders the reversed write handles and an error message", () => {
     const undo = modelResult({
       command: "undo",
       status: "reversed",
-      payload: { path: "chapter.md", reversal: { direction: "undo", count: 2 } },
+      payload: { path: "chapter.md", reversal: { direction: "undo", writes: ["w2", "w3"] } },
     });
-    expect(renderAgentEditResult(undo)).toBe("status: reversed; path: chapter.md; undo: 2 edit(s)");
+    expect(renderAgentEditResult(undo)).toBe("status: reversed; path: chapter.md; undo: w2, w3");
     const missing: AgentEditResultV1 = modelResult({
       command: "remove",
       status: "not_found",

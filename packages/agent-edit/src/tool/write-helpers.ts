@@ -10,7 +10,7 @@ import type { AgentEditResultCommand } from "./model-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { status } from "./response-format.js";
 import { readCall } from "./result-text.js";
-import type { MutationActor, WriteCommand, WriteErrorStatus } from "./types.js";
+import type { MutationActor, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
 

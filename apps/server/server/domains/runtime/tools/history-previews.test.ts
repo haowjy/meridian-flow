@@ -1,6 +1,10 @@
 /** History navigation names the conversation a call resolved, even when the model said "current". */
 import { expect, it } from "vitest";
-import { threadHistoryPreview, threadLsHistoryPreview } from "./history-previews.js";
+import {
+  spawnHistoryPreview,
+  threadHistoryPreview,
+  threadLsHistoryPreview,
+} from "./history-previews.js";
 
 it("names the resolved conversation, never a report run", () => {
   expect(threadHistoryPreview({ ref: "p7" }, { ref: "p7", outcome: "succeeded" })).toBe("p7");
@@ -15,4 +19,11 @@ it("previews the explicit or resolved thread_ls target instead of the path root"
   expect(threadLsHistoryPreview({ ref: "p2" }, output)).toBe("p2");
   expect(threadLsHistoryPreview({ ref: "current" }, output)).toBe("p2");
   expect(threadLsHistoryPreview({}, output)).toBe("p2");
+});
+
+it("previews a spawn by its handle and task name, and tolerates a pre-rename row", () => {
+  expect(spawnHistoryPreview({ name: "Continuity check" }, { handle: "p4" })).toBe(
+    '"Continuity check" → p4',
+  );
+  expect(spawnHistoryPreview({ description: "Old label" }, { handle: "p4" })).toBe('"" → p4');
 });

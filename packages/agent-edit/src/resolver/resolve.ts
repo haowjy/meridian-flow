@@ -69,9 +69,6 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  if (params.command !== "remove" && params.content === undefined) {
-    return error("invalid_write", "content is required");
-  }
   const normalized = normalizeParams(params);
   const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
   const contentCheck = validateContent(concreteCtx, normalized);
@@ -100,23 +97,6 @@ function resolveInsert(
   params: NormalizedParams,
   parsed: ParsedContent,
 ): ResolveWriteResultWithoutIr {
-  if (params.content.length === 0)
-    return error("invalid_write", "insert requires non-empty content");
-  if (params.after && params.before)
-    return error("invalid_write", "`after` and `before` are mutually exclusive");
-  if ((params.after || params.before) && params.find) {
-    return error(
-      "invalid_write",
-      "Use either block targeting (`after`/`before`) or text targeting (`find`), not both",
-    );
-  }
-  if (params.in !== undefined && !params.find) {
-    return error(
-      "invalid_write",
-      "`in` scopes a find-based insert; use `after` or `before` for block positioning",
-    );
-  }
-
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
@@ -151,12 +131,6 @@ function resolveReplace(
   params: NormalizedParams,
   parsed: ParsedContent,
 ): ResolveWriteResultWithoutIr {
-  if (params.after || params.before) {
-    return error(
-      "invalid_write",
-      "replace does not accept `after` or `before`; use `in` or `find`",
-    );
-  }
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
@@ -170,11 +144,10 @@ function resolveReplace(
     return lowerFindMatches(ctx, params, found.matches, "replace");
   }
 
-  if (params.around !== undefined) {
-    return error("invalid_write", "`around` only scopes find-based replace commands");
-  }
   const target = params.in ?? fragmentScope(params);
-  if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
+  if (target === undefined) {
+    return error("invalid_write", "replace needs `in`, `find` or a #heading-slug in path");
+  }
   const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (params.content.length === 0) {
@@ -187,11 +160,9 @@ function resolveRemove(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteResultWithoutIr {
-  const fragment = fragmentScope(params);
-  if ((params.in === undefined) === (fragment === undefined)) {
-    return error("invalid_write", "remove needs exactly one of `in` or a #heading-slug in path");
-  }
-  const scope = resolveScope(ctx, params.in ?? fragment, { allowSlugFallback: false });
+  const scope = resolveScope(ctx, params.in ?? fragmentScope(params), {
+    allowSlugFallback: false,
+  });
   if (!scope.ok) return scopeError(scope);
   return deleteScope(params, scope.scope);
 }
@@ -208,10 +179,6 @@ function validateContent(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
-  if (params.find === "") return error("invalid_write", "`find` must not be empty");
-  if (params.command === "insert" && params.content.length === 0) {
-    return error("invalid_write", "insert requires non-empty content");
-  }
   if (params.command === "replace" && params.content.length === 0) {
     return { ok: true, parsed: { blocks: [] } };
   }

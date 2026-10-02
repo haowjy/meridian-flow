@@ -6,6 +6,7 @@ import type { AssetPathResolver } from "@meridian/markup";
 import {
   deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
+  isInDrizzleTransaction,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
@@ -52,12 +53,16 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleResponseDocumentScreen } from "./adapters/drizzle-response-document-screen.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
-import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
+import {
+  createDeferredLiveProjectionCoordinator,
+  createHocuspocusCoordinator,
+} from "./adapters/hocuspocus-coordinator.js";
 import { createWriterIngressBinding } from "./adapters/writer-ingress-binding.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
@@ -194,6 +199,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const runtime = createAgentEditRuntime({
     journal: persistence.journal,
     coordinator: liveCoordinator,
+    agentCoordinator: createDeferredLiveProjectionCoordinator({
+      hocuspocus: hocuspocusBinding.require,
+      journal: persistence.journal,
+      live: liveCoordinator,
+      transactions: {
+        inTransaction: isInDrizzleTransaction,
+        outsideTransaction: runOutsideDrizzleTransaction,
+        afterCommit: deferUntilDrizzleCommit,
+      },
+    }),
     lifecycle: documentCreation,
     initialDocumentSeeds: persistence.lifecycle,
     deferUntilCommit: deferUntilDrizzleCommit,
@@ -262,6 +277,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
+    screenResponseDocuments: createDrizzleResponseDocumentScreen(deps.db),
     journal: persistence.journal,
     liveCoordinator,
     lifecycle: persistence.lifecycle,
@@ -432,7 +448,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     authorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     agentEdit: {
-      agentEdit: (context) => (context?.draftOwner === null ? runtime.liveUtilityCore : agentEdit),
+      agentEdit: () => agentEdit,
     },
     reversal: turnReversal,
     documents: {

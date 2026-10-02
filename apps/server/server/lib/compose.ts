@@ -668,8 +668,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    threadWorks: ports.threadRepos.threadWorks,
-    works: ports.workRepo,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,

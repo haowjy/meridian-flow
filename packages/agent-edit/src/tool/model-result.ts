@@ -14,6 +14,7 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "read_required"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -54,6 +55,10 @@ export interface AgentEditConcurrentRun {
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
+  /** Where a write landed: the live document, or the Work draft named by `draftWork`. */
+  destination?: "live" | "draft";
+  /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
+  draftWork?: string;
   message?: string;
   write?: {
     id?: string;
@@ -61,7 +66,8 @@ export interface AgentEditModelPayload {
   };
   reversal?: {
     direction: "undo" | "redo";
-    count: number;
+    /** Write handles actually reversed, oldest first; group atomicity can add to the selection. */
+    writes: string[];
   };
   read?: {
     format: "full" | "outline";
@@ -151,6 +157,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "document_not_found":
     case "partial_failure":
     case "cant_undo_dependent":
+    case "read_required":
     case "internal_error":
     case "reversed":
     case "reconciled":

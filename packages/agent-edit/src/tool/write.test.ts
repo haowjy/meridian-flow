@@ -407,7 +407,7 @@ describe("write tool dispatch", () => {
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(undo.result).toMatchObject({
       command: "undo",
-      reversal: { direction: "undo", count: 1 },
+      reversal: { direction: "undo", writes: ["w3"] },
     });
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(beforeDelete);
 
@@ -478,7 +478,7 @@ describe("write tool dispatch", () => {
     );
     expect(outcomeText(invalid)).toContain("status: invalid_write");
     expectOutcome(invalid, "invalid_write", true);
-    expect(outcomeText(invalid)).toContain("insert requires non-empty content");
+    expect(outcomeText(invalid)).toContain("content:");
   });
 
   it("maps typed missing documents differently from transient coordinator failures", async () => {

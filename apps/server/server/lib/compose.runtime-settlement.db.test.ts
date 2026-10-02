@@ -136,6 +136,90 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
 
+    it("keeps scratch live in a draft-mode Work and names the draft on drafted writes", async () => {
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.works.id, WORK_ID));
+      const runtime = await composeRuntime();
+      try {
+        await runtime.ports.documentSync.writeDocument({
+          documentId: DOC_ID,
+          markdown: "Writer live content.",
+          origin: { type: "user", actorUserId: USER_ID },
+          threadId: THREAD_ID,
+        });
+        await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
+          projectId: PROJECT_ID,
+        });
+        await db.insert(schema.modelResponses).values({
+          id: RESPONSE_ID,
+          turnId: TURN_ID,
+          sequence: 1,
+          provider: "runtime-test",
+          model: "runtime-test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        const toolContext = {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: RESPONSE_ID,
+          agentSlug: null,
+        } as const;
+        const call = (id: string, name: string, args: Record<string, unknown>) =>
+          runtime.app.toolExecutor.executeTool({ id, name, arguments: args }, toolContext);
+
+        const notes = await call("00000000-0000-4000-8000-000000000920", "write", {
+          command: "create",
+          path: "scratch://notes.md",
+          content: "Scratch notes.",
+        });
+        expect(notes.isError).toBeFalsy();
+        expect(notes.output).toMatch(
+          /^status: success; path: scratch:\/\/notes\.md; write: w\d+\n/,
+        );
+        expect(notes.result).toMatchObject({ destination: "live" });
+
+        await call("00000000-0000-4000-8000-000000000921", "read", {
+          path: "manuscript://runtime-settlement.md",
+        });
+        const chapter = await call("00000000-0000-4000-8000-000000000922", "write", {
+          command: "replace",
+          path: "manuscript://runtime-settlement.md",
+          find: "Writer live content.",
+          content: "Model draft content.",
+          all: true,
+        });
+        expect(chapter.isError).toBeFalsy();
+        expect(chapter.output).toMatch(/write: w\d+ \(drafted in @runtime-settlement\)/);
+        expect(chapter.result).toMatchObject({
+          destination: "draft",
+          draftWork: "runtime-settlement",
+        });
+
+        await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        });
+        const branches = await db
+          .select({ documentId: schema.documentBranches.documentId })
+          .from(schema.documentBranches);
+        expect([...new Set(branches.map((branch) => branch.documentId))]).not.toContain(
+          (notes.metadata as { documentId?: string } | undefined)?.documentId,
+        );
+        const scratchRead = await call("00000000-0000-4000-8000-000000000923", "read", {
+          path: "scratch://notes.md",
+        });
+        expect(scratchRead.output).toContain("Scratch notes.");
+        const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
+        expect(live.ok && live.value.trim()).toBe("Writer live content.");
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
@@ -212,11 +296,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        execution: {
-          scope: { workId: NO_WORK_ID, workSlug: null },
-          aiWriteMode: "draft",
-          draftOwner: { kind: "work", workId: NO_WORK_ID },
-        },
       });
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
@@ -267,6 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { file: "runtime-settlement.md", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
+          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: RESPONSE_ID,
@@ -314,6 +394,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
+          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: RESPONSE_ID,
@@ -331,6 +412,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
+          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: RESPONSE_ID,

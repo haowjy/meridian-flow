@@ -63,6 +63,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
     const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 
+    const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
     const createTestCollab = () =>
@@ -207,7 +208,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Live undo target.",
         },
-        { sessionId: "session", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          destination: DRAFT_DESTINATION,
+        },
       );
       expect(write.status).toBe("success");
       const [workDraft] = await db
@@ -298,12 +304,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [gate, ""],
       ] as const) {
         await expect(
-          collab
-            .agentEdit()
-            .write(
-              { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
-              { sessionId: "session-overlap", threadId: THREAD_ID, turnId: TURN_ID },
-            ),
+          collab.agentEdit().write(
+            { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
+            {
+              sessionId: "session-overlap",
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              destination: DRAFT_DESTINATION,
+            },
+          ),
         ).resolves.toMatchObject({ status: "success" });
       }
 
@@ -355,7 +364,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               documentId,
               content: `Turn edit for ${documentId}.`,
             },
-            { sessionId: "session-atomic-reversal", threadId: THREAD_ID, turnId: TURN_ID },
+            {
+              sessionId: "session-atomic-reversal",
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              destination: DRAFT_DESTINATION,
+            },
           ),
         ).resolves.toMatchObject({ status: "success" });
       }
@@ -398,12 +412,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      await collab
-        .agentEdit()
-        .write(
-          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
-          { sessionId: "session-writer-redo", threadId: THREAD_ID, turnId: TURN_ID },
-        );
+      await collab.agentEdit().write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
+        {
+          sessionId: "session-writer-redo",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          destination: DRAFT_DESTINATION,
+        },
+      );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
       await collab.reverseTurn({
@@ -477,7 +494,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Agent paragraph.",
         },
-        { sessionId: "session-live-dependent", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session-live-dependent",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          destination: DRAFT_DESTINATION,
+        },
       );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
@@ -520,7 +542,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Agent paragraph.",
         },
-        { sessionId: "session-live-independent", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session-live-independent",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          destination: DRAFT_DESTINATION,
+        },
       );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
@@ -568,6 +595,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "session-same-response-db",
+          destination: DRAFT_DESTINATION,
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId,
@@ -586,6 +614,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-same-response-db",
+            destination: DRAFT_DESTINATION,
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId,
@@ -634,6 +663,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
+            destination: DRAFT_DESTINATION,
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId: "response-reused-provider-tool-id-db-a",
@@ -656,6 +686,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
+            destination: DRAFT_DESTINATION,
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseId: "response-reused-provider-tool-id-db-b",

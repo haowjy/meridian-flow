@@ -24,27 +24,13 @@ export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
-  /** Immutable bake read by the assembler when the thread already has a pointer. */
-  frozenSystemPrompt?: string;
+  /**
+   * The thread's system prompt: its frozen bake, or the would-be first bake
+   * while unfrozen. Required once frozen; an unfrozen thread without one gets
+   * the bare runtime instructions.
+   */
+  systemPrompt?: string;
   tools?: Tool[];
-  /** Raw agent/project prompt used only while the thread prompt is not frozen. */
-  unfrozenBasePrompt?: string | null;
-  /** Additive per-invocation prompt layer, pre-freeze only. */
-  appendPrompt?: string | null;
-  /**
-   * Available skill listings for pre-freeze assembly only.
-   * Ignored when the thread prompt is already frozen.
-   */
-  availableSkills?: readonly { slug: string; name: string; description: string }[];
-  /**
-   * Named subagent listings for pre-freeze assembly only.
-   * Ignored when the thread prompt is already frozen.
-   */
-  namedSubagents?: readonly { slug: string; name: string; description: string }[];
-  /** Frozen Work section for a would-be first bake. */
-  workContext?: string;
-  /** Subagent closing instruction; pre-freeze only, owns the prompt's last layer. */
-  subagentGuidance?: string | null;
   /** Dev observability for invalid persisted chat contracts. */
   eventSink?: EventSink;
 }
@@ -57,24 +43,9 @@ export function buildContext(input: BuildContextInput): {
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
-  if (isThreadPromptFrozen(input.thread)) {
-    if (input.frozenSystemPrompt === undefined)
-      throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
-    messages.push(system(input.frozenSystemPrompt));
-  } else {
-    messages.push(
-      system(
-        assembleComposedSystemPrompt({
-          basePrompt: input.unfrozenBasePrompt,
-          appendPrompt: input.appendPrompt,
-          workContext: input.workContext,
-          availableSkills: input.availableSkills,
-          namedSubagents: input.namedSubagents,
-          subagentGuidance: input.subagentGuidance,
-        }),
-      ),
-    );
-  }
+  if (isThreadPromptFrozen(input.thread) && input.systemPrompt === undefined)
+    throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
+  messages.push(system(input.systemPrompt ?? assembleComposedSystemPrompt({})));
 
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {

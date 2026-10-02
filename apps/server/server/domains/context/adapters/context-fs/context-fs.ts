@@ -22,6 +22,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
+import { destination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
@@ -75,6 +76,7 @@ export interface ContextFSDeps {
     workId?: string | null;
     threadId?: string | null;
     responseId?: string | null;
+    draftMode?: boolean;
   };
 }
 
@@ -849,6 +851,7 @@ export class ContextFS implements ContextSchemeAdapter {
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
+        destination: destination(this.name, this.manifestView.draftMode === true),
       });
       return read.ok ? Ok(read.value.content) : read;
     }
@@ -872,6 +875,7 @@ export class ContextFS implements ContextSchemeAdapter {
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
+        destination: destination(this.name, this.manifestView.draftMode === true),
       });
       return hashlines.ok
         ? Ok({

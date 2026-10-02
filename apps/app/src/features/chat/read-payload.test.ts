@@ -17,7 +17,7 @@ function readEnvelope(
 }
 
 describe("readPayloadMarkup", () => {
-  it("flattens hash-free bodies from the agent-edit envelope", () => {
+  it("returns each block's hash-free body as its own paragraph", () => {
     expect(
       readPayloadMarkup(
         readEnvelope([
@@ -25,21 +25,31 @@ describe("readPayloadMarkup", () => {
           { hash: "", body: "Second paragraph." },
         ]),
       ),
-    ).toBe("First paragraph.\nSecond paragraph.");
+    ).toBe("First paragraph.\n\nSecond paragraph.");
   });
 
   it("keeps a pipe in envelope prose, which is not a hashline separator", () => {
     expect(readPayloadMarkup(readEnvelope([{ hash: "h1", body: "a | b" }]))).toBe("a | b");
   });
 
-  it("strips hashlines from a serialized string payload", () => {
-    expect(readPayloadMarkup("h1|First paragraph.\nh2|Second paragraph.")).toBe(
-      "First paragraph.\nSecond paragraph.",
-    );
+  it("reads only the document blocks", () => {
+    const result = {
+      schema: "meridian.agent-edit.v1",
+      command: "read",
+      status: "success",
+      phase: "committed",
+      blocks: [
+        { extent: "full", relation: "document", items: [{ hash: "h1", body: "Kept." }] },
+        { extent: "full", relation: "swept", items: [{ hash: "h2", body: "Swept." }] },
+      ],
+    } satisfies JsonValue;
+    expect(readPayloadMarkup(result)).toBe("Kept.");
   });
 
-  it("returns empty string for a payload with no document content", () => {
+  it("returns empty string for a value that isn't a read result", () => {
     expect(readPayloadMarkup(null)).toBe("");
+    // A row from before `result` existed: only the model's text, never parsed.
+    expect(readPayloadMarkup("status: success; path: ch1.md\n\nh1|First paragraph.")).toBe("");
     expect(readPayloadMarkup([{ uri: "x" }])).toBe("");
     expect(readPayloadMarkup({ schema: "other", blocks: [] })).toBe("");
   });
@@ -67,14 +77,8 @@ describe("readPayloadOutline", () => {
     expect(readPayloadOutline(readEnvelope([{ hash: "h1", body: "Just prose." }]))).toBeNull();
   });
 
-  it("reads an outline from a serialized string payload and drops locator lines", () => {
-    expect(
-      readPayloadOutline(
-        'h1|## Chapter One\nwrite(command="read", path="x#h1")\nh2|## Chapter Two',
-      ),
-    ).toEqual([
-      { level: 0, text: "Chapter One" },
-      { level: 0, text: "Chapter Two" },
-    ]);
+  it("returns null for a value that isn't a read result", () => {
+    expect(readPayloadOutline(null)).toBeNull();
+    expect(readPayloadOutline('h1|## Chapter One\nread({"path": "x#h1"})')).toBeNull();
   });
 });

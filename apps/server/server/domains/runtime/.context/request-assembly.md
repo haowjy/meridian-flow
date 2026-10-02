@@ -42,16 +42,20 @@ the Agent, and a different-Agent handoff starts unbaked
 
 `composed-system-prompt.ts` layers, in order: the immutable Agent body, the
 invocation overlay's additive `appendSystemPrompt`, frozen Work context,
-available skill slugs (name when it differs) and descriptions, the named
+available skill slugs (name when it differs) and descriptions, the bodies of
+preloaded (`skills.load`) skills, the named
 subagent roster (slug, name, description), the core document dialect, the
 runtime URI instruction, and, for subagent threads only, the mandatory closing
 report instruction (`SUBAGENT_GUIDANCE`) as the last layer. An empty or absent
 append adds nothing.
 
-Prompt bake and the `skill` tool use bound Agent `skills.available` only (name
-and description from the retained `SKILL.md`), dropping `model-invocable:
-false`. Account installs never join the prompt or `skill()`. `skills.load` is
-not injected into first-turn context; a nonempty `load` refuses selection. The
+Prompt bake and the `skill` tool use the thread's own bound `skills.available`
+only (name and description from the retained `SKILL.md`), dropping
+`model-invocable: false`. Subagent threads read their own binding the same way
+as primaries; nothing falls back to the parent's or the writer's skills.
+Account installs never join the prompt or `skill()`. `skills.load` bodies are
+baked into the first prompt (rendered like a slash activation) regardless of
+`model-invocable`, which only governs `skill()`. The
 first-bake CAS persists the Agent-available slugs (`[]` when the list is
 empty). Skills that join slash after freeze do not rewrite the prompt or its
 skill list, and display slugs do not guard freezing. `spawn` and
