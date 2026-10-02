@@ -302,6 +302,37 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     expect(state !== "" && !state.startsWith("Z")).toBe(true);
   });
 
+  it("refuses a captured executable change instead of reporting a live process as exited", async () => {
+    const root = `${repo}.worktrees/exec-on-term`;
+    const script = path.join(temp, "exec.mjs");
+    fs.writeFileSync(
+      script,
+      `
+      import fs from 'node:fs';
+      process.on('SIGHUP', () => {});
+      process.on('SIGTERM', () => process.execve('/bin/sh',
+        ['sh', '-c', "trap '' HUP TERM; exec sleep 60"], process.env));
+      fs.writeFileSync(${JSON.stringify(path.join(temp, "parent.pid"))}, String(process.pid));
+      setInterval(() => {}, 1000);
+    `,
+    );
+    const name = session(root, undefined, `${process.execPath} ${script}`);
+    await expect.poll(() => fs.existsSync(path.join(temp, "parent.pid"))).toBe(true);
+    const pid = fs.readFileSync(path.join(temp, "parent.pid"), "utf8").trim();
+    fs.rmSync(root, { recursive: true });
+    const result = prune("--yes");
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Captured process identity changed");
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("ps", ["-p", pid, "-o", "comm="]).stdout.trim()).toMatch(/(^|\/)sleep$/);
+    // A newly inspected plan can authorize the replacement without treating
+    // the original identity mismatch as proof of exit or permission to kill.
+    const retry = prune("--yes");
+    expect(retry.status, retry.stderr).toBe(0);
+    const state = run("ps", ["-p", pid, "-o", "stat="]).stdout.trim();
+    expect(state === "" || state.startsWith("Z")).toBe(true);
+  });
+
   it("captures and stops detached children spawned by a TERM handler", async () => {
     const root = `${repo}.worktrees/late-child`;
     const name = stubbornSession(root, true);
