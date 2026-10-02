@@ -2,102 +2,44 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import postgres, { type Sql } from "postgres";
 
-interface MigrationJournal {
-  entries: Array<{ idx: number; tag: string; when: number }>;
-}
+import {
+  type DatabaseHistoryIssue,
+  formatDatabaseHistoryIssue,
+  planDatabaseMigrations,
+  readAppliedMigrations,
+  readMigrationHistory,
+} from "./migration-history.js";
+
+export * from "./migration-history.js";
 
 export type SchemaStatus = "current" | "ahead" | "behind" | "divergent";
-type AppliedMigration = { hash: string; created_at: string | number | null };
-
 export class DatabaseHistoryRefusalError extends Error {
-  readonly applied: Array<{ hash: string; createdAt: number | null }>;
-
-  constructor(applied: AppliedMigration[]) {
+  constructor(readonly issues: DatabaseHistoryIssue[]) {
     super("Database migration history is ahead of or divergent from this checkout");
     this.name = "DatabaseHistoryRefusalError";
-    this.applied = applied.map((row) => ({
-      hash: row.hash,
-      createdAt: row.created_at === null ? null : Number(row.created_at),
-    }));
   }
 }
 
 function readReleaseMigrations(migrationsDirectory: string) {
-  const journal = JSON.parse(
-    readFileSync(path.join(migrationsDirectory, "meta/_journal.json"), "utf8"),
-  ) as MigrationJournal;
-  const sqlFiles = readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql"));
-  const journalFiles = new Set(journal.entries.map((entry) => `${entry.tag}.sql`));
-  const seenTags = new Set<string>();
-  const seenTimestamps = new Set<number>();
-  const issues: string[] = [];
-  for (const [index, entry] of journal.entries.entries()) {
-    if (entry.idx !== index) {
-      issues.push(`journal entry ${entry.tag} has idx ${entry.idx}; expected ${index}`);
-    }
-    const previous = journal.entries[index - 1];
-    if (previous && entry.when <= previous.when) {
-      issues.push(
-        `journal entry ${entry.tag} has when ${entry.when}; it must be newer than ${previous.when}`,
-      );
-    }
-    if (seenTags.has(entry.tag)) issues.push(`journal tag ${entry.tag} is duplicated`);
-    if (seenTimestamps.has(entry.when)) issues.push(`journal when ${entry.when} is duplicated`);
-    seenTags.add(entry.tag);
-    seenTimestamps.add(entry.when);
-    if (!sqlFiles.includes(`${entry.tag}.sql`)) {
-      issues.push(`journal entry ${entry.idx} (${entry.tag}) is missing ${entry.tag}.sql`);
-    }
-  }
-  for (const file of sqlFiles) {
-    if (!journalFiles.has(file)) issues.push(`${file} is not listed in meta/_journal.json`);
-  }
-  if (issues.length > 0) {
+  const history = readMigrationHistory(migrationsDirectory);
+  if (history.issues.length > 0) {
     throw new Error(
-      `Refused inconsistent migration files\n${issues.map((issue) => `  - ${issue}`).join("\n")}`,
+      `Refused inconsistent migration files\n${history.issues.map((issue) => `  - ${issue}`).join("\n")}`,
     );
   }
   const migrations = readMigrationFiles({ migrationsFolder: migrationsDirectory });
-  if (journal.entries.length !== migrations.length) {
+  if (history.entries.length !== migrations.length) {
     throw new Error("Migration journal does not match the committed migration files");
   }
   for (const [index, migration] of migrations.entries()) {
-    const entry = journal.entries[index];
-    if (!entry || entry.when !== migration.folderMillis) {
+    const entry = history.entries[index];
+    if (!entry || entry.when !== migration.folderMillis || entry.hash !== migration.hash) {
       throw new Error(`Migration journal entry ${index} does not match its SQL file`);
     }
   }
-  return { journal, migrations };
-}
-
-function compareMigrationHistory(
-  applied: Array<{ hash: string; created_at: string | number | null }>,
-  migrations: ReturnType<typeof readMigrationFiles>,
-): SchemaStatus {
-  const compared = Math.min(applied.length, migrations.length);
-  for (let index = 0; index < compared; index += 1) {
-    const row = applied[index];
-    const migration = migrations[index];
-    if (row.hash !== migration.hash || Number(row.created_at) !== migration.folderMillis) {
-      return "divergent";
-    }
-  }
-  if (applied.length < migrations.length) return "behind";
-  return applied.length > migrations.length ? "ahead" : "current";
-}
-
-async function readAppliedHistory(
-  sql: Sql | TransactionSql,
-): Promise<AppliedMigration[] | undefined> {
-  const [table] = await sql<Array<{ exists: boolean }>>`
-    SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
-  `;
-  if (!table?.exists) return undefined;
-  return sql<AppliedMigration[]>`
-    SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
-  `;
+  return { history, migrations };
 }
 
 /** Compare the database ledger with the exact release bundle journal. */
@@ -105,13 +47,12 @@ export async function getSchemaStatus(input: {
   sql: Sql;
   migrationsDirectory: string;
 }): Promise<SchemaStatus> {
-  const { migrations } = readReleaseMigrations(input.migrationsDirectory);
-  const applied = await readAppliedHistory(input.sql);
-  if (!applied) return migrations.length === 0 ? "current" : "behind";
-  return compareMigrationHistory(applied, migrations);
+  const { history } = readReleaseMigrations(input.migrationsDirectory);
+  const plan = planDatabaseMigrations(history, (await readAppliedMigrations(input.sql)) ?? []);
+  return plan.verdict === "pending" ? "behind" : plan.verdict;
 }
 
-class MigrationStatementError extends Error {
+export class MigrationStatementError extends Error {
   constructor(
     readonly migrationPath: string,
     cause: unknown,
@@ -137,19 +78,13 @@ export async function runRelease(input: {
 }): Promise<{ appliedMigrations: number; skippedFunctions: boolean }> {
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
-    const { journal, migrations } = readReleaseMigrations(input.migrationsDirectory);
+    const { history, migrations } = readReleaseMigrations(input.migrationsDirectory);
     for (const name of functionFiles) {
       if (!readdirSync(input.functionsDirectory).includes(name)) {
         throw new Error(`Missing canonical function SQL file: ${name}`);
       }
     }
 
-    for (const [index, migration] of migrations.entries()) {
-      const entry = journal.entries[index];
-      if (!entry || entry.when !== migration.folderMillis) {
-        throw new Error(`Migration journal entry ${index} does not match its SQL file`);
-      }
-    }
     let appliedMigrations = 0;
     let skippedFunctions = false;
     await client.begin(async (tx) => {
@@ -164,21 +99,19 @@ export async function runRelease(input: {
           created_at bigint
         )
       `;
-      const applied = (await readAppliedHistory(tx)) ?? [];
-      const schemaStatus = compareMigrationHistory(applied, migrations);
-      if (schemaStatus === "divergent") {
-        throw new DatabaseHistoryRefusalError(applied);
+      const applied = (await readAppliedMigrations(tx)) ?? [];
+      const plan = planDatabaseMigrations(history, applied);
+      if (plan.verdict === "divergent") {
+        throw new DatabaseHistoryRefusalError(plan.issues);
       }
-      if (schemaStatus === "ahead" && !input.allowAhead) {
-        throw new DatabaseHistoryRefusalError(applied);
+      if (plan.verdict === "ahead" && !input.allowAhead) {
+        throw new DatabaseHistoryRefusalError(plan.issues);
       }
-      const pending =
-        applied.length >= migrations.length
-          ? []
-          : migrations.slice(applied.length).map((migration, offset) => ({
-              migration,
-              entry: journal.entries[applied.length + offset],
-            }));
+      const pending = plan.pending.map((entry) => {
+        const migration = migrations[entry.idx];
+        if (!migration) throw new Error(`Missing validated migration at index ${entry.idx}`);
+        return { entry, migration };
+      });
       await input.beforeMigrate?.(pending.length);
 
       for (const { migration, entry } of pending) {
@@ -195,18 +128,25 @@ export async function runRelease(input: {
           [migration.hash, migration.folderMillis],
         );
       }
-      if (schemaStatus !== "ahead") {
+      if (plan.verdict !== "ahead") {
         for (const name of functionFiles) {
           await tx.unsafe(readFileSync(path.join(input.functionsDirectory, name), "utf8"));
         }
       }
       appliedMigrations = pending.length;
-      skippedFunctions = schemaStatus === "ahead";
+      skippedFunctions = plan.verdict === "ahead";
     });
     return { appliedMigrations, skippedFunctions };
   } finally {
     await client.end();
   }
+}
+
+export function formatDatabaseHistoryRefusal(error: DatabaseHistoryRefusalError): string {
+  const details = error.issues
+    .map((issue) => `  - ${formatDatabaseHistoryIssue(issue)}`)
+    .join("\n");
+  return `${error.message}\n${details}\nFix: This is a shared or deployed database and requires human repair. Do not reset it.`;
 }
 
 export function formatMigrationFailure(error: unknown): string {

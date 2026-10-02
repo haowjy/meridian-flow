@@ -1,7 +1,13 @@
 /** Deploy-time command for backup-confirmed atomic database releases. */
 import path from "node:path";
 import { assertSupportedDatabaseUrl } from "./database-url.js";
-import { formatMigrationFailure, runRelease } from "./release-runner.js";
+import {
+  DatabaseHistoryRefusalError,
+  formatDatabaseHistoryRefusal,
+  formatMigrationFailure,
+  MigrationStatementError,
+  runRelease,
+} from "./release-runner.js";
 
 function log(message: string): void {
   process.stdout.write(`${message}\n`);
@@ -73,11 +79,13 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message =
-    error instanceof Error && error.message.includes("Migration")
+    error instanceof MigrationStatementError
       ? formatMigrationFailure(error)
-      : error instanceof Error
-        ? error.message
-        : String(error);
+      : error instanceof DatabaseHistoryRefusalError
+        ? formatDatabaseHistoryRefusal(error)
+        : error instanceof Error
+          ? error.message
+          : String(error);
   console.error(`release: ${message}`);
   process.exitCode = 1;
 });
