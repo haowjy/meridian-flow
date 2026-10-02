@@ -175,4 +175,48 @@ describe("pasting links into an Editor", () => {
       parent: "../volume-2/chapter-1.md",
     });
   });
+
+  it("keeps a `#` or `%` in a filename part of the document's name", () => {
+    const special: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            link("hash", "ch%233.md"),
+            { type: "text", text: " " },
+            link("pct", "100%25.md#intro"),
+          ],
+        },
+      ],
+    };
+    const { dom, text } = copy(editor("manuscript://a/b.md", special));
+    expect(
+      [...dom.querySelectorAll("a")].map((a) => a.getAttribute(LINK_ADDRESS_ATTRIBUTE)),
+    ).toEqual(["manuscript://a/ch%233.md", "manuscript://a/100%25.md#intro"]);
+    expect(text).toBe("[hash](manuscript://a/ch%233.md) [pct](manuscript://a/100%25.md#intro)");
+    expect(pasteInto("manuscript://a/q.md", dom.innerHTML)).toEqual({
+      hash: "ch%233.md",
+      pct: "100%25.md#intro",
+    });
+    expect(pasteInto("manuscript://z/q.md", dom.innerHTML)).toEqual({
+      hash: "../a/ch%233.md",
+      pct: "../a/100%25.md#intro",
+    });
+  });
+
+  it("records a contextual Scratch link with its holder's Work", () => {
+    const scratch: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [link("plan", "scratch://plan.md")] }],
+    };
+    const { dom } = copy(editor("scratch://@revision/notes/a.md", scratch));
+    expect(dom.querySelector("a")?.getAttribute(LINK_ADDRESS_ATTRIBUTE)).toBe(
+      "scratch://@revision/plan.md",
+    );
+    expect(pasteInto("scratch://@second-pass/b.md", dom.innerHTML)).toEqual({
+      plan: "scratch://@revision/plan.md",
+    });
+    expect(pasteInto("scratch://@revision/b.md", dom.innerHTML)).toEqual({ plan: "plan.md" });
+  });
 });

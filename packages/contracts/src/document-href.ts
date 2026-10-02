@@ -59,7 +59,7 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
       return encodePath([...from.map(() => ".."), ...to].join("/"));
     }
   }
-  return target.value.normalized;
+  return format(target.value, encodePath(target.value.path));
 }
 
 /**

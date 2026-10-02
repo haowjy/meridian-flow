@@ -21,7 +21,8 @@
  * on the clipboard.
  */
 
-import { resolveDocumentHref, spellDocumentHref } from "@meridian/contracts";
+import { parseContextUri, resolveDocumentHref, spellDocumentHref } from "@meridian/contracts";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { DOMSerializer, Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
@@ -33,9 +34,12 @@ export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
 const linkClipboardPluginKey = new PluginKey<LinkResolution>("meridianLinkClipboard");
 
 /**
- * The full address an internal href names from its holder, keeping its
- * fragment or query, or null for an external link or one that cannot be
- * resolved (a relative path with no holder).
+ * The full address an internal href names from its holder, spelled as an href
+ * (`%`, `#` and `?` in a filename encoded) with its fragment or query, or null
+ * for an external link or one that cannot be resolved (a relative path with no
+ * holder). A contextual `scratch://` or `uploads://` link in a Work's own
+ * Scratch means that Work, so it is recorded with the holder's authority and
+ * keeps meaning that Work wherever it is pasted.
  */
 export function linkHrefAddress(href: string, holderUri: string | null): string | null {
   const target = classifyLinkTarget(href);
@@ -44,14 +48,32 @@ export function linkHrefAddress(href: string, holderUri: string | null): string 
     target.kind === "scheme"
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, holderUri);
-  return resolved ? resolved.uri + resolved.suffix : null;
+  if (!resolved) return null;
+  return spellDocumentHref(null, qualifiedByHolder(resolved.uri, holderUri)) + resolved.suffix;
 }
 
-/** A recorded address read back from untrusted clipboard HTML, or null. */
+function qualifiedByHolder(uri: string, holderUri: string | null): string {
+  const parsed = parseContextUri(uri);
+  const holder = holderUri ? parseContextUri(holderUri) : null;
+  if (!parsed.ok || parsed.value.authority.kind !== "contextual" || !holder?.ok) return uri;
+  const { authority } = holder.value;
+  if (!isWorkScopedProjectContextScheme(holder.value.scheme) || authority.kind === "contextual")
+    return uri;
+  if (!isWorkScopedProjectContextScheme(parsed.value.scheme)) return uri;
+  const qualifier = authority.kind === "work" ? `@${authority.workSlug}` : "@";
+  return `${parsed.value.scheme}://${qualifier}/${parsed.value.path}`;
+}
+
+/**
+ * A recorded address read back from untrusted clipboard HTML, or null: only a
+ * full address in exactly the spelling `linkHrefAddress` writes.
+ */
 export function clipboardLinkAddress(value: string | null): string | null {
   if (!value) return null;
   const resolved = resolveDocumentHref(value, null);
-  return resolved && resolved.uri + resolved.suffix === value ? value : null;
+  return resolved && spellDocumentHref(null, resolved.uri) + resolved.suffix === value
+    ? value
+    : null;
 }
 
 /** An address spelled for the document it lands in. */
