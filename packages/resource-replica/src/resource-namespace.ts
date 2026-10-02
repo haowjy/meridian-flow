@@ -329,12 +329,15 @@ export function recordNamespaceOutcome(
 
 function createLocation(
   result: Exclude<Extract<NamespaceOutcome, { kind: "create" }>["result"], { status: "conflict" }>,
-): ResourceLocation {
+): ResourceLocation | null {
+  // The create response names a Work by id alone; a Work-scoped location
+  // waits for the catalog observation, which carries the Work's slug.
+  if (result.workId) return null;
   return {
     scheme: result.scheme,
     path: displayedPath(result.path),
     name: result.name,
-    workId: result.workId ?? null,
+    workId: null,
   };
 }
 
@@ -439,10 +442,9 @@ export function installCanonicalRefresh(input: {
   )
     return null;
   const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
-  // A catalog observation names its Work by id; a named Work also carries its
-  // slug, and No Work (`@/`) carries none, exactly as catalog installation
-  // derives it from the entry's URI. Only a Work-scoped location with no Work
-  // id at all is incomplete.
+  // A catalog observation names its Work by id with its slug, null for No Work
+  // (`@/`), exactly as catalog installation derives it from the entry's URI.
+  // Only a Work-scoped location with no Work id at all is incomplete.
   if (
     (workScoped && input.location.workId == null) ||
     (!workScoped && (input.location.workId !== null || input.location.workSlug != null))
