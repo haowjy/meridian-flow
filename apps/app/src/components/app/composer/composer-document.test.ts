@@ -1,3 +1,4 @@
+import { resolveDocumentHref } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 
 import { serializeComposerDraft } from "./composer-document";
@@ -104,5 +105,31 @@ describe("serializeComposerDraft reference occurrences", () => {
         uri: "manuscript://volume-1/chapter-1.md",
       },
     ]);
+  });
+
+  it("keeps a `#` or `%` in a name part of the sent address, not a fragment or an escape", () => {
+    const uris = ["kb://notes/Issue #3.md", "kb://notes/100% Done.md"];
+    const envelope = serializeComposerDraft({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            reference(uris[0] as string, "Issue #3.md"),
+            { type: "text", text: " and " },
+            reference(uris[1] as string, "100% Done.md"),
+          ],
+        },
+      ],
+    });
+
+    expect(envelope.text).toBe(
+      "[Issue #3.md](<kb://notes/Issue %233.md>) and [100% Done.md](<kb://notes/100%25 Done.md>)",
+    );
+    // The model and a paste read each destination back as the referenced document.
+    const destinations = [...envelope.text.matchAll(/\]\(<([^>]+)>\)/g)].map((match) => match[1]);
+    expect(destinations.map((href) => resolveDocumentHref(href as string, null))).toEqual(
+      uris.map((uri) => ({ uri, suffix: "" })),
+    );
   });
 });

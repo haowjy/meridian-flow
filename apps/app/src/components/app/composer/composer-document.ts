@@ -1,4 +1,6 @@
 /** Pure Composer document schema, serialization, and exact selection snapshots. */
+
+import { spellDocumentHref } from "@meridian/contracts";
 import type {
   ReferenceOccurrence,
   SkillOccurrence,
@@ -99,10 +101,11 @@ export type ComposerSkillAttrs = {
 /**
  * What a reference reads as in text: the occurrence a sent message carries
  * (what the model reads) and the plain clipboard form. A standard Markdown
- * link to the canonical URI, so the model and a paste see an address.
+ * link to the canonical URI, spelled by the href module so a `#` or `%` in a
+ * name stays part of the address the model and a paste read back.
  */
 export function referenceSpelling(value: ComposerReferenceAttrs): string {
-  return formatMarkdownLink(value.displayText ?? value.label, value.uri);
+  return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
 }
 
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
