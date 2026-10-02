@@ -352,13 +352,16 @@ and for Scratch and Uploads it is required because the Work is the file's
 identity. No Work has one Editor identity, none: the locked No Work row's id
 (which a No Work chat is bound to and a No Work Scratch address carries)
 resolves to No Work, and a No Work Scratch tab carries no Work, so it stays in
-the No Work Editor's strip however the Editor was reached. The recognized query keys are `work`, `settings`, `results`, and
-`view`. Selectors distinguish omitted, explicit no-Work (empty), a Work ID, and
-malformed input; duplicate recognized keys and malformed encodings are invalid
-rather than normalized into another destination. Older shapes have no alias and
-render the unavailable state. Case and trailing-slash canonical replacement use
-the address serializer. Settings remains the layout-owned overlay; Results
-remains auxiliary state. The full grammar is in
+the No Work Editor's strip however the Editor was reached. A tab carries a
+Work only when its location names one by slug (`editorTabWorkId`); every
+resource location states its Work's slug, null only for the No Work row
+(`ResourceWorkAuthority`). The recognized query keys are `work`, `settings`,
+`results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
+a Work ID, and malformed input; duplicate recognized keys and malformed
+encodings are invalid rather than normalized into another destination. Older
+shapes have no alias and render the unavailable state. Case and trailing-slash
+canonical replacement use the address serializer. Settings remains the
+layout-owned overlay; Results remains auxiliary state. The full grammar is in
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and

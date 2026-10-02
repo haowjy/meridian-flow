@@ -427,6 +427,7 @@ describe("namespace record transitions", () => {
       path: "/side/note.md",
       name: "note.md",
       workId: "no-work-row",
+      workSlug: null,
     };
     const refreshed = installCanonicalRefresh({
       record: settled.next,
@@ -439,7 +440,7 @@ describe("namespace record transitions", () => {
       installCanonicalRefresh({
         record: settled.next,
         operationId: "move-operation",
-        location: { ...location, workId: null },
+        location: { ...location, workId: null, workSlug: undefined },
       }),
     ).toThrow("incomplete Work authority");
   });
