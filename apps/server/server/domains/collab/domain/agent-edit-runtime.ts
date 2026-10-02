@@ -42,6 +42,11 @@ type AgentEditObservability = Pick<
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
+  /**
+   * The live agent-edit core's coordinator when it differs from `coordinator`:
+   * production defers live projection until a reply's transaction commits.
+   */
+  agentCoordinator?: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -68,7 +73,7 @@ export function createAgentEditRuntime(input: {
     createAgentEditCore({
       documentRevision,
       journal: input.journal,
-      coordinator: input.coordinator,
+      coordinator: input.agentCoordinator ?? input.coordinator,
       lifecycle: input.lifecycle,
       codec,
       model,

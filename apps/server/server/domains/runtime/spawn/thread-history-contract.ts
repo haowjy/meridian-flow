@@ -656,7 +656,7 @@ not found
       await f.block(live, "tool_use", {
         toolCallId: "spawn-1",
         toolName: "spawn",
-        input: { description: "Summarize conversation test" },
+        input: { name: "Summarize conversation test" },
       });
       const result = structured(await f.read());
       expect(result.next).toBeUndefined();

@@ -19,7 +19,7 @@ interface RunTurnBase {
   executionReport?: {
     correlation: ExecutionReportCorrelation;
     agentSlug?: string | null;
-    description?: string | null;
+    name?: string | null;
   };
   child?: { parentThreadId: ThreadId; background: boolean; origin: "spawn" | "message" };
   onCurrentTurnChanged?: (turn: CurrentTurn) => void;

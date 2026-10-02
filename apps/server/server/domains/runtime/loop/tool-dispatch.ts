@@ -171,7 +171,7 @@ export async function dispatchToolCall(
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             from: spawnInput.from,
-            description: spawnInput.description,
+            name: spawnInput.name,
             ...(spawnInput.append_system_prompt !== undefined
               ? { appendSystemPrompt: spawnInput.append_system_prompt }
               : {}),

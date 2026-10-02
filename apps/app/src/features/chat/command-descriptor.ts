@@ -5,7 +5,6 @@ import {
   BookOpen,
   FilePlus2,
   FolderTree,
-  History,
   Layers,
   List,
   type LucideIcon,
@@ -51,9 +50,9 @@ export type CommandExpand =
   /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
   /** The passage the model read, as quoted prose. */
-  | "output-preview"
+  | "result-preview"
   /** The headings a skim saw, as a list. */
-  | "output-outline"
+  | "result-outline"
   /** What the model submitted, read from the tool input. */
   | "submitted-content"
   /** Curated per-tool content the registry builds itself. */
@@ -89,24 +88,24 @@ function workTenses(tool: ToolView, active: string, complete: string): ToolActiv
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   read: {
     Icon: BookOpen,
-    phrases: (tool) => documentReadTenses(tool, t`Reading`, t`Read`),
+    phrases: (tool) => documentTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-preview",
+    expand: "result-preview",
   },
   // An outline read returns heading structure, not prose. A row saying "Read"
   // over that payload claims the model saw the words.
   skim: {
     Icon: List,
-    phrases: (tool) => documentReadTenses(tool, t`Skimming`, t`Skimmed`),
+    phrases: (tool) => documentTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-outline",
+    expand: "result-outline",
   },
   create: {
     Icon: FilePlus2,
     phrases: (tool, writeMode) =>
-      documentWriteTenses(
+      documentTenses(
         tool,
         writeMode === "draft" ? t`Drafting` : t`Writing`,
         writeMode === "draft" ? t`Drafted` : t`Wrote`,
@@ -118,7 +117,7 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   edit: {
     Icon: PenLine,
     phrases: (tool, writeMode) =>
-      documentWriteTenses(
+      documentTenses(
         tool,
         writeMode === "draft" ? t`Drafting` : t`Editing`,
         writeMode === "draft" ? t`Drafted` : t`Edited`,
@@ -141,13 +140,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     Icon: Redo2,
     phrases: () => tenses(t`Redoing…`, t`Redid`),
     failureVerb: () => t`Couldn't redo`,
-    pathlessTitle: null,
-    expand: "none",
-  },
-  review: {
-    Icon: History,
-    phrases: () => tenses(t`Checking recent changes…`, t`Checked recent changes`),
-    failureVerb: () => t`Couldn't check recent changes`,
     pathlessTitle: null,
     expand: "none",
   },
@@ -246,22 +238,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
 };
 
-function documentReadTenses(
-  tool: ToolView,
-  activeVerb: string,
-  completeVerb: string,
-): ToolActivityVocabulary {
-  const input = toolInputObject(tool);
-  const file = documentTarget(input);
-  if (!file) return tenses(`${activeVerb}…`, completeVerb);
-  const name = documentFileName(file);
-  return {
-    active: { verb: activeVerb, parameter: `${name}…` },
-    complete: { verb: completeVerb, parameter: name },
-  };
-}
-
-function documentWriteTenses(
+/** A document command's phrases, naming the document it acted on. */
+function documentTenses(
   tool: ToolView,
   activeVerb: string,
   completeVerb: string,
@@ -310,6 +288,7 @@ export function liveToolActivityLabel(toolName: string, input: unknown): string 
     toolName,
     input: (input ?? null) as ToolView["input"],
     output: null,
+    result: null,
     status: "partial",
     isError: false,
     message: null,

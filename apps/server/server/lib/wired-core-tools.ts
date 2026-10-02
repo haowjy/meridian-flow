@@ -25,6 +25,7 @@ import {
   type AskUserToolInput,
   interruptResolvedPropsFromAnswer,
 } from "@meridian/contracts/components";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
   askRequestFromAskUser,
   type MeridianError,
@@ -43,6 +44,7 @@ import type {
 import { workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
+  AgentEditDestination,
   CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
@@ -54,6 +56,7 @@ import {
 import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
 import type { ContextError, ContextPort } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
+import { destination as fileDestination } from "../domains/file-policy/index.js";
 import {
   type EventSink,
   emitEvent,
@@ -160,6 +163,8 @@ export type ResponseWriteLifecycleCommitResult =
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** Documents the save left out, with the copy their writes' results now carry (D29). */
+      refused: Array<{ documentId: string; message: string }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -213,19 +218,6 @@ async function resolveExecutionContext(
   const work = await deps.works.findById(primary.workId);
   if (!work || workLifecycleState(work) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
-  }
-  return threadExecutionContext(work);
-}
-
-async function resolveExecutionContextOrThrow(
-  deps: Pick<ToolWiringDeps, "threadWorks" | "works">,
-  threadId: string,
-): Promise<ThreadExecutionContext> {
-  const primary = await deps.threadWorks.findPrimary(threadId);
-  if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
-  const work = await deps.works.findById(primary.workId);
-  if (!work || workLifecycleState(work) === "deleted") {
-    throw new Error("The current Work is unavailable during response finalization");
   }
   return threadExecutionContext(work);
 }
@@ -403,6 +395,13 @@ function contextErrorMessage(error: ContextError): string {
   return `${error.code}: ${error.uri}`;
 }
 
+/** D29: the reply's Work was archived before its save, so this file's change was left out. */
+function archivedBeforeSaveMessage(workSlug: string | null): string {
+  if (workSlug === null)
+    return "This chat's Work was archived before this reply was saved, so this change wasn't saved.";
+  return `Work @${workSlug} was archived before this reply was saved, so this change wasn't saved. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing its files.`;
+}
+
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
@@ -444,6 +443,34 @@ function buildAgentWriteCommand(
 type ReadSelection = Pick<ReadToolInput, "in" | "around">;
 
 /**
+ * Where this thread reads and writes the document: the file policy's answer
+ * for its source and the thread's Work (D20). Scratch and uploads stay live.
+ */
+function documentDestination(
+  execution: ThreadExecutionContext,
+  address: ResolvedDocumentAddress,
+): AgentEditDestination {
+  const parsed = parseUnifiedContextUri(address.uri);
+  if (!parsed.ok) throw new Error(`Resolved document URI is not a context URI: ${address.uri}`);
+  const owner = execution.draftOwner;
+  if (!owner || fileDestination(parsed.value.scheme, true) === "live") return { kind: "live" };
+  return { kind: "draft", workId: owner.workId, workSlug: execution.scope.workSlug };
+}
+
+/** Writes report where they landed; a drafted write names its Work. */
+function withDestination(outcome: WriteOutcome, destination: AgentEditDestination): WriteOutcome {
+  if (outcome.isError) return outcome;
+  return {
+    ...outcome,
+    result: {
+      ...outcome.result,
+      destination: destination.kind,
+      ...(destination.kind === "draft" ? { draftWork: destination.workSlug ?? "/" } : {}),
+    },
+  };
+}
+
+/**
  * The one server read path (D18). The `read` tool's handler and reference
  * loading both call it; nothing builds tool arguments to reach it.
  */
@@ -454,7 +481,7 @@ async function readDocument(
   options: { selection?: ReadSelection; format?: ReadToolInput["format"] },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
 ): Promise<WriteOutcome> {
-  return deps.documentSync.agentEdit(execution).read(
+  return deps.documentSync.agentEdit().read(
     {
       ...options.selection,
       ...(options.format ? { format: options.format } : {}),
@@ -465,6 +492,7 @@ async function readDocument(
       sessionId: ctx.threadId,
       threadId: ctx.threadId,
       turnId: ctx.turnId,
+      destination: documentDestination(execution, address),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },
@@ -483,8 +511,7 @@ async function refreshProjectionAfterToolWrite(
 }
 
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync"> &
-    Partial<Pick<ToolWiringDeps, "threadWorks" | "works">>,
+  deps: Pick<ToolWiringDeps, "documentSync">,
 ): AgentEditResponseWriteLifecycle {
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
 
@@ -534,21 +561,15 @@ export function createAgentEditResponseWriteLifecycle(
               ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
               : [],
           ),
+          refused: result.refused.map((refusal) => ({
+            documentId: refusal.documentId,
+            message: archivedBeforeSaveMessage(refusal.workSlug),
+          })),
         };
       };
       const result = await deps.documentSync.finalizeResponseCommit(
         responseId,
-        {
-          ...ctx,
-          ...(deps.threadWorks && deps.works
-            ? {
-                execution: await resolveExecutionContextOrThrow(
-                  { threadWorks: deps.threadWorks, works: deps.works },
-                  ctx.threadId,
-                ),
-              }
-            : {}),
-        },
+        ctx,
         async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
       );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
@@ -560,17 +581,7 @@ export function createAgentEditResponseWriteLifecycle(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     ): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId, {
-        ...ctx,
-        ...(deps.threadWorks && deps.works
-          ? {
-              execution: await resolveExecutionContextOrThrow(
-                { threadWorks: deps.threadWorks, works: deps.works },
-                ctx.threadId,
-              ),
-            }
-          : {}),
-      });
+      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {
@@ -673,8 +684,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     });
     if (isToolError(address)) return address;
 
-    const outcome = await deps.documentSync
-      .agentEdit(execution)
+    const destination = documentDestination(execution, address);
+    const written = await deps.documentSync
+      .agentEdit()
       .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
@@ -682,7 +694,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         responseId: ctx.responseId,
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
+        destination,
       });
+    // Undo and redo go where history says, so only forward writes name a destination.
+    const outcome =
+      parsed.command === "undo" || parsed.command === "redo"
+        ? written
+        : withDestination(written, destination);
     const stagedCreate =
       parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
     if (outcome.isError) {

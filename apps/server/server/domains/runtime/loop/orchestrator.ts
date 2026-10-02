@@ -274,6 +274,8 @@ type ResponseWriteCommitOutcome =
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** Documents the save left out; their writes did not land (D29). */
+      refused: Array<{ documentId: string; message: string }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -419,7 +421,7 @@ async function admitRunExecution(
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
-      description: input.executionReport?.description ?? null,
+      name: input.executionReport?.name ?? null,
     });
   }
 }
@@ -1096,6 +1098,7 @@ async function persistUncommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   text: string;
+  status?: "internal_error" | "invalid_write";
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1104,7 +1107,7 @@ async function persistUncommittedWriteResult(input: {
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
-      status: "internal_error",
+      status: input.status ?? "internal_error",
       payload: { ...(staged?.path ? { path: staged.path } : {}), message },
     }),
   );
@@ -1144,9 +1147,14 @@ async function persistCommittedWriteResult(input: {
   const metadata = { ...content?.metadata };
   metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
-  // The settled receipt describes the same document the staged result named.
-  const path = stagedWriteResult(input.block)?.path;
-  const { output, result } = writeResultContent({ ...input.result, ...(path ? { path } : {}) });
+  // The settled receipt describes the same document and destination the staged result named.
+  const staged = stagedWriteResult(input.block);
+  const { output, result } = writeResultContent({
+    ...input.result,
+    ...(staged?.path ? { path: staged.path } : {}),
+    ...(staged?.destination ? { destination: staged.destination } : {}),
+    ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
+  });
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,
@@ -1409,9 +1417,20 @@ function createResponseScope(input: {
         { threadId, turnId },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
+            const refusal =
+              settled.status === "committed"
+                ? settled.refused.find((refused) => refused.documentId === documentId)
+                : undefined;
             for (const write of blocks) {
-              const result =
-                settled.status === "committed"
+              const result = refusal
+                ? await persistUncommittedWriteResult({
+                    deps,
+                    threadId,
+                    block: write.block,
+                    status: "invalid_write",
+                    text: refusal.message,
+                  })
+                : settled.status === "committed"
                   ? await persistCommittedWriteResult({
                       deps,
                       threadId,

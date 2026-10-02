@@ -12,7 +12,6 @@ export type ToolCommand =
   | "edit"
   | "undo"
   | "redo"
-  | "review"
   | "search"
   | "list"
   | "invoke"
@@ -25,12 +24,10 @@ export type ToolCommand =
 
 export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
-    case "write":
-      return documentCommand(toolInputObject(tool));
-    case "edit":
-      return "edit";
     case "read":
-      return "read";
+      return stringInput(toolInputObject(tool), "format") === "outline" ? "skim" : "read";
+    case "write":
+      return writeCommand(toolInputObject(tool));
     case "search":
       return "search";
     case "ls":
@@ -99,24 +96,28 @@ function workCategoryFromInput(
   }
 }
 
-function documentCommand(input: Record<string, JsonValue>): ToolCommand {
-  switch (stringInput(input, "command")) {
-    case "read":
-      return stringInput(input, "format") === "outline" ? "skim" : "read";
+/**
+ * The writer-facing verb for one `write` call. Removing blocks is an edit, and a
+ * copy makes a new document, so it reads as a create. A call whose command
+ * hasn't streamed in yet reads as writing; a command this list doesn't know
+ * (an old row's `write(command: "read")`, say) is `unknown`.
+ */
+function writeCommand(input: Record<string, JsonValue>): ToolCommand {
+  const command = stringInput(input, "command");
+  switch (command) {
     case "create":
+    case "copy":
       return "create";
     case "insert":
     case "replace":
-    case "delete":
+    case "remove":
       return "edit";
     case "undo":
       return "undo";
     case "redo":
       return "redo";
-    case "diff":
-      return "review";
     default:
-      return stringInput(input, "command") ? "unknown" : "create";
+      return command ? "unknown" : "create";
   }
 }
 

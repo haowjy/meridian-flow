@@ -14,6 +14,7 @@ import {
   loadUserSkillBody,
   resolveSelectionUserInvocableSkills,
   resolveThreadModelAvailableSkills,
+  resolveThreadPreloadedSkills,
   resolveThreadUserInvocableSkills,
   SkillUnavailableError,
 } from "./available-skills.js";
@@ -449,5 +450,105 @@ You are Alpha.
     });
     expect(skill2.body).toBe("skill2 body.\n");
     expect(skill2.description).toBe("First package skill two.");
+  });
+});
+
+const CRITIC_SOURCE = {
+  coordinate: "meridian-launch-agents",
+  files: {
+    ...WRITER_SOURCE.files,
+    "agents/critic.md": `---
+name: Critic
+mode: subagent
+model: fixture-model
+skills:
+  load:
+    - writing-principles
+  available:
+    - story-review
+    - hidden-from-model
+---
+
+You are Critic.
+`,
+    "skills/hidden-from-model/SKILL.md": skillMd("hidden-from-model", "Hidden from skill().", {
+      modelInvocable: false,
+    }),
+  },
+};
+
+/** A subagent thread under a Writer chat, bound to Critic's own configuration. */
+async function spawnCritic() {
+  const parent = await bindPrimary({ agentSlug: "writer", source: CRITIC_SOURCE });
+  const { repos, agentRevisions, accountSkillInstalls } = parent;
+  const definition = (
+    await agentRevisions.readPackageDefinitions(parent.definition.packageRevisionId)
+  ).find((entry) => entry.slug === "critic");
+  if (!definition) throw new Error("Critic definition missing");
+  const configuration = await resolveAgentConfiguration({
+    revision: definition,
+    store: agentRevisions,
+    defaultModel: "fixture-model",
+  });
+  const parentTurn = await repos.turns.create({
+    threadId: parent.thread.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "complete",
+  });
+  const thread = await repos.threads.createSubagent({
+    userId: parent.thread.userId,
+    projectId: parent.thread.projectId,
+    parentThreadId: parent.thread.id,
+    rootThreadId: parent.thread.id,
+    originTurnId: parentTurn.id,
+    spawnDepth: 1,
+    title: "Continuity check",
+  });
+  await agentRevisions.bindThread(thread.id, definition.id, configuration, null);
+  return { thread, agentRevisions, accountSkillInstalls };
+}
+
+describe("subagent skills", () => {
+  it("lists the subagent's own available skills, not the parent's", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    expect(await resolveThreadModelAvailableSkills({ thread, agentRevisions })).toEqual([
+      {
+        slug: "story-review",
+        name: "story-review",
+        description: "Review drafts after prose exists.",
+      },
+    ]);
+  });
+
+  it("loads an available skill body and refuses the parent's skills", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    const review = await loadModelSkillBody({ thread, slug: "story-review", agentRevisions });
+    expect(review.body).toBe("story-review body.\n");
+    await expect(
+      loadModelSkillBody({ thread, slug: "creative-writing-modes", agentRevisions }),
+    ).rejects.toBeInstanceOf(SkillUnavailableError);
+  });
+
+  it("refuses a model-invocable false skill from the subagent's available list", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    await expect(
+      loadModelSkillBody({ thread, slug: "hidden-from-model", agentRevisions }),
+    ).rejects.toBeInstanceOf(SkillUnavailableError);
+  });
+
+  it("keeps the writer's slash catalog off subagent threads", async () => {
+    const { thread, agentRevisions, accountSkillInstalls } = await spawnCritic();
+    expect(
+      await resolveThreadUserInvocableSkills({ thread, agentRevisions, accountSkillInstalls }),
+    ).toEqual([]);
+  });
+
+  it("reads the subagent's preloaded skill bodies from its own binding", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    const loaded = await resolveThreadPreloadedSkills({ thread, agentRevisions });
+    expect(loaded.map((skill) => [skill.slug, skill.body])).toEqual([
+      ["writing-principles", "writing-principles body.\n"],
+    ]);
   });
 });

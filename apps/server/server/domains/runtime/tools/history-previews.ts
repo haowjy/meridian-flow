@@ -15,7 +15,7 @@ export function writeHistoryPreview(input: JsonObject, result?: JsonValue): stri
 export function spawnHistoryPreview(input: JsonObject, result?: JsonValue): string {
   const output = result as JsonObject | undefined;
   const handle = output?.handle ?? (output?.report as JsonObject | undefined)?.handle;
-  return `${JSON.stringify(input.description ?? "")}${typeof handle === "string" ? ` → ${handle}` : ""}`;
+  return `${JSON.stringify(input.name ?? "")}${typeof handle === "string" ? ` → ${handle}` : ""}`;
 }
 export function workHistoryPreview(input: JsonObject): string {
   const target = input.work ?? input.target ?? input.name;

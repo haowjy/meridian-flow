@@ -3,7 +3,6 @@ import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
-import { splitHashline } from "../model/hashline.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
@@ -37,7 +36,8 @@ export interface ApplySuccessResponseInput {
 export interface ReversalSuccessResponseInput {
   direction: "undo" | "redo";
   status: UndoRedoOutcome;
-  targetCount?: number;
+  /** Write handles actually reversed, oldest first. */
+  writeIds: readonly string[];
   sync: SyncedMutationSummary;
 }
 
@@ -85,7 +85,7 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
     model: {
       reversal: {
         direction: input.direction,
-        count: input.targetCount ?? 0,
+        writes: [...input.writeIds],
       },
       ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.sync.concurrentEdits
@@ -164,6 +164,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "read_required" ||
     status === "internal_error"
   );
 }

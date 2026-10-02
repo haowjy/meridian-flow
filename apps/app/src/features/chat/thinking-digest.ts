@@ -7,9 +7,8 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
-import { type ToolCommand, toolCommand } from "./tool-command";
+import { stringInput, type ToolCommand, toolCommand, toolInputObject } from "./tool-command";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
@@ -25,10 +24,9 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   let steps = 0;
 
   for (const tool of tools) {
-    const path = stringField(inputObject(tool), "path");
-    // The writer-facing command, not the raw tool name, decides the bucket: a
-    // `write(command:"diff")` is a review of changes, not an edit or a document
-    // read, and must not be summarized as one.
+    const path = stringInput(toolInputObject(tool), "path");
+    // `read` calls count as reads and `write` calls as edits. A write command
+    // the app doesn't know (an old row's `write(command: "read")`) is a step.
     const command = toolCommand(tool);
 
     if (!tool.isError && path && isReadCommand(command)) {
@@ -39,8 +37,8 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       editedDocuments.add(documentIdentity(path));
       continue;
     }
-    // Failed, non-document (`search`, `ls`, `work`), read-only reviews, and
-    // pathless operations are uncountable: they contribute a step instead.
+    // Failed, non-document (`search`, `ls`, `work`) and pathless operations
+    // are uncountable: they contribute a step instead.
     steps += 1;
   }
 
@@ -101,29 +99,6 @@ export function thinkingDigest(
 
   const digest = clauses.join(", ");
   return digest ? capitalizeFirst(digest) : null;
-}
-
-function inputObject(tool: ToolView): Record<string, JsonValue> {
-  const raw = tool.input;
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, JsonValue>;
-  }
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw) as JsonValue;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, JsonValue>;
-      }
-    } catch {
-      return {};
-    }
-  }
-  return {};
-}
-
-function stringField(input: Record<string, JsonValue>, field: string): string | null {
-  const value = input[field];
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function documentIdentity(uriOrPath: string): string {

@@ -36,9 +36,6 @@ export function resolveSearchScope(
   around?: string,
   options: ScopeResolveOptions = {},
 ): ScopeResult {
-  if (input !== undefined && around !== undefined) {
-    return invalid("`in` and `around` are mutually exclusive scope parameters");
-  }
   if (around !== undefined) return resolveAround(ctx, around);
   if (input !== undefined) return resolveScope(ctx, input, options);
   const blocks = ctx.model.getBlocks(ctx.doc);

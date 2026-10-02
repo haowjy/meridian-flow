@@ -1,4 +1,4 @@
-/** User slash catalog (installed packages ∪ account) and model-available catalog (Agent available). */
+/** User slash catalog (installed packages ∪ account), model-available catalog (Agent available), and preloaded skill bodies (Agent load). */
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import {
@@ -68,7 +68,6 @@ export async function resolveThreadModelAvailableSkills(input: {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }): Promise<AvailableSkillListing[]> {
-  if (input.thread.kind !== "primary") return [];
   const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
   if (!binding) return [];
   const listings: AvailableSkillListing[] = [];
@@ -82,6 +81,24 @@ export async function resolveThreadModelAvailableSkills(input: {
     });
   }
   return listings;
+}
+
+/**
+ * Bodies of the thread's preloaded skills (`skills.load`), read from its own
+ * binding. Preloading is the Agent author's choice, so `model-invocable` does
+ * not gate it; that flag only governs the `skill` tool.
+ */
+export async function resolveThreadPreloadedSkills(input: {
+  thread: Thread;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+}): Promise<SkillListing[]> {
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!binding) return [];
+  const loaded: SkillListing[] = [];
+  for (const reference of binding.configuration.skills.load) {
+    loaded.push(await listingFromBoundReference(input.agentRevisions, reference));
+  }
+  return loaded;
 }
 
 export function unavailableActivatedSkillSlugs(
@@ -130,14 +147,12 @@ export async function loadModelSkillBody(input: {
   slug: string;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }): Promise<SkillListing> {
-  if (input.thread.kind === "primary") {
-    const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-    if (binding) {
-      const modelSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
-      if (modelSkill) {
-        if (!modelSkill.modelInvocable) throw new SkillUnavailableError(input.slug);
-        return modelSkill;
-      }
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (binding) {
+    const modelSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
+    if (modelSkill) {
+      if (!modelSkill.modelInvocable) throw new SkillUnavailableError(input.slug);
+      return modelSkill;
     }
   }
   throw new SkillUnavailableError(input.slug);

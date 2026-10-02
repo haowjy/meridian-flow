@@ -110,7 +110,8 @@ export type SavedExecutionReport = {
   toolCallId: string | null;
   cardBlockId: TurnBlockId | null;
   agentSlug: string | null;
-  description: string | null;
+  /** The spawn's task label (`spawn.name`). */
+  name: string | null;
   capture: ReturnResultCapture | null;
   captureToolCallId: string | null;
   reason: string | null;
@@ -259,7 +260,7 @@ export type SpawnResult =
       handle: string;
       threadId: string;
       agentSlug: string;
-      description?: string;
+      name?: string;
       /** Present for a spawned execution; absent for queue-only thread_message. */
       execution?: TurnId;
     }

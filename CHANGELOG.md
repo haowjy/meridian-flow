@@ -1,5 +1,7 @@
 # Changelog
 
+- Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0025 renames the report column.
+- Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
 - `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns.
