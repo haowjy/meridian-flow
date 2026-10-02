@@ -4,6 +4,7 @@
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
 import { z } from "zod";
+import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import {
   type ReversalSelectorFields,
   reversalSelectorIssues,
@@ -67,18 +68,67 @@ const WRITE_HANDLE_SELECTOR_FIELDS = {
   all: z.boolean().optional().describe("Every write in this thread."),
 };
 
+/**
+ * Which version of a document to read (D3, D14). It has no default: omitted
+ * means the version this thread's writes change, which the host decides per
+ * document. `read`, `search`, `ls` and `from` share this one description.
+ */
+export const DocumentVersionSchema = z
+  .enum(["draft", "live"])
+  .describe(
+    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
+  );
+export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
+
+const SOURCE_PATH = z.string().min(1);
+
+/**
+ * The source of a block copy (D23). It keeps the model's own path: the host
+ * resolves and reads it, and the engine only names it in the receipt.
+ */
+const BlockCopySourceSchema = z
+  .object({
+    path: SOURCE_PATH,
+    in: BlockSelectorSchema.optional(),
+    version: DocumentVersionSchema.optional(),
+  })
+  .strict()
+  .describe("Copy these blocks instead of `content`. Give exactly one of `content` or `from`.");
+
+/** The source of a whole-document copy (D24). */
+const DocumentCopySourceSchema = z
+  .object({
+    path: SOURCE_PATH,
+    version: DocumentVersionSchema.optional(),
+  })
+  .strict()
+  .describe(
+    "Document to copy. Omit `version` for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
+  );
+
+const OVERWRITE = z.boolean().optional().describe("Replace an existing document's entire content.");
+
 const MUTATION_BRANCHES = {
   create: {
     description: "Create a document.",
     fields: {
       content: z.string().optional(),
-      overwrite: z.boolean().optional().describe("Replace an existing document's entire content."),
+      overwrite: OVERWRITE,
+    },
+  },
+  copy: {
+    description:
+      "Copy a whole document, of any type, to `path`. The copy starts with its own history.",
+    fields: {
+      from: DocumentCopySourceSchema,
+      overwrite: OVERWRITE,
     },
   },
   insert: {
     description: "Insert content.",
     fields: {
-      content: z.string().min(1),
+      content: z.string().min(1).optional(),
+      from: BlockCopySourceSchema.optional(),
       after: z.string().min(1).optional().describe("Block hash to insert after. Not with `find`."),
       before: z
         .string()
@@ -94,7 +144,8 @@ const MUTATION_BRANCHES = {
   replace: {
     description: "Replace blocks selected by in, or the exact text find.",
     fields: {
-      content: z.string(),
+      content: z.string().optional(),
+      from: BlockCopySourceSchema.optional(),
       in: BlockSelectorSchema.optional(),
       find: z
         .string()
@@ -158,6 +209,7 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
   return z
     .discriminatedUnion("command", [
       branch("create"),
+      branch("copy"),
       branch("insert"),
       branch("replace"),
       branch("remove"),
@@ -169,6 +221,11 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       const command = fields.command;
       if (command === "insert" || command === "replace" || command === "remove") {
         addSelectorIssues(ctx, command, fields, targetKey);
+      }
+      if (command === "insert" || command === "replace" || command === "copy") {
+        for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
+          ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
+        }
       }
       if (command === "undo" || command === "redo") {
         for (const issue of reversalSelectorIssues(fields as ReversalSelectorFields)) {
@@ -188,18 +245,6 @@ const ENGINE_TARGET = {
   documentId: z.string().optional(),
   tool_use_id: z.string().optional(),
 };
-
-/**
- * Which version of a document to read (D3, D14). It has no default: omitted
- * means the version this thread's writes change, which the host decides per
- * document. `read`, `search`, `ls` and `from` share this one description.
- */
-export const DocumentVersionSchema = z
-  .enum(["draft", "live"])
-  .describe(
-    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
-  );
-export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 
 const READ_TARGET = {
   path: z
@@ -243,6 +288,7 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
   const command = (input as { command?: unknown }).command;
   switch (command) {
     case "create":
+    case "copy":
     case "insert":
     case "replace":
     case "remove":

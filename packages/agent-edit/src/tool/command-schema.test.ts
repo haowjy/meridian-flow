@@ -53,6 +53,13 @@ const validWrites = [
   { command: "redo", file: "chapter.md", last: 1 },
   { command: "redo", file: "chapter.md", all: true },
   { command: "insert", file: "chapter.md", content: "x", documentId: "d", tool_use_id: "c" },
+  { command: "insert", file: "chapter.md", after: "a1b2", from: { path: "ch11.md" } },
+  { command: "insert", file: "chapter.md", from: { path: "ch11.md", in: [1, 3], version: "live" } },
+  { command: "insert", file: "chapter.md", from: { path: "ch11.md#scene" } },
+  { command: "replace", file: "chapter.md", in: [2, 4], from: { path: "kb://lin.md", in: "a1b2" } },
+  { command: "replace", file: "chapter.md#scene", from: { path: "ch11.md" } },
+  { command: "copy", file: "scratch://lin.md", from: { path: "kb://characters/lin.md" } },
+  { command: "copy", file: "ch11-alt", from: { path: "ch11", version: "live" }, overwrite: true },
 ] satisfies unknown[];
 
 const invalidWrites = [
@@ -79,6 +86,12 @@ const invalidWrites = [
   ["insert with empty content", { command: "insert", file: "chapter.md", content: "" }],
   ["insert with empty find", { command: "insert", file: "chapter.md", content: "x", find: "" }],
   ["replace with empty find", { command: "replace", file: "chapter.md", content: "", find: "" }],
+  ["from as a string", { command: "insert", file: "chapter.md", from: "ch11.md" }],
+  ["from with around", { command: "insert", file: "c.md", from: { path: "a", around: "a1" } }],
+  ["copy without from", { command: "copy", file: "chapter.md" }],
+  ["copy with from.in", { command: "copy", file: "c.md", from: { path: "a", in: 1 } }],
+  ["copy with content", { command: "copy", file: "c.md", from: { path: "a" }, content: "x" }],
+  ["create with from", { command: "create", file: "c.md", from: { path: "a" } }],
 ] satisfies Array<[string, unknown]>;
 
 /**
@@ -177,6 +190,48 @@ const selectorMatrix = [
     { command: "remove", file: "c.md" },
     "file",
     "remove needs exactly one of `in` or a #heading-slug in path",
+  ],
+  [
+    "insert with content and from",
+    { command: "insert", file: "c.md", content: "x", from: { path: "a" } },
+    "from",
+    "Give exactly one of `content` or `from`",
+  ],
+  [
+    "insert with neither content nor from",
+    { command: "insert", file: "c.md" },
+    "",
+    "Give exactly one of `content` or `from`",
+  ],
+  [
+    "replace with neither content nor from",
+    { command: "replace", file: "c.md", in: 1 },
+    "",
+    "Give exactly one of `content` or `from`",
+  ],
+  [
+    "from.in with a #fragment in from.path",
+    { command: "insert", file: "c.md", from: { path: "a#s", in: 1 } },
+    "from.in",
+    "Use one of from.in or a #fragment in from.path",
+  ],
+  [
+    "insert from with find",
+    { command: "insert", file: "c.md", find: "Alpha", from: { path: "a" } },
+    "find",
+    "from copies whole blocks; position them with after or before, not find",
+  ],
+  [
+    "replace from with find",
+    { command: "replace", file: "c.md", find: "Alpha", from: { path: "a" } },
+    "find",
+    "from copies whole blocks; select the blocks to replace with in or a #heading-slug in path, not find",
+  ],
+  [
+    "copy of a section",
+    { command: "copy", file: "c.md", from: { path: "a#s" } },
+    "from.path",
+    "copy takes a whole document; drop the #fragment from from.path",
   ],
 ] as const;
 

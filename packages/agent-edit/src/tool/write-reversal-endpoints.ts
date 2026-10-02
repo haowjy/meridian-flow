@@ -112,6 +112,7 @@ export function createWriteReversalEndpoints(deps: {
       commandName: command.command,
       direction,
       selection,
+      filePath: address.filePath,
       actor:
         context.actor?.kind === "human"
           ? { type: "user", userId: context.actor.userId }

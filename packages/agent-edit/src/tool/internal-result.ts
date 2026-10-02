@@ -1,5 +1,6 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
+import type { Block } from "../codec-types.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
 import type {
   DocumentCommandName,
@@ -13,6 +14,8 @@ export type InternalWriteResult = InternalWriteResultBase &
 
 interface InternalWriteResultBase {
   revision?: string | null;
+  /** The blocks a read selected, for a host copying them. */
+  nodes?: readonly Block[];
   model?: AgentEditModelPayload;
   writeId?: string;
   settlementId?: string;

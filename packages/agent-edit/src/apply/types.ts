@@ -29,7 +29,13 @@ export type ResolvedEdit = { documentId: string; file: string } & (
   | {
       kind: "insert";
       after?: BlockRef;
+      /** Markup of the inserted blocks; it drives the insert unless `blocks` is set. */
       newText: string;
+      /**
+       * Copied blocks inserted as given (D23), so no markdown round trip
+       * normalizes them. `newText` then only describes them for provenance.
+       */
+      blocks?: readonly Block[];
     }
   | {
       kind: "delete";

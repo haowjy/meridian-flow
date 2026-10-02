@@ -3,6 +3,7 @@ import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
+import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
@@ -31,6 +32,8 @@ export interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: boolean;
+  /** A copy reports this instead of echoing what it wrote; its edges are `hash|prefix` lines. */
+  copied?: { summary: CopySummary; edges: readonly string[] };
 }
 
 export interface ReversalSuccessResponseInput {
@@ -42,7 +45,7 @@ export interface ReversalSuccessResponseInput {
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
-  const blocks = echoGroups(input.echo);
+  const blocks = input.copied ? copiedGroups(input.copied.edges) : echoGroups(input.echo);
   const swept = input.lateSweep?.capturedDeletedBodies ?? [];
   if (swept.length > 0) {
     blocks.push({
@@ -65,6 +68,9 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
               ...(deletedHashes.length > 0 ? { deletedHashes: [...deletedHashes] } : {}),
             },
           }
+        : {}),
+      ...(input.copied
+        ? { copied: { from: input.copied.summary.from, blocks: input.copied.summary.blocks } }
         : {}),
       ...(blocks.length > 0 || input.lateSweep ? { blocks } : {}),
       ...(input.concurrentEdits
@@ -133,12 +139,19 @@ export function toOutcome(
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
+    ...(result.nodes ? { nodes: result.nodes } : {}),
     result: model,
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
   }
   return { ...base, status: result.status };
+}
+
+function copiedGroups(edges: readonly string[]): AgentEditBlockGroup[] {
+  return edges.length > 0
+    ? [{ extent: "prefix", relation: "copied", items: edges.map(modelBlockItem) }]
+    : [];
 }
 
 function echoGroups(echo: readonly ApplyEchoHunk[]): AgentEditBlockGroup[] {
