@@ -389,7 +389,10 @@ export function ReadableProjectRoute({
         current.address.destination.kind === "document" &&
         next.address.destination.kind === "document" &&
         current.address.destination.scheme === next.address.destination.scheme &&
-        current.address.destination.path === next.address.destination.path;
+        current.address.destination.path === next.address.destination.path &&
+        (target.workId === null
+          ? current.address.work.kind === "none"
+          : current.address.work.kind === "id" && current.address.work.id === target.workId);
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
