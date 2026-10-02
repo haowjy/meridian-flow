@@ -1,11 +1,11 @@
 // Versioned JSON result contract presented to editing models.
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
-import { type WriteCommandName, writeCommandName } from "./command-schema.js";
+import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
 export const AGENT_EDIT_RESULT_SCHEMA = "meridian.agent-edit.v1" as const;
 
-export type AgentEditResultCommand = WriteCommandName | "unknown";
+export type AgentEditResultCommand = DocumentCommandName | "unknown";
 
 export type WriteErrorStatus =
   | "not_found"
@@ -103,6 +103,7 @@ export function modelResult(input: ModelResultInput): AgentEditResultV1 {
   return { ...base, status: input.status };
 }
 
+/** The result command for a `write` call's arguments, which may be malformed. */
 export function agentEditResultCommand(input: unknown): AgentEditResultCommand {
   return writeCommandName(input) ?? "unknown";
 }
@@ -126,7 +127,9 @@ export function isAgentEditResultEnvelope(input: unknown): input is AgentEditRes
   const result = input as Record<string, unknown>;
   if (
     result.schema !== AGENT_EDIT_RESULT_SCHEMA ||
-    (result.command !== "unknown" && writeCommandName(result) === undefined) ||
+    (result.command !== "unknown" &&
+      result.command !== "read" &&
+      writeCommandName(result) === undefined) ||
     !isWriteStatus(result.status)
   ) {
     return false;

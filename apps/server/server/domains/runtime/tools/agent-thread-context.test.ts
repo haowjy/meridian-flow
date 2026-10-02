@@ -34,6 +34,7 @@ const CRITIC_MAP = {
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
   return {
+    read: noop,
     write: noop,
     work: noop,
     ls: noop,
@@ -179,34 +180,35 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(JSON.stringify(context.tools)).not.toMatch(/writer/i);
   });
 
-  it("advertises read as a write command and requires the command discriminator", () => {
+  it("registers read and write as two tools, each with its own input", () => {
     const registrations = createCoreToolRegistrations(stubHandlers());
-    expect(registrations.map((registration) => registration.definition.name)).not.toContain("read");
+    const read = registrations.find((registration) => registration.definition.name === "read");
+    expect(read?.definition.inputSchema).toMatchObject({
+      required: ["path"],
+      properties: expect.not.objectContaining({ command: expect.anything() }),
+    });
     const write = registrations.find((registration) => registration.definition.name === "write");
-    const branches = write?.definition.inputSchema.oneOf;
-    expect(Array.isArray(branches)).toBe(true);
-    expect(branches).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          required: expect.arrayContaining(["command", "path"]),
-          properties: expect.objectContaining({ command: { const: "read", type: "string" } }),
-        }),
-      ]),
-    );
+    expect(commandConsts([write?.definition as Tool], "write")).toEqual([
+      "create",
+      "insert",
+      "replace",
+      "remove",
+      "undo",
+      "redo",
+    ]);
   });
 
-  it("advertises Critic read and Writer all commands on one write tool", async () => {
+  it("advertises write only to agents with edit, and read to both", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
-    expect([...commandConsts(critic.tools, "write")].sort()).toEqual(["read"]);
-    expect(hasTool(critic.tools, "read")).toBe(false);
-    expect(commandConsts(writer.tools, "write")).toContain("replace");
+    expect(hasTool(critic.tools, "read")).toBe(true);
+    expect(hasTool(critic.tools, "write")).toBe(false);
+    expect(hasTool(writer.tools, "read")).toBe(true);
     expect([...commandConsts(writer.tools, "write")].sort()).toEqual([
       "create",
-      "delete",
       "insert",
-      "read",
       "redo",
+      "remove",
       "replace",
       "undo",
     ]);
@@ -216,8 +218,8 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
-    expect([...commandConsts(generic.tools, "write")].sort()).toEqual(["read"]);
-    expect(hasTool(generic.tools, "read")).toBe(false);
+    expect(hasTool(generic.tools, "read")).toBe(true);
+    expect(hasTool(generic.tools, "write")).toBe(false);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {

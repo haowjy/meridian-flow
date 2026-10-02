@@ -14,7 +14,7 @@ describe("agent-edit model result", () => {
     expect(
       isAgentEditResultEnvelope({
         schema: "meridian.agent-edit.v1",
-        command: "delete",
+        command: "remove",
         status: "not_found",
         phase: "staged",
       }),

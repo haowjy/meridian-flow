@@ -30,7 +30,7 @@ describe("write tool dispatch", () => {
     const firstBody = "```text\nfirst line\nc3d4|looks like another block\n```";
     const ctx = harness({ "chapter.md": `${firstBody}\n\nActual block.` });
 
-    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const read = await ctx.core.read({ file: "chapter.md" }, context);
 
     expect(read.result).toMatchObject({
       schema: "meridian.agent-edit.v1",
@@ -63,7 +63,7 @@ describe("write tool dispatch", () => {
         },
       },
     );
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const result = await ctx.core.write(
       {
@@ -97,7 +97,7 @@ describe("write tool dispatch", () => {
         },
       },
     );
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const failed = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Phantom." },
@@ -118,7 +118,7 @@ describe("write tool dispatch", () => {
     const ctx = harness({
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
     });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
@@ -187,7 +187,7 @@ describe("write tool dispatch", () => {
 
   it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
     const ctx = harness({ "chapter.md": "Alpha canonical." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
 
     const result = await ctx.core.write(
@@ -221,7 +221,7 @@ describe("write tool dispatch", () => {
 
   it("inserts by block hash, by find, and deduplicates tool_use_id", async () => {
     const ctx = harness({ "chapter.md": "Alpha.\n\nOmega." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
 
     const byHash = await ctx.core.write(
@@ -261,7 +261,7 @@ describe("write tool dispatch", () => {
 
   it("scopes tool_use_id idempotency to the response identity", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const first = await ctx.core.write(
       {
@@ -311,7 +311,7 @@ describe("write tool dispatch", () => {
 
   it("rejects tool_use_id replay after rollback instead of returning cached staged success", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-idempotency-after-rollback",
@@ -338,7 +338,7 @@ describe("write tool dispatch", () => {
 
   it("brands staged mutating success with phase staged and immediate commit with committed", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const staged = await ctx.core.write(
       {
@@ -371,7 +371,7 @@ describe("write tool dispatch", () => {
     const ctx = harness({
       "chapter.md": "Alpha sword.\n\nDelete one.\n\n## Delete two\n\nKeep me.",
     });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const text = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -393,13 +393,13 @@ describe("write tool dispatch", () => {
     const firstDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 1);
     const lastDeleteHash = hashAt(ctx.liveDoc("chapter.md"), 2);
     const deletion = await ctx.core.write(
-      { command: "delete", file: "chapter.md", in: [firstDeleteHash, lastDeleteHash] },
+      { command: "remove", file: "chapter.md", in: [firstDeleteHash, lastDeleteHash] },
       context,
     );
 
     expect(outcomeText(deletion)).toContain("status: success");
     expect(deletion.result).toMatchObject({
-      command: "delete",
+      command: "remove",
       write: { deletedHashes: [firstDeleteHash, lastDeleteHash] },
     });
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Keep me."]);
@@ -416,7 +416,7 @@ describe("write tool dispatch", () => {
       context,
     );
     expect(rejectedSentinel.status).toBe("invalid_write");
-    expect(outcomeText(rejectedSentinel)).toContain("Use the delete command");
+    expect(outcomeText(rejectedSentinel)).toContain("Use `remove` to remove blocks");
   });
 
   it("restores the pre-write runtime snapshot after an apply failure", async () => {
@@ -436,7 +436,7 @@ describe("write tool dispatch", () => {
       },
     };
     const ctx = harness({ "chapter.md": "cat one\n\ncat two" }, { model: rejectingModel });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const failed = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "kitten", find: "cat", all: true },
@@ -454,7 +454,7 @@ describe("write tool dispatch", () => {
 
   it("returns LLM-readable not_found, ambiguous_match, and invalid_write errors", async () => {
     const ctx = harness({ "chapter.md": "sword one\n\nsword two" });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const missing = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "x", after: "deadbeef" },
@@ -462,7 +462,7 @@ describe("write tool dispatch", () => {
     );
     expect(outcomeText(missing)).toContain("status: not_found");
     expectOutcome(missing, "not_found", true);
-    expect(outcomeText(missing)).toContain('write(command="read", path="chapter.md")');
+    expect(outcomeText(missing)).toContain('read({"path": "chapter.md"})');
 
     const ambiguous = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
@@ -484,7 +484,7 @@ describe("write tool dispatch", () => {
   it("maps typed missing documents differently from transient coordinator failures", async () => {
     const missingCtx = harness();
 
-    const missing = await missingCtx.core.write({ command: "read", file: "missing.md" }, context);
+    const missing = await missingCtx.core.read({ file: "missing.md" }, context);
     const missingEdit = await missingCtx.core.write(
       { command: "replace", file: "missing.md", find: "x", content: "y" },
       context,
@@ -498,7 +498,7 @@ describe("write tool dispatch", () => {
     const failingCtx = harness({ "chapter.md": "Alpha." });
     failingCtx.coordinator.failWith(new Error("database unavailable"));
 
-    const transient = await failingCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    const transient = await failingCtx.core.read({ file: "chapter.md" }, context);
 
     expect(outcomeText(transient)).toContain("status: internal_error");
     expectOutcome(transient, "internal_error", true);
@@ -513,7 +513,7 @@ describe("write tool dispatch", () => {
       { "chapter.md": "cat one" },
       { semanticProvenance: { writeCertifiedFacts } },
     );
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
 
     const failed = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
@@ -522,7 +522,7 @@ describe("write tool dispatch", () => {
     expectOutcome(failed, "internal_error", true);
     expect(writeCertifiedFacts).toHaveBeenCalledOnce();
 
-    const reread = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const reread = await ctx.core.read({ file: "chapter.md" }, context);
     expectOutcome(reread, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
   });

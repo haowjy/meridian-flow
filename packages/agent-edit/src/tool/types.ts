@@ -1,11 +1,21 @@
-// LLM-facing write(command=...) contract types for the agent editing core.
+// Engine-facing read and write contract types for the agent editing core.
 
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { WriteCommand, WriteCommandName } from "./command-schema.js";
-import type { AgentEditResultV1, WriteStatus, WriteSuccessPhase } from "./model-result.js";
+import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
+import type {
+  AgentEditResultCommand,
+  AgentEditResultV1,
+  WriteStatus,
+  WriteSuccessPhase,
+} from "./model-result.js";
 
-export type { WriteCommand, WriteCommandName } from "./command-schema.js";
+export type {
+  DocumentCommandName,
+  ReadCommand,
+  WriteCommand,
+  WriteCommandName,
+} from "./command-schema.js";
 export type {
   UndoRedoOutcome,
   WriteErrorStatus,
@@ -13,9 +23,9 @@ export type {
   WriteSuccessPhase,
 } from "./model-result.js";
 export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
-export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
 export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
 export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
+export type RemoveCommand = Extract<WriteCommand, { command: "remove" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
@@ -25,7 +35,7 @@ export type WriteOutcome = WriteOutcomeBase &
 interface WriteOutcomeBase {
   /** Host-only identity; never included in the model result. */
   revision: string | null;
-  command: WriteCommandName;
+  command: AgentEditResultCommand;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
@@ -89,7 +99,7 @@ export interface WriteIdempotencyHitDetail {
 /** Host-only evidence for a dispatch failure collapsed to the stable internal-error outcome. */
 export interface UnexpectedWriteErrorDetail {
   cause: unknown;
-  command: WriteCommandName;
+  command: DocumentCommandName;
   documentId?: string;
   sessionId: string;
   threadId: string;
@@ -189,6 +199,7 @@ export type MutationActor =
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 
+export type ReadFunction = (command: ReadCommand, context?: WriteContext) => Promise<WriteOutcome>;
 export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,

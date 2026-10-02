@@ -261,8 +261,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
-      await ports.documentSync.agentEdit().write(
-        { command: "read", file: "runtime-settlement.md", documentId: DOC_ID },
+      await ports.documentSync.agentEdit().read(
+        { file: "runtime-settlement.md", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
           threadId: THREAD_ID,

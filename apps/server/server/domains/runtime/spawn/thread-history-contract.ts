@@ -2,16 +2,18 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { handoffBriefFailedCopy, handoffSeedMetadata } from "../../threads/index.js";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { handoffSeedBlock } from "../handoff/seed.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import {
   historyDocumentText,
+  readDocumentText,
   searchDocumentText,
   writeDocumentText,
 } from "../tools/document-text.js";
-import { writeHistoryPreview } from "../tools/history-previews.js";
+import { readHistoryPreview, writeHistoryPreview } from "../tools/history-previews.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
 import {
   readThreadHistory,
@@ -40,16 +42,18 @@ export function defineThreadHistoryContract(
       contentHash: "initial-hash",
     });
     const registry = createToolRegistry();
-    for (const [name, documentText] of [
-      ["write", writeDocumentText],
-      ["search", searchDocumentText],
-      ["thread_history", historyDocumentText],
+    for (const [name, documentText, historyPreview] of [
+      ["read", readDocumentText, readHistoryPreview],
+      ["write", writeDocumentText, writeHistoryPreview],
+      ["search", searchDocumentText, undefined],
+      ["thread_history", historyDocumentText, undefined],
     ] as const)
       registry.register({
         source: "core",
         definition: { type: "function", name, description: name, inputSchema: {} },
+        input: z.unknown(),
         documentText,
-        historyPreview: name === "write" ? writeHistoryPreview : undefined,
+        historyPreview,
         execution: { type: "server", handler: async () => "" },
       });
     const read = (input = {}) =>
@@ -128,15 +132,15 @@ export function defineThreadHistoryContract(
         await f.block(first, "reasoning", { text: "hidden" });
       await f.block(first, "tool_use", {
         toolCallId: "reused",
-        toolName: "write",
-        input: { command: "read", path: "manuscript://first.md" },
+        toolName: "read",
+        input: { path: "manuscript://first.md" },
       });
       await f.block(first, "tool_result", { toolCallId: "reused", output: "FIRST SECRET" });
       const second = await f.turn();
       await f.block(second, "tool_use", {
         toolCallId: "reused",
-        toolName: "write",
-        input: { command: "read", path: "manuscript://second.md" },
+        toolName: "read",
+        input: { path: "manuscript://second.md" },
       });
       await f.block(second, "tool_result", { toolCallId: "reused", output: "SECOND SECRET" });
       const batches = vi.spyOn(f.repos.blocks, "listToolBlocks");
@@ -443,12 +447,7 @@ export function defineThreadHistoryContract(
     ])("stubs copies and only opts in to labelled edit inputs: %j", async (input) => {
       const f = await fixture();
       const t = await f.turn();
-      const read = await f.tool(
-        t,
-        "write",
-        { command: "read", path: "manuscript://chapter.md" },
-        "COPY SENTINEL",
-      );
+      const read = await f.tool(t, "read", { path: "manuscript://chapter.md" }, "COPY SENTINEL");
       const search = await f.tool(t, "search", { pattern: "Dragon" }, [
         {
           uri: "manuscript://chapter.md",

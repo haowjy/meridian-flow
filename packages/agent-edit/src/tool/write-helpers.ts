@@ -4,8 +4,9 @@ import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { writeCommandName } from "./command-schema.js";
-import type { RenderedRead } from "./document-renderer.js";
+import { type RenderedRead, readCall } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import type { AgentEditResultCommand } from "./model-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
 import type { MutationActor, WriteCommand, WriteErrorStatus } from "./types.js";
@@ -33,11 +34,8 @@ export function errorResponse(
   message: string,
   filePath: string,
 ): InternalWriteResult {
-  const needsRead = code === "not_found" && !message.includes('write(command="read"');
-  return status(
-    code,
-    needsRead ? `${message}. Run write(command="read", path="${filePath}") to re-sync.` : message,
-  );
+  const needsRead = code === "not_found" && !message.includes("read({");
+  return status(code, needsRead ? `${message}. Run ${readCall(filePath)} to re-sync.` : message);
 }
 
 export function readSuccess(read: RenderedRead): InternalWriteResult {
@@ -95,8 +93,8 @@ export function mutationUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrig
   return { type: "system" };
 }
 
-export function fallbackCommandName(command: unknown): WriteCommand["command"] {
-  return writeCommandName(command) ?? "read";
+export function fallbackCommandName(command: unknown): AgentEditResultCommand {
+  return writeCommandName(command) ?? "unknown";
 }
 
 export function writeSchemaError(error: {

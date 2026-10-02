@@ -12,7 +12,7 @@ import {
   type InternalWriteResult,
   isInternalWriteResult,
 } from "./internal-result.js";
-import type { WriteCommand } from "./types.js";
+import type { DocumentCommandName } from "./types.js";
 
 export interface RuntimeDocumentState {
   doc: Y.Doc;
@@ -24,7 +24,7 @@ export interface RuntimeRecoveryDocument {
   docId: string;
   session: ActorSession;
   runtime: RuntimeDocumentState;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
 }
 
 export interface RuntimeStore {
@@ -44,7 +44,7 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     options?: RuntimeRestoreOptions,
   ): Promise<InternalWriteResult | null>;
   recoverCommittedResponseProjection(documents: readonly RuntimeRecoveryDocument[]): Promise<void>;
@@ -52,12 +52,12 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }>;
   requireSynced(
     session: ActorSession,
     docId: string,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
     filePath?: string,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
@@ -165,7 +165,7 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     options: RuntimeRestoreOptions = {},
   ): Promise<InternalWriteResult | null> {
     const filePath = options.filePath ?? docId;
@@ -222,7 +222,7 @@ export function createRuntimeStore(deps: {
     _session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId)) {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
@@ -247,7 +247,7 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     const merged = await mergeLiveIntoRuntime(session, docId, runtime, commandName);
     if (!merged.ok) return merged;
@@ -258,7 +258,7 @@ export function createRuntimeStore(deps: {
   async function requireSynced(
     session: ActorSession,
     docId: string,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
     filePath = docId,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
@@ -287,7 +287,7 @@ export function createRuntimeStore(deps: {
 
   async function recoverLiveDocFromJournal(
     docId: string,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     filePath = docId,
   ): Promise<InternalWriteResult | null> {
     try {

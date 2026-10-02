@@ -1,4 +1,4 @@
-// Dispatches validated write commands to their owning handlers.
+// Dispatches validated mutation commands to their owning handlers.
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { WriteCommand, WriteContext } from "./types.js";
@@ -15,13 +15,11 @@ export function createWriteDispatch(input: {
     context: WriteContext,
   ): Promise<InternalWriteResult> {
     switch (command.command) {
-      case "read":
-        return input.commands.read(command, session, context);
       case "create":
         return input.commands.create(command, session, context);
       case "insert":
       case "replace":
-      case "delete":
+      case "remove":
         return input.commands.mutate(command, session, context);
       case "undo":
       case "redo":

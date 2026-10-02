@@ -4,7 +4,8 @@ import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
 export type DocumentRef = Pick<DocumentRevisionEvidence, "documentId" | "uri">;
 export interface DocumentTextPolicy {
-  kind(input: JsonObject): "read" | "write" | "none";
+  /** Whether the tool's results hold document text it read or text it wrote. */
+  kind: "read" | "write";
   elide(
     block: { input?: JsonObject; output?: JsonValue },
     changed: readonly DocumentRef[],
@@ -16,31 +17,30 @@ export function staleReadStub(documents: string): string {
   return `[Cleared at compaction: ${documents} has changed since this read. Read it again before relying on its text.]`;
 }
 
-export const writeDocumentText: DocumentTextPolicy = {
-  kind(input) {
-    switch (input.command) {
-      case "read":
-        return "read";
-      case "create":
-      case "insert":
-      case "replace":
-      case "delete":
-      case "undo":
-      case "redo":
-        return "write";
-      default:
-        return "none";
-    }
+function documentsLabel(changed: readonly DocumentRef[], input: JsonObject): string {
+  return (
+    changed.map((ref) => ref.uri ?? ref.documentId).join(", ") ||
+    String(input.path ?? "This document")
+  );
+}
+
+export const readDocumentText: DocumentTextPolicy = {
+  kind: "read",
+  elide({ input = {} }, changed, treatment) {
+    const documents = documentsLabel(changed, input);
+    return {
+      output: treatment === "history" ? historyReadStub(documents) : staleReadStub(documents),
+    };
   },
+};
+
+export const writeDocumentText: DocumentTextPolicy = {
+  kind: "write",
   elide({ input = {}, output }, changed, treatment) {
-    const documents =
-      changed.map((ref) => ref.uri ?? ref.documentId).join(", ") ||
-      String(input.path ?? "This document");
+    const documents = documentsLabel(changed, input);
     if (treatment === "history") {
-      if (input.command === "read") return { output: historyReadStub(documents) };
       return { output: `[edit applied to ${documents} (${input.command})]` };
     }
-    if (input.command === "read") return { output: staleReadStub(documents) };
     const { content: _content, find: _find, around: _around, ...kept } = input;
     return {
       ...(["create", "insert", "replace"].includes(String(input.command)) ? { input: kept } : {}),
@@ -54,7 +54,7 @@ export const writeDocumentText: DocumentTextPolicy = {
 };
 
 export const searchDocumentText: DocumentTextPolicy = {
-  kind: () => "read",
+  kind: "read",
   elide({ output }, changed, treatment) {
     const uris = new Set(changed.map((ref) => ref.uri));
     return {
@@ -83,7 +83,7 @@ export function historyReadStub(documents: string): string {
 }
 
 export const historyDocumentText: DocumentTextPolicy = {
-  kind: () => "read",
+  kind: "read",
   elide(_block, documents, treatment) {
     return {
       output:

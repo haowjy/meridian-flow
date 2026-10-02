@@ -129,6 +129,11 @@ export function createDocumentRenderer(deps: {
   }
 }
 
+/** The `read` call that targets one path, in the form results print for the model. */
+export function readCall(path: string): string {
+  return `read({"path": ${JSON.stringify(path)}})`;
+}
+
 function outlineFromSerialized(
   serialized: readonly string[],
   items: readonly { hash: string }[],
@@ -136,7 +141,7 @@ function outlineFromSerialized(
 ): string {
   return serialized
     .flatMap((line, index) => {
-      return [line, `write(command="read", path="${filePath}#${items[index]?.hash ?? line}")`];
+      return [line, readCall(`${filePath}#${items[index]?.hash ?? line}`)];
     })
     .join("\n");
 }

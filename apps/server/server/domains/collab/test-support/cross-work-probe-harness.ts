@@ -133,12 +133,8 @@ export async function runCrossWorkProbe(
     turnId: TURN_B_ID,
     responseId: undefined,
   };
-  await collab
-    .agentEdit()
-    .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, contextA);
-  await collab
-    .agentEdit()
-    .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, contextB);
+  await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextA);
+  await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextB);
 
   const branchA = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
   const branchB = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_B_ID);

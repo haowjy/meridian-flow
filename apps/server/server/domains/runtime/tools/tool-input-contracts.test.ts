@@ -17,6 +17,7 @@ function registrations(): ToolRegistration[] {
   const unused = async () => "";
   return [
     ...createCoreToolRegistrations({
+      read: unused,
       write: unused,
       work: unused,
       ls: unused,

@@ -128,6 +128,6 @@ describe("override alias folding and coupled merge", () => {
       packageRevisionId: null,
     });
     expect(patched["disallowed-tools"]).not.toContain("edit");
-    expect(projectToolPolicy(patched).writeCommands).toContain("replace");
+    expect(projectToolPolicy(patched).tools.has("write")).toBe(true);
   });
 });

@@ -19,6 +19,7 @@ import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mu
 import { formatApplySuccess } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
+  DocumentCommandName,
   InteractionContext,
   MutationActor,
   ResponseClaimDiscardedEntry,
@@ -31,7 +32,6 @@ import type {
   ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
-  WriteCommand,
 } from "./types.js";
 
 export interface ResponseCommitter {
@@ -84,7 +84,7 @@ export interface ResponseStageUpdateInput {
   docId: string;
   session: ActorSession;
   runtime: RuntimeDocumentState;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   update: Uint8Array;
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
@@ -104,7 +104,7 @@ export interface ResponseStageUpdateInput {
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
   actor: Extract<MutationActor, { kind: "agent" }>;
@@ -121,7 +121,7 @@ interface ResponseDocumentBuffer {
   docId: string;
   session: ActorSession;
   runtime: RuntimeDocumentState;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;

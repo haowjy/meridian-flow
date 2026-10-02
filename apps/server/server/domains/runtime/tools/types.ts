@@ -249,7 +249,7 @@ export interface ToolRegistration {
    * `modelToolSchema` projection, and the executor parses every call with it
    * before dispatch: invalid values and unknown keys never reach the handler.
    */
-  input?: z.ZodType;
+  input: z.ZodType;
   advertise?: boolean;
   execution:
     | {

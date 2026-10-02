@@ -5,6 +5,7 @@ import { createCoreToolRegistrations } from "../../tools/core-tools.js";
 import { collectRecordedDocuments, planModelElisions } from "./elide.js";
 
 const registrations = createCoreToolRegistrations({
+  read: async () => null,
   write: async () => null,
   work: async () => null,
   ls: async () => null,

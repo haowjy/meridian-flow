@@ -4,6 +4,7 @@ import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
 export interface AgentEditCore {
+  read: ReturnType<typeof createWriteTool>["read"];
   write: ReturnType<typeof createWriteTool>["write"];
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
@@ -21,6 +22,7 @@ export interface AgentEditCore {
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
   const tool = createWriteTool(options);
   return {
+    read: tool.read,
     write: tool.write,
     recover: tool.recover,
     commitResponse: tool.commitResponse,
@@ -47,8 +49,21 @@ export {
   isBlockItemId,
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
-export type { WriteCommand, WriteCommandName } from "./tool/command-schema.js";
-export { WriteCommandSchema, writeCommandName } from "./tool/command-schema.js";
+export type {
+  DocumentCommandName,
+  ReadCommand,
+  ReadToolInput,
+  WriteCommand,
+  WriteCommandName,
+  WriteToolInput,
+} from "./tool/command-schema.js";
+export {
+  ReadCommandSchema,
+  ReadToolInputSchema,
+  WriteCommandSchema,
+  WriteToolInputSchema,
+  writeCommandName,
+} from "./tool/command-schema.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
@@ -66,6 +81,7 @@ export {
 } from "./tool/model-result.js";
 export type {
   MutationActor,
+  ReadFunction,
   RedoResult,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,

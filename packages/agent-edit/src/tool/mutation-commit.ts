@@ -27,7 +27,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
+import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -56,7 +56,7 @@ export interface JournaledUpdate {
 
 export interface LiveUpdateCommitInput {
   docId: string;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   updates: readonly JournaledUpdate[];
   liveOrigin: ConcurrentUpdateOrigin;
   interactionContext?: InteractionContext;

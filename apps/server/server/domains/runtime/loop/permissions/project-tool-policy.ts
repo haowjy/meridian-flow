@@ -1,28 +1,15 @@
 /** Projects compiled Mars tool policy onto Flow advertise and dispatch policy. */
 
-import type { WriteCommandName as CanonicalWriteCommandName } from "@meridian/agent-edit/integration";
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { WorkCommand } from "../../tools/core-tools.js";
 
-export type WriteCommandName = CanonicalWriteCommandName;
 export type WorkCommandName = WorkCommand["command"];
 
 export interface EffectiveToolPolicy {
   tools: ReadonlySet<string>;
-  writeCommands: ReadonlySet<WriteCommandName>;
   workCommands: ReadonlySet<WorkCommandName>;
 }
 
-const ALL_WRITE_COMMANDS = [
-  "read",
-  "create",
-  "insert",
-  "replace",
-  "delete",
-  "undo",
-  "redo",
-] as const satisfies readonly WriteCommandName[];
-const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter((command) => command !== "read");
 const WORK_NAV_COMMANDS = ["list", "show", "switch"] as const satisfies readonly WorkCommandName[];
 const WORK_MUTATE_COMMANDS = [
   "archive",
@@ -41,10 +28,6 @@ type CompiledToolFields = {
 export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPolicy {
   const mutate = marsAllowed("edit", metadata);
 
-  const writeCommands = new Set<WriteCommandName>([
-    "read",
-    ...(mutate ? WRITE_MUTATE_COMMANDS : []),
-  ]);
   const workCommands = new Set<WorkCommandName>([
     ...WORK_NAV_COMMANDS,
     ...(mutate ? WORK_MUTATE_COMMANDS : []),
@@ -62,15 +45,17 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
     "thread_report",
     "thread_ls",
     "thread_history",
-    "write",
+    "read",
     "ls",
     "search",
   ]);
+  // Until file permissions (PR 2), an agent without `edit` has no `write` at all.
+  if (mutate) tools.add("write");
   // ask_user is disabled until its rework (composer-attached input, subagent
   // semantics): https://github.com/haowjy/meridian-flow/issues/601
   // if (marsAllowed("ask_user", metadata)) tools.add("ask_user");
 
-  return { tools, writeCommands, workCommands };
+  return { tools, workCommands };
 }
 
 /** Single per-tool command mapping; callers must not duplicate these lists. */
@@ -78,14 +63,12 @@ export function commandSetForTool(
   policy: EffectiveToolPolicy,
   toolName: string,
 ): ReadonlySet<string> | undefined {
-  if (toolName === "write") return policy.writeCommands;
   if (toolName === "work") return policy.workCommands;
   return undefined;
 }
 
 /** Commands understood by the shared command schemas, including policy-disabled commands. */
 export function knownCommandSetForTool(toolName: string): ReadonlySet<string> {
-  if (toolName === "write") return new Set(ALL_WRITE_COMMANDS);
   if (toolName === "work") return new Set(ALL_WORK_COMMANDS);
   return new Set();
 }

@@ -1,11 +1,14 @@
 /** Compact navigation markers, never document text or drafted edit inputs. */
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+export function readHistoryPreview(input: JsonObject): string {
+  return String(input.path ?? "");
+}
 export function writeHistoryPreview(input: JsonObject): string {
   const size =
     typeof input.content === "string"
       ? `, ${input.content.trim().split(/\s+/u).filter(Boolean).length.toLocaleString("en-US")} words`
       : "";
-  return `${input.command ?? ""} ${input.path ?? input.document_id ?? ""}${size}`;
+  return `${input.command ?? ""} ${input.path ?? ""}${size}`;
 }
 export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): string {
   const result = output as JsonObject | undefined;

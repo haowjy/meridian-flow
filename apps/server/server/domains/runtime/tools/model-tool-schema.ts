@@ -3,7 +3,10 @@ import { z } from "zod";
 
 export function modelToolSchema(schema: z.ZodType): Record<string, unknown> {
   const projected = stripModelSchemaNoise(
-    z.toJSONSchema(schema, { io: "input" }) as Record<string, unknown>,
+    z.toJSONSchema(schema, { io: "input", override: publishModelJsonSchema }) as Record<
+      string,
+      unknown
+    >,
   ) as Record<string, unknown>;
   // Every gateway adapter forwards this object as the provider JSON Schema.
   // Anthropic's SDK requires an object root, which z.toJSONSchema doesn't emit
@@ -11,6 +14,20 @@ export function modelToolSchema(schema: z.ZodType): Record<string, unknown> {
   // with additionalProperties would make every strict branch unsatisfiable.
   projected.type = "object";
   return projected;
+}
+
+/**
+ * A schema whose zod projection is needlessly large declares its published
+ * shape as `modelJsonSchema` metadata; it replaces the generated schema and
+ * keeps the description. Parse-only checks such as positivity stay in zod.
+ */
+function publishModelJsonSchema(context: { jsonSchema: Record<string, unknown> }): void {
+  const schema = context.jsonSchema;
+  const published = schema.modelJsonSchema;
+  if (!published || typeof published !== "object") return;
+  const { description } = schema;
+  for (const key of Object.keys(schema)) delete schema[key];
+  Object.assign(schema, published, description === undefined ? {} : { description });
 }
 
 function stripModelSchemaNoise(value: unknown): unknown {
