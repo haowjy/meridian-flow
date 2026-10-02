@@ -20,7 +20,7 @@ function ThreadReportTitle({ tool }: { tool: ToolView }) {
   const ref = stringInput(toolInputObject(tool), "ref") ?? "";
   const subagent = useSubagentRun({ ref });
   const run = subagent ?? fallbackSubagentRun;
-  const description = subagent?.description;
+  const name = subagent?.name;
   const originTurnId = subagent?.originTurnId;
   const parentThreadId = subagent?.parentThreadId;
   const childThreadId = subagent?.threadId;
@@ -49,7 +49,7 @@ function ThreadReportTitle({ tool }: { tool: ToolView }) {
   const line = (
     <>
       {who}
-      {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
+      {name ? <span className="ml-1.5 text-muted-foreground">{name}</span> : null}
     </>
   );
   if (tool.status === "partial") return <Trans>Reading report from {line}</Trans>;
@@ -87,7 +87,7 @@ const fallbackSubagentRun: SubagentRun = {
   ref: null,
   execution: null,
   agentName: "Subagent",
-  description: null,
+  name: null,
   status: "unknown",
   startedAt: null,
   endedAt: null,

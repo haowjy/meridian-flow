@@ -10,14 +10,16 @@ import { SubagentMark } from "./SubagentMark";
 export function SubagentIdentity({
   run,
   size = "row",
-  name,
-  showDescription = true,
+  agentLabel,
+  showName = true,
   afterName,
 }: {
   run: SubagentRun;
   size?: "row" | "card";
-  name?: ReactNode;
-  showDescription?: boolean;
+  /** Replaces the agent name, e.g. an aggregate count. */
+  agentLabel?: ReactNode;
+  /** Whether the run's task name follows the agent name. */
+  showName?: boolean;
   afterName?: ReactNode;
 }) {
   const markStatus: SubagentRunStatus = run.status;
@@ -28,15 +30,15 @@ export function SubagentIdentity({
         status={markStatus}
         className={size === "card" ? undefined : "size-5 text-[10px]"}
       />
-      {name ?? <SubagentIdentityName run={run} />}
-      {showDescription && run.description ? (
+      {agentLabel ?? <SubagentIdentityName run={run} />}
+      {showName && run.name ? (
         <span
           className={cn(
             "min-w-0 truncate text-sm text-muted-foreground",
             size === "card" && "flex-1",
           )}
         >
-          {run.description}
+          {run.name}
         </span>
       ) : null}
       {afterName}
@@ -60,7 +62,7 @@ export function SubagentIdentity({
 
 export function SubagentIdentityName({ run }: { run: SubagentRun }) {
   return (
-    // The name is the identity: the description gives way first, and the name
+    // The agent name is the identity: the task name gives way first, and the agent name
     // truncates only past half the row.
     <span className="max-w-[50%] shrink-0 truncate text-sm font-medium text-foreground">
       {resolveSubagentName({ agentName: run.agentName })}
@@ -69,7 +71,7 @@ export function SubagentIdentityName({ run }: { run: SubagentRun }) {
 }
 
 export function matchesSubagentIdentity(run: SubagentRun, filter: string): boolean {
-  return `${run.agentName} ${run.description ?? ""}`
+  return `${run.agentName} ${run.name ?? ""}`
     .toLocaleLowerCase()
     .includes(filter.toLocaleLowerCase());
 }
