@@ -155,3 +155,17 @@ it("keeps an escaped link as literal brackets, through the Markdown door and pla
   expect(links(prose)).toEqual([]);
   expect(prose.state.doc.textContent).toBe("Meridian writes [[Lin Feng]] and ![[map.png]].");
 });
+
+it("gives paste without formatting the characters, while an ordinary paste links", () => {
+  const plain = editor(DOCUMENTS);
+  // ProseMirror reads Shift from the last keydown, as the browser's
+  // Ctrl/Cmd+Shift+V leaves it.
+  plain.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", shiftKey: true }));
+  paste(plain, { "text/plain": "Lin met [[Lin Feng]]." });
+  expect(links(plain)).toEqual([]);
+  expect(plain.state.doc.textContent).toBe("Lin met [[Lin Feng]].");
+
+  const ordinary = editor(DOCUMENTS);
+  paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
+  expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+});

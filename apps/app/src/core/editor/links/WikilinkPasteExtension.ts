@@ -53,6 +53,14 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions>({
               return false;
             },
           },
+          // ProseMirror's own paste-without-formatting flag (Ctrl/Cmd+Shift+V),
+          // the one the Markdown door reads as `plain`, arrives here ORed with
+          // "the destination is code"; either way the writer gets the
+          // characters, which is also how they paste literal brackets.
+          transformPastedText: (text, plainOrCode) => {
+            if (plainOrCode) keepCharacters = true;
+            return text;
+          },
           transformPasted: (slice, view) => {
             const keep = keepCharacters;
             keepCharacters = false;
