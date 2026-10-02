@@ -1,7 +1,35 @@
-/** Model-facing schema requiredness, including Zod input defaults. */
+/**
+ * Model-facing schemas: requiredness, the published projection of every
+ * registration's zod input.
+ */
 import { describe, expect, it } from "vitest";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
+import { modelToolSchema } from "./model-tool-schema.js";
+import { createSkillToolRegistrations } from "./skill-tool.js";
+import { createSpawnToolRegistrations } from "./spawn-tools.js";
+import type { ToolRegistration } from "./types.js";
+
+function allRegistrations(): ToolRegistration[] {
+  const handler = async () => "";
+  return [
+    ...createCoreToolRegistrations({
+      write: handler,
+      work: handler,
+      ls: handler,
+      search: handler,
+      ask_user: handler,
+    } as CoreToolHandlers),
+    ...createInspectionToolRegistrations({
+      repos: {} as never,
+      statusReader: {} as never,
+      registry: {} as never,
+      tokenizer: async () => "anthropic",
+    }),
+    ...createSpawnToolRegistrations(),
+    ...createSkillToolRegistrations({ loadBody: async () => ({ slug: "", body: "" }) }),
+  ];
+}
 
 function requiredFields(schema: unknown, path = "$"): string[] {
   if (!schema || typeof schema !== "object") return [];
@@ -94,5 +122,33 @@ describe("model tool schemas", () => {
 
     expect(schemas.every((schema) => !schema.includes('"$schema"'))).toBe(true);
     expect(schemas.every((schema) => !schema.includes(String(Number.MAX_SAFE_INTEGER)))).toBe(true);
+  });
+
+  it("publishes exactly the generator's projection of every registration's input", () => {
+    const registrations = allRegistrations();
+    const withInput = registrations.filter((registration) => registration.input);
+    // Phase 2 migrates write, the last registration without an input contract.
+    expect(
+      registrations.filter((registration) => !registration.input).map((r) => r.definition.name),
+    ).toEqual(["write"]);
+    for (const registration of withInput) {
+      expect(registration.definition.inputSchema, registration.definition.name).toEqual(
+        modelToolSchema(registration.input as never),
+      );
+    }
+  });
+
+  it('documents "current" on every read-only conversation ref', () => {
+    const properties = (name: string) =>
+      allRegistrations().find((r) => r.definition.name === name)?.definition.inputSchema
+        .properties as Record<string, { description?: string }>;
+    for (const [tool, field] of [
+      ["thread_history", "ref"],
+      ["thread_ls", "ref"],
+      ["thread_report", "ref"],
+      ["spawn", "from"],
+    ] as const) {
+      expect(properties(tool)[field]?.description, `${tool}.${field}`).toContain('"current"');
+    }
   });
 });
