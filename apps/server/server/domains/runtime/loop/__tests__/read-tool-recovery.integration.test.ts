@@ -82,7 +82,8 @@ describe("document command recovery through the runtime loop", () => {
           toolCallId: "read-missing-command",
           output: expect.objectContaining({
             error: "invalid_arguments",
-            reason: expect.stringContaining('command: "read"'),
+            message: expect.stringContaining('- command: required; expected "read"'),
+            issues: [expect.objectContaining({ path: "command" })],
           }),
           isError: true,
         }),
@@ -106,7 +107,7 @@ describe("document command recovery through the runtime loop", () => {
     );
     const persistedOutput = (savedRejection?.content as { output?: unknown } | null)?.output;
     expect(persistedOutput).toMatchObject({ error: "invalid_arguments" });
-    const repairReason = (persistedOutput as { reason: string }).reason;
+    const repairReason = (persistedOutput as { message: string }).message;
     expect(repairReason).toContain("command");
     expect(repairReason).toContain("read");
     const retryMessage = requests[1]?.messages
@@ -119,7 +120,7 @@ describe("document command recovery through the runtime loop", () => {
       isError: true,
     });
     expect(JSON.stringify(retryMessage)).toContain("invalid_arguments");
-    expect((retryMessage as { output: { reason: string } }).output.reason).toBe(repairReason);
+    expect((retryMessage as { output: { message: string } }).output.message).toBe(repairReason);
     expect(events.some((event) => event.type === "turn.completed")).toBe(true);
   });
 

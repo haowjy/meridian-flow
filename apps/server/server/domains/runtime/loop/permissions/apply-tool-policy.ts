@@ -1,12 +1,16 @@
-/** Applies EffectiveToolPolicy to advertisement and the name+command permission gate. */
+/** Applies EffectiveToolPolicy to advertisement and the name+command permission gate; malformed commands get the executor's invalid_arguments shape. */
 
 import type { Tool } from "../../gateway/index.js";
+import {
+  type InvalidArgumentIssue,
+  invalidArgumentsOutput,
+} from "../../tools/invalid-arguments.js";
 import {
   commandSetForTool,
   type EffectiveToolPolicy,
   knownCommandSetForTool,
 } from "./project-tool-policy.js";
-import type { PermissionGate } from "./types.js";
+import type { PermissionDecision, PermissionGate } from "./types.js";
 
 export function permissionGateFromToolPolicy(
   policy: EffectiveToolPolicy,
@@ -25,23 +29,15 @@ export function permissionGateFromToolPolicy(
       const commands = commandSetForTool(policy, toolName);
       if (commands) {
         const command = commandValue(input);
-        if (typeof command !== "string") {
-          const detail =
-            command === undefined
-              ? "missing required string `command`"
-              : "`command` must be a string";
-          return {
-            allowed: false,
-            kind: "invalid_arguments",
-            reason: `Invalid arguments for ${toolName}: ${detail}; use ${commandExamples(commands)}.`,
-          };
-        }
-        if (!knownCommandSetForTool(toolName).has(command)) {
-          return {
-            allowed: false,
-            kind: "invalid_arguments",
-            reason: `Invalid arguments for ${toolName}: unknown command "${command}"; use ${commandExamples(commands)}.`,
-          };
+        if (typeof command !== "string" || !knownCommandSetForTool(toolName).has(command)) {
+          const expected = oneOf(commands);
+          return invalidArguments(toolName, {
+            path: "command",
+            message:
+              command === undefined
+                ? `required; expected ${expected}`
+                : `expected ${expected}, got ${JSON.stringify(command)}`,
+          });
         }
         if (!commands.has(command)) {
           return {
@@ -76,11 +72,21 @@ function commandValue(input: unknown): unknown {
   return (input as { command?: unknown }).command;
 }
 
-function commandExamples(commands: ReadonlySet<string>): string {
-  const examples = [...commands].map((command) => `\`command: "${command}"\``);
-  return examples.length === 1
-    ? examples[0]
-    : `${examples.slice(0, -1).join(", ")} or ${examples.at(-1)}`;
+function oneOf(commands: ReadonlySet<string>): string {
+  const quoted = [...commands].map((command) => JSON.stringify(command));
+  return quoted.length === 1
+    ? (quoted[0] as string)
+    : `${quoted.slice(0, -1).join(", ")} or ${quoted.at(-1)}`;
+}
+
+function invalidArguments(toolName: string, issue: InvalidArgumentIssue): PermissionDecision {
+  const output = invalidArgumentsOutput(toolName, [issue]);
+  return {
+    allowed: false,
+    kind: "invalid_arguments",
+    reason: output.message,
+    issues: output.issues,
+  };
 }
 
 function narrowCommandSchema(

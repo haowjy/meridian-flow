@@ -41,13 +41,17 @@ describe("permissionGateFromToolPolicy", () => {
       if (input.command === "read") continue;
       expect(result).toMatchObject({ allowed: false, kind: "invalid_arguments" });
     }
-    const missing = criticGate().check("write", {});
-    expect(missing).toMatchObject({ allowed: false, kind: "invalid_arguments" });
-    if (!missing.allowed) expect(missing.reason).toContain('command: "read"');
+    expect(criticGate().check("write", {})).toEqual({
+      allowed: false,
+      kind: "invalid_arguments",
+      reason: 'Invalid arguments for write:\n- command: required; expected "read" or "diff"',
+      issues: [{ path: "command", message: 'required; expected "read" or "diff"' }],
+    });
     expect(criticGate().check("write", { command: "read" })).toEqual({ allowed: true });
     expect(criticGate().check("write", { command: "bogus" })).toMatchObject({
       allowed: false,
       kind: "invalid_arguments",
+      issues: [{ path: "command", message: 'expected "read" or "diff", got "bogus"' }],
     });
   });
 
