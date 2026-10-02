@@ -137,8 +137,8 @@ Creating from the offer (`useCreateLinkedDocument`) makes the document at
 exactly the missing address (`linkCreationTarget`): its scheme (manuscript,
 kb, user, or scratch; never uploads, which are files a writer brings, and never
 Unfiled), its folders, and its filename, with `.md` added when the link omitted
-the extension (`documentFileName`, the same rule the `[[` picker's create row
-uses). Scratch goes to the Work its authority names: `@slug` by slug, `@/` as
+the extension (`documentFileName`, the same rule the Editor `@` menu's
+link-ahead row uses). Scratch goes to the Work its authority names: `@slug` by slug, `@/` as
 No Work, and a contextual `scratch://` in the surface's Work, which the host
 passes as `workId`. A named Work travels with its slug, or the background move
 could never validate its canonical address. An address that is not a legal
@@ -155,11 +155,11 @@ resolution generation, so the resolver simply starts finding it.
 ## The document index
 
 `useLinkableDocuments({ projectId, workId })` walks the context catalogs the
-app already caches, so opening the `[[` picker costs no request. It answers
-three questions from one set: which documents the picker offers, what the
-document holding a link is called (its address, which a relative link resolves
-against and an inserted link is spelled relative to), and which document is at
-an address the index holds.
+app already caches, so it costs no request. It answers three questions from one
+set: what the document holding a link is called (its address, which a relative
+link resolves against and an inserted link is spelled relative to), which
+document is at an address the index holds, and whether the Editor's `@`
+link-ahead address is already taken.
 
 `linkableCatalogScopes` names the catalogs: the project catalog (manuscript,
 kb, and Unfiled, whatever the Work), the user catalog, and the current Work's
@@ -172,13 +172,8 @@ A Work-qualified URI outside the selected Work (`scratch://@other-work/…`) is
 outside the index: it has no local match and always asks the server, which
 resolves the slug itself.
 
-The manuscript comes first, so a name both trees carry keeps the chapter above
-the note (ranking ties hold the order they arrive in). A scratch row says
-`Scratch` where a manuscript row says its folder, because where it lives is
-what tells two documents with one name apart.
-
-`revision` is content, not an object identity and not a counter: each row's id,
-URI, filename, title, and aliases joined per document. A refetch that found the
+`revision` is content, not an object identity and not a counter: each
+document's id and URI. A refetch that found the
 same documents is the same revision and costs nothing, while anything that
 changes where a link could go is a different one. An identity-based revision
 would drop every answer on a poll that changed nothing; a counter would restart

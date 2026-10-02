@@ -88,11 +88,6 @@ msgstr "{agentName} deleted a passage"
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
-#. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
-msgid "(also {0})"
-msgstr "(also {0})"
-
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -1333,8 +1328,8 @@ msgstr "Couldn't withdraw. Try again."
 msgid "Couldn't write"
 msgstr "Couldn't write"
 
-#. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
+#. placeholder {0}: row.label
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Create “{0}”"
 msgstr "Create “{0}”"
 
@@ -2134,10 +2129,6 @@ msgstr "Light"
 msgid "Link"
 msgstr "Link"
 
-#: src/features/editor/EditorView.tsx
-msgid "Link a document"
-msgstr "Link a document"
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link a file"
 msgstr "Link a file"
@@ -2146,7 +2137,7 @@ msgstr "Link a file"
 msgid "Link text"
 msgstr "Link text"
 
-#: src/features/editor/surfaces/link/LinkPickerMenu.tsx
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "links now, page later"
 msgstr "links now, page later"
 

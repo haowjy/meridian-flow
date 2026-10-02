@@ -83,7 +83,7 @@ change-trail events, not manuscript content.
 
 - **A menu the writer types underneath is a spec, not a plugin.**
   `extensions/suggestion/` holds one mechanism that wires `@tiptap/suggestion`,
-  the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
+  the kernel keymap, and the catalog fence for every lane; `/` and `@` each
   declare a spec (char, envelope predicate, matches, row projection, choice) and
   nothing else, so a third trigger is a spec rather than a third copy of the
   lifecycle. The presentation-neutral half — the generation-fenced suggestion
@@ -202,7 +202,6 @@ and navigation contracts.
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
-→ [`extensions/link-picker/AGENTS.md`](extensions/link-picker/AGENTS.md) — the `[[` picker
 → [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — which fences draw, and who draws them

@@ -309,10 +309,7 @@ describe("useLinkFollower", () => {
         {
           documentId: "doc-ms",
           uri: "manuscript://Kael.md",
-          filename: "Kael.md",
           title: "Kael",
-          location: "",
-          aliases: [],
           workId: null,
         },
       ],

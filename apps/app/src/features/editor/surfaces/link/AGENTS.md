@@ -1,11 +1,11 @@
 # surfaces/link — everything a writer meets a link through
 
-The destination hint, the right-click menu, the form, the `[[` picker, what a
+The destination hint, the right-click menu, the form, the `@` menu, what a
 follow says when it finds nothing, and the runtime that gives an internal link
 somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
 runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
-[`core/editor/extensions/link-picker/`](../../../../core/editor/extensions/link-picker/AGENTS.md),
+[`core/editor/extensions/at-reference/`](../../../../core/editor/extensions/at-reference/AGENTS.md),
 and — for the shared name matching and the `@` reference browser —
 [`core/completion/`](../../../../core/completion/AGENTS.md).
 
@@ -26,11 +26,11 @@ Three summoned components, three physics, one store.
 
 Beside them, three things that are not summoned surfaces:
 
-- **`LinkPickerMenu`** — rows for the `[[` picker, over the shared
+- **`AtReferenceMenu`** — rows for the Editor's `@`, over the shared
   `SuggestionMenu` the slash menu also renders through: each document's name
-  and where it lives, plus the create row. Its documents come from the context
-  trees the app already caches (`useLinkableDocuments` in
-  [`features/links`](../../../links/AGENTS.md)), so opening it costs no request.
+  and where it lives (its folder, after its area unless that is the
+  manuscript), plus the link-ahead row for a name no document carries.
+  `ReferenceSuggestionMenu` is the same rows for LinkForm's search.
 - **`FollowOutcomeDialog`** — what a follow says when it has something to say
   (still checking, missing, or failed): the `EditorDialog` host over
   the shared `FollowOutcomeContent`. A chrome

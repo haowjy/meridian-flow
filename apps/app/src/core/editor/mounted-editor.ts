@@ -20,7 +20,6 @@ import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
-import type { LinkPickerCatalog } from "./extensions/link-picker";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
@@ -93,12 +92,11 @@ export type MountedEditorInput = {
    */
   slashCommandCatalog?: () => SlashCommandCatalog | null;
   /**
-   * Reads the project's documents when the `[[` menu opens. Same reason as the
+   * Reads the reference catalog when the `@` menu opens. Same reason as the
    * slash catalog: mounting the trigger is a construction fact, and the list it
    * offers — which changes every time the writer creates or renames a file —
    * is not.
    */
-  linkPickerCatalog?: () => LinkPickerCatalog | null;
   atReferenceCatalog?: () => AtReferenceCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
@@ -111,7 +109,6 @@ export function useMountedEditor({
   agentNames,
   placeholder,
   slashCommandCatalog,
-  linkPickerCatalog,
   atReferenceCatalog,
   surface,
   evidenceDegraded = false,
@@ -121,8 +118,6 @@ export function useMountedEditor({
   // reads through.
   const catalogRef = useRef(slashCommandCatalog);
   catalogRef.current = slashCommandCatalog;
-  const linkPickerCatalogRef = useRef(linkPickerCatalog);
-  linkPickerCatalogRef.current = linkPickerCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
   atReferenceCatalogRef.current = atReferenceCatalog;
   // Frozen on first render: identity is constant for the mount by construction
@@ -144,7 +139,6 @@ export function useMountedEditor({
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
-      linkPicker: { catalog: () => linkPickerCatalogRef.current?.() ?? null },
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
     });
     return {

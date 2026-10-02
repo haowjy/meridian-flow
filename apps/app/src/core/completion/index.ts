@@ -8,19 +8,20 @@ export {
 } from "./dom-input-suggestion-transport";
 export {
   createReferenceBrowserController,
+  type LinkAheadRow,
   type ReferenceBrowserController,
   type ReferenceBrowserMeta,
   type ReferenceBrowserOpenContext,
   type ReferenceBrowserOptions,
   type ReferenceBrowserState,
   type ReferenceCatalogPort,
+  type ReferenceMenuRow,
 } from "./reference-browser";
 export {
   type AuthoritativeReference,
   authoritativeReferenceForFile,
   canonicalReferenceUri,
   MAX_REFERENCE_QUERY_LENGTH,
-  matchReferenceName,
   normalizeReferenceName,
   REFERENCE_ROW_LIMIT,
   type ReferenceAuthorityIndex,

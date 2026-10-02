@@ -11,6 +11,7 @@ import { type CatalogCacheView, catalogChildren } from "@meridian/resource-repli
 import {
   authoritativeReferenceForFile,
   canonicalReferenceUri,
+  normalizeReferenceName,
   type ReferenceAuthorityIndex,
   type ReferenceKind,
   type ReferenceNavigationAction,
@@ -51,20 +52,37 @@ export type ReferenceBrowserMeta = {
   canBacktrack: boolean;
 };
 
+/**
+ * A host's row beside the catalog rows: a link to a document nobody has
+ * written yet, at an address the host computed. Only a host that can hold
+ * such a link (the Editor) offers one; identity-bearing references never do.
+ */
+export type LinkAheadRow = {
+  kind: "link-ahead";
+  rowId: "link-ahead";
+  /** The name as typed: the inserted link's text. */
+  label: string;
+  /** The canonical Context URI the link will address. */
+  uri: string;
+};
+
+/** What the browser's menu lists: catalog rows, then at most one link-ahead row. */
+export type ReferenceMenuRow = ReferenceRow | LinkAheadRow;
+
 export type ReferenceBrowserState =
   | { kind: "closed" }
   | (ReferenceBrowserMeta & {
       kind: "root";
       query: string;
       warmScopes: readonly CatalogScope[];
-      rows: readonly ReferenceRow[];
+      rows: readonly ReferenceMenuRow[];
     })
   | (ReferenceBrowserMeta & {
       kind: "drilled";
       query: string;
       activeScope: CatalogScope;
       containerId?: string;
-      rows: readonly ReferenceRow[];
+      rows: readonly ReferenceMenuRow[];
     });
 
 export type ReferenceBrowserOpenContext = Readonly<{
@@ -73,7 +91,7 @@ export type ReferenceBrowserOpenContext = Readonly<{
 }>;
 export type ReferenceBrowserController = SuggestionDriver<
   never,
-  ReferenceRow,
+  ReferenceMenuRow,
   ReferenceBrowserMeta
 > & {
   refresh: () => boolean;
@@ -89,6 +107,13 @@ export type ReferenceBrowserOptions = {
     triggerRange: SuggestionTriggerRange;
   }) => void;
   onCompleteSegment: (input: { prefix: string; triggerRange: SuggestionTriggerRange }) => void;
+  /**
+   * Where a link to a not-yet-written document named `name` would point, or
+   * null when the host offers none for it. Asked only for a root search that
+   * names no existing document exactly.
+   */
+  linkAhead?: (name: string) => { uri: string } | null;
+  onLinkAhead?: (input: { row: LinkAheadRow; triggerRange: SuggestionTriggerRange }) => void;
 };
 
 type RootLocation = {
@@ -113,14 +138,14 @@ type BrowsableCatalogEntry = Extract<CatalogEntry, { kind: "source" | "folder" |
 export function createReferenceBrowserController(
   options: ReferenceBrowserOptions,
 ): ReferenceBrowserController {
-  const { menu, lifecycle } = createSuggestionDriverCore<ReferenceRow, ReferenceBrowserMeta>();
+  const { menu, lifecycle } = createSuggestionDriverCore<ReferenceMenuRow, ReferenceBrowserMeta>();
   let identity: InternalSuggestionGeneration | null = null;
   let location: Location | null = null;
   let history: Location[] = [];
   let query = "";
   let triggerRange = { from: 0, to: 0 };
   let completedPrefix = "";
-  let rows: readonly ReferenceRow[] = [];
+  let rows: readonly ReferenceMenuRow[] = [];
   let incomplete = false;
   let loadFailed = false;
   let queriedContainer: Extract<ReferenceRow, { kind: "source" | "folder" }> | null = null;
@@ -170,7 +195,7 @@ export function createReferenceBrowserController(
     canBacktrack: explicitUri() !== null || location?.kind === "drilled",
   });
 
-  const session = (): InternalSuggestionSession<ReferenceRow, ReferenceBrowserMeta> => ({
+  const session = (): InternalSuggestionSession<ReferenceMenuRow, ReferenceBrowserMeta> => ({
     items: rows,
     keepOpenWhenEmpty: true,
     rowId: (row) => row.rowId,
@@ -183,7 +208,7 @@ export function createReferenceBrowserController(
     dismiss,
   });
 
-  const project = (override?: CatalogCacheView): readonly ReferenceRow[] => {
+  const project = (override?: CatalogCacheView): readonly ReferenceMenuRow[] => {
     if (!location) return [];
     const authorityIndex = authorities();
     const root = location.kind === "root" ? location : history[0];
@@ -274,7 +299,15 @@ export function createReferenceBrowserController(
       ? typedQuery.slice(queriedContainer.action.prefix.length)
       : query;
     hasSearch = search.length > 0 && !(parsed && parsed.path === "");
-    return rankReferenceRows(candidates, search, { ...options.priors, kinds: referenceKinds });
+    const ranked = rankReferenceRows(candidates, search, {
+      ...options.priors,
+      kinds: referenceKinds,
+    });
+    const ahead =
+      options.linkAhead && location.kind === "root" && !parsed && !queriedContainer
+        ? linkAheadRow(search, ranked, options.linkAhead)
+        : null;
+    return ahead ? [...ranked, ahead] : ranked;
   };
 
   const publish = (
@@ -327,7 +360,14 @@ export function createReferenceBrowserController(
     }
   }
 
-  function chooseRow(row: ReferenceRow, action: SuggestionChoiceAction): void {
+  function chooseRow(row: ReferenceMenuRow, action: SuggestionChoiceAction): void {
+    if (row.kind === "link-ahead") {
+      if (settled || !identity) return;
+      settled = true;
+      options.onLinkAhead?.({ row, triggerRange });
+      requestExit?.();
+      return;
+    }
     if (row.kind !== "file") {
       void navigate(row.action, row.label);
       if (action === "tab") {
@@ -679,4 +719,27 @@ function rowForFile(
     matchedAlias: null,
     action: { type: "select", reference },
   };
+}
+
+/**
+ * The link-ahead row for a search, when it names no document the rows already
+ * offer exactly (by filename, with or without its extension).
+ */
+function linkAheadRow(
+  search: string,
+  ranked: readonly ReferenceRow[],
+  linkAhead: NonNullable<ReferenceBrowserOptions["linkAhead"]>,
+): LinkAheadRow | null {
+  const name = search.trim();
+  if (!name) return null;
+  const needle = normalizeReferenceName(name);
+  const named = ranked.some((row) => {
+    if (row.kind !== "file") return false;
+    const label = normalizeReferenceName(row.label);
+    const dot = label.lastIndexOf(".");
+    return label === needle || (dot > 0 && label.slice(0, dot) === needle);
+  });
+  if (named) return null;
+  const target = linkAhead(name);
+  return target ? { kind: "link-ahead", rowId: "link-ahead", label: name, uri: target.uri } : null;
 }

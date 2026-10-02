@@ -1,8 +1,8 @@
 /**
- * What choosing a document writes: a standard link to its address, labeled
- * with its name. The href is `spellDocumentHref`'s, relative within the
- * holder's area and a full Context URI across areas, so the picker, `@`
- * references, and the link form spell one destination one way.
+ * What choosing a document in the Editor's `@` menu writes: a standard link to
+ * its address, labeled with its name. The href is `spellDocumentHref`'s,
+ * relative within the holder's area and a full Context URI across areas, so
+ * `@` and the link form spell one destination one way.
  */
 
 import { spellDocumentHref } from "@meridian/contracts";

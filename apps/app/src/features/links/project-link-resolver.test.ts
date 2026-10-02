@@ -22,10 +22,7 @@ function document(
   return {
     documentId,
     uri,
-    filename,
     title: filename.replace(/\.[^.]+$/, ""),
-    location: "",
-    aliases: [],
     workId: options.workId ?? null,
   };
 }

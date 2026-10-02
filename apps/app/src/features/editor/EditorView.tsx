@@ -32,6 +32,7 @@ import {
 } from "react";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
+import { linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -90,7 +91,7 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /**
    * The Work this editor is open in — the active editing context, not a review's
-   * ownership. It scopes what a `[[` menu offers, what the resolver is asked, and
+   * ownership. It scopes what the `@` menu offers, what the resolver is asked, and
    * where a followed link is looked for. Runtime scope: changing it never
    * remounts the editor.
    */
@@ -318,39 +319,45 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // Read when the `[[` menu opens, for the same reason as the slash catalog:
-  // the label resolves against whatever locale is active then, and the document
-  // list changes every time the writer creates or renames a file.
+  // The scope's document index: what this document's relative links resolve
+  // against, and which addresses already hold a document.
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  // This document's own address, from the same index the picker offers rows
-  // from: what its relative links resolve against and what a link inserted
-  // into it is spelled relative to. Null until the tree carrying it arrives,
-  // or while it has no address yet, which spells full URIs.
+  // This document's own address: what its relative links resolve against and
+  // what a link inserted into it is spelled relative to. Null until the tree
+  // carrying it arrives, or while it has no address yet, which spells full URIs.
   const holderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
       null,
     [linkableDocuments, documentId],
   );
-  const { documents: linkPickerDocuments } = linkableDocuments;
-  const linkPickerCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: linkPickerDocuments, holderUri };
-  }, [effectiveEditable, holderUri, identity.schemaType, linkPickerDocuments, projectId]);
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? workId : null,
     t`Reference a file`,
   );
-  const atReferenceCatalog = useCallback(
-    () =>
-      identity.schemaType === "document" && effectiveEditable && sharedReferenceCatalog
-        ? { ...sharedReferenceCatalog, holderUri }
-        : null,
-    [effectiveEditable, holderUri, identity.schemaType, sharedReferenceCatalog],
-  );
+  // Read when the `@` menu opens. The Editor's `@` also links ahead: a name no
+  // document carries gets a row that writes a link beside this document, which
+  // stays dashed until a follow's Create makes the document.
+  const atReferenceCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
+      return null;
+    const linkAhead = (name: string) => {
+      const uri = linkAheadAddress(holderUri, name);
+      return uri && !linkableDocuments.documents.some((document) => document.uri === uri)
+        ? { uri }
+        : null;
+    };
+    return { ...sharedReferenceCatalog, holderUri, linkAhead };
+  }, [
+    effectiveEditable,
+    holderUri,
+    identity.schemaType,
+    linkableDocuments,
+    sharedReferenceCatalog,
+  ]);
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
@@ -371,7 +378,6 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     slashCommandCatalog,
-    linkPickerCatalog,
     atReferenceCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,

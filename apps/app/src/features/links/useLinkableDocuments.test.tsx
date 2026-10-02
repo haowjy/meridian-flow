@@ -93,7 +93,7 @@ afterEach(() => {
 });
 
 describe("useLinkableDocuments", () => {
-  it("offers Unfiled under a named Work and is complete", () => {
+  it("holds Unfiled under a named Work and is complete", () => {
     render({ projectId: "project-1", workId: "work-1" }, "no-work");
 
     expect(uris()).toContain("unfiled://Stray Notes.md");

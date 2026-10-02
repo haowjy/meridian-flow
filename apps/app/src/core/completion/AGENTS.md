@@ -61,12 +61,16 @@ stable authority, and full non-contextual URI. Work and no-Work contextual URI
 syntax is verified through the contracts parser at this boundary; contextual
 Work syntax is never reconstructed into stable identity on the client.
 
-**One matching rule.** `matchReferenceName` is the lexical tier for a name or
-its aliases; `rankReferenceRows` ranks `@` rows with it, and the Editor's `[[`
-link picker ranks its rows with it, so both menus agree about one query. Rows
-say where a document lives, which is what tells two same-named documents apart;
-a reference is identity-bearing and a link is an address, so neither needs a
-"shared name" state.
+**Rows say where a document lives**, which is what tells two same-named
+documents apart; a reference is identity-bearing and a link is an address, so
+neither needs a "shared name" state.
+
+**A host may link ahead.** `linkAhead`/`onLinkAhead` let a host that can hold
+a link to a not-yet-written document (the Editor) append one `LinkAheadRow`
+after the catalog rows, for a root search that names no listed document
+exactly. The browser only asks; the host computes the address and writes the
+link. The chat composer passes neither: its references are identity-bearing and
+must name an existing document.
 
 ## Key rules
 
@@ -96,5 +100,5 @@ a reference is identity-bearing and a link is an address, so neither needs a
 
 → [`../editor/extensions/suggestion/`](../editor/extensions/suggestion/suggestion-lane.ts) —
   the TipTap adapter that drives this from a lane spec
-→ [`../editor/extensions/link-picker/AGENTS.md`](../editor/extensions/link-picker/AGENTS.md) —
-  the `[[` picker, which ranks with `matchReferenceName`
+→ [`../editor/extensions/at-reference/`](../editor/extensions/at-reference/AtReferenceExtension.ts) —
+  the Editor's `@`, which links ahead

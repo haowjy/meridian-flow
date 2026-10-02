@@ -13,7 +13,11 @@ export {
   LinkSurfaceExtension,
   openLinkForm,
 } from "./LinkSurfaceExtension";
-export { documentFileName, linkTargetAddress, siblingDocumentAddress } from "./link-address";
+export {
+  documentFileName,
+  linkAheadAddress,
+  linkTargetAddress,
+} from "./link-address";
 export {
   LINK_CHIP_ICONS,
   type LinkChip,
