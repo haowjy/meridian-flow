@@ -57,6 +57,7 @@ export function createInspectionToolRegistrations(deps: {
         description: "Read the history of this or a connected conversation.",
         inputSchema: modelToolSchema(ThreadHistoryInputSchema),
       },
+      input: ThreadHistoryInputSchema,
       sequential: true,
       historyPreview: threadHistoryPreview,
       documentText: historyDocumentText,
@@ -74,7 +75,7 @@ export function createInspectionToolRegistrations(deps: {
           const result = await readThreadHistory({
             ...deps,
             caller,
-            input: ThreadHistoryInputSchema.parse(input),
+            input: input as z.output<typeof ThreadHistoryInputSchema>,
             tokenizer,
           });
           return "ok" in result && !result.ok ? toolFailureResult(result) : result;
