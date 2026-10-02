@@ -17,7 +17,7 @@ function readEnvelope(
 }
 
 describe("readPayloadMarkup", () => {
-  it("flattens hash-free bodies from the agent-edit envelope", () => {
+  it("returns each block's hash-free body as its own paragraph", () => {
     expect(
       readPayloadMarkup(
         readEnvelope([
@@ -25,7 +25,7 @@ describe("readPayloadMarkup", () => {
           { hash: "", body: "Second paragraph." },
         ]),
       ),
-    ).toBe("First paragraph.\nSecond paragraph.");
+    ).toBe("First paragraph.\n\nSecond paragraph.");
   });
 
   it("keeps a pipe in envelope prose, which is not a hashline separator", () => {
