@@ -199,6 +199,9 @@ export function createReferenceBrowserController(
     items: rows,
     keepOpenWhenEmpty: true,
     rowId: (row) => row.rowId,
+    // A sentence after `@` that names no document must still end in a new
+    // paragraph on Enter; the link-ahead row is reached by arrow or pointer.
+    defaultActive: (row) => row.kind !== "link-ahead",
     query,
     anchorRect,
     label: options.label(),
