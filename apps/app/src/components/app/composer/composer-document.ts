@@ -16,7 +16,11 @@ import type { Selection } from "@tiptap/pm/state";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { AuthoritativeReference } from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
-import { internalClipboardTarget } from "@/core/editor/links";
+import {
+  clipboardLinkAddress,
+  internalClipboardTarget,
+  LINK_ADDRESS_ATTRIBUTE,
+} from "@/core/editor/links";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -220,7 +224,11 @@ export const ComposerReferenceNode = Node.create({
                 continue;
               // Manuscript marks carry a target, not admitted attachment identity.
               // Preserve their Markdown rather than inventing a Composer attachment.
-              const target = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+              // Chat has no folder, so a recorded address (the full Context URI
+              // the link named where it was copied) wins over a relative href.
+              const target =
+                clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE)) ??
+                internalClipboardTarget(element.getAttribute("data-meridian-link"));
               if (!target) continue;
               element.replaceWith(
                 document.createTextNode(formatMarkdownLink(element.textContent ?? target, target)),

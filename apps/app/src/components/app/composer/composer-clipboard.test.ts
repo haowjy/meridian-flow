@@ -101,6 +101,21 @@ it("preserves manuscript reference Markdown without inventing attachment identit
   }
 });
 
+it("takes a copied Editor link's recorded address, since chat has no folder", () => {
+  const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
+  try {
+    editor.view.pasteHTML(
+      '<a data-meridian-link="../volume-2/chapter-1.md" data-meridian-address="manuscript://serial/volume-2/chapter-1.md">Chapter 1</a>',
+      new Event("paste") as ClipboardEvent,
+    );
+    expect(editor.state.doc.textContent).toBe(
+      "[Chapter 1](manuscript://serial/volume-2/chapter-1.md)",
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
 it.each(['{"label":"broken"}', "not JSON"])("ignores malformed reference metadata %s", (raw) => {
   const element = document.createElement("span");
   element.setAttribute("data-composer-reference", raw);

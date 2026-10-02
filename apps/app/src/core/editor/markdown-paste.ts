@@ -34,6 +34,8 @@ import {
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
+import { linksAsAddresses } from "./links";
+
 /**
  * Does this parse carry anything plain-text paste would have thrown away?
  *
@@ -118,12 +120,17 @@ function defaultPlainTextPaste(): Slice {
   return undefined as unknown as Slice;
 }
 
-/** Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor structure. */
+/**
+ * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
+ * structure. Internal links go out as full addresses, so the text means the
+ * same thing wherever it lands, holder or not.
+ */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
-  slice,
+  copied,
   view,
 ) => {
   const schema = view.state.schema;
+  const slice = linksAsAddresses(copied, view.state);
   const blocks: PMNode[] = [];
   if (slice.content.firstChild?.isInline) {
     blocks.push(schema.nodes.paragraph.create(null, slice.content));

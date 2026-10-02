@@ -303,7 +303,23 @@ applying peer writes.
 
 Internal links have no browser `href`. Their validated stored target travels in
 `data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
-codec (`[label](destination)`). The app's click handler reads the semantic
+codec (`[label](destination)`).
+
+A relative href means something only beside its holder, so the clipboard also
+carries where each internal link points (`link-clipboard.ts`). Copying records
+`data-meridian-address`, the canonical Context URI plus any fragment or query
+(`resolveDocumentHref(href, holderUri)`), beside the href as written; the
+address-recording `clipboardSerializer` is a prop of the link clipboard plugin,
+whose state is the editor's resolution (`baseUri` is the holder). The text
+flavour (`markdownClipboardSerializer`) spells every internal link as its full
+address through `linksAsAddresses`, so it means the same thing in another app
+or through the Markdown paste door. On paste the sanitizer keeps a well-formed
+address, and the plugin's `transformPastedHTML` (which runs after it) re-spells
+each recorded link with `spellDocumentHref(holderUri, uri)`: relative within the
+holder's area, the full URI across areas or from a document with no address.
+The chat composer takes the full address. A link with no recorded address
+(pasted from outside the app) keeps its href. Nothing enters the schema or the
+stored Markdown. The app's click handler reads the semantic
 target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and

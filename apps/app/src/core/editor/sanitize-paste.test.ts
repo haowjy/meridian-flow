@@ -83,4 +83,16 @@ it("preserves only validated internal metadata through the live paste sanitizer"
       '<a data-meridian-link="javascript:alert(1)" href="https://safe.example">safe</a>',
     ),
   ).toBe('<a href="https://safe.example">safe</a>');
+  expect(
+    sanitizePastedHTML(
+      '<a data-meridian-link="../a.md" data-meridian-address="manuscript://v/a.md#s">a</a>',
+    ),
+  ).toBe('<a data-meridian-link="../a.md" data-meridian-address="manuscript://v/a.md#s">a</a>');
+  for (const address of ["javascript:alert(1)", "../a.md", "manuscript://v/./a.md"]) {
+    expect(
+      sanitizePastedHTML(
+        `<a data-meridian-link="../a.md" data-meridian-address="${address}">a</a>`,
+      ),
+    ).toBe('<a data-meridian-link="../a.md">a</a>');
+  }
 });
