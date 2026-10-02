@@ -102,7 +102,7 @@ type ReversalResult =
       ok: true;
       status: UndoRedoOutcome;
       sync?: SyncedMutationSummary;
-      targetCount?: number;
+      writeIds?: readonly string[];
       turnId?: string | null;
       scopeTurnId?: string;
     }
@@ -279,7 +279,7 @@ export function createWriteReversal(deps: {
     return formatReversalSuccess({
       direction: input.direction,
       status: reversal.status,
-      targetCount: reversal.targetCount,
+      writeIds: reversal.writeIds,
       sync,
     });
   }
@@ -321,7 +321,7 @@ export function createWriteReversal(deps: {
       const undoUpdateSeq = prepared.prepared.plan.redoGroup?.undoUpdateSeq;
       if (undoUpdateSeq !== undefined) excludedRedoGroups.add(undoUpdateSeq);
       for (const writeId of prepared.prepared.plan.writeIds) excludedUndoWrites.add(writeId);
-      if (!isScopeSelection(selection)) break;
+      if (!plansEveryGroup(input.direction, selection)) break;
     }
 
     return {
@@ -449,8 +449,11 @@ export function createWriteReversal(deps: {
     return { kind: "turn", turnId: first.scopeTurnId };
   }
 
-  function isScopeSelection(selection: ReversalSelection): boolean {
-    return selection.kind === "turn" || selection.kind === "all";
+  // Undo plans a whole selection at once; redo plans one undo group at a time,
+  // so every multi-write selection keeps planning until no selected group is left.
+  function plansEveryGroup(direction: "undo" | "redo", selection: ReversalSelection): boolean {
+    if (selection.kind === "turn" || selection.kind === "all") return true;
+    return direction === "redo" && (selection.kind === "range" || selection.kind === "last");
   }
 
   async function executePrepared(input: {
@@ -467,7 +470,7 @@ export function createWriteReversal(deps: {
         ok: true;
         status: "reversed" | "reconciled";
         sync?: SyncedMutationSummary;
-        targetCount: number;
+        writeIds: string[];
       }
     | { ok: false; response: InternalWriteResult }
   > {
@@ -612,10 +615,7 @@ export function createWriteReversal(deps: {
           ok: true,
           status: "reversed",
           sync: { echo: [], reconciled: false },
-          targetCount: input.plans.reduce(
-            (count, prepared) => count + prepared.plan.writeIds.length,
-            0,
-          ),
+          writeIds: reversedWriteIds(input.plans),
         };
       }
       if (journalCommitKind === "staged") await restoreAfterRejectedStagedReversal(input);
@@ -637,10 +637,7 @@ export function createWriteReversal(deps: {
             ? "reconciled"
             : "reversed",
       ...(projectionDeferred ? {} : { sync: mutation }),
-      targetCount: input.plans.reduce(
-        (count, prepared) => count + prepared.plan.writeIds.length,
-        0,
-      ),
+      writeIds: reversedWriteIds(input.plans),
     };
   }
 
@@ -922,6 +919,12 @@ function dependentUndoRemedyRange(
   const min = Math.min(...ordinals);
   const max = Math.max(...ordinals);
   return min === max ? `w${min}` : `w${min}..w${max}`;
+}
+
+function reversedWriteIds(plans: readonly { plan: { writeIds: readonly string[] } }[]): string[] {
+  return [...new Set(plans.flatMap(({ plan }) => plan.writeIds))].sort(
+    (left, right) => (parseWriteHandle(left) ?? 0) - (parseWriteHandle(right) ?? 0),
+  );
 }
 
 function formatWriteSelection(writeIds: readonly string[]): string {

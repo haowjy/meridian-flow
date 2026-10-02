@@ -4,7 +4,13 @@
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
 import { z } from "zod";
-import { type SelectorCommand, type SelectorFields, selectorIssues } from "./selector-rules.js";
+import {
+  type ReversalSelectorFields,
+  reversalSelectorIssues,
+  type SelectorCommand,
+  type SelectorFields,
+  selectorIssues,
+} from "./selector-rules.js";
 
 /**
  * `in` publishes as one compact JSON Schema instead of zod's nested projection.
@@ -53,10 +59,10 @@ const READ_FIELDS = {
   format: z.enum(["full", "outline"]).optional(),
 };
 
-// One selector at most; none means the latest write.
+// One selector at most; none means the latest write. The rule lives in `reversalSelectorIssues`.
 const WRITE_HANDLE_SELECTOR_FIELDS = {
-  to: z.string().optional().describe("Write handle such as w3; with from, the end of a range."),
-  from: z.string().optional().describe("First write handle of a range ending at to."),
+  to: z.string().optional().describe("Write handle such as w3; with `since`, the end of a range."),
+  since: z.string().optional().describe("With `to`: the first write handle of the range."),
   last: z.number().int().min(1).optional().describe("The last N writes."),
   all: z.boolean().optional().describe("Every write in this thread."),
 };
@@ -163,6 +169,16 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       const command = fields.command;
       if (command === "insert" || command === "replace" || command === "remove") {
         addSelectorIssues(ctx, command, fields, targetKey);
+      }
+      if (command === "undo" || command === "redo") {
+        for (const issue of reversalSelectorIssues(fields as ReversalSelectorFields)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [issue.field],
+            message: issue.message,
+            input: value,
+          });
+        }
       }
     });
 }

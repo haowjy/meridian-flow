@@ -407,7 +407,7 @@ describe("write tool dispatch", () => {
     const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
     expect(undo.result).toMatchObject({
       command: "undo",
-      reversal: { direction: "undo", count: 1 },
+      reversal: { direction: "undo", writes: ["w3"] },
     });
     expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(beforeDelete);
 

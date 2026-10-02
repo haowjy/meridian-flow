@@ -61,7 +61,8 @@ export interface AgentEditModelPayload {
   };
   reversal?: {
     direction: "undo" | "redo";
-    count: number;
+    /** Write handles actually reversed, oldest first; group atomicity can add to the selection. */
+    writes: string[];
   };
   read?: {
     format: "full" | "outline";
