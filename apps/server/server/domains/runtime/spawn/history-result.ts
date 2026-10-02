@@ -200,7 +200,9 @@ function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): st
   const hidden =
     turn.hiddenCount > 0 && turn.number !== undefined
       ? [
-          `(${turn.hiddenCount} routine tool call${turn.hiddenCount === 1 ? "" : "s"} hidden: ${call({ ref: result.ref, expand: turn.number })})`,
+          turn.hiddenCount === 1
+            ? `(1 routine tool call hidden; list it with ${call({ ref: result.ref, expand: turn.number })})`
+            : `(${turn.hiddenCount} routine tool calls hidden; list them with ${call({ ref: result.ref, expand: turn.number })})`,
         ]
       : [];
   return [

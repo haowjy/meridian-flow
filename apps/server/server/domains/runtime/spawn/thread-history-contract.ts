@@ -487,7 +487,7 @@ I looked around to see what "pizza" might point at.
 write create manuscript://notes.md, 3 words
 read manuscript://missing.md (failed)
 not found
-(10 routine tool calls hidden: thread_history({"ref":"${ref}","expand":2}))`);
+(10 routine tool calls hidden; list them with thread_history({"ref":"${ref}","expand":2}))`);
       const routine = output(await f.read({ include: ["routine_calls"] }));
       expect(routine).toContain("read manuscript://ch0.md\n");
       expect(routine).toContain("ls /\n");
@@ -693,7 +693,7 @@ not found
       expect(text).toContain("SAVED LINE 20\n");
       expect(text).not.toContain("SAVED LINE 21");
       expect(text).toContain(
-        `(report truncated: thread_history({"ref":"${child.ref}","expand":2}))\n(1 routine tool call hidden: thread_history({"ref":"${child.ref}","expand":2}))`,
+        `(report truncated: thread_history({"ref":"${child.ref}","expand":2}))\n(1 routine tool call hidden; list it with thread_history({"ref":"${child.ref}","expand":2}))`,
       );
       expect(text).not.toContain("ARGUMENT SUMMARY");
       const expanded = output(await f.read({ expand: 2 }, child));
