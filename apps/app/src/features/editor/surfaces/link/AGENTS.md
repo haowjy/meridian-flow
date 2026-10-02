@@ -6,7 +6,7 @@ somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
 runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
 [`core/editor/extensions/at-reference/`](../../../../core/editor/extensions/at-reference/AGENTS.md),
-and — for the shared name matching and the `@` reference browser —
+and — for the `@` reference browser and its ranking —
 [`core/completion/`](../../../../core/completion/AGENTS.md).
 
 ## Mental model
