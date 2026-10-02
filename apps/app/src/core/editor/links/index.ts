@@ -98,3 +98,10 @@ export {
   linkTargetLabel,
   normalizeLinkHref,
 } from "./link-target";
+export {
+  linkPastedWikilinks,
+  parseWikilinks,
+  pickWikilinkTarget,
+  type WikilinkPasteCatalog,
+  wikilinkHref,
+} from "./wikilink-paste";
