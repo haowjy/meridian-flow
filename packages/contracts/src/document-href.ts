@@ -11,10 +11,13 @@ export function resolveDocumentHref(
   if (!rawPath || rawPath.startsWith("/") || rawPath.endsWith("/")) return null;
   const path = decodePath(rawPath);
   if (path === null || !path) return null;
-  const full = parseContextUri(path);
-  if (full.ok && /:\/\//.test(path)) {
-    if (!full.value.path) return null;
-    return { uri: full.value.normalized, suffix };
+  // A full URI is only one that starts with `scheme://`; the scheme is
+  // case-insensitive, as in any URI. Anything else is a path relative to the
+  // base, wherever a `://` might appear inside it.
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(path)?.[1];
+  if (scheme) {
+    const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length));
+    return full.ok && full.value.path ? { uri: full.value.normalized, suffix } : null;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
   if (!baseUri) return null;

@@ -32,6 +32,20 @@ describe("resolveDocumentHref", () => {
     );
   });
 
+  it("reads a scheme in any case and only at the start", () => {
+    expect(resolveDocumentHref("MANUSCRIPT://a.md", null)?.uri).toBe("manuscript://a.md");
+    expect(resolveDocumentHref("Kb://cast/Lin%20Feng.md#bio", null)).toEqual({
+      uri: "kb://cast/Lin Feng.md",
+      suffix: "#bio",
+    });
+    expect(resolveDocumentHref("HTTPS://example.com/a.md", null)).toBeNull();
+    // A `://` inside a relative path never makes it a full URI escaping the base.
+    expect(resolveDocumentHref("foo/bar://x.md", "manuscript://vol/base.md")?.uri).toBe(
+      "manuscript://vol/foo/bar:/x.md",
+    );
+    expect(resolveDocumentHref("foo/kb://x.md", null)).toBeNull();
+  });
+
   it.each([
     ["chapter.md#scene-2", "chapter.md", "#scene-2"],
     ["chapter.md?view=outline#scene-2", "chapter.md", "?view=outline#scene-2"],

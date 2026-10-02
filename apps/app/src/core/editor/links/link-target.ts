@@ -59,6 +59,15 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
+/**
+ * An internal link is a Context URI: a known scheme followed by `://`, in any
+ * case, exactly as `resolveDocumentHref` reads it. `kb:x` is neither internal
+ * nor a web link.
+ */
+function internalScheme(value: string, scheme: string): boolean {
+  return INTERNAL_SCHEMES.has(scheme) && value.slice(scheme.length + 1).startsWith("//");
+}
+
 /** Whether reference completion must leave this writer-entered href entirely to the form. */
 export function linkInputStepsAsideFromReferences(input: string): boolean {
   const value = input.trim();
@@ -90,7 +99,8 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
   if (!scheme) return { kind: "relative", path: value };
-  if (INTERNAL_SCHEMES.has(scheme)) return { kind: "scheme", uri: value };
+  if (internalScheme(value, scheme)) return { kind: "scheme", uri: value };
+  if (INTERNAL_SCHEMES.has(scheme)) return null;
   return externalTarget(value);
 }
 
@@ -118,7 +128,10 @@ export function documentLinkTarget(target: LinkTarget, baseUri: string): Documen
  *
  * The one convenience is the missing `https://`, because writers paste bare
  * hostnames constantly. It is deliberately last, so `manuscript://…` and
- * `../notes/kael.md` keep their own meaning.
+ * `../notes/kael.md` keep their own meaning. A path whose first segment has no
+ * dot (`notes/kael`, `kael`) is relative, since a hostname always has one; a
+ * dotted first segment (`example.com/x`) is a web address unless the path ends
+ * in a document extension.
  */
 export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
@@ -129,10 +142,15 @@ export function normalizeLinkHref(input: string): string | null {
   if (value.startsWith("/")) return null;
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
-  if (scheme) return INTERNAL_SCHEMES.has(scheme) ? value : validExternalHref(value);
+  if (scheme) {
+    if (INTERNAL_SCHEMES.has(scheme)) return internalScheme(value, scheme) ? value : null;
+    return validExternalHref(value);
+  }
 
   if (value.startsWith("./") || value.startsWith("../")) return value;
   if (DOCUMENT_PATH.test(value)) return value;
+  const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
+  if (!firstSegment.includes(".")) return value;
   return validExternalHref(`https://${value}`);
 }
 
