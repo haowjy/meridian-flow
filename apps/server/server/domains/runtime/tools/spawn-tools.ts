@@ -23,9 +23,9 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
+  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
-  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
+  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 
 const { "disallowed-tools": disallowedTools, ...invocationPatchShape } =
   invocationPatchSchema.shape;
@@ -51,7 +51,7 @@ export const SpawnInputSchema = z
       .string()
       .min(1)
       .describe(
-        'Conversation ref, or "current", that the child can read with thread_history; its history is not copied in.',
+        'A conversation ref, not a document (or "current"). The child can read it with thread_history; its history is not copied in.',
       )
       .optional(),
     prompt: z.string().min(1).describe("The child's task."),
@@ -59,7 +59,7 @@ export const SpawnInputSchema = z
       .string()
       .min(1)
       .describe(
-        'The name the user sees in chat, 2 to 5 words naming the task, e.g. "Chapter 12 continuity check". Distinct across parallel subagents; not a sentence, agent name or pN handle.',
+        '2–5 word task label the user sees, e.g. "Chapter 12 continuity check". Make parallel tasks distinct. Not the agent\'s name.',
       )
       .optional(),
     mode: z
@@ -88,8 +88,8 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
  * recursive JSON-value schema would add a self-referencing `$defs` entry.
  */
 export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
-  summary: returnResultCaptureSchema.shape.summary.describe("Terminal summary for the parent."),
-  payload: z.unknown().describe("Package-defined structured result.").optional(),
+  summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
+  payload: z.unknown().describe("Optional JSON result.").optional(),
   artifacts: returnResultCaptureSchema.shape.artifacts.describe(
     "Meridian document URIs produced by this child.",
   ),
