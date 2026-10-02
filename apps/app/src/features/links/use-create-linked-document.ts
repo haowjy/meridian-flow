@@ -12,8 +12,9 @@
  * and syncs in the background; the server's move creates any missing folders.
  * A later sync failure lands on the document itself. No Work's Scratch is the
  * one area the local replica cannot place a document in (its namespace
- * protocol names a Work by slug, and No Work has none), so there Create asks
- * the server first, the way the Scratch tree's own New file does. Nothing about the link
+ * requests reject a Work id without a slug, so a local placement cannot name
+ * No Work by its row id), so there Create asks the server first, the way the
+ * Scratch tree's own New file does. Nothing about the link
  * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
  */

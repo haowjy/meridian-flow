@@ -145,8 +145,10 @@ could never validate its canonical address. An address that is not a legal
 path gets the dialog without the button.
 
 It is the reservation and `setLocation` primitive (except No Work's Scratch,
-which the local replica cannot place: it names a Scratch Work by slug and No
-Work has none, so there Create asks the server first, as the Scratch tree's New
+which the local replica cannot place: its namespace requests reject a Work id
+without a slug (`requestFor` in `resource-namespace.ts`, and the request policy
+in `resource-records-policy.ts`), so a local placement cannot name No Work by
+its row id, and there Create asks the server first, as the Scratch tree's New
 file does). Both steps commit locally, so the dialog closes and the document
 opens through the host's `onOpen` at once,
 while the server's move (which creates any missing folders) catches up in the
