@@ -7,6 +7,8 @@ import type { ContextRouteTarget } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
+  /** Replace only when the route already names this document; otherwise push. */
+  replaceIfSameDocument?: boolean;
   tab?: ContextTab;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   draftId?: string;

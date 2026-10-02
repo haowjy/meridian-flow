@@ -1,6 +1,5 @@
 /** The Work Files tab's Drafts to review group: manuscript documents with pending drafts from this Work. */
 import { t } from "@lingui/core/macro";
-import { Plural } from "@lingui/react/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -52,15 +51,14 @@ export function WorkDrafts({
                   className={workFileRowClass}
                   disabled={!path}
                   onClick={() => {
-                    const draft = group.drafts[0];
-                    if (path && draft)
+                    if (path)
                       openAiDraft({
                         workId,
                         documentId: group.documentId,
-                        draftId: draft.draftId,
+                        draftId: group.draft.draftId,
                         contextPath: path,
                         documentName: group.documentName ?? undefined,
-                        isNewDocument: draft.isNewDocument === true,
+                        isNewDocument: group.draft.isNewDocument === true,
                       });
                   }}
                 >
@@ -68,13 +66,7 @@ export function WorkDrafts({
                   <span className="min-w-0 flex-1 truncate font-medium">
                     {group.documentName || path || t`Untitled manuscript`}
                   </span>
-                  <span className="shrink-0 text-xs text-jade-text">
-                    <Plural
-                      value={group.drafts.length}
-                      one="# pending draft"
-                      other="# pending drafts"
-                    />
-                  </span>
+                  <span className="shrink-0 text-xs text-jade-text">{t`Pending draft`}</span>
                 </button>
               ),
             };

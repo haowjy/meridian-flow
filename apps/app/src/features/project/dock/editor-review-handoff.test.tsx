@@ -78,7 +78,7 @@ function ScopeProbe({ name }: { name: string }) {
 function reviewValue(workId: string, enterInlineReview = vi.fn()): DraftReviewContextValue {
   const documentId = draftA.documentId;
   const draftId = workId === "work-a" ? draftA.draftId : draftB.draftId;
-  const groups = [{ documentId, drafts: [{ draftId }] }];
+  const groups = [{ documentId, draft: { draftId } }];
   return {
     controller: {
       workId,
@@ -378,13 +378,10 @@ describe("Editor review handoff", () => {
     }, navigate);
   });
 
-  it.each([
-    "cancelled",
-    "superseded",
-  ] as const)("retries a %s route settlement once with the review address", async (kind) => {
+  it("retries a superseded route settlement once with the review address", async () => {
     const navigate = vi
       .fn()
-      .mockResolvedValueOnce({ kind })
+      .mockResolvedValueOnce({ kind: "superseded" })
       .mockResolvedValueOnce({ kind: "applied" });
     await withHarness(async ({ enterB }) => {
       await act(async () => showEditor?.(draftB));
@@ -393,8 +390,20 @@ describe("Editor review handoff", () => {
       expect(navigate).toHaveBeenCalledTimes(2);
       expect(navigate).toHaveBeenLastCalledWith(
         expect.objectContaining({ documentId: draftB.documentId }),
-        expect.objectContaining({ replace: true, draftId: draftB.draftId }),
+        expect.objectContaining({ replaceIfSameDocument: true, draftId: draftB.draftId }),
       );
+    }, navigate);
+  });
+
+  it("settles a cancelled route quietly without retrying", async () => {
+    const navigate = vi.fn().mockResolvedValue({ kind: "cancelled" });
+    await withHarness(async ({ enterB }) => {
+      await act(async () => {
+        await expect(openReview?.(draftB)).resolves.toBeUndefined();
+      });
+      expect(navigate).toHaveBeenCalledOnce();
+      await act(async () => showEditor?.(draftB));
+      expect(enterB).not.toHaveBeenCalled();
     }, navigate);
   });
 

@@ -63,6 +63,7 @@ function reportRouteSettlement(
 const EditorReviewCommandContext = createContext<EditorReviewCommand | null>(null);
 const EditorReviewIntentContext = createContext<{
   intent: EditorReviewIntent | null;
+  routingDraftId: string | null;
   claim: (sequence: number) => void;
 } | null>(null);
 
@@ -94,6 +95,7 @@ export function EditorReviewHandoffProvider({
   children: ReactNode;
 }) {
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
+  const [routingDraftId, setRoutingDraftId] = useState<string | null>(null);
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
   const claimed = useRef<number | null>(null);
@@ -113,6 +115,7 @@ export function EditorReviewHandoffProvider({
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
+      setRoutingDraftId(target.draftId);
       // A matching mounted Editor may claim immediately. This avoids making a
       // same-route review command depend on an unrelated navigation settlement.
       setIntent(staged);
@@ -129,7 +132,7 @@ export function EditorReviewHandoffProvider({
               documentId: target.documentId,
             },
             {
-              replace: true,
+              replaceIfSameDocument: true,
               tab: tab ?? undefined,
               draftId: target.draftId,
               canCommit: () => latest.current?.sequence === staged.sequence,
@@ -146,6 +149,13 @@ export function EditorReviewHandoffProvider({
             }
             return;
           }
+          if (result.kind === "cancelled") {
+            if (latest.current?.sequence === staged.sequence) {
+              latest.current = null;
+              setIntent(null);
+            }
+            return;
+          }
           if (latest.current?.sequence !== staged.sequence) return;
         }
         throw new Error("Editor review navigation did not settle after retry");
@@ -155,6 +165,10 @@ export function EditorReviewHandoffProvider({
           setIntent(null);
         }
         throw error;
+      } finally {
+        if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {
+          setRoutingDraftId(null);
+        }
       }
     },
     [openContextRoute, projectId],
@@ -235,7 +249,7 @@ export function EditorReviewHandoffProvider({
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
       <AcknowledgeLiveBindingContext.Provider value={acknowledgeLiveBinding}>
-        <EditorReviewIntentContext.Provider value={{ intent, claim }}>
+        <EditorReviewIntentContext.Provider value={{ intent, routingDraftId, claim }}>
           <LiveBindingHandoffContext.Provider value={liveBindingHandoff}>
             {children}
           </LiveBindingHandoffContext.Provider>
@@ -293,7 +307,7 @@ export function useOpenEditorReview(): EditorReviewCommand {
 
 /** Draft currently crossing the route-to-Editor handoff, if any. */
 export function usePendingEditorReviewDraftId(): string | null {
-  return useContext(EditorReviewIntentContext)?.intent?.draftId ?? null;
+  return useContext(EditorReviewIntentContext)?.routingDraftId ?? null;
 }
 
 /** Mount inside the Editor review boundary, beside the active viewer/editor. */
@@ -316,7 +330,7 @@ export function EditorReviewIntentClaimant({
     if (activeScheme !== "manuscript" || activePath !== intent.contextPath) return;
     if (review.activeEditorDocumentId !== intent.documentId) return;
     const group = review.groupForDocument(intent.documentId);
-    if (!group?.drafts.some((draft) => draft.draftId === intent.draftId)) return;
+    if (group?.draft.draftId !== intent.draftId) return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
     handoff?.claim(intent.sequence);
   }, [activePath, activeScheme, editorWorkId, handoff, intent, review]);

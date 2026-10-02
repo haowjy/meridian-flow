@@ -285,7 +285,7 @@ function useDraftReviewScopeOwner(
       controller.exitReview();
       return;
     }
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
+    const activeDrafts = drafts.drafts ?? rawGroups.map((group) => group.draft);
     if (
       activeDrafts.some(
         (draft) =>
@@ -331,7 +331,7 @@ function useDraftReviewScopeOwner(
       return;
     }
     const tabs = getContextTabs(projectId).tabs;
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
+    const activeDrafts = drafts.drafts ?? rawGroups.map((group) => group.draft);
     const candidates = dispositionSnapshot.remoteDraftWitnesses.flatMap((witness) => {
       if (
         witness.identity.accountId !== accountId ||

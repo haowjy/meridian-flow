@@ -51,8 +51,9 @@ owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
 
-Review mode is the dock's `Changes` view plus a full-width Editor; there is no
-in-editor review split. `useAiDraftLauncher` submits an explicit Work/document/
+Review mode is a full-width Editor; the dock remains in the writer's chosen
+open/collapsed state and view. There is no in-editor review split.
+`useAiDraftLauncher` submits an explicit Work/document/
 draft/path command to the route-level Editor handoff rather than commanding the
 ambient Chat controller. The handoff holds one provider-lifetime, latest-wins
 intent, navigates atomically to its Work and manuscript path, and lets the
