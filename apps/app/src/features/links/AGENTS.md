@@ -34,8 +34,8 @@ finds come from the same cache.
 `useLinkFollower` binds the three: it registers `createProjectLinkResolver` on
 the surface's resolution cache once per scope and runs `followProjectLink` for
 each click. `useLinkableDocuments` is the scope's local document index: the
-`[[` picker's rows, the holder's address (a relative link's base), and the
-local answer that saves a request.
+holder's address (a relative link's base), the local answer that saves a
+request, and which addresses the Editor's `@` link-ahead row may not take.
 
 ## Key rules
 

@@ -95,6 +95,6 @@ pointer, and calls into it.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the seam, the behavior matrix,
   the resolution port, and how a state nobody stored gets drawn
-→ [`../extensions/link-picker/AGENTS.md`](../extensions/link-picker/AGENTS.md) —
-  the `[[` picker that writes one of these links
+→ [`../extensions/at-reference/AGENTS.md`](../extensions/at-reference/AGENTS.md) —
+  the Editor's `@`, the one way a writer inserts one of these links
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — the kernel this registers with

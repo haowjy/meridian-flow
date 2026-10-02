@@ -257,7 +257,7 @@ describe("typing the closer steps over the one that was written", () => {
     const editor = openEditor();
     type(editor, "[[The Third Gate]]");
 
-    // `[[name]]` is never a link; the `[[` picker is how a writer links one.
+    // `[[name]]` is never a link and opens nothing; `@` is how a writer links.
     expect(shape(editor)).toBe("[[The Third Gate]]|");
     expect(editor.view.dom.querySelector("a")).toBeNull();
   });

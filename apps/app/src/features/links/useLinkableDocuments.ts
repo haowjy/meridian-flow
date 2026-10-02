@@ -2,16 +2,14 @@
  * Every document a link in this scope can reach, from the trees the app already
  * has.
  *
- * One index answers three link questions: which documents the `[[` picker
- * offers (the project's manuscript, kb, and Unfiled, the writer's user files,
+ * One index answers the link questions an editor scope asks: what the
+ * document holding a link is called (its address, which a relative link
+ * resolves against), which document is at an address, so a link the index can
+ * answer costs no request, and whether a link-ahead address is already taken.
+ * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
  * and the current Work's Scratch and Uploads, where no Work means the No Work
- * row), what the document holding a link is called (its address, which a
- * relative link resolves against), and which document is at an address, so a
- * link the index can answer costs no request. A URI naming another Work's
- * Scratch is outside it and always asks the server.
- *
- * Titles are filenames without their extension; aliases are alternate names
- * the picker's search matches.
+ * row. A URI naming another Work's Scratch is outside it and always asks the
+ * server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -21,7 +19,7 @@
  * remember to poke a cache it does not own.
  *
  * Cached client-side and free: these are the same queries the context tree
- * already pays for, so opening the picker costs no request.
+ * already pays for, so the index costs no request.
  */
 
 import { useMemo, useRef } from "react";
@@ -29,21 +27,16 @@ import { useMemo, useRef } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
-import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
 
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
   documentId: string;
-  /** The filename without its extension: the picker's label. */
+  /** The filename without its extension. */
   title: string;
-  /** Where it lives, for the picker row's quiet second column. */
-  location: string;
   /** Its canonical Context URI: its address, and what a relative link in it resolves against. */
   uri: string;
-  filename: string;
-  aliases: readonly string[];
   workId: string | null;
 };
 
@@ -85,14 +78,12 @@ export function useLinkableDocuments({
 
   return useMemo(() => {
     const documents = [
-      // The manuscript first, so a name both trees carry keeps the chapter's
-      // row above the note's: ranking ties hold the order they arrive in.
-      ...(manuscript ? linkableDocuments(manuscript, [], null) : []),
-      ...(knowledgeBase ? linkableDocuments(knowledgeBase, [schemeLabel("kb")], null) : []),
-      ...(user ? linkableDocuments(user, [schemeLabel("user")], null) : []),
-      ...(unfiled ? linkableDocuments(unfiled, [schemeLabel("unfiled")], null) : []),
-      ...(scratch ? linkableDocuments(scratch, [schemeLabel("scratch")], catalogWorkId) : []),
-      ...(uploads ? linkableDocuments(uploads, [schemeLabel("uploads")], catalogWorkId) : []),
+      ...(manuscript ? linkableDocuments(manuscript, null) : []),
+      ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
+      ...(user ? linkableDocuments(user, null) : []),
+      ...(unfiled ? linkableDocuments(unfiled, null) : []),
+      ...(scratch ? linkableDocuments(scratch, catalogWorkId) : []),
+      ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
     ];
     const next = {
       documents,
@@ -127,47 +118,22 @@ export function useLinkableDocuments({
 }
 
 /**
- * Everything an answer depends on, in one string: which documents exist, what
- * each is called, and where each one is. Two catalogs with the same revision
- * cannot disagree about where any link goes, which is the property the
- * resolution scope needs — a link is re-asked when this changes and left alone
- * when it does not.
+ * Everything an answer depends on, in one string: which documents exist and
+ * where each one is. Two catalogs with the same revision cannot disagree about
+ * where any link goes, which is the property the resolution scope needs — a
+ * link is re-asked when this changes and left alone when it does not.
  */
 function catalogRevision(documents: readonly LinkableDocument[]): string {
-  return documents
-    .map(
-      (entry) =>
-        `${entry.documentId} ${entry.uri} ${entry.filename} ${entry.title} ${entry.aliases.join("\u0000")}`,
-    )
-    .join("\n");
+  return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
 }
 
-/**
- * Depth-first, so ties in the menu keep the order the manuscript reads in.
- *
- * `root` names the tree a row came out of. The manuscript is where a chapter
- * lives and needs no label; a scratch note says so, because "where it lives" is
- * the only thing separating two documents whose names look alike.
- */
-function linkableDocuments(
-  catalog: CatalogContextView,
-  root: readonly string[],
-  workId: string | null,
-): LinkableDocument[] {
-  const documents: LinkableDocument[] = [];
-  for (const node of catalog.files()) {
-    const folders = [...root, ...node.path.split("/").filter(Boolean).slice(0, -1)];
-    documents.push({
-      documentId: node.documentId,
-      filename: node.name,
-      title: documentTitle(node.name),
-      location: folders.join("/"),
-      uri: node.uri,
-      aliases: node.aliases ?? [],
-      workId,
-    });
-  }
-  return documents;
+function linkableDocuments(catalog: CatalogContextView, workId: string | null): LinkableDocument[] {
+  return catalog.files().map((node) => ({
+    documentId: node.documentId,
+    title: documentTitle(node.name),
+    uri: node.uri,
+    workId,
+  }));
 }
 
 function documentTitle(filename: string): string {

@@ -197,19 +197,6 @@ export function normalizeReferenceName(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-/**
- * How well a name, or failing that one of its aliases, answers a query: the
- * lexical tier (exact, prefix, word-start, contains, fuzzy; lower is better)
- * and which alias matched. The one matching rule every menu ranks by.
- */
-export function matchReferenceName(
-  label: string,
-  aliases: readonly string[],
-  query: string,
-): { tier: number; matchedAlias: string | null } | null {
-  return bestNameMatch(label, aliases, normalizeReferenceName(query));
-}
-
 function stableAuthority(
   scope: CatalogScope,
   authorities: ReferenceAuthorityIndex,

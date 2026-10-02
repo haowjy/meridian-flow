@@ -4,12 +4,13 @@
  *
  * Every internal link is an address (a Context URI, or a path relative to its
  * holder), and addresses are unique, so a link names one document or none.
- * The `[[` picker's create row and a follow's Create both write a new document
- * at an address; they share the filename rule here so the link one writes is
- * the document the other makes.
+ * The Editor `@` menu's link-ahead row and a follow's Create both name a new
+ * document at an address; they share the filename rule here so the link one
+ * writes is the document the other makes.
  */
 
 import { canonicalContextUri, resolveDocumentHref } from "@meridian/contracts";
+import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { classifyFiletype, filetypeForKnownPath } from "@meridian/contracts/protocol";
 
 import type { LinkTarget } from "./link-target";
@@ -46,4 +47,14 @@ export function siblingDocumentAddress(holderUri: string | null, name: string): 
   const filename = documentFileName(name);
   if (!holderUri) return canonicalContextUri("manuscript", filename);
   return resolveDocumentHref(encodeURIComponent(filename), holderUri)?.uri ?? null;
+}
+
+/**
+ * Where a link to a not-yet-written document a writer named goes: beside its
+ * holder, or null when the name cannot be a filename.
+ */
+export function linkAheadAddress(holderUri: string | null, name: string): string | null {
+  const trimmed = name.trim();
+  if (!validateContextEntryName(trimmed).ok) return null;
+  return siblingDocumentAddress(holderUri, trimmed);
 }

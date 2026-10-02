@@ -148,7 +148,7 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Spelled from the holder the way the `[[` picker spells it:
+              // Spelled from the holder the way the Editor's `@` spells it:
               // relative within its area, a full Context URI across areas.
               const holderUri = getLinkResolution(editor)?.baseUri ?? null;
               setHref(spellDocumentHref(holderUri, row.action.reference.uri));

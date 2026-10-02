@@ -2,7 +2,7 @@
  * The scope one editor is open in: which project, and which Work.
  *
  * Project and Work are the writer's two primitives, and a manuscript is only
- * half the answer to "what can this document reach". A `[[` menu offers the
+ * half the answer to "what can this document reach". The `@` menu offers the
  * manuscript AND the Work's scratch, the resolver is asked with a Work so
  * `work://notes.md` has a fallback to fall back to, and a door that opens a
  * document has to know which Work's scratch to look in. One value carries all

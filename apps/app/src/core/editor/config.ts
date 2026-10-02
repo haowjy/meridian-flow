@@ -25,7 +25,6 @@ import { AutoPairExtension } from "./extensions/auto-pair";
 import { DropLandingExtension } from "./extensions/DropLandingExtension";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
-import { LinkPickerExtension, type LinkPickerExtensionOptions } from "./extensions/link-picker";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
   MeridianBulletList,
@@ -102,8 +101,6 @@ export type CreateEditorExtensionsOptions = {
   agentNames?: AgentNameStore;
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
-  /** Mounts the `[[` link picker; a surface with no project offers none. */
-  linkPicker?: LinkPickerExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
 };
 
@@ -284,7 +281,6 @@ export function createEditorExtensions({
   markerStore,
   agentNames,
   slashCommands,
-  linkPicker,
   atReferences,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
@@ -299,7 +295,6 @@ export function createEditorExtensions({
       schemaType,
       assetRenderContext,
       slashCommands,
-      linkPicker,
       atReferences,
     }),
     ...collaboration,
@@ -319,11 +314,10 @@ export function createStandaloneEditorExtensions({
   schemaType = "document",
   assetRenderContext,
   slashCommands,
-  linkPicker,
   atReferences,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "linkPicker" | "atReferences"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -370,14 +364,6 @@ export function createStandaloneEditorExtensions({
           }),
         ]
       : []),
-    ...(linkPicker
-      ? [
-          LinkPickerExtension.configure({
-            ...linkPicker,
-            suggestionHost: (editor) => editorSuggestionHost(editor, "prose"),
-          }),
-        ]
-      : []),
     ...(atReferences
       ? [
           AtReferenceExtension.configure({
@@ -417,7 +403,6 @@ export function createEditorConfig({
   markerStore,
   agentNames,
   slashCommands,
-  linkPicker,
   atReferences,
   editable = true,
   autofocus = false,
@@ -447,7 +432,6 @@ export function createEditorConfig({
         markerStore,
         agentNames,
         slashCommands,
-        linkPicker,
         atReferences,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),

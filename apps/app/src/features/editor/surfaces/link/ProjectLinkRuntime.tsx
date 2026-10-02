@@ -54,7 +54,7 @@ export function useEditorLinkDestination(): LinkDestination {
   );
 }
 
-/** Runtime over the index the editor's `[[` picker already offers rows from. */
+/** Runtime over the scope's document index, which the Editor also reads its holder from. */
 export function ProjectLinkRuntime({
   editor,
   baseUri,
