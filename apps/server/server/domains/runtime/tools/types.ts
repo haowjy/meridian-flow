@@ -19,6 +19,7 @@ import type {
   SpawnResult,
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
@@ -190,12 +191,9 @@ export interface InterruptToolHandlerContext extends ToolHandlerContext {
 /**
  * The core tool-handler type signature.
  *
- * `input` is typed as `unknown` rather than `Record<string, unknown>`
- * because the executor does not re-parse or validate the model's arguments
- * before passing them through — the handler is responsible for casting and
- * validating its own input. This is a pragmatic choice: the model's JSON
- * output is already parsed at the orchestrator layer, and per-tool JSON
- * Schema validation is deferred to individual handler implementations.
+ * When the registration declares `input`, the executor has already parsed the
+ * model's arguments with it: `input` is that schema's output and the handler
+ * may cast to it. Registrations without `input` still receive raw arguments.
  *
  * The return type is `Promise<unknown>` — handlers are async by convention
  * (most do I/O), and the executor normalizes whatever they return through
@@ -246,6 +244,12 @@ export interface ToolRegistration {
    */
   source: "core" | "spawn" | "skill";
   definition: FunctionTool;
+  /**
+   * The tool's one input contract. `definition.inputSchema` is its
+   * `modelToolSchema` projection, and the executor parses every call with it
+   * before dispatch: invalid values and unknown keys never reach the handler.
+   */
+  input?: z.ZodType;
   advertise?: boolean;
   execution:
     | {

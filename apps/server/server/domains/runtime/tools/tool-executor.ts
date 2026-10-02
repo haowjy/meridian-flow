@@ -5,6 +5,11 @@
  *
  * ── Execution model ──
  *
+ * A registration with an `input` schema has its arguments parsed first. A
+ * failed parse returns one `invalid_arguments` result and the handler never
+ * runs; a successful parse hands the handler the parsed value, defaults
+ * applied.
+ *
  * Every tool call is dispatched as a Promise that races three things:
  *
  *   1. The handler itself — `handler(input, context) => Promise<unknown>`
@@ -53,6 +58,7 @@ import {
 } from "@meridian/contracts/interrupt";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { invalidArgumentsOutput, parseToolInput } from "./invalid-arguments.js";
 import type {
   InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -326,6 +332,19 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         });
       }
 
+      let input: unknown = call.arguments;
+      if (registration.input) {
+        const parsed = parseToolInput(registration.input, call.arguments);
+        if (!parsed.ok) {
+          return {
+            toolCallId: call.id,
+            output: toJsonValue(invalidArgumentsOutput(call.name, parsed.issues)),
+            isError: true,
+          };
+        }
+        input = parsed.value;
+      }
+
       if (ctx.signal?.aborted) {
         // Early-exit: the turn was already cancelled before we started.
         // This skips handler invocation entirely, avoiding wasted work.
@@ -359,7 +378,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
       if (registration.timeoutMs !== undefined) {
         const outcome = await runWithTimeout(
           registration.execution.handler as ToolHandler,
-          call.arguments,
+          input,
           effectiveHandlerContext,
           registration.timeoutMs,
           ctx.signal,
@@ -385,7 +404,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         input: unknown,
         context: typeof effectiveHandlerContext,
       ) => Promise<unknown>;
-      const handlerPromise = handler(call.arguments, effectiveHandlerContext).then((result) => ({
+      const handlerPromise = handler(input, effectiveHandlerContext).then((result) => ({
         result,
       }));
       const abortPromise = abortOutcome(ctx.signal);

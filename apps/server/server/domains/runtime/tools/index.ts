@@ -25,6 +25,11 @@ export {
 } from "./core-tools.js";
 export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
 export { createInspectionToolRegistrations } from "./inspection-tools.js";
+export {
+  type InvalidArgumentIssue,
+  type InvalidArgumentsOutput,
+  invalidArgumentsOutput,
+} from "./invalid-arguments.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,

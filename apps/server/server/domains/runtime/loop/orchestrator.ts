@@ -63,6 +63,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
+  JsonObject,
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
@@ -100,7 +101,7 @@ import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-a
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
-import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { invalidArgumentsOutput, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -139,7 +140,11 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
+import {
+  type PermissionDecision,
+  type PermissionGate,
+  permissionGateFromToolPolicy,
+} from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -1020,19 +1025,16 @@ async function persistToolRejection(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  decision: {
-    allowed: false;
-    kind: "permission_denied" | "invalid_arguments";
+  decision: Extract<PermissionDecision, { allowed: false }> & {
     category: Extract<OrchestratorEvent, { type: "permission.denied" }>["category"];
-    reason: string;
   };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionOutput = {
-    error: input.decision.kind,
-    reason: input.decision.reason,
-  };
+  const rejectionOutput: JsonObject =
+    input.decision.kind === "invalid_arguments"
+      ? invalidArgumentsOutput(input.call.name, input.decision.issues)
+      : { error: input.decision.kind, reason: input.decision.reason };
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
