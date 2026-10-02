@@ -106,14 +106,24 @@ function returnResultInputError(error: ZodError): string {
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
-export type ThreadMessageMode = "foreground" | "background";
-
-export type ThreadMessageArgs = {
-  /** Thread handle (`pN`/`cN`); never an internal id. */
-  ref: string;
-  message: string;
-  mode: ThreadMessageMode;
-};
+export const ThreadMessageInputSchema = z
+  .object({
+    ref: z
+      .string()
+      .min(1)
+      .refine((ref) => ref !== "current", { message: "Name the thread to message, e.g. p12" })
+      .describe('Thread ref such as p3 or c1. Not "current".'),
+    message: z.string().min(1),
+    mode: z
+      .enum(["foreground", "background"])
+      .default("background")
+      .describe(
+        "background (default) queues it and returns; foreground waits for a subagent in your subtree and returns its report.",
+      ),
+  })
+  .strict();
+export type ThreadMessageArgs = z.output<typeof ThreadMessageInputSchema>;
+export type ThreadMessageMode = ThreadMessageArgs["mode"];
 
 export const ThreadReportInputSchema = z
   .object({
@@ -121,19 +131,6 @@ export const ThreadReportInputSchema = z
   })
   .strict();
 export type ThreadReportArgs = z.output<typeof ThreadReportInputSchema>;
-
-/** One parse for thread_message arguments; omitted mode is background. */
-export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ref: typeof rec.ref === "string" ? rec.ref : "",
-    message: typeof rec.message === "string" ? rec.message : "",
-    mode: rec.mode === "foreground" ? "foreground" : "background",
-  };
-}
 
 export function createSpawnToolRegistrations(): ToolRegistration[] {
   return [
@@ -249,29 +246,13 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "thread_message",
         description: THREAD_MESSAGE_DESCRIPTION,
-        inputSchema: {
-          type: "object",
-          properties: {
-            ref: {
-              type: "string",
-              description: "Thread ref such as p3 or c1.",
-            },
-            message: { type: "string" },
-            mode: {
-              type: "string",
-              enum: ["foreground", "background"],
-              description:
-                "background (default) queues it and returns; foreground waits for a subagent in your subtree and returns its report.",
-            },
-          },
-          required: ["ref", "message"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ThreadMessageInputSchema),
       },
+      input: ThreadMessageInputSchema,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) => {
-          return ctx.threadMessage(parseThreadMessageArgs(input));
+          return ctx.threadMessage(input as ThreadMessageArgs);
         },
       },
       sequential: true,
