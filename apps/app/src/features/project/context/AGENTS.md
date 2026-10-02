@@ -54,9 +54,9 @@ Shared across both shells:
 - Record from the active editor tab, not from the open intent and not from the
   create path. A parked restored tab is not an open. Opening the new document
   records it, including a local draft, once that tab is in front of the writer.
-  The device record updates before the POST. `recordRecentDocument` still owns
-  the retry that covers the window between reserving a document id and the
-  server writing its row. The server's five-second interval is write hygiene:
+  The device record updates before the POST, and the POST waits until the
+  replica says the server holds the document (`whenOnServer`), so a document
+  created on this device is never posted (and 404ed) before its create syncs. The server's five-second interval is write hygiene:
   it does not decide whether this device shows the opening.
 
 ## File groups
