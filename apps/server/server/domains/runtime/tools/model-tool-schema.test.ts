@@ -1,13 +1,16 @@
 /**
  * Model-facing schemas: requiredness, the published projection of every
- * registration's zod input.
+ * registration's zod input, and the pinned size of the primary catalog.
  */
 import { describe, expect, it } from "vitest";
+import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
+import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
+import { createToolRegistry } from "./tool-registry.js";
 import type { ToolRegistration } from "./types.js";
 
 function allRegistrations(): ToolRegistration[] {
@@ -150,5 +153,34 @@ describe("model tool schemas", () => {
     ] as const) {
       expect(properties(tool)[field]?.description, `${tool}.${field}`).toContain('"current"');
     }
+  });
+
+  // Later phases change this number on purpose, so catalog growth shows in review.
+  it("pins the published primary catalog size", () => {
+    // The primary catalog as the audit exporter defines it: the default policy's advertisement.
+    const definitions = advertiseTools(
+      createToolRegistry({ registrations: allRegistrations() }).getDefinitions(),
+      projectToolPolicy({}),
+    ).flatMap((tool) => (tool.type === "function" ? [tool] : []));
+    const characters = definitions.reduce(
+      (total, { name, description, inputSchema }) =>
+        total + JSON.stringify({ name, description, inputSchema }).length,
+      0,
+    );
+    expect(definitions.map(({ name }) => name)).toMatchInlineSnapshot(`
+      [
+        "write",
+        "work",
+        "ls",
+        "search",
+        "thread_ls",
+        "thread_history",
+        "thread_report",
+        "spawn",
+        "thread_message",
+        "skill",
+      ]
+    `);
+    expect(characters).toMatchInlineSnapshot(`12661`);
   });
 });
