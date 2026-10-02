@@ -106,6 +106,14 @@ the server response owner.
 
 ### Tool concerns
 
+**One selector rule.** `tool/selector-rules.ts` owns which selectors `read`,
+`insert`, `replace` and `remove` accept together: one of `in`, `around` or a
+`#fragment`; `around` and `all` only with `find`; insert positions with
+`after`, `before` or `find`; `remove` takes exactly one of `in` or a fragment.
+The command schemas run it in `superRefine`, so hosts refuse a bad combination
+before dispatch and the resolver never re-checks it. Field descriptions state
+each rule, because refinements don't export to JSON Schema.
+
 `tool/interaction-mode.ts` is the sole owner of `mutationMode` and
 `interactionContextForAttempt`. The mode (`"threadPeer"` plus
 `branchGeneration`, or `"live"`) is required end-to-end.
