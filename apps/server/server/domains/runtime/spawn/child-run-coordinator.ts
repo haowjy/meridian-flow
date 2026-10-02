@@ -42,7 +42,8 @@ import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
-  description?: string;
+  /** Task label the writer sees; becomes the child thread's title. */
+  name?: string;
   from?: string;
   /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
@@ -172,7 +173,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,
             spawnDepth: input.parentThread.spawnDepth + 1,
-            title: input.description ?? defaultTitle,
+            title: input.name ?? defaultTitle,
             spawnStatus: "running",
           }),
         resolveWork: (created) =>
@@ -199,7 +200,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           parentTurnId: input.parentTurnId as string,
           childThreadId: created.id,
           agentSlug: resolvedSlug,
-          description: input.description,
+          name: input.name,
         });
       }
       return created;
@@ -219,7 +220,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       });
       return {
         ...prepared,
-        description: input.description,
+        name: input.name,
         seedBlocks,
         ...(source
           ? {
@@ -315,7 +316,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return invocationCardProps({
         agent: request.agentSlug,
         agentName: invocationAgentName(prepared.resolvedSlug, prepared.child.agentName),
-        description: request.description,
+        name: request.name,
         correlation,
         childThreadId: prepared.child.id,
         execution: null,
@@ -397,7 +398,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           options.transcript,
           unadmittedInvocationFailureProps({
             agent: request.agentSlug,
-            description: request.description,
+            name: request.name,
             correlation,
             reason: prepared.error.message,
           }),
@@ -436,7 +437,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           handle: prepared.handle,
           threadId: prepared.child.id,
           agentSlug: prepared.resolvedSlug,
-          ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+          ...(prepared.name !== undefined ? { name: prepared.name } : {}),
         };
       } catch (error) {
         if (request.kind === "spawn") {

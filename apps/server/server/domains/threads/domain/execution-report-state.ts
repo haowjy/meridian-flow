@@ -77,7 +77,7 @@ export function reportIdentity(input: AdmitExecutionReportInput) {
     toolCallId: input.toolCallId,
     cardBlockId: input.cardBlockId,
     agentSlug: input.agentSlug ?? null,
-    description: input.description ?? null,
+    name: input.name ?? null,
   };
 }
 

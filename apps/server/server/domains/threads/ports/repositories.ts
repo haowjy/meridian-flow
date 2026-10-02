@@ -165,7 +165,7 @@ export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
   executionTurnId: TurnId;
   handle: string;
   agentSlug?: string | null;
-  description?: string | null;
+  name?: string | null;
 }
 export interface FinalizeExecutionReportInput {
   terminalTurnId?: TurnId;
