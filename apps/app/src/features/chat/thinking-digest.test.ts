@@ -24,6 +24,7 @@ function tool(args: {
     toolName: args.toolName,
     input: (args.input ?? null) as ToolView["input"],
     output: null,
+    result: null,
     status: "complete",
     isError: args.isError ?? false,
     message: null,
