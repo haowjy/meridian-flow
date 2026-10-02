@@ -18,6 +18,7 @@ export {
   type CoreToolHandlers,
   type CoreToolName,
   createCoreToolRegistrations,
+  type LsToolInput,
   type WorkCommand,
   type WorkCommandCategory,
   WorkCommandSchema,

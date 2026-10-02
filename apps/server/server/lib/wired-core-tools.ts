@@ -69,6 +69,7 @@ import {
 import {
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
+  type LsToolInput,
   type ReferenceReader,
   type ToolHandlerContext,
   type ToolRegistration,
@@ -1017,7 +1018,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       }
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path } = (input ?? {}) as { path?: string };
+      const { path } = input as LsToolInput;
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.list(path);
