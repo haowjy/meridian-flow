@@ -14,6 +14,8 @@
 - Links: clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
 - A reference sent from the composer reads to the AI, and copies, as a standard link to the document's address.
 - Links copied from the Editor keep pointing at the same document wherever they are pasted: into a document in another folder or area, into chat, or into another app as text.
+- A chat with no Work no longer says "This Work is unavailable", and a No Work Scratch document opens in the Editor. No Work has one Editor however you reach it, and its tabs stay in its strip.
+- Renaming a Work's Scratch document from the title bar keeps it in that Work and saves the new name.
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
