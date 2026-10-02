@@ -280,6 +280,43 @@ describe("Editor review handoff", () => {
     }
   });
 
+  it("bounds a claimed host that never completes live admission", async () => {
+    const host = {
+      state: { kind: "absent" },
+      retry: vi.fn(),
+      adoptAndAcknowledge: vi.fn(() => new Promise<never>(() => undefined)),
+    } as LiveDocumentHostBinding;
+    const admission = {
+      projectId: "project-1",
+      documentId: "document-1",
+      generation: "7",
+      bind: vi.fn(),
+    } as AdmittedLiveDocument;
+    vi.useFakeTimers();
+    try {
+      await withReactRoot(
+        <EditorReviewHandoffProvider
+          projectId="project-1"
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        >
+          <BindingCommandCapture />
+          <BindingHost documentId="document-1" host={host} />
+        </EditorReviewHandoffProvider>,
+        async () => {
+          await act(async () => undefined);
+          let pending: Promise<unknown> | undefined;
+          await act(async () => {
+            pending = acknowledgeBinding?.(admission, new AbortController().signal);
+          });
+          await act(async () => vi.advanceTimersByTime(15_000));
+          await expect(pending).resolves.toEqual({ kind: "unusable" });
+        },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails a missing-host request after the bounded acknowledgement window", async () => {
     const admission = {
       projectId: "project-1",

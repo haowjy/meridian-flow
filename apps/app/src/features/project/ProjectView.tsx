@@ -62,6 +62,7 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
+import { activeEditorDocumentId } from "./context/active-editor-document";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
@@ -468,7 +469,10 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   );
   if (usePhone === null) return null;
   const activeDesktopDocumentId =
-    props.activeLocalDocumentId ?? selectedTabIdByWork[props.editorWorkId ?? ""] ?? null;
+    activeEditorDocumentId(
+      props.activeLocalDocumentId,
+      selectedTabIdByWork[props.editorWorkId ?? ""],
+    ) ?? null;
   const desktopHostDocumentIds =
     usePhone ||
     props.activeScreen !== "context" ||
