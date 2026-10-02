@@ -74,6 +74,7 @@ export function EditorReviewHandoffProvider({
     sequence: number;
     owner: object | null;
     abort: AbortController;
+    claimTimeout: ReturnType<typeof globalThis.setTimeout>;
     settle: (result: LiveDocumentAcknowledgement) => void;
   } | null>(null);
   const [advertisedBinding, setAdvertisedBinding] = useState<LiveBindingRequest | null>(null);
@@ -125,11 +126,11 @@ export function EditorReviewHandoffProvider({
     const abort = new AbortController();
     return new Promise<LiveDocumentAcknowledgement>((resolve) => {
       let settled = false;
-      const timeout = globalThis.setTimeout(() => settle({ kind: "unclaimed" }), 1_000);
+      const claimTimeout = globalThis.setTimeout(() => settle({ kind: "unclaimed" }), 1_000);
       const settle = (result: LiveDocumentAcknowledgement) => {
         if (settled) return;
         settled = true;
-        globalThis.clearTimeout(timeout);
+        globalThis.clearTimeout(claimTimeout);
         abort.abort();
         signal.removeEventListener("abort", cancel);
         if (bindingRequest.current?.sequence === requestSequence) {
@@ -144,6 +145,7 @@ export function EditorReviewHandoffProvider({
         sequence: requestSequence,
         owner: null,
         abort,
+        claimTimeout,
         settle,
       };
       if (signal.aborted) {
@@ -157,6 +159,7 @@ export function EditorReviewHandoffProvider({
     const request = bindingRequest.current;
     if (!request || request.sequence !== requestSequence || request.owner) return false;
     request.owner = owner;
+    globalThis.clearTimeout(request.claimTimeout);
     return true;
   }, []);
   const completeLiveBinding = useCallback(
