@@ -138,18 +138,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "server",
         handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
           const result = await ctx.threadReport(input as ThreadReportArgs);
-          if ("ok" in result) return toolFailureResult(result);
-          if ("status" in result) return { ref: result.ref, status: result.status };
-          return {
-            ref: result.ref,
-            run: result.run,
-            outcome: result.outcome,
-            summary: result.summary,
-            ...(result.payload !== undefined ? { payload: result.payload } : {}),
-            ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
-            ...(result.reason !== null ? { reason: result.reason } : {}),
-            ...(result.source !== "return_result" ? { source: result.source } : {}),
-          };
+          return "ok" in result ? toolFailureResult(result) : result;
         },
       },
       sequential: true,
