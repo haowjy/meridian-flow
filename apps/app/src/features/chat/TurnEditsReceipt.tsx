@@ -325,6 +325,7 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "invalid_write":
       return t`This change no longer matches the chapter text, so it can't be reversed.`;
     case "internal_error":
+    case "read_required":
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {
