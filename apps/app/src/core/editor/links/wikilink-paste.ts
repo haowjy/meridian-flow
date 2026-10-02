@@ -47,8 +47,12 @@ export type WikilinkPasteCatalog = {
 };
 
 // An optional `\` or `!` before `[[` is captured so an escape or an embed can
-// be skipped; the brackets hold no bracket and no line break.
-const WIKILINK = /(\\|!)?\[\[([^[\]\n]+)\]\]/g;
+// be told apart; `\[\[` (how Meridian's own Markdown escapes brackets) is an
+// escape too. The brackets hold no bracket and no line break.
+const WIKILINK = /(\\|!)?\[(\\)?\[([^[\]\n]+)\]\]/g;
+
+/** An escaped `\[[…]]`: text, spelled as the literal brackets without the backslash. */
+type EscapedWikilink = { from: number; to: number; literal: string };
 
 /**
  * Every convertible `[[…]]` in a run of text, in order. A backtick code span
@@ -56,13 +60,22 @@ const WIKILINK = /(\\|!)?\[\[([^[\]\n]+)\]\]/g;
  * is code, and code is never converted.
  */
 export function parseWikilinks(text: string): WikilinkOccurrence[] {
-  const found: WikilinkOccurrence[] = [];
+  return scanWikilinks(text).filter((found): found is WikilinkOccurrence => "target" in found);
+}
+
+/** Links and escapes, in order; embeds and code are neither. */
+function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
+  const found: (WikilinkOccurrence | EscapedWikilink)[] = [];
   const code = codeSpans(text);
   for (const match of text.matchAll(WIKILINK)) {
-    if (match[1]) continue;
     const start = match.index ?? 0;
     if (code.some(([from, to]) => start >= from && start < to)) continue;
-    const inner = match[2] ?? "";
+    const inner = match[3] ?? "";
+    if (match[1] === "\\") {
+      found.push({ from: start, to: start + match[0].length, literal: `[[${inner}]]` });
+      continue;
+    }
+    if (match[1] || match[2]) continue;
     // Inside a table Obsidian escapes the alias bar as `\|`.
     const bar = inner.search(/\\?\|/);
     const destination = bar < 0 ? inner : inner.slice(0, bar);
@@ -79,10 +92,9 @@ export function parseWikilinks(text: string): WikilinkOccurrence[] {
     const segments = path.split("/").map((segment) => segment.trim());
     const name = segments.pop() ?? "";
     if (!name || segments.some((segment) => !segment)) continue;
-    const from = match.index ?? 0;
     found.push({
-      from,
-      to: from + match[0].length,
+      from: start,
+      to: start + match[0].length,
       target: { folders: segments, name },
       suffix,
       label: alias || name.replace(/\.md$/i, ""),
@@ -207,21 +219,24 @@ function linkText(node: PMNode, link: MarkType, catalog: WikilinkPasteCatalog): 
   if (node.marks.some((mark) => mark.type.spec.code || mark.type.name === "link")) return [node];
   const pieces: PMNode[] = [];
   let cursor = 0;
-  for (const occurrence of parseWikilinks(text)) {
-    const href = wikilinkHref(occurrence, catalog);
-    if (!href) continue;
+  const { schema } = node.type;
+  for (const occurrence of scanWikilinks(text)) {
+    let piece: PMNode | null;
+    if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
+    else {
+      const href = wikilinkHref(occurrence, catalog);
+      piece = href
+        ? schema.text(occurrence.label, link.create({ href, title: null }).addToSet(node.marks))
+        : null;
+    }
+    if (!piece) continue;
     if (occurrence.from > cursor)
-      pieces.push(node.type.schema.text(text.slice(cursor, occurrence.from), node.marks));
-    pieces.push(
-      node.type.schema.text(
-        occurrence.label,
-        link.create({ href, title: null }).addToSet(node.marks),
-      ),
-    );
+      pieces.push(schema.text(text.slice(cursor, occurrence.from), node.marks));
+    pieces.push(piece);
     cursor = occurrence.to;
   }
   if (!pieces.length) return [node];
-  if (cursor < text.length) pieces.push(node.type.schema.text(text.slice(cursor), node.marks));
+  if (cursor < text.length) pieces.push(schema.text(text.slice(cursor), node.marks));
   return pieces;
 }
 
