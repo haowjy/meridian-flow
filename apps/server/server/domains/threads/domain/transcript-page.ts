@@ -563,17 +563,17 @@ export async function readTranscriptPageForProjection(
   });
 }
 
-/** How many effective-transcript turns precede `position`: a turn's display number minus one. */
-export async function countTranscriptTurnsBefore(
+/** How many conversation turns precede `position`: the next conversation turn's number minus one. */
+export async function countConversationTurnsBefore(
   repos: Pick<ThreadRepositories, "threads" | "turns">,
   thread: Thread,
   position: number,
 ): Promise<number> {
   const resolution = await resolveTranscriptSpans(repos, thread);
-  return repos.turns.countTranscriptTurns(resolution.spans, position);
+  return repos.turns.countConversationTurns(resolution.spans, position);
 }
 
-/** The Nth effective-transcript turn (from 1) with all its blocks, including the live tail. */
+/** The Nth conversation turn (from 1) with all its blocks, including the live tail. */
 export async function readTranscriptTurn(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,
@@ -581,7 +581,7 @@ export async function readTranscriptTurn(
 ) {
   return repos.readSnapshot(async () => {
     const resolution = await resolveTranscriptSpans(repos, thread);
-    const turn = await repos.turns.findTranscriptTurnByOrdinal(resolution.spans, ordinal);
+    const turn = await repos.turns.findConversationTurnByOrdinal(resolution.spans, ordinal);
     if (!turn) return null;
     const blocks = (await repos.blocks.listByTurn(turn.id as TurnId)).sort(
       (left, right) => left.sequence - right.sequence,

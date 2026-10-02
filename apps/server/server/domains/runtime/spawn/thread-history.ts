@@ -15,7 +15,7 @@ import {
 } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
-  countTranscriptTurnsBefore,
+  countConversationTurnsBefore,
   cursorAfter,
   InvalidTranscriptCursorError,
   readTranscriptPageForProjection,
@@ -494,12 +494,13 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
     throw error;
   }
 
-  // Numbers are ordinals over the whole thread; the walk covered a contiguous run of turns.
+  // Numbers count conversation turns only (isConversationTurn, the same rule as the
+  // repository count); the walk covered a contiguous run, so they continue from the base.
   const walked = [...turns.values()].sort(
     (left, right) => left.turn.position - right.turn.position,
   );
   const first = walked[0];
-  const base = first ? await countTranscriptTurnsBefore(repos, target, first.turn.position) : 0;
+  let counted = first ? await countConversationTurnsBefore(repos, target, first.turn.position) : 0;
   const opener =
     segment?.openedBy?.kind === "compaction"
       ? walked.find((entry) => entry.turn.id === segment?.openedBy?.turnId)
@@ -507,7 +508,8 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
   let marked = false;
   const settled: HistoryTurn[] = [];
   const inProgress: HistoryTurn[] = [];
-  for (const [rank, entry] of walked.entries()) {
+  for (const entry of walked) {
+    const number = entry.heading.system ? undefined : ++counted;
     if (!entry.shown) continue;
     const items = entry.items.sort((left, right) => left.sequence - right.sequence);
     if (items.some(({ item }) => item.truncated)) {
@@ -519,7 +521,7 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
       !marked && !entry.live && opener !== undefined && entry.turn.position >= opener.turn.position;
     if (summarizedBefore) marked = true;
     (entry.live ? inProgress : settled).push({
-      number: base + rank + 1,
+      ...(number !== undefined ? { number } : {}),
       role: entry.heading.role,
       label: entry.heading.label,
       ...(entry.from ? { from: entry.from } : {}),

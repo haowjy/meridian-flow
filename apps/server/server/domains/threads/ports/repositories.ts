@@ -469,10 +469,10 @@ export interface TurnRepository {
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
   /** Reads bounded transcript items by `(position, sequence)` across owner spans. */
   readTranscriptItems(input: ReadTranscriptItemsInput): Promise<TranscriptItemRow[]>;
-  /** Counts the turns across owner spans positioned before `beforePosition`. */
-  countTranscriptTurns(spans: readonly TranscriptSpan[], beforePosition: number): Promise<number>;
-  /** The Nth turn (from 1) across owner spans in transcript order, or null. */
-  findTranscriptTurnByOrdinal(
+  /** Counts the conversation turns (`isConversationTurn`) across owner spans before `beforePosition`. */
+  countConversationTurns(spans: readonly TranscriptSpan[], beforePosition: number): Promise<number>;
+  /** The Nth conversation turn (from 1) across owner spans in transcript order, or null. */
+  findConversationTurnByOrdinal(
     spans: readonly TranscriptSpan[],
     ordinal: number,
   ): Promise<Turn | null>;
