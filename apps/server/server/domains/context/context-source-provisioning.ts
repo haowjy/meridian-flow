@@ -91,13 +91,24 @@ export async function findNoWorkId(db: Database, projectId: string): Promise<str
   return row?.id ?? null;
 }
 
+/**
+ * Whether a project-scoped source is stored in the writer's personal project
+ * rather than the project being browsed. Its documents belong to that
+ * project's manifest, not this one's.
+ */
+export function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
+  return scheme === "user";
+}
+
 async function findProjectContextSource(
   db: Database,
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string | null> {
-  const sourceProjectId = scheme === "user" ? await findUserContextProject(db, userId) : projectId;
+  const sourceProjectId = storedInPersonalProject(scheme)
+    ? await findUserContextProject(db, userId)
+    : projectId;
   if (!sourceProjectId) return null;
   const [row] = await currentDrizzleDb(db)
     .select({ id: contextSources.id })
@@ -120,8 +131,9 @@ async function ensureProjectContextSource(
   scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string> {
-  const sourceProjectId =
-    scheme === "user" ? await ensureUserContextProject(db, userId) : projectId;
+  const sourceProjectId = storedInPersonalProject(scheme)
+    ? await ensureUserContextProject(db, userId)
+    : projectId;
   const existing = await findProjectContextSource(db, projectId, scheme, userId);
   if (existing) return existing;
 

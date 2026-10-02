@@ -33,6 +33,7 @@ import {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
   findNoWorkId,
+  storedInPersonalProject,
 } from "./context-source-provisioning.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
@@ -139,6 +140,15 @@ function contextFsAdapter(
   });
 }
 
+/**
+ * Drafted sources list through this project's manifest, so a draft-only
+ * create appears and a draft-deleted one doesn't (D14). User files live in
+ * the personal project's manifest, so they list their live rows.
+ */
+function listsThroughProjectManifest(scheme: ProjectContextFsScheme): boolean {
+  return isDrafted(scheme) && !storedInPersonalProject(scheme);
+}
+
 function buildProjectContextFsAdapters(
   assembly: AdapterAssembly,
   projectId: string,
@@ -157,8 +167,7 @@ function buildProjectContextFsAdapters(
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
         },
         scheme,
-        // Only drafted sources list through the manifest; the rest are live rows.
-        ...(isDrafted(scheme) ? { manifestView } : {}),
+        ...(listsThroughProjectManifest(scheme) ? { manifestView } : {}),
       }),
     );
   }

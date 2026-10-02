@@ -27,9 +27,10 @@ Each result also says which `version` it came from, `draft` or `live`.
 **Thread views (D14, D20).** A thread's port reads every source through its
 `ThreadContextView`: each document in the version that thread's writes change
 (`destination` from `domains/file-policy`), so drafted sources read the Work
-draft in draft mode and everything else reads live. Drafted sources (`isDrafted`)
-also list through the project manifest, so a draft-only create appears in `ls`
-and `search`. `version: "live"` on the view reads published text and the live
+draft in draft mode and everything else reads live. Drafted sources this
+project stores (`isDrafted`, minus `user://`, which lives in the personal
+project's manifest) also list through the project manifest, so a draft-only
+create appears in `ls` and `search`. `version: "live"` on the view reads published text and the live
 manifest, and never touches a draft. `read`, `search` and `ls` build their port
 with the version the model named.
 Plain markdown convenience reads and versioned reads share collab serialization.
