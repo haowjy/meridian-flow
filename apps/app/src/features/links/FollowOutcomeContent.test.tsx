@@ -27,6 +27,10 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountResourceReplica: () => resources,
 }));
 vi.mock("@/client/query/useWorks", () => ({ useWorks: () => worksValue }));
+const createContextEntry = vi.fn();
+vi.mock("@/client/api/projects-api", () => ({
+  createContextEntry: (...args: unknown[]) => createContextEntry(...args),
+}));
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 let root: Root;
@@ -78,6 +82,8 @@ beforeEach(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
   worksValue = { works: [{ id: "work-rev", slug: "revision" }], noWork: { id: "no-work" } };
   for (const fn of Object.values(resources)) fn.mockReset();
+  createContextEntry.mockReset();
+  createContextEntry.mockResolvedValue({ status: "created", documentId: "doc-server" });
   resources.reserveDocument.mockResolvedValue(reservation());
   resources.setLocation.mockResolvedValue({ isLatest: true });
   resources.deleteDocument.mockResolvedValue(undefined);
@@ -165,6 +171,21 @@ describe("Create on a missing link", () => {
       expect.objectContaining({ scheme: "scratch", workId: "work-rev", workSlug: "revision" }),
     );
     expect(onOpen).toHaveBeenCalledWith({ documentId: "doc-new" });
+  });
+
+  it("creates a No Work Scratch document on the server, then opens it", async () => {
+    const { onClose, onOpen } = render(missing("scratch://@/side/plan.md"));
+    await act(async () => createButton().click());
+
+    expect(createContextEntry).toHaveBeenCalledWith(
+      "project-1",
+      "scratch",
+      { type: "file", path: "side/plan.md" },
+      { workId: "no-work" },
+    );
+    expect(resources.reserveDocument).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledWith({ documentId: "doc-server" });
   });
 
   it("offers no Create for an address naming another kind of file", () => {

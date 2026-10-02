@@ -10,7 +10,10 @@
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
  * and syncs in the background; the server's move creates any missing folders.
- * A later sync failure lands on the document itself. Nothing about the link
+ * A later sync failure lands on the document itself. No Work's Scratch is the
+ * one area the local replica cannot place a document in (its namespace
+ * protocol names a Work by slug, and No Work has none), so there Create asks
+ * the server first, the way the Scratch tree's own New file does. Nothing about the link
  * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
  */
@@ -20,6 +23,7 @@ import { type ParsedContextAuthority, parseContextUri } from "@meridian/contract
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 
+import { createContextEntry } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
 import { acquireWorksSnapshot } from "@/client/query/works-projection-acquisition";
@@ -88,30 +92,43 @@ export function useCreateLinkedDocument(
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        let work = scratchWork(target, workId, works, noWork?.id ?? null);
+        let noWorkId = noWork?.id ?? null;
+        let work = scratchWork(target, workId, works, noWorkId);
         // The Works list is still loading: a slug it will name is not missing.
-        if (work === "unknown" && works === null) {
+        if (
+          (work === "unknown" && works === null) ||
+          (isNoWorkScratch(target, work) && !noWorkId)
+        ) {
           const snapshot = await queryClient.ensureQueryData({
             queryKey: projectQueryKeys.works(projectId),
             queryFn: () => acquireWorksSnapshot(queryClient, projectId),
           });
-          work = scratchWork(target, workId, snapshot.works, snapshot.noWork.id);
+          noWorkId = snapshot.noWork.id;
+          work = scratchWork(target, workId, snapshot.works, noWorkId);
         }
         if (work === "unknown") throw new Error("The address names no Work this project has");
-        const reservation = await resources.reserveDocument(projectId);
-        if (reservation.content.kind !== "opened")
-          throw new Error("Local document content is unavailable");
-        reserved = { key: reservation.key };
-        documentId = reservation.content.handle.documentId;
-        try {
-          await resources.setLocation(projectId, reservation.key, {
-            scheme: target.scheme,
-            folderPath: target.folderPath,
-            name: target.name,
-            ...work,
+        if (isNoWorkScratch(target, work)) {
+          if (!noWorkId) throw new Error("No Work is not known yet");
+          documentId = await createOnServer(projectId, target, noWorkId);
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.contextCatalogView(projectId, "scratch", noWorkId),
           });
-        } finally {
-          reservation.content.handle.release();
+        } else {
+          const reservation = await resources.reserveDocument(projectId);
+          if (reservation.content.kind !== "opened")
+            throw new Error("Local document content is unavailable");
+          reserved = { key: reservation.key };
+          documentId = reservation.content.handle.documentId;
+          try {
+            await resources.setLocation(projectId, reservation.key, {
+              scheme: target.scheme,
+              folderPath: target.folderPath,
+              name: target.name,
+              ...work,
+            });
+          } finally {
+            reservation.content.handle.release();
+          }
         }
       } catch {
         documentId = null;
@@ -130,6 +147,32 @@ export function useCreateLinkedDocument(
   );
 
   return { create, creating, failed };
+}
+
+function isNoWorkScratch(
+  target: LinkCreationTarget,
+  work: ReturnType<typeof scratchWork>,
+): boolean {
+  return target.scheme === "scratch" && work !== "unknown" && work.workId === null;
+}
+
+async function createOnServer(
+  projectId: string,
+  target: LinkCreationTarget,
+  noWorkId: string,
+): Promise<string> {
+  const path = [target.folderPath, target.name].filter(Boolean).join("/");
+  const result = await createContextEntry(
+    projectId,
+    "scratch",
+    { type: "file", path },
+    {
+      workId: noWorkId,
+    },
+  );
+  if (result.status !== "created" || !result.documentId)
+    throw new Error("No Work Scratch document was not created");
+  return result.documentId;
 }
 
 /**

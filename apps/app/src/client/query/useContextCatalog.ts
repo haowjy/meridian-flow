@@ -79,24 +79,15 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
-/**
- * A pending placement in No Work's Scratch carries a null Work id (the server
- * resolves it to the locked row), while No Work's catalog scope is keyed by
- * that row's id; `noWorkId` is what lets the two meet.
- */
 function locationBelongsToScope(
   location: ReturnType<typeof projectResourceLocation> & {},
   scope: CatalogScope,
-  noWorkId: string | null = null,
 ): boolean {
   if (scope.kind === "project")
     return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
   if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
-  if (scope.kind !== "work") return false;
-  return (
-    location.workId === scope.workId || (location.workId === null && scope.workId === noWorkId)
-  );
+  return scope.kind === "work" && location.workId === scope.workId;
 }
 
 function catalogUri(scheme: ProjectContextTreeScheme, path: string): string {
@@ -112,7 +103,6 @@ function overlayResourceCatalogView(
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
   isKnownVisible: (record: ResourceRecord) => boolean,
-  noWorkId: string | null = null,
 ): CatalogCacheView {
   const entries = new Map(view.entries);
   const invalidatedEntryIds = new Set(view.invalidatedEntryIds);
@@ -133,8 +123,7 @@ function overlayResourceCatalogView(
       installed.uri.startsWith(`${location?.scheme}://`) &&
       `/${installed.path.join("/")}` === location?.path;
     if (installed && !installedMatches) entries.delete(documentId);
-    if (!location || !locationBelongsToScope(location, scope, noWorkId) || installedMatches)
-      continue;
+    if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
 
     const sourceId =
       [...entries.values()].find(
@@ -218,7 +207,6 @@ export function accessibleResourceCatalogView(
   projectId: string,
   scope: CatalogScope,
   record: ResourceRecord,
-  noWorkId: string | null = null,
 ): CatalogCacheView {
   return overlayResourceCatalogView(
     projectId,
@@ -226,7 +214,6 @@ export function accessibleResourceCatalogView(
     emptyCatalogView(scope),
     [record],
     () => true,
-    noWorkId,
   );
 }
 

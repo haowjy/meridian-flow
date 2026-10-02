@@ -439,8 +439,12 @@ export function installCanonicalRefresh(input: {
   )
     return null;
   const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
+  // A catalog observation names its Work by id; a named Work also carries its
+  // slug, and No Work (`@/`) carries none, exactly as catalog installation
+  // derives it from the entry's URI. Only a Work-scoped location with no Work
+  // id at all is incomplete.
   if (
-    (workScoped && (input.location.workId != null) !== (input.location.workSlug != null)) ||
+    (workScoped && input.location.workId == null) ||
     (!workScoped && (input.location.workId !== null || input.location.workSlug != null))
   )
     throw new Error("Canonical observation has incomplete Work authority");
