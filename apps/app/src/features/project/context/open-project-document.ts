@@ -38,6 +38,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
 } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
@@ -46,6 +47,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
+import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
@@ -224,11 +226,19 @@ type NavigationAdapterDependencies = {
     >;
     openDocument: import("@/core/resources/account-resource-replica").AccountResourceReplica["openDocument"];
   } | null;
+  /** The project's locked No Work row, once known. */
+  noWorkId?: () => string | null;
 };
 
+/**
+ * Where a local record opens. A placement in No Work's Scratch carries a null
+ * Work id until the server answers; it opens in No Work's scope, keyed by the
+ * locked row's id, as the server's answer will.
+ */
 function localFileForRecord(
   projectId: string,
   record: ResourceRecord,
+  noWorkId: string | null,
 ): {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
@@ -238,9 +248,11 @@ function localFileForRecord(
   if (record.resource.content.kind !== "exact") return null;
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, location.workId);
+  const workId =
+    location.workId ?? (isWorkScopedProjectContextScheme(location.scheme) ? noWorkId : null);
+  const scope = contextCatalogScope(projectId, location.scheme, workId);
   if (!scope) return null;
-  const projected = accessibleResourceCatalogView(projectId, scope, record);
+  const projected = accessibleResourceCatalogView(projectId, scope, record, noWorkId);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
     record.resource.identity.documentId,
   );
@@ -248,7 +260,7 @@ function localFileForRecord(
   if (!file || entry?.kind !== "file") return null;
   return {
     scheme: location.scheme,
-    workId: location.workId,
+    workId,
     file,
     entry,
   };
@@ -301,7 +313,11 @@ export class ProjectDocumentNavigationAdapter {
       if (local.kind === "opened") {
         const prepared = local.handle;
         try {
-          const resolved = localFileForRecord(projectId, local.record);
+          const resolved = localFileForRecord(
+            projectId,
+            local.record,
+            this.dependencies.noWorkId?.() ?? null,
+          );
           if (!resolved) return { kind: "unavailable", reason: "deleted" };
           if (!isCurrent()) return { kind: "cancelled" };
           const committed = await this.commitFile({
@@ -458,6 +474,11 @@ export function ProjectDocumentNavigationProvider({
   const resources = useOptionalAccountResourceReplica();
   const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
+  // Read through a ref so the adapter (and every open in flight) survives the
+  // Works list loading.
+  const { noWork } = useWorks(projectId);
+  const noWorkId = useRef<string | null>(null);
+  noWorkId.current = noWork?.id ?? null;
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
@@ -467,6 +488,7 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         resources,
+        noWorkId: () => noWorkId.current,
       }),
     }),
     [openContextRoute, openTab, opener, projectId, captureNavigation, resources],
