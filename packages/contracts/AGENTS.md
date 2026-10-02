@@ -29,6 +29,13 @@ runtime shapes, and observability records.
   are projections; do not re-declare an effort set or tool alias map.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.
+- `document-href.ts` is the one place a standard Markdown link's destination
+  is resolved (`resolveDocumentHref`), spelled (`spellDocumentHref`), and
+  matched to a catalog path (`matchDocumentPath`). Both link resolvers, the
+  Editor clipboard, `@` insertion, LinkForm and the composer's reference
+  spelling call it. Never format a destination from a raw URI or
+  re-implement relative resolution: two copies of it once disagreed, and a raw
+  `#` or `%` in a filename silently names another document.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.

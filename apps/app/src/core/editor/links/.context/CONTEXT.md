@@ -6,7 +6,6 @@ Reference depth. Read [`AGENTS.md`](../AGENTS.md) first.
 
 ```ts
 export type LinkTarget =
-  | { kind: "wikilink"; name: string }   // [[The Second Gate]]
   | { kind: "scheme"; uri: string }      // manuscript://…, scratch://…
   | { kind: "relative"; path: string }   // chapter-213.md, ../notes/kael.md
   | { kind: "external"; url: string };   // http, https, mailto
@@ -15,30 +14,34 @@ classifyLinkTarget(href: string): LinkTarget | null
 documentLinkTarget(target: LinkTarget, baseUri: string): DocumentLinkTarget | null
 normalizeLinkHref(input: string): string | null
 linkTargetHref(target: LinkTarget): string
+linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
 ```
 
-The three internal kinds line up one-for-one with `DocumentLinkTarget` in
+There are no wikilinks: `[[name]]` is text wherever it appears. The two
+internal kinds line up one-for-one with `DocumentLinkTarget` in
 `@meridian/contracts/protocol`, which is what `POST /api/projects/:projectId/
 links/resolve` takes. `baseUri` is the URI of the document holding the link;
-only `relative` needs it and only the caller knows it.
+only `relative` needs it and only the caller knows it. `linkTargetAddress`
+resolves either kind to its canonical Context URI through `resolveDocumentHref`
+(`@meridian/contracts`), the one href module both resolvers use;
+`link-address.ts` also holds the filename rule (`documentFileName`) and the
+address of a new document beside its holder (`siblingDocumentAddress`).
 
 Two directions, one fence. `classifyLinkTarget` reads an href already in the
 document — from the markdown parser, an LLM, or this module — and asks what it
 is. `normalizeLinkHref` reads what a writer typed and asks what to store; the
-one thing it adds is the missing `https://`, last, so a wikilink, a scheme URI,
-and a relative path keep their own meaning. The difference shows on a bare
+one thing it adds is the missing `https://`, last, so a Context URI and a
+relative path keep their own meaning. The difference shows on a bare
 hostname: `example.com` in an href is a path (markdown never adds a scheme),
 and `example.com` in the form is a website.
 
 | href | classify | normalize |
 |---|---|---|
-| `[[The Second Gate]]` | wikilink | `[[The Second Gate]]` |
-| `[[ Warden Ilsever ]]` | wikilink | `[[Warden Ilsever]]` |
-| `[[Kael\|the warden]]` | null | null (an href is destination-only; display text is stored in linked prose) |
 | `manuscript://appendix/charter` | scheme | unchanged |
 | `scratch://@revision-pass/notes.md` | scheme | unchanged |
 | `chapter-213.md`, `../notes/kael.md` | relative | unchanged |
 | `example.com` | relative | `https://example.com` |
+| `/chapter.md` | relative (resolves to nothing) | null (there is no project root) |
 | `https://…`, `mailto:…`, `//host/p` | external | unchanged (`//` gains `https:`) |
 | `javascript:`, `data:`, `ftp://` | null | null |
 
@@ -120,22 +123,25 @@ The navigator is where a follow goes. The resolver is where every rendered
 internal link's state comes from, and the two share one cache, so a click on a
 link the writer can already see resolved opens the document with no round trip.
 
-`createLinkResolution` keys answers by `linkTargetHref(target)` — the
-classifier's own spelling — so `[[ The Second Gate ]]` and `[[The Second Gate]]`
-ask once between them. Three states are answers (`pending`, `resolved`,
-`unresolved`) and a fourth outcome is not: a request that THROWS caches nothing
-and renders nothing, because a link the editor could not ask about must never
-be drawn as a link that does not exist.
+The link store also takes `registerFollowHandlers({ dismiss, retry })`. The
+follow-outcome dialog mounts through the chrome host, not beside the follower,
+so its Close, Cancel, and Try again reach the follower through
+`dismissFollow()` and `retryFollow()`; only the follower knows which follow
+owns what is shown. With nothing registered, `dismissFollow()` just clears.
 
-Null from the port covers both "nothing matched" and "several did": ambiguity
-resolves to nothing rather than to a guess, and the writer sees the same
-dashed link either way. The `[[` menu is where ambiguity is named, before the
-link is written.
+`createLinkResolution` keys answers by `linkTargetHref(target)` — the
+classifier's own spelling. Three states are answers (`pending`, `resolved`,
+`unresolved`) and a fourth outcome is not: a request that THROWS caches
+nothing, and the link draws as a filled chip in its own family, because a link
+the editor could not ask about must never be drawn as a link that does not
+exist. Addresses are unique, so there is no "several documents" state: a link
+names one document or none.
 
 ### A registration is a generation
 
 `registerResolver` is the whole invalidation mechanism; there is no second verb
-that drops answers. Registering starts a generation, and that generation owns
+that drops answers. A writer's Try again follows a failed link, and a failure
+caches nothing, so it is simply asked again. Registering starts a generation, and that generation owns
 everything true of it:
 
 | It owns | Which means |
@@ -151,30 +157,40 @@ not hold:
   null and touches nothing live. It cannot settle the promise a question asked
   AFTER the change is waiting on. A store that looked its waiter up by href
   instead answered the new question null while the cache held the right
-  document, so the follow said nothing carries that name.
+  document, so the follow said nothing was at that address.
 - An abandoned generation's promises decrement their own counter, so they never
   admit work into the live one and the live counter never goes negative. A
   shared counter reset at invalidation admitted twice the limit and then drifted
   below zero, which is no limit at all.
 
 A promise cannot be recalled, so retiring a generation drops its queue and
-answers every waiter null right away; whatever the port still returns lands on
-an object nothing can reach.
+abandons what is in flight; whatever the port still returns lands on an object
+nothing can reach. What happens to the waiter depends on who is waiting:
+
+- A `resolve()` waiter (a click) is asked again in the generation that replaced
+  its own, and settles with that answer. The writer asked to go somewhere, and a
+  catalog moving underneath them is not an answer; mapping retirement to "could
+  not be checked" would also blur a failed request with an unasked one.
+- A `request()` question (the decorations) settles null and is dropped. The new
+  generation publishes, and the decoration scan asks again.
+- Unregistering or destroying the port leaves no generation to carry anything
+  into, so every waiter settles null.
 
 The app registers again whenever the scope or the project's document catalog
 changes (see
-[`features/editor/surfaces/link/.context/CONTEXT.md`](../../../../features/editor/surfaces/link/.context/CONTEXT.md)),
+[`features/links/.context/CONTEXT.md`](../../../../features/links/.context/CONTEXT.md)),
 so a change landing while questions are in flight is the ordinary case here,
 not an exotic one.
 
 ### Server authority
 
-All five canonical Context schemes resolve through the same server port. Wiki
-names search project/personal content plus the selected Work/no-Work, not other
-Works. An explicit canonical Work slug may navigate to that Work in the same
-  project; contextual scratch/uploads use the host's selected Work and `@/` is
-  explicit No Work. The server gets personal scope from authenticated identity.
-There is no legacy `work://` adapter or client-side title-search fallback.
+All canonical Context schemes resolve through the same server port, by
+address only: the exact path, or the path with its final extension omitted
+when exactly one document fits (`matchDocumentPath`). An explicit canonical
+Work slug may navigate to that Work in the same project; contextual
+scratch/uploads use the host's selected Work and `@/` is explicit No Work. The
+server gets personal scope from authenticated identity. Nothing searches by
+name or title.
 Submitted transcript `(documentId, uri)` authority remains separate from syntax
 lookup; rendering a title does not adopt it as an attachment.
 
@@ -193,15 +209,59 @@ for. Both halves matter:
   update is the one ProseMirror refuses to apply. The delay also coalesces a
   burst of answers into one redraw.
 
-ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
-`surfaces/link/link-surfaces.css` reaches the anchor through
-`a:has([data-link-state="unresolved"])`
-— the underline belongs to the anchor and a descendant cannot call it off.
-  That nesting is load-bearing: a change to it is a silently unstyled
-  unresolved link.
+ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`,
+one span per text node, while the link mark (priority 1000, outermost) renders
+one `<a>` around the whole label. The chip is drawn on the `<a>`: each span
+carries `data-link-chip-part` and `data-link-chip-icon`, and the link chip
+stylesheet reaches the anchor through `a:has([data-link-chip-part])`. So
+`[Lin **Feng**]` is one chip with a bold word in it, not two. That nesting is
+load-bearing: a mark ranked above the link would split the `<a>`, and a change
+to the decoration shape is a silently undrawn chip.
 
-Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
-zero extra attributes, and no peer ever receives a resolution.
+A React surface with no document to scan (the chat transcript) does the same
+through `createLinkRequester`: each shown link `watch`es its href, one
+requester per surface asks about the whole watched set in one microtask-
+coalesced `request()` on mount and on every publish, and each link only reads
+its answer. Asking per link costs links × publishes.
+
+Nothing here is stored. Law 9 is the reason: an LLM's
+`[Chapter 214](chapter-214.md)` needs zero extra attributes, and no peer ever
+receives a resolution.
+
+## Which chip a link draws
+
+`link-chip.ts` is the one presentation rule for internal links, and every
+surface draws from it: the transcript and the composer on their own element
+(`linkChipAttributes`), the Editor on the decoration spans inside its `<a>`
+(`linkChipPartAttributes`).
+
+| Answer | Chip | Icon |
+|---|---|---|
+| resolved | filled | the resolved document's scheme |
+| unresolved | dashed | the target's own family |
+| pending, failed, not asked | filled | the target's own family |
+
+A scheme URI knows its family from its prefix and a relative path from the
+holder's `baseUri`. The one link that cannot know it yet is a relative path
+before the holder's URI arrives; it draws the generic `file` icon (the registration states it: `registerResolver(resolve,
+{ baseUri })`, read back as `resolution.baseUri`), so neither waits on an
+answer for its icon. An exact
+reference (`referenceChip`) is its URI's family, dashed once its document is
+gone. External targets get no chip.
+
+The seam: core emits the chip attributes, never an image. The app owns the
+icon data and turns each family into a `--link-chip-icon` mask image keyed by
+the icon attribute, on the element or on the `<a>` holding it
+(`components/app/link-chip/`). The alternatives were an image passed into
+core (core would import app icon data), a per-element inline style (the
+Editor's decorations could not carry it without a second hook), and a link
+mark view writing state onto its own `<a>` (a second drawing path beside the
+decorations, and attribute writes ProseMirror's DOM observer would see).
+
+Drawing changes nothing about editing. The label stays ordinary marked text;
+the icon is a pseudo-element, so it is not in the document, the clipboard, or
+the caret's path; `inclusive: false` still keeps typing at either edge out of
+the link (`link-chip-editing.test.ts`).
 
 ## Where the mark's own fences are
 
@@ -243,7 +303,23 @@ applying peer writes.
 
 Internal links have no browser `href`. Their validated stored target travels in
 `data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
-codec (including wikilink aliases). The app's click handler reads the semantic
+codec (`[label](destination)`).
+
+A relative href means something only beside its holder, so the clipboard also
+carries where each internal link points (`link-clipboard.ts`). Copying records
+`data-meridian-address`, the canonical Context URI plus any fragment or query
+(`resolveDocumentHref(href, holderUri)`), beside the href as written; the
+address-recording `clipboardSerializer` is a prop of the link clipboard plugin,
+whose state is the editor's resolution (`baseUri` is the holder). The text
+flavour (`markdownClipboardSerializer`) spells every internal link as its full
+address through `linksAsAddresses`, so it means the same thing in another app
+or through the Markdown paste door. On paste the sanitizer keeps a well-formed
+address, and the plugin's `transformPastedHTML` (which runs after it) re-spells
+each recorded link with `spellDocumentHref(holderUri, uri)`: relative within the
+holder's area, the full URI across areas or from a document with no address.
+The chat composer takes the full address. A link with no recorded address
+(pasted from outside the app) keeps its href. Nothing enters the schema or the
+stored Markdown. The app's click handler reads the semantic
 target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and

@@ -108,3 +108,25 @@ it("preserves viewer classification while projecting its namespace", () => {
     },
   });
 });
+
+it("projects No Work's Scratch as a tab of the No Work Editor, and a named Work's as that Work's", () => {
+  const scratchTab: ContextTab = { ...serverTab, scheme: "scratch", path: "/a.md", name: "a.md" };
+  const scratch = (location: { workId: string; workSlug: string | null }): ResourceRecord => {
+    const base = record();
+    return {
+      ...base,
+      resource: {
+        ...base.resource,
+        canonical: { scheme: "scratch", path: "/a.md", name: "a.md", ...location },
+      },
+    };
+  };
+  const noWork = projectResourceTab("project", scratchTab, [
+    scratch({ workId: "no-work-row", workSlug: null }),
+  ]);
+  expect(noWork.kind === "projected" && noWork.tab).not.toHaveProperty("workId");
+  const named = projectResourceTab("project", scratchTab, [
+    scratch({ workId: "work-a", workSlug: "drafting" }),
+  ]);
+  expect(named.kind === "projected" && named.tab).toMatchObject({ workId: "work-a" });
+});

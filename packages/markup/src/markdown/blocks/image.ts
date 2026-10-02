@@ -9,9 +9,8 @@
  * result is byte-identical to what the picture spelled before it was touched.
  */
 
-import { type MdastImage, type MdastWikiLinkImage, stringifyBlock } from "../../helpers.js";
+import { type MdastImage, stringifyBlock } from "../../helpers.js";
 import type { BlockCodec, ParseContext, PMNode } from "../../types.js";
-import { formatWikilink, wikilinkTarget } from "../wikilink-target.js";
 import {
   type ImageHtmlAttributes,
   imageHtmlTag,
@@ -19,33 +18,20 @@ import {
   parseImageHtmlAst,
 } from "./image-html.js";
 
-export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
+export const imageCodec: BlockCodec<MdastImage> = {
   name: "image",
 
   serialize(node, ctx) {
     const image = imageWireAttributes(node, ctx);
     if (image.width !== null) return imageHtmlTag(image);
 
-    const target = wikilinkTarget(image.url);
     return stringifyBlock(ctx, {
       type: "paragraph",
-      children: [
-        target === null
-          ? { type: "image", url: image.url, alt: image.alt, title: image.title }
-          : { type: "wikiLinkImage", target, alt: image.alt, title: image.title },
-      ],
+      children: [{ type: "image", url: image.url, alt: image.alt, title: image.title }],
     });
   },
 
   parse(ast, ctx) {
-    if (ast.type === "wikiLinkImage") {
-      return imageNodeFromAttributes(ctx, {
-        url: formatWikilink(ast.target),
-        alt: ast.alt ?? null,
-        title: ast.title ?? null,
-        width: null,
-      });
-    }
     if (ast.type === "image") {
       return imageNodeFromAttributes(ctx, {
         url: ast.url,
@@ -68,15 +54,9 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
  * guessing an id would write a reference that can never render.
  */
 export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
-  const target = wikilinkTarget(tag.url);
   const assetDocumentId = tag.url === "" ? null : ctx.assetPathResolver.assetForPath(tag.url);
   return ctx.schema.node("image", {
-    src:
-      target !== null
-        ? formatWikilink(target)
-        : assetDocumentId
-          ? `asset:${assetDocumentId}`
-          : tag.url,
+    src: assetDocumentId ? `asset:${assetDocumentId}` : tag.url,
     alt: tag.alt,
     title: tag.title,
     width: tag.width,

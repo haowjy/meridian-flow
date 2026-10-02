@@ -5,7 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer, type ComposerSubmitEnvelope, type ComposerSubmitOutcome } from "./Composer";
 import type { ComposerChatCommand } from "./command";
-import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
+import {
+  type ComposerReferenceAttrs,
+  composerReferenceContent,
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "./composer-document";
 
 vi.mock("@lingui/react", () => ({
   useLingui: () => ({ i18n: { _: (descriptor: { message: string }) => descriptor.message } }),
@@ -158,5 +163,37 @@ describe("Composer chat verbs", () => {
     const onSubmit = await render({ initialDraft: draft("/compact Keep the names") });
     await pressEnter();
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Composer references", () => {
+  it("draws a reference atom as a link chip in its URI's family", async () => {
+    // Branded ids and URIs: the fixture states them as plain strings.
+    const reference = {
+      documentId: "01900000-0000-7000-8000-000000000001",
+      uri: "kb://characters/Kael.md",
+      fileType: "markdown",
+      authority: { kind: "project", projectId: "01900000-0000-7000-8000-000000000002" },
+      label: "Kael",
+      imageCapable: false,
+      upload: null,
+    } as unknown as ComposerReferenceAttrs;
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Ask " }, composerReferenceContent(reference)],
+        },
+      ],
+    };
+    await render({ initialDraft: { ...serializeComposerDraft(doc).draft } });
+
+    await vi.waitFor(() => {
+      const atom = host.querySelector("[data-composer-reference]");
+      expect(atom?.getAttribute("data-link-chip")).toBe("filled");
+      expect(atom?.getAttribute("data-link-chip-icon")).toBe("kb");
+      expect(atom?.textContent).toBe("Kael");
+    });
   });
 });

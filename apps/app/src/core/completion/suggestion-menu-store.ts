@@ -53,6 +53,12 @@ export type InternalSuggestionSession<TItem, TMeta = null> = {
   meta: TMeta;
   choose: (item: TItem, action: SuggestionChoiceAction) => void;
   choosable?: (item: TItem) => boolean;
+  /**
+   * Whether a row may take the highlight on its own when a session opens or
+   * its rows change. False keeps a row choosable by arrow or pointer but never
+   * the answer to a bare Enter: with no default row, Enter is the host's.
+   */
+  defaultActive?: (item: TItem) => boolean;
   /** Keep loading/empty feedback visible without inventing a selectable row. */
   keepOpenWhenEmpty?: boolean;
   /** Handles Escape within a hierarchical session; false hands it back to the host. */
@@ -155,7 +161,8 @@ export function createInternalSuggestionLifecycle<TItem, TMeta = null>(
     const count = session?.items.length ?? 0;
     for (let index = 0; index < count; index += 1) {
       const item = session?.items[index];
-      if (item !== undefined && choosable(index)) return session?.rowId(item) ?? null;
+      if (item !== undefined && choosable(index) && (session?.defaultActive?.(item) ?? true))
+        return session?.rowId(item) ?? null;
     }
     return null;
   };

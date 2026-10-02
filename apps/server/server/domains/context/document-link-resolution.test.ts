@@ -89,21 +89,19 @@ function fixture() {
 }
 
 describe("catalog-backed document links", () => {
-  it("matches titles, filenames and aliases only in current scopes", async () => {
+  it("resolves the exact path first, else the one path with its extension omitted", async () => {
     const f = fixture();
-    const local = f.add(a, "scratch", "notes/Gate.md", ["North entrance"]);
-    f.add(b, "scratch", "Gate.md");
-    f.add(b, "scratch", "Other.md");
-    expect(await f.resolve({ kind: "wikilink", name: "gate" })).toMatchObject({
-      documentId: local.entryId,
+    const exact = f.add(project, "manuscript", "Gate");
+    const withExtension = f.add(project, "manuscript", "Gate.md");
+    f.add(project, "manuscript", "Map.md");
+    f.add(project, "manuscript", "Map.mdx");
+    expect(await f.resolve({ kind: "scheme", uri: "manuscript://Gate" })).toMatchObject({
+      documentId: exact.entryId,
     });
-    expect(await f.resolve({ kind: "wikilink", name: "North entrance" })).toMatchObject({
-      documentId: local.entryId,
+    expect(await f.resolve({ kind: "scheme", uri: "manuscript://Gate.md" })).toMatchObject({
+      documentId: withExtension.entryId,
     });
-    expect(await f.resolve({ kind: "wikilink", name: "Other" })).toBeNull();
-    expect(await f.resolve({ kind: "wikilink", name: "Gate" }, null)).toBeNull();
-    f.add(project, "manuscript", "Gate.md");
-    expect(await f.resolve({ kind: "wikilink", name: "Gate" })).toBeNull();
+    expect(await f.resolve({ kind: "scheme", uri: "manuscript://Map" })).toBeNull();
   });
   it.each([
     [project, "manuscript", "chapters/Gate.md"],
@@ -143,6 +141,20 @@ describe("catalog-backed document links", () => {
     ).toBeNull();
     expect(await f.resolve({ kind: "scheme", uri: "work://a/Gate.md" })).toBeNull();
   });
+  it("ignores a fragment or query on a scheme or relative href", async () => {
+    const f = fixture();
+    const file = f.add(project, "manuscript", "volume-1/chapter.md");
+    expect(
+      await f.resolve({ kind: "scheme", uri: "manuscript://volume-1/chapter.md#scene-2" }),
+    ).toMatchObject({ documentId: file.entryId });
+    expect(
+      await f.resolve({
+        kind: "relative",
+        baseUri: "manuscript://volume-2/other.md",
+        path: "../volume-1/chapter.md?view=outline#scene-2",
+      }),
+    ).toMatchObject({ documentId: file.entryId });
+  });
   it("does not use another user's personal scope", async () => {
     const f = fixture();
     const file = f.add(user, "user", "Secret.md");
@@ -150,9 +162,9 @@ describe("catalog-backed document links", () => {
   });
   it("observes current catalog files and deletion without a separate resolution cache", async () => {
     const f = fixture();
-    expect(await f.resolve({ kind: "wikilink", name: "Future" })).toBeNull();
+    expect(await f.resolve({ kind: "scheme", uri: "manuscript://Future" })).toBeNull();
     const file = f.add(project, "manuscript", "Future.md");
-    expect(await f.resolve({ kind: "wikilink", name: "Future" })).toMatchObject({
+    expect(await f.resolve({ kind: "scheme", uri: "manuscript://Future" })).toMatchObject({
       documentId: file.entryId,
     });
     f.catalog.commit(project, [{ operation: "delete", entryId: file.entryId }]);

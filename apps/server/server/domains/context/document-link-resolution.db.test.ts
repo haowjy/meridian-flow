@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       }
     });
-    it("does not search another Work's titles and resolves archived but not deleted authority", async () => {
+    it("resolves a contextual address in the current Work only, and archived but not deleted authority", async () => {
       const r = resolver();
       const local = await add("scratch", "Gate", a);
       await add("scratch", "Gate", b);
@@ -98,7 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "wikilink", name: "Gate" },
+          target: { kind: "scheme", uri: "scratch://Gate.md" },
         }),
       ).toMatchObject({ documentId: local });
       expect(
@@ -106,7 +106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: null,
-          target: { kind: "wikilink", name: "Gate" },
+          target: { kind: "scheme", uri: "scratch://Gate.md" },
         }),
       ).toBeNull();
       await database.current.update(works).set({ archivedAt: new Date() }).where(eq(works.id, b));
@@ -136,7 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: p,
           userId: u,
           workId: a,
-          target: { kind: "wikilink", name: "Gate" },
+          target: { kind: "scheme", uri: "scratch://Gate" },
         }),
       ).toBeNull();
     });

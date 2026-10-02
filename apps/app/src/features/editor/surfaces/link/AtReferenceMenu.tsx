@@ -1,10 +1,13 @@
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { ChevronLeft, ChevronRight, FileText, Folder, Image } from "lucide-react";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import { ChevronLeft, ChevronRight, FilePlus2, FileText, Folder, Image } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import {
   closedSuggestionMenu,
   type ReferenceBrowserMeta,
+  type ReferenceMenuRow,
   type ReferenceRow,
 } from "@/core/completion";
 import { getAtReferenceMenu } from "@/core/editor/extensions/at-reference";
@@ -12,7 +15,7 @@ import { schemeLabel } from "@/features/project/context/context-schemes";
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 
 const NO_SUBSCRIPTION = () => () => {};
-const closed = () => closedSuggestionMenu<ReferenceRow, ReferenceBrowserMeta>();
+const closed = () => closedSuggestionMenu<ReferenceMenuRow, ReferenceBrowserMeta>();
 export function AtReferenceMenu({ editor }: EditorChromeSurfaceProps) {
   const menu = getAtReferenceMenu(editor);
   return (
@@ -90,20 +93,49 @@ export function ReferenceSuggestionMenu({
           </div>
         ) : undefined
       }
-      rows={snapshot.items.map((row) => ({
+      rows={snapshot.items.map((row, index) => ({
         key: row.rowId,
-        content: (
-          <>
-            <ReferenceIcon row={row} />
-            <span className="truncate">{row.label}</span>
-            <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">{row.location}</span>
-            {row.kind !== "file" ? <ChevronRight aria-hidden /> : null}
-          </>
-        ),
+        before:
+          // The link-ahead row is a different kind of answer: everything above
+          // it exists, and it does not yet.
+          row.kind === "link-ahead" && index > 0 ? (
+            <div className="my-1 border-border-subtle border-t" />
+          ) : undefined,
+        content:
+          row.kind === "link-ahead" ? (
+            <>
+              <FilePlus2 aria-hidden />
+              {/* It writes a link, not a document: Create is offered when the
+                  link is followed. */}
+              <span className="truncate">{t`Link to “${row.label}” (not written yet)`}</span>
+            </>
+          ) : (
+            <>
+              <ReferenceIcon row={row} />
+              <span className="truncate">{row.label}</span>
+              <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">
+                {rowLocation(row)}
+              </span>
+              {row.kind !== "file" ? <ChevronRight aria-hidden /> : null}
+            </>
+          ),
       }))}
     />
   );
 }
+
+/**
+ * Where a file lives, so two documents with one name are told apart: its
+ * folder, after the area it is in unless that is the manuscript.
+ */
+function rowLocation(row: ReferenceRow): string {
+  if (row.kind !== "file") return row.location;
+  const parsed = parseContextUri(row.action.reference.uri);
+  if (!parsed.ok || parsed.value.scheme === "manuscript") return row.location;
+  const area = schemeLabel(parsed.value.scheme);
+  return row.location ? `${area}/${row.location}` : area;
+}
+
 function ReferenceIcon({ row }: { row: ReferenceRow }) {
   if (row.kind === "file")
     return row.fileKind === "asset" ? <Image aria-hidden /> : <FileText aria-hidden />;

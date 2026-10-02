@@ -6,15 +6,10 @@ import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
-import { remarkWikiLink } from "./markdown/wikilink.js";
 
 const RAW_HTML_CANDIDATE = /<(?:!--|!\[CDATA\[|[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?=[\t\n\f\r />]))/;
-const MARKDOWN_SYNTAX_PARSER = unified().use(remarkParse).use(remarkWikiLink);
-const MDX_SYNTAX_PARSER = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(remarkMdx)
-  .use(remarkWikiLink);
+const MARKDOWN_SYNTAX_PARSER = unified().use(remarkParse);
+const MDX_SYNTAX_PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMdx);
 
 export function escapeProseForMdxIngress(text: string): string {
   const protectedText = protectRawHtmlLiterals(text);
@@ -36,14 +31,6 @@ function escapePreparedMdxIngress(
   text: string,
   enclosedDestinationStarts: ReadonlySet<number>,
 ): string {
-  const wikilinks = new Map<number, number>();
-  if (text.includes("[["))
-    visitMarkdownNodes(MARKDOWN_SYNTAX_PARSER.parse(text), (node) => {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-      if (node.type === "wikiLink" && typeof start === "number" && typeof end === "number")
-        wikilinks.set(start, end);
-    });
   const lines = text.split("\n");
   const lineStarts: number[] = [];
   let sourceOffset = 0;
@@ -84,9 +71,7 @@ function escapePreparedMdxIngress(
       continue;
     }
 
-    out.push(
-      escapeProseSegment(line, lineStarts[index] ?? 0, enclosedDestinationStarts, wikilinks),
-    );
+    out.push(escapeProseSegment(line, lineStarts[index] ?? 0, enclosedDestinationStarts));
   }
   return out.join("\n");
 }
@@ -308,31 +293,14 @@ function tryConsumeInlineCodeSpan(text: string, start: number): number | null {
   return null;
 }
 
-function tryConsumeWikilink(text: string, start: number): number | null {
-  if (text[start] !== "[" || text[start + 1] !== "[") return null;
-  const close = text.indexOf("]]", start + 2);
-  if (close === -1) return null;
-  const target = text.slice(start + 2, close);
-  if (!target.trim() || target.includes("|") || target.includes("]")) return null;
-  return close + 2 - start;
-}
-
 function escapeProseSegment(
   segment: string,
   segmentOffset: number,
   enclosedDestinationStarts: ReadonlySet<number>,
-  wikilinks: ReadonlyMap<number, number>,
 ): string {
   let out = "";
   let i = 0;
   while (i < segment.length) {
-    const wikiEnd = wikilinks.get(segmentOffset + i);
-    if (wikiEnd !== undefined) {
-      const end = wikiEnd - segmentOffset;
-      out += segment.slice(i, end);
-      i = end;
-      continue;
-    }
     if (segment[i] === "\\" && i + 1 < segment.length) {
       out += segment[i] + segment[i + 1];
       i += 2;
@@ -340,14 +308,6 @@ function escapeProseSegment(
     }
     if (segment[i] === "`") {
       const len = tryConsumeInlineCodeSpan(segment, i);
-      if (len !== null) {
-        out += segment.slice(i, i + len);
-        i += len;
-        continue;
-      }
-    }
-    if (segment[i] === "[") {
-      const len = tryConsumeWikilink(segment, i);
       if (len !== null) {
         out += segment.slice(i, i + len);
         i += len;

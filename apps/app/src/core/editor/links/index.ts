@@ -14,6 +14,27 @@ export {
   openLinkForm,
 } from "./LinkSurfaceExtension";
 export {
+  type CreatableLinkScheme,
+  documentFileName,
+  isCreatableLinkScheme,
+  linkAheadAddress,
+  linkTargetAddress,
+} from "./link-address";
+export {
+  LINK_CHIP_ICONS,
+  type LinkChip,
+  type LinkChipIcon,
+  linkChip,
+  linkChipAttributes,
+  linkChipPartAttributes,
+  referenceChip,
+} from "./link-chip";
+export {
+  clipboardLinkAddress,
+  LINK_ADDRESS_ATTRIBUTE,
+  linksAsAddresses,
+} from "./link-clipboard";
+export {
   anchorLinkRange,
   commitLinkDraft,
   type LinkAnchor,
@@ -45,6 +66,7 @@ export {
   linkClickIntent,
   MIDDLE_BUTTON,
 } from "./link-navigation";
+export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
   createLinkResolution,
   type InternalLinkResolver,
@@ -53,6 +75,7 @@ export {
 } from "./link-resolution";
 export {
   createLinkSurface,
+  type FollowHandlers,
   type LinkFollowOutcome,
   type LinkFormRequest,
   type LinkHint,

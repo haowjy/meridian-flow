@@ -1,4 +1,6 @@
 /** Pure Composer document schema, serialization, and exact selection snapshots. */
+
+import { spellDocumentHref } from "@meridian/contracts";
 import type {
   ReferenceOccurrence,
   SkillOccurrence,
@@ -9,14 +11,18 @@ import type {
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { decodeWorkSlug } from "@meridian/contracts/works";
-import { formatWikilink, wikilinkTarget } from "@meridian/markup";
+import { formatMarkdownLink } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { AuthoritativeReference } from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
-import { internalClipboardTarget } from "@/core/editor/links";
+import {
+  clipboardLinkAddress,
+  internalClipboardTarget,
+  LINK_ADDRESS_ATTRIBUTE,
+} from "@/core/editor/links";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -75,7 +81,6 @@ export function mergeComposerDraftSnapshots(
 }
 
 export type ComposerReferenceAttrs = AuthoritativeReference & {
-  spelling: string;
   /** Per-occurrence prose, independent of the catalog title and stable identity. */
   displayText?: string;
   imageCapable: boolean;
@@ -93,6 +98,16 @@ export type ComposerSkillAttrs = {
   description: string;
 };
 
+/**
+ * What a reference reads as in text: the occurrence a sent message carries
+ * (what the model reads) and the plain clipboard form. A standard Markdown
+ * link to the canonical URI, spelled by the href module so a `#` or `%` in a
+ * name stays part of the address the model and a paste read back.
+ */
+export function referenceSpelling(value: ComposerReferenceAttrs): string {
+  return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
+}
+
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
   if (!raw) return null;
@@ -105,7 +120,7 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
   if (
     !value ||
     typeof value !== "object" ||
-    ![value.documentId, value.uri, value.fileType, value.label, value.spelling].every(
+    ![value.documentId, value.uri, value.fileType, value.label].every(
       (field) => typeof field === "string",
     ) ||
     (value.displayText !== undefined && typeof value.displayText !== "string") ||
@@ -153,7 +168,6 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     uri,
     fileType: value.fileType,
     label: value.label,
-    spelling: value.spelling,
     ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
     upload: null,
     imageCapable: classification.kind === "binary" && classification.fileType === "image",
@@ -213,15 +227,14 @@ export const ComposerReferenceNode = Node.create({
                 continue;
               // Manuscript marks carry a target, not admitted attachment identity.
               // Preserve their Markdown rather than inventing a Composer attachment.
-              const target = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+              // Chat has no folder, so a recorded address (the full Context URI
+              // the link named where it was copied) wins over a relative href.
+              const target =
+                clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE)) ??
+                internalClipboardTarget(element.getAttribute("data-meridian-link"));
               if (!target) continue;
               element.replaceWith(
-                document.createTextNode(
-                  formatWikilink(
-                    wikilinkTarget(target) ?? target,
-                    element.textContent ?? undefined,
-                  ),
-                ),
+                document.createTextNode(formatMarkdownLink(element.textContent ?? target, target)),
               );
             }
             return container.innerHTML;
@@ -230,17 +243,14 @@ export const ComposerReferenceNode = Node.create({
       }),
     ];
   },
-  renderText: ({ node }) => {
-    const value = node.attrs.reference as ComposerReferenceAttrs;
-    return formatWikilink(value.uri, value.displayText ?? value.label);
-  },
+  renderText: ({ node }) => referenceSpelling(node.attrs.reference as ComposerReferenceAttrs),
   renderHTML: ({ node, HTMLAttributes }) => {
     const value = node.attrs.reference as ComposerReferenceAttrs;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-composer-reference": JSON.stringify({ ...value, upload: null }),
-        "data-meridian-link": formatWikilink(value.uri),
+        "data-meridian-link": value.uri,
         role: "link",
         tabindex: "0",
         "aria-label": value.displayText ?? value.label,
@@ -377,10 +387,7 @@ export function serializeComposerDraft(
     }
     if (node.type === "composerReference") {
       const value = node.attrs?.reference as ComposerReferenceAttrs;
-      const spelling =
-        value.displayText === undefined
-          ? value.spelling
-          : formatWikilink(wikilinkTarget(value.spelling) ?? value.uri, value.displayText);
+      const spelling = referenceSpelling(value);
       const occurrence: ReferenceOccurrence = {
         type: "reference",
         text: spelling,

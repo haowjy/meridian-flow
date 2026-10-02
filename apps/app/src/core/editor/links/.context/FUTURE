@@ -1,0 +1,10 @@
+# Deferred, link state
+
+- Dashed Editor chips have no accessible description. Chat chips carry
+  `aria-description` in the follow's own words ("No document at that
+  address"). In the Editor the state lives on the
+  decoration spans (`link-resolution-decorations.ts`) inside the link mark's
+  `<a>`, and a description on a generic span is not announced, so a screen
+  reader hears an ordinary link until it is followed. Carry the description on
+  the `<a>` (for example a link mark view reading the surface's resolution),
+  still adding nothing to the schema, the shared document, or the clipboard.

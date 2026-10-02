@@ -381,6 +381,70 @@ describe("namespace record transitions", () => {
     });
   });
 
+  it("installs the observation of a move into No Work's Scratch", () => {
+    const before = local();
+    before.resource.canonical = {
+      scheme: "unfiled",
+      path: "/before.md",
+      name: "before.md",
+      workId: null,
+    };
+    before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.intents = [
+      {
+        ...before.intents[0],
+        intentId: "move",
+        desired: {
+          kind: "set-location",
+          destination: { scheme: "scratch", folderPath: "side", name: "note.md", workId: null },
+        },
+      },
+    ];
+    const submitted = prepareNamespaceAttempt(before, {
+      attemptId: "move-attempt",
+      operationId: "move-operation",
+    });
+    if (!submitted) throw new Error("missing move attempt");
+    const received = recordNamespaceOutcome(submitted.next, "move", "move-attempt", {
+      kind: "operation",
+      receipt: {
+        operationId: "move-operation",
+        command: {
+          kind: "move",
+          sourceUri: "unfiled://before.md",
+          destinationUri: "scratch://@/side/note.md",
+          expected: { kind: "file", nodeId: "document" },
+        },
+        result: { ok: true, value: { movedNodeId: "document", destinationPath: "side/note.md" } },
+      },
+    });
+    if (!received) throw new Error("missing move outcome");
+    const settled = settleNamespaceOutcome(received.next);
+    if (!settled) throw new Error("missing move settlement");
+    // Catalog installation names No Work by the locked row's id and no slug.
+    const location = {
+      scheme: "scratch" as const,
+      path: "/side/note.md",
+      name: "note.md",
+      workId: "no-work-row",
+      workSlug: null,
+    };
+    const refreshed = installCanonicalRefresh({
+      record: settled.next,
+      operationId: "move-operation",
+      location,
+    });
+    expect(refreshed?.next.resource.canonical).toEqual(location);
+    expect(refreshed?.next.resource.obligations.canonicalRefresh).toBeUndefined();
+    expect(() =>
+      installCanonicalRefresh({
+        record: settled.next,
+        operationId: "move-operation",
+        location: { ...location, workId: null, workSlug: undefined },
+      }),
+    ).toThrow("incomplete Work authority");
+  });
+
   it("rejects a receipt for a different immutable source path", () => {
     const before = local();
     before.resource.canonical = {

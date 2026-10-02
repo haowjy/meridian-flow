@@ -54,7 +54,6 @@ import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./exte
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
-import { type WikilinkExtensionOptions, WikilinkSuggestionExtension } from "./extensions/wikilink";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
@@ -102,8 +101,6 @@ export type CreateEditorExtensionsOptions = {
   agentNames?: AgentNameStore;
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
-  /** Mounts the `[[` document menu; a surface with no project offers none. */
-  wikilinks?: WikilinkExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
 };
 
@@ -284,7 +281,6 @@ export function createEditorExtensions({
   markerStore,
   agentNames,
   slashCommands,
-  wikilinks,
   atReferences,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
@@ -299,7 +295,6 @@ export function createEditorExtensions({
       schemaType,
       assetRenderContext,
       slashCommands,
-      wikilinks,
       atReferences,
     }),
     ...collaboration,
@@ -319,11 +314,10 @@ export function createStandaloneEditorExtensions({
   schemaType = "document",
   assetRenderContext,
   slashCommands,
-  wikilinks,
   atReferences,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "wikilinks" | "atReferences"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -370,14 +364,6 @@ export function createStandaloneEditorExtensions({
           }),
         ]
       : []),
-    ...(wikilinks
-      ? [
-          WikilinkSuggestionExtension.configure({
-            ...wikilinks,
-            suggestionHost: (editor) => editorSuggestionHost(editor, "prose"),
-          }),
-        ]
-      : []),
     ...(atReferences
       ? [
           AtReferenceExtension.configure({
@@ -417,7 +403,6 @@ export function createEditorConfig({
   markerStore,
   agentNames,
   slashCommands,
-  wikilinks,
   atReferences,
   editable = true,
   autofocus = false,
@@ -447,7 +432,6 @@ export function createEditorConfig({
         markerStore,
         agentNames,
         slashCommands,
-        wikilinks,
         atReferences,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),

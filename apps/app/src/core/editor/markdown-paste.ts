@@ -6,8 +6,8 @@
  * contains: a writer, or the AI relay they are working with, who pastes
  * headings, lists, fences, tables and links gets headings, lists, fences,
  * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
- * the wire uses, wikilinks included, so nothing here has to know what markdown
- * looks like.
+ * the wire uses, so nothing here has to know what markdown looks like. Pasted
+ * `[[name]]` is text, like everywhere else.
  *
  * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
  * and MDX reads `<` and `{` as syntax. Fiction contains both.
@@ -33,6 +33,8 @@ import {
   Slice,
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
+
+import { linksAsAddresses } from "./links";
 
 /**
  * Does this parse carry anything plain-text paste would have thrown away?
@@ -118,12 +120,17 @@ function defaultPlainTextPaste(): Slice {
   return undefined as unknown as Slice;
 }
 
-/** Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor structure. */
+/**
+ * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
+ * structure. Internal links go out as full addresses, so the text means the
+ * same thing wherever it lands, holder or not.
+ */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
-  slice,
+  copied,
   view,
 ) => {
   const schema = view.state.schema;
+  const slice = linksAsAddresses(copied, view.state);
   const blocks: PMNode[] = [];
   if (slice.content.firstChild?.isInline) {
     blocks.push(schema.nodes.paragraph.create(null, slice.content));

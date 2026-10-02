@@ -53,7 +53,6 @@ it("copies a reference as scoped Markdown and restores its structured identity",
     },
     label: "Notes",
     displayText: "My notes",
-    spelling: "[[Notes]]",
     imageCapable: false,
     upload: {
       intakeId: "owned",
@@ -74,7 +73,7 @@ it("copies a reference as scoped Markdown and restores its structured identity",
   try {
     editor.commands.selectAll();
     const copied = editor.view.serializeForClipboard(editor.state.selection.content());
-    expect(copied.text).toBe("[[uploads://@revision/notes.md|My notes]]");
+    expect(copied.text).toBe("[My notes](uploads://@revision/notes.md)");
     editor.commands.clearContent();
     editor.view.pasteHTML(copied.dom.innerHTML, new Event("paste") as ClipboardEvent);
     expect(editor.state.doc.firstChild?.firstChild?.attrs.reference).toEqual({
@@ -93,10 +92,38 @@ it("preserves manuscript reference Markdown without inventing attachment identit
   const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
   try {
     editor.view.pasteHTML(
-      '<a data-meridian-link="[[scratch://@/notes.md]]">My notes</a>',
+      '<a data-meridian-link="scratch://@/notes.md">My notes</a>',
       new Event("paste") as ClipboardEvent,
     );
-    expect(editor.state.doc.textContent).toBe("[[scratch://@/notes.md|My notes]]");
+    expect(editor.state.doc.textContent).toBe("[My notes](scratch://@/notes.md)");
+  } finally {
+    editor.destroy();
+  }
+});
+
+it("takes a copied Editor link's recorded address, since chat has no folder", () => {
+  const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
+  try {
+    editor.view.pasteHTML(
+      '<a data-meridian-link="../volume-2/chapter-1.md" data-meridian-address="manuscript://serial/volume-2/chapter-1.md">Chapter 1</a>',
+      new Event("paste") as ClipboardEvent,
+    );
+    expect(editor.state.doc.textContent).toBe(
+      "[Chapter 1](manuscript://serial/volume-2/chapter-1.md)",
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
+it("keeps a `#` in a pasted address part of the document's name", () => {
+  const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
+  try {
+    editor.view.pasteHTML(
+      '<a data-meridian-link="ch%233.md" data-meridian-address="manuscript://a/ch%233.md">Chapter #3</a>',
+      new Event("paste") as ClipboardEvent,
+    );
+    expect(editor.state.doc.textContent).toBe("[Chapter #3](manuscript://a/ch%233.md)");
   } finally {
     editor.destroy();
   }
@@ -130,7 +157,6 @@ it.each([
       uri: "scratch://@revision/notes.md",
       fileType: "markdown",
       label: "Notes",
-      spelling: "[[Notes]]",
       imageCapable: false,
       upload: null,
       authority: {
@@ -158,7 +184,6 @@ it("normalizes copied UUIDs before deduplicating reference identity", () => {
     uri: "scratch://@revision/notes.md",
     fileType: "markdown",
     label: "Notes",
-    spelling: "[[Notes]]",
     imageCapable: false,
     upload: null,
     authority: { kind: "work", projectId: id, workId: id, workSlug: "revision" },

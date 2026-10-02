@@ -13,6 +13,13 @@ import type { RouteWorkResolution } from "./project-route";
 export type WorkCatalog = AddressCatalog<AddressableWork> & {
   creations: ReadonlyMap<string, WorkCreation>;
   isFetching: boolean;
+  /**
+   * The project's locked No Work row, once known. A No Work chat is bound to
+   * it and a No Work Scratch address carries it, but a route means No Work by
+   * naming no Work, so the row's id resolves to No Work (`none`): one Editor
+   * identity for No Work, however it was reached.
+   */
+  noWorkId?: string | null;
 };
 type WorkNavigation = ReturnType<typeof createProjectNavigation>;
 
@@ -25,6 +32,7 @@ export function resolveRouteWork(
   if (selection.kind === "malformed")
     return { status: "unresolved", reason: "unavailable", workId: null };
   const workId = selection.id;
+  if (catalog.noWorkId && workId === catalog.noWorkId) return { status: "none" };
   const work = catalog.entries?.find((entry) => entry.id === workId);
   if (work) return { status: "present", workId, work };
   const creation = catalog.creations.get(workId);
@@ -55,6 +63,7 @@ export function useWorkCatalog(projectId: string): WorkCatalog {
     entries: works.works ?? NO_WORKS,
     creations: works.creations,
     isFetching: works.isFetching,
+    noWorkId: works.noWork?.id ?? null,
   };
 }
 
@@ -75,10 +84,16 @@ export function useWorkRoute({
 } {
   const accountId = useAccountId();
   const catalog = useWorkCatalog(projectId);
+  const selection = addressWorkSelection(address);
   const routeWork: RouteWorkResolution =
     address.destination.kind === "works-new"
       ? { status: "new" }
-      : resolveRouteWork(addressWorkSelection(address), catalog);
+      : // No Work has no Work screen of its own; only content addresses name it.
+        address.destination.kind === "work" &&
+          selection.kind === "id" &&
+          selection.id === catalog.noWorkId
+        ? { status: "unresolved", reason: "unavailable", workId: selection.id }
+        : resolveRouteWork(selection, catalog);
 
   const [rememberedId, setRememberedId] = useState(() =>
     parseRequestId(readCurrentWork(accountId, projectId)),
@@ -87,6 +102,8 @@ export function useWorkRoute({
   const latest = useRef({ address, navigation, rememberedWork });
   latest.current = { address, navigation, rememberedWork };
 
+  // No Work resolves to `none`, so it is never the remembered Work: it has no
+  // Work screen to return to.
   const activeWorkId = routeWork.status === "present" ? routeWork.workId : null;
   useEffect(() => {
     if (!activeWorkId) return;

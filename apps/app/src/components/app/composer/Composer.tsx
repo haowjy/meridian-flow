@@ -3,7 +3,6 @@
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
-import { formatWikilink } from "@meridian/markup";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip, RotateCcw } from "lucide-react";
@@ -141,11 +140,6 @@ export type ComposerHandle = {
     later?: ComposerDraftSnapshot | null,
     expectedRevision?: number,
   ) => boolean;
-  insertReference: (
-    reference: AuthoritativeReference,
-    spelling: string,
-    imageCapable?: boolean,
-  ) => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
@@ -233,7 +227,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ...catalog,
             insertReference: (current, range, row) => {
               const reference = row.action.reference;
-              const spelling = row.ambiguous ? reference.uri : formatWikilink(reference.label);
               return current
                 .chain()
                 .focus()
@@ -241,7 +234,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   range,
                   composerReferenceContent({
                     ...reference,
-                    spelling,
                     imageCapable: row.fileKind === "asset" && reference.fileType === "image",
                     upload: null,
                   }),
@@ -397,16 +389,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             : submitted,
         );
       },
-      insertReference: (reference, spelling, imageCapable = false) => {
-        if (!editor || editor.isDestroyed) return;
-        editor
-          ?.chain()
-          .focus()
-          .insertContent(
-            composerReferenceContent({ ...reference, spelling, imageCapable, upload: null }),
-          )
-          .run();
-      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -526,7 +508,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ...ready,
               authority: authorityForUpload(scope, ready.uri),
               label: file.name,
-              spelling: formatWikilink(file.name),
               imageCapable: ready.fileType === "image",
               upload: {
                 intakeId,

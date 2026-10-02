@@ -1,5 +1,5 @@
 /**
- * The typed-under menus: `/` (M8, §5.7, mockup 07) and `[[` (§5.5).
+ * The typed-under menus: `/` (M8, §5.7, mockup 07) and `@`.
  *
  * One stylesheet because they are one primitive — `SuggestionMenu` — wearing
  * two triggers. Portalled, hence the `meridian-` prefix rather than a nesting

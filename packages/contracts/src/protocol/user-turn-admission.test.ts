@@ -4,7 +4,7 @@ import { referenceOccurrenceContent, skillOccurrenceContent } from "./user-turn-
 
 const occurrence = {
   type: "reference",
-  text: "[[Gate Map]]",
+  text: "[Gate Map](uploads://@/gate-map.png)",
   documentId: "33333333-3333-4333-8333-333333333333",
   uri: "uploads://@/gate-map.png",
 };
