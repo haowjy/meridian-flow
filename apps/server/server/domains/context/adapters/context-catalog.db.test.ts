@@ -41,6 +41,106 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
+    it("publishes only live manuscript membership while leaving other project sources unchanged", async () => {
+      const db = database.current;
+      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
+      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
+      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
+      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
+      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-membership"));
+      await db.insert(projects).values({
+        id: PROJECT_ID,
+        userId: USER_ID,
+        name: "Catalog Project",
+        slug: "catalog-project",
+      });
+      await db.insert(contextSources).values([
+        { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
+        { id: KB_SOURCE_ID, projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb" },
+      ]);
+      await db.insert(documents).values([
+        {
+          id: LIVE_DOCUMENT_ID,
+          contextSourceId: SOURCE_ID,
+          name: "live",
+          extension: "md",
+        },
+        {
+          id: DRAFT_DOCUMENT_ID,
+          contextSourceId: SOURCE_ID,
+          name: "draft-only",
+          extension: "md",
+        },
+        {
+          id: KB_DOCUMENT_ID,
+          contextSourceId: KB_SOURCE_ID,
+          name: "notes",
+          extension: "md",
+        },
+      ]);
+      const members = new Set([LIVE_DOCUMENT_ID]);
+      const publish = vi.fn();
+      const catalog = createDrizzleContextCatalog(
+        db,
+        { publish },
+        {
+          manifestMembership: {
+            async resolveManifestMembership() {
+              return {
+                documentId: "00000000-0000-4000-8000-000000000809" as never,
+                members: [...members],
+              };
+            },
+          },
+        },
+      );
+      const scope = { kind: "project", projectId: PROJECT_ID } as const;
+      const initial = await catalog.snapshot(scope);
+      const initialFileIds = initial.entries.flatMap((entry) =>
+        entry.kind === "file" ? [entry.entryId] : [],
+      );
+      expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
+      expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
+
+      members.add(DRAFT_DOCUMENT_ID);
+      await catalog.refreshProject(PROJECT_ID);
+      await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
+        kind: "delta",
+        commits: [
+          {
+            changes: expect.arrayContaining([
+              expect.objectContaining({
+                operation: "upsert",
+                entry: expect.objectContaining({ entryId: DRAFT_DOCUMENT_ID }),
+              }),
+            ]),
+          },
+        ],
+      });
+      expect(publish).toHaveBeenCalledTimes(1);
+
+      const applied = await catalog.snapshot(scope);
+      members.delete(DRAFT_DOCUMENT_ID);
+      await catalog.refreshProject(PROJECT_ID);
+      await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
+        kind: "delta",
+        commits: [
+          {
+            changes: expect.arrayContaining([
+              expect.objectContaining({ operation: "delete", entryId: DRAFT_DOCUMENT_ID }),
+            ]),
+          },
+        ],
+      });
+      const discarded = await catalog.snapshot(scope);
+      const discardedFileIds = discarded.entries.flatMap((entry) =>
+        entry.kind === "file" ? [entry.entryId] : [],
+      );
+      expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
+      expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
+      expect(publish).toHaveBeenCalledTimes(2);
+    });
+
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(USER_ID, "catalog"));

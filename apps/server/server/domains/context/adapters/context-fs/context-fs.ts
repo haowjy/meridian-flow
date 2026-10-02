@@ -56,6 +56,7 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
+import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
@@ -163,7 +164,7 @@ function moveFiletypeTransition(
  * catalog metadata only after their location history has been reconciled.
  */
 export class ContextFS implements ContextSchemeAdapter {
-  readonly name: string;
+  readonly name: ContextScheme;
   readonly capabilities: SchemeCapabilities;
 
   private readonly store: ContextDocumentStore;
@@ -897,20 +898,11 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private async resolveVisibleMembership(): Promise<Set<string> | null> {
-    if (this.name !== "manuscript" || !this.manifestView) return null;
-    try {
-      const membership = await this.documentSync.resolveManifestMembership({
-        projectId: this.manifestView.projectId as never,
-        workId: this.manifestView.workId as never,
-        threadId: this.manifestView.threadId as never,
-        responseId: this.manifestView.responseId,
-      });
-      return membership.documentId ? new Set(membership.members) : null;
-    } catch {
-      // Authority failure is not permission to expose raw rows. Creation paths
-      // can repair an occupied row; observations remain fail-closed.
-      return new Set();
-    }
+    return resolveVisibleDocumentMembership({
+      scheme: this.name,
+      view: this.manifestView,
+      resolver: this.documentSync,
+    });
   }
 
   private async listVisibleDocuments(
