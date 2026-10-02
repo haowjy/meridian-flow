@@ -179,7 +179,7 @@ describe("conversation summarizer", () => {
       onlyText(compaction.requests[0], compaction.requests[0].messages.length - 1),
       onlyText(handoff.requests[0], handoff.requests[0].messages.length - 1),
       history,
-      typeof listing === "string" ? listing : "",
+      "listing" in listing ? listing.listing : "",
       listingDescription ?? "",
     ].join("\n");
     expect(modelText).not.toMatch(/writer/i);
