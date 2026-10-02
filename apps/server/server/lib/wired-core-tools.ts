@@ -591,16 +591,20 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
 }
 
+function referenceError(message: string): JsonValue {
+  return JSON.parse(JSON.stringify(writeToolError("read", message).output));
+}
+
 /** Reference loading resolves the mention and calls `readDocument`, as the `read` tool does. */
 export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
   return {
     async read(reference, ctx) {
       const execution = await resolveExecutionContext(deps, ctx.threadId);
       if ("isError" in execution)
-        return { result: JSON.parse(JSON.stringify(execution.output)), revision: null };
+        return { result: referenceError(execution.output.message), revision: null };
       const context = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in context)
-        return { result: JSON.parse(JSON.stringify(context.output)), revision: null };
+        return { result: referenceError(context.output.message), revision: null };
       const address = await resolveDocumentAddress(context, "read", reference.uri);
       if (isToolError(address))
         return { result: JSON.parse(JSON.stringify(address.output)), revision: null };
@@ -642,7 +646,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const { path, format, ...selection } = input as ReadToolInput;
     const execution = await resolveExecutionContext(deps, ctx.threadId);
-    if ("isError" in execution) return execution;
+    if ("isError" in execution) return writeToolError("read", execution.output.message);
     const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
     if ("isError" in context) return writeToolError("read", context.output.message);
     const address = await resolveDocumentAddress(context, "read", path);
@@ -657,7 +661,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   const writeHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const parsed = input as WriteToolInput;
     const execution = await resolveExecutionContext(deps, ctx.threadId);
-    if ("isError" in execution) return execution;
+    if ("isError" in execution) return writeToolError(parsed.command, execution.output.message);
 
     const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
     if ("isError" in portOrError) {

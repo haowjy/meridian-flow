@@ -42,66 +42,31 @@ export interface ReversalSuccessResponseInput {
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
-  const metaLines = ["status: success"];
-  if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
-  if (input.deletedBlocks && input.deletedBlocks.length > 0) {
-    metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
-  }
-  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-  if (input.concurrentEdits) {
-    metaLines.push(
-      ...formatConcurrent(input.concurrentEdits, {
-        excludeHashes: blockHashes(
-          input.echo
-            .filter((hunk) => hunk.mode === "full")
-            .flatMap((hunk) => hunk.blocks)
-            .filter((line) => line.length > 0),
-        ),
-      }),
-    );
-  }
-  if (input.lateSweep) {
-    metaLines.push("concurrent user content swept during commit; re-read required");
-    for (const { hash, body } of input.lateSweep.capturedDeletedBodies ?? []) {
-      metaLines.push(`swept: ${hash}|${body}`);
-    }
-  }
-  if (input.awarenessDegraded) {
-    metaLines.push("destructive awareness degraded after durable recovery; re-read required");
-  }
-
-  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
-    "\n\n",
-  );
   const blocks = echoGroups(input.echo);
-  if (input.lateSweep) {
-    const swept = input.lateSweep.capturedDeletedBodies ?? [];
-    if (swept.length > 0) {
-      blocks.push({
-        extent: "full",
-        relation: "swept",
-        items: swept.map(({ hash, body }) => ({ hash, body })),
-      });
-    }
+  const swept = input.lateSweep?.capturedDeletedBodies ?? [];
+  if (swept.length > 0) {
+    blocks.push({
+      extent: "full",
+      relation: "swept",
+      items: swept.map(({ hash, body }) => ({ hash, body })),
+    });
   }
+  const deletedHashes = input.deletedBlocks ?? [];
 
   return {
     status: "success",
     phase: input.phase,
     revision: input.revision ?? null,
-    text,
     model: {
-      ...(input.writeId || (input.deletedBlocks && input.deletedBlocks.length > 0)
+      ...(input.writeId || deletedHashes.length > 0
         ? {
             write: {
               ...(input.writeId ? { id: input.writeId } : {}),
-              ...(input.deletedBlocks && input.deletedBlocks.length > 0
-                ? { deletedHashes: [...input.deletedBlocks] }
-                : {}),
+              ...(deletedHashes.length > 0 ? { deletedHashes: [...deletedHashes] } : {}),
             },
           }
         : {}),
-      ...(echoLines.length > 0 || input.lateSweep ? { blocks } : {}),
+      ...(blocks.length > 0 || input.lateSweep ? { blocks } : {}),
       ...(input.concurrentEdits
         ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
         : {}),
@@ -113,30 +78,16 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
 }
 
 export function formatReversalSuccess(input: ReversalSuccessResponseInput): InternalWriteResult {
-  const metaLines = [`status: ${input.status}`];
-  if (input.targetCount && input.targetCount > 0) {
-    metaLines.push(`${input.direction}: ${input.targetCount} edit(s)`);
-  }
-  if (input.sync.concurrentEdits) {
-    metaLines.push(...formatConcurrent(input.sync.concurrentEdits));
-  }
-
-  const echoLines = input.sync.echo
-    .flatMap((hunk) => hunk.blocks)
-    .filter((line) => line.length > 0);
-  const text = [metaLines.join("\n"), ...(echoLines.length > 0 ? [echoLines.join("\n")] : [])].join(
-    "\n\n",
-  );
+  const blocks = echoGroups(input.sync.echo);
   return {
     status: input.status,
     revision: input.sync.revision ?? null,
-    text,
     model: {
       reversal: {
         direction: input.direction,
         count: input.targetCount ?? 0,
       },
-      ...(echoLines.length > 0 ? { blocks: echoGroups(input.sync.echo) } : {}),
+      ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.sync.concurrentEdits
         ? { concurrent: modelConcurrentResult(input.sync.concurrentEdits) }
         : {}),
@@ -157,72 +108,24 @@ export function status(
   message?: string,
   options: { error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, {
-    ...options,
-    ...(message ? { model: { message } } : {}),
-  });
-}
-
-export function result(
-  status: "success",
-  text: string,
-  options: {
-    phase: WriteSuccessPhase;
-    error?: WriteErrorDetail;
-    model?: InternalWriteResult["model"];
-  },
-): InternalWriteResult;
-export function result(
-  status: Exclude<WriteStatus, "success">,
-  text: string,
-  options?: { error?: WriteErrorDetail; model?: InternalWriteResult["model"] },
-): InternalWriteResult;
-export function result(
-  status: WriteStatus,
-  text: string,
-  options: {
-    phase?: WriteSuccessPhase;
-    error?: WriteErrorDetail;
-    model?: InternalWriteResult["model"];
-  } = {},
-): InternalWriteResult {
-  if (status === "success") {
-    if (!options.phase) {
-      throw new Error("success results require phase");
-    }
-    return {
-      status,
-      phase: options.phase,
-      text,
-      ...(options.error ? { error: options.error } : {}),
-      ...(options.model ? { model: options.model } : {}),
-    };
-  }
   return {
-    status,
-    text,
+    status: code,
     ...(options.error ? { error: options.error } : {}),
-    ...(options.model ? { model: options.model } : {}),
+    ...(message ? { model: { message } } : {}),
   };
 }
 
+/** The typed outcome; `path` is the document the command read or changed. */
 export function toOutcome(
   command: AgentEditResultCommand,
   result: InternalWriteResult,
+  path?: string,
 ): WriteOutcome {
+  const payload = { ...(path ? { path } : {}), ...result.model };
   const model =
     result.status === "success"
-      ? modelResult({
-          command,
-          status: "success",
-          phase: result.phase,
-          ...(result.model ? { payload: result.model } : {}),
-        })
-      : modelResult({
-          command,
-          status: result.status,
-          ...(result.model ? { payload: result.model } : {}),
-        });
+      ? modelResult({ command, status: "success", phase: result.phase, payload })
+      : modelResult({ command, status: result.status, payload });
   const base = {
     command,
     revision: result.revision ?? null,
@@ -231,7 +134,6 @@ export function toOutcome(
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     result: model,
-    text: result.text,
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };
@@ -254,30 +156,6 @@ function echoGroups(echo: readonly ApplyEchoHunk[]): AgentEditBlockGroup[] {
   return groups;
 }
 
-function formatConcurrent(
-  info: ConcurrentEditInfo,
-  options: { excludeHashes?: ReadonlySet<string> } = {},
-): string[] {
-  const runs: string[] = [];
-  for (const run of info.runs) {
-    const entries: string[] = [];
-    for (const block of run.blocks) {
-      if (!options.excludeHashes?.has(blockHash(block))) entries.push(`    ${block}`);
-    }
-    for (const tombstone of run.tombstones) {
-      entries.push(`    ${tombstone.hash}| [explicit deletion]\n${tombstone.capturedBody}`);
-    }
-    if (entries.length > 0) runs.push(`  ${run.origin}:`, ...entries);
-  }
-  const lines = runs.length > 0 ? ["concurrent edits:", ...runs] : [];
-  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
-  return lines;
-}
-
-function blockHash(serialized: string): string {
-  return splitHashline(serialized)?.hash ?? serialized;
-}
-
 export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
   return (
     status === "not_found" ||
@@ -288,8 +166,4 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "cant_undo_dependent" ||
     status === "internal_error"
   );
-}
-
-function blockHashes(lines: readonly string[]): Set<string> {
-  return new Set(lines.map(blockHash));
 }

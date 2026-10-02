@@ -1,6 +1,6 @@
 /** Settled tool-result metadata preserves the apply-time token, not a later writer revision. */
 
-import { modelResult } from "@meridian/agent-edit";
+import { modelResult, renderAgentEditResult } from "@meridian/agent-edit";
 import { describe, expect, it } from "vitest";
 import { runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
@@ -33,13 +33,16 @@ describe("document revision settlement", () => {
       gateway,
       toolExecutor: {
         async executeTool(call) {
+          const staged = modelResult({
+            command: "create",
+            status: "success",
+            phase: "staged",
+            payload: { path: uri },
+          });
           return {
             toolCallId: call.id,
-            output: JSON.parse(
-              JSON.stringify(
-                modelResult({ command: "create", status: "success", phase: "staged" }),
-              ),
-            ),
+            output: renderAgentEditResult(staged),
+            result: JSON.parse(JSON.stringify(staged)),
             metadata: {
               stagedWrite: true,
               documentId,
@@ -85,7 +88,8 @@ describe("document revision settlement", () => {
     );
     expect(results).toHaveLength(1);
     expect(results[0]?.content).toMatchObject({
-      output: { phase: "committed" },
+      output: `status: success; path: ${uri}`,
+      result: { command: "create", status: "success", phase: "committed", path: uri },
       metadata: { documentRevisions: [{ documentId, uri, revision: "y1:at-apply" }] },
     });
     expect(gateway.requests).toHaveLength(2);

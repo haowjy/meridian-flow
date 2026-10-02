@@ -29,17 +29,12 @@ export interface DocumentRenderer {
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
   renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
-  renderRead(
-    doc: DocHandle,
-    blocks: readonly BlockRef[],
-    filePath: string,
-    format: "full" | "outline",
-  ): RenderedRead;
+  renderRead(doc: DocHandle, blocks: readonly BlockRef[], format: "full" | "outline"): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
 }
 
 export interface RenderedRead {
-  text: string;
+  /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
   blocks: Array<{ hash: string; body: string }>;
 }
@@ -102,22 +97,13 @@ export function createDocumentRenderer(deps: {
   function renderRead(
     doc: DocHandle,
     blocks: readonly BlockRef[],
-    filePath: string,
     format: "full" | "outline",
   ): RenderedRead {
     const headingBlocks =
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
-    const renderedBlocks = headingBlocks.length > 0 ? headingBlocks : blocks;
-    const serialized = model.serializeBlockLines(doc, codec, renderedBlocks);
-    const items = serialized.map(modelBlockItem);
-    return {
-      text:
-        format === "outline" && headingBlocks.length > 0
-          ? outlineFromSerialized(serialized, items, filePath)
-          : serialized.join("\n"),
-      format,
-      blocks: items,
-    };
+    const outline = headingBlocks.length > 0;
+    const serialized = model.serializeBlockLines(doc, codec, outline ? headingBlocks : blocks);
+    return { format: outline ? "outline" : "full", blocks: serialized.map(modelBlockItem) };
   }
 
   function parseForCommand(content: string): ParseForCommandResult {
@@ -127,21 +113,4 @@ export function createDocumentRenderer(deps: {
       return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
     }
   }
-}
-
-/** The `read` call that targets one path, in the form results print for the model. */
-export function readCall(path: string): string {
-  return `read({"path": ${JSON.stringify(path)}})`;
-}
-
-function outlineFromSerialized(
-  serialized: readonly string[],
-  items: readonly { hash: string }[],
-  filePath: string,
-): string {
-  return serialized
-    .flatMap((line, index) => {
-      return [line, readCall(`${filePath}#${items[index]?.hash ?? line}`)];
-    })
-    .join("\n");
 }

@@ -1,4 +1,5 @@
 /** The retired write(command="read") gets repair guidance, then `read` dispatches in the same turn. */
+import { modelResult } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import type { GenerateResult } from "../../gateway/index.js";
 import {
@@ -35,12 +36,25 @@ function textResult(): GenerateResult {
   };
 }
 
+const CHAPTER_READ = modelResult({
+  command: "read",
+  status: "success",
+  phase: "committed",
+  payload: {
+    path: "manuscript://chapter.md",
+    read: { format: "full" },
+    blocks: [
+      { extent: "full", relation: "document", items: [{ hash: "a1b2", body: "Chapter text." }] },
+    ],
+  },
+});
+
 function documentToolRegistry(dispatched: Array<{ tool: string; input: unknown }>) {
   const handler =
     (tool: string): CoreToolHandlers["read"] =>
     async (input: unknown) => {
       dispatched.push({ tool, input });
-      return { content: "chapter text" };
+      return { output: CHAPTER_READ };
     };
   const handlers: CoreToolHandlers = {
     read: handler("read"),
@@ -94,7 +108,8 @@ describe("document command recovery through the runtime loop", () => {
         }),
         expect.objectContaining({
           toolCallId: "read-corrected",
-          output: { content: "chapter text" },
+          output: "status: success; path: manuscript://chapter.md; blocks: 1\n\na1b2|Chapter text.",
+          result: CHAPTER_READ,
           isError: undefined,
         }),
       ]),

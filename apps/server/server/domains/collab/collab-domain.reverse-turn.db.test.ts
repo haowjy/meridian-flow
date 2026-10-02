@@ -1,5 +1,6 @@
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
+import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -573,7 +574,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
       if (stagedCreate.status !== "success") {
-        throw new Error(`staged create failed: ${stagedCreate.text}`);
+        throw new Error(`staged create failed: ${renderAgentEditResult(stagedCreate.result)}`);
       }
       await expect(
         collab.agentEdit().write(

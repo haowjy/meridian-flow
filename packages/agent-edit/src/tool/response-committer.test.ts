@@ -1,7 +1,7 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 import { describe, expect, it, vi } from "vitest";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
-import { blockTexts } from "./test-support/assertions.js";
+import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
@@ -123,7 +123,7 @@ describe("response committer", () => {
       responseContext,
     );
     expect(staged).toMatchObject({ status: "invalid_write", isError: true });
-    expect(staged.text).toContain("already committed");
+    expect(outcomeText(staged)).toContain("already committed");
 
     ctx.coordinator.failWith(undefined);
     recover.mockImplementation(originalRecover);

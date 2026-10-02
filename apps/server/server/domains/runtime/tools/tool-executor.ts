@@ -101,7 +101,7 @@ function executionErrorResult(
     try {
       return {
         toolCallId,
-        output: toJsonValue(registration.formatExecutionError(error)),
+        ...modelOutput(registration, toJsonValue(registration.formatExecutionError(error))),
         isError: true,
       };
     } catch {
@@ -166,10 +166,14 @@ function isStructuredHandlerResult(
 function successResult(
   toolCallId: string,
   output: unknown,
-  capability?: ToolRegistration["capability"],
+  registration: ToolRegistration,
 ): ToolExecutionResult {
   if (isHandlerErrorResult(output)) {
-    return { toolCallId, output: toJsonValue(output.output), isError: true };
+    return {
+      toolCallId,
+      ...modelOutput(registration, toJsonValue(output.output)),
+      isError: true,
+    };
   }
   let value = output;
   let metadata: JsonObject | undefined;
@@ -179,12 +183,21 @@ function successResult(
   }
   return {
     toolCallId,
-    output: toJsonValue(value),
+    ...modelOutput(registration, toJsonValue(value)),
     ...(metadata ? { metadata } : {}),
-    ...(capability === "return_result" && isReturnResultOutcome(value)
+    ...(registration.capability === "return_result" && isReturnResultOutcome(value)
       ? { returnResult: value }
       : {}),
   };
+}
+
+/** The model's text for a typed result, with the result kept beside it when the tool renders one. */
+function modelOutput(
+  registration: ToolRegistration,
+  value: JsonValue,
+): Pick<ToolExecutionResult, "output" | "result"> {
+  if (!registration.renderResult) return { output: value };
+  return { output: registration.renderResult(value), result: value };
 }
 
 /**
@@ -397,7 +410,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
             arguments: call.arguments,
           });
         }
-        return successResult(call.id, outcome.result, registration.capability);
+        return successResult(call.id, outcome.result, registration);
       }
 
       const handler = registration.execution.handler as (
@@ -418,7 +431,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           arguments: call.arguments,
         });
       }
-      return successResult(call.id, outcome.result, registration.capability);
+      return successResult(call.id, outcome.result, registration);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return executionErrorResult(call.id, registration, {

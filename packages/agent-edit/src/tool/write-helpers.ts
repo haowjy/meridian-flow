@@ -4,11 +4,12 @@ import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { writeCommandName } from "./command-schema.js";
-import { type RenderedRead, readCall } from "./document-renderer.js";
+import type { RenderedRead } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
-import { result, status } from "./response-format.js";
+import { status } from "./response-format.js";
+import { readCall } from "./result-text.js";
 import type { MutationActor, WriteCommand, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
@@ -39,7 +40,8 @@ export function errorResponse(
 }
 
 export function readSuccess(read: RenderedRead): InternalWriteResult {
-  return result("success", read.text, {
+  return {
+    status: "success",
     phase: "committed",
     model: {
       read: { format: read.format },
@@ -54,7 +56,7 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
             ]
           : [],
     },
-  });
+  };
 }
 
 export function writeError(cause: unknown): InternalWriteResult {

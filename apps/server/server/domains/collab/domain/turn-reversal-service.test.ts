@@ -1,4 +1,4 @@
-import type { ReversalStore } from "@meridian/agent-edit/integration";
+import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
 import { ReverseThreadContextError } from "../contracts.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
@@ -12,10 +12,20 @@ function createService(input: {
 }) {
   const agentReverse =
     input.agentReverse ??
-    vi.fn(async () => ({ command: "undo", status: "reversed", isError: false, text: "ok" }));
+    vi.fn(async () => ({
+      command: "undo",
+      status: "reversed",
+      isError: false,
+      result: modelResult({ command: "undo", status: "reversed" }),
+    }));
   const liveReverse =
     input.liveReverse ??
-    vi.fn(async () => ({ command: "undo", status: "reversed", isError: false, text: "ok" }));
+    vi.fn(async () => ({
+      command: "undo",
+      status: "reversed",
+      isError: false,
+      result: modelResult({ command: "undo", status: "reversed" }),
+    }));
   const refreshDocumentProjection = vi.fn(async () => undefined);
   const resolveContextDocument = vi.fn(async () => ({
     documentId: input.resolvedDocumentId === undefined ? "document-1" : input.resolvedDocumentId,
@@ -112,7 +122,7 @@ describe("reverseThreadContext", () => {
       command: "undo",
       status: "reversed",
       isError: false,
-      text: "ok",
+      result: modelResult({ command: "undo", status: "reversed" }),
     }));
     const { service } = createService({
       liveReverse,
@@ -141,7 +151,7 @@ describe("cross-scope reversal", () => {
       command: "undo",
       status: "reversed",
       isError: false,
-      text: "ok",
+      result: modelResult({ command: "undo", status: "reversed" }),
     }));
     const service = createTurnReversalService({
       live: {
@@ -209,7 +219,12 @@ describe("cross-scope reversal", () => {
         agentEdit: {
           reverse: async () => {
             liveReversed = true;
-            return { command: "undo", status: "reversed", isError: false, text: "ok" };
+            return {
+              command: "undo",
+              status: "reversed",
+              isError: false,
+              result: modelResult({ command: "undo", status: "reversed" }),
+            };
           },
         } as never,
         resolveDocumentUri: async () => "manuscript://live.md",

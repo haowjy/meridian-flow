@@ -5,8 +5,10 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
   type ReversalStore,
+  renderAgentEditResult,
   type UpdateJournal,
   type WriteContext,
+  type WriteOutcome,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
@@ -475,8 +477,8 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 }
 
-function outcomeText(outcome: { text: string }): string {
-  return outcome.text;
+function outcomeText(outcome: WriteOutcome): string {
+  return renderAgentEditResult(outcome.result);
 }
 
 function createDoc(markdown: string, clientID: number): Y.Doc {

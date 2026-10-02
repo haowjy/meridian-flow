@@ -52,6 +52,8 @@ export interface AgentEditConcurrentRun {
 }
 
 export interface AgentEditModelPayload {
+  /** The document path the command read or changed, as the caller named it. */
+  path?: string;
   message?: string;
   write?: {
     id?: string;
@@ -140,7 +142,7 @@ export function isAgentEditResultEnvelope(input: unknown): input is AgentEditRes
   return result.phase === undefined;
 }
 
-function isWriteStatus(status: unknown): status is WriteStatus {
+export function isWriteStatus(status: unknown): status is WriteStatus {
   switch (status) {
     case "success":
     case "not_found":

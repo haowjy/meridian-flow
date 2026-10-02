@@ -13,7 +13,7 @@ import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { isInternalWriteResult } from "./internal-result.js";
+import { internalResultError, isInternalWriteResult } from "./internal-result.js";
 import { modelResult } from "./model-result.js";
 import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import { formatApplySuccess } from "./response-format.js";
@@ -380,7 +380,7 @@ export function createResponseCommitter(deps: {
             preflights.set(docBuffer.docId, undefined);
             continue;
           }
-          throw new Error(preflight.text);
+          throw internalResultError(preflight);
         }
         if (!preflight) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
         preflights.set(docBuffer.docId, preflight);
@@ -444,7 +444,7 @@ export function createResponseCommitter(deps: {
             ),
           lockOptions,
         );
-        if (isInternalWriteResult(applied)) throw new Error(applied.text);
+        if (isInternalWriteResult(applied)) throw internalResultError(applied);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
         for (const concurrent of applied.concurrent.updates) {
           if (concurrent.update.length > 0) {
@@ -825,7 +825,7 @@ export function createResponseCommitter(deps: {
           docBuffer.runtime,
           docBuffer.commandName,
         );
-        if (isInternalWriteResult(restored)) throw new Error(restored.text);
+        if (isInternalWriteResult(restored)) throw internalResultError(restored);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
       }
       const result = {

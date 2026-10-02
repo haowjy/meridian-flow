@@ -12,6 +12,7 @@ import {
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
+  renderAgentEditResult,
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
@@ -569,7 +570,7 @@ export class DocumentMutationRejectedError extends Error {
   readonly status: WriteOutcome["status"];
 
   constructor(outcome: WriteOutcome) {
-    super(outcome.text);
+    super(renderAgentEditResult(outcome.result));
     this.name = "DocumentMutationRejectedError";
     this.status = outcome.status;
   }

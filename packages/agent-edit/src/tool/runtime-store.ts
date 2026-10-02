@@ -10,6 +10,7 @@ import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
   type InternalWriteResult,
+  internalResultError,
   isInternalWriteResult,
 } from "./internal-result.js";
 import type { DocumentCommandName } from "./types.js";
@@ -201,7 +202,7 @@ export function createRuntimeStore(deps: {
         document.runtime,
         document.commandName,
       );
-      if (isInternalWriteResult(restored)) throw new Error(restored.text);
+      if (isInternalWriteResult(restored)) throw internalResultError(restored);
       attachRuntime(document.session, document.docId, document.runtime);
     }
   }
