@@ -54,18 +54,21 @@ describe("subagent display", () => {
   it("uses the process-fold tool vocabulary for live calls", () => {
     expect(subagentCurrentToolLabel("search", { query: "lantern" })).toContain("Searching");
     expect(subagentCurrentToolLabel("spawn", { agent: "Reader" })).toContain("Waiting on Reader");
+    expect(subagentCurrentToolLabel("read", { path: "manuscript://chapter-1.md" })).toBe(
+      "Reading chapter-1.md…",
+    );
     expect(
-      subagentCurrentToolLabel("write", { command: "read", path: "manuscript://chapter-1.md" }),
-    ).toBe("Reading chapter-1.md…");
+      subagentCurrentToolLabel("read", { path: "manuscript://chapter-1.md", format: "outline" }),
+    ).toBe("Skimming chapter-1.md…");
     expect(subagentCurrentToolLabel("write", { path: "manuscript://story-b.md" })).toBe(
       "Writing story-b.md…",
     );
-    expect(subagentCurrentToolLabel("edit", { path: "manuscript://story-b.md" })).toBe(
-      "Editing story-b.md…",
-    );
-    expect(subagentCurrentToolLabel("read", { uri: "manuscript://story-a.md" })).toBe(
-      "Reading story-a.md…",
-    );
+    expect(
+      subagentCurrentToolLabel("write", { command: "remove", path: "manuscript://story-b.md" }),
+    ).toBe("Editing story-b.md…");
+    expect(
+      subagentCurrentToolLabel("write", { command: "copy", path: "manuscript://story-c.md" }),
+    ).toBe("Writing story-c.md…");
     expect(subagentCurrentToolLabel("search", null)).toBe("Searching…");
     expect(subagentCurrentToolLabel("spawn", null)).toContain("Waiting on");
     expect(subagentCurrentToolLabel("return_result", { summary: "Done" })).toBe("Reporting back…");
