@@ -19,8 +19,9 @@ test choice; changing the table does not extend coverage automatically.
 
 **Openers are one character and pairs compose.** `[[` is the `[` row firing
 twice: `[` gives `[]`, a second `[` gives `[[]]`, and `]]` steps out of both
-in order. `[[name]]` is plain text; nothing opens on it. A multi-character row would need its own matching logic and would
-race the single-character rows it overlaps.
+in order. `[[name]]` is plain text; nothing opens on it. A multi-character
+row would need its own matching logic and would race the single-character
+rows it overlaps.
 
 **A step is only ever over a closer this plugin wrote.** The plugin state
 holds the positions of its own closers, mapped forward through every

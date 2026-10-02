@@ -280,7 +280,7 @@ function ActiveSessionEditorView({
   effectiveEditableRef.current = effectiveEditable;
 
   // Which project and which Work this editor is open in. Everything that has to
-  // reach past the document — the `[[` candidates, the resolver, a followed
+  // reach past the document — the `@` candidates, the resolver, a followed
   // link — reads this one value, and none of it is a reason to remount.
   const scope = useMemo<EditorScope>(
     () => ({ projectId: projectId ?? null, workId }),

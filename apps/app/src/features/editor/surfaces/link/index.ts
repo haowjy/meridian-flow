@@ -1,9 +1,9 @@
 /**
- * The link surfaces: the destination hint, the context menu, the form, the `[[`
+ * The link surfaces: the destination hint, the context menu, the form, the `@`
  * menu, and what a follow says when it finds nothing.
  *
  * Every surface here mounts through `EDITOR_CHROME_SURFACES` and reads the stores
- * in `core/editor/links/` (or the `[[` trigger's own menu store). The one
+ * in `core/editor/links/` (or the `@` trigger's own menu store). The one
  * component a host mounts directly is `ProjectLinkRuntime`, which renders
  * nothing: it is the Editor's adapter over `features/links`, not a surface.
  */
