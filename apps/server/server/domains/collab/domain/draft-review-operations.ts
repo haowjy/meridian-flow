@@ -825,6 +825,7 @@ export function computeDraftReviewOperations(input: {
   return groupOperationsForHunks(
     attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
     attribution,
+    input.updates,
   );
 }
 
@@ -833,6 +834,7 @@ type AttributedOperationGraphHunk = OperationGraphHunk & { operationIds: string[
 function groupOperationsForHunks(
   attributedHunks: readonly AttributedOperationGraphHunk[],
   attribution: DraftUpdateAttributionIndex,
+  updates: readonly IndexedDraftUpdate[],
 ): DraftReviewOperationGraph {
   const writerGroups: WriterGroup[] = [];
   const writerOperationIdsByHunk = new Map<number, Set<string>>();
@@ -964,7 +966,7 @@ function groupOperationsForHunks(
   const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
     operationSort(a.operationId, b.operationId),
   );
-  return { hunks, operations: assignDiscardClasses({ hunks, operations }) };
+  return { hunks, operations: assignDiscardClasses({ hunks, operations, updates }) };
 }
 
 function stableWriterOperationId(sourceUpdateIds: ReadonlySet<SourceUpdateId>): string {
