@@ -62,9 +62,8 @@ export function markdown(): MarkupPlugin {
 }
 
 /**
- * The canonical Markdown codec. `remarkPlugins` extend it for one caller (the
- * clipboard door keeps an escaped `\[[` the writer meant literally); the wire
- * codec takes none.
+ * The canonical Markdown codec. Callers may extend parsing with
+ * `remarkPlugins`; without them it is the wire codec.
  */
 export function markdownCodec(options: {
   schema: Schema;

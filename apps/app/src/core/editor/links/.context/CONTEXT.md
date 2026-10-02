@@ -338,11 +338,16 @@ writes, and text already stored stay text; so does a drag inside the editor.
   formatting (Ctrl/Cmd+Shift+V, ProseMirror's own flag in
   `transformPastedText`, the signal the Markdown door reads as `plain`; it is
   also how a writer pastes literal brackets), any paste or drop whose
-  destination is code (the selection, or the pointer's resolved position as
-  ProseMirror resolves `$mouse`; ProseMirror hands code a bare text slice, and
-  a link there would keep only its label), and a drag within the document.
-  The policy reads the destination where the gesture starts and the transform
-  reads and clears it.
+  destination is code, and a drag within the document. `transformPasted`
+  reads the destination itself, as every paste path resolves it (a keyed
+  paste, and the menu's `pasteHTML` and `pasteText`): a pending drop's
+  pointer, else the selection's `$from`. Only a drop's pointer is recorded,
+  in `handleDOMEvents.drop` the way ProseMirror resolves `$mouse`, and it is
+  cleared in a microtask after the event, so a drop ProseMirror abandons
+  leaves nothing behind. The plain-or-code flag from `transformPastedText` is
+  set and read within one parse of clipboard text. Code matters because
+  ProseMirror hands it a bare text slice, and a link there would keep only
+  its label.
 
 - **Where.** `transformPasted`, the one prop every paste kind reaches once and
   after parsing (Markdown through the paste door, plain prose, HTML whose text
@@ -357,12 +362,17 @@ writes, and text already stored stay text; so does a drag inside the editor.
   name without `.md`; the suffix stays on the destination. `![[…]]` (no
   transclusion) and anything in code (a fence, a code mark, or a backtick span
   still spelled out) stay text; so does a link inside a link.
-- **Escapes.** `\[[…]]`, and `\[\[…]]` as Meridian's own Markdown writes it,
-  stay the literal brackets without the backslash, on every path. The
-  Markdown door would turn `\[` into `[` before the transform sees it, so its
-  codec takes `remarkKeepWikilinkEscapes` (`wikilink-escape.ts`), a micromark
-  text construct that claims the escape ahead of the core one and keeps the
-  characters.
+- **Escapes.** On every paste the policy transforms, each escaped opening
+  outside code, `\[[` or `\[\[` (as Meridian's own Markdown writes literal
+  brackets), becomes the literal `[[`, closed or not and with the catalog
+  loaded or not. Paste without formatting and a code destination keep the
+  characters as pasted, backslash included. The Markdown door would turn `\[`
+  into `[` before the transform could tell an escape from a link, so the
+  extension contributes `remarkKeepWikilinkEscapes` (`wikilink-escape.ts`, a
+  micromark text construct that claims the escape ahead of the core one and
+  keeps the characters) through its storage, and the door reads it per paste
+  (`wikilinkPasteParsePlugins`). An Editor without the extension reads an
+  escape exactly as Markdown does.
 - **Which document** (`pickWikilinkTarget`; per paste, `wikilinkResolver`
   locates the catalog once and ranks only the documents sharing a link's
   filename): case-insensitive, by path ending.

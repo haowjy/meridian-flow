@@ -1,6 +1,7 @@
 /**
  * Keeps an escaped `\[[` (or `\[\[`) as the characters it spells when the
- * clipboard door reads Markdown.
+ * clipboard door reads Markdown. `WikilinkPasteExtension` contributes it, so
+ * it is only ever mounted beside the transform that spells the escape out.
  *
  * Markdown's own escape turns `\[` into `[`, so by the time a paste reaches
  * the wikilink transform an escaped `\[[Name]]` would look exactly like a
