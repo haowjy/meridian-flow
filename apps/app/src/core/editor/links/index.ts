@@ -71,4 +71,5 @@ export {
   normalizeLinkHref,
 } from "./link-target";
 export { WikilinkPasteExtension, type WikilinkPasteOptions } from "./WikilinkPasteExtension";
+export { remarkKeepWikilinkEscapes } from "./wikilink-escape";
 export type { WikilinkPasteCatalog } from "./wikilink-paste";

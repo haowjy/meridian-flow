@@ -7,9 +7,9 @@
  * headings, lists, fences, tables and links gets headings, lists, fences,
  * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
  * the wire uses, so nothing here has to know what markdown looks like. Pasted
- * `[[Name]]` parses as text here; the `@` extension's paste transform turns it
- * into a link afterwards, whichever door the paste came through
- * (`links/wikilink-paste.ts`).
+ * `[[Name]]` parses as text here, and an escaped `\[[` keeps its backslash
+ * (`remarkKeepWikilinkEscapes`) so the paste transform that turns `[[Name]]`
+ * into a link afterwards can still see the escape (`links/wikilink-paste.ts`).
  *
  * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
  * and MDX reads `<` and `{` as syntax. Fiction contains both.
@@ -36,7 +36,7 @@ import {
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
-import { linksAsAddresses } from "./links";
+import { linksAsAddresses, remarkKeepWikilinkEscapes } from "./links";
 
 /**
  * Does this parse carry anything plain-text paste would have thrown away?
@@ -68,6 +68,7 @@ export function markdownClipboardParser(
       blocks = markdownCodec({
         assetPathResolver,
         schema: schema ?? view.state.schema,
+        remarkPlugins: [remarkKeepWikilinkEscapes],
       }).parse(text).blocks;
     } catch {
       return defaultPlainTextPaste();

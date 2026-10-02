@@ -143,3 +143,15 @@ it("keeps the characters when dropped into a code block, and links them dropped 
   drop(prose, 2, { "text/plain": "see [[Lin Feng]] here" });
   expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
 });
+
+it("keeps an escaped link as literal brackets, through the Markdown door and plain prose", () => {
+  const list = editor(DOCUMENTS);
+  paste(list, { "text/plain": "- one \\[[Lin Feng]]\n- two `\\[[code]]`" });
+  expect(links(list)).toEqual([]);
+  expect(list.state.doc.textContent).toBe("one [[Lin Feng]]two \\[[code]]");
+
+  const prose = editor(DOCUMENTS);
+  paste(prose, { "text/plain": "Meridian writes \\[\\[Lin Feng]] and ![[map.png]]." });
+  expect(links(prose)).toEqual([]);
+  expect(prose.state.doc.textContent).toBe("Meridian writes [[Lin Feng]] and ![[map.png]].");
+});

@@ -47,6 +47,10 @@ describe("parseWikilinks", () => {
     expect(parseWikilinks("an unclosed ` before [[c]]").map(({ label }) => label)).toEqual(["c"]);
   });
 
+  it("treats `\\[\\[` as an escape, and `[\\[` as no link at all", () => {
+    expect(parseWikilinks("\\[\\[Gate]] [\\[Gate]]")).toEqual([]);
+  });
+
   it("leaves embeds, escapes, and empty or malformed targets", () => {
     for (const text of [
       "![[map.png]]",
@@ -189,6 +193,17 @@ describe("linkPastedWikilinks", () => {
       "kb://characters/Lin Feng.md",
     ]);
     expect(out.content.child(1).textContent).toBe("[[fenced]]");
+  });
+
+  it("drops the backslash of an escaped link, which stays text", () => {
+    const slice = new Slice(
+      Fragment.from(paragraph(["see \\[[Lin Feng]] and \\[\\[Kael]]"])),
+      0,
+      0,
+    );
+    const out = linkPastedWikilinks(slice, schema, catalog);
+    expect(out.content.child(0).textContent).toBe("see [[Lin Feng]] and [[Kael]]");
+    expect(out.content.child(0).childCount).toBe(1);
   });
 
   it("returns the very slice when nothing converts", () => {
