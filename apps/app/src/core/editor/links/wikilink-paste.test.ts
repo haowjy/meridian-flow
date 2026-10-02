@@ -40,6 +40,13 @@ describe("parseWikilinks", () => {
     ]);
   });
 
+  it("leaves a link inside a code span the text still spells", () => {
+    expect(
+      parseWikilinks("`[[code]]` and ``a ` [[b]]`` then [[c]]").map(({ label }) => label),
+    ).toEqual(["c"]);
+    expect(parseWikilinks("an unclosed ` before [[c]]").map(({ label }) => label)).toEqual(["c"]);
+  });
+
   it("leaves embeds, escapes, and empty or malformed targets", () => {
     for (const text of [
       "![[map.png]]",

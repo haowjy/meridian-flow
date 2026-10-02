@@ -50,11 +50,18 @@ export type WikilinkPasteCatalog = {
 // be skipped; the brackets hold no bracket and no line break.
 const WIKILINK = /(\\|!)?\[\[([^[\]\n]+)\]\]/g;
 
-/** Every convertible `[[…]]` in a run of text, in order. */
+/**
+ * Every convertible `[[…]]` in a run of text, in order. A backtick code span
+ * still spelled out in the text (paste without formatting keeps it literal)
+ * is code, and code is never converted.
+ */
 export function parseWikilinks(text: string): WikilinkOccurrence[] {
   const found: WikilinkOccurrence[] = [];
+  const code = codeSpans(text);
   for (const match of text.matchAll(WIKILINK)) {
     if (match[1]) continue;
+    const start = match.index ?? 0;
+    if (code.some(([from, to]) => start >= from && start < to)) continue;
     const inner = match[2] ?? "";
     // Inside a table Obsidian escapes the alias bar as `\|`.
     const bar = inner.search(/\\?\|/);
@@ -216,6 +223,24 @@ function linkText(node: PMNode, link: MarkType, catalog: WikilinkPasteCatalog): 
   if (!pieces.length) return [node];
   if (cursor < text.length) pieces.push(node.type.schema.text(text.slice(cursor), node.marks));
   return pieces;
+}
+
+/** Markdown code spans: a backtick run up to the next run of the same length. */
+function codeSpans(text: string): [number, number][] {
+  const spans: [number, number][] = [];
+  const runs = [...text.matchAll(/`+/g)];
+  for (let index = 0; index < runs.length; index += 1) {
+    const open = runs[index];
+    if (!open) continue;
+    const closeIndex = runs.findIndex(
+      (run, candidate) => candidate > index && run[0].length === open[0].length,
+    );
+    const close = runs[closeIndex];
+    if (!close) continue;
+    spans.push([open.index ?? 0, (close.index ?? 0) + close[0].length]);
+    index = closeIndex;
+  }
+  return spans;
 }
 
 function locate(uri: string): Located | null {
