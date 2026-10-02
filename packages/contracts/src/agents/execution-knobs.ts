@@ -236,6 +236,7 @@ export const invocationPatchSchema = z
         load: z.array(z.string()).optional(),
         available: z.array(z.string()).optional(),
       })
+      .strict()
       .optional(),
   })
   .strict();

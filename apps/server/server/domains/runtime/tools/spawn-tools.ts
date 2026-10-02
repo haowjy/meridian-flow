@@ -10,8 +10,7 @@ import {
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
 import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
-import { ZodError, z } from "zod";
-import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
+import { type ZodError, z } from "zod";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
@@ -28,51 +27,55 @@ const SPAWN_DESCRIPTION =
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
   "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
 
-export type SpawnToolArgs = {
-  agent?: string;
-  prompt: string;
-  from?: string;
-  description?: string;
-  mode: "foreground" | "background";
-  append_system_prompt?: string;
-  overrides?: InvocationPatch;
-};
+const { "disallowed-tools": disallowedTools, ...invocationPatchShape } =
+  invocationPatchSchema.shape;
 
-/** One parse for spawn tool arguments. */
-export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
-    ...(rec.from !== undefined && rec.from !== null ? { from: z.string().parse(rec.from) } : {}),
-    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
-    ...(typeof rec.description === "string" ? { description: rec.description } : {}),
-    mode: rec.mode === "background" ? "background" : "foreground",
-    ...(typeof rec.append_system_prompt === "string"
-      ? { append_system_prompt: rec.append_system_prompt }
-      : {}),
-    ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
-      ? { overrides: parseInvocationPatch(rec.overrides) }
-      : {}),
-  };
-}
+/**
+ * Today's invocation patch with its one public spelling change: the model
+ * writes `disallowed_tools`, the configuration keeps `disallowed-tools`.
+ */
+const SpawnOverridesSchema = z
+  .object({ ...invocationPatchShape, disallowed_tools: disallowedTools })
+  .strict()
+  .transform(
+    ({ disallowed_tools, ...patch }): InvocationPatch => ({
+      ...patch,
+      ...(disallowed_tools !== undefined ? { "disallowed-tools": disallowed_tools } : {}),
+    }),
+  );
 
-function parseInvocationPatch(input: unknown): InvocationPatch {
-  try {
-    return invocationPatchSchema.parse(input);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      throw new InvocationPatchError(
-        error.issues
-          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-          .join("; "),
-      );
-    }
-    throw error;
-  }
-}
+export const SpawnInputSchema = z
+  .object({
+    agent: z.string().min(1).describe("Roster name; omit for the generic subagent.").optional(),
+    from: z
+      .string()
+      .min(1)
+      .describe(
+        'Conversation ref, or "current", that the child can read with thread_history; its history is not copied in.',
+      )
+      .optional(),
+    prompt: z.string().min(1).describe("The child's task."),
+    description: z
+      .string()
+      .min(1)
+      .describe(
+        'The name the user sees in chat, 2 to 5 words naming the task, e.g. "Chapter 12 continuity check". Distinct across parallel subagents; not a sentence, agent name or pN handle.',
+      )
+      .optional(),
+    mode: z
+      .enum(["foreground", "background"])
+      .default("foreground")
+      .describe("foreground (default) waits for the child's report; background returns at once."),
+    append_system_prompt: z
+      .string()
+      .describe("Extra system-prompt text for this run only.")
+      .optional(),
+    overrides: SpawnOverridesSchema.describe(
+      "Change this run's model, effort, tools, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
+    ).optional(),
+  })
+  .strict();
+export type SpawnToolArgs = z.output<typeof SpawnInputSchema>;
 
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
@@ -172,68 +175,13 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "spawn",
         description: SPAWN_DESCRIPTION,
-        inputSchema: {
-          type: "object",
-          properties: {
-            agent: {
-              type: "string",
-              description: "Roster name; omit for the generic subagent.",
-            },
-            from: {
-              type: "string",
-              description:
-                'Conversation ref, or "current", that the child can read with thread_history; its history is not copied in.',
-            },
-            prompt: { type: "string", description: "The child's task." },
-            description: {
-              type: "string",
-              description:
-                'The name the user sees in chat, 2 to 5 words naming the task, e.g. "Chapter 12 continuity check". Distinct across parallel subagents; not a sentence, agent name or pN handle.',
-            },
-            mode: {
-              type: "string",
-              enum: ["foreground", "background"],
-              description:
-                "foreground (default) waits for the child's report; background returns at once.",
-            },
-            append_system_prompt: {
-              type: "string",
-              description: "Extra system-prompt text for this run only.",
-            },
-            overrides: {
-              type: "object",
-              description:
-                "Change this run's model, effort, tools, disallowed-tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
-            },
-          },
-          required: ["prompt"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(SpawnInputSchema),
       },
+      input: SpawnInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
-          let args: SpawnToolArgs;
-          try {
-            args = parseSpawnToolArgs(input);
-          } catch (error) {
-            if (error instanceof ZodError) {
-              return {
-                ok: false,
-                error: meridianErrorFromSystem(
-                  "invalid_from",
-                  'from must be one conversation ref or "current".',
-                ),
-              };
-            }
-            if (!(error instanceof InvocationPatchError)) throw error;
-            return {
-              ok: false,
-              error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
-            };
-          }
-          return ctx.spawn(args);
-        },
+        handler: async (input: unknown, ctx: SpawnToolHandlerContext) =>
+          ctx.spawn(input as SpawnToolArgs),
       },
       sequential: true,
       capability: "spawn",

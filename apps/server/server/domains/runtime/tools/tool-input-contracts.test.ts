@@ -187,3 +187,62 @@ describe("thread_message", () => {
     ]);
   });
 });
+
+describe("spawn", () => {
+  it("delivers foreground only when mode is omitted", async () => {
+    await expectDelivered("spawn", { prompt: "Task" }, { prompt: "Task", mode: "foreground" });
+    await expectDelivered(
+      "spawn",
+      { prompt: "Task", mode: "background", from: "current", append_system_prompt: "Be brief." },
+      { prompt: "Task", mode: "background", from: "current", append_system_prompt: "Be brief." },
+    );
+  });
+
+  it("maps the published disallowed_tools key to the configuration spelling", async () => {
+    await expectDelivered(
+      "spawn",
+      {
+        prompt: "Task",
+        overrides: { effort: "high", disallowed_tools: ["bash"], skills: { load: ["modes"] } },
+      },
+      {
+        prompt: "Task",
+        mode: "foreground",
+        overrides: { effort: "high", "disallowed-tools": ["bash"], skills: { load: ["modes"] } },
+      },
+    );
+  });
+
+  it("refuses the inputs it used to fill with defaults or drop", async () => {
+    await expectRefused("spawn", {}, ["prompt: required; expected a string"]);
+    await expectRefused("spawn", { prompt: "" }, ["prompt: must not be empty"]);
+    await expectRefused("spawn", { prompt: "Task", mode: "invalid" }, [
+      'mode: expected "foreground" or "background", got "invalid"',
+    ]);
+    await expectRefused("spawn", { prompt: "Task", agent: 42 }, [
+      "agent: expected a string, got 42",
+    ]);
+    await expectRefused("spawn", { prompt: "Task", from: null }, [
+      "from: expected a string, got null",
+    ]);
+    await expectRefused("spawn", { prompt: "Task", append_system_prompt: 42 }, [
+      "append_system_prompt: expected a string, got 42",
+    ]);
+    await expectRefused("spawn", { prompt: "Task", overrides: "invalid" }, [
+      'overrides: expected an object, got "invalid"',
+    ]);
+    await expectRefused("spawn", { prompt: "Task", extra: true }, ["extra: unknown argument"]);
+  });
+
+  it("refuses an invalid or misspelled override before spawning", async () => {
+    await expectRefused("spawn", { prompt: "Task", overrides: { effort: "max" } }, [
+      'overrides.effort: expected "low", "medium", "high", "xhigh", "none", "disabled" or "adaptive", got "max"',
+    ]);
+    await expectRefused("spawn", { prompt: "Task", overrides: { "disallowed-tools": ["bash"] } }, [
+      "overrides.disallowed-tools: unknown argument",
+    ]);
+    await expectRefused("spawn", { prompt: "Task", overrides: { skills: { preload: [] } } }, [
+      "overrides.skills.preload: unknown argument",
+    ]);
+  });
+});
