@@ -1,33 +1,18 @@
-import { inlineMarkdownToMdast } from "../../helpers.js";
+/** The link mark on the wire: always a standard `[text](destination "title")`. */
 import type { MarkCodec } from "../../types.js";
-import { formatWikilink, wikilinkTarget } from "../wikilink-target.js";
 
-type LinkAst = { type: string; url?: string; title?: string | null; target?: string };
+type LinkAst = { type: string; url?: string; title?: string | null };
 
 export const linkMarkCodec: MarkCodec<LinkAst> = {
   name: "link",
 
-  serialize(text, attrs, ctx) {
+  serialize(text, attrs) {
     const href = String(attrs.href ?? "");
-    const wikiTarget = wikilinkTarget(href);
-    if (wikiTarget !== null && attrs.title == null) {
-      const children = inlineMarkdownToMdast(text, ctx);
-      if (children.length === 1 && children[0]?.type === "text") {
-        const label = (children[0] as { value: string }).value;
-        if (!/[\r\n]/.test(label)) return formatWikilink(wikiTarget, label);
-      }
-    }
     const title = attrs.title == null ? "" : ` "${String(attrs.title).replaceAll('"', '\\"')}"`;
     return `[${text.replaceAll("]", "\\]")}](${markdownLinkDestination(href)}${title})`;
   },
 
   parse(ast) {
-    if (ast.type === "wikiLink" && typeof ast.target === "string") {
-      return { href: formatWikilink(ast.target), title: null };
-    }
-    if (ast.type === "wikiLinkResource" && typeof ast.target === "string") {
-      return { href: formatWikilink(ast.target), title: ast.title ?? null };
-    }
     if (ast.type !== "link") return null;
     return { href: ast.url ?? "", title: ast.title ?? null };
   },
