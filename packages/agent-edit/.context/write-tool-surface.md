@@ -29,7 +29,7 @@ new write.
 
 ### Response commit lifecycle
 
-Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `delete` apply to
+Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `remove` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
@@ -138,10 +138,9 @@ accidental UUID interpolation fails loudly.
   envelope. The seam stays clean through pure resolvers, stable `ResolvedEdit`,
   and a version-agnostic apply layer; no command-contract pinning is needed until
   a second command version exists.
-- **Read auto-budget/truncation is not implemented.** `format: "auto"` resolves
-  to full; outline requires explicit selection and falls back to full selected
-  content when no headings exist. Read results do not report changes since an
-  earlier read; `write(command: "diff")` queries the current turn's mutation trail.
+- **Read auto-budget/truncation is not implemented.** Outline requires explicit
+  selection and falls back to full selected content (reported as `full`) when no
+  headings exist. Read results do not report changes since an earlier read.
   These limitations are tracked in [#523](https://github.com/haowjy/meridian-flow/issues/523).
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.

@@ -33,8 +33,8 @@ The memory-only runtime replica is distinct from that host-owned branch.
 
 ### Destructive scope targeting and recovery
 
-`delete` is the structural block-removal command and requires an explicit `in`
-scope. `replace({ find, content: "" })` remains exact text-span deletion, while
+`remove` is the structural block-removal command and takes exactly one of `in`
+or a `#fragment` in the path; it never deletes the document. `replace({ find, content: "" })` remains exact text-span deletion, while
 an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
 confused with structural deletion.
 
@@ -126,10 +126,11 @@ going blind to a concurrent human edit.
   document/changed/swept groups and prefix context groups exist. Concurrent
   blocks and tombstones sit in `concurrent.runs`; placement, not another block
   relation, conveys their concurrent semantics.
-- **Tool results have one model representation.** Read, diff, mutation, undo,
-  redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
-  JSON-stringify that object; no provider receives the internal diagnostic
-  hashline stream or a parallel compatibility rendering.
+- **Tool results have one typed form and one rendering.** Read, mutation, undo,
+  redo, and write errors return a `meridian.agent-edit.v1` result.
+  `renderAgentEditResult` (`tool/result-text.ts`) is the only path from it to
+  the model's text: a status line, notes, then `hash|text` blocks. Hosts keep
+  the typed result beside the text and never parse the text back (D43).
 - **Convergence is not intent preservation.** Two edits to the same span can CRDT-merge at character level
   into garbled prose. Convergence does not guarantee intent preservation or that
   every concurrent word remains visible. The model is **told** via the echo,
