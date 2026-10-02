@@ -1,0 +1,11 @@
+# TODO
+
+- Prevent a timed-out Vitest fixture hook from racing the next case's database
+  reset in the same worker. Vitest reports `hookTimeout` without cancelling the
+  hook promise, and `deleteDrizzleRows` cannot discover arbitrary work started
+  by suite-owned hooks. The existing detached-work drain covers only runtime
+  work registered with that tracker. A safe fix therefore needs a worker-level
+  fail-stop/cancellation contract from Vitest, or a mandatory hook-work tracker
+  that every DB fixture awaits before reset. Do not add a delay, a longer
+  timeout, or a reset-only mutex: each can release while the timed-out hook is
+  still mutating the database and would only hide the race. See #616.
