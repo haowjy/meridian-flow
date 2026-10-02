@@ -1,5 +1,6 @@
 /** Latest-wins command handoff from any project surface to the Editor review scope. */
 
+import type { EventRecord } from "@meridian/contracts/observability";
 import {
   createContext,
   type ReactNode,
@@ -10,7 +11,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { AdmittedLiveDocument } from "../context/open-project-document";
 import type {
@@ -31,6 +34,31 @@ export type AiDraftLaunchTarget = {
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
+
+function reportRouteSettlement(
+  projectId: string,
+  target: AiDraftLaunchTarget,
+  kind: "applied" | "cancelled" | "superseded" | "failed",
+  attempt: number,
+): void {
+  if (!DEBUG_FEATURE_ALLOWED) return;
+  const event: EventRecord = {
+    timestamp: new Date().toISOString(),
+    level: kind === "failed" ? "error" : kind === "applied" ? "info" : "warn",
+    source: "project.review",
+    name: "editor_review.route_settlement",
+    sensitivity: "safe",
+    correlation: { projectId },
+    payload: {
+      kind,
+      attempt,
+      workId: target.workId,
+      documentId: target.documentId,
+      draftId: target.draftId,
+    },
+  };
+  appendTraceEvent(event);
+}
 
 const EditorReviewCommandContext = createContext<EditorReviewCommand | null>(null);
 const EditorReviewIntentContext = createContext<{
@@ -68,6 +96,7 @@ export function EditorReviewHandoffProvider({
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
+  const claimed = useRef<number | null>(null);
   const bindingSequence = useRef(0);
   const bindingMounted = useRef(true);
   const bindingRequest = useRef<{
@@ -82,27 +111,43 @@ export function EditorReviewHandoffProvider({
     async (target) => {
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
-      // Supersession cancels any advertised intent immediately. The new one
-      // does not become claimable until its route command has committed.
-      setIntent(null);
+      claimed.current = null;
+      // A matching mounted Editor may claim immediately. This avoids making a
+      // same-route review command depend on an unrelated navigation settlement.
+      setIntent(staged);
 
       const tab = contextTabFromDraftGroup(target);
 
       try {
-        const result = await openContextRoute(
-          {
-            scheme: "manuscript",
-            path: target.contextPath,
-            workId: target.workId,
-            documentId: target.documentId,
-          },
-          { tab: tab ?? undefined, canCommit: () => latest.current?.sequence === staged.sequence },
-        );
-        if (result.kind === "failed") throw result.error;
-        if (result.kind !== "applied") return;
-        if (latest.current?.sequence === staged.sequence) {
-          setIntent(staged);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const result = await openContextRoute(
+            {
+              scheme: "manuscript",
+              path: target.contextPath,
+              workId: target.workId,
+              documentId: target.documentId,
+            },
+            {
+              replace: true,
+              tab: tab ?? undefined,
+              draftId: target.draftId,
+              canCommit: () => latest.current?.sequence === staged.sequence,
+            },
+          );
+          reportRouteSettlement(projectId, target, result.kind, attempt + 1);
+          if (result.kind === "failed") throw result.error;
+          if (result.kind === "applied") {
+            if (
+              latest.current?.sequence === staged.sequence &&
+              claimed.current === staged.sequence
+            ) {
+              latest.current = null;
+            }
+            return;
+          }
+          if (latest.current?.sequence !== staged.sequence) return;
         }
+        throw new Error("Editor review navigation did not settle after retry");
       } catch (error) {
         if (latest.current?.sequence === staged.sequence) {
           latest.current = null;
@@ -115,7 +160,7 @@ export function EditorReviewHandoffProvider({
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;
-    latest.current = null;
+    claimed.current = claimedSequence;
     setIntent(null);
   }, []);
 
@@ -241,6 +286,11 @@ export function useOpenEditorReview(): EditorReviewCommand {
   const command = useContext(EditorReviewCommandContext);
   if (!command) throw new Error("Opening a draft requires the project review handoff owner");
   return command;
+}
+
+/** Draft currently crossing the route-to-Editor handoff, if any. */
+export function usePendingEditorReviewDraftId(): string | null {
+  return useContext(EditorReviewIntentContext)?.intent?.draftId ?? null;
 }
 
 /** Mount inside the Editor review boundary, beside the active viewer/editor. */

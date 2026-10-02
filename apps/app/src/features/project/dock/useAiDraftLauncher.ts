@@ -27,7 +27,9 @@ export function useAiDraftLauncher() {
       setDockView(screen, "changes");
       setDockCollapsed(false);
 
-      void openEditorReview(target).catch(() => undefined);
+      void openEditorReview(target).catch((error) => {
+        console.error("[editor-review] launch failed", error);
+      });
     },
     [openEditorReview, screen, setDockCollapsed, setDockView],
   );

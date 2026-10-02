@@ -299,7 +299,7 @@ describe("Editor review handoff", () => {
     });
   });
 
-  it("does not advertise an already-matching intent when navigation rejects", async () => {
+  it("enters an already-committed matching review without waiting for navigation", async () => {
     const route = deferred();
     const navigate = vi.fn(() => route.promise);
     await withHarness(async ({ enterB }) => {
@@ -308,13 +308,33 @@ describe("Editor review handoff", () => {
       await act(async () => {
         pending = openReview?.(draftB);
       });
-      expect(enterB).not.toHaveBeenCalled();
+      expect(enterB).toHaveBeenCalledWith(draftB.documentId, draftB.draftId);
 
       route.reject(new Error("route rejected"));
       await act(async () => {
         await expect(pending).rejects.toThrow("route rejected");
       });
-      expect(enterB).not.toHaveBeenCalled();
+      expect(enterB).toHaveBeenCalledOnce();
+    }, navigate);
+  });
+
+  it.each([
+    "cancelled",
+    "superseded",
+  ] as const)("retries a %s route settlement once with the review address", async (kind) => {
+    const navigate = vi
+      .fn()
+      .mockResolvedValueOnce({ kind })
+      .mockResolvedValueOnce({ kind: "applied" });
+    await withHarness(async ({ enterB }) => {
+      await act(async () => showEditor?.(draftB));
+      await act(async () => openReview?.(draftB));
+      expect(enterB).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(navigate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ documentId: draftB.documentId }),
+        expect.objectContaining({ replace: true, draftId: draftB.draftId }),
+      );
     }, navigate);
   });
 

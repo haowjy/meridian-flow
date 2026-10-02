@@ -245,9 +245,12 @@ Editor review value (Editor Work, no thread authority) above desktop/phone
 selection. Boundaries only re-provide those values: ChatSurface and the Chat
 context dock share the Chat value, while viewer/editor surfaces receive the
 Editor value. An explicit latest-wins route handoff carries review commands into
-the matching Editor, advertises them only after route success, and claims them
-only after Work, manuscript path, mounted document, and draft membership agree;
-it survives phone view unmounts because the owner does not.
+the matching Editor. A matching committed Editor may claim immediately; other
+destinations claim after navigation. Claims require Work, manuscript path,
+mounted document, and draft membership to agree. The document address persists
+the draft identity, so reload restores through the same handoff; stale identities
+are removed by replacing the current entry. The owner survives phone view
+unmounts.
 
 A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
@@ -427,7 +430,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/works/new                        create dialog
 /p/<id>/works/<workId>[?view=files]      Work page
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
-/p/<id>/editor/<scheme>/<path>[?work=…]  document
+/p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
 ?settings=<section> on any screen; ?results on a chat or the Editor
 ```
@@ -442,6 +445,9 @@ invalid address. The query guard never repairs an identity `?work`. Slugs and
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
+`?draft=` belongs only to a document destination. It names a pending draft in
+the addressed Work and document, never a separate document. Entering or leaving
+review replaces the current history entry so Back does not toggle review.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
