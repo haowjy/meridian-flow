@@ -7,6 +7,7 @@ import {
   enterEventCorrelation,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
+import { completeHttpRequest, trackHttpRequest } from "../lib/http-drain.js";
 import { getProcessEventSink } from "../lib/observability.js";
 import {
   createRequestObservabilityContext,
@@ -38,6 +39,7 @@ type NitroHookApp = {
 export default function requestObservabilityPlugin(app: unknown) {
   const nitroApp = app as NitroHookApp;
   nitroApp.hooks.hook("request", (event) => {
+    trackHttpRequest(event);
     const context = createRequestObservabilityContext(event);
     event.context.observability = context;
     enterEventCorrelation({
@@ -47,6 +49,7 @@ export default function requestObservabilityPlugin(app: unknown) {
 
   nitroApp.hooks.hook("error", (error, { event }) => {
     if (!event) return;
+    completeHttpRequest(event);
     if (!shouldEmitUnexpectedRouteFailure(error)) return;
     const context = getRequestObservabilityContext(event);
     if (!context) return;
@@ -72,6 +75,7 @@ export default function requestObservabilityPlugin(app: unknown) {
   });
 
   nitroApp.hooks.hook("response", (response, event) => {
+    completeHttpRequest(event);
     if (unexpectedRouteFailureWasEmitted(event)) return;
     const context = getRequestObservabilityContext(event);
     if (!context) return;

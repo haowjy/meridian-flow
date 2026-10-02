@@ -41,3 +41,10 @@ export function getApiRouteOwner(pathname: string): ApiRouteOwner | null {
   }
   return null;
 }
+
+/** Exact API routes served by the app shell instead of the API server. */
+export function getAppOwnedExactApiRoutes(): readonly string[] {
+  return API_ROUTE_OWNERSHIP.filter((rule) => rule.owner === "app" && rule.match === "exact").map(
+    (rule) => rule.path,
+  );
+}

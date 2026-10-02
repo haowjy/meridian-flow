@@ -11,6 +11,13 @@
         "command": "tsc --noEmit -p tsconfig.json"
       }
     },
+    "build:release": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/database",
+        "command": "pnpm build:release"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "options": {

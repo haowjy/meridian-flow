@@ -2,7 +2,7 @@
 
 Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (plain `postgres:16` Docker container in dev).
 
-- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies them after migrations; `pnpm db:apply-functions` is the guarded standalone sync command.
+- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies pending migrations and functions atomically through the package-owned release runner; `pnpm db:apply-functions` is the guarded standalone sync command.
 - Keep provider-specific auth assumptions at the adapter/composition boundary; schema should remain ordinary Postgres where possible.
 - Thread-domain usage/cost rollups are persisted columns maintained by
   application repositories/projectors, not database triggers or functions.

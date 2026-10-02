@@ -56,9 +56,11 @@ source preparation or summary attempt is final and can be retried by the writer
 with a new S. Shutdown sets the shared flag before aborting live runs and briefs
 with reason `shutdown`, suppressing new run starts and wakes. Live work is
 aborted so paid response rows settle before claim release. The app's shared
-runtime tracker drains for at most 10 seconds and reports a timeout. The
-five-second recovery-lane stop and ten-second drain are derived from the shared
-12-second process deadline in `lib/shutdown-deadlines.ts`. A brief
+runtime tracker drains within the application-drain stage's 10-second budget
+and reports a timeout. `SHUTDOWN_PLAN` in `lib/process-shutdown.ts` owns the
+full sequence: 0.5 s websocket admission, 3 s polling loops, 10 s application
+drain, 2 s HTTP drain, 4 s reserved websocket drain, 0.5 s database close,
+and a separate 4 s observability flush under the 25 s global deadline. A brief
 launch that begins after shutdown has started leaves S pending for ordinary
 orphan repair. A released claim does not wake the destination after shutdown.
 

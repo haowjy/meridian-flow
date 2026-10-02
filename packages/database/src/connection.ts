@@ -18,7 +18,7 @@ export function createDb(databaseUrl: string, options?: CreateDbOptions) {
   const db = drizzle(client, { schema });
   return Object.assign(db, {
     close: () => client.end(),
-    listen: (channel: string, onNotify: (payload: string) => void) =>
-      client.listen(channel, onNotify),
+    listen: (channel: string, onNotify: (payload: string) => void, onListen?: () => void) =>
+      client.listen(channel, onNotify, onListen),
   });
 }

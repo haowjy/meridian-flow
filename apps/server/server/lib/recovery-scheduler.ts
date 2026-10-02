@@ -4,7 +4,8 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import { RECOVERY_LANE_STOP_DEADLINE_MS } from "./shutdown-deadlines.js";
+// Fits within the polling-loops stage's 3 second process-shutdown budget.
+export const RECOVERY_LANE_STOP_DEADLINE_MS = 2_500;
 
 export interface RecoveryLane {
   name: string;

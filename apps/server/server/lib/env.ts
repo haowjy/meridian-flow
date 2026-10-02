@@ -1,6 +1,20 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+export function assertProductionAppEnvPresent(input: {
+  rawNodeEnv?: string;
+  rawAppEnv?: string;
+}): void {
+  if (input.rawNodeEnv === "production" && !input.rawAppEnv?.trim()) {
+    throw new Error("APP_ENV must be set to staging or production when NODE_ENV=production.");
+  }
+}
+
+assertProductionAppEnvPresent({
+  rawNodeEnv: process.env.NODE_ENV,
+  rawAppEnv: process.env.APP_ENV,
+});
+
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

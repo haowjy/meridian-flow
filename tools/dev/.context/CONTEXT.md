@@ -61,8 +61,7 @@ tools/dev/
 │   ├── tailscale-lifecycle.ts Stale route pruning + external route verification
 │   ├── tailscale-external-routes.ts  Pure policy: verify expected bindings
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
-│   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
-│   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
+│   ├── migration-history.ts   Migration identity and repository-history comparison
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
 │   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
@@ -87,7 +86,7 @@ tools/dev/
 ├── print-worktree-env.ts      eval'd by .envrc
 ├── portless-routes.ts / portless-prefix.ts / session-identity.ts / tmux-session-store.ts
 ├── prune-worktrees.ts         Merged worktree + branch + DB + work-item cleanup
-├── migrate-db.ts              pnpm db:migrate (runner + SQL function sync)
+├── migrate-db.ts              pnpm db:migrate (guarded target + database-owned atomic release runner)
 ├── check-migration-history.ts pnpm db:migration-history -- --base <ref> (CI frozen-history check)
 ├── migration-lint.ts
 ├── project.json               Nx project; exposes the tools typecheck target

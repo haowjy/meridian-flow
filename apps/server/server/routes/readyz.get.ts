@@ -1,36 +1,94 @@
 /** GET /readyz: readiness probe verifying the app composes and the database answers, returning 503 otherwise. Depends on the app singleton and db. */
-import { sql } from "drizzle-orm";
-import { defineEventHandler, setResponseStatus } from "nitro/h3";
 
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { getSchemaStatus, type SchemaStatus } from "@meridian/database";
+import { defineEventHandler, setResponseStatus } from "nitro/h3";
+import { emitEvent, unknownToEventPayload } from "../domains/observability";
 import { getApp } from "../lib/app";
 import { getDb } from "../lib/db";
+import { getProcessEventSink } from "../lib/observability";
 
-function reasonFromError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+let cachedReadySchemaStatus: "current" | undefined;
+let pendingSchemaStatus: Promise<SchemaStatus> | undefined;
+
+function releaseMigrationsDirectory(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "release/migrations"),
+    path.resolve(process.cwd(), "packages/database/src/migrations"),
+    path.resolve(process.cwd(), "../../packages/database/src/migrations"),
+  ];
+  const directory = candidates.find((candidate) =>
+    existsSync(path.join(candidate, "meta/_journal.json")),
+  );
+  if (!directory)
+    throw new Error("The release migration journal is missing from the runtime bundle.");
+  return directory;
+}
+
+async function checkSchemaStatus(sql: ReturnType<typeof getDb>["$client"]) {
+  if (cachedReadySchemaStatus) return cachedReadySchemaStatus;
+  if (!pendingSchemaStatus) {
+    pendingSchemaStatus = getSchemaStatus({
+      sql,
+      migrationsDirectory: releaseMigrationsDirectory(),
+    });
+  }
+  const check = pendingSchemaStatus;
+  try {
+    const status = await check;
+    if (status === "current") cachedReadySchemaStatus = status;
+    return status;
+  } finally {
+    if (pendingSchemaStatus === check) pendingSchemaStatus = undefined;
+  }
 }
 
 export default defineEventHandler(async (event) => {
   try {
-    await getApp();
+    const sql = getDb().$client;
+    await sql`SELECT 1`;
+    const schemaStatus = await checkSchemaStatus(sql);
+    if (schemaStatus === "behind" || schemaStatus === "divergent") {
+      setResponseStatus(event, 503);
+      return {
+        status: "error",
+        service: "api",
+        ready: false,
+        reason: schemaStatus === "behind" ? "schema_behind" : "schema_divergent",
+      };
+    }
   } catch (error) {
+    emitEvent(getProcessEventSink(), {
+      level: "error",
+      source: "routes.readyz",
+      name: "database_unavailable",
+      payload: unknownToEventPayload(error),
+    });
     setResponseStatus(event, 503);
     return {
       status: "error",
       service: "api",
       ready: false,
-      reason: `app_init_failed: ${reasonFromError(error)}`,
+      reason: "database_unavailable",
     };
   }
 
   try {
-    await getDb().execute(sql`SELECT 1`);
+    await getApp();
   } catch (error) {
+    emitEvent(getProcessEventSink(), {
+      level: "error",
+      source: "routes.readyz",
+      name: "app_init_failed",
+      payload: unknownToEventPayload(error),
+    });
     setResponseStatus(event, 503);
     return {
       status: "error",
       service: "api",
       ready: false,
-      reason: `database_unavailable: ${reasonFromError(error)}`,
+      reason: "app_init_failed",
     };
   }
 

@@ -1,30 +1,12 @@
-/**
- * Purpose: Owns the in-memory interrupt promise registry plus restart recovery for same-turn suspend/resume.
- * Key decisions: the registry is intentionally process-local for the MVP, while the journal remains the durable truth; restart recovery expires unresolved interrupts because the awaiting orchestrator promise cannot survive process death.
- */
+/** Owns the process-local interrupt promise registry and response correlation. */
 import type {
   ComponentBlockContent,
   InterruptAnswerEnvelope,
 } from "@meridian/contracts/components";
 import type { AskRequest } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { DEFAULT_PROJECT_PREFERENCES } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import {
-  isTerminalTurnStatus,
-  type JsonObject,
-  type JsonValue,
-  type OrchestratorEvent,
-  type Turn,
-} from "@meridian/contracts/threads";
-import { toIsoString } from "../../threads/domain/contract-serialization.js";
-import {
-  type EventJournalReader,
-  type EventJournalWriter,
-  projectReadModelEvent,
-  replyFailedCopy,
-  type ThreadRepositories,
-} from "../../threads/index.js";
+import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
 export const EXPIRED_INTERRUPT_VALUE = "__expired__";
 
@@ -65,8 +47,6 @@ export interface InterruptRegistry {
     interruptId: string;
     value: JsonValue;
   }): ResolveInterruptResult;
-  /** Recovery deduplication map for restart recovery per thread. */
-  recoverPendingInterrupts(deps: InterruptRecoveryDeps): Promise<OrchestratorEvent[]>;
 }
 
 export function defaultInterruptAutoResumePolicy(): InterruptAutoResumePolicy {
@@ -93,7 +73,6 @@ export type ResolveInterruptResult =
 
 export function createInterruptRegistry(): InterruptRegistry {
   const pendingInterrupts = new Map<string, PendingInterrupt>();
-  const interruptRecoveryByThread = new Map<string, Promise<OrchestratorEvent[]>>();
 
   function pendingCount(): number {
     return pendingInterrupts.size;
@@ -192,74 +171,6 @@ export function createInterruptRegistry(): InterruptRegistry {
     return { ok: true };
   }
 
-  async function hasLiveInterruptState(deps: InterruptRecoveryDeps): Promise<boolean> {
-    if (deps.hasLivePendingInterrupt?.(deps.threadId) ?? hasPendingForThread(deps.threadId)) {
-      return true;
-    }
-    if (!deps.getLiveRunnerTurnId) return false;
-    return deps.getLiveRunnerTurnId(deps.threadId) !== null;
-  }
-
-  async function recoverPendingInterruptsLocked(
-    deps: InterruptRecoveryDeps,
-  ): Promise<OrchestratorEvent[]> {
-    if (await hasLiveInterruptState(deps)) return [];
-
-    const created = await deps.journalReader.listByType(deps.threadId, "interrupt.created");
-    const recoveryEvents: OrchestratorEvent[] = [];
-
-    for (const entry of created) {
-      const payload = entry.payload;
-      if (payload.type !== "interrupt.created") continue;
-      if (await interruptHasClosingEvent(deps, payload.interruptId)) continue;
-
-      const turn = await deps.repos.turns.findById(payload.turnId);
-      if (!turn || turn.threadId !== deps.threadId || isTerminalTurn(turn)) continue;
-
-      const events: OrchestratorEvent[] = [
-        {
-          type: "interrupt.expired",
-          turnId: payload.turnId,
-          interruptId: payload.interruptId,
-          blockSequence: payload.blockSequence,
-        },
-        restartInterruptedTurnEvent(turn),
-      ];
-
-      await deps.repos.transaction(async () => {
-        // Re-check immediately before the destructive append so concurrent
-        // subscribe-triggered recovery remains idempotent even if a second caller
-        // observed the unresolved interrupt before this transaction committed.
-        if (await interruptHasClosingEvent(deps, payload.interruptId)) return;
-        for (const event of events) {
-          await deps.journalWriter.appendEvent(deps.threadId, event);
-          await projectReadModelEvent(deps.repos, event);
-        }
-        recoveryEvents.push(...events);
-      });
-    }
-
-    return recoveryEvents;
-  }
-
-  async function recoverPendingInterrupts(
-    deps: InterruptRecoveryDeps,
-  ): Promise<OrchestratorEvent[]> {
-    if (await hasLiveInterruptState(deps)) return [];
-
-    const key = deps.threadId as string;
-    const existing = interruptRecoveryByThread.get(key);
-    if (existing) return existing;
-
-    const recovery = recoverPendingInterruptsLocked(deps).finally(() => {
-      if (interruptRecoveryByThread.get(key) === recovery) {
-        interruptRecoveryByThread.delete(key);
-      }
-    });
-    interruptRecoveryByThread.set(key, recovery);
-    return recovery;
-  }
-
   return {
     pendingCount,
     hasPendingForThread,
@@ -267,7 +178,6 @@ export function createInterruptRegistry(): InterruptRegistry {
     reject,
     waitForResponse,
     resolve,
-    recoverPendingInterrupts,
   };
 }
 
@@ -295,55 +205,5 @@ export function extractInterruptHints(
   return {
     recommended: "recommended" in props ? ((props as JsonObject).recommended ?? null) : null,
     requiresHuman: (props as JsonObject).requiresHuman === true,
-  };
-}
-
-export type InterruptRecoveryDeps = {
-  repos: ThreadRepositories;
-  journalReader: EventJournalReader;
-  journalWriter: EventJournalWriter;
-  threadId: ThreadId;
-  /**
-   * Recovery is destructive: it turns an unresolved interrupt into a terminal
-   * restart error. A live pending promise or active runner means this process
-   * can still resume the turn, so subscribe-time recovery must stand down.
-   */
-  getLiveRunnerTurnId?: (threadId: ThreadId) => TurnId | null;
-  hasLivePendingInterrupt?: (threadId: ThreadId) => boolean;
-};
-
-function isTerminalTurn(turn: Turn | null): boolean {
-  return turn != null && isTerminalTurnStatus(turn.status);
-}
-
-async function interruptHasClosingEvent(
-  deps: InterruptRecoveryDeps,
-  interruptId: string,
-): Promise<boolean> {
-  const [resolved, expired] = await Promise.all([
-    deps.journalReader.listByType(deps.threadId, "interrupt.resolved"),
-    deps.journalReader.listByType(deps.threadId, "interrupt.expired"),
-  ]);
-  return [...resolved, ...expired].some((entry) => {
-    const payload = entry.payload;
-    return "interruptId" in payload && payload.interruptId === interruptId;
-  });
-}
-
-function restartInterruptedTurnEvent(turn: Turn): OrchestratorEvent {
-  const error = meridianErrorFromSystem(
-    "interrupt_interrupted",
-    "Interrupt interrupted by server restart before it could be resumed.",
-  );
-  return {
-    type: "turn.error",
-    turn: {
-      ...turn,
-      status: "error",
-      finishReason: "error",
-      error: replyFailedCopy,
-      completedAt: toIsoString(new Date()),
-    },
-    error,
   };
 }

@@ -1,39 +1,39 @@
 #!/usr/bin/env tsx
-/** Apply committed migrations and surface the exact file and PostgreSQL failure. */
-import { execFileSync } from "node:child_process";
+/** Apply committed migrations and canonical functions through the package-owned runner. */
 import path from "node:path";
 import {
-  ALLOW_MAIN_DATABASE,
-  MANAGED_TEST_DATABASE,
-  resolveDatabaseAdminTarget,
-} from "./lib/dev-db-target";
+  DatabaseHistoryRefusalError,
+  formatMigrationFailure,
+  runMigrations,
+} from "@meridian/database/release";
+import { isLocalDevPostgres } from "./lib/dev-db";
+import { resolveDatabaseAdminTarget } from "./lib/dev-db-target";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
-import { formatMigrationFailure, runMigrations } from "./lib/migration-runner";
+import { formatDatabaseHistoryRefusal } from "./lib/migration-history";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const repoRoot = resolveCurrentRepoRoot();
   const target = resolveDatabaseAdminTarget({ repoRoot, args });
-
   const migrationsDirectory = path.join(repoRoot, "packages/database/src/migrations");
+
   try {
     await runMigrations({ databaseUrl: target.databaseUrl, migrationsDirectory });
-    console.log(`db:migrate: applied migrations to "${target.databaseName}"`);
+    console.log(`db:migrate: applied migrations and functions to "${target.databaseName}"`);
   } catch (error) {
-    console.error(formatMigrationFailure(error, { repoRoot }));
+    if (error instanceof DatabaseHistoryRefusalError) {
+      console.error(
+        formatDatabaseHistoryRefusal({
+          databaseName: target.databaseName,
+          issues: error.issues,
+          localDevDatabase: isLocalDevPostgres(target.databaseUrl),
+        }),
+      );
+    } else {
+      console.error(formatMigrationFailure(error));
+    }
     process.exitCode = 1;
-    return;
   }
-
-  console.log(`db:migrate: applying SQL functions to "${target.databaseName}"`);
-  const functionArgs = args.filter(
-    (arg) => arg === ALLOW_MAIN_DATABASE || arg === MANAGED_TEST_DATABASE,
-  );
-  execFileSync(
-    "pnpm",
-    ["exec", "tsx", "packages/database/scripts/apply-functions.ts", ...functionArgs],
-    { cwd: repoRoot, stdio: "inherit", env: process.env },
-  );
 }
 
 main().catch((error: unknown) => {

@@ -66,7 +66,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 ## Do not
 
 - Do not run `tools/dev/*` scripts from production code or app runtime
-- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code (except `@meridian/contracts` in `cli/`; see `.context/CONTEXT.md`)
+- Do not import from `apps/`, other `packages/`, or `python/` — these are dev tools, not app code. The deliberate exceptions are `@meridian/contracts` in `cli/` and the database-owned release runner in `migrate-db.ts`; see `.context/CONTEXT.md`.
 - Do not depend on Node modules outside the root `package.json`'s devDependencies
 - Do not print or persist the `executable` command — stdout, logs, and `.meridian/dev-session.json` get `display` (redacted) only
 - Do not build the tmux command before calling `applyDevEnvToProcess`
