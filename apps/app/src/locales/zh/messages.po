@@ -100,8 +100,8 @@ msgstr "{0, plural, other {# 次调用}}"
 
 #. placeholder {0}: group.drafts.length
 #: src/features/project/work/WorkDrafts.tsx
-msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
-msgstr ""
+#~ msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
+#~ msgstr ""
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -2811,6 +2811,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
+msgstr ""
+
+#: src/features/project/work/WorkDrafts.tsx
+msgid "Pending draft"
 msgstr ""
 
 #: src/features/project/work/WorkDrafts.tsx

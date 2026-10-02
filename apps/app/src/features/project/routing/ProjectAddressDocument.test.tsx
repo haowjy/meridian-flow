@@ -52,24 +52,19 @@ it.each([
 ] as const)("publishes %s metadata without revealing an unresolved alias", async (kind) => {
   openTab.mockReturnValue({ kind: "opened" });
   const onAdmission = vi.fn();
-  let finishReplace!: () => void;
   const href =
     kind === "alias"
       ? "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before"
       : "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigate = vi.fn(
-    () =>
-      new Promise<void>((resolve) => {
-        finishReplace = resolve;
-      }),
-  );
+  const navigate = vi.fn();
+  const replaceEntry = vi.fn();
   const navigation = createProjectNavigation(
     {
       read: () => ({ key: "entry", href, state: {} }),
       subscribe: () => () => undefined,
       flush: () => undefined,
       settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
+      replaceEntry,
       navigate,
     },
     () => ({ workId: null }),
@@ -114,12 +109,12 @@ it.each([
         }),
       );
       if (kind === "alias") {
-        expect(navigate).toHaveBeenCalledWith(
+        expect(replaceEntry).toHaveBeenCalledWith(
           "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc",
-          expect.objectContaining({ replace: true }),
+          expect.any(Object),
         );
-        await act(async () => finishReplace());
-      } else expect(navigate).not.toHaveBeenCalled();
+      } else expect(replaceEntry).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
     },
   );
   navigation.dispose();
@@ -243,23 +238,24 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
 
 it.each([
   "current",
-  "before-failure",
-  "after-failure",
-] as const)("settles a rejected alias replace only while it owns the entry (superseded: %s)", async (superseded) => {
-  openTab.mockReturnValue({ kind: "opened" });
-  let reject!: (error: unknown) => void;
-  const pending = new Promise<void>((_resolve, fail) => {
-    reject = fail;
-  });
+  "before-replace",
+] as const)("settles a rejected alias repair only while it owns the entry (superseded: %s)", async (superseded) => {
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before";
-  const navigation = createProjectNavigation(
+  let navigation!: ReturnType<typeof createProjectNavigation>;
+  openTab.mockImplementation(() => {
+    if (superseded === "before-replace") navigation.beginIntent();
+    return { kind: "opened" };
+  });
+  navigation = createProjectNavigation(
     {
       read: () => ({ key: "entry", href, state: {} }),
       subscribe: () => () => undefined,
       flush: () => undefined,
       settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
+      replaceEntry: () => {
+        throw new Error("router rejected replacement");
+      },
+      navigate: vi.fn(),
     },
     () => ({ workId: null }),
   );
@@ -271,12 +267,6 @@ it.each([
     results: false,
   };
   const onAdmission = vi.fn();
-  void pending.catch(() => {
-    if (superseded === "after-failure")
-      queueMicrotask(() => {
-        navigation.beginIntent();
-      });
-  });
   try {
     await withReactRoot(
       <ProjectAddressDocument
@@ -290,9 +280,10 @@ it.each([
         onAdmission={onAdmission}
       />,
       async () => {
-        expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "loading" }));
-        if (superseded === "before-failure") navigation.beginIntent();
-        await act(async () => reject(new Error("router rejected replacement")));
+        expect(onAdmission).toHaveBeenLastCalledWith(
+          expect.objectContaining({ issue: superseded === "current" ? "error" : "loading" }),
+        );
+        await act(async () => undefined);
         expect(onAdmission).toHaveBeenLastCalledWith(
           expect.objectContaining({
             issue: superseded === "current" ? "error" : "loading",
