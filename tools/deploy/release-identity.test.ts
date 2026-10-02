@@ -4,6 +4,7 @@ import {
   parseTag,
   RAILWAY_CLI_VERSION,
   releaseSubject,
+  runReleaseIdentity,
   SERVICES,
 } from "./release-identity.ts";
 
@@ -24,5 +25,26 @@ describe("release identity", () => {
       "ghcr.io/haowjy/meridian-flow-ingress",
     ]);
     expect(RAILWAY_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it.each([
+    ["Merge pull request #1", [], 0, "false"],
+    ["release: v1.2.3", ["v1.2.3"], 0, "true"],
+    ["release: v1.2.3", [], 1, ""],
+    ["release: v1.2.3", ["v1.2.3", "v1.2.4"], 1, ""],
+  ])("identifies subject %j with tags %j", (subject, tags, expectedCode, expectedOutput) => {
+    const output: string[] = [];
+    const errors: string[] = [];
+    const code = runReleaseIdentity(["identify-release", "abc123"], {
+      git: (args) => (args[0] === "show" ? subject : tags.join("\n")),
+      log: (message) => output.push(message),
+      error: (message) => errors.push(message),
+    });
+    expect(code).toBe(expectedCode);
+    expect(output.join("\n")).toBe(expectedOutput);
+    if (expectedCode === 1)
+      expect(errors.join("\n")).toContain(
+        "Release commit abc123 (release: v1.2.3) must have exactly its one canonical tag. Re-run Release on Merge.",
+      );
   });
 });

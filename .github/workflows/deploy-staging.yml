@@ -31,11 +31,8 @@ jobs:
         env:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if node tools/deploy/manifest.ts resolve-tag "$RELEASE_SHA" >/dev/null 2>&1; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "release=false" >> "$GITHUB_OUTPUT"
-          fi
+          release=$(node tools/deploy/release-identity.ts identify-release "$RELEASE_SHA")
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   build:
     needs: identify-release
