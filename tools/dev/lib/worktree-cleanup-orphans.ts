@@ -45,8 +45,19 @@ function missingDirectory(directory: string): boolean {
     return false;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    fs.accessSync(path.dirname(directory), fs.constants.R_OK | fs.constants.X_OK);
-    return true;
+    // The sibling worktree container may itself have been deleted. Walk to an
+    // inspectable existing ancestor, refusing dangling symlinks along the way.
+    let ancestor = path.dirname(directory);
+    while (true) {
+      try {
+        if (!fs.lstatSync(ancestor).isDirectory()) return false;
+        fs.accessSync(ancestor, fs.constants.R_OK | fs.constants.X_OK);
+        return true;
+      } catch (ancestorError) {
+        if ((ancestorError as NodeJS.ErrnoException).code !== "ENOENT") throw ancestorError;
+        ancestor = path.dirname(ancestor);
+      }
+    }
   }
 }
 
