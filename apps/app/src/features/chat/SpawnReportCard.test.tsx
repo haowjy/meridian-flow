@@ -138,7 +138,7 @@ describe("SpawnReportCard", () => {
     const use = block("p17-use", 1, "tool_use", {
       toolCallId: callId,
       toolName: "spawn",
-      input: { mode: "foreground", description: "Repeat-read comparison" },
+      input: { mode: "foreground", name: "Repeat-read comparison" },
       output: null,
       isError: false,
     });
