@@ -30,9 +30,8 @@ function advertisedWrite(policy: ReturnType<typeof projectToolPolicy>) {
 describe("permissionGateFromToolPolicy", () => {
   const criticGate = () => permissionGateFromToolPolicy(projectToolPolicy({ tools: CRITIC_MAP }));
 
-  it("allows universal read and diff commands", () => {
+  it("allows universal read commands", () => {
     expect(criticGate().check("write", { command: "read" })).toEqual({ allowed: true });
-    expect(criticGate().check("write", { command: "diff" })).toEqual({ allowed: true });
   });
 
   it("treats malformed/unknown commands as invalid arguments", () => {
@@ -44,14 +43,14 @@ describe("permissionGateFromToolPolicy", () => {
     expect(criticGate().check("write", {})).toEqual({
       allowed: false,
       kind: "invalid_arguments",
-      reason: 'Invalid arguments for write:\n- command: required; expected "read" or "diff"',
-      issues: [{ path: "command", message: 'required; expected "read" or "diff"' }],
+      reason: 'Invalid arguments for write:\n- command: required; expected "read"',
+      issues: [{ path: "command", message: 'required; expected "read"' }],
     });
     expect(criticGate().check("write", { command: "read" })).toEqual({ allowed: true });
     expect(criticGate().check("write", { command: "bogus" })).toMatchObject({
       allowed: false,
       kind: "invalid_arguments",
-      issues: [{ path: "command", message: 'expected "read" or "diff", got "bogus"' }],
+      issues: [{ path: "command", message: 'expected "read", got "bogus"' }],
     });
   });
 
@@ -76,7 +75,6 @@ describe("write tool policy advertisement", () => {
     const { base, advertised } = advertisedWrite(projectToolPolicy({ tools: CRITIC_MAP }));
     const schema = JSON.stringify(advertised.inputSchema);
     expect(schema).toContain("Read a document");
-    expect(schema).toContain("Needs a Work in draft write mode");
     expect(schema).not.toContain('"create"');
     expect(schema).not.toContain("entire content");
     expect(schema).not.toContain("Undo this thread");

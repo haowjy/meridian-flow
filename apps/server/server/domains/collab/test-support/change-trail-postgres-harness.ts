@@ -34,7 +34,6 @@ const {
   createDrizzlePushCommitStore,
   createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
-const { createDrizzleTurnDiffQuery } = await import("../adapters/drizzle-turn-diff-query.js");
 const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
@@ -571,10 +570,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       enlist: enlistResponseParticipant,
       run: runResponseTransaction,
     },
-    turnDiffQuery: createDrizzleTurnDiffQuery(
-      db,
-      persistence.journal.documentsForTurn.bind(persistence.journal),
-    ),
   });
   const noLiveDependents = async () => ({
     hasDependents: false,
@@ -1698,10 +1693,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     autoPush: (branchId: string) => realBranchPush.pushToLive({ branchId }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
-    diff: () =>
-      collab
-        .agentEdit()
-        .write({ command: "diff" }, { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID }),
     seedDestructivePush,
     seedSweepClassificationPush,
     seedMatrixPush,

@@ -95,9 +95,7 @@ export function planModelElisions(input: {
     )) {
       const refs = recorded.get(result.id);
       const changed = changedDocuments(new Map([[result.id, refs]]), current);
-      const diff =
-        (call.content as JsonObject).toolName === "write" && toolInput.command === "diff";
-      if (!diff && refs !== undefined && changed.length === 0) continue;
+      if (refs !== undefined && changed.length === 0) continue;
       const uris = [...new Set(changed.flatMap((ref) => (ref.uri ? [ref.uri] : [])))];
       const replacement = policy.elide(
         { input: toolInput, output: (result.content as JsonObject).output },

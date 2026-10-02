@@ -1,7 +1,6 @@
 // Versioned JSON result contract presented to editing models.
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
-import type { TurnDiffResult } from "../ports/turn-diff-query.js";
 import { type WriteCommandName, writeCommandName } from "./command-schema.js";
 
 export const AGENT_EDIT_RESULT_SCHEMA = "meridian.agent-edit.v1" as const;
@@ -70,7 +69,6 @@ export interface AgentEditModelPayload {
     runs: AgentEditConcurrentRun[];
     syncOverflow?: boolean;
   };
-  diff?: TurnDiffResult | null;
   awarenessDegraded?: boolean;
 }
 

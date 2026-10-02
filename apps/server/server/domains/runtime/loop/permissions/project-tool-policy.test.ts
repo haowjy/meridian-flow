@@ -6,7 +6,7 @@ import {
   type WriteCommandName,
 } from "./project-tool-policy.js";
 
-const WRITE_READ = ["diff", "read"] as const;
+const WRITE_READ = ["read"] as const;
 const WRITE_MUTATE = [
   "create",
   "delete",

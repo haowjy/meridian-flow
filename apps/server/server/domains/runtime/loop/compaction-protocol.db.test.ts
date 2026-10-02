@@ -187,7 +187,6 @@ else
             { id: "stale-write", command: "replace", revision: "old" },
             { id: "fresh-write", command: "replace", revision: "new" },
             { id: "search", command: "search", revision: "old" },
-            { id: "diff", command: "diff", revision: null },
             { id: "failed-write", command: "replace", revision: "old" },
           ]
         : [{ id: "stale-read", command: "read", revision: "old" }];
@@ -247,7 +246,7 @@ else
                 documentRevisions: [
                   {
                     documentId: "chapter",
-                    uri: record.command === "diff" ? null : uri,
+                    uri,
                     revision: record.revision,
                   },
                   ...(isSearch
@@ -339,7 +338,6 @@ else
         "STALE-WRITE TEXT",
         "STALE SEARCH TEXT",
         "STALE REFERENCE TEXT",
-        "DIFF TEXT",
       ])
         expect(bytes).not.toContain(text);
       for (const text of [
@@ -400,7 +398,6 @@ else
       const retained = JSON.stringify(rig.summarizer.calls[1].retainedMessages);
       expect(retained).toContain("Cleared at compaction");
       expect(retained).not.toContain("STALE-READ TEXT");
-      expect(retained).not.toContain("DIFF TEXT");
       const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);

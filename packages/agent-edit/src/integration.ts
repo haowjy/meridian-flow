@@ -61,12 +61,6 @@ export type {
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
-  TurnDiffChange,
-  TurnDiffQuery,
-  TurnDiffResult,
-  TurnDiffTrailState,
-} from "./ports/turn-diff-query.js";
-export type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,

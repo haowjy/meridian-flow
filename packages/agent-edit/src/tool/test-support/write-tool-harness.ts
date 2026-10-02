@@ -19,7 +19,6 @@ import {
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
-import type { TurnDiffQuery } from "../../ports/turn-diff-query.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
@@ -61,7 +60,6 @@ export function harness(
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
-    turnDiffQuery?: TurnDiffQuery;
   } = {},
 ) {
   const agentEditModel = options.model ?? model;
@@ -78,7 +76,6 @@ export function harness(
     codec,
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
-    turnDiffQuery: options.turnDiffQuery,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),

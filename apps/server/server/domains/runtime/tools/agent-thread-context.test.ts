@@ -195,16 +195,15 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     );
   });
 
-  it("advertises Critic read/diff and Writer all commands on one write tool", async () => {
+  it("advertises Critic read and Writer all commands on one write tool", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
-    expect([...commandConsts(critic.tools, "write")].sort()).toEqual(["diff", "read"]);
+    expect([...commandConsts(critic.tools, "write")].sort()).toEqual(["read"]);
     expect(hasTool(critic.tools, "read")).toBe(false);
     expect(commandConsts(writer.tools, "write")).toContain("replace");
     expect([...commandConsts(writer.tools, "write")].sort()).toEqual([
       "create",
       "delete",
-      "diff",
       "insert",
       "read",
       "redo",
@@ -217,7 +216,7 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
-    expect([...commandConsts(generic.tools, "write")].sort()).toEqual(["diff", "read"]);
+    expect([...commandConsts(generic.tools, "write")].sort()).toEqual(["read"]);
     expect(hasTool(generic.tools, "read")).toBe(false);
   });
 

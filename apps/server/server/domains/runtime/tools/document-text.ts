@@ -20,7 +20,6 @@ export const writeDocumentText: DocumentTextPolicy = {
   kind(input) {
     switch (input.command) {
       case "read":
-      case "diff":
         return "read";
       case "create":
       case "insert":
@@ -36,22 +35,11 @@ export const writeDocumentText: DocumentTextPolicy = {
   elide({ input = {}, output }, changed, treatment) {
     const documents =
       changed.map((ref) => ref.uri ?? ref.documentId).join(", ") ||
-      String(input.path ?? input.document_id ?? "This document");
+      String(input.path ?? "This document");
     if (treatment === "history") {
-      if (input.command === "diff")
-        return {
-          output: changed.some((ref) => ref.uri)
-            ? historyReadStub(documents)
-            : "[change summary omitted]",
-        };
       if (input.command === "read") return { output: historyReadStub(documents) };
       return { output: `[edit applied to ${documents} (${input.command})]` };
     }
-    if (input.command === "diff")
-      return {
-        output:
-          "[Cleared at compaction: this change trail may be out of date. Query diff again before relying on it.]",
-      };
     if (input.command === "read") return { output: staleReadStub(documents) };
     const { content: _content, find: _find, around: _around, ...kept } = input;
     return {

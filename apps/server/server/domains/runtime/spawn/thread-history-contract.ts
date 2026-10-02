@@ -467,7 +467,6 @@ export function defineThreadHistoryContract(
         },
         "COPY SENTINEL",
       );
-      const diff = await f.tool(t, "write", { command: "diff" }, "COPY SENTINEL");
       const writer = await f.turn("user", null, "complete", "writer");
       await f.block(writer, "text", {
         type: "reference",
@@ -495,7 +494,7 @@ export function defineThreadHistoryContract(
         expect(text).toContain('"omitted":"read it for current text"');
         expect(text).not.toContain('"matches"');
       }
-      for (const pair of [read, edit, search, diff]) {
+      for (const pair of [read, edit, search]) {
         const expanded = output(await f.read({ expand: `${t.position}.${pair.result.sequence}` }));
         expect(expanded).not.toContain("COPY SENTINEL");
       }

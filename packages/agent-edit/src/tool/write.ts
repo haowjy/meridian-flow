@@ -140,11 +140,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     runtimeStore,
     threadOrigins,
   });
-  const dispatch = createWriteDispatch({
-    commands,
-    reversal: reversalEndpoints,
-    turnDiffQuery: options.turnDiffQuery,
-  });
+  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
 
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);
@@ -176,11 +172,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         options.onUnexpectedWriteError?.({
           cause,
           command: validCommand.command,
-          ...("documentId" in validCommand && validCommand.documentId
-            ? { documentId: validCommand.documentId }
-            : "document_id" in validCommand && validCommand.document_id
-              ? { documentId: validCommand.document_id }
-              : {}),
+          ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
           sessionId: session.id,
           threadId: session.threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
