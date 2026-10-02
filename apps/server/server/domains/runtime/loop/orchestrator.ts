@@ -1144,9 +1144,14 @@ async function persistCommittedWriteResult(input: {
   const metadata = { ...content?.metadata };
   metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
-  // The settled receipt describes the same document the staged result named.
-  const path = stagedWriteResult(input.block)?.path;
-  const { output, result } = writeResultContent({ ...input.result, ...(path ? { path } : {}) });
+  // The settled receipt describes the same document and destination the staged result named.
+  const staged = stagedWriteResult(input.block);
+  const { output, result } = writeResultContent({
+    ...input.result,
+    ...(staged?.path ? { path: staged.path } : {}),
+    ...(staged?.destination ? { destination: staged.destination } : {}),
+    ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
+  });
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,
