@@ -19,6 +19,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24.17.0

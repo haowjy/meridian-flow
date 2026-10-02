@@ -132,7 +132,7 @@ export function classifyPushFailure(
   expectedMain: string,
 ): "protection" | "race" {
   return remoteMain === expectedMain &&
-    /GH013|protected branch|ruleset|permission denied|write access/i.test(output)
+    /GH013|protected branch|ruleset|permission (?:to .* )?denied|write access/i.test(output)
     ? "protection"
     : "race";
 }
@@ -408,7 +408,7 @@ export async function publish(
     const classification = classifyPushFailure(pushed.output, git.remoteMain(), release.parent);
     if (classification === "protection")
       throw new Error(
-        "RELEASE_TOKEN was rejected by main protection. Its owner must bypass the protect ruleset; see docs/deploy/runbook.md.",
+        "RELEASE_TOKEN was rejected by GitHub permissions or main protection. Check RELEASE_TOKEN and ensure its owner bypasses the protect ruleset; see docs/deploy/runbook.md.",
       );
     if (attempt === 3) throw new Error("Release push lost three races; rerun the workflow.");
   }

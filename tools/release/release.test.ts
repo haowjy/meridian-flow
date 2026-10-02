@@ -133,6 +133,13 @@ describe("push failure classification", () => {
       "protection",
     );
     expect(classifyPushFailure("non-fast-forward", "new-tip", "parent")).toBe("race");
+    expect(
+      classifyPushFailure(
+        "remote: Permission to haowjy/meridian-flow.git denied to github-actions[bot].\nfatal: unable to access: The requested URL returned error: 403",
+        "parent",
+        "parent",
+      ),
+    ).toBe("protection");
   });
 });
 
