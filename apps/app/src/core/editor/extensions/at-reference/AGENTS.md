@@ -2,9 +2,10 @@
 
 Typing `@` in prose opens the reference browser
 ([`@/core/completion`](../../../completion/AGENTS.md)); choosing a document
-writes a **standard Markdown link** to its address. `@` is the only way a writer
-inserts a document link in the Editor: `[[name]]` is plain text and opens
-nothing. The surface is `AtReferenceMenu` in
+writes a **standard Markdown link** to its address. `@` is how a writer types a
+document link in the Editor: a typed `[[name]]` is plain text and opens nothing
+(a pasted one becomes a link, which is [`../../links/`](../../links/AGENTS.md)'s
+paste policy). The surface is `AtReferenceMenu` in
 [`features/editor/surfaces/link/`](../../../../features/editor/surfaces/link/AGENTS.md).
 
 ## Key rules

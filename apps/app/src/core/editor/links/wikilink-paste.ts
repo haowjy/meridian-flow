@@ -7,7 +7,9 @@
  * Obsidian's syntax: `[[target]]`, `[[target|label]]`, `[[target#Heading]]`,
  * `[[target#^block]]`, with folders in the target (`Arc 1/Kael`) and `.md`
  * implied when it names no extension. `![[…]]` is an embed and stays text
- * (there is no transclusion); `\[[` is escaped; code is never touched.
+ * (there is no transclusion); `\[[` is escaped and stays the literal
+ * brackets; code is never touched. Which pastes convert at all is the
+ * policy's (`WikilinkPasteExtension`).
  *
  * A target resolves as Obsidian's does, with a fixed order where Obsidian's
  * last step is "the first one it finds" (`pickWikilinkTarget`). One that names
