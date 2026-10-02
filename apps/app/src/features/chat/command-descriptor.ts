@@ -50,9 +50,9 @@ export type CommandExpand =
   /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
   /** The passage the model read, as quoted prose. */
-  | "output-preview"
+  | "result-preview"
   /** The headings a skim saw, as a list. */
-  | "output-outline"
+  | "result-outline"
   /** What the model submitted, read from the tool input. */
   | "submitted-content"
   /** Curated per-tool content the registry builds itself. */
@@ -91,7 +91,7 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     phrases: (tool) => documentTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-preview",
+    expand: "result-preview",
   },
   // An outline read returns heading structure, not prose. A row saying "Read"
   // over that payload claims the model saw the words.
@@ -100,7 +100,7 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     phrases: (tool) => documentTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-outline",
+    expand: "result-outline",
   },
   create: {
     Icon: FilePlus2,
