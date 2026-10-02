@@ -2,13 +2,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { parseReleaseManifest } from "./manifest.ts";
+import { type Image, parseReleaseManifest } from "./manifest.ts";
 import { createConfirmedSnapshot } from "./neon.ts";
+import { RAILWAY_CLI_VERSION, SERVICES } from "./release-identity.ts";
 
-type Image = { repository: string; digest: string; ref: string };
 type Deployment = { id?: string; status?: string; deploymentId?: string };
-const services = ["server", "app", "www", "ingress"] as const;
-const cliVersion = "5.62.1";
 const timeoutMs = Number(process.env.DEPLOY_TIMEOUT_MS ?? 12 * 60_000);
 const pollMs = Number(process.env.DEPLOY_POLL_MS ?? 3_000);
 const detectMs = Number(process.env.DEPLOY_DETECT_MS ?? 60_000);
@@ -166,14 +164,14 @@ async function main() {
   });
   const backupRef = `neon-snapshot:${snapshot.id}:release=${manifest.sha}`;
   const versionOutput = command(["--version"]);
-  if (!versionOutput.includes(cliVersion))
-    fail(`Railway CLI ${cliVersion} required, found '${versionOutput}'`);
+  if (!versionOutput.includes(RAILWAY_CLI_VERSION))
+    fail(`Railway CLI ${RAILWAY_CLI_VERSION} required, found '${versionOutput}'`);
   const results: Array<[string, string]> = [];
   results.push(await deployService(environment, "server", manifest.images.server, backupRef));
   const rest = await Promise.all(
-    services
-      .filter((name) => name !== "server")
-      .map((name) => deployService(environment, name, manifest.images[name])),
+    SERVICES.filter((name) => name !== "server").map((name) =>
+      deployService(environment, name, manifest.images[name]),
+    ),
   );
   results.push(...rest);
   console.log(`\n${environment} ${manifest.tag} (${manifest.sha})`);

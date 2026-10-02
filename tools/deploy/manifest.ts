@@ -1,17 +1,20 @@
 /** Shared release-manifest validation, creation, and byte-level SHA-256. */
+
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { imageRepository, parseTag, SERVICES, type Service } from "./release-identity.ts";
+
+export type Image = { repository: string; digest: string; ref: string };
 
 export type ReleaseManifest = {
   version: string;
   tag: string;
   sha: string;
-  images: Record<string, { repository: string; digest: string; ref: string }>;
+  images: Record<Service, Image>;
   builtAt?: string;
   runUrl?: string;
 };
-
-const services = ["server", "app", "www", "ingress"] as const;
 
 export function parseReleaseManifest(raw: string): ReleaseManifest {
   let manifest: ReleaseManifest;
@@ -22,18 +25,18 @@ export function parseReleaseManifest(raw: string): ReleaseManifest {
   }
   if (
     !manifest ||
-    !/^v\d+\.\d+\.\d+(-rc\.\d+)?$/.test(manifest.tag) ||
+    !parseTag(manifest.tag) ||
     manifest.tag !== `v${manifest.version}` ||
     !/^[0-9a-f]{40}$/.test(manifest.sha)
   )
     throw new Error(
       "Manifest must include a matching version/tag and full 40-character release sha",
     );
-  for (const service of services) {
+  for (const service of SERVICES) {
     const image = manifest.images?.[service];
     if (
       !image ||
-      image.repository !== `ghcr.io/haowjy/meridian-flow-${service}` ||
+      image.repository !== imageRepository(service) ||
       !/^sha256:[0-9a-f]{64}$/.test(image.digest) ||
       image.ref !== `${image.repository}@${image.digest}`
     )
@@ -56,10 +59,9 @@ async function main() {
     const version = process.env.VERSION ?? "";
     const tag = process.env.TAG ?? "";
     const sha = process.env.SHA ?? "";
-    const repository = "ghcr.io/haowjy/meridian-flow";
     const images = Object.fromEntries(
-      services.map((service) => {
-        const repo = `${repository}-${service}`;
+      SERVICES.map((service) => {
+        const repo = imageRepository(service);
         const digest = process.env[`${service.toUpperCase()}_DIGEST`] ?? "";
         return [service, { repository: repo, digest, ref: `${repo}@${digest}` }];
       }),
@@ -89,7 +91,25 @@ async function main() {
     console.log(await manifestSha256(path));
     return;
   }
-  throw new Error("Usage: manifest.ts create|validate|sha256 <path> [expected-tag] [expected-sha]");
+  if (command === "resolve-tag" && path) {
+    const result = spawnSync("git", ["tag", "--points-at", path, "v*"], { encoding: "utf8" });
+    if (result.status !== 0)
+      throw new Error(result.stderr.trim() || `Could not inspect tags at ${path}`);
+    const tags = result.stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .filter((tag) => parseTag(tag));
+    if (tags.length !== 1)
+      throw new Error(
+        `Expected exactly one release tag on ${path}; found ${tags.length}: ${tags.join(" ")}`,
+      );
+    console.log(tags[0]);
+    return;
+  }
+  throw new Error(
+    "Usage: manifest.ts create|validate|sha256 <path> [expected-tag] [expected-sha] | resolve-tag <sha>",
+  );
 }
 
 if (process.argv[1]?.endsWith("manifest.ts")) {

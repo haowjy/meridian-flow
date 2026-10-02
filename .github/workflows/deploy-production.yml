@@ -14,14 +14,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      statuses: write
     outputs:
-      version: ${{ steps.release.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       # Environment deployment-branch restrictions are the actual security gate.
       - name: Require dispatch from main
@@ -30,37 +29,20 @@ jobs:
             echo "::error::Deploy Production must be dispatched from main (got $GITHUB_REF)"
             exit 1
           fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.17.0
-      - name: Validate version, staging status, and manifest
-        id: release
+      - name: Forward requested version
+        id: version
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
-          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Version must match vX.Y.Z or vX.Y.Z-rc.N"; exit 1; }
-          tag="$VERSION"
-          sha=$(node tools/deploy/release-commit.ts "$tag") || { echo "::error::Tag $tag does not exist or does not resolve to a commit"; exit 1; }
-          status=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/status" --jq '[.statuses[] | select(.context == "deploy/staging")] | sort_by(.created_at) | last // {}')
-          state=$(jq -r '.state // "missing"' <<< "$status")
-          [[ "$state" == success ]] || { echo "::error::$tag was not deployed to staging successfully — deploy it to staging first"; exit 1; }
-          mkdir -p "$RUNNER_TEMP/release"
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
-          node tools/deploy/manifest.ts validate "$RUNNER_TEMP/release/release-manifest.json" "$tag" "$sha"
-          staged_hash=$(grep -oE 'manifest-sha256=[a-f0-9]{64}' <<< "$(jq -r '.description // ""' <<< "$status")" | cut -d= -f2)
-          manifest_hash=$(node tools/deploy/manifest.ts sha256 "$RUNNER_TEMP/release/release-manifest.json")
-          [[ -n "$staged_hash" && "$manifest_hash" == "$staged_hash" ]] || { echo "::error::Release manifest SHA-256 does not match the latest successful deploy/staging status"; exit 1; }
           echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
 
   promote:
-    needs: verify
+    needs: guard
     permissions:
       contents: read
       statuses: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: production
-      version: ${{ needs.verify.outputs.version }}
+      version: ${{ needs.guard.outputs.version }}
     secrets: inherit

@@ -83,7 +83,7 @@ first staging deploy, migrations are append-only: a replaced history makes `/rea
    token:
 
    ```sh
-   pnpm add -g @railway/cli@5.62.1
+   pnpm add -g "@railway/cli@$(node tools/deploy/release-identity.ts railway-version)"
    railway --version
    railway link
    export RAILWAY_TOKEN='<staging-project-token>'

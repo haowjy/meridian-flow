@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  hasReleaseSkipTrailer,
+  classifyPushFailure,
   nextVersion,
   promoteChangelog,
+  resolveBatch,
   resolveBatchIntent,
   resolveIntent,
-  unreleasedFirstParentCommits,
-} from "./release.mjs";
+  selectPullRequest,
+  uncoveredCommits,
+} from "./release.ts";
 
 describe("release intent", () => {
   it.each([
@@ -21,34 +23,75 @@ describe("release intent", () => {
   ])("%j resolves to %j", (labels, expected) => expect(resolveIntent(labels)).toEqual(expected));
 });
 
-describe("exact release skip", () => {
-  it("recognizes only the exact trailing Release-Skip trailer", () => {
-    expect(hasReleaseSkipTrailer("merge body mentions release:skip as text")).toBe(false);
-    expect(hasReleaseSkipTrailer("Release-Skip: true is ordinary body text")).toBe(false);
-    expect(hasReleaseSkipTrailer("Merge title\n\nRelease-Skip: true")).toBe(true);
-  });
-});
-
 describe("main release coverage", () => {
-  it("covers first-parent commits after the latest release boundary", () => {
+  const merge = (sha: string) => ({ sha, subject: `Merge ${sha}`, tags: [] });
+
+  it("starts after the latest release boundary and uses the workflow bootstrap when tagless", () => {
     expect(
-      unreleasedFirstParentCommits([
-        { sha: "merge-1", isRelease: false },
-        { sha: "release-1", isRelease: true },
-        { sha: "merge-2", isRelease: false },
-        { sha: "merge-3", isRelease: false },
-      ]),
-    ).toEqual(["merge-2", "merge-3"]);
+      uncoveredCommits(
+        [merge("old"), { sha: "release", subject: "release: v1.2.3", tags: [] }, merge("new")],
+        null,
+      ),
+    ).toEqual(["new"]);
+    expect(uncoveredCommits([merge("old"), merge("workflow"), merge("new")], "workflow")).toEqual([
+      "new",
+    ]);
+    expect(() => uncoveredCommits([merge("old")], null)).toThrow("No release boundary");
   });
 
-  it("uses the workflow-introduction commit as the tagless bootstrap boundary", () => {
-    expect(
-      unreleasedFirstParentCommits([
-        { sha: "old-history", isRelease: false },
-        { sha: "workflow-activation", isBaseline: true },
-        { sha: "merge-1", isRelease: false },
-      ]),
-    ).toEqual(["merge-1"]);
+  it("prefers an exact PR and identifies a rebase-merge fallback", () => {
+    const exact = {
+      number: 1,
+      merged_at: "now",
+      base: { ref: "main" },
+      merge_commit_sha: "sha",
+      labels: [],
+    };
+    const other = { ...exact, number: 2, merge_commit_sha: "other" };
+    expect(selectPullRequest("sha", [other, exact])).toMatchObject({
+      pullRequest: exact,
+      reason: "exact merge SHA",
+      rebaseMerge: false,
+    });
+    expect(selectPullRequest("rebased", [other])).toMatchObject({
+      pullRequest: other,
+      reason: "merged PR fallback",
+      rebaseMerge: true,
+    });
+    expect(() => selectPullRequest("sha", [])).toThrow("Expected one merged PR");
+  });
+
+  it("skips rebase-merge commits while resolving a batch", async () => {
+    const history = [
+      { sha: "base", subject: "release: v1.0.0", tags: [] },
+      merge("rebased"),
+      merge("merge"),
+    ];
+    const messages = new Map([
+      ["rebased", "body"],
+      ["merge", "body"],
+    ]);
+    const git = {
+      firstParent: () => history,
+      workflowIntroduction: () => null,
+      message: (sha: string) => messages.get(sha) ?? "",
+    };
+    const github = {
+      pullRequests: (sha: string) => [
+        {
+          number: 1,
+          merged_at: "now",
+          base: { ref: "main" },
+          merge_commit_sha: sha === "rebased" ? "represented-elsewhere" : sha,
+          labels: [{ name: "release:minor" }],
+        },
+      ],
+    };
+    await expect(resolveBatch(git as never, github)).resolves.toMatchObject({
+      covered: ["merge"],
+      kind: "stable",
+      bump: "minor",
+    });
   });
 
   it("takes the strongest non-skipped merge intent", () => {
@@ -67,11 +110,10 @@ describe("main release coverage", () => {
       skipped: [],
     });
   });
-
-  it("skips only excluded merges and does not let skip labels suppress the batch", () => {
+  it("skips excluded merges", () => {
     expect(
       resolveBatchIntent([
-        { sha: "skip-label", labels: ["release:skip", "release:major"] },
+        { sha: "skip-label", labels: ["release:skip"] },
         { sha: "skip-trailer", labels: [], skipTrailer: true },
         { sha: "minor", labels: ["release:minor"] },
       ]),
@@ -83,19 +125,14 @@ describe("main release coverage", () => {
       skipped: ["skip-label", "skip-trailer"],
     });
   });
+});
 
-  it("does not release when every uncovered merge is skipped", () => {
-    expect(
-      resolveBatchIntent([
-        { sha: "skip-label", labels: ["release:skip"] },
-        { sha: "skip-trailer", labels: [], skipTrailer: true },
-      ]),
-    ).toEqual({
-      release: false,
-      kind: "skip",
-      covered: [],
-      skipped: ["skip-label", "skip-trailer"],
-    });
+describe("push failure classification", () => {
+  it("distinguishes protection rejection from a concurrent main update", () => {
+    expect(classifyPushFailure("remote: GH013 ruleset violation", "parent", "parent")).toBe(
+      "protection",
+    );
+    expect(classifyPushFailure("non-fast-forward", "new-tip", "parent")).toBe("race");
   });
 });
 
