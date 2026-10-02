@@ -446,8 +446,9 @@ are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
 `?draft=` belongs only to a document destination. It names a pending draft in
-the addressed Work and document, never a separate document. Entering or leaving
-review replaces the current history entry so Back does not toggle review.
+the addressed Work and document, never a separate document. A cross-document
+review launch pushes history. The review address owner replaces the current
+entry when it adds or removes `?draft=`, so Back does not toggle review.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
