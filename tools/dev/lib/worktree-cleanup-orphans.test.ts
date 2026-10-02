@@ -191,6 +191,16 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     expect(prune("--yes").stdout).toContain("No orphan dev sessions found.");
   }, 20_000);
 
+  it("reclaims an orphan when the entire sibling worktree container was deleted", () => {
+    const root = `${repo}.worktrees/container-gone`;
+    const name = session(root);
+    fs.rmSync(`${repo}.worktrees`, { recursive: true });
+    const result = prune("--yes");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`Stopping orphan dev session ${name}`);
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+  });
+
   it("refuses an orphan plan if its checkout reappears before execution", () => {
     const root = `${repo}.worktrees/reappeared`;
     const name = session(root);
