@@ -57,15 +57,33 @@ function sameIdentity(a: ProcessIdentity, b: ProcessIdentity): boolean {
   return a.pid === b.pid && a.uid === b.uid && a.started === b.started && a.command === b.command;
 }
 
+function inspectIdentities(
+  owned: readonly ProcessIdentity[],
+  current: readonly ProcessIdentity[],
+): { readonly remaining: ProcessIdentity[]; readonly changed: number[] } {
+  const byPid = new Map(current.map((entry) => [entry.pid, entry]));
+  const remaining: ProcessIdentity[] = [];
+  const changed: number[] = [];
+  for (const entry of owned) {
+    const now = byPid.get(entry.pid);
+    if (!now) continue;
+    if (sameIdentity(entry, now)) remaining.push(now);
+    else changed.push(entry.pid);
+  }
+  return { remaining, changed };
+}
+
 function surviving(
   owned: readonly ProcessIdentity[],
   current: readonly ProcessIdentity[],
 ): ProcessIdentity[] {
-  const byPid = new Map(current.map((entry) => [entry.pid, entry]));
-  return owned.flatMap((entry) => {
-    const now = byPid.get(entry.pid);
-    return now && sameIdentity(entry, now) ? [now] : [];
-  });
+  const inspection = inspectIdentities(owned, current);
+  // An exec or PID reuse is not evidence of exit, nor permission to signal
+  // the changed identity. Refuse rather than silently losing a live process.
+  if (inspection.changed.length > 0) {
+    throw new Error(`Captured process identity changed: PID ${inspection.changed.join(", ")}`);
+  }
+  return inspection.remaining;
 }
 
 function descendants(
@@ -209,9 +227,9 @@ export async function stopOwnedProcessTree(options: ShutdownOptions): Promise<vo
   } finally {
     // An ownership refusal must not strand this invocation's paused processes.
     if (paused.size > 0) {
-      for (const entry of surviving([...paused.values()], snapshot(options.cwd))) {
-        signal(entry, "SIGCONT", options.log);
-      }
+      // Leave changed identities untouched without stranding other survivors.
+      const inspection = inspectIdentities([...paused.values()], snapshot(options.cwd));
+      for (const entry of inspection.remaining) signal(entry, "SIGCONT", options.log);
     }
   }
 }
