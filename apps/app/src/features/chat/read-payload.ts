@@ -11,10 +11,10 @@ const HEADING_LINE = /^(#{1,6})\s+(.*)$/;
 /** The agent-edit result schema; its block items already carry hash-free bodies. */
 const READ_RESULT_SCHEMA = "meridian.agent-edit.v1";
 
-/** The document body the read returned, with no block hashes. */
+/** The document body the read returned, with no block hashes; each block its own paragraph. */
 export function readPayloadMarkup(result: JsonValue | null | undefined): string {
   const bodies = documentBodies(result);
-  return bodies === null ? "" : bodies.join("\n").trim();
+  return bodies === null ? "" : bodies.join("\n\n").trim();
 }
 
 export function readPayloadOutline(result: JsonValue | null | undefined): OutlineHeading[] | null {
