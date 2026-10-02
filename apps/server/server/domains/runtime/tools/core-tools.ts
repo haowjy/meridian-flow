@@ -104,6 +104,18 @@ export const LsToolInputSchema = z
   .strict();
 export type LsToolInput = z.output<typeof LsToolInputSchema>;
 
+export const SearchToolInputSchema = z
+  .object({
+    pattern: z.string().min(1).describe("Literal text, not a regex."),
+    scope: z
+      .string()
+      .min(1)
+      .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
+      .optional(),
+  })
+  .strict();
+export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
+
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
 
@@ -225,22 +237,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description: "Search document text across all context files.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            pattern: {
-              type: "string",
-              description: "Literal text, not a regex.",
-            },
-            scope: {
-              type: "string",
-              description: "URI prefix to search under, e.g. kb:// or kb://protocols.",
-            },
-          },
-          required: ["pattern"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(SearchToolInputSchema),
       },
+      input: SearchToolInputSchema,
       execution: { type: "server", handler: handlers.search },
       documentText: searchDocumentText,
       historyPreview: (input) => String(input.pattern ?? ""),

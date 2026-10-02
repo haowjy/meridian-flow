@@ -71,6 +71,7 @@ import {
   type InterruptToolHandlerContext,
   type LsToolInput,
   type ReferenceReader,
+  type SearchToolInput,
   type ToolHandlerContext,
   type ToolRegistration,
   WorkCommandSchema,
@@ -1026,8 +1027,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       return modelContextResults(result.value, portOrError);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { pattern, scope } = input as { pattern?: string; scope?: string };
-      if (!pattern) return toolError({ message: "pattern is required" });
+      const { pattern, scope } = input as SearchToolInput;
       const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.search(pattern, scope);

@@ -73,3 +73,21 @@ describe("ls", () => {
     await expectRefused("ls", { dir: "kb://" }, ["dir: unknown argument"]);
   });
 });
+
+describe("search", () => {
+  it("delivers a pattern with an optional scope", async () => {
+    await expectDelivered("search", { pattern: "mirror" }, { pattern: "mirror" });
+    await expectDelivered(
+      "search",
+      { pattern: "mirror", scope: "kb://" },
+      { pattern: "mirror", scope: "kb://" },
+    );
+  });
+
+  it("refuses a missing or empty pattern, an empty scope and unknown keys", async () => {
+    await expectRefused("search", {}, ["pattern: required; expected a string"]);
+    await expectRefused("search", { pattern: "" }, ["pattern: must not be empty"]);
+    await expectRefused("search", { pattern: "x", scope: "" }, ["scope: must not be empty"]);
+    await expectRefused("search", { pattern: "x", regex: true }, ["regex: unknown argument"]);
+  });
+});
