@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { mapConcurrentSettled, throwSettledFailures } from "./lib/bounded-concurrency";
 /** Detached cleanup of exactly one parent's managed DB run; stale GC is the fallback. */
 import { dropDatabaseForUrl, parseTargetDatabase } from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
@@ -11,19 +12,27 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
     if (managedTestDatabaseOwnerPid(targetDb, mainNames) !== process.ppid) {
       throw new Error("Refusing cleanup: managed database is not owned by the sending parent.");
     }
-    const urls = [
-      ...Array.from({ length: message.workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(message.databaseUrl, index + 1),
-      ),
-      message.databaseUrl,
-    ];
+    const workerUrls = Array.from({ length: message.workerCount }, (_, index) =>
+      managedTestDatabaseWorkerUrl(message.databaseUrl, index + 1),
+    );
     // Acknowledge ownership while the parent is still alive. No credentials go in argv or logs.
     process.send?.("ready");
     process.disconnect();
-    for (const url of urls) {
+    const workerResults = await mapConcurrentSettled(workerUrls, 4, async (url) => {
       const result = await dropDatabaseForUrl(url, mainNames);
       console.log(`Dropped ${result.targetDb}.`);
-    }
+      return result;
+    });
+    const templateResult = await mapConcurrentSettled([message.databaseUrl], 1, async (url) => {
+      const result = await dropDatabaseForUrl(url, mainNames);
+      console.log(`Dropped ${result.targetDb}.`);
+      return result;
+    });
+    throwSettledFailures(
+      "DB test cleanup",
+      [...workerResults, ...templateResult],
+      [...workerUrls, message.databaseUrl].map((url) => parseTargetDatabase(url).targetDb),
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

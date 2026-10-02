@@ -3,6 +3,7 @@
 import { realpathSync } from "node:fs";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { mapConcurrentSettled, throwSettledFailures } from "./lib/bounded-concurrency";
 import {
   dropDatabaseForUrl,
   isReservedDatabase,
@@ -165,13 +166,15 @@ async function main(): Promise<void> {
   }
 
   const { adminConnString } = parseTargetDatabase(databaseUrl);
-  for (const dbName of droppable) {
+  const results = await mapConcurrentSettled(droppable, 4, async (dbName) => {
     const result = await dropDatabaseForUrl(
       databaseUrlForName(adminConnString, dbName),
       mainDbNames,
     );
     console.log(`Dropped ${result.targetDb}.`);
-  }
+    return result;
+  });
+  throwSettledFailures("Database GC", results, droppable);
 }
 
 main().catch((error: unknown) => {

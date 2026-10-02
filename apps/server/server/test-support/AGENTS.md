@@ -18,3 +18,7 @@ other connections.
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.
 Run DB tests through `pnpm test:db`, never against a dev database.
+
+Vitest does not cancel a fixture hook when its timeout fires. Do not treat a
+longer timeout, delay, or reset mutex as isolation from the still-running hook;
+the unresolved fail-stop/tracking work is recorded in `.context/TODO`.
