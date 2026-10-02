@@ -14,6 +14,8 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
+  /** Whether the thread's Work drafts AI writes. */
+  primaryDraftMode: boolean;
 }
 
 export interface ThreadContextResolutionDeps {
@@ -46,11 +48,13 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
+  const primaryWork = projectWorks.find((work) => work.id === primaryMembership?.workId);
   return {
     thread,
     primaryWorkId: primaryMembership?.workId ?? null,
     workAuthorities,
     primaryWorkAuthority,
+    primaryDraftMode: primaryWork?.aiWriteMode === "draft",
   };
 }
 
@@ -69,6 +73,7 @@ export function contextPortForThread(
     resolution.workAuthorities,
     resolution.thread.id,
     options.responseId,
+    resolution.primaryDraftMode,
   );
 }
 

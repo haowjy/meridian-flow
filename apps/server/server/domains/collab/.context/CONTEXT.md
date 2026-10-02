@@ -24,14 +24,26 @@ recovery returns null, never a later read's token.
 
 Effective markdown/hashline reads return content and revision from the same
 callback. `readEffectiveRevision` uses their synchronous pull/fallback chain.
-Context selects live authority for direct mode and the thread view for draft
-mode. A thread rebind is resolved anew on each query. A draft read with no
+Every effective read names a `destination`: `live` reads live authority (plus
+the reply's own staged writes) and never touches a Work draft, kept or not;
+`draft` reads the thread view. A thread rebind is resolved anew on each query. A draft read with no
 thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
 state a later `write read` forks from.
 
-Direct response finalization invokes the receipt callback after the live core's
-durable commit; the thread-peer core invokes it inside its host transaction.
+## One save per reply
+
+The thread-peer pool is the only model read/write entry point. Callers pass a
+`destination` per call, computed with `domains/file-policy`; the pool never
+consults the policy. A reply pins each document to its first destination, may
+own a live core and a thread core at once, and saves both, plus the reply's
+records and the receipt callback, in one response transaction. The live
+journal joins that transaction; the live agent-edit core's coordinator works
+on a private copy of the room inside it and publishes through `recover()`
+after commit, so a rollback shows nothing. The save step first drops
+documents whose Work was archived mid-reply (D29) and reports them. The pool
+also records each document's last read version per thread (`live` or
+`draft` of a Work); a write against another version returns `read_required`.
 
 ## Pull and provisioning transactions
 
