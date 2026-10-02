@@ -65,10 +65,13 @@ export interface AgentEditModelPayload {
     id?: string;
     deletedHashes?: string[];
   };
-  /** A copy's receipt: how many blocks it wrote and the source as the model named it. */
+  /**
+   * A copy's receipt: the source as the model named it and how many blocks the
+   * copy wrote. A binary file's copy has no blocks.
+   */
   copied?: {
     from: string;
-    blocks: number;
+    blocks?: number;
   };
   reversal?: {
     direction: "undo" | "redo";

@@ -683,6 +683,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
+    objectStore: ports.objectStore,
   };
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);

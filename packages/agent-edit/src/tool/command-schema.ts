@@ -95,11 +95,14 @@ const BlockCopySourceSchema = z
   .strict()
   .describe("Copy these blocks instead of `content`. Give exactly one of `content` or `from`.");
 
-/** The source of a whole-document copy (D24). */
+/**
+ * The source of a whole-document copy (D24). Its description carries the
+ * version sentence, so `version` itself isn't described twice.
+ */
 const DocumentCopySourceSchema = z
   .object({
     path: SOURCE_PATH,
-    version: DocumentVersionSchema.optional(),
+    version: z.enum(DocumentVersionSchema.options).optional(),
   })
   .strict()
   .describe(

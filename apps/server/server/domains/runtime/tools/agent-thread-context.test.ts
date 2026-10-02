@@ -191,6 +191,7 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     const write = registrations.find((registration) => registration.definition.name === "write");
     expect(commandConsts([write?.definition as Tool], "write")).toEqual([
       "create",
+      "copy",
       "insert",
       "replace",
       "remove",
@@ -206,6 +207,7 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(hasTool(critic.tools, "write")).toBe(false);
     expect(hasTool(writer.tools, "read")).toBe(true);
     expect([...commandConsts(writer.tools, "write")].sort()).toEqual([
+      "copy",
       "create",
       "insert",
       "redo",

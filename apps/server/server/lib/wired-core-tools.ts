@@ -50,12 +50,19 @@ import type {
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
 } from "../domains/collab/index.js";
+import { copyBinaryDocument } from "../domains/context/binary-copy.js";
 import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
+import type { CopiedFrom, DocumentCreationMetadata } from "../domains/context/document-metadata.js";
 import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
-import type { ContextError, ContextPort } from "../domains/context/ports/context-port.js";
+import type {
+  BinaryFileRef,
+  ContextError,
+  ContextPort,
+  FileRef,
+} from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
 import { destination as fileDestination } from "../domains/file-policy/index.js";
 import {
@@ -84,6 +91,7 @@ import {
   type ToolRegistration,
   type WorkCommand,
 } from "../domains/runtime/index.js";
+import type { ObjectStorePort } from "../domains/storage/index.js";
 import type {
   ThreadRepository,
   ThreadWorksRepository,
@@ -111,6 +119,8 @@ export interface ToolWiringDeps {
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  /** Binary copies duplicate the stored object (D24). */
+  objectStore: ObjectStorePort;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -343,15 +353,19 @@ async function resolveDocumentAddress(
   context: ResolvedModelContextPort,
   command: DocumentCommandName,
   path: string,
-  options: { deferTrackedDocumentSync?: boolean } = {},
+  options: { deferTrackedDocumentSync?: boolean; metadata?: DocumentCreationMetadata } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
-  if (command === "create") {
-    if (fragment) return writeToolError(command, "create does not accept a #fragment in path");
+  if (command === "create" || command === "copy") {
+    if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
+    const ensureOptions = {
+      ...(options.deferTrackedDocumentSync ? { deferDocumentSync: true } : {}),
+      ...(options.metadata ? { metadata: options.metadata } : {}),
+    };
     const ensured = await port.ensureTrackedDocument(
       basePath,
-      options.deferTrackedDocumentSync ? { deferDocumentSync: true } : undefined,
+      Object.keys(ensureOptions).length > 0 ? ensureOptions : undefined,
     );
     if (!ensured.ok) {
       return writeToolError(command, modelContextErrorMessage(ensured.error, context));
@@ -489,6 +503,8 @@ async function readDocument(
     selection?: ReadSelection;
     format?: ReadToolInput["format"];
     version?: DocumentVersion;
+    /** A copy's source read also returns the selected blocks as nodes. */
+    includeNodes?: boolean;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
 ): Promise<WriteOutcome> {
@@ -507,10 +523,114 @@ async function readDocument(
       turnId: ctx.turnId,
       destination,
       ...(options.version === "live" ? { published: true } : {}),
+      ...(options.includeNodes ? { includeNodes: true } : {}),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },
   );
+}
+
+/** `from` on `insert`, `replace` or `copy`. */
+type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVersion };
+
+/** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
+interface CopiedSource {
+  nodes: NonNullable<WriteOutcome["nodes"]>;
+  copiedFrom: CopiedFrom;
+}
+
+/**
+ * Reads a copy's source through `readDocument`, with `read`'s version rule
+ * (D14) and the source's own destination (D20).
+ */
+async function readCopySource(
+  deps: ToolWiringDeps,
+  execution: ThreadExecutionContext,
+  command: "insert" | "replace" | "copy",
+  source: CopySource,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+): Promise<CopiedSource | WriteToolErrorOutput> {
+  const resolved = await resolveCopySource(deps, command, source, ctx);
+  if (isToolError(resolved)) return resolved;
+  if (resolved.ref.kind !== "tracked") {
+    return writeToolError(command, `Cannot copy blocks from binary file: ${source.path}`);
+  }
+  return readTrackedCopySource(deps, execution, command, source, resolved.address, ctx);
+}
+
+async function resolveCopySource(
+  deps: ToolWiringDeps,
+  command: "insert" | "replace" | "copy",
+  source: CopySource,
+  ctx: Pick<ToolHandlerContext, "threadId" | "responseId">,
+): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
+  // A live source resolves its path against live membership, as a live read does.
+  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, source.version);
+  if (isToolError(context))
+    return writeToolError(command, fromMessage(source, context.output.message));
+  const { filePath: basePath, fragment } = splitDocumentFile(source.path);
+  const ref = await context.port.stat(basePath);
+  if (!ref.ok) {
+    return writeToolError(
+      command,
+      fromMessage(source, modelContextErrorMessage(ref.error, context)),
+      ref.error.code === "not_found" ? "document_not_found" : "invalid_write",
+    );
+  }
+  if (ref.value.kind === "tracked" && !ref.value.documentId) {
+    return writeToolError(command, fromMessage(source, "Document id missing."));
+  }
+  return {
+    ref: ref.value,
+    address: {
+      documentId: ref.value.documentId ?? "",
+      uri: ref.value.uri,
+      filePath: basePath,
+      ...(fragment === undefined ? {} : { fragment }),
+    },
+  };
+}
+
+async function readTrackedCopySource(
+  deps: ToolWiringDeps,
+  execution: ThreadExecutionContext,
+  command: "insert" | "replace" | "copy",
+  source: CopySource,
+  address: ResolvedDocumentAddress,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+): Promise<CopiedSource | WriteToolErrorOutput> {
+  const outcome = await readDocument(
+    deps,
+    execution,
+    address,
+    {
+      ...(source.in !== undefined ? { selection: { in: source.in } } : {}),
+      ...(source.version ? { version: source.version } : {}),
+      includeNodes: true,
+    },
+    // Never the write's tool call id: it keys the write's idempotency cache.
+    { threadId: ctx.threadId, turnId: ctx.turnId, responseId: ctx.responseId },
+  );
+  if (outcome.isError) {
+    return {
+      isError: true,
+      output: {
+        ...outcome.result,
+        command,
+        message: fromMessage(source, outcome.result.message ?? outcome.result.status),
+      },
+    };
+  }
+  const version = outcome.result.read?.version ?? documentDestination(execution, address).kind;
+  return {
+    nodes: outcome.nodes ?? [],
+    copiedFrom: { uri: address.uri, version, revision: outcome.revision },
+  };
+}
+
+/** Errors about the source say so, since `path` names the destination. */
+function fromMessage(source: CopySource, message: string): string {
+  return `from ${source.path}: ${message}`;
 }
 
 async function refreshProjectionAfterToolWrite(
@@ -667,6 +787,40 @@ function documentRevisionMetadata(address: ResolvedDocumentAddress, outcome: Wri
   };
 }
 
+/**
+ * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
+ * write, so it has no write handle, isn't part of the reply's save and is
+ * never drafted.
+ */
+async function copyBinary(
+  deps: ToolWiringDeps,
+  context: ResolvedModelContextPort,
+  input: Extract<WriteToolInput, { command: "copy" }>,
+  source: BinaryFileRef,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+) {
+  // Binary files have no drafts or revisions, so the copy always reads the live file.
+  const copied = await copyBinaryDocument({
+    port: context.port,
+    objectStore: deps.objectStore,
+    source,
+    destinationUri: splitDocumentFile(input.path).filePath,
+    copiedFrom: { uri: source.uri, version: "live", revision: null },
+  });
+  if (!copied.ok) {
+    return writeToolError(input.command, modelContextErrorMessage(copied.error, context));
+  }
+  if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
+  return {
+    output: modelResult({
+      command: "copy",
+      status: "success",
+      phase: "committed",
+      payload: { path: input.path, destination: "live", copied: { from: input.from.path } },
+    }),
+  };
+}
+
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const { path, format, version, ...selection } = input as ReadToolInput;
@@ -700,8 +854,36 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       return writeToolError(parsed.command, portOrError.output.message);
     }
 
+    // A copy reads its source before it creates anything, so a bad source leaves no file.
+    let copied: CopiedSource | undefined;
+    if (parsed.command === "copy") {
+      const source = await resolveCopySource(deps, parsed.command, parsed.from, ctx);
+      if (isToolError(source)) return source;
+      if (source.ref.kind === "binary") {
+        return copyBinary(deps, portOrError, parsed, source.ref, ctx);
+      }
+      const read = await readTrackedCopySource(
+        deps,
+        execution,
+        parsed.command,
+        parsed.from,
+        source.address,
+        ctx,
+      );
+      if (isToolError(read)) return read;
+      copied = read;
+    } else if ((parsed.command === "insert" || parsed.command === "replace") && parsed.from) {
+      const read = await readCopySource(deps, execution, parsed.command, parsed.from, ctx);
+      if (isToolError(read)) return read;
+      copied = read;
+    }
+
+    const creates = parsed.command === "create" || parsed.command === "copy";
     const address = await resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
-      deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
+      deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
+      ...(parsed.command === "copy" && copied
+        ? { metadata: { copiedFrom: copied.copiedFrom } }
+        : {}),
     });
     if (isToolError(address)) return address;
 
@@ -716,14 +898,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
         destination,
+        ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
     // Undo and redo go where history says, so only forward writes name a destination.
     const outcome =
       parsed.command === "undo" || parsed.command === "redo"
         ? written
         : withDestination(written, destination);
-    const stagedCreate =
-      parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
+    const stagedCreate = creates && ctx.responseId !== undefined && address.created === true;
     if (outcome.isError) {
       if (stagedCreate) {
         try {

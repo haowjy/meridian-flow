@@ -417,3 +417,22 @@ describe("unknownToEventPayload", () => {
     });
   });
 });
+
+describe("sanitizeEventRecord document commands", () => {
+  it.each([
+    "read",
+    "create",
+    "copy",
+    "insert",
+    "replace",
+    "remove",
+    "undo",
+    "redo",
+  ])("keeps the %s command", (command) => {
+    expect(sanitize({ command })).toEqual({ command });
+  });
+
+  it("redacts a command it doesn't know", () => {
+    expect(sanitize({ command: "entire manuscript" })).toEqual({ command: "[redacted]" });
+  });
+});

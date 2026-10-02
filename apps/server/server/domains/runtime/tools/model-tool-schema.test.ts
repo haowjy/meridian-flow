@@ -87,11 +87,15 @@ describe("model tool schemas", () => {
           "name": "write",
           "required": [
             "$.oneOf[0]: command, path",
-            "$.oneOf[1]: command, path, content",
-            "$.oneOf[2]: command, path, content",
+            "$.oneOf[1]: command, path, from",
+            "$.oneOf[1].properties.from: path",
+            "$.oneOf[2]: command, path",
+            "$.oneOf[2].properties.from: path",
             "$.oneOf[3]: command, path",
+            "$.oneOf[3].properties.from: path",
             "$.oneOf[4]: command, path",
             "$.oneOf[5]: command, path",
+            "$.oneOf[6]: command, path",
           ],
         },
         {
@@ -183,6 +187,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`14097`);
+    expect(characters).toMatchInlineSnapshot(`16343`);
   });
 });
