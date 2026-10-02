@@ -1,6 +1,6 @@
 /** Executor input parsing and capability plumbing for spawn-family registrations. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ThreadReportResult } from "@meridian/contracts/spawn";
+import type { ModelThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { threadReadError } from "../spawn/resolve-readable-thread.js";
@@ -33,12 +33,8 @@ describe("thread_message capability plumbing", () => {
 });
 
 describe("thread_report capability plumbing", () => {
-  it("injects the exact-report reader", async () => {
-    const expected: ThreadReportResult = {
-      childThreadId: "child-1" as ThreadId,
-      ref: "p1",
-      status: "unavailable",
-    };
+  it("injects the latest-report reader", async () => {
+    const expected: ModelThreadReportResult = { ref: "p1", status: "unavailable" };
     const threadReportFn = vi.fn(async () => expected);
     const executor = executorFor("thread_report");
     const result = await executor.executeTool(
@@ -50,7 +46,11 @@ describe("thread_report capability plumbing", () => {
       { ...executionBase, agentSlug: null, threadReport: threadReportFn },
     );
     expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
-    expect(result.output).toEqual({ ref: "p1", status: "unavailable" });
+    // The model reads text; the typed result rides beside it.
+    expect(result.result).toEqual({ ref: "p1", status: "unavailable" });
+    expect(result.output).toBe(
+      "p1 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
+    );
   });
 });
 
@@ -64,7 +64,8 @@ it("marks a structured thread-report refusal as an error result", async () => {
     },
   );
   expect(result.isError).toBe(true);
-  expect(result.output).toMatchObject({ code: "thread_not_connected" });
+  expect(result.result).toMatchObject({ code: "thread_not_connected" });
+  expect(result.output).toBe("Not connected (thread_not_connected)");
 });
 
 describe("input parsing before dispatch", () => {

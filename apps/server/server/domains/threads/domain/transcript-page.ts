@@ -563,36 +563,36 @@ export async function readTranscriptPageForProjection(
   });
 }
 
-/** Direct expansion uses the same spans and bounded item read, including the live tail. */
-export async function readTranscriptItem(
-  repos: ThreadRepositories,
+/** How many conversation turns precede `position`: the next conversation turn's number minus one. */
+export async function countConversationTurnsBefore(
+  repos: Pick<ThreadRepositories, "threads" | "turns">,
   thread: Thread,
-  key: { position: number; sequence?: number },
+  position: number,
+): Promise<number> {
+  const resolution = await resolveTranscriptSpans(repos, thread);
+  return repos.turns.countConversationTurns(resolution.spans, position);
+}
+
+/** The Nth conversation turn (from 1) with all its blocks, including the live tail. */
+export async function readTranscriptTurn(
+  repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
+  thread: Thread,
+  ordinal: number,
 ) {
   return repos.readSnapshot(async () => {
     const resolution = await resolveTranscriptSpans(repos, thread);
-    const [row] = await repos.turns.readTranscriptItems({
-      spans: resolution.spans,
-      order: "oldest_first",
-      unit: "item",
-      limit: 1,
-      after: {
-        position: key.position,
-        sequence: key.sequence === undefined ? -2 : key.sequence - 1,
-      },
-    });
-    if (
-      !row ||
-      row.turn.position !== key.position ||
-      (key.sequence !== undefined && row.sequence !== key.sequence)
-    )
-      return null;
+    const turn = await repos.turns.findConversationTurnByOrdinal(resolution.spans, ordinal);
+    if (!turn) return null;
+    const blocks = (await repos.blocks.listByTurn(turn.id as TurnId)).sort(
+      (left, right) => left.sequence - right.sequence,
+    );
     const boundaries = await repos.turns.listTranscriptBoundaries(resolution.spans);
     const firstBake = await firstPromptBakeId(repos, resolution.owners, thread);
     return {
-      entry: { ...row, block: key.sequence === undefined ? null : row.block },
+      turn,
+      blocks,
       owners: resolution.owners,
-      segment: segmentHeader(key.position, boundaries, firstBake),
+      segment: segmentHeader(turn.position, boundaries, firstBake),
     };
   });
 }

@@ -3,37 +3,33 @@ import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 export function readHistoryPreview(input: JsonObject): string {
   return String(input.path ?? "");
 }
-export function writeHistoryPreview(input: JsonObject): string {
+export function writeHistoryPreview(input: JsonObject, result?: JsonValue): string {
   const size =
     typeof input.content === "string"
       ? `, ${input.content.trim().split(/\s+/u).filter(Boolean).length.toLocaleString("en-US")} words`
       : "";
-  return `${input.command ?? ""} ${input.path ?? ""}${size}`;
+  const write = (result as JsonObject | undefined)?.write as JsonObject | undefined;
+  const handle = typeof write?.id === "string" ? `, ${write.id}` : "";
+  return `${input.command ?? ""} ${input.path ?? ""}${size}${handle}`;
 }
-export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): string {
-  const result = output as JsonObject | undefined;
-  return `→ ${result?.handle ?? (result?.report as JsonObject | undefined)?.handle ?? ""} ${JSON.stringify(input.name ?? "")}`;
+export function spawnHistoryPreview(input: JsonObject, result?: JsonValue): string {
+  const output = result as JsonObject | undefined;
+  const handle = output?.handle ?? (output?.report as JsonObject | undefined)?.handle;
+  return `${JSON.stringify(input.name ?? "")}${typeof handle === "string" ? ` → ${handle}` : ""}`;
 }
-export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
-  const run = input.run ?? (output as JsonObject | undefined)?.run;
-  const outputRef =
-    (input.ref === undefined || input.ref === "current") && typeof output === "string"
-      ? /^([cp]\d+)\b/u.exec(output)?.[1]
-      : typeof (output as JsonObject | undefined)?.ref === "string"
-        ? String((output as JsonObject).ref)
-        : undefined;
-  const ref = input.ref !== undefined && input.ref !== "current" ? input.ref : outputRef;
-  return `${ref ?? input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
+export function workHistoryPreview(input: JsonObject): string {
+  const target = input.work ?? input.target ?? input.name;
+  return `${input.command ?? ""}${typeof target === "string" ? ` ${target}` : ""}`;
 }
-
-export function threadLsHistoryPreview(input: JsonObject, output?: JsonValue): string {
+/** The conversation a thread tool resolved, from its typed result (`ref`), never its text. */
+function resolvedRef(input: JsonObject, result?: JsonValue): string {
   if (input.ref !== undefined && input.ref !== "current") return String(input.ref);
-  const targetRef =
-    typeof output === "string"
-      ? output
-          .split("\n")
-          .find((line) => !line.includes(" › "))
-          ?.match(/^([cp]\d+)\b/u)?.[1]
-      : undefined;
-  return targetRef ?? String(input.ref ?? "current");
+  const ref = (result as JsonObject | null | undefined)?.ref;
+  return typeof ref === "string" ? ref : String(input.ref ?? "current");
+}
+export function threadHistoryPreview(input: JsonObject, result?: JsonValue): string {
+  return resolvedRef(input, result);
+}
+export function threadLsHistoryPreview(input: JsonObject, result?: JsonValue): string {
+  return resolvedRef(input, result);
 }

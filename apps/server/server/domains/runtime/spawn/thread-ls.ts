@@ -39,6 +39,12 @@ export function formatLastAsked(text: string): string {
   return JSON.stringify(`${shortened}…`);
 }
 
+/** `thread_ls`'s typed result: the resolved conversation and its listing text. */
+export interface ThreadLsResult {
+  ref: string;
+  listing: string;
+}
+
 export async function listReadableThreads({
   repos,
   statusReader,
@@ -184,6 +190,6 @@ export async function listReadableThreads({
     ];
     if (![...path, ...nodes.map(({ thread }) => thread)].some(({ id }) => id === caller.id))
       outputLines[0] += ` (you are ${caller.ref})`;
-    return outputLines.join("\n");
+    return { ref: target.ref as string, listing: outputLines.join("\n") } satisfies ThreadLsResult;
   });
 }

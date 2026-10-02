@@ -3999,6 +3999,10 @@ msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
 
+#: src/features/chat/thread-report-renderer.tsx
+msgid "This report is from its previous run. It's running again now."
+msgstr "This report is from its previous run. It's running again now."
+
 #: src/features/chat/ErrorBlock.tsx
 msgid "This response failed."
 msgstr "This response failed."

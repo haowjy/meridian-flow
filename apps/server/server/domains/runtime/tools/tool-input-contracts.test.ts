@@ -162,6 +162,17 @@ describe("thread_history", () => {
       { ref: "current", expand: "3.2" },
       { ref: "current", expand: "3.2", order: "newest_first", limit: 40 },
     );
+    // A turn number arrives as an integer or a string; both are the same handle.
+    await expectDelivered(
+      "thread_history",
+      { expand: 2 },
+      { expand: 2, order: "newest_first", limit: 40 },
+    );
+    await expectDelivered(
+      "thread_history",
+      { expand: "2" },
+      { expand: "2", order: "newest_first", limit: 40 },
+    );
   });
 
   it("refuses bad values and unknown keys", async () => {
@@ -170,9 +181,14 @@ describe("thread_history", () => {
     ]);
     await expectRefused("thread_history", { limit: 0 }, ["limit: must be at least 1"]);
     await expectRefused("thread_history", { include: ["everything"] }, [
-      'include[0]: expected "thinking", "tool_args", "tool_results", "system_messages" or "system_prompt", got "everything"',
+      'include[0]: expected "routine_calls", "tool_args", "tool_results", "thinking", "system_messages", "system_prompt" or "timestamps", got "everything"',
     ]);
-    await expectRefused("thread_history", { expand: 2 }, ["expand: expected a string, got 2"]);
+    await expectRefused("thread_history", { expand: "2.x" }, [
+      'expand: expected a turn number such as 4, or "4.7"',
+    ]);
+    await expectRefused("thread_history", { expand: 1.5 }, [
+      'expand: expected a turn number such as 4, or "4.7"',
+    ]);
     await expectRefused("thread_history", { turn: 3 }, ["turn: unknown argument"]);
   });
 });

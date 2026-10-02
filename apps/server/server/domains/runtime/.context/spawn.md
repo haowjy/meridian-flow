@@ -143,6 +143,8 @@ A child run's report is admitted once, finalized with its terminal turn, and
 published to the parent from that durable row. `ChildDriveInput.reportCorrelation`
 carries only the caller/turn/tool/card and origin/delivery metadata; the
 child's `executionTurnId` is assigned only after turn admission. The model reads
-a report with `thread_report` ([history tools](history-tools.md)); tool and API
-responses share the `ThreadReportResult` contracts schema, including
-`childThreadId`, and the app projects both through `toReportContentValue`.
+a report with `thread_report` ([history tools](history-tools.md)). The API
+route returns `ThreadReportResult` (with `childThreadId` and `run`); the tool
+returns the compact `ModelThreadReportResult` (no `run`, plus `running` and
+`message`). One contracts parser accepts both, and the app projects either
+through `toReportContentValue`.

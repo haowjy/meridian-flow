@@ -25,6 +25,8 @@ export function toolView({
   toolCallId,
   toolName,
   output,
+  result = null,
+  isError = false,
   sequence = 1,
   input = null,
   message = null,
@@ -32,6 +34,8 @@ export function toolView({
   toolCallId: string;
   toolName: string;
   output: JsonValue;
+  result?: JsonValue | null;
+  isError?: boolean;
   sequence?: number;
   input?: JsonValue | null;
   message?: string | null;
@@ -41,9 +45,9 @@ export function toolView({
     toolName,
     input,
     output,
-    result: null,
+    result,
     status: "complete",
-    isError: false,
+    isError,
     message,
     streamedOutput: null,
     metadata: null,
