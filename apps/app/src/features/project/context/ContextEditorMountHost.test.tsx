@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 /** Resource-session fallback and recovery behavior at the desktop editor host. */
+
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -25,7 +27,7 @@ vi.mock("../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor", () => ({
   usePostApplyHostWake: () => undefined,
 }));
 
-import { ContextTabSessionBoundary } from "./ContextEditorMountHost";
+import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
 
 function session(): DocumentSession {
   return {
@@ -51,6 +53,23 @@ function admission(boundSession: DocumentSession): AdmittedLiveDocument {
 describe("ContextTabSessionBoundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("does not treat an unrelated catalog revision as document availability", () => {
+    const resource = {
+      identity: { documentId: "document-a" },
+      revision: 4,
+      lifecycle: { kind: "acknowledged", availabilityGeneration: "9" },
+    };
+    const snapshot = (catalogRevision: number) =>
+      ({
+        records: [{ resource }],
+        catalogs: [{ scope: "project", revision: catalogRevision }],
+      }) as unknown as ResourceProjectionSnapshot;
+
+    expect(resourceAvailabilityRevision(snapshot(1), "document-a")).toBe(
+      resourceAvailabilityRevision(snapshot(2), "document-a"),
+    );
   });
 
   it("does not claim a live admission while a draft-only branch is mounted", async () => {
@@ -158,5 +177,70 @@ describe("ContextTabSessionBoundary", () => {
       expect(opener.open).toHaveBeenCalledTimes(3);
       expect(observed.at(-1)).toEqual({ value: serverSession, failed: false });
     });
+  });
+
+  it("keeps a warm cached editor mounted while its availability is reprobed", async () => {
+    const cachedSession = session();
+    let finishReprobe!: () => void;
+    const reprobe = new Promise<void>((resolve) => {
+      finishReprobe = resolve;
+    });
+    const firstRelease = vi.fn();
+    const secondRelease = vi.fn();
+    resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
+    resourceReplica.openDocument
+      .mockResolvedValueOnce({
+        kind: "opened",
+        handle: { session: cachedSession, release: firstRelease },
+      })
+      .mockImplementationOnce(async () => {
+        await reprobe;
+        return {
+          kind: "opened",
+          handle: { session: cachedSession, release: secondRelease },
+        };
+      });
+    const opener = { open: vi.fn() };
+    let advanceAvailability!: () => void;
+    const observed: Array<DocumentSession | null> = [];
+
+    function Harness() {
+      const [revision, setRevision] = useState("document-1");
+      advanceAvailability = () => setRevision("document-2");
+      return (
+        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+          <ContextTabSessionBoundary
+            projectId="project-a"
+            documentId="document-a"
+            availabilityRevision={revision}
+          >
+            {(value) => {
+              observed.push(value);
+              return null;
+            }}
+          </ContextTabSessionBoundary>
+        </ProjectDocumentLiveOpenerContext.Provider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => undefined);
+      expect(observed.at(-1)).toBe(cachedSession);
+      const observationsBeforeReprobe = observed.length;
+
+      await act(async () => advanceAvailability());
+      expect(observed.slice(observationsBeforeReprobe)).not.toContain(null);
+      expect(observed.at(-1)).toBe(cachedSession);
+      expect(firstRelease).not.toHaveBeenCalled();
+
+      await act(async () => {
+        finishReprobe();
+        await reprobe;
+      });
+      await act(async () => undefined);
+      expect(observed.at(-1)).toBe(cachedSession);
+      expect(firstRelease).toHaveBeenCalledOnce();
+    });
+    expect(secondRelease).toHaveBeenCalledOnce();
   });
 });
