@@ -149,11 +149,19 @@ The sweep requires a managed `meridian-…-<path-hash>` session, a missing check
 and every pane still under that checkout. Unregistered paths must be immediate
 children of this repo's sibling `<repo>.worktrees/` directory. Live checkouts,
 locked registrations, other repositories, and unrelated tmux sessions are left
-alone. Captured same-user descendants get SIGTERM, then remaining processes get
-SIGKILL after tmux teardown; detached children are included while still descended
-from a pane. Already-reparented processes with no remaining session ancestry are
-not guessed at. The sweep prunes Portless routes but never deletes branches,
-databases, or work items.
+alone. Git discovery ignores inherited repository overrides. The same ownership
+checks run before each shutdown phase; newly added or relocated panes abort
+teardown. Same-user descendants are tracked through the TERM grace period,
+including detached children spawned during shutdown. After tmux teardown,
+captured survivors are briefly stopped for a stable descendant census, then
+force-killed; an ownership refusal resumes any processes this invocation paused.
+Processes that reparent before their identity or ancestry can be captured are
+not guessed at.
+
+Portless route maintenance is separate: failures warn rather than block dev
+startup. Rerun `--orphans --yes` to retry maintenance even if all sessions are
+already gone; dry-run and cancelled plans never maintain routes. The sweep never
+deletes branches, databases, or work items.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 

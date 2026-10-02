@@ -14,7 +14,8 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Session planning** — `dev-session-plan.ts` (canonical env, redacted commands, internal API origin)
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
-- **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown); `lib/worktree-cleanup-orphans.ts` reclaims managed dev sessions for missing checkouts
+- **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown); `lib/worktree-cleanup-orphans.ts` authorizes missing-checkout session cleanup; `lib/owned-process-tree.ts` tracks and terminates owned descendants
+- **Route maintenance** — `lib/portless-maintenance.ts` (bounded, warning-only stale route pruning, independent of session teardown)
 - **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
   shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
   never reads Postgres and holds no business logic; when the API cannot answer a
@@ -68,7 +69,9 @@ tools/dev/
 │   ├── worktree-cleanup-ancestry.ts  Remote-first ancestry ref selection
 │   ├── worktree-cleanup-eligibility.ts  Commit-bound cleanup authorization
 │   ├── worktree-cleanup-readiness.ts  Auto cleanup ownership/liveness gates
-│   ├── worktree-cleanup-orphans.ts  Missing-checkout tmux/process reclamation
+│   ├── worktree-cleanup-orphans.ts  Missing-checkout session authorization and teardown
+│   ├── owned-process-tree.ts  Identity-checked descendants, shutdown grace, quiescence
+│   ├── portless-maintenance.ts  Best-effort shared route pruning
 │   └── worktree-cleanup.ts    Cleanup resolver + execution engine
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
@@ -208,15 +211,28 @@ sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
 ownership. Existing directories, dangling symlinks, and inspection failures are
 not deletion evidence.
 
-Execution revalidates the session ID/name/path/pane PIDs and missing directory,
-captures same-user descendants, sends SIGTERM, waits briefly, kills the exact tmux
-session ID if it remains, and sends SIGKILL to captured survivors. PID, UID,
-start time, and command are rechecked before escalation so reparented/setsid
-children stay owned without signalling a reused PID. Zombies count as exited.
-Portless routes are pruned after successful teardown. No branch, worktree,
-database, or work-item state is deleted. Processes already reparented before
-capture cannot be proven owned by a pane and are left alone; cwd alone is never
-permission to kill.
+Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
+repository overrides. Discovery and execution use the same session authorization
+rules. Before each shutdown phase, execution rechecks repository/lock/path
+ownership and all remaining panes against the original plan: original panes may
+exit during TERM, but newly added or relocated panes refuse teardown.
+
+`owned-process-tree.ts` captures same-user descendants, sends SIGTERM, and extends
+the owned set during the bounded grace period through still-valid captured
+ancestors. Captured detached/reparented children stay owned by PID, UID, start time
+and command; an unobserved process never becomes owned by cwd alone. After the
+fully authorized exact tmux session is closed, survivors are quiesced with
+SIGSTOP and repeated descendant censuses until the stopped set is stable, then
+force-killed. Quiescence must follow session closure because tmux resumes stopped
+pane leaders. On refusal/error, this invocation's paused survivors receive
+SIGCONT; processes already stopped by someone else are not resumed. Zombies count
+as exited. Processes that fork and reparent before an identity or ancestry can be
+captured remain unprovable and are left alone.
+
+`portless-maintenance.ts` runs shared route pruning independently of teardown.
+Failures produce a warning and retry command, never a startup failure. Executing
+`--orphans` retries maintenance even when no sessions remain; dry-run/cancellation
+never touches routes. No branch, worktree, database, or work-item state is deleted.
 
 ## WS 426 noise suppression (server-side)
 

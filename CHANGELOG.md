@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-- Reclaim managed tmux sessions and child processes for deleted worktrees on dev startup or `dev:prune-worktrees -- --orphans`; keep live checkouts and unrelated sessions.
+- Reclaim managed tmux sessions and owned process trees for deleted worktrees on dev startup or `dev:prune-worktrees -- --orphans`; isolate Git scope, recheck live panes throughout shutdown, and track late descendants. Route-prune failures warn without blocking startup.
 
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 

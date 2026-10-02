@@ -40,6 +40,47 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     return run(process.execPath, [tsx, cli, "--orphans", ...args]);
   }
 
+  function stubbornSession(root: string, spawnChildOnTerm = false): string {
+    const script = path.join(temp, "stubborn.mjs");
+    fs.writeFileSync(
+      script,
+      `
+      import { spawn } from 'node:child_process';
+      import fs from 'node:fs';
+      const child = process.argv.includes('--child');
+      let spawned = false;
+      function spawnChild() {
+        if (child || spawned) return;
+        spawned = true;
+        spawn(process.execPath, [import.meta.filename, '--child'], { detached: true, stdio: 'ignore' });
+      }
+      process.on('SIGTERM', () => { if (${spawnChildOnTerm}) spawnChild(); });
+      process.on('SIGHUP', () => {});
+      if (!${spawnChildOnTerm}) spawnChild();
+      const dir = ${JSON.stringify(temp)};
+      fs.writeFileSync(dir + (child ? '/child.pid' : '/parent.pid'), String(process.pid));
+      setInterval(() => {}, 1000);
+    `,
+    );
+    return session(root, undefined, `${process.execPath} ${script}`);
+  }
+
+  function stopScript(body: string) {
+    const runner = path.join(temp, "stop.mts");
+    const module = path.join(checkout, "tools/dev/lib/worktree-cleanup-orphans.ts");
+    fs.writeFileSync(
+      runner,
+      `
+      import fs from 'node:fs';
+      import { spawnSync } from 'node:child_process';
+      import { collectOrphanDevSessions, stopOrphanDevSessions } from ${JSON.stringify(module)};
+      const plan = collectOrphanDevSessions(process.cwd());
+      ${body}
+    `,
+    );
+    return run(process.execPath, [tsx, runner]);
+  }
+
   beforeEach(() => {
     // Keep the socket pathname under the POSIX Unix-socket length limit.
     temp = fs.mkdtempSync(path.join(os.tmpdir(), "mf-orphan-"));
@@ -155,23 +196,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
 
   it("force-kills captured detached children that ignore TERM/HUP while preserving a live session", async () => {
     const root = `${repo}.worktrees/stubborn`;
-    const script = path.join(temp, "stubborn.mjs");
-    fs.writeFileSync(
-      script,
-      `
-      import { spawn } from 'node:child_process';
-      import fs from 'node:fs';
-      process.on('SIGTERM', () => {});
-      process.on('SIGHUP', () => {});
-      const dir = ${JSON.stringify(temp)};
-      if (!process.argv.includes('--child')) {
-        spawn(process.execPath, [import.meta.filename, '--child'], { detached: true, stdio: 'ignore' });
-      }
-      fs.writeFileSync(dir + (process.argv.includes('--child') ? '/child.pid' : '/parent.pid'), String(process.pid));
-      setInterval(() => {}, 1000);
-    `,
-    );
-    const name = session(root, undefined, `${process.execPath} ${script}`);
+    const name = stubbornSession(root);
     const live = session(`${repo}.worktrees/live`);
     await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
     const pids = ["parent.pid", "child.pid"].map((file) =>
@@ -221,6 +246,124 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("Orphan session ownership changed");
     expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+  });
+
+  it("ignores inherited Git repository overrides when scoping orphan cleanup", () => {
+    const foreign = path.join(temp, "foreign");
+    fs.mkdirSync(foreign);
+    expect(run("git", ["init", "--quiet"], foreign).status).toBe(0);
+    expect(
+      run(
+        "git",
+        [
+          "-c",
+          "user.name=Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "--allow-empty",
+          "-qm",
+          "foreign",
+        ],
+        foreign,
+      ).status,
+    ).toBe(0);
+    const root = `${foreign}.worktrees/gone`;
+    const name = session(root);
+    fs.rmSync(root, { recursive: true });
+    env.GIT_DIR = path.join(foreign, ".git");
+    env.GIT_WORK_TREE = foreign;
+    const result = prune("--yes");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("No orphan dev sessions found.");
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+  });
+
+  it("preserves a live-checkout pane added during the TERM grace period", async () => {
+    const root = `${repo}.worktrees/changed-panes`;
+    const name = stubbornSession(root);
+    await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
+    fs.rmSync(root, { recursive: true });
+    const livePidFile = path.join(temp, "live.pid");
+    const result = stopScript(`
+      setTimeout(() => {
+        const pane = spawnSync('tmux', ['split-window', '-d', '-t', plan[0].sessionId + ':0',
+          '-c', ${JSON.stringify(repo)}, '-P', '-F', '#{pane_pid}', 'sleep 60'], { encoding: 'utf8' });
+        if (pane.status !== 0) throw new Error(pane.stderr);
+        fs.writeFileSync(${JSON.stringify(livePidFile)}, pane.stdout.trim());
+      }, 200);
+      await stopOrphanDevSessions(process.cwd(), plan);
+    `);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Orphan session ownership changed");
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    const livePid = fs.readFileSync(livePidFile, "utf8");
+    const state = run("ps", ["-p", livePid, "-o", "stat="]).stdout.trim();
+    expect(state !== "" && !state.startsWith("Z")).toBe(true);
+  });
+
+  it("captures and stops detached children spawned by a TERM handler", async () => {
+    const root = `${repo}.worktrees/late-child`;
+    const name = stubbornSession(root, true);
+    await expect.poll(() => fs.existsSync(path.join(temp, "parent.pid"))).toBe(true);
+    fs.rmSync(root, { recursive: true });
+    const result = prune("--yes");
+    expect(result.status, result.stderr).toBe(0);
+    const pid = Number(fs.readFileSync(path.join(temp, "child.pid"), "utf8"));
+    expect(result.stdout).toContain(`SIGKILL PID ${pid}`);
+    const state = run("ps", ["-p", String(pid), "-o", "stat="]).stdout.trim();
+    expect(state === "" || state.startsWith("Z")).toBe(true);
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+  });
+
+  it("warns on route contention and retries maintenance even after all orphans are gone", () => {
+    const root = `${repo}.worktrees/route-lock`;
+    const name = session(root);
+    const calls = path.join(temp, "route-prune.calls");
+    fs.writeFileSync(
+      path.join(temp, "bin/pnpm"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(calls)}\necho 'Failed to acquire route lock' >&2\nexit 1\n`,
+      { mode: 0o755 },
+    );
+    fs.rmSync(root, { recursive: true });
+    const result = prune("--yes");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("cleanup complete");
+    expect(result.stderr).toContain("portless prune warning: Failed to acquire route lock");
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+    const retry = prune("--yes");
+    expect(retry.status, retry.stderr).toBe(0);
+    expect(retry.stdout).toContain("No orphan dev sessions found.");
+    expect(fs.readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(2);
+    expect(prune("--dry-run").status).toBe(0);
+    expect(fs.readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(2);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("resumes only its own paused survivors on refusal (externally paused child: %s)", async (pauseChild) => {
+    const root = `${repo}.worktrees/resume-on-refusal`;
+    const name = stubbornSession(root);
+    await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
+    if (pauseChild)
+      process.kill(Number(fs.readFileSync(path.join(temp, "child.pid"), "utf8")), "SIGSTOP");
+    fs.rmSync(root, { recursive: true });
+    const result = stopScript(`
+        await stopOrphanDevSessions(process.cwd(), plan, (line) => {
+          if (line.startsWith('SIGSTOP')) fs.mkdirSync(${JSON.stringify(root)}, { recursive: true });
+        });
+      `);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Orphan session ownership changed");
+    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+    expect(fs.existsSync(root)).toBe(true);
+    for (const file of ["parent.pid", "child.pid"]) {
+      const pid = fs.readFileSync(path.join(temp, file), "utf8").trim();
+      const state = run("ps", ["-p", pid, "-o", "stat="]).stdout.trim();
+      if (pauseChild && file === "child.pid") expect(state).toMatch(/^[Tt]/);
+      else expect(state !== "" && !/^[TZ]/.test(state)).toBe(true);
+    }
   });
 
   it("does nothing without a tmux server and rejects mixed cleanup modes", () => {
