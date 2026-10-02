@@ -333,20 +333,39 @@ Pasting into an Editor document turns each `[[…]]` into a standard link (D15),
 so a note brought over from Obsidian keeps its links. A typed `[[`, what the AI
 writes, and text already stored stay text; so does a drag inside the editor.
 
-- **Where.** `WikilinkPasteExtension`'s `transformPasted`, the one prop every
-  paste kind reaches once and after parsing (Markdown through the paste door,
-  plain prose, HTML whose text holds the brackets). Only the Editor mounts it.
-  Its catalog is the Editor's: the holder, the link index across Manuscript,
-  KB, User, and this Work's Scratch, and the same `linkAhead` the `@` menu's
-  link-ahead row uses. While the index loads the catalog is null and the
-  brackets stay text rather than all turning dashed.
+- **Which pastes** (`WikilinkPasteExtension`, the policy): a paste or a drop
+  from outside the editor. Three keep their characters: paste without
+  formatting (Ctrl/Cmd+Shift+V, ProseMirror's own flag in
+  `transformPastedText`, the signal the Markdown door reads as `plain`; it is
+  also how a writer pastes literal brackets), any paste or drop whose
+  destination is code (the selection, or the pointer's resolved position as
+  ProseMirror resolves `$mouse`; ProseMirror hands code a bare text slice, and
+  a link there would keep only its label), and a drag within the document.
+  The policy reads the destination where the gesture starts and the transform
+  reads and clears it.
+
+- **Where.** `transformPasted`, the one prop every paste kind reaches once and
+  after parsing (Markdown through the paste door, plain prose, HTML whose text
+  holds the brackets). Only the Editor mounts the extension. Its catalog is
+  the Editor's: the holder, its link index (what its links resolve against)
+  across Manuscript, KB, User, and this Work's Scratch, and the same
+  `linkAhead` the `@` menu's link-ahead row uses. While the index loads the
+  catalog is null and the brackets stay text rather than all turning dashed.
 - **Syntax** (`parseWikilinks`): `[[target]]`, `[[target|label]]` (also the
   table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
   target, `.md` implied without an extension. The label is the alias or the
   name without `.md`; the suffix stays on the destination. `![[…]]` (no
-  transclusion), `\[[`, and anything in code (a fence, a code mark, or a
-  backtick span still spelled out) stay text; so does a link inside a link.
-- **Which document** (`pickWikilinkTarget`): case-insensitive, by path ending.
+  transclusion) and anything in code (a fence, a code mark, or a backtick span
+  still spelled out) stay text; so does a link inside a link.
+- **Escapes.** `\[[…]]`, and `\[\[…]]` as Meridian's own Markdown writes it,
+  stay the literal brackets without the backslash, on every path. The
+  Markdown door would turn `\[` into `[` before the transform sees it, so its
+  codec takes `remarkKeepWikilinkEscapes` (`wikilink-escape.ts`), a micromark
+  text construct that claims the escape ahead of the core one and keeps the
+  characters.
+- **Which document** (`pickWikilinkTarget`; per paste, `wikilinkResolver`
+  locates the catalog once and ranks only the documents sharing a link's
+  filename): case-insensitive, by path ending.
   `[[Name]]`: the holder's folder, then its area root, then the rest by
   holder's area first, fewest folders, alphabetical URI. `[[a/Name]]`: that
   path from the holder's area root, then from another area's root (Manuscript,
