@@ -3,6 +3,7 @@ import { execFile, execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
+import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import {
   buildCleanupContext,
   type CleanupAction,
@@ -919,6 +920,7 @@ async function main(): Promise<void> {
     const orphans = collectOrphanDevSessions(cwd);
     if (orphans.length === 0) {
       console.log("No orphan dev sessions found.");
+      if (!options.dryRun) prunePortlessRoutes(cwd);
       return;
     }
     console.log(`Orphan dev session cleanup plan (${orphans.length} sessions):`);
@@ -939,6 +941,7 @@ async function main(): Promise<void> {
       return;
     }
     await stopOrphanDevSessions(cwd, orphans);
+    prunePortlessRoutes(cwd);
     console.log("\nOrphan dev session cleanup complete.");
     return;
   }
