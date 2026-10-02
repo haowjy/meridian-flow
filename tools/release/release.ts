@@ -235,7 +235,10 @@ function gitText(args: string[]) {
 }
 
 class CommandGit implements GitPort {
-  constructor(private triggerSha: string) {}
+  private triggerSha: string;
+  constructor(triggerSha: string) {
+    this.triggerSha = triggerSha;
+  }
   fetchMain() {
     command("git", ["fetch", "origin", "main", "--force", "--tags"]);
     command("git", ["checkout", "-B", "main", "origin/main"]);
@@ -325,7 +328,10 @@ class CommandGit implements GitPort {
   }
 }
 class CommandGitHub implements GitHubPort {
-  constructor(private repository: string) {}
+  private repository: string;
+  constructor(repository: string) {
+    this.repository = repository;
+  }
   pullRequests(sha: string) {
     return JSON.parse(
       command("gh", ["api", `/repos/${this.repository}/commits/${sha}/pulls`]).output,
