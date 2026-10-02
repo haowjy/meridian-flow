@@ -1,6 +1,6 @@
 /** Executor input parsing and capability plumbing for spawn-family registrations. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ThreadReportResult } from "@meridian/contracts/spawn";
+import type { ModelThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { threadReadError } from "../spawn/resolve-readable-thread.js";
@@ -33,12 +33,8 @@ describe("thread_message capability plumbing", () => {
 });
 
 describe("thread_report capability plumbing", () => {
-  it("injects the exact-report reader", async () => {
-    const expected: ThreadReportResult = {
-      childThreadId: "child-1" as ThreadId,
-      ref: "p1",
-      status: "unavailable",
-    };
+  it("injects the latest-report reader", async () => {
+    const expected: ModelThreadReportResult = { ref: "p1", status: "unavailable" };
     const threadReportFn = vi.fn(async () => expected);
     const executor = executorFor("thread_report");
     const result = await executor.executeTool(

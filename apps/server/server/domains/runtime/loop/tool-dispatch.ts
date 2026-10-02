@@ -24,7 +24,7 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import { readThreadActivity } from "../../threads/index.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
-import { readThreadReport } from "../spawn/read-thread-report.js";
+import { readModelThreadReport } from "../spawn/model-thread-report.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
@@ -229,7 +229,7 @@ export async function dispatchToolCall(
   const threadReport =
     call.name === "thread_report"
       ? (reportInput: ThreadReportArgs) =>
-          readThreadReport({
+          readModelThreadReport({
             callerThreadId: ctx.thread.id as never,
             ref: reportInput.ref,
             repos: {

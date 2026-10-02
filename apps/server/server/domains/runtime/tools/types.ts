@@ -171,7 +171,7 @@ export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
 export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
   threadReport(
     input: ThreadReportArgs,
-  ): Promise<import("@meridian/contracts/spawn").ThreadReportResult>;
+  ): Promise<import("@meridian/contracts/spawn").ModelThreadReportResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {

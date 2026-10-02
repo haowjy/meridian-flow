@@ -15,15 +15,14 @@ export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): stri
   return `→ ${result?.handle ?? (result?.report as JsonObject | undefined)?.handle ?? ""} ${JSON.stringify(input.description ?? "")}`;
 }
 export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
-  const run = input.run ?? (output as JsonObject | undefined)?.run;
   const outputRef =
-    (input.ref === undefined || input.ref === "current") && typeof output === "string"
-      ? /^([cp]\d+)\b/u.exec(output)?.[1]
+    typeof output === "string"
+      ? /^Conversation ([cp]\d+)\b/u.exec(output)?.[1]
       : typeof (output as JsonObject | undefined)?.ref === "string"
         ? String((output as JsonObject).ref)
         : undefined;
-  const ref = input.ref !== undefined && input.ref !== "current" ? input.ref : outputRef;
-  return `${ref ?? input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
+  if (input.ref !== undefined && input.ref !== "current") return String(input.ref);
+  return outputRef ?? String(input.ref ?? "current");
 }
 
 export function threadLsHistoryPreview(input: JsonObject, output?: JsonValue): string {
