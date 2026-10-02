@@ -184,7 +184,7 @@ function rankWikilinkMatches(
  * it names, or the link-ahead address when it names none; null leaves it
  * text. Built once per paste: the candidates are located once and bucketed by
  * filename, so a link only ranks the documents that share its name, and a
- * target seen twice is answered once.
+ * target seen twice is ranked once.
  */
 export function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
@@ -199,19 +199,19 @@ export function wikilinkResolver(
     else byName.set(name, [located]);
   }
   const holder = catalog.holderUri ? locate(catalog.holderUri) : null;
-  const answers = new Map<string, string | null>();
+  // Ranking ignores case, so its answer is cached under the lowercased path;
+  // a link-ahead address keeps the writer's casing, so it is asked each time.
+  const matches = new Map<string, string | null>();
   return (occurrence) => {
     const { target } = occurrence;
     const wanted = wantedPath(target);
     const key = wanted.join("/");
-    let uri = answers.get(key);
-    if (uri === undefined) {
-      uri =
-        rankWikilinkMatches(byName.get(wanted.at(-1) ?? "") ?? [], target, holder) ??
-        catalog.linkAhead(target.name, target.folders)?.uri ??
-        null;
-      answers.set(key, uri);
+    let match = matches.get(key);
+    if (match === undefined) {
+      match = rankWikilinkMatches(byName.get(wanted.at(-1) ?? "") ?? [], target, holder);
+      matches.set(key, match);
     }
+    const uri = match ?? catalog.linkAhead(target.name, target.folders)?.uri;
     return uri ? spellDocumentHref(catalog.holderUri, uri) + occurrence.suffix : null;
   };
 }
