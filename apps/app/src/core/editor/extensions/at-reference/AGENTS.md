@@ -19,6 +19,10 @@ nothing. The surface is `AtReferenceMenu` in
   Create shares; `manuscript://<name>.md` from a holder with no address). It
   inserts a link and creates nothing: the chip is dashed until a follow's Create
   makes the document at exactly that address.
+- **A paste links `[[Name]]` from the same catalog.** The extension's
+  `transformPasted` plugin turns each pasted `[[…]]` into a standard link to
+  the document `linkTargets()` names, or a dashed `linkAhead` link
+  ([`../../links/.context/CONTEXT.md`](../../links/.context/CONTEXT.md)).
 - **The composer reuses this lane with its own insertion** (`insertReference`)
   and no `linkAhead`: a chat reference is identity-bearing and must name an
   existing document.

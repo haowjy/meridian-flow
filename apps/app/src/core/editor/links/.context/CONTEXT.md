@@ -17,7 +17,8 @@ linkTargetHref(target: LinkTarget): string
 linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
 ```
 
-There are no wikilinks: `[[name]]` is text wherever it appears. The two
+There are no wikilinks: `[[name]]` is text wherever it appears, and only a
+paste converts it ([Pasted `[[Name]]`](#pasted-name)). The two
 internal kinds line up one-for-one with `DocumentLinkTarget` in
 `@meridian/contracts/protocol`, which is what `POST /api/projects/:projectId/
 links/resolve` takes. `baseUri` is the URI of the document holding the link;
@@ -25,7 +26,8 @@ only `relative` needs it and only the caller knows it. `linkTargetAddress`
 resolves either kind to its canonical Context URI through `resolveDocumentHref`
 (`@meridian/contracts`), the one href module both resolvers use;
 `link-address.ts` also holds the filename rule (`documentFileName`) and the
-address of a new document beside its holder (`siblingDocumentAddress`).
+address of a new document beside its holder, or at a folder path from its
+area root (`linkAheadAddress`).
 
 Two directions, one fence. `classifyLinkTarget` reads an href already in the
 document — from the markdown parser, an LLM, or this module — and asks what it
@@ -324,3 +326,37 @@ target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and
 formatting; it never persists resolver answers or manufactures document identity.
+
+## Pasted `[[Name]]`
+
+Pasting into an Editor document turns each `[[…]]` into a standard link (D15),
+so a note brought over from Obsidian keeps its links. A typed `[[`, what the AI
+writes, and text already stored stay text; so does a drag inside the editor.
+
+- **Where.** `transformPasted`, the one prop every paste kind reaches once and
+  after parsing (Markdown through the paste door, plain prose, HTML whose text
+  holds the brackets). The plugin rides `AtReferenceExtension` because it reads
+  the `@` catalog: `linkTargets()` (the Editor's document index across
+  Manuscript, KB, User, and this Work's Scratch) and the link-ahead row's own
+  `linkAhead`. A catalog without `linkTargets` (the chat composer) converts
+  nothing, and while the index loads `linkTargets()` is null and the brackets
+  stay text rather than all turning dashed.
+- **Syntax** (`parseWikilinks`): `[[target]]`, `[[target|label]]` (also the
+  table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
+  target, `.md` implied without an extension. The label is the alias or the
+  name without `.md`; the suffix stays on the destination. `![[…]]` (no
+  transclusion), `\[[`, and anything in code (a fence, a code mark, or a
+  backtick span still spelled out) stay text; so does a link inside a link.
+- **Which document** (`pickWikilinkTarget`): case-insensitive, by path ending.
+  `[[Name]]`: the holder's folder, then its area root, then the rest by
+  holder's area first, fewest folders, alphabetical URI. `[[a/Name]]`: that
+  path from the holder's area root, then from another area's root (Manuscript,
+  KB, User, Scratch), then path endings ordered as before. Obsidian's own last
+  step is index order; ours is fixed so a paste never depends on load order.
+  Any match links.
+- **No match**: `linkAhead(name, folders)`, which is `linkAheadAddress`: beside
+  the holder, a folder form under the holder's area root, the manuscript root
+  from a holder with no address. The link is dashed until a follow's Create
+  makes the document.
+- **Spelling**: `spellDocumentHref(holderUri, uri)` plus the suffix, as `@`
+  writes. The paste is one transaction, so one undo removes it.
