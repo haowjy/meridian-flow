@@ -229,6 +229,10 @@ export function deferUntilDrizzleRollback(callback: () => void | Promise<void>):
   return true;
 }
 
+export function isInDrizzleTransaction(): boolean {
+  return transactionStorage.getStore() !== undefined;
+}
+
 export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
 }
