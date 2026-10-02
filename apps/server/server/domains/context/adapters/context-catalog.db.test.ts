@@ -1,4 +1,5 @@
 /** PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics. */
+import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextAvailabilityHeads,
@@ -11,7 +12,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
@@ -169,6 +170,74 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(contextAvailabilityHeads)
           .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`)),
       ).resolves.toEqual(availabilityBeforeFailure);
+    });
+
+    it("retries a post-Apply document refresh after the availability lock timeout", async () => {
+      const db = database.current;
+      const NEW_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
+      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-apply-retry"));
+      await db.insert(projects).values({
+        id: PROJECT_ID,
+        userId: USER_ID,
+        name: "Catalog Project",
+        slug: "catalog-project",
+      });
+      await db.insert(contextSources).values({
+        id: SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+      });
+      const members = new Set<string>();
+      const catalog = createDrizzleContextCatalog(db, undefined, {
+        manifestMembership: {
+          async resolveManifestMembership() {
+            return {
+              documentId: "00000000-0000-4000-8000-000000000809" as never,
+              members: [...members],
+            };
+          },
+        },
+      });
+      const scope = { kind: "project", projectId: PROJECT_ID } as const;
+      await catalog.snapshot(scope);
+      await db.insert(documents).values({
+        id: NEW_DOCUMENT_ID,
+        contextSourceId: SOURCE_ID,
+        name: "new-chapter",
+        extension: "md",
+      });
+      members.add(NEW_DOCUMENT_ID);
+
+      const lockDb = createDb(DATABASE_URL, { max: 1 });
+      let releaseLock!: () => void;
+      let lockAcquired!: () => void;
+      const acquired = new Promise<void>((resolve) => {
+        lockAcquired = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      const lockTask = lockDb.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
+        lockAcquired();
+        await held;
+      });
+      await acquired;
+      const releaseTimer = setTimeout(releaseLock, 350);
+      try {
+        await catalog.refreshProjectDocuments(PROJECT_ID);
+      } finally {
+        clearTimeout(releaseTimer);
+        releaseLock();
+        await lockTask;
+        await lockDb.close();
+      }
+
+      const snapshot = await catalog.snapshot(scope);
+      expect(snapshot.entries).toContainEqual(
+        expect.objectContaining({ kind: "file", entryId: NEW_DOCUMENT_ID }),
+      );
     });
 
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {

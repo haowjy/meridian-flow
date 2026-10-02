@@ -52,6 +52,7 @@ import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-map
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
+const REFRESH_RETRY_DELAYS_MS = [10, 50, 250, 1_000] as const;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -369,6 +370,18 @@ export function createDrizzleContextCatalog(
     1,
     Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
   );
+  async function retryRefresh<T>(operation: () => Promise<T>): Promise<T> {
+    let lastCause: unknown;
+    for (const delayMs of REFRESH_RETRY_DELAYS_MS) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try {
+        return await operation();
+      } catch (cause) {
+        lastCause = cause;
+      }
+    }
+    throw lastCause;
+  }
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -619,43 +632,38 @@ export function createDrizzleContextCatalog(
       const orderedScopes = [...scopes.values()].sort((a, b) =>
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
       );
-      const reserveGeneration = availabilityMutations.reserve;
-      const publishReservedGeneration = availabilityMutations.publishReserved;
-      if (manifestBackedProjectIds.size > 0 && reserveGeneration && publishReservedGeneration) {
-        const availabilityGeneration = await reserveGeneration();
+      if (manifestBackedProjectIds.size > 0) {
+        const availabilityGeneration = await availabilityMutations.reserve();
         const repair = async () => {
-          let lastCause: unknown;
-          for (const delayMs of [10, 50, 250, 1_000]) {
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-            try {
-              await runInDrizzleTransaction(db, async () => {
+          try {
+            await retryRefresh(() =>
+              runInDrizzleTransaction(db, async () => {
                 await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
                 for (const scope of orderedScopes) {
                   await refreshScope(scope, invalidatedRootIds, commitId);
                 }
-                await publishReservedGeneration({
+                await availabilityMutations.publishReserved({
                   generation: availabilityGeneration,
                   projectIds,
                   userIds,
                 });
+              }),
+            );
+            return;
+          } catch (cause) {
+            if (options.eventSink) {
+              emitEvent(options.eventSink, {
+                level: "error",
+                source: "context-catalog",
+                name: "DeferredRefreshFailure",
+                payload: {
+                  sourceIds: [...new Set(sourceIds)],
+                  ...unknownToEventPayload(cause),
+                },
               });
-              return;
-            } catch (cause) {
-              lastCause = cause;
             }
+            throw cause;
           }
-          if (options.eventSink) {
-            emitEvent(options.eventSink, {
-              level: "error",
-              source: "context-catalog",
-              name: "DeferredRefreshFailure",
-              payload: {
-                sourceIds: [...new Set(sourceIds)],
-                ...unknownToEventPayload(lastCause),
-              },
-            });
-          }
-          throw lastCause;
         };
         const launchRepair = () => {
           setImmediate(() => {
@@ -708,11 +716,18 @@ export function createDrizzleContextCatalog(
       }
     },
     async refreshProjectDocuments(projectId) {
-      await runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
-        await refreshScope({ kind: "project", projectId });
-        await availabilityMutations.advance({ projectIds: [projectId], userIds: [] });
-      });
+      await retryRefresh(() =>
+        runInDrizzleTransaction(db, async () => {
+          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+          const generation = await availabilityMutations.reserve();
+          await refreshScope({ kind: "project", projectId });
+          await availabilityMutations.publishReserved({
+            generation,
+            projectIds: [projectId],
+            userIds: [],
+          });
+        }),
+      );
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
