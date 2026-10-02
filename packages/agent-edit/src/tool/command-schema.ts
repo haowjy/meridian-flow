@@ -189,6 +189,18 @@ const ENGINE_TARGET = {
   tool_use_id: z.string().optional(),
 };
 
+/**
+ * Which version of a document to read (D3, D14). It has no default: omitted
+ * means the version this thread's writes change, which the host decides per
+ * document. `read`, `search`, `ls` and `from` share this one description.
+ */
+export const DocumentVersionSchema = z
+  .enum(["draft", "live"])
+  .describe(
+    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
+  );
+export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
+
 const READ_TARGET = {
   path: z
     .string()
@@ -196,6 +208,7 @@ const READ_TARGET = {
     .describe(
       "Document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` for one section.",
     ),
+  version: DocumentVersionSchema.optional(),
 };
 const WRITE_TARGET = {
   path: z

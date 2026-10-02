@@ -67,8 +67,12 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
-      forWork: (authority, projectId, _userId, _workMemberships, threadId) => {
-        calls.push({ workId: authority.workId, projectId, ...(threadId ? { threadId } : {}) });
+      forWork: (authority, projectId, _userId, _workMemberships, thread) => {
+        calls.push({
+          workId: authority.workId,
+          projectId,
+          ...(thread ? { threadId: thread.threadId } : {}),
+        });
         return {} as ContextPort;
       },
       forProject: () => {

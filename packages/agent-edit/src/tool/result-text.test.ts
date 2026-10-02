@@ -13,7 +13,7 @@ describe("renderAgentEditResult", () => {
       phase: "committed",
       payload: {
         path: "manuscript://chapter.md",
-        read: { format: "full" },
+        read: { format: "full", version: "draft" },
         blocks: [
           {
             extent: "full",
@@ -28,7 +28,7 @@ describe("renderAgentEditResult", () => {
     });
     expect(renderAgentEditResult(result)).toBe(
       [
-        "status: success; path: manuscript://chapter.md; blocks: 2",
+        "status: success; path: manuscript://chapter.md; blocks: 2; version: draft",
         "",
         "a1b2|# Chapter",
         "c3d4|",
@@ -65,6 +65,27 @@ describe("renderAgentEditResult", () => {
         'read({"path": "chapter.md#a1b2"})',
         "e5f6|## Arena",
         'read({"path": "chapter.md#e5f6"})',
+      ].join("\n"),
+    );
+  });
+
+  it("keeps an outline's section reads on the live version it read", () => {
+    const result = modelResult({
+      command: "read",
+      status: "success",
+      phase: "committed",
+      payload: {
+        path: "chapter.md",
+        read: { format: "outline", version: "live" },
+        blocks: [{ extent: "full", relation: "document", items: [item("e5f6", "## Arena")] }],
+      },
+    });
+    expect(renderAgentEditResult(result)).toBe(
+      [
+        "status: success; path: chapter.md; blocks: 1; version: live; format: outline",
+        "",
+        "e5f6|## Arena",
+        'read({"path": "chapter.md#e5f6", "version": "live"})',
       ].join("\n"),
     );
   });

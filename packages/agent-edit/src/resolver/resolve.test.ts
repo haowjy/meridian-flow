@@ -138,7 +138,12 @@ describe("resolveWrite", () => {
     });
     expect(resolve(doc, { command: "replace", content: "x", in: "deadbeef" })).toMatchObject({
       ok: false,
-      error: { code: "not_found", message: 'Block hash "deadbeef" was not found' },
+      error: {
+        code: "not_found",
+        message: expect.stringContaining(
+          'Block hash "deadbeef" was not found in the version your writes change',
+        ),
+      },
     });
     expect(
       resolve(doc, {
@@ -160,7 +165,12 @@ describe("resolveWrite", () => {
     ]) {
       expect(resolve(doc, params)).toMatchObject({
         ok: false,
-        error: { code: "not_found", message: 'Block hash "cafe" was not found' },
+        error: {
+          code: "not_found",
+          message: expect.stringContaining(
+            'Block hash "cafe" was not found in the version your writes change',
+          ),
+        },
       });
     }
   });
