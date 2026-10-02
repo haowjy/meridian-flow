@@ -53,6 +53,7 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleResponseDocumentScreen } from "./adapters/drizzle-response-document-screen.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
@@ -276,6 +277,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
+    screenResponseDocuments: createDrizzleResponseDocumentScreen(deps.db),
     journal: persistence.journal,
     liveCoordinator,
     lifecycle: persistence.lifecycle,
