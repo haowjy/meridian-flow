@@ -271,7 +271,13 @@ export async function dropDatabaseForUrl(
     throw new Error(`Refusing to drop reserved database: ${targetDb}`);
   }
 
-  const adminSql = postgres(adminConnString, { max: 1 });
+  const adminSql = postgres(adminConnString, {
+    max: 1,
+    connection: {
+      lock_timeout: 5_000,
+      statement_timeout: 15_000,
+    },
+  });
   try {
     await adminSql.unsafe(`DROP DATABASE IF EXISTS "${targetDb}" WITH (FORCE)`);
     return { targetDb, dropped: true };
