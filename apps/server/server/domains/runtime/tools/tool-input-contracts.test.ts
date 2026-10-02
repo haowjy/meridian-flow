@@ -112,3 +112,26 @@ describe("thread_ls", () => {
     await expectRefused("thread_ls", { limit: 5 }, ["limit: unknown argument"]);
   });
 });
+
+describe("thread_history", () => {
+  it("delivers order and limit defaults", async () => {
+    await expectDelivered("thread_history", {}, { order: "newest_first", limit: 40 });
+    await expectDelivered(
+      "thread_history",
+      { ref: "current", expand: "3.2" },
+      { ref: "current", expand: "3.2", order: "newest_first", limit: 40 },
+    );
+  });
+
+  it("refuses bad values and unknown keys", async () => {
+    await expectRefused("thread_history", { order: "latest" }, [
+      'order: expected "newest_first" or "oldest_first", got "latest"',
+    ]);
+    await expectRefused("thread_history", { limit: 0 }, ["limit: must be at least 1"]);
+    await expectRefused("thread_history", { include: ["everything"] }, [
+      'include[0]: expected "thinking", "tool_args", "tool_results", "system_messages" or "system_prompt", got "everything"',
+    ]);
+    await expectRefused("thread_history", { expand: 2 }, ["expand: expected a string, got 2"]);
+    await expectRefused("thread_history", { turn: 3 }, ["turn: unknown argument"]);
+  });
+});
