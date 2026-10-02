@@ -324,13 +324,14 @@ export function ReadableProjectRoute({
     return {
       ...address,
       destination: next,
+      draftId: undefined,
       workView: next.kind === "work" ? address.workView : undefined,
       worksView: undefined,
       results: false,
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteTarget, preparedTab?: ContextTab) => {
+    (target: ContextRouteTarget, preparedTab?: ContextTab, draftId?: string) => {
       const current = latest.current;
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
@@ -368,6 +369,7 @@ export function ReadableProjectRoute({
             ? { kind: "document", scheme: target.scheme, path: target.path.replace(/^\/+/, "") }
             : { kind: "editor" },
           work: workIdSelection(target.workId),
+          draftId,
           results: false,
         } as ProjectAddress,
         state,
@@ -382,7 +384,7 @@ export function ReadableProjectRoute({
     ): Promise<NavigationSettlement> => {
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
-      const next = contextDestination(target, options?.tab);
+      const next = contextDestination(target, options?.tab, options?.draftId);
       const workspace = getContextTabs(projectId);
       const tab = target.documentId
         ? workspace.tabs.find((tab) => tab.documentId === target.documentId)
@@ -416,6 +418,14 @@ export function ReadableProjectRoute({
     },
     [contextDestination, projectId],
   );
+  const setEditorReviewDraftId = useCallback((draftId: string | null) => {
+    const current = latest.current;
+    if (!current.navigation) return;
+    void current.navigation.navigate(
+      { ...current.address, draftId: draftId ?? undefined },
+      { replace: true },
+    );
+  }, []);
   const closeDestination = useCallback(
     (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;
@@ -596,12 +606,14 @@ export function ReadableProjectRoute({
             activeContextScheme={search.scheme ?? null}
             activeContextFolder={search.folder ?? null}
             activeContextPath={search.path ?? null}
+            reviewDraftId={address.draftId}
             resultsOpen={address.results}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
+            onSetEditorReviewDraftId={setEditorReviewDraftId}
             onOpenResults={() => go({ ...address, results: true }, { replace: true })}
             onCloseResults={() => go({ ...address, results: false }, { replace: true })}
           />

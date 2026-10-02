@@ -123,6 +123,24 @@ describe("readable project addresses", () => {
     expect(parse(`${P}/works/${WORK}?view=files&view=chats`).kind).toBe("invalid");
   });
 
+  it("round trips review identity only on an Editor document", () => {
+    const href = `${P}/editor/manuscript/chapter.md?work=${WORK}&draft=draft%2Fone`;
+    expect(parse(href)).toMatchObject({
+      kind: "valid",
+      href,
+      address: { draftId: "draft/one" },
+    });
+    const editor = parse(`${P}/editor?draft=draft-one`);
+    expect(editor).toMatchObject({ kind: "valid", href: `${P}/editor` });
+    if (editor.kind !== "valid") throw new Error(editor.reason);
+    expect(editor.address).not.toHaveProperty("draftId");
+    expect(parse(`${P}/chats?draft=draft-one`)).toMatchObject({ href: `${P}/chats` });
+    expect(parse(`${P}/editor/manuscript/chapter.md?draft=a&draft=b`)).toMatchObject({
+      kind: "invalid",
+      reason: "duplicate:draft",
+    });
+  });
+
   it("preserves absent, explicitly empty, and malformed editing contexts", () => {
     expect(parse(`${P}/editor`)).toMatchObject({ address: { work: { kind: "absent" } } });
     expect(parse(`${P}/editor?work=`)).toMatchObject({
