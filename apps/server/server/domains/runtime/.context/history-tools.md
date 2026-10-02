@@ -12,8 +12,10 @@ Rationale: [Models Read Connected Conversations by Lineage][kb-connected] and
 |---|---|
 | `spawn/resolve-readable-thread.ts` | `resolveReadableThread`, the one authority for which thread a model may read. |
 | `spawn/thread-ls.ts`, `spawn/thread-ls-contract.ts` | `thread_ls`. |
-| `spawn/thread-history.ts`, `spawn/thread-history-contract.ts`, `spawn/history-item.ts` | `thread_history` and its per-item projection. |
-| `spawn/read-thread-report.ts` | `thread_report`. |
+| `spawn/thread-history.ts`, `spawn/thread-history-contract.ts` | `thread_history`: the page walk, turn numbering, saved reports and `expand`. |
+| `spawn/history-item.ts` | Turn labels and the per-block projection: the visibility inputs, document elision, display indexes. |
+| `spawn/history-result.ts` | `HistoryResult`, the structured result, and its pure text renderer. |
+| `spawn/model-thread-report.ts`, `spawn/read-thread-report.ts` | `thread_report` (latest report, `running`), over the execution-addressed reader the app route also uses. |
 | `tools/inspection-tools.ts` | Registers `thread_ls` and `thread_history` with repository and tokenizer ports at composition, not privileged run-loop callbacks. |
 | `thread-reference.ts` | `threadReferenceText` and `threadReferenceBlock`, the frozen pointer shared by spawn seeds and handoff briefs. |
 | `loop/history-tool-availability.ts` | Whether history guidance may name `thread_history` (below). |
@@ -48,32 +50,50 @@ source history is intentionally not a fallback.
 
 ## `thread_history`
 
-History projects the shared `readTranscriptPageForProjection` and bounded
-expansion read (threads domain); there is no second fork walker. Tool pairs
-load once per raw page, keyed by turn and tool-call ID, including partners
-outside the page. `history-item.ts` filters and elides document copies before
-token trimming, using each tool's `history` treatment
-([document text](document-text.md)). Component blocks use their model text when
-they define it. History renders compaction summaries, writer questions, and
-short invocation-status labels for the remaining known cards; unknown cards
-render only their kind. Raw component props are never serialized. Pages cap
-scan work at 2,000 raw items and carry the settled anchor
-forward when trimming. Opt-in prompts
-(`include: ["system_prompt"]`) appear only when a cursor opens a segment; a
-segment header otherwise names the Agent and prompt boundary. Internal bake
-hashes are not model-facing.
+History projects the shared `readTranscriptPageForProjection` (threads
+domain); there is no second fork walker. The handler returns a
+`HistoryResult` and the registration's `renderResult` turns it into text (D8);
+nothing parses the text back. Tool pairs load once per raw page, keyed by turn
+and tool-call ID, including partners outside the page. `history-item.ts`
+elides document copies before token trimming, using each tool's `history`
+treatment ([document text](document-text.md)). Component blocks use their
+model text when they define it; raw component props are never serialized.
+
+- **Numbers.** A turn's number is its ordinal in the effective transcript.
+  After the walk, `countTranscriptTurns` over the spans before the page's
+  first turn gives the base; the walk covered a contiguous run, so the rest
+  follow. `expand: N` maps back through `findTranscriptTurnByOrdinal`. Cursors
+  still encode storage keys; storage `position.sequence` never reaches the
+  model.
+- **Visibility.** One classifier reads the registration's `historyKind`
+  (`"routine"`, or a function of the input for `work`), never tool-name
+  strings. Absent means a receipt line. A routine call that failed, or that a
+  settled turn never finished, still shows.
+- **Paging.** `limit` counts shown turns; every consumed row advances the
+  cursor, so hidden rows neither repeat nor count. A page stops at a new turn
+  past the limit, at the 8k budget (possibly mid-turn), at a prompt-epoch
+  boundary, or after scanning 2,000 raw rows.
+- **Reports.** On a subagent's history, finished reports attach to the turn
+  their `terminalTurnId` names, on the page that holds the turn's last row.
+- **Handles.** Display indexes (`N.k`) count a turn's blocks in order, a tool
+  result sharing its call's index. The page computes them only for truncated
+  items, from the turn's blocks.
+
+Opt-in prompts (`include: ["system_prompt"]`) appear only when a cursor opens
+a segment. Internal bake hashes are not model-facing.
 
 ## `thread_report`
 
-`thread_report({ ref, run? })` reads a child's saved report. An omitted `run`
-defaults to the latest finished report; an explicit 1-based `run` reads an
-earlier one. The read runs in one root repeatable-read snapshot. A `run` with
-no matching finished report, or one whose outcome, source, or summary never
-finalized, is `unavailable`, the only non-success status. The separate
-writer-facing `GET .../reports/[childThreadId]/[execution]` route also returns
-`not_ready` for an execution still running; it resolves `execution` to a
-`run` index itself and is not the model tool. Report admission and publication
-are in [spawn](spawn.md#reports).
+`thread_report({ ref })` reads a child's latest finished report through
+`readModelThreadReport`, which calls the unchanged `readThreadReport` (one
+root repeatable-read snapshot) and then checks `listLatestByChildren`: an
+admitted execution with no terminal truth means the child is running again,
+reported as `running: true` with a line. `unavailable` says to wait for the
+completion notice. The writer-facing
+`GET .../reports/[childThreadId]/[execution]` route resolves `execution` to a
+`run` index and calls `readThreadReport` with it; that execution-addressed
+path is not on the model tool (D17). Report admission and publication are in
+[spawn](spawn.md#reports).
 
 ## `spawn.from`
 
