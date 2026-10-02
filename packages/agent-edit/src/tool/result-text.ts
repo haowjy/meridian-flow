@@ -10,9 +10,13 @@ import type {
   AgentEditResultV1,
 } from "./model-result.js";
 
-/** The `read` call that targets one path, in the form results print for the model. */
-export function readCall(path: string): string {
-  return `read({"path": ${JSON.stringify(path)}})`;
+/**
+ * The `read` call that targets one path, in the form results print for the
+ * model. A live read's follow-ups stay live; the default needs no `version`.
+ */
+export function readCall(path: string, version?: "draft" | "live"): string {
+  const versionArg = version === "live" ? `, "version": "live"` : "";
+  return `read({"path": ${JSON.stringify(path)}${versionArg}})`;
 }
 
 /**
@@ -38,6 +42,7 @@ function statusLine(result: AgentEditResultV1): string {
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     facts.push(`blocks: ${count}`);
+    if (result.read.version) facts.push(`version: ${result.read.version}`);
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
@@ -99,7 +104,10 @@ function bodyLines(result: AgentEditResultV1, groups: readonly AgentEditBlockGro
   if (result.read?.format !== "outline" || !result.path) return items.map(blockLine);
   // An outline lists headings; each one prints the call that reads its section.
   const { filePath } = splitDocumentFile(result.path);
-  return items.flatMap((item) => [blockLine(item), readCall(`${filePath}#${item.hash}`)]);
+  return items.flatMap((item) => [
+    blockLine(item),
+    readCall(`${filePath}#${item.hash}`, result.read?.version),
+  ]);
 }
 
 function documentItems(groups: readonly AgentEditBlockGroup[]): AgentEditBlockItem[] {

@@ -30,6 +30,20 @@ import type { Result } from "../../../shared/result.js";
 export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
 
+/**
+ * How one thread reads every source through its port. Reads follow the
+ * version that thread's writes change, per document (D14, D20), or the
+ * published text when `version` is `live`.
+ */
+export interface ThreadContextView {
+  threadId: string;
+  /** The reply in progress, whose own staged writes reads still see. */
+  responseId?: string | null;
+  /** Whether the thread's Work drafts AI writes (D40). */
+  draftMode: boolean;
+  version?: "draft" | "live";
+}
+
 /** Schemes provisioned at project scope in the unified context port. */
 export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
 
@@ -149,8 +163,8 @@ export interface SearchMatch {
   /**
    * Hash of the block the excerpt came from, so a caller can navigate back to
    * the passage rather than to the top of the file. Present only for schemes
-   * whose documents are serialized as hashlines (manuscript); its absence
-   * elsewhere is the contract, not an error.
+   * whose documents are serialized as hashlines (drafted sources read
+   * through a thread view); its absence elsewhere is the contract, not an error.
    */
   blockHash?: string;
 }
@@ -162,6 +176,8 @@ export interface SearchResult {
   revision: string | null;
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
+  /** The version the passages came from: this thread's Work draft, or live (D14). */
+  version: "draft" | "live";
   /** Matching passages in file order, capped by the adapter. Never empty. */
   matches: SearchMatch[];
   /**

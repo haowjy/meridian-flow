@@ -49,6 +49,7 @@ import type {
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
+  ThreadContextView,
 } from "../../ports/context-port.js";
 import type {
   ContextLocationToken,
@@ -71,13 +72,15 @@ export interface ContextFSDeps {
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
+  /** The project manifest that decides which documents of a drafted source exist (D20). */
   manifestView?: {
     projectId: string;
     workId?: string | null;
     threadId?: string | null;
     responseId?: string | null;
-    draftMode?: boolean;
   };
+  /** The thread reading through this adapter; without one, reads are live. */
+  threadView?: ThreadContextView;
 }
 
 class DocumentCreationFault extends Error {
@@ -174,6 +177,8 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly documentCreation: DocumentCreationAggregate;
   private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   private readonly manifestView?: ContextFSDeps["manifestView"];
+  private readonly readView?: ThreadContextView;
+  private readonly scheme: ContextScheme;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -208,6 +213,8 @@ export class ContextFS implements ContextSchemeAdapter {
           : undefined,
     });
     this.manifestView = deps.manifestView;
+    this.readView = deps.threadView;
+    this.scheme = deps.scheme;
     this.name = deps.scheme;
   }
 
@@ -822,6 +829,7 @@ export class ContextFS implements ContextSchemeAdapter {
         path: row.path,
         documentId: row.document.id,
         revision: read.value.revision,
+        version: this.threadView()?.version ?? "live",
         ...match,
       });
     }
@@ -845,13 +853,31 @@ export class ContextFS implements ContextSchemeAdapter {
     return out;
   }
 
+  /** The thread reading this source and the version it reads, or null outside a thread. */
+  private threadView(): {
+    threadId: string;
+    responseId?: string | null;
+    version: "draft" | "live";
+  } | null {
+    const view = this.readView;
+    if (!view) return null;
+    // Without a separate draft both versions are the same document (D3).
+    const ownVersion = destination(this.scheme, view.draftMode);
+    return {
+      threadId: view.threadId,
+      responseId: view.responseId,
+      version: view.version === "live" ? "live" : ownVersion,
+    };
+  }
+
   private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
-    if (this.name === "manuscript" && this.manifestView?.threadId) {
+    const view = this.threadView();
+    if (view) {
       const read = await this.documentSync.readEffectiveMarkdown({
         documentId: documentId as never,
-        threadId: this.manifestView.threadId as never,
-        responseId: this.manifestView.responseId,
-        destination: destination(this.name, this.manifestView.draftMode === true),
+        threadId: view.threadId as never,
+        responseId: view.responseId,
+        destination: view.version,
       });
       return read.ok ? Ok(read.value.content) : read;
     }
@@ -860,22 +886,23 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * What a search scans, and whether its entries carry block hashes. Only the
-   * manuscript effective view serializes hashlines, so the flag travels with
-   * the text rather than being re-derived from the scheme name — a manuscript
-   * read outside a thread view falls back to plain markdown and would
-   * otherwise be parsed as hashlines it does not have.
+   * thread view serializes hashlines, so the flag travels with the text
+   * rather than being re-derived from the scheme name: a read outside a
+   * thread view falls back to plain markdown and would otherwise be parsed as
+   * hashlines it does not have.
    */
   private async searchableLines(
     documentId: string,
   ): Promise<
     Result<{ entries: string[]; hashlines: boolean; revision: string | null }, SyncError>
   > {
-    if (this.name === "manuscript" && this.manifestView?.threadId) {
+    const view = this.threadView();
+    if (view) {
       const hashlines = await this.documentSync.readEffectiveHashlines({
         documentId: documentId as never,
-        threadId: this.manifestView.threadId as never,
-        responseId: this.manifestView.responseId,
-        destination: destination(this.name, this.manifestView.draftMode === true),
+        threadId: view.threadId as never,
+        responseId: view.responseId,
+        destination: view.version,
       });
       return hashlines.ok
         ? Ok({
@@ -901,14 +928,21 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private async resolveVisibleMembership(): Promise<Set<string> | null> {
-    if (this.name !== "manuscript" || !this.manifestView) return null;
+    const view = this.manifestView;
+    if (!view) return null;
+    // A live view lists the published manifest and never touches a draft.
+    const live = this.readView?.version === "live" && this.readView.draftMode;
     try {
-      const membership = await this.documentSync.resolveManifestMembership({
-        projectId: this.manifestView.projectId as never,
-        workId: this.manifestView.workId as never,
-        threadId: this.manifestView.threadId as never,
-        responseId: this.manifestView.responseId,
-      });
+      const membership = await this.documentSync.resolveManifestMembership(
+        live
+          ? { projectId: view.projectId as never }
+          : {
+              projectId: view.projectId as never,
+              workId: view.workId as never,
+              threadId: view.threadId as never,
+              responseId: view.responseId,
+            },
+      );
       return membership.documentId ? new Set(membership.members) : null;
     } catch {
       // Authority failure is not permission to expose raw rows. Creation paths

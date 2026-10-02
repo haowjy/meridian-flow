@@ -2,6 +2,7 @@
  * ContextPort resolution helpers: centralize the non-deleted Work lookup that turns
  * thread or project-browse context into the correct unified ContextPort.
  */
+import type { DocumentVersion } from "@meridian/agent-edit";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
@@ -61,7 +62,7 @@ export async function resolveThreadContext(
 export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
-  options: { responseId?: string | null } = {},
+  options: { responseId?: string | null; version?: DocumentVersion } = {},
 ): ContextPort {
   if (!resolution.primaryWorkAuthority) {
     throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
@@ -71,9 +72,12 @@ export function contextPortForThread(
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
-    resolution.thread.id,
-    options.responseId,
-    resolution.primaryDraftMode,
+    {
+      threadId: resolution.thread.id,
+      responseId: options.responseId,
+      draftMode: resolution.primaryDraftMode,
+      ...(options.version ? { version: options.version } : {}),
+    },
   );
 }
 
