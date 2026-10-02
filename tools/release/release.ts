@@ -23,6 +23,7 @@ export interface GitPort {
   firstParent(): HistoryCommit[];
   workflowIntroduction(): string | null;
   message(sha: string): string;
+  trailers(sha: string): string[];
   tags(): string[];
   tagCommit(tag: string): string | null;
   createTag(tag: string, commit: string): void;
@@ -137,23 +138,12 @@ export function classifyPushFailure(
     : "race";
 }
 
-function hasSkipTrailer(message: string): boolean {
-  return (
-    message
-      .trimEnd()
-      .split(/\r?\n\r?\n/)
-      .at(-1)
-      ?.split(/\r?\n/)
-      .includes("Release-Skip: true") ?? false
-  );
-}
-
 export async function resolveBatch(git: GitPort, github: GitHubPort) {
   const history = git.firstParent();
   const shas = uncoveredCommits(history, git.workflowIntroduction());
   const commits: BatchCommit[] = [];
   for (const sha of shas) {
-    const skipTrailer = hasSkipTrailer(git.message(sha));
+    const skipTrailer = git.trailers(sha).includes("Release-Skip: true");
     if (skipTrailer) {
       commits.push({ sha, labels: [], skipTrailer });
       continue;
@@ -222,8 +212,9 @@ function command(
   program: string,
   args: string[],
   allowFailure = false,
+  input?: string,
 ): { ok: boolean; output: string } {
-  const result = spawnSync(program, args, { encoding: "utf8", env: process.env });
+  const result = spawnSync(program, args, { encoding: "utf8", env: process.env, input });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
   if (!allowFailure && result.status !== 0)
     throw new Error(output || `${program} ${args.join(" ")} failed`);
@@ -275,6 +266,11 @@ class CommandGit implements GitPort {
   }
   message(sha: string) {
     return gitText(["show", "-s", "--format=%B", sha]);
+  }
+  trailers(sha: string) {
+    return command("git", ["interpret-trailers", "--parse"], false, this.message(sha))
+      .output.split("\n")
+      .filter(Boolean);
   }
   tags() {
     return gitText(["tag", "--list", "v*"]).split("\n").filter(Boolean);

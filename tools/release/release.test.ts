@@ -75,6 +75,7 @@ describe("main release coverage", () => {
       firstParent: () => history,
       workflowIntroduction: () => null,
       message: (sha: string) => messages.get(sha) ?? "",
+      trailers: () => [],
     };
     const github = {
       pullRequests: (sha: string) => [
@@ -91,6 +92,33 @@ describe("main release coverage", () => {
       covered: ["merge"],
       kind: "stable",
       bump: "minor",
+    });
+  });
+
+  it.each([
+    ["lone first paragraph", [], ["merge"], []],
+    ["no-space form", ["Release-Skip: true"], [], ["merge"]],
+    ["whitespace-only separator", ["Release-Skip: true"], [], ["merge"]],
+  ])("uses git trailer parsing for the %s case", async (_case, trailers, covered, skipped) => {
+    const git = {
+      firstParent: () => [{ sha: "base", subject: "release: v1.0.0", tags: [] }, merge("merge")],
+      workflowIntroduction: () => null,
+      trailers: () => trailers,
+    };
+    const github = {
+      pullRequests: () => [
+        {
+          number: 1,
+          merged_at: "now",
+          base: { ref: "main" },
+          merge_commit_sha: "merge",
+          labels: [],
+        },
+      ],
+    };
+    await expect(resolveBatch(git as never, github)).resolves.toMatchObject({
+      covered,
+      skipped,
     });
   });
 
