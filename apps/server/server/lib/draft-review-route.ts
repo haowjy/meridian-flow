@@ -36,21 +36,22 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
 export function scheduleDraftCatalogRefresh(
   app: Pick<AppServices, "contextCatalogRefresh" | "eventSink">,
   projectId: ProjectId,
-  schedule: (task: () => Promise<void>) => void,
+  waitUntil: (task: Promise<void>) => void,
 ): void {
-  if (!app.contextCatalogRefresh) return;
-  schedule(async () => {
-    try {
-      await app.contextCatalogRefresh?.refreshProjectDocuments(projectId);
-    } catch (cause) {
-      emitEvent(app.eventSink, {
-        level: "error",
-        source: "draft-review",
-        name: "CatalogRefreshFailure",
-        payload: { projectId, ...unknownToEventPayload(cause) },
-      });
-    }
-  });
+  waitUntil(
+    new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
+      try {
+        await app.contextCatalogRefresh.refreshProjectDocuments(projectId);
+      } catch (cause) {
+        emitEvent(app.eventSink, {
+          level: "error",
+          source: "draft-review",
+          name: "CatalogRefreshFailure",
+          payload: { projectId, ...unknownToEventPayload(cause) },
+        });
+      }
+    }),
+  );
 }
 
 export async function requireDraftWorkAccess(
@@ -157,8 +158,7 @@ export async function handleDiscardWorkDraftRequest(
   },
 ): Promise<DraftDiscardResponse> {
   await requireDraftWorkAccess(deps, input);
-  const result = await callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
-  return result;
+  return callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
 }
 
 function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
