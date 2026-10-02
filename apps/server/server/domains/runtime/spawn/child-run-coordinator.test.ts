@@ -96,7 +96,7 @@ function stubOrchestrator(
           cardBlockId: null,
         }),
         agentSlug: input.executionReport?.agentSlug ?? null,
-        description: input.executionReport?.description ?? null,
+        name: input.executionReport?.name ?? null,
       });
       return {
         userTurnId: userTurn.id,

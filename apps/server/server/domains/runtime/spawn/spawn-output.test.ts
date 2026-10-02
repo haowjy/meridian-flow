@@ -18,7 +18,7 @@ describe("spawnOutputForTranscript", () => {
     const running = invocationCardProps({
       agent: "critic",
       agentName: "Critic (harsh)",
-      description: "Continuity",
+      name: "Continuity",
       correlation,
       childThreadId: "child-1",
       execution: null,
@@ -62,7 +62,7 @@ describe("spawnOutputForTranscript", () => {
     const running = invocationCardProps({
       agent: "subagent",
       agentName: "Subagent",
-      description: "Check continuity",
+      name: "Check continuity",
       correlation,
       childThreadId: "child-9",
       execution: null,

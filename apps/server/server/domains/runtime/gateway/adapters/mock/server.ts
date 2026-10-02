@@ -450,7 +450,7 @@ function buildBackgroundWriterHelperSpawnChunks(
     args: {
       agent: "writer-helper",
       mode: "background",
-      description: "Writer helper background check",
+      name: "Writer helper background check",
       prompt: `Check this request independently and return a concise writing-craft note: ${userText}`,
     },
   });
@@ -691,7 +691,7 @@ export function createMockOpenAICompatibleServer(options?: {
                             arguments: JSON.stringify({
                               agent: "writer-helper",
                               mode: "background",
-                              description: "Writer helper background check",
+                              name: "Writer helper background check",
                               prompt: `Check this request independently and return a concise writing-craft note: ${userText}`,
                             }),
                           },

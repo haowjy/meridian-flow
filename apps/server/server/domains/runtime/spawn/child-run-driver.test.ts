@@ -20,7 +20,7 @@ function saved(
     toolCallId: "spawn-call",
     cardBlockId: "card-id",
     agentSlug: "critic",
-    description: null,
+    name: null,
     capture: null,
     captureToolCallId: null,
     outcome: "succeeded",

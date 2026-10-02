@@ -55,7 +55,7 @@ export const SpawnInputSchema = z
       )
       .optional(),
     prompt: z.string().min(1).describe("The child's task."),
-    description: z
+    name: z
       .string()
       .min(1)
       .describe(

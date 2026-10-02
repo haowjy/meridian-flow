@@ -75,7 +75,7 @@ describe("spawn tool guidance", () => {
     const properties = (
       spawn?.inputSchema as { properties: Record<string, { description?: string }> }
     ).properties;
-    expect(properties.description?.description).toBe(
+    expect(properties.name?.description).toBe(
       '2–5 word task label the user sees, e.g. "Chapter 12 continuity check". Make parallel tasks distinct. Not the agent\'s name.',
     );
     expect(properties.from?.description).toBe(
