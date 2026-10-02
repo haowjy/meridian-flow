@@ -2,6 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ResourceWorkAuthority } from "@meridian/resource-replica";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -79,7 +80,7 @@ export function deriveIdentityCommitPlan(
 export function identityWorkAuthority(
   destination: IdentityDestination,
   works: readonly { id: string; slug: string | null }[] | null | undefined,
-): { workId: null } | { workId: string; workSlug: string } | null {
+): ResourceWorkAuthority | null {
   if (!destination.workId) return { workId: null };
   const slug = works?.find((work) => work.id === destination.workId)?.slug;
   return slug ? { workId: destination.workId, workSlug: slug } : null;

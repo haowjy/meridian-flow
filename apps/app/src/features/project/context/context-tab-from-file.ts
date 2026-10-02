@@ -10,6 +10,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   projectResourceLocation,
   type ResourceRecord,
+  type ResourceWorkAuthority,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
@@ -18,13 +19,11 @@ import type { ContextTab } from "@/client/stores";
 
 /**
  * The Work an Editor tab carries: a named Work's id. No Work's documents carry
- * none, because the No Work Editor names no Work; a named Work location always
- * has a slug and No Work's never does.
+ * none, because the No Work Editor names no Work. A Work id always states its
+ * slug (`ResourceWorkAuthority`, and the server's document authority), and
+ * only the No Work row's is null.
  */
-export function editorTabWorkId(location: {
-  workId?: string | null;
-  workSlug?: string | null;
-}): string | undefined {
+export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
   return location.workId && location.workSlug ? location.workId : undefined;
 }
 
