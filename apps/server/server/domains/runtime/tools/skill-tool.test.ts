@@ -48,12 +48,24 @@ describe("skill tool", () => {
       output: { message: 'Skill "missing" is not available' },
       isError: true,
     });
-    await expect(
-      tools.executeTool({ id: "call-3", name: "skill", arguments: {} }, execution),
-    ).resolves.toEqual({
-      toolCallId: "call-3",
-      output: { message: "slug is required" },
-      isError: true,
+  });
+
+  it("refuses a missing, empty or extra argument before loading", async () => {
+    let loads = 0;
+    const tools = executor(async (_threadId, slug) => {
+      loads += 1;
+      return { slug, body: "" };
     });
+    const outputs = await Promise.all(
+      [{}, { slug: "" }, { slug: "modes", extra: true }].map((args, index) =>
+        tools.executeTool({ id: `call-${index}`, name: "skill", arguments: args }, execution),
+      ),
+    );
+    expect(outputs.map(({ output }) => (output as { message: string }).message)).toEqual([
+      "Invalid arguments for skill:\n- slug: required; expected a string",
+      "Invalid arguments for skill:\n- slug: must not be empty",
+      "Invalid arguments for skill:\n- extra: unknown argument",
+    ]);
+    expect(loads).toBe(0);
   });
 });

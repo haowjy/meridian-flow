@@ -1,5 +1,9 @@
 /** Model `skill` tool: load an available SKILL.md body into this turn. */
+import { z } from "zod";
+import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolHandlerContext, ToolRegistration } from "./types.js";
+
+export const SkillToolInputSchema = z.object({ slug: z.string().min(1) }).strict();
 
 export function createSkillToolRegistrations(deps: {
   loadBody(threadId: string, slug: string): Promise<{ slug: string; body: string }>;
@@ -11,22 +15,13 @@ export function createSkillToolRegistrations(deps: {
         type: "function",
         name: "skill",
         description: "Load a skill listed under Available skills.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            slug: { type: "string" },
-          },
-          required: ["slug"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(SkillToolInputSchema),
       },
+      input: SkillToolInputSchema,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
-          const slug = skillSlug(input);
-          if (!slug) {
-            return { isError: true, output: { message: "slug is required" } };
-          }
+          const { slug } = input as z.output<typeof SkillToolInputSchema>;
           try {
             const loaded = await deps.loadBody(ctx.threadId, slug);
             return { slug: loaded.slug, body: loaded.body };
@@ -43,10 +38,4 @@ export function createSkillToolRegistrations(deps: {
       },
     },
   ];
-}
-
-function skillSlug(input: unknown): string | null {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const slug = (input as { slug?: unknown }).slug;
-  return typeof slug === "string" && slug.length > 0 ? slug : null;
 }
