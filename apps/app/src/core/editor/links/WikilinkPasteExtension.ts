@@ -10,6 +10,7 @@
  */
 
 import { Extension } from "@tiptap/core";
+import type { ResolvedPos } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { linkPastedWikilinks, type WikilinkPasteCatalog } from "./wikilink-paste";
@@ -30,14 +31,34 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions>({
 
   addProseMirrorPlugins() {
     const read = this.options.catalog;
+    // Whether the paste or drop in flight keeps its characters. Set where the
+    // gesture starts, before ProseMirror parses it; read and cleared by the
+    // transform, which has no destination of its own to look at.
+    let keepCharacters = false;
     return [
       new Plugin({
         key: wikilinkPastePluginKey,
         props: {
+          handleDOMEvents: {
+            // Code is literal characters: a link mark cannot live there, so
+            // converting would drop the brackets and keep only the label.
+            paste: (view) => {
+              keepCharacters = isCode(view.state.selection.$from);
+              return false;
+            },
+            // A drop lands where ProseMirror resolves the pointer (`$mouse`).
+            drop: (view, event) => {
+              const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+              keepCharacters = at ? isCode(view.state.doc.resolve(at.pos)) : false;
+              return false;
+            },
+          },
           transformPasted: (slice, view) => {
+            const keep = keepCharacters;
+            keepCharacters = false;
             // A drag inside the editor moves text it already holds, which
             // stays as written.
-            if (view.dragging) return slice;
+            if (keep || view.dragging) return slice;
             const catalog = read();
             return catalog ? linkPastedWikilinks(slice, view.state.schema, catalog) : slice;
           },
@@ -46,3 +67,7 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions>({
     ];
   },
 });
+
+function isCode($pos: ResolvedPos): boolean {
+  return Boolean($pos.parent.type.spec.code);
+}

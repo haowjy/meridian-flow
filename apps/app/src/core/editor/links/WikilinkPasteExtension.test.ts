@@ -110,3 +110,36 @@ it("leaves the brackets as text while the documents are still loading", () => {
   expect(links(target)).toEqual([]);
   expect(target.state.doc.textContent).toBe("Lin met [[Lin Feng]].");
 });
+
+it("keeps the characters when pasted into a code block", () => {
+  const target = editor(DOCUMENTS, "<pre><code>x</code></pre>");
+  target.commands.setTextSelection(2);
+  paste(target, { "text/plain": "see [[Lin Feng]] here" });
+  expect(links(target)).toEqual([]);
+  expect(target.state.doc.textContent).toBe("xsee [[Lin Feng]] here");
+});
+
+/**
+ * The browser's drop from outside the editor, landing at `pos`. jsdom has no
+ * layout, so the pointer's position is stubbed where ProseMirror (and the
+ * paste policy) ask for it.
+ */
+function drop(target: Editor, pos: number, data: Record<string, string>) {
+  target.view.posAtCoords = () => ({ pos, inside: -1 });
+  const event = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", {
+    value: { types: Object.keys(data), files: [], getData: (type: string) => data[type] ?? "" },
+  });
+  target.view.dom.dispatchEvent(event);
+}
+
+it("keeps the characters when dropped into a code block, and links them dropped into prose", () => {
+  const fence = editor(DOCUMENTS, "<pre><code>x</code></pre>");
+  drop(fence, 2, { "text/plain": "see [[Lin Feng]] here" });
+  expect(links(fence)).toEqual([]);
+  expect(fence.state.doc.textContent).toContain("see [[Lin Feng]] here");
+
+  const prose = editor(DOCUMENTS, "<p>x</p>");
+  drop(prose, 2, { "text/plain": "see [[Lin Feng]] here" });
+  expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+});
