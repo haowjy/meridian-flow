@@ -74,7 +74,7 @@ import {
   type SearchToolInput,
   type ToolHandlerContext,
   type ToolRegistration,
-  WorkCommandSchema,
+  type WorkCommand,
 } from "../domains/runtime/index.js";
 import type {
   ThreadRepository,
@@ -363,15 +363,6 @@ function writeSchemaError(error: {
   return error.issues
     .map((issue) => {
       const path = issue.path.map((part) => (part === "file" ? "path" : part)).join(".");
-      return path ? `${path}: ${issue.message}` : issue.message;
-    })
-    .join("; ");
-}
-
-function schemaError(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
-  return error.issues
-    .map((issue) => {
-      const path = issue.path.join(".");
       return path ? `${path}: ${issue.message}` : issue.message;
     })
     .join("; ");
@@ -808,9 +799,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   return createCoreToolRegistrations({
     write: documentToolHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
-      const parsed = WorkCommandSchema.safeParse(input);
-      if (!parsed.success) return toolError({ message: schemaError(parsed.error) });
-      const command = parsed.data;
+      const command = input as WorkCommand;
       const thread = await deps.threads.findById(ctx.threadId);
       if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
 

@@ -160,12 +160,12 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               projectId: input.projectId,
               createdByUserId:
                 project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-              name: input.name.trim(),
+              name: input.name,
               slug: nextWorkSlug(
                 input.name,
                 existingSlugs.map(({ slug }) => slug),
               ),
-              goal: input.goal,
+              goal: input.goal ?? null,
             })
             .returning();
         } catch (cause) {
@@ -269,7 +269,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       await requireUnlocked(id);
       const patch: Partial<typeof works.$inferInsert> = {};
-      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.name !== undefined) patch.name = input.name;
       if (input.goal !== undefined) patch.goal = input.goal;
       if (input.status !== undefined) patch.status = input.status;
       try {

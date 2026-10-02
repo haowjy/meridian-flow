@@ -16,7 +16,10 @@ import {
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import {
+  INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
+  normalizeWorkGoal,
+  normalizeWorkName,
   normalizeWorkStatus,
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
@@ -26,7 +29,52 @@ import { writeHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
-const WorkSelectorSchema = z.object({ work: z.string().min(1).describe("Work slug.") });
+/** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
+const WorkRefSchema = z
+  .string()
+  .min(1)
+  .transform((raw, context) => {
+    const trimmed = raw.trim();
+    const slug = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+    if (!slug) {
+      context.addIssue({ code: "custom", message: 'must name a Work slug, e.g. "arc" or "@arc"' });
+      return z.NEVER;
+    }
+    return slug;
+  });
+
+const WorkNameSchema = z
+  .string()
+  .min(1)
+  .transform((raw, context) => {
+    const name = normalizeWorkName(raw);
+    if (name === INVALID_WORK_NAME) {
+      context.addIssue({ code: "custom", message: "must not be blank" });
+      return z.NEVER;
+    }
+    return name;
+  });
+
+const WorkGoalSchema = z.string().nullable().transform(normalizeWorkGoal);
+
+const WorkStatusSchema = z
+  .string()
+  .nullable()
+  .transform((raw, context) => {
+    const status = normalizeWorkStatus(raw);
+    if (status === INVALID_WORK_STATUS) {
+      context.addIssue({
+        code: "custom",
+        message: `must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
+      });
+      return z.NEVER;
+    }
+    return status;
+  });
+
+const WorkSelectorSchema = z.object({
+  work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
+});
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
@@ -39,30 +87,18 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("create"),
-      name: z.string().min(1),
-      goal: z.string().optional(),
+      name: WorkNameSchema,
+      goal: WorkGoalSchema.describe("Omit, null or blank for no goal.").optional(),
     })
     .strict()
     .describe("Create a Work."),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
-    name: z.string().optional(),
-    goal: z.string().optional(),
-    status: z
-      .string()
-      .nullable()
-      .superRefine((value, context) => {
-        if (normalizeWorkStatus(value) === INVALID_WORK_STATUS) {
-          context.addIssue({
-            code: "custom",
-            message: `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
-          });
-        }
-      })
-      .optional()
-      .describe(
-        "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current; null clears it.",
-      ),
+    name: WorkNameSchema.optional(),
+    goal: WorkGoalSchema.describe("Omit to keep; null or blank clears it.").optional(),
+    status: WorkStatusSchema.describe(
+      "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current. Omit to keep; null or blank clears it.",
+    ).optional(),
   })
     .strict()
     .describe("Change a Work's name, goal or status."),
@@ -78,13 +114,15 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("switch"),
-      target: z.string().min(1).nullable().optional().describe("Work slug; omit for No Work."),
+      target: WorkRefSchema.nullable()
+        .optional()
+        .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work."),
 ]);
 
-export type WorkCommand = z.infer<typeof WorkCommandSchema>;
+export type WorkCommand = z.output<typeof WorkCommandSchema>;
 export type WorkCommandCategory = "read" | "mutate" | "binding";
 
 export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
@@ -130,10 +168,6 @@ export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
   return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
-}
-
-function workToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(modelToolSchema(WorkCommandSchema));
 }
 
 function formatWriteExecutionError(error: ToolExecutionError) {
@@ -213,8 +247,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "work",
         description: "Manage the project's Works and which Work this conversation is in.",
-        inputSchema: workToolInputSchema(),
+        inputSchema: modelToolSchema(WorkCommandSchema),
       },
+      input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
       sequential: true,
       timeoutMs: 30_000,

@@ -12,7 +12,8 @@ export interface CreateWorkInput {
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;
-  goal?: string;
+  /** Omitted or null means no goal. */
+  goal?: string | null;
 }
 
 export interface UpdateWorkInput {

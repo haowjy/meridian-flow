@@ -48,7 +48,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       id: input.id ?? crypto.randomUUID(),
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-      name: input.name.trim(),
+      name: input.name,
       slug: nextWorkSlug(
         input.name,
         [...rows.values()]
@@ -189,7 +189,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) {
         if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
-        row.name = input.name.trim();
+        row.name = input.name;
       }
       if (input.goal !== undefined) row.goal = input.goal;
       const timestamp = now();
