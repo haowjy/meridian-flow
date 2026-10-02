@@ -9,7 +9,7 @@ import { getApp } from "../lib/app";
 import { getDb } from "../lib/db";
 import { getProcessEventSink } from "../lib/observability";
 
-let cachedReadySchemaStatus: "current" | "ahead" | undefined;
+let cachedReadySchemaStatus: "current" | undefined;
 let pendingSchemaStatus: Promise<SchemaStatus> | undefined;
 
 function releaseMigrationsDirectory(): string {

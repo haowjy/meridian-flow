@@ -45,12 +45,14 @@ mutation result.
 
 `server/lib/process-shutdown.ts` owns SIGTERM/SIGINT sequencing and the only
 application `process.exit`. The stage order is **websocket-admission** (close
-thread and Yjs peers with 1012), **polling-loops** (stop loops and drain for
-up to 3 s), **application-drain** (stop new runner and handoff work, then give
-in-flight reply settlement up to 10 s), **http-drain** (stop admission and wait
-up to 10 s), **websocket-drain** (Yjs checkpoint and persistence queue while Postgres is open), **database-close**,
-then bounded observability flush. Stage timeout/failure emits an incomplete or
-failed event and proceeds to later stages; the shared 25 s deadline bounds
+thread and Yjs peers with 1012, 0.5 s), **polling-loops** (stop loops and drain,
+3 s), **application-drain** (stop new runner and handoff work, then settle
+in-flight replies, 10 s), **http-drain** (stop admission and wait, 2 s),
+**websocket-drain** (Yjs checkpoint and persistence queue while Postgres is
+open, 4 s reserved), and **database-close** (0.5 s), followed by a 4 s
+observability flush. `SHUTDOWN_PLAN` in `server/lib/process-shutdown.ts` is the
+source of truth for the stage budgets. Stage timeout/failure emits an incomplete
+or failed event and proceeds to later stages; the shared 25 s deadline bounds
 process exit. srvx closes its listener independently and keeps its force-close
 fallback at 29 s, after the application deadline. The application drain calls
 `beginShutdown` on runners and handoff briefs, then waits for active work and

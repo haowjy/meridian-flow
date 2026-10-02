@@ -132,7 +132,9 @@ first staging deploy, migrations are append-only: a replaced history makes `/rea
 4. Confirm workflow smoke and `deploy/staging` success on the tagged release commit. Smoke checks
    `/healthz` (version/SHA), `/readyz`, root redirect and callback, `/login` (release headers), and a
    WebSocket upgrade (opens then closes `4401 auth_failed`). A `schema_behind` or `schema_divergent` 503
-   is a stop condition; inspect release and server logs.
+   is a stop condition; inspect release and server logs. Readiness checks database connectivity on each
+   request, but checks migration status only until it first reports `current`, then caches that status
+   for the process lifetime.
 5. Open **Actions → Deploy Production → Run workflow**, enter the complete tag, and approve the
    production deployment. It requires staging success and a matching manifest, takes a fresh snapshot,
    promotes the same digests, and runs the same runtime smoke.
