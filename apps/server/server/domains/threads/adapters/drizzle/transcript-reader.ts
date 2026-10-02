@@ -3,6 +3,7 @@
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import { SYSTEM_TURN_KINDS } from "../../domain/turn-metadata.js";
 import type {
   ReadTranscriptItemsInput,
   TranscriptItemRow,
@@ -97,7 +98,19 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
   `;
 }
 
-function transcriptTurnBranches(spans: readonly TranscriptSpan[], beforePosition?: number) {
+/** `isConversationTurn` in SQL; the two must stay the same rule. */
+const conversationTurnSql = sql`(
+  COALESCE(t.metadata->>'kind', '') NOT IN (${sql.join(
+    SYSTEM_TURN_KINDS.map((kind) => sql`${kind}`),
+    sql`, `,
+  )})
+  AND (
+    (t.role = 'user' AND (t.origin = 'writer' OR (t.origin = 'system' AND t.metadata->>'kind' = 'inbox_message')))
+    OR (t.role = 'assistant' AND t.origin = 'assistant')
+  )
+)`;
+
+function conversationTurnBranches(spans: readonly TranscriptSpan[], beforePosition?: number) {
   return spans.map(
     (span) => sql`(
       SELECT t.id, t.position
@@ -106,6 +119,7 @@ function transcriptTurnBranches(spans: readonly TranscriptSpan[], beforePosition
         AND t.position > ${span.afterPosition}
         ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
         ${beforePosition === undefined ? sql`` : sql`AND t.position < ${beforePosition}`}
+        AND ${conversationTurnSql}
     )`,
   );
 }
@@ -151,8 +165,8 @@ export function createDrizzleTranscriptReader(
 ): Pick<
   TurnRepository,
   | "readTranscriptItems"
-  | "countTranscriptTurns"
-  | "findTranscriptTurnByOrdinal"
+  | "countConversationTurns"
+  | "findConversationTurnByOrdinal"
   | "findFirstUnsettledTranscriptTurn"
   | "listUnsettledForThread"
   | "listTranscriptBoundaries"
@@ -213,18 +227,18 @@ export function createDrizzleTranscriptReader(
         ];
       });
     },
-    async countTranscriptTurns(spans, beforePosition) {
+    async countConversationTurns(spans, beforePosition) {
       if (spans.length === 0) return 0;
       const result = await turns().execute(
-        sql`SELECT count(*)::int AS count FROM (${sql.join(transcriptTurnBranches(spans, beforePosition), sql` UNION ALL `)}) counted`,
+        sql`SELECT count(*)::int AS count FROM (${sql.join(conversationTurnBranches(spans, beforePosition), sql` UNION ALL `)}) counted`,
       );
       const [row] = Array.from(result as unknown as Iterable<{ count: number }>);
       return row?.count ?? 0;
     },
-    async findTranscriptTurnByOrdinal(spans, ordinal) {
+    async findConversationTurnByOrdinal(spans, ordinal) {
       if (spans.length === 0 || !Number.isSafeInteger(ordinal) || ordinal < 1) return null;
       const result = await turns().execute(
-        sql`SELECT id FROM (${sql.join(transcriptTurnBranches(spans), sql` UNION ALL `)}) ordered ORDER BY position ASC OFFSET ${ordinal - 1} LIMIT 1`,
+        sql`SELECT id FROM (${sql.join(conversationTurnBranches(spans), sql` UNION ALL `)}) ordered ORDER BY position ASC OFFSET ${ordinal - 1} LIMIT 1`,
       );
       const [row] = Array.from(result as unknown as Iterable<{ id: string }>);
       if (!row) return null;

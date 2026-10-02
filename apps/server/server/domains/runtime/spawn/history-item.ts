@@ -9,7 +9,7 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { classifyHistoryItem } from "../../threads/index.js";
+import { classifyHistoryItem, isConversationTurn } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
@@ -74,22 +74,24 @@ export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "
         }
       : undefined;
   const base = failure ? { failure } : {};
-  if (kind.kind === "writer_request")
+  // One rule decides numbering here and in the repository count: isConversationTurn.
+  if (isConversationTurn(turn)) {
+    if (turn.role === "assistant")
+      return { ...base, system: false, role: "assistant", label: "assistant" };
+    if (turn.origin === "writer")
+      return {
+        ...base,
+        system: false,
+        role: "user",
+        label: `user${kind.kind === "writer_request" && kind.delivery === "steer" ? ", steer" : ""}`,
+      };
     return {
       ...base,
       system: false,
       role: "user",
-      label: `user${kind.delivery === "steer" ? ", steer" : ""}`,
+      label: `agent${kind.kind === "agent_request" && kind.source === "child_seed" ? ", spawn prompt" : ""}`,
     };
-  if (kind.kind === "agent_request")
-    return {
-      ...base,
-      system: false,
-      role: "user",
-      label: `agent${kind.source === "child_seed" ? ", spawn prompt" : ""}`,
-    };
-  if (kind.kind === "assistant_response")
-    return { ...base, system: false, role: "assistant", label: "assistant" };
+  }
   return {
     ...base,
     system: true,

@@ -248,10 +248,14 @@ export function defineThreadHistoryContract(
       const all = output(
         await f.read({ order: "oldest_first", include: ["system_messages", "thinking"] }),
       );
-      for (const [index, [, , , label]] of cases.entries())
+      // Conversation turns are numbered without gaps; system turns carry no number.
+      for (const [index, [, , , label]] of cases.slice(0, 5).entries())
         expect(all).toContain(`[${index + 1}] ${label}\n`);
+      for (const [, , , label] of cases.slice(5))
+        expect(all).toMatch(new RegExp(`^${label.replace(/[()]/gu, "\\$&")}\n`, "mu"));
       expect(all).toContain("Thinking:\nthinking-secret");
-      expect(all).toContain("[9] system: compaction\nerror");
+      expect(all).toContain("\n\nsystem: compaction\nerror");
+      expect(all).toContain("[6] assistant\nThinking:\nthinking-secret");
     });
     it.each([
       "complete",
@@ -276,7 +280,7 @@ export function defineThreadHistoryContract(
         await f.repos.turns.updateStatus(seed.id, { status, error: handoffBriefFailedCopy });
       expect(output(await f.read())).not.toContain("handoff-brief");
       const text = output(await f.read({ include: ["system_messages"] }));
-      expect(text).toContain("[1] system: fork_or_handoff_seed");
+      expect(text).toMatch(/^system: fork_or_handoff_seed$/mu);
       expect(text).toContain("<system_update>");
       expect(text).not.toContain('"kind":"handoff-brief"');
       expect(text).not.toContain(f.thread.id);
@@ -371,7 +375,7 @@ export function defineThreadHistoryContract(
       await f.text(later, "after");
 
       const newest = output(await f.read());
-      expect(newest).toContain("[earlier turns summarized]\n\n[4] user\nafter");
+      expect(newest).toContain("[earlier turns summarized]\n\n[3] user\nafter");
       expect(newest).not.toContain("before");
       const older = output(await f.read({ cursor: cursor(newest) }));
       expect(older).toContain("[1] user\nbefore");
@@ -392,11 +396,59 @@ export function defineThreadHistoryContract(
       expect(second).not.toContain("bake");
       expect(second).not.toContain("new-hash");
       expect(second).toContain(
-        "[earlier turns summarized]\n\n[3] system: compaction\ninstructions: Emphasize the broken oath.",
+        "[earlier turns summarized]\n\nsystem: compaction\ninstructions: Emphasize the broken oath.",
       );
-      expect(second).toContain("[4] user\nafter");
+      expect(second).toContain("[3] user\nafter");
       // The expand handle is the same turn number in either order.
-      expect(output(await f.read({ expand: 4 }))).toContain("[4] user\n4.1 after");
+      expect(output(await f.read({ expand: 3 }))).toContain("[3] user\n3.1 after");
+    });
+
+    it.each([
+      "oldest_first",
+      "newest_first",
+    ] as const)("numbers %s turns without gaps around a hidden system turn", async (order) => {
+      const f = await fixture();
+      await f.text(await f.turn("user", null, "complete", "writer"), "check on p4");
+      await f.text(
+        await f.turn("system", {
+          kind: "subagent_update",
+          handle: "p4",
+          outcome: "succeeded",
+          execution: "execution",
+          childThreadId: "child",
+          agentName: "Helper",
+        }),
+        "p4 finished",
+      );
+      await f.text(
+        await f.turn("user", { kind: "system_update", section: "work_context" }),
+        "Work",
+      );
+      await f.text(await f.turn(), "p4 is done");
+      await f.text(await f.turn("user", null, "complete", "writer"), "thanks");
+      const text = output(await f.read({ order }));
+      expect(text).toBe(`Conversation ${f.thread.ref}
+
+[1] user
+check on p4
+
+[2] assistant
+p4 is done
+
+[3] user
+thanks`);
+      for (const limit of [1, 2]) {
+        const numbers: (number | undefined)[] = [];
+        let next: string | undefined;
+        do {
+          const page = structured(await f.read({ order, limit, cursor: next }));
+          numbers.push(...page.turns.map((turn) => turn.number));
+          next = page.next?.call.cursor;
+        } while (next);
+        expect([...numbers].sort()).toEqual([1, 2, 3]);
+      }
+      expect(output(await f.read({ expand: 2 }))).toContain("[2] assistant\n2.1 p4 is done");
+      expect(output(await f.read({ expand: 3 }))).toContain("[3] user\n3.1 thanks");
     });
 
     it("gives a turn the same number in newest_first and oldest_first pages", async () => {
@@ -489,7 +541,7 @@ not found
       do {
         const page = structured(await f.read({ order, limit: 5, cursor: next }));
         for (const turn of page.turns) {
-          seen.push(turn.number);
+          seen.push(turn.number ?? 0);
           hidden += turn.hiddenCount;
           expect(turn.items).toEqual([expect.objectContaining({ text: `reply ${turn.number}` })]);
         }

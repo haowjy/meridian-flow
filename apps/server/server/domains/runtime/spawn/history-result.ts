@@ -47,8 +47,12 @@ export type HistoryItem =
     };
 
 export interface HistoryTurn {
-  /** The turn's ordinal among all of the thread's turns: stable across pages, order and compaction. */
-  number: number;
+  /**
+   * The turn's ordinal among the thread's conversation turns (requests and
+   * replies), with no gaps; stable across pages, order and compaction. System
+   * turns, shown only with `system_messages`, have none and can't be expanded.
+   */
+  number?: number;
   role: "user" | "assistant" | "system";
   /** Heading word: user, "user, steer", agent, assistant, "system: Work update" and the like. */
   label: string;
@@ -81,8 +85,11 @@ export interface HistoryResult {
 const call = (input: ThreadHistoryInput) => `thread_history(${JSON.stringify(input)})`;
 const formatTokens = (tokens: number) => `${tokens.toLocaleString("en-US")} tokens`;
 
-function handle(result: HistoryResult, turn: HistoryTurn, item: HistoryItem) {
-  return call({ ref: result.ref, expand: `${turn.number}.${item.index}` });
+function truncation(result: HistoryResult, turn: HistoryTurn, item: HistoryItem) {
+  if (!item.truncated) return "";
+  return turn.number === undefined || item.index === undefined
+    ? "\n(truncated)"
+    : `\n(truncated: ${call({ ref: result.ref, expand: `${turn.number}.${item.index}` })})`;
 }
 
 function toolLine(item: Extract<HistoryItem, { kind: "tool" }>, inProgress: boolean) {
@@ -106,7 +113,7 @@ function itemLabel(item: HistoryItem) {
 }
 
 function pageItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem, live: boolean) {
-  const truncated = item.truncated ? `\n(truncated: ${handle(result, turn, item)})` : "";
+  const truncated = truncation(result, turn, item);
   switch (item.kind) {
     case "message":
       return `${item.text ?? ""}${truncated}`;
@@ -129,7 +136,7 @@ function turnItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem) {
   const key = `${turn.number}.${item.index}`;
   if (item.kind === "tool") return `${key} ${sized(toolLine(item, false), item.resultTokens)}`;
   if (item.text === undefined) return `${key} ${sized(itemLabel(item), item.tokens)}`;
-  const truncated = item.truncated ? `\n(truncated: ${handle(result, turn, item)})` : "";
+  const truncated = truncation(result, turn, item);
   const head = item.kind === "message" ? `${key} ` : `${key} ${itemLabel(item)}\n`;
   return `${head}${item.text}${truncated}`;
 }
@@ -159,7 +166,7 @@ function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedRepo
     `Report (${outcome}${source})`,
     ...(notes.length ? [notes.join("; ")] : []),
     ...(report.content ? [report.content] : []),
-    ...(report.truncated
+    ...(report.truncated && turn.number !== undefined
       ? [`(report truncated: ${call({ ref: result.ref, expand: turn.number })})`]
       : []),
   ].join("\n");
@@ -167,11 +174,16 @@ function reportBlock(result: HistoryResult, turn: HistoryTurn, report: SavedRepo
 
 function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): string {
   // A live turn that so far only calls tools reads as its running calls.
-  if (live && turn.items.length > 0 && turn.items.every((item) => item.kind === "tool"))
+  if (
+    live &&
+    turn.number !== undefined &&
+    turn.items.length > 0 &&
+    turn.items.every((item) => item.kind === "tool")
+  )
     return turn.items
       .map((item) => `[${turn.number}] ${pageItem(result, turn, item, true)}`)
       .join("\n");
-  const heading = `[${turn.number}] ${turn.label}${turn.from ? ` (from ${turn.from})` : ""}${turn.at ? `  ${turn.at}` : ""}`;
+  const heading = `${turn.number === undefined ? "" : `[${turn.number}] `}${turn.label}${turn.from ? ` (from ${turn.from})` : ""}${turn.at ? `  ${turn.at}` : ""}`;
   const items = turn.items.map((item) =>
     result.view === "page"
       ? pageItem(result, turn, item, live)
@@ -186,7 +198,7 @@ function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): st
       ]
     : [];
   const hidden =
-    turn.hiddenCount > 0
+    turn.hiddenCount > 0 && turn.number !== undefined
       ? [
           `(${turn.hiddenCount} routine tool call${turn.hiddenCount === 1 ? "" : "s"} hidden: ${call({ ref: result.ref, expand: turn.number })})`,
         ]
