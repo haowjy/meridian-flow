@@ -169,3 +169,25 @@ it("gives paste without formatting the characters, while an ordinary paste links
   paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
   expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
 });
+
+it("leaves text dragged within the document as written", () => {
+  const target = editor(DOCUMENTS, "<p>[[Lin Feng]] waits.</p>");
+  const slice = target.state.doc.slice(1, 13);
+  expect(slice.content.textBetween(0, slice.content.size)).toBe("[[Lin Feng]]");
+  target.view.dragging = { slice, move: false } as typeof target.view.dragging;
+  drop(target, target.state.doc.content.size - 1, { "text/plain": "[[Lin Feng]]" });
+  expect(links(target)).toEqual([]);
+  expect(target.state.doc.textContent).toBe("[[Lin Feng]] waits.[[Lin Feng]]");
+});
+
+it("links a paste into a table cell", () => {
+  const target = editor(DOCUMENTS, "<table><tr><td><p>x</p></td></tr></table>");
+  let inCell = 0;
+  target.state.doc.descendants((node, pos) => {
+    if (node.type.name === "paragraph") inCell = pos + 1 + node.content.size;
+  });
+  target.commands.setTextSelection(inCell);
+  paste(target, { "text/plain": "see [[Lin Feng]]" });
+  expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+  expect(target.state.doc.textContent).toBe("xsee Lin Feng");
+});
