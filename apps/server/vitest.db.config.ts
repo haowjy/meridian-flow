@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { defineProject } from "vitest/config";
+import { parseDbTestWorkerCount } from "../../tools/dev/lib/db-test-workers";
 
 /** Canonical, destructive PostgreSQL suite spanning the server and database package. */
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -15,6 +16,12 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
+const configuredWorkerCount = parseDbTestWorkerCount(process.env.DB_TEST_WORKERS);
+if (workerDatabaseUrls.length > 0 && workerDatabaseUrls.length !== configuredWorkerCount) {
+  throw new Error(
+    `DB_TEST_DATABASE_URLS has ${workerDatabaseUrls.length} entries but DB_TEST_WORKERS is ${configuredWorkerCount}.`,
+  );
+}
 const expectedSuites = [
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
