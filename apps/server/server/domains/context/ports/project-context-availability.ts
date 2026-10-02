@@ -18,9 +18,9 @@ export interface ProjectContextAvailabilityMutationPort {
     userIds: readonly string[];
   }): Promise<AvailabilityGeneration>;
   /** Reserve ordering without making it visible; used when authority changes after commit. */
-  reserve?(): Promise<AvailabilityGeneration>;
+  reserve(): Promise<AvailabilityGeneration>;
   /** Publish a reserved generation in the caller's ambient transaction. */
-  publishReserved?(input: {
+  publishReserved(input: {
     generation: AvailabilityGeneration;
     projectIds: readonly string[];
     userIds: readonly string[];
