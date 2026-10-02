@@ -7,7 +7,7 @@
  * component's props, not a sentence, and an unlisted future block stays silent
  * until it is deliberately let in.
  *
- * One set for both menus. `/` and `[[` differ in what else they demand — a
+ * One set for both menus. `/` and `@` differ in what else they demand — a
  * word boundary, an enclosing link — but not in what counts as prose, and two
  * lists of the same two names would have drifted the first time a lane let a
  * new block in.

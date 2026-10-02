@@ -12,8 +12,8 @@
  * and completion on Enter as well as on space.
  *
  * What this extension owns is the remaining autoformat behavior: the code
- * fence's info string, and Backspace. Typed `[[name]]` is text: the `[[`
- * picker is how a writer links a document. The truth table
+ * fence's info string, and Backspace. Typed `[[name]]` is text: `@` is how a
+ * writer links a document. The truth table
  * beside it pins the whole surface, inherited rules included, so an upgrade
  * that drops a trigger fails loudly instead of quietly.
  */

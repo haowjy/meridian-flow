@@ -1,7 +1,7 @@
 /**
  * One mechanism for every menu the writer types underneath, reading a spec.
  *
- * `/` and `[[` are the same machine with different envelopes: a plugin key, a
+ * `/` and `@` are the same machine with different envelopes: a plugin key, a
  * driver in extension storage, one `@tiptap/suggestion` plugin, arrow keys
  * registered against the chrome kernel, and a plugin view that closes the menu
  * when the host's catalog is withdrawn. None of that is where the lanes differ,
@@ -85,7 +85,7 @@ export const defaultSuggestionLaneDriver = <TCatalog, TCandidate, TRow, TMeta>(
 export type SuggestionLaneSpec<TCatalog, TCandidate, TRow = TCandidate, TMeta = null> = {
   /** Extension name, storage key, and the plugin key's name. */
   name: string;
-  /** The text that opens the menu: `/`, `[[`, `@`. */
+  /** The text that opens the menu: `/`, `@`. */
   char: string;
   /**
    * Whether the query may carry spaces. On for a lane matching names a writer
