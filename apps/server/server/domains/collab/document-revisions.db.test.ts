@@ -3,7 +3,7 @@
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
@@ -37,10 +37,15 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 
 beforeEach(resetDatabase);
+const harnesses: Array<ReturnType<typeof createHarness>> = [];
+afterEach(() => {
+  for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+});
 afterAll(closeDatabase);
 
 async function fixture(mode: "direct" | "draft") {
   const harness = createHarness();
+  harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
   await f.persistence.lifecycle.ensureDocument(ALPHA_ID);

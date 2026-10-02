@@ -1752,6 +1752,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       deliveredEvents,
     }),
     pollTrails: () => trailDelivery.drain(),
+    /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
+    cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
     advanceTrailWorkTime(milliseconds: number) {
       trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
     },
