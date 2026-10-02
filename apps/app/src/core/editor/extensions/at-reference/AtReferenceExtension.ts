@@ -1,5 +1,6 @@
 import type { Range } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import type {
   ReferenceBrowserOpenContext,
@@ -9,6 +10,7 @@ import type {
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
+import { linkPastedWikilinks } from "../../links/wikilink-paste";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
 import { insertDocumentLink } from "./document-link-insertion";
@@ -27,10 +29,17 @@ export type AtReferenceCatalog = {
   holderUri?: string | null;
   /**
    * The Editor's link-ahead row: where a link to a not-yet-written document
-   * named `name` would point, or null for none. Omitted where a reference
-   * must name an existing document (the chat composer).
+   * named `name` (under `folders` from the area root, for a pasted path link)
+   * would point, or null for none. Omitted where a reference must name an
+   * existing document (the chat composer).
    */
-  linkAhead?: (name: string) => { uri: string } | null;
+  linkAhead?: (name: string, folders?: readonly string[]) => { uri: string } | null;
+  /**
+   * The addresses a pasted `[[Name]]` may name: the documents this menu
+   * offers. Null while they are still loading, which leaves a paste's
+   * brackets as text. Omitted where paste never converts (the chat composer).
+   */
+  linkTargets?: () => readonly string[] | null;
 };
 export type AtReferenceMenu = SuggestionMenu<
   ReferenceMenuRow,
@@ -122,7 +131,44 @@ const lane = createSuggestionLane<
     Tab: () => menu.chooseActive("tab"),
   }),
 });
-export const AtReferenceExtension = lane.extension;
+const wikilinkPastePluginKey = new PluginKey("wikilinkPaste");
+
+/**
+ * The `@` lane, plus the one other way a link enters an Editor from its
+ * catalog: a paste whose `[[Name]]` becomes a standard link (D15). Every paste
+ * kind (Markdown, plain text, HTML) reaches `transformPasted` once, after it
+ * is parsed, so the conversion sees nodes and can leave code alone.
+ */
+export const AtReferenceExtension = lane.extension.extend({
+  addProseMirrorPlugins() {
+    const catalog = this.options.catalog;
+    return [
+      ...(this.parent?.() ?? []),
+      new Plugin({
+        key: wikilinkPastePluginKey,
+        props: {
+          // ProseMirror's third argument says the slice came from clipboard
+          // text, not that the writer pasted without formatting, so it is no
+          // reason to decline: text is exactly where an Obsidian note arrives.
+          transformPasted: (slice, view) => {
+            // A drag inside the editor moves text it already holds, which
+            // stays as written.
+            if (view.dragging) return slice;
+            const current = catalog();
+            const targets = current?.linkTargets?.();
+            const linkAhead = current?.linkAhead;
+            if (!current || !targets || !linkAhead) return slice;
+            return linkPastedWikilinks(slice, view.state.schema, {
+              holderUri: current.holderUri ?? null,
+              targets,
+              linkAhead: (name, folders) => linkAhead(name, folders),
+            });
+          },
+        },
+      }),
+    ];
+  },
+});
 export const getAtReferenceMenu = lane.getMenu;
 export type AtReferenceExtensionOptions = Pick<
   SuggestionLaneOptions<AtReferenceCatalog>,
