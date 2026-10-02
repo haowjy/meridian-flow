@@ -13,7 +13,6 @@ import type {
   MdastParagraph,
   MdastRoot,
   MdastText,
-  MdastWikiLinkImage,
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
@@ -24,7 +23,6 @@ import {
   type PropSpec,
 } from "./components.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
-import { wikilinkTarget } from "./markdown/wikilink-target.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -45,7 +43,6 @@ export type {
   MdastTable,
   MdastTableCell,
   MdastThematicBreak,
-  MdastWikiLinkImage,
   MdxJsxAttribute,
 } from "./ast.js";
 
@@ -199,11 +196,9 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
           tokens.push({ type: "html", value: imageHtmlTag(image), marks: child.marks });
           break;
         }
-        const target = wikilinkTarget(image.url);
         tokens.push({
-          ...(target === null
-            ? { type: "image" as const, url: image.url }
-            : { type: "wikiLinkImage" as const, target }),
+          type: "image",
+          url: image.url,
           alt: image.alt,
           title: image.title,
           marks: child.marks,
@@ -233,8 +228,7 @@ export function parseInlineChildren(
       case "break":
         out.push(ctx.schema.node("hard_break"));
         break;
-      case "image":
-      case "wikiLinkImage": {
+      case "image": {
         const image = parseInlineImage(child, ctx);
         if (image) out.push(image);
         break;
@@ -493,7 +487,6 @@ type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
   | (MdastImage & { marks: readonly Mark[] })
-  | (MdastWikiLinkImage & { marks: readonly Mark[] })
   /** A raw tag standing among the words: the escalated spelling of a sized picture. */
   | { type: "html"; value: string; marks: readonly Mark[] };
 
@@ -571,7 +564,6 @@ function plainText(tokens: readonly InlineToken[]): string {
         case "break":
           return "\n";
         case "image":
-        case "wikiLinkImage":
           return token.alt ?? "";
         case "html":
           return token.value;
@@ -600,7 +592,7 @@ function addRegisteredMark(
 
 /**
  * The picture an inline AST node means, through the one registered image codec:
- * `![alt](src)`, a wikilink picture, and the raw `<img>` tag a sized picture
+ * `![alt](src)` and the raw `<img>` tag a sized picture
  * escalates to, in whichever shape this dialect's parser reports it.
  */
 function parseInlineImage(ast: unknown, ctx: ParseContext): PMNode | null {
