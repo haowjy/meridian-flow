@@ -33,17 +33,20 @@ import {
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
+  ProjectCatalogLifecyclePort,
+  ProjectDocumentCatalogRefreshPort,
   WorkAuthorityCatalogMutationPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
 import {
   type ManifestMembershipResolver,
-  resolveVisibleDocumentMembership,
+  resolveCatalogDocumentMembership,
 } from "../visible-document-membership.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -216,9 +219,8 @@ async function buildScopeEntries(
       sourceRows.filter((source) => source.slug === "manuscript").map((source) => source.id),
     );
     if (manuscriptSourceIds.size > 0) {
-      const visibleMembership = await resolveVisibleDocumentMembership({
-        scheme: "manuscript",
-        view: { projectId: scope.projectId },
+      const visibleMembership = await resolveCatalogDocumentMembership({
+        projectId: scope.projectId,
         resolver: manifestMembership,
       });
       if (visibleMembership) {
@@ -354,8 +356,13 @@ export function createDrizzleContextCatalog(
     retainedCommitsPerScope?: number;
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
     manifestMembership?: ManifestMembershipResolver;
+    eventSink?: EventSink;
   } = {},
-): ContextCatalog & ContextCatalogMutationPort & WorkAuthorityCatalogMutationPort {
+): ContextCatalog &
+  ContextCatalogMutationPort &
+  ProjectCatalogLifecyclePort &
+  ProjectDocumentCatalogRefreshPort &
+  WorkAuthorityCatalogMutationPort {
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
@@ -593,27 +600,74 @@ export function createDrizzleContextCatalog(
             )
           : [],
       );
-      const availabilityGeneration = await availabilityMutations.advance({
-        projectIds: [
-          ...new Set(
-            ownershipRows.flatMap(
-              (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
-            ),
+      const projectIds = [
+        ...new Set(
+          ownershipRows.flatMap(
+            (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
           ),
-        ],
-        userIds: [
-          ...new Set(
-            ownershipRows.flatMap((row) =>
-              row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
-                ? [row.projectUserId]
-                : [],
-            ),
+        ),
+      ];
+      const userIds = [
+        ...new Set(
+          ownershipRows.flatMap((row) =>
+            row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
+              ? [row.projectUserId]
+              : [],
           ),
-        ],
-      });
-      for (const scope of [...scopes.values()].sort((a, b) =>
+        ),
+      ];
+      const orderedScopes = [...scopes.values()].sort((a, b) =>
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      )) {
+      );
+      const reserveGeneration = availabilityMutations.reserve;
+      const publishReservedGeneration = availabilityMutations.publishReserved;
+      if (manifestBackedProjectIds.size > 0 && reserveGeneration && publishReservedGeneration) {
+        const availabilityGeneration = await reserveGeneration();
+        const repair = async () => {
+          let lastCause: unknown;
+          for (const delayMs of [10, 50, 250, 1_000]) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            try {
+              await runInDrizzleTransaction(db, async () => {
+                await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+                for (const scope of orderedScopes) {
+                  await refreshScope(scope, invalidatedRootIds, commitId);
+                }
+                await publishReservedGeneration({
+                  generation: availabilityGeneration,
+                  projectIds,
+                  userIds,
+                });
+              });
+              return;
+            } catch (cause) {
+              lastCause = cause;
+            }
+          }
+          if (options.eventSink) {
+            emitEvent(options.eventSink, {
+              level: "error",
+              source: "context-catalog",
+              name: "DeferredRefreshFailure",
+              payload: {
+                sourceIds: [...new Set(sourceIds)],
+                ...unknownToEventPayload(lastCause),
+              },
+            });
+          }
+          throw lastCause;
+        };
+        const launchRepair = () => {
+          setImmediate(() => {
+            void repair().catch(() => undefined);
+          });
+        };
+        if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
+        await repair();
+        return availabilityGeneration;
+      }
+      const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
+      for (const scope of orderedScopes) {
         const refresh = () => refreshScope(scope, invalidatedRootIds, commitId);
         if (
           scope.kind === "project" &&
@@ -652,6 +706,13 @@ export function createDrizzleContextCatalog(
       )) {
         await refreshScope(scope, [], commitId);
       }
+    },
+    async refreshProjectDocuments(projectId) {
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+        await refreshScope({ kind: "project", projectId });
+        await availabilityMutations.advance({ projectIds: [projectId], userIds: [] });
+      });
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();

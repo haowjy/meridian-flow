@@ -30,10 +30,12 @@ Plain markdown convenience reads and versioned reads share collab serialization.
 - **Authoritative metadata catalog** — one normalized catalog beside ContextFS
   with per-scope heads, complete repeatable-read snapshots, bounded whole-commit
   replay/reset from an explicit captured head, direct children, and ID/path
-  lookup. Project Manuscript entries use the shared fail-closed live-manifest
-  membership resolver for snapshots and reconciliation. Mutation-triggered
-  Manuscript reconciliation runs after the aggregate commit so membership is
-  settled and no second connection waits on its uncommitted document row; other
+  lookup. Project Manuscript entries use live-manifest membership. ContextFS
+  observations fail closed when membership cannot be read, while catalog
+  reconciliation aborts and preserves its last good tree. Mutation-triggered
+  Manuscript reconciliation reserves an availability generation, then publishes
+  the catalog commit and generation atomically after the aggregate commit; a
+  failed deferred repair is retried and never exposes its reserved generation. Other
   project and Work sources retain their source-specific visibility. `ContextFS` owns result-aware single-source transactions;
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after

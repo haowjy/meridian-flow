@@ -51,7 +51,9 @@ import {
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
+  type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
+  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
   type ResultRepository,
   type UnifiedContextPortFactory,
@@ -231,7 +233,8 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog & ContextCatalogMutationPort;
+  contextCatalog: ContextCatalog;
+  contextCatalogRefresh?: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -303,7 +306,10 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog & ContextCatalogMutationPort;
+  contextCatalog: ContextCatalog &
+    ContextCatalogMutationPort &
+    ProjectCatalogLifecyclePort &
+    ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -414,11 +420,17 @@ export async function createProductionAppPorts(input: {
   const db = input.db;
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let documentSync: CollabDomain;
+  let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
+    eventSink,
     manifestMembership: {
-      resolveManifestMembership: (input) => documentSync.resolveManifestMembership(input),
+      resolveManifestMembership: (input) => {
+        if (!boundManifestMembership) {
+          throw new Error("Manifest membership resolver used before the collab domain was bound");
+        }
+        return boundManifestMembership.resolveManifestMembership(input);
+      },
     },
   });
   const workProjectionMutation = createWorkProjectionMutation({
@@ -449,7 +461,7 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
-  documentSync = createCollabDomain({
+  const documentSync = createCollabDomain({
     db,
     assetPathResolver,
     documentAccess,
@@ -479,6 +491,7 @@ export async function createProductionAppPorts(input: {
         ),
     },
   });
+  boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
@@ -982,6 +995,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
+    contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
