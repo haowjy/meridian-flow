@@ -4,6 +4,7 @@ import { execFile, fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { acquireDatabaseTestAdmission } from "./lib/db-test-admission";
 import { effectiveDbTestWorkerCount, parseDbTestWorkerCount } from "./lib/db-test-workers";
 import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
@@ -85,18 +86,25 @@ async function main(): Promise<void> {
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
   const configuredWorkerCount = parseDbTestWorkerCount(process.env.DB_TEST_WORKERS);
-  const selectedSuiteCount = await countSelectedSuites(repoRoot, testArgs, databaseUrl);
-  const workerCount = effectiveDbTestWorkerCount(configuredWorkerCount, selectedSuiteCount);
-  console.log(
-    `DB tests: ${selectedSuiteCount} suite(s) selected; using ${workerCount} of ${configuredWorkerCount} configured worker(s).`,
-  );
-  const workerDatabaseUrls = local
-    ? Array.from({ length: workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
-      )
-    : [];
+  const admission = local
+    ? await acquireDatabaseTestAdmission(sourceDatabaseUrl, configuredWorkerCount)
+    : undefined;
+  let workerDatabaseUrls: string[] = [];
 
   try {
+    const selectedSuiteCount = await countSelectedSuites(repoRoot, testArgs, databaseUrl);
+    const workerCount = effectiveDbTestWorkerCount(
+      Math.min(configuredWorkerCount, admission?.workerBudget ?? configuredWorkerCount),
+      selectedSuiteCount,
+    );
+    console.log(
+      `DB tests: ${selectedSuiteCount} suite(s) selected; using ${workerCount} of ${configuredWorkerCount} configured worker(s).`,
+    );
+    workerDatabaseUrls = local
+      ? Array.from({ length: workerCount }, (_, index) =>
+          managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+        )
+      : [];
     if (local) {
       const { targetDb } = await ensureDatabaseForUrl(databaseUrl);
       console.log(`DB tests: created owned database ${targetDb}.`);
@@ -136,29 +144,33 @@ async function main(): Promise<void> {
     );
     process.exitCode = testExit;
   } finally {
-    if (local) {
-      const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
-      mkdirSync(logDirectory, { recursive: true });
-      const logPath = join(logDirectory, `${process.pid}.log`);
-      const log = openSync(logPath, "a", 0o600);
-      const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
-        cwd: repoRoot,
-        detached: true,
-        stdio: ["ignore", log, log, "ipc"],
-      });
-      closeSync(log);
-      await new Promise<void>((resolve, reject) => {
-        cleanup.once("error", reject);
-        cleanup.once("exit", (code) =>
-          reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
-        );
-        cleanup.on("message", (message) => {
-          if (message === "ready") resolve();
+    try {
+      if (local) {
+        const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
+        mkdirSync(logDirectory, { recursive: true });
+        const logPath = join(logDirectory, `${process.pid}.log`);
+        const log = openSync(logPath, "a", 0o600);
+        const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
+          cwd: repoRoot,
+          detached: true,
+          stdio: ["ignore", log, log, "ipc"],
         });
-        cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
-      });
-      cleanup.unref();
-      console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
+        closeSync(log);
+        await new Promise<void>((resolve, reject) => {
+          cleanup.once("error", reject);
+          cleanup.once("exit", (code) =>
+            reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
+          );
+          cleanup.on("message", (message) => {
+            if (message === "ready") resolve();
+          });
+          cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
+        });
+        cleanup.unref();
+        console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
+      }
+    } finally {
+      await admission?.release();
     }
   }
 }
