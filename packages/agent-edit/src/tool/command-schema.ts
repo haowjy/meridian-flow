@@ -124,8 +124,22 @@ const ENGINE_TARGET = {
   tool_use_id: z.string().optional(),
 };
 
-/** The model's path rule lives in each tool description, not on the field. */
-const MODEL_TARGET = { path: z.string().min(1) };
+const READ_TARGET = {
+  path: z
+    .string()
+    .min(1)
+    .describe(
+      "Document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` for one section.",
+    ),
+};
+const WRITE_TARGET = {
+  path: z
+    .string()
+    .min(1)
+    .describe(
+      "The document this command creates or changes: a path or context URI, optionally with `#heading-slug` for one section.",
+    ),
+};
 
 /** Engine read input: the document and which of its blocks to render. */
 export const ReadCommandSchema = z.object({ ...ENGINE_TARGET, ...READ_FIELDS }).strict();
@@ -133,9 +147,9 @@ export const ReadCommandSchema = z.object({ ...ENGINE_TARGET, ...READ_FIELDS }).
 export const WriteCommandSchema = mutationUnion(ENGINE_TARGET);
 
 /** The `read` tool's published input. */
-export const ReadToolInputSchema = z.object({ ...MODEL_TARGET, ...READ_FIELDS }).strict();
+export const ReadToolInputSchema = z.object({ ...READ_TARGET, ...READ_FIELDS }).strict();
 /** The `write` tool's published input. */
-export const WriteToolInputSchema = mutationUnion(MODEL_TARGET);
+export const WriteToolInputSchema = mutationUnion(WRITE_TARGET);
 
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;
