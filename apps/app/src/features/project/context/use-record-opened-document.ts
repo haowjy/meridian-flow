@@ -48,6 +48,20 @@ export async function whenOnServer(
   documentId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
+  // A replica that is closing, or a read that fails, proves nothing: no post.
+  try {
+    return await waitOnServer(source, projectId, documentId, signal);
+  } catch {
+    return false;
+  }
+}
+
+async function waitOnServer(
+  source: ServerPresenceSource,
+  projectId: string,
+  documentId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   const known = await source.readKnownDocument(projectId, documentId);
   const state = (record: ResourceRecord | undefined) =>
     !record || record.resource.lifecycle.kind === "acknowledged"
@@ -66,16 +80,21 @@ export async function whenOnServer(
     };
     const onAbort = () => finish(false);
     signal.addEventListener("abort", onAbort, { once: true });
-    stop = source.observeProjection(
-      projectId,
-      ({ records }) => {
-        const current = state(
-          records.find((record) => record.resource.identity.documentId === documentId),
-        );
-        if (current !== "local") finish(current === "server");
-      },
-      () => finish(false),
-    );
+    try {
+      stop = source.observeProjection(
+        projectId,
+        ({ records }) => {
+          const current = state(
+            records.find((record) => record.resource.identity.documentId === documentId),
+          );
+          if (current !== "local") finish(current === "server");
+        },
+        () => finish(false),
+      );
+    } catch {
+      finish(false);
+      return;
+    }
     if (signal.aborted) finish(false);
   });
 }

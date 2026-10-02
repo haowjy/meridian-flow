@@ -67,4 +67,23 @@ describe("whenOnServer", () => {
     closing.abort();
     expect(await aborted).toBe(false);
   });
+
+  it("answers false, never rejects, when the replica read fails or the replica is closing", async () => {
+    const signal = new AbortController().signal;
+    const failing: ServerPresenceSource = {
+      readKnownDocument: async () => {
+        throw new Error("metadata unavailable");
+      },
+      observeProjection: () => () => {},
+    };
+    await expect(whenOnServer(failing, "p", "doc-1", signal)).resolves.toBe(false);
+
+    const closing: ServerPresenceSource = {
+      readKnownDocument: async () => ({ record: record({ kind: "local" }) }),
+      observeProjection: () => {
+        throw new Error("Account resource replica is closed");
+      },
+    };
+    await expect(whenOnServer(closing, "p", "doc-1", signal)).resolves.toBe(false);
+  });
 });
