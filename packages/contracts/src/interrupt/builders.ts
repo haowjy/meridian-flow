@@ -10,7 +10,6 @@ import {
   type ComponentBlockContent,
   isAskUserKind,
   parseAskUserOptions,
-  parseAskUserToolInput,
 } from "../components/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 import type { AskRequest, JsonSchema } from "./index.js";
@@ -167,4 +166,4 @@ export function minimalAskRequest(interruptId: string, prompt = "test"): AskRequ
   };
 }
 
-export { parseAskUserOptions, parseAskUserToolInput };
+export { parseAskUserOptions };

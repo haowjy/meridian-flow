@@ -344,3 +344,34 @@ describe("work", () => {
     ]);
   });
 });
+
+describe("ask_user", () => {
+  it("maps snake_case arguments to the ask input", async () => {
+    await expectDelivered(
+      "ask_user",
+      { question: "Proceed?", kind: "free-text", requires_human: true, timeout_ms: 5000 },
+      {
+        question: "Proceed?",
+        kind: "free-text",
+        recommended: null,
+        requiresHuman: true,
+        timeoutMs: 5000,
+      },
+    );
+  });
+
+  it("refuses camelCase, coerced values and a choice with no options", async () => {
+    await expectRefused("ask_user", { question: "Q", kind: "free-text", timeoutMs: 10 }, [
+      "timeoutMs: unknown argument",
+    ]);
+    await expectRefused("ask_user", { question: "Q", kind: "free-text", timeout_ms: 1.5 }, [
+      "timeout_ms: expected a whole number, got 1.5",
+    ]);
+    await expectRefused("ask_user", { question: "Q", kind: "free-text", requires_human: "yes" }, [
+      'requires_human: expected a boolean, got "yes"',
+    ]);
+    await expectRefused("ask_user", { question: "Q", kind: "choice" }, [
+      "options: choice needs at least one { value, label } option",
+    ]);
+  });
+});
