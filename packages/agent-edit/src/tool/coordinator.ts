@@ -6,7 +6,7 @@ import {
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
-import type { WriteCommand } from "./types.js";
+import type { DocumentCommandName } from "./types.js";
 
 export type LiveDocumentCallback<T> = (
   doc: Y.Doc,
@@ -15,7 +15,7 @@ export type LiveDocumentCallback<T> = (
 export async function withLiveDocument<T>(
   coordinator: DocumentCoordinator,
   docId: string,
-  commandName: WriteCommand["command"],
+  commandName: DocumentCommandName,
   filePath: string,
   fn: LiveDocumentCallback<T>,
   options?: import("../ports/document-coordinator.js").DocumentLockOptions,

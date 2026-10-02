@@ -25,7 +25,7 @@ export class ReversalScenario {
     options?: Parameters<typeof harness>[1],
   ): Promise<ReversalScenario> {
     const ctx = harness(initialDocs, options);
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     return new ReversalScenario(ctx);
   }
 
@@ -74,7 +74,7 @@ export class ReversalScenario {
   async deletedFirstBlock(turnId: string): Promise<{ originalHash: string }> {
     const originalHash = hashAt(this.ctx.liveDoc("chapter.md"), 0);
     await this.ctx.core.write(
-      { command: "delete", file: "chapter.md", in: originalHash },
+      { command: "remove", file: "chapter.md", in: originalHash },
       { ...context, turnId },
     );
     return { originalHash };

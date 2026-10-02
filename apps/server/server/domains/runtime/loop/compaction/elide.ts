@@ -31,8 +31,7 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
     const tool = call.content as JsonObject;
     const policy = policies(tool.toolName as string);
     const input = (tool.input ?? {}) as JsonObject;
-    const kind = policy?.kind(input);
-    return policy && kind && kind !== "none" ? [{ call, result, input, policy, kind }] : [];
+    return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
   });
 }
 

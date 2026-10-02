@@ -119,7 +119,7 @@ export function renderHistoryItem(input: {
         (!call || !registration) && !result?.isError
           ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
           : stringify(
-              !result?.isError && policy && policy.kind(args) !== "none"
+              !result?.isError && policy
                 ? policy.elide({ input: args, output: result?.output }, refs, "history").output
                 : result?.output,
             );
@@ -127,13 +127,13 @@ export function renderHistoryItem(input: {
       label = `tool_call ${name}`;
       if (expand || include.has("tool_args")) {
         body = JSON.stringify(args);
-        if (policy?.kind(args) === "write") {
+        if (policy?.kind === "write") {
           body = `edit record from ${turn.createdAt.slice(0, 16).replace("T", " ")}; the document may have changed since\n${body}`;
           const evidence = refs.length
             ? refs
             : [
                 {
-                  documentId: String(args.document_id ?? args.path ?? "unknown document"),
+                  documentId: String(args.path ?? "unknown document"),
                   uri: typeof args.path === "string" ? args.path : null,
                   revision: null,
                 },

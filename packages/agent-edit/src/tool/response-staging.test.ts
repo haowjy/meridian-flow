@@ -14,7 +14,7 @@ describe("response staging", () => {
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-echo-summary-failure";
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const originalSerialize = model.serializeBlockLines.bind(model);
     const serialize = vi
       .spyOn(model, "serializeBlockLines")
@@ -63,8 +63,8 @@ describe("response staging", () => {
     expect(rollback.stagedCreates).toEqual({ committed: [], discarded: ["new.md"] });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-    expect(outcomeText(await ctx.core.write({ command: "read", file: "new.md" }, context))).toBe(
-      'status: document_not_found\n\nFile not found. Check the path, or use write(command="create", file="new.md") to make a new one.',
+    expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
+      'status: document_not_found\n\nFile not found. Check the path, or use write(command="create", path="new.md") to make a new one.',
     );
   });
 
@@ -74,7 +74,7 @@ describe("response staging", () => {
       { "chapter.md": "Alpha." },
       { onResponseLifecycleError: (event) => lifecycleErrors.push(event) },
     );
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-committed-response",
@@ -124,7 +124,7 @@ describe("response staging", () => {
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-response-staging",
@@ -197,7 +197,7 @@ describe("response staging", () => {
 
   it("resyncs staged response views from live while preserving staged edits on another block", async () => {
     const ctx = harness({ "chapter.md": "Alpha waits.\n\nBravo waits." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-staged-read-resync-other-block",
@@ -210,7 +210,7 @@ describe("response staging", () => {
     );
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 5 }, "Human");
 
-    const review = await ctx.core.write({ command: "read", file: "chapter.md" }, responseContext);
+    const review = await ctx.core.read({ file: "chapter.md" }, responseContext);
 
     expect(renderedBlockBodies(review)).toEqual(["Agent waits.", "Human waits."]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha waits.", "Human waits."]);
@@ -218,7 +218,7 @@ describe("response staging", () => {
 
   it("drops staged response buffers when invalidating a thread", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       {
@@ -234,14 +234,14 @@ describe("response staging", () => {
     );
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const read = await ctx.core.read({ file: "chapter.md" }, context);
     expect(outcomeText(read)).toContain("|Alpha.");
     expect(outcomeText(read)).not.toContain("Beta.");
   });
 
   it("rolls back staged response writes and restores the runtime doc from live", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-response-rollback",
@@ -260,14 +260,14 @@ describe("response staging", () => {
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const read = await ctx.core.read({ file: "chapter.md" }, context);
     expect(outcomeText(read)).toContain("Alpha.");
     expect(outcomeText(read)).not.toContain("Beta.");
   });
 
   it("keeps response commit all-or-nothing when the journal batch append fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
       ...context,
       turnId: "turn-response-journal-fail",
@@ -285,7 +285,7 @@ describe("response staging", () => {
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-    const viewAfterFailure = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const viewAfterFailure = await ctx.core.read({ file: "chapter.md" }, context);
     expect(outcomeText(viewAfterFailure)).toContain("Alpha.");
     expect(outcomeText(viewAfterFailure)).not.toContain("Beta.");
 

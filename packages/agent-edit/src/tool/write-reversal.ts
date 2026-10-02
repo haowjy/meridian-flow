@@ -32,10 +32,10 @@ import type {
 import { formatReversalSuccess, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
+  DocumentCommandName,
   InteractionContext,
   MutationActor,
   UndoRedoOutcome,
-  WriteCommand,
   WriteRedoResult,
   WriteUndoResult,
 } from "./types.js";
@@ -81,7 +81,7 @@ export interface WriteReversal {
 export interface WriteReversalRunInput {
   docId: string;
   session: ActorSession;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   direction: "undo" | "redo";
   selection: ReversalSelection;
   actor?: ReversalActor;
@@ -262,7 +262,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    commandName: WriteCommand["command"];
+    commandName: DocumentCommandName;
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
@@ -457,7 +457,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    commandName: WriteCommand["command"];
+    commandName: DocumentCommandName;
     direction: "undo" | "redo";
     actor: ReversalActor;
     interactionContext: InteractionContext;
@@ -763,7 +763,7 @@ export function createWriteReversal(deps: {
       docId: string;
       session: ActorSession;
       runtime: RuntimeDocumentState;
-      commandName: WriteCommand["command"];
+      commandName: DocumentCommandName;
     },
     cause: unknown,
   ): Promise<void> {
@@ -793,7 +793,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    commandName: WriteCommand["command"];
+    commandName: DocumentCommandName;
   }): Promise<void> {
     try {
       const response = await runtimeStore.restoreRuntimeFromLive(

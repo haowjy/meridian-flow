@@ -1,25 +1,13 @@
-/** Mars mutation policy projected onto the canonical document command set. */
+/** Mars `edit` policy projected onto the document tools and Work commands. */
 import { describe, expect, it } from "vitest";
-import {
-  type EffectiveToolPolicy,
-  projectToolPolicy,
-  type WriteCommandName,
-} from "./project-tool-policy.js";
+import { type EffectiveToolPolicy, projectToolPolicy } from "./project-tool-policy.js";
 
-const WRITE_READ = ["read"] as const;
-const WRITE_MUTATE = [
-  "create",
-  "delete",
-  "insert",
-  "redo",
-  "replace",
-  "undo",
-] as const satisfies readonly WriteCommandName[];
 const WORK_NAV = ["list", "show", "switch"] as const;
 const WORK_MUTATE = ["archive", "create", "delete", "unarchive", "update"] as const;
 // ask_user is not granted while disabled (#601), even when an agent allows it.
-const ALL_FLOW_TOOLS = [
+const READ_ONLY_TOOLS = [
   "ls",
+  "read",
   "search",
   "skill",
   "spawn",
@@ -28,8 +16,8 @@ const ALL_FLOW_TOOLS = [
   "thread_message",
   "thread_report",
   "work",
-  "write",
 ];
+const ALL_FLOW_TOOLS = [...READ_ONLY_TOOLS, "write"].sort();
 
 const WRITER_MAP = {
   edit: "allow",
@@ -44,41 +32,37 @@ const CRITIC_MAP = {
 function snapshot(policy: EffectiveToolPolicy) {
   return {
     tools: [...policy.tools].sort(),
-    writeCommands: [...policy.writeCommands].sort(),
     workCommands: [...policy.workCommands].sort(),
   };
 }
 
 describe("projectToolPolicy", () => {
-  it("treats omitted tools and tools: [] as the same full mutate set", () => {
+  it("treats omitted tools and tools: [] as the same full set", () => {
     const omitted = snapshot(projectToolPolicy({}));
     expect(omitted).toEqual({
       tools: ALL_FLOW_TOOLS,
-      writeCommands: [...WRITE_MUTATE, ...WRITE_READ].sort(),
       workCommands: [...WORK_NAV, ...WORK_MUTATE].sort(),
     });
     expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(omitted);
   });
 
-  it("maps Writer to full mutate and Critic to read/diff with work nav", () => {
+  it("gives Writer `write` and leaves Critic `read` with Work navigation", () => {
     expect(snapshot(projectToolPolicy({ tools: WRITER_MAP }))).toEqual(
       snapshot(projectToolPolicy({})),
     );
     expect(snapshot(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual({
-      tools: ALL_FLOW_TOOLS,
-      writeCommands: [...WRITE_READ],
+      tools: READ_ONLY_TOOLS,
       workCommands: WORK_NAV,
     });
   });
 
-  it("ignores historical read metadata and uses edit only for mutations", () => {
+  it("uses edit, not the historical read entry, to grant `write`", () => {
     const policy = projectToolPolicy({ tools: { read: "deny", edit: "allow" } });
-    expect(policy.tools.has("read")).toBe(false);
+    expect(policy.tools.has("read")).toBe(true);
     expect(policy.tools.has("write")).toBe(true);
-    expect([...policy.writeCommands].sort()).toEqual([...WRITE_MUTATE, ...WRITE_READ].sort());
   });
 
-  it("keeps baseline document inspection under restrictive retained policies", () => {
+  it("keeps document inspection under restrictive retained policies", () => {
     for (const metadata of [
       { tools: ["bash"] as string[] },
       { tools: ["read"] as string[] },
@@ -86,10 +70,10 @@ describe("projectToolPolicy", () => {
       { "disallowed-tools": ["read", "edit", "ls", "search"] as string[] },
     ]) {
       const policy = projectToolPolicy(metadata);
-      expect(policy.tools.has("write")).toBe(true);
+      expect(policy.tools.has("read")).toBe(true);
+      expect(policy.tools.has("write")).toBe(false);
       expect(policy.tools.has("ls")).toBe(true);
       expect(policy.tools.has("search")).toBe(true);
-      expect([...policy.writeCommands].sort()).toEqual([...WRITE_READ]);
     }
   });
 });

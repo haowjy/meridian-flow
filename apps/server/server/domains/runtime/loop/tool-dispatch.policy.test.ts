@@ -14,6 +14,7 @@ function coreExecutor() {
     tools: createToolExecutor(
       createToolRegistry({
         registrations: createCoreToolRegistrations({
+          read: noop,
           write,
           work: noop,
           ls: noop,
@@ -30,13 +31,13 @@ describe("core catalogue without policy", () => {
     const { write, tools } = coreExecutor();
     const result = await tools.executeTool(
       {
-        id: "call-read",
+        id: "call-remove",
         name: "write",
-        arguments: { command: "read", path: "kb://notes.md" },
+        arguments: { command: "remove", path: "kb://notes.md", in: 1 },
       },
       { threadId: "thread-1" as never, turnId: "turn-1" as never, agentSlug: "agent" },
     );
     expect(write).toHaveBeenCalledOnce();
-    expect(result).toEqual({ toolCallId: "call-read", output: { ok: true } });
+    expect(result).toEqual({ toolCallId: "call-remove", output: { ok: true } });
   });
 });

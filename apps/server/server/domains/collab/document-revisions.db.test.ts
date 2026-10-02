@@ -82,10 +82,7 @@ async function fixture(mode: "direct" | "draft") {
   const core = mode === "direct" ? f.runtime.liveUtilityCore : f.collab.agentEdit();
   const context = { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: TURN_ID };
   const read = (responseId?: string) =>
-    core.write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-      { ...context, responseId },
-    );
+    core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
   async function writerDelete() {

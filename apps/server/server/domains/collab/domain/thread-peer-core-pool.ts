@@ -9,6 +9,8 @@ import {
   type ReversalStore,
   type SemanticProvenanceWriter,
   type UpdateJournal,
+  type WriteCommand,
+  type WriteContext,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -257,64 +259,78 @@ export function createThreadPeerCorePool(input: {
     await evictIdleCores();
   }
 
-  return asThreadPeerAgentEditCore({
-    async write(command, context = {}) {
-      const documentId = documentIdFromWriteCommand(command);
-      const threadCore = await coreFor(context.threadId);
-      const responseAlreadyBufferedDocument = Boolean(
-        context.responseId &&
-          documentId &&
-          threadCore.hasResponseDocument(context.responseId, documentId),
-      );
-      let pulled:
-        | {
-            branchGeneration: number;
-            afterJournalId?: number;
-            liveJournalSeq?: number;
-            attributionBaseline: Uint8Array;
-          }
-        | undefined;
-      if (documentId && context.threadId && !responseAlreadyBufferedDocument) {
-        pulled = await input.pullThreadPeer({
-          documentId,
-          threadId: context.threadId as ThreadId,
-        });
-      }
-      const owner = context.responseId ? responseOwners.get(context.responseId) : undefined;
-      if (owner && owner.threadId !== context.threadId) {
-        throw new Error(
-          `Response ${context.responseId} is already owned by thread ${owner.threadId ?? "live"}; cannot reuse it from thread ${context.threadId ?? "live"}.`,
-        );
-      }
-      const selectedCore =
-        owner?.core ??
-        (documentId && isReversalWriteCommand(command)
-          ? await reversalCoreFor(documentId, context.threadId)
-          : threadCore);
-      const useLiveReversal = selectedCore === input.liveUtilityCore;
-      // Live reversals commit immediately. They must not claim the response:
-      // a later forward write in the same response still belongs in Draft.
-      if (owner || !useLiveReversal || !isReversalWriteCommand(command)) {
-        trackResponse(context.threadId, context.responseId, selectedCore);
-      }
-      if (!context.responseId && pulled && !useLiveReversal) {
-        await threadCore.invalidateThread(documentId as DocumentId, context.threadId as ThreadId);
-      }
-      return selectedCore.write(command, {
-        ...context,
-        ...(pulled && !useLiveReversal
-          ? {
-              interactionContext: {
-                mode: "threadPeer" as const,
-                branchGeneration: pulled.branchGeneration,
-                afterJournalId: pulled.afterJournalId ?? 0,
-                liveJournalSeq: pulled.liveJournalSeq,
-                attributionBaseline: pulled.attributionBaseline,
-              },
-            }
-          : {}),
+  /**
+   * Picks the core for one document operation and pulls the thread peer first.
+   * Reads route like forward writes, so they see this thread's own pending text.
+   */
+  async function routed<Result>(
+    command: { file: string; documentId?: string },
+    reversal: boolean,
+    context: WriteContext,
+    run: (core: AgentEditCore, context: WriteContext) => Promise<Result>,
+  ): Promise<Result> {
+    const documentId = documentIdFromCommand(command);
+    const threadCore = await coreFor(context.threadId);
+    const responseAlreadyBufferedDocument = Boolean(
+      context.responseId &&
+        documentId &&
+        threadCore.hasResponseDocument(context.responseId, documentId),
+    );
+    let pulled:
+      | {
+          branchGeneration: number;
+          afterJournalId?: number;
+          liveJournalSeq?: number;
+          attributionBaseline: Uint8Array;
+        }
+      | undefined;
+    if (documentId && context.threadId && !responseAlreadyBufferedDocument) {
+      pulled = await input.pullThreadPeer({
+        documentId,
+        threadId: context.threadId as ThreadId,
       });
-    },
+    }
+    const owner = context.responseId ? responseOwners.get(context.responseId) : undefined;
+    if (owner && owner.threadId !== context.threadId) {
+      throw new Error(
+        `Response ${context.responseId} is already owned by thread ${owner.threadId ?? "live"}; cannot reuse it from thread ${context.threadId ?? "live"}.`,
+      );
+    }
+    const selectedCore =
+      owner?.core ??
+      (documentId && reversal ? await reversalCoreFor(documentId, context.threadId) : threadCore);
+    const useLiveReversal = selectedCore === input.liveUtilityCore;
+    // Live reversals commit immediately. They must not claim the response:
+    // a later forward write in the same response still belongs in Draft.
+    if (owner || !useLiveReversal || !reversal) {
+      trackResponse(context.threadId, context.responseId, selectedCore);
+    }
+    if (!context.responseId && pulled && !useLiveReversal) {
+      await threadCore.invalidateThread(documentId as DocumentId, context.threadId as ThreadId);
+    }
+    return run(selectedCore, {
+      ...context,
+      ...(pulled && !useLiveReversal
+        ? {
+            interactionContext: {
+              mode: "threadPeer" as const,
+              branchGeneration: pulled.branchGeneration,
+              afterJournalId: pulled.afterJournalId ?? 0,
+              liveJournalSeq: pulled.liveJournalSeq,
+              attributionBaseline: pulled.attributionBaseline,
+            },
+          }
+        : {}),
+    });
+  }
+
+  return asThreadPeerAgentEditCore({
+    read: (command, context = {}) =>
+      routed(command, false, context, (core, routedContext) => core.read(command, routedContext)),
+    write: (command, context = {}) =>
+      routed(command, isReversalCommand(command), context, (core, routedContext) =>
+        core.write(command, routedContext),
+      ),
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
     },
@@ -443,19 +459,11 @@ export function createThreadPeerCorePool(input: {
 
 export const createThreadPeerAgentEditCore = createThreadPeerCorePool;
 
-function documentIdFromWriteCommand(command: unknown): DocumentId | null {
-  if (typeof command !== "object" || command === null) return null;
-  const { file, documentId } = command as { file?: unknown; documentId?: unknown };
-  if (typeof file !== "string") return null;
-  const address = parseDocumentAddress(
-    file,
-    typeof documentId === "string" ? documentId : undefined,
-  );
+function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
+  const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
 }
 
-function isReversalWriteCommand(command: unknown): boolean {
-  if (typeof command !== "object" || command === null) return false;
-  const name = (command as { command?: unknown }).command;
-  return name === "undo" || name === "redo";
+function isReversalCommand(command: WriteCommand): boolean {
+  return command.command === "undo" || command.command === "redo";
 }

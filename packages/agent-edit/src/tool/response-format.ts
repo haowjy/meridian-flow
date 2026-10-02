@@ -7,6 +7,7 @@ import { splitHashline } from "../model/hashline.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
+  type AgentEditResultCommand,
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
@@ -14,7 +15,6 @@ import {
 import type { DestructiveSweepReport, SyncedMutationSummary } from "./mutation-commit.js";
 import type {
   UndoRedoOutcome,
-  WriteCommandName,
   WriteErrorDetail,
   WriteErrorStatus,
   WriteOutcome,
@@ -206,7 +206,10 @@ export function result(
   };
 }
 
-export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
+export function toOutcome(
+  command: AgentEditResultCommand,
+  result: InternalWriteResult,
+): WriteOutcome {
   const model =
     result.status === "success"
       ? modelResult({

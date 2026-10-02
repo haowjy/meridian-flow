@@ -2,6 +2,7 @@
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   CompactionMetadataCodec,
@@ -12,7 +13,7 @@ import {
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
-import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
+import { readDocumentText, searchDocumentText, writeDocumentText } from "../tools/document-text.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
@@ -170,12 +171,14 @@ else
 
     async function documentTail(rig: Awaited<ReturnType<typeof fixture>>, allKinds = false) {
       for (const [name, documentText] of [
+        ["read", readDocumentText],
         ["write", writeDocumentText],
         ["search", searchDocumentText],
       ] as const)
         rig.deps.toolRegistry.register({
           source: "core",
           definition: { type: "function", name, description: name, inputSchema: {} },
+          input: z.unknown(),
           execution: { type: "server", handler: async () => null },
           documentText,
         });
@@ -195,7 +198,7 @@ else
       for (const record of records) {
         const uri = "manuscript://chapter.md";
         const isSearch = record.command === "search";
-        const toolName = isSearch ? "search" : "write";
+        const toolName = isSearch ? "search" : record.command === "read" ? "read" : "write";
         const staleText = `${record.id.toUpperCase()} TEXT`;
         await rig.repos.blocks.create({
           turnId: answer.id,
@@ -208,7 +211,7 @@ else
             input: isSearch
               ? { pattern: "dragon" }
               : {
-                  command: record.command,
+                  ...(record.command === "read" ? {} : { command: record.command }),
                   path: uri,
                   ...(record.command === "replace"
                     ? { content: staleText, find: staleText, in: "b41" }

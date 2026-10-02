@@ -24,7 +24,7 @@ import {
   type ScopeFailure,
 } from "./scope.js";
 
-export type WriteCommandName = "insert" | "replace" | "delete";
+export type WriteCommandName = "insert" | "replace" | "remove";
 
 export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
@@ -69,7 +69,7 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  if (params.command !== "delete" && params.content === undefined) {
+  if (params.command !== "remove" && params.content === undefined) {
     return error("invalid_write", "content is required");
   }
   const normalized = normalizeParams(params);
@@ -85,8 +85,8 @@ export function resolveWrite(
     case "replace":
       resolved = resolveReplace(concreteCtx, normalized, contentCheck.parsed);
       break;
-    case "delete":
-      resolved = resolveDelete(concreteCtx, normalized);
+    case "remove":
+      resolved = resolveRemove(concreteCtx, normalized);
       break;
   }
   if (!resolved.ok) return resolved;
@@ -178,19 +178,20 @@ function resolveReplace(
   const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   if (params.content.length === 0) {
-    return error("invalid_write", "Use the delete command to remove a block scope");
+    return error("invalid_write", "Use `remove` to remove blocks");
   }
   return replaceScope(ctx, params, scope.scope, parsed);
 }
 
-function resolveDelete(
+function resolveRemove(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteResultWithoutIr {
-  if (params.documentAddress.fragment !== undefined) {
-    return error("invalid_write", "delete uses `in` for its block scope; remove the file fragment");
+  const fragment = fragmentScope(params);
+  if ((params.in === undefined) === (fragment === undefined)) {
+    return error("invalid_write", "remove needs exactly one of `in` or a #heading-slug in path");
   }
-  const scope = resolveScope(ctx, params.in, { allowSlugFallback: false });
+  const scope = resolveScope(ctx, params.in ?? fragment, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
   return deleteScope(params, scope.scope);
 }
@@ -214,7 +215,7 @@ function validateContent(
   if (params.command === "replace" && params.content.length === 0) {
     return { ok: true, parsed: { blocks: [] } };
   }
-  if (params.command === "delete") return { ok: true, parsed: { blocks: [] } };
+  if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {

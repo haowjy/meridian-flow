@@ -1,7 +1,12 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
 import type { AgentEditModelPayload } from "./model-result.js";
-import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
+import type {
+  DocumentCommandName,
+  WriteErrorDetail,
+  WriteStatus,
+  WriteSuccessPhase,
+} from "./types.js";
 
 export type InternalWriteResult = InternalWriteResultBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
@@ -16,13 +21,13 @@ interface InternalWriteResultBase {
 }
 
 export function documentNotFound(
-  commandName: WriteCommand["command"],
+  commandName: DocumentCommandName,
   filePath: string,
 ): InternalWriteResult {
   if (commandName === "read") {
     return status(
       "document_not_found",
-      `File not found. Check the path, or use write(command="create", file="${filePath}") to make a new one.`,
+      `File not found. Check the path, or use write(command="create", path="${filePath}") to make a new one.`,
     );
   }
   return status("document_not_found", "File not found. Read the project to find the right path.");

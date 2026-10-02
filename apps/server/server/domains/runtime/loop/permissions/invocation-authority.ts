@@ -23,11 +23,6 @@ export function validateInvocationAuthority(input: ValidateInvocationAuthorityIn
       reasons.push(`Tool "${tool}" is not enabled for the caller.`);
     }
   }
-  for (const command of patchedPolicy.writeCommands) {
-    if (!baselinePolicy.writeCommands.has(command) && !callerPolicy.writeCommands.has(command)) {
-      reasons.push(`Write command "${command}" is not enabled for the caller.`);
-    }
-  }
   for (const command of patchedPolicy.workCommands) {
     if (!baselinePolicy.workCommands.has(command) && !callerPolicy.workCommands.has(command)) {
       reasons.push(`Work command "${command}" is not enabled for the caller.`);

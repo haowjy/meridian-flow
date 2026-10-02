@@ -85,22 +85,13 @@ async function scenarioCreate(env: DemoEnvironment, docId: string) {
 
 async function scenarioView(env: DemoEnvironment, docId: string) {
   section("2. read: full and outline with block hashes");
-  const full = await env.core.write(
-    { command: "read", file: docId, format: "full" },
-    defaultContext,
-  );
-  print("write(read, full)", full.text);
-  const outline = await env.core.write(
-    { command: "read", file: docId, format: "outline" },
-    defaultContext,
-  );
-  print("write(read, outline)", outline.text);
+  const full = await env.core.read({ file: docId, format: "full" }, defaultContext);
+  print("read(full)", full.text);
+  const outline = await env.core.read({ file: docId, format: "outline" }, defaultContext);
+  print("read(outline)", outline.text);
   printBlocks("hash index", await blocks(env, docId));
   assert(/^([0-9a-f]{4,})\|# Chapter/m.test(full.text), "full read should include block hashes");
-  assert(
-    outline.text.includes('write(command="read"'),
-    "outline should include drill-down command",
-  );
+  assert(outline.text.includes('read({"path"'), "outline should include drill-down command");
 }
 
 async function scenarioInsert(env: DemoEnvironment, docId: string) {
@@ -141,7 +132,7 @@ async function scenarioDelete(env: DemoEnvironment, docId: string) {
   const inserted = before.find((block) => block.text === "A foxfire lantern flared to life.");
   assert(inserted !== undefined, "inserted paragraph should exist before delete");
   const result = await env.core.write(
-    { command: "delete", file: docId, in: inserted.hash },
+    { command: "remove", file: docId, in: inserted.hash },
     defaultContext,
   );
   const after = await blocks(env, docId);
@@ -181,7 +172,7 @@ async function scenarioMultiWriteTurn() {
     { command: "create", file: docId, content: "Alpha sword.\n\nOmega." },
     defaultContext,
   );
-  await env.core.write({ command: "read", file: docId }, defaultContext);
+  await env.core.read({ file: docId }, defaultContext);
 
   const alpha = (await blocks(env, docId))[0];
   assert(alpha !== undefined, "turn demo alpha block should exist");
@@ -232,7 +223,7 @@ async function scenarioConcurrentReconciled() {
     { command: "create", file: docId, content: "Alpha waits.\n\nBeta carries a sword." },
     defaultContext,
   );
-  await env.core.write({ command: "read", file: docId }, defaultContext);
+  await env.core.read({ file: docId }, defaultContext);
 
   const humanSeq = await env.coordinator.applyHumanUpdate(docId, "human-demo", (doc) => {
     const first = model.getBlocks(doc)[0];
@@ -264,14 +255,14 @@ async function scenarioColdUndoAfterRestart() {
   const initial = "Alpha sword.\n\nOmega waits.";
 
   await env.core.write({ command: "create", file: docId, content: initial }, defaultContext);
-  await env.core.write({ command: "read", file: docId }, defaultContext);
+  await env.core.read({ file: docId }, defaultContext);
   await env.core.write(
     { command: "replace", file: docId, find: "sword", content: "blade" },
     { ...defaultContext, turnId: "demo-thread:cold-restart-edit" },
   );
 
   const freshCoreEnv = createEnvironment(env.journal, env.coordinator);
-  await freshCoreEnv.core.write({ command: "read", file: docId }, defaultContext);
+  await freshCoreEnv.core.read({ file: docId }, defaultContext);
   const undo = await freshCoreEnv.core.write({ command: "undo", file: docId }, defaultContext);
   const afterUndo = await rendered(env, docId);
   print("cold reconstruction undo", undo.text);

@@ -10,9 +10,11 @@
  * of ContextPort or other app-layer adapter imports.
  */
 import {
+  type AgentEditResultCommand,
   agentEditResultCommand,
   modelResult,
-  WriteCommandSchema,
+  ReadToolInputSchema,
+  WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
 import { askUserToolInputSchema } from "@meridian/contracts/components";
 import {
@@ -24,8 +26,8 @@ import {
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
 import { z } from "zod";
-import { searchDocumentText, writeDocumentText } from "./document-text.js";
-import { writeHistoryPreview } from "./history-previews.js";
+import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
+import { readHistoryPreview, writeHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -155,7 +157,7 @@ export const SearchToolInputSchema = z
 export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -166,61 +168,14 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
-function writeToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
-}
-
-function formatWriteExecutionError(error: ToolExecutionError) {
-  return modelResult({
-    command: agentEditResultCommand(error.arguments),
-    status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
-    payload: { message: error.message },
-  });
-}
-
-function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {
-  const transformed = renameSchemaProperty(schema, "file", "path") as Record<string, unknown>;
-  stripSchemaProperty(transformed, "documentId");
-  stripSchemaProperty(transformed, "tool_use_id");
-  return transformed;
-}
-
-function renameSchemaProperty(schema: unknown, from: string, to: string): unknown {
-  if (Array.isArray(schema)) return schema.map((item) => renameSchemaProperty(item, from, to));
-  if (!schema || typeof schema !== "object") return schema;
-  const record = schema as Record<string, unknown>;
-  for (const [key, value] of Object.entries(record)) {
-    record[key] = renameSchemaProperty(value, from, to);
-  }
-  const properties = record.properties;
-  if (properties && typeof properties === "object" && from in properties) {
-    const propertyRecord = properties as Record<string, unknown>;
-    propertyRecord[to] = propertyRecord[from];
-    delete propertyRecord[from];
-  }
-  const required = record.required;
-  if (Array.isArray(required)) {
-    record.required = required.map((value) => (value === from ? to : value));
-  }
-  return record;
-}
-
-function stripSchemaProperty(schema: unknown, property: string): void {
-  if (Array.isArray(schema)) {
-    for (const item of schema) stripSchemaProperty(item, property);
-    return;
-  }
-  if (!schema || typeof schema !== "object") return;
-  const record = schema as Record<string, unknown>;
-  const properties = record.properties;
-  if (properties && typeof properties === "object") {
-    delete (properties as Record<string, unknown>)[property];
-  }
-  const required = record.required;
-  if (Array.isArray(required)) {
-    record.required = required.filter((value) => value !== property);
-  }
-  for (const value of Object.values(record)) stripSchemaProperty(value, property);
+/** Executor-owned failures in the document tools' own result protocol. */
+function documentExecutionError(command: (error: ToolExecutionError) => AgentEditResultCommand) {
+  return (error: ToolExecutionError) =>
+    modelResult({
+      command: command(error),
+      status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
+      payload: { message: error.message },
+    });
 }
 
 export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
@@ -229,17 +184,38 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
+        name: "read",
+        description:
+          "Read a document, or part of it. `path` is a document path or context URI; a bare path means `manuscript://`. Append `#heading-slug` to target one section. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
+        inputSchema: modelToolSchema(ReadToolInputSchema),
+      },
+      input: ReadToolInputSchema,
+      execution: { type: "server", handler: handlers.read },
+      documentText: readDocumentText,
+      historyPreview: readHistoryPreview,
+      // Reads run in call order with writes, so a read after a write sees it.
+      sequential: true,
+      timeoutMs: 30_000,
+      formatExecutionError: documentExecutionError(() => "read"),
+    },
+    {
+      source: "core",
+      definition: {
+        type: "function",
         name: "write",
         description:
-          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the user.",
-        inputSchema: writeToolInputSchema(),
+          "Change documents. `path` is the document the command creates or changes: a document path or context URI, optionally with `#heading-slug` for one section. `from` is always the source. In a draft-mode Work your changes go to the draft, except `scratch://`, which is always edited directly. `copy` copies a whole document.",
+        inputSchema: modelToolSchema(WriteToolInputSchema),
       },
+      input: WriteToolInputSchema,
       execution: { type: "server", handler: handlers.write },
       documentText: writeDocumentText,
       historyPreview: writeHistoryPreview,
       sequential: true,
       timeoutMs: 30_000,
-      formatExecutionError: formatWriteExecutionError,
+      formatExecutionError: documentExecutionError((error) =>
+        agentEditResultCommand(error.arguments),
+      ),
     },
     {
       source: "core",

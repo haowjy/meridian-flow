@@ -65,7 +65,7 @@ describe("applyInvocationPatch", () => {
     });
     expect(result.tools).toEqual([]);
     const policy = projectToolPolicy(result);
-    expect(policy.writeCommands).toContain("replace");
+    expect(policy.tools.has("write")).toBe(true);
     expect(policy.tools.has("spawn")).toBe(true);
   });
 
@@ -126,9 +126,9 @@ describe("applyInvocationPatch", () => {
       packageRevisionId,
     });
     const deniedPolicy = projectToolPolicy(denied);
-    expect(deniedPolicy.tools.has("write")).toBe(true);
+    expect(deniedPolicy.tools.has("read")).toBe(true);
+    expect(deniedPolicy.tools.has("write")).toBe(false);
     expect(deniedPolicy.tools.has("ask_user")).toBe(false);
-    expect(deniedPolicy.writeCommands).not.toContain("replace");
     expect(deniedPolicy.tools.has("ls")).toBe(true);
     expect(deniedPolicy.tools.has("search")).toBe(true);
 
@@ -142,7 +142,7 @@ describe("applyInvocationPatch", () => {
     const allowedPolicy = projectToolPolicy(allowed);
     expect(allowedPolicy.tools.has("ls")).toBe(true);
     expect(allowedPolicy.tools.has("ask_user")).toBe(false);
-    expect(allowedPolicy.writeCommands).not.toContain("replace");
+    expect(allowedPolicy.tools.has("write")).toBe(false);
   });
 
   it("patches each skills list independently without disturbing the other", async () => {

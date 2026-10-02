@@ -22,7 +22,7 @@ import {
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
+import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
   errorResponse,
@@ -69,7 +69,7 @@ export function createWriteCommands(deps: {
   return { read, create, mutate };
 
   async function read(
-    command: Extract<WriteCommand, { command: "read" }>,
+    command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -84,7 +84,7 @@ export function createWriteCommands(deps: {
       session,
       address.documentId,
       runtime,
-      command.command,
+      "read",
       { filePath: address.filePath },
     );
     if (isInternalWriteResult(restored)) {
@@ -219,7 +219,7 @@ export function createWriteCommands(deps: {
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
         replacement.length === 0
           ? {
-              command: "delete",
+              command: "remove",
               documentAddress: address,
               in: [1, existingBlocks.length],
             }
@@ -382,7 +382,7 @@ export function createWriteCommands(deps: {
   }
 
   async function mutate(
-    command: Extract<WriteCommand, { command: "insert" | "replace" | "delete" }>,
+    command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {

@@ -13,7 +13,7 @@ describe("response committer", () => {
       { onResponseCommitterTransition: (event) => transitions.push(event) },
     );
     const responseId = "response-deferred-close";
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       { ...context, responseId, turnId: "turn-deferred-close" },
@@ -37,7 +37,7 @@ describe("response committer", () => {
       { onResponseCommitterTransition: (event) => transitions.push(event) },
     );
     const responseId = "response-publish-close";
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       { ...context, responseId, turnId: "turn-publish-close" },
@@ -59,8 +59,8 @@ describe("response committer", () => {
   it("commits a multi-document thread-peer response in one journal batch", async () => {
     const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "Beta." });
     const responseId = "response-multi-thread-peer";
-    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
-    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    await ctx.core.read({ file: "alpha.md" }, context);
+    await ctx.core.read({ file: "beta.md" }, context);
     for (const file of ["alpha.md", "beta.md"]) {
       await ctx.core.write(
         { command: "insert", file, content: "Tail." },
@@ -100,7 +100,7 @@ describe("response committer", () => {
       turnId: "turn-durable-projection-recovery-failure",
       responseId,
     };
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Durable words." },
       responseContext,
@@ -127,7 +127,7 @@ describe("response committer", () => {
 
     ctx.coordinator.failWith(undefined);
     recover.mockImplementation(originalRecover);
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     expect(recover).toHaveBeenCalledTimes(2);
   });
 
@@ -135,7 +135,7 @@ describe("response committer", () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-stage-during-commit";
     const responseContext = { ...context, turnId: "turn-stage-during-commit", responseId };
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       responseContext,
@@ -170,7 +170,7 @@ describe("response committer", () => {
     );
     const responseId = "response-drop-during-append";
     const responseContext = { ...context, turnId: "turn-drop-during-append", responseId };
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       responseContext,
@@ -218,7 +218,7 @@ describe("response committer", () => {
       responseId: "response-observer-throw",
     };
 
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       responseContext,
@@ -274,7 +274,7 @@ describe("response committer", () => {
       responseId,
     };
 
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       responseContext,

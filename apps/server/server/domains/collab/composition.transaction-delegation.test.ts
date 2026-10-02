@@ -114,6 +114,7 @@ describe("thread-peer response transaction delegation", () => {
       stagedCreates: { committed: [], discarded: [] },
     };
     const threadCore = {
+      read: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
       write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
       commitResponse: vi.fn(async () => {
         durable.push("document");
@@ -138,8 +139,8 @@ describe("thread-peer response transaction delegation", () => {
         }
       },
     });
-    await core.write(
-      { command: "read", file: "alpha.md" },
+    await core.read(
+      { file: "alpha.md" },
       {
         threadId: THREAD_ID,
         sessionId: THREAD_ID,
@@ -189,6 +190,7 @@ describe("thread-peer response transaction delegation", () => {
       stagedCreates: { committed: [], discarded: [] },
     }));
     const threadCore = {
+      read: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
       write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
       rollbackResponse: threadRollback,
       hasResponseDocument: vi.fn(() => false),
@@ -207,8 +209,8 @@ describe("thread-peer response transaction delegation", () => {
       commitThreadResponseAtomically: async (operation) => operation(),
     });
     const responseId = "response-rollback";
-    await core.write(
-      { command: "read", file: "alpha.md" },
+    await core.read(
+      { file: "alpha.md" },
       { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-rollback", responseId },
     );
 

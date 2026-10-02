@@ -17,6 +17,7 @@ function allRegistrations(): ToolRegistration[] {
   const handler = async () => "";
   return [
     ...createCoreToolRegistrations({
+      read: handler,
       write: handler,
       work: handler,
       ls: handler,
@@ -52,6 +53,7 @@ describe("model tool schemas", () => {
   it("snapshots required fields from the input side of every Zod-backed tool schema", () => {
     const handler = async () => "";
     const core = createCoreToolRegistrations({
+      read: handler,
       write: handler,
       work: handler,
       ls: handler,
@@ -66,7 +68,7 @@ describe("model tool schemas", () => {
     });
     const definitions = [...core, ...inspection]
       .filter(({ definition }) =>
-        ["write", "work", "thread_ls", "thread_history"].includes(definition.name),
+        ["read", "write", "work", "thread_ls", "thread_history"].includes(definition.name),
       )
       .map(({ definition }) => ({
         name: definition.name,
@@ -76,15 +78,20 @@ describe("model tool schemas", () => {
     expect(definitions).toMatchInlineSnapshot(`
       [
         {
+          "name": "read",
+          "required": [
+            "$: path",
+          ],
+        },
+        {
           "name": "write",
           "required": [
-            "$.oneOf[0]: path, command",
-            "$.oneOf[1]: path, command",
-            "$.oneOf[2]: path, command, content",
-            "$.oneOf[3]: path, command, content",
-            "$.oneOf[4]: path, command, in",
-            "$.oneOf[5]: path, command",
-            "$.oneOf[6]: path, command",
+            "$.oneOf[0]: command, path",
+            "$.oneOf[1]: command, path, content",
+            "$.oneOf[2]: command, path, content",
+            "$.oneOf[3]: command, path",
+            "$.oneOf[4]: command, path",
+            "$.oneOf[5]: command, path",
           ],
         },
         {
@@ -115,6 +122,7 @@ describe("model tool schemas", () => {
   it("removes Zod metadata that adds no model constraint", () => {
     const handler = async () => "";
     const schemas = createCoreToolRegistrations({
+      read: handler,
       write: handler,
       work: handler,
       ls: handler,
@@ -127,15 +135,9 @@ describe("model tool schemas", () => {
   });
 
   it("publishes exactly the generator's projection of every registration's input", () => {
-    const registrations = allRegistrations();
-    const withInput = registrations.filter((registration) => registration.input);
-    // Phase 2 migrates write, the last registration without an input contract.
-    expect(
-      registrations.filter((registration) => !registration.input).map((r) => r.definition.name),
-    ).toEqual(["write"]);
-    for (const registration of withInput) {
+    for (const registration of allRegistrations()) {
       expect(registration.definition.inputSchema, registration.definition.name).toEqual(
-        modelToolSchema(registration.input as never),
+        modelToolSchema(registration.input),
       );
     }
   });
@@ -168,6 +170,7 @@ describe("model tool schemas", () => {
     );
     expect(definitions.map(({ name }) => name)).toMatchInlineSnapshot(`
       [
+        "read",
         "write",
         "work",
         "ls",
@@ -180,6 +183,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`12338`);
+    expect(characters).toMatchInlineSnapshot(`12631`);
   });
 });

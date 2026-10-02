@@ -8,6 +8,7 @@ const CRITIC_MAP = { edit: "deny" } as const;
 
 const handler: CoreToolHandlers["write"] = async () => ({});
 const handlers: CoreToolHandlers = {
+  read: handler,
   write: handler,
   work: handler,
   ls: handler,
@@ -15,98 +16,72 @@ const handlers: CoreToolHandlers = {
   ask_user: handler,
 };
 
-function advertisedWrite(policy: ReturnType<typeof projectToolPolicy>) {
-  const registration = createCoreToolRegistrations(handlers).find(
-    ({ definition }) => definition.type === "function" && definition.name === "write",
+function coreDefinitions() {
+  return createCoreToolRegistrations(handlers).map(({ definition }) => definition);
+}
+
+function advertisedNames(policy: ReturnType<typeof projectToolPolicy>): string[] {
+  return advertiseTools(coreDefinitions(), policy).map((tool) =>
+    tool.type === "function" ? tool.name : tool.kind,
   );
-  if (registration?.definition.type !== "function") {
-    throw new Error("write registration is missing");
-  }
-  const [advertised] = advertiseTools([registration.definition], policy);
-  if (advertised?.type !== "function") throw new Error("write was not advertised");
-  return { base: registration.definition, advertised };
 }
 
 describe("permissionGateFromToolPolicy", () => {
   const criticGate = () => permissionGateFromToolPolicy(projectToolPolicy({ tools: CRITIC_MAP }));
 
-  it("allows universal read commands", () => {
-    expect(criticGate().check("write", { command: "read" })).toEqual({ allowed: true });
-  });
-
-  it("treats malformed/unknown commands as invalid arguments", () => {
-    for (const input of [{}, { command: 4 }, { command: "read" }]) {
-      const result = criticGate().check("write", input);
-      if (input.command === "read") continue;
-      expect(result).toMatchObject({ allowed: false, kind: "invalid_arguments" });
-    }
-    expect(criticGate().check("write", {})).toEqual({
-      allowed: false,
-      kind: "invalid_arguments",
-      reason: 'Invalid arguments for write:\n- command: required; expected "read"',
-      issues: [{ path: "command", message: 'required; expected "read"' }],
-    });
-    expect(criticGate().check("write", { command: "read" })).toEqual({ allowed: true });
-    expect(criticGate().check("write", { command: "bogus" })).toMatchObject({
-      allowed: false,
-      kind: "invalid_arguments",
-      issues: [{ path: "command", message: 'expected "read", got "bogus"' }],
-    });
-  });
-
-  it("denies each mutation by edit policy while rejecting retired tool names", () => {
-    for (const command of ["create", "insert", "replace", "delete", "undo", "redo"]) {
-      expect(criticGate().check("write", { command })).toMatchObject({
+  it("refuses every write for an agent without edit and allows read", () => {
+    for (const input of [{ command: "create" }, { command: "replace" }, { command: "undo" }, {}]) {
+      expect(criticGate().check("write", input)).toEqual({
         allowed: false,
         kind: "permission_denied",
+        reason: 'Tool "write" is not enabled.',
       });
     }
-    expect(criticGate().check("read", { command: "read" })).toMatchObject({
+    expect(criticGate().check("read", { path: "chapter.md" })).toEqual({ allowed: true });
+  });
+
+  it("narrows Work commands by edit and reports malformed ones as invalid arguments", () => {
+    expect(criticGate().check("work", { command: "show", work: "arc" })).toEqual({
+      allowed: true,
+    });
+    expect(criticGate().check("work", { command: "archive", work: "arc" })).toMatchObject({
       allowed: false,
       kind: "permission_denied",
+    });
+    expect(criticGate().check("work", {})).toMatchObject({
+      allowed: false,
+      kind: "invalid_arguments",
+      issues: [{ path: "command", message: 'required; expected "list", "show" or "switch"' }],
     });
   });
 });
 
-describe("write tool policy advertisement", () => {
-  // Per-command guidance lives on each command's schema branch, so narrowing the
-  // schema is what keeps a read-only agent from seeing mutation guidance.
-  it("narrows the read-only schema and its guidance without mutating the registration", () => {
-    const { base, advertised } = advertisedWrite(projectToolPolicy({ tools: CRITIC_MAP }));
-    const schema = JSON.stringify(advertised.inputSchema);
-    expect(schema).toContain("Read a document");
-    expect(schema).not.toContain('"create"');
-    expect(schema).not.toContain("entire content");
-    expect(schema).not.toContain("Undo this thread");
-    expect(advertised.description).toBe(base.description);
-    expect(JSON.stringify(base.inputSchema)).toContain("entire content");
+describe("tool policy advertisement", () => {
+  it("advertises write only to agents with edit and leaves the document tools untouched", () => {
+    expect(advertisedNames(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual([
+      "read",
+      "work",
+      "ls",
+      "search",
+    ]);
+    const writer = advertiseTools(
+      coreDefinitions(),
+      projectToolPolicy({ tools: { edit: "allow" } }),
+    );
+    for (const name of ["read", "write"]) {
+      const advertised = writer.find((tool) => tool.type === "function" && tool.name === name);
+      const base = coreDefinitions().find((tool) => tool.type === "function" && tool.name === name);
+      expect(advertised).toEqual(base);
+    }
   });
 
-  it("keeps only the permitted commands' guidance", () => {
-    const editPolicy = projectToolPolicy({ tools: { edit: "allow" } });
-    const editor = JSON.stringify(advertisedWrite(editPolicy).advertised.inputSchema);
-    expect(editor).toContain("entire content");
-    expect(editor).toContain("Undo this thread");
-
-    const subset = { ...editPolicy, writeCommands: new Set(["read", "replace"] as const) };
-    const schema = JSON.stringify(advertisedWrite(subset).advertised.inputSchema);
-    expect(schema).toContain("Exact text to replace");
-    expect(schema).not.toContain("entire content");
-    expect(schema).not.toContain("Undo this thread");
-  });
-
-  it("leaves other tools and the base registration untouched", () => {
-    const baseTools = createCoreToolRegistrations(handlers).map(({ definition }) => definition);
-    const critic = advertiseTools(baseTools, projectToolPolicy({ tools: CRITIC_MAP }));
-    const find = (tools: typeof critic, name: string) => {
-      const tool = tools.find(
-        (candidate) => candidate.type === "function" && candidate.name === name,
-      );
-      if (tool?.type !== "function") throw new Error(`missing ${name}`);
-      return tool;
-    };
-    expect(find(critic, "ls")).toEqual(find(baseTools, "ls"));
-    expect(find(critic, "write").inputSchema).not.toEqual(find(baseTools, "write").inputSchema);
-    expect(JSON.stringify(find(baseTools, "write").inputSchema)).toContain('"create"');
+  it("narrows the Work schema for an agent without edit", () => {
+    const work = advertiseTools(coreDefinitions(), projectToolPolicy({ tools: CRITIC_MAP })).find(
+      (tool) => tool.type === "function" && tool.name === "work",
+    );
+    if (work?.type !== "function") throw new Error("work was not advertised");
+    const schema = JSON.stringify(work.inputSchema);
+    expect(schema).toContain('"switch"');
+    expect(schema).not.toContain('"archive"');
   });
 });

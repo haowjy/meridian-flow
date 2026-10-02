@@ -661,16 +661,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     // The following staged write must capture that row as a pending watermark.
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseId: undefined },
-      );
+      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "beta.md", documentId: BETA_ID },
-        { ...context, responseId: undefined },
-      );
+      .read({ file: "beta.md", documentId: BETA_ID }, { ...context, responseId: undefined });
     for (const documentId of [ALPHA_ID, BETA_ID]) {
       const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
@@ -746,9 +740,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       responseId,
       createdDocument: false,
     };
-    await collab
-      .agentEdit()
-      .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
     await db.update(schema.documentBranches).set({ pushPolicy: "manual" });
     if (writerEditBeforeWrite) {
       await db.insert(schema.modelResponses).values({
@@ -831,9 +823,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId };
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
-    await collab
-      .agentEdit()
-      .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before destructive push");
@@ -890,9 +880,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       turnId: TURN_ID,
       responseId: input.responseId,
     };
-    await collab
-      .agentEdit()
-      .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, context);
+    await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
@@ -957,10 +945,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     };
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseId: undefined },
-      );
+      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
@@ -1073,8 +1058,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     source.destroy();
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      .read(
+        { file: "alpha.md", documentId: ALPHA_ID },
         { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId: undefined },
       );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -1117,8 +1102,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      .read(
+        { file: "alpha.md", documentId: ALPHA_ID },
         { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId },
       );
   }
@@ -1397,8 +1382,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         });
       }
     });
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
@@ -1563,8 +1548,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         seq: 0,
       });
     });
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
@@ -1585,8 +1570,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      .read(
+        { file: "alpha.md", documentId: ALPHA_ID },
         { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID },
       );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);

@@ -17,7 +17,7 @@ describe("validateInvocationAuthority", () => {
     const caller = config({ tools: CRITIC_MAP });
     const reasons = validateInvocationAuthority({ baseline, patched, caller });
     expect(reasons.length).toBeGreaterThan(0);
-    expect(reasons.some((reason) => reason.includes("Write command"))).toBe(true);
+    expect(reasons).toContain('Tool "write" is not enabled for the caller.');
   });
 
   it("does not re-validate a named child's own definition-granted tools", () => {

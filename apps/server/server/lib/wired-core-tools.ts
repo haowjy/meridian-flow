@@ -6,18 +6,20 @@
 import type {
   AgentEditResultCommand,
   ConcurrentEditInfo,
+  DocumentCommandName,
+  ReadToolInput,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
   WriteCommand,
   WriteErrorStatus,
+  WriteOutcome,
+  WriteToolInput,
 } from "@meridian/agent-edit/integration";
 import {
-  agentEditResultCommand,
   type DocumentAddress,
   formatDocumentFile,
   modelResult,
   splitDocumentFile,
-  WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
 import {
   type AskUserToolInput,
@@ -112,12 +114,6 @@ type WriteToolErrorOutput = {
   isError: true;
   output: ReturnType<typeof modelResult>;
 };
-type ModelWriteCommand = {
-  [Command in WriteCommand as Command["command"]]: Omit<Command, "file" | "documentId"> & {
-    path: string;
-  };
-}[WriteCommand["command"]];
-
 type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?: boolean };
 
 type ModelWork = Pick<
@@ -166,15 +162,6 @@ export type ResponseWriteLifecycleCommitResult =
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
-
-const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
-  "create",
-  "insert",
-  "replace",
-  "delete",
-  "undo",
-  "redo",
-]);
 
 function toolError(
   error: ContextError | ({ message: string; code?: string } & Record<string, unknown>),
@@ -319,40 +306,6 @@ function recordTouchInBackground(
   });
 }
 
-function asRecord(input: unknown): Record<string, unknown> | null {
-  return typeof input === "object" && input !== null && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : null;
-}
-
-function parseWriteToolInput(input: unknown): ModelWriteCommand | WriteToolErrorOutput {
-  const record = asRecord(input);
-  const resultCommand = agentEditResultCommand(input);
-  if (!record) return writeToolError(resultCommand, "write input must be an object");
-
-  const { path, ...packageInput } = record;
-  if (typeof path !== "string" || path.length === 0) {
-    return writeToolError(resultCommand, "path is required");
-  }
-
-  const parsed = WriteCommandSchema.safeParse({ ...packageInput, file: path });
-  if (!parsed.success) return writeToolError(resultCommand, writeSchemaError(parsed.error));
-
-  const { file: _file, documentId: _documentId, tool_use_id: _toolUseId, ...command } = parsed.data;
-  return { ...command, path } as ModelWriteCommand;
-}
-
-function writeSchemaError(error: {
-  issues: Array<{ path: PropertyKey[]; message: string }>;
-}): string {
-  return error.issues
-    .map((issue) => {
-      const path = issue.path.map((part) => (part === "file" ? "path" : part)).join(".");
-      return path ? `${path}: ${issue.message}` : issue.message;
-    })
-    .join("; ");
-}
-
 function receiptState(work: Work): WorkReceiptState {
   return {
     name: work.name,
@@ -388,28 +341,28 @@ function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorO
   );
 }
 
+/** Resolves a model path to its tracked document; only `create` may make one. */
 async function resolveDocumentAddress(
   context: ResolvedModelContextPort,
-  input: ModelWriteCommand,
+  command: DocumentCommandName,
+  path: string,
   options: { deferTrackedDocumentSync?: boolean } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
-  const { filePath: basePath, fragment } = splitDocumentFile(input.path);
-  if (input.command === "create") {
-    if (fragment)
-      return writeToolError(input.command, "create does not accept a #fragment in path");
+  const { filePath: basePath, fragment } = splitDocumentFile(path);
+  if (command === "create") {
+    if (fragment) return writeToolError(command, "create does not accept a #fragment in path");
     const ensured = await port.ensureTrackedDocument(
       basePath,
       options.deferTrackedDocumentSync ? { deferDocumentSync: true } : undefined,
     );
     if (!ensured.ok) {
-      return writeToolError(input.command, modelContextErrorMessage(ensured.error, context));
+      return writeToolError(command, modelContextErrorMessage(ensured.error, context));
     }
     return {
       documentId: ensured.value.documentId,
       uri: ensured.value.uri,
       filePath: basePath,
-      ...(fragment === undefined ? {} : { fragment }),
       created: ensured.value.created,
     };
   }
@@ -417,16 +370,16 @@ async function resolveDocumentAddress(
   const ref = await port.stat(basePath);
   if (!ref.ok) {
     return writeToolError(
-      input.command,
+      command,
       modelContextErrorMessage(ref.error, context),
       ref.error.code === "not_found" ? "document_not_found" : "invalid_write",
     );
   }
   if (ref.value.kind !== "tracked") {
-    return writeToolError(input.command, `Cannot ${input.command} binary file: ${input.path}`);
+    return writeToolError(command, `Cannot ${command} binary file: ${path}`);
   }
   if (!ref.value.documentId) {
-    return writeToolError(input.command, `Document id missing for ${input.path}`);
+    return writeToolError(command, `Document id missing for ${path}`);
   }
   return {
     documentId: ref.value.documentId,
@@ -474,7 +427,7 @@ async function deleteCreatedTrackedDocument(input: {
 }
 
 function buildAgentWriteCommand(
-  input: ModelWriteCommand,
+  input: WriteToolInput,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
 ): WriteCommand {
@@ -484,7 +437,38 @@ function buildAgentWriteCommand(
     documentId: address.documentId,
     file: formatDocumentFile(address),
     tool_use_id: toolUseId,
-  } as WriteCommand;
+  };
+}
+
+/** Which blocks a read renders, as the `read` tool's selector fields. */
+type ReadSelection = Pick<ReadToolInput, "in" | "around">;
+
+/**
+ * The one server read path (D18). The `read` tool's handler and reference
+ * loading both call it; nothing builds tool arguments to reach it.
+ */
+async function readDocument(
+  deps: Pick<ToolWiringDeps, "documentSync">,
+  execution: ThreadExecutionContext,
+  address: ResolvedDocumentAddress,
+  options: { selection?: ReadSelection; format?: ReadToolInput["format"] },
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
+): Promise<WriteOutcome> {
+  return deps.documentSync.agentEdit(execution).read(
+    {
+      ...options.selection,
+      ...(options.format ? { format: options.format } : {}),
+      file: formatDocumentFile(address),
+      documentId: address.documentId,
+    },
+    {
+      sessionId: ctx.threadId,
+      threadId: ctx.threadId,
+      turnId: ctx.turnId,
+      ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
+      ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
+    },
+  );
 }
 
 async function refreshProjectionAfterToolWrite(
@@ -607,7 +591,7 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
 }
 
-/** Reference loading uses the same context resolution and agent-edit read core as the write tool. */
+/** Reference loading resolves the mention and calls `readDocument`, as the `read` tool does. */
 export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
   return {
     async read(reference, ctx) {
@@ -617,8 +601,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
       const context = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in context)
         return { result: JSON.parse(JSON.stringify(context.output)), revision: null };
-      const command = { command: "read" as const, path: reference.uri, format: "auto" as const };
-      const address = await resolveDocumentAddress(context, command);
+      const address = await resolveDocumentAddress(context, "read", reference.uri);
       if (isToolError(address))
         return { result: JSON.parse(JSON.stringify(address.output)), revision: null };
       if (address.documentId !== reference.documentId) {
@@ -635,24 +618,44 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
           ),
         };
       }
-      const outcome = await deps.documentSync
-        .agentEdit(execution)
-        .write(buildAgentWriteCommand(command, address, undefined), {
-          sessionId: ctx.threadId,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-        });
+      const outcome = await readDocument(deps, execution, address, {}, ctx);
       if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
       return { result: JSON.parse(JSON.stringify(outcome.result)), revision: outcome.revision };
     },
   };
 }
 
-export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
-  const documentToolHandler = async (input: unknown, ctx: ToolHandlerContext) => {
-    const parsed = parseWriteToolInput(input);
-    if (isToolError(parsed)) return parsed;
+/** Host evidence for the document a `read` or `write` call touched. */
+function documentRevisionMetadata(address: ResolvedDocumentAddress, outcome: WriteOutcome) {
+  return {
+    documentRevisions: [
+      {
+        documentId: address.documentId,
+        uri: address.uri,
+        revision: outcome.revision,
+      } satisfies DocumentRevisionEvidence,
+    ],
+  };
+}
 
+export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
+  const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
+    const { path, format, ...selection } = input as ReadToolInput;
+    const execution = await resolveExecutionContext(deps, ctx.threadId);
+    if ("isError" in execution) return execution;
+    const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
+    if ("isError" in context) return writeToolError("read", context.output.message);
+    const address = await resolveDocumentAddress(context, "read", path);
+    if (isToolError(address)) return address;
+
+    const outcome = await readDocument(deps, execution, address, { selection, format }, ctx);
+    if (outcome.isError) return { isError: true, output: outcome.result };
+    recordTouchInBackground(deps, address.documentId, ctx);
+    return { output: outcome.result, metadata: documentRevisionMetadata(address, outcome) };
+  };
+
+  const writeHandler = async (input: unknown, ctx: ToolHandlerContext) => {
+    const parsed = input as WriteToolInput;
     const execution = await resolveExecutionContext(deps, ctx.threadId);
     if ("isError" in execution) return execution;
 
@@ -661,7 +664,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       return writeToolError(parsed.command, portOrError.output.message);
     }
 
-    const address = await resolveDocumentAddress(portOrError, parsed, {
+    const address = await resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
       deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
     });
     if (isToolError(address)) return address;
@@ -712,25 +715,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
+    // Undo and redo apply at once; every other write stages until the response commits.
     const stagedWrite =
-      ctx.responseId !== undefined &&
-      (parsed.command === "create" ||
-        parsed.command === "insert" ||
-        parsed.command === "replace" ||
-        parsed.command === "delete");
-    if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
-      await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
-    }
+      ctx.responseId !== undefined && parsed.command !== "undo" && parsed.command !== "redo";
+    if (!stagedWrite) await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
     return {
       output: outcome.result,
       metadata: {
-        documentRevisions: [
-          {
-            documentId: address.documentId,
-            uri: address.uri,
-            revision: outcome.revision,
-          } satisfies DocumentRevisionEvidence,
-        ],
+        ...documentRevisionMetadata(address, outcome),
         ...(stagedWrite
           ? {
               documentId: address.documentId,
@@ -744,7 +736,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   };
 
   return createCoreToolRegistrations({
-    write: documentToolHandler,
+    read: readHandler,
+    write: writeHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
       const command = input as WorkCommand;
       const thread = await deps.threads.findById(ctx.threadId);
