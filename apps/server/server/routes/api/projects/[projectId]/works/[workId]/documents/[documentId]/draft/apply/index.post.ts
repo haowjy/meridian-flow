@@ -25,8 +25,6 @@ export default defineEventHandler(async (event) => {
     userId: user.userId,
     signal: event.req.signal,
   });
-  scheduleDraftCatalogRefresh(app, projectId, (task) => {
-    event.waitUntil(new Promise<void>((resolve) => setImmediate(resolve)).then(task));
-  });
+  scheduleDraftCatalogRefresh(app, projectId, event.waitUntil.bind(event));
   return result;
 });

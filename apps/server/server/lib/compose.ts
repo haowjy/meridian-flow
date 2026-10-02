@@ -234,7 +234,7 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
-  contextCatalogRefresh?: ProjectDocumentCatalogRefreshPort;
+  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -1272,6 +1272,11 @@ export function createInMemoryAppServices(): AppServices {
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    contextCatalogRefresh: {
+      async refreshProjectDocuments() {
+        throw new Error("Project document catalog refresh is unavailable in memory");
+      },
+    },
     documentAddresses: {
       async resolve() {
         return { kind: "unavailable" };
