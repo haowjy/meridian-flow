@@ -32,7 +32,7 @@ behavior; schema-only stubs are not advertised.
 
 ## Permissions
 
-`loop/permissions/`: `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and command sets (`write`, `work`). `write` is always advertised with `read` and `diff`; existing `edit` policy adds or removes mutation commands. `advertiseTools` uses that same command set to narrow the schema, including its per-command descriptions, so denied-command instructions are not exposed. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free.
+`loop/permissions/`: `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and the `work` command set. `read` is always advertised; `write` only when the existing `edit` policy allows it (until file permissions replace this), and the gate refuses it otherwise. `edit` also adds or removes Work mutation commands, and `advertiseTools` narrows the `work` schema, including its per-command descriptions, to the same set. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free.
 
 ## Policy and cost
 
@@ -46,13 +46,15 @@ behavior; schema-only stubs are not advertised.
   [#601](https://github.com/haowjy/meridian-flow/issues/601)), even when an
   Agent's Mars policy allows it (`project-tool-policy.ts`). The interrupt
   runtime and the app's interrupt card remain; re-enabling is that one line.
-- The single document tool is `write` and every call requires an explicit
-  `command`. Baseline `write({ command: "read", path: "..." })` reads and
-  `write({ command: "diff" })` inspects the folded turn trail; these baseline
-  commands do not expand URI, object, Project, owner, or document authorization.
-  Diff additionally requires an owned Work draft, including the No Work row
-  when draft mode is active; otherwise it returns `work_required`. Neither
-  command changes Work binding or write mode.
+- Documents have two tools (D1): `read({ path, in?, around?, format? })` never
+  changes a document, and every `write` command (`create`, `insert`,
+  `replace`, `remove`, `undo`, `redo`) does. Both parse their zod `input` in the
+  executor; the handlers map `path` to the engine's `file`. `read` and the
+  reference reader share one `readDocument` (D18). Their handlers return the
+  typed agent-edit result, and the registration's `renderResult` makes the
+  model's text; the typed result is persisted beside it as `result` (D43).
+  Reading does not expand URI, object, Project, owner, or document
+  authorization, change Work binding, or change write mode.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
