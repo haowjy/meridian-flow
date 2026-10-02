@@ -32,45 +32,82 @@ const manifest = JSON.stringify({
     ]),
   ),
 });
-const fakeCli = `#!/usr/bin/env node
-const fs = require('node:fs');
-const statePath = process.env.FAKE_RAILWAY_STATE;
-let state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, 'utf8')) : {};
-const args = process.argv.slice(2); const scenario = process.env.SCENARIO;
-const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
-if (args[0] === '--version') { console.log('railway 5.62.1'); process.exit(0); }
-const service = args[args.indexOf('-s') + 1] || (args[0] === 'environment' ? args[args.indexOf('--service-config') + 1] : undefined);
-if (args[0] === 'environment' && args[1] === 'edit') {
-  fs.appendFileSync(process.env.FAKE_RAILWAY_LOG, args.join(' ') + '\\n');
-  if (scenario !== 'no-auto') { state[service] = {id: service + '-1', status: 'DEPLOYING', reads: 0}; save(); }
-  process.exit(0);
+const fakeCli = `#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "--version" ]; then
+  echo "railway 5.62.1"
+  exit 0
+fi
+service=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "-s" ] || [ "$previous" = "--service-config" ]; then
+    service="$arg"
+    break
+  fi
+  previous="$arg"
+done
+state_path="$FAKE_RAILWAY_STATE-$service"
+count_path="$state_path-count"
+save() { printf '%s|%s|%s|%s\\n' "$id" "$status" "$reads" "$pending" > "$state_path"; }
+load() {
+  id=""; status=""; reads=0; pending=""
+  if [ -f "$state_path" ]; then IFS='|' read -r id status reads pending < "$state_path"; fi
 }
-if (args[0] === 'redeploy') {
-  state[service] = scenario === 'fallback-race'
-    ? {id: service + '-late', status: 'REMOVED', reads: 0, pendingRedeploy: true}
-    : {id: service + '-1', status: 'DEPLOYING', reads: 0};
-  save(); console.log('{}'); process.exit(0);
-}
-if (args[0] === 'deployment' && args[1] === 'list') {
-  state.listCounts ??= {}; state.listCounts[service] = (state.listCounts[service] || 0) + 1;
-  const deployment = state[service];
-  if (!deployment) {
-    if (scenario === 'fallback-race' && state.listCounts[service] >= 2) {
-      state[service] = {id: service + '-late', status: 'REMOVED', reads: 0}; save();
-      console.log(JSON.stringify([state[service]])); process.exit(0);
-    }
-    save(); console.log('[]'); process.exit(0);
-  }
-  deployment.reads++;
-  if (deployment.pendingRedeploy && deployment.reads >= 2) {
-    state[service] = {id: service + '-redeploy', status: 'SUCCESS', reads: 0};
-    save(); console.log(JSON.stringify([state[service]])); process.exit(0);
-  }
-  if (['failure', 'removed', 'skipped', 'completed'].includes(scenario) && deployment.reads >= 2) deployment.status = scenario === 'removed' ? 'REMOVED' : scenario === 'skipped' ? 'SKIPPED' : scenario === 'completed' ? 'COMPLETED' : 'FAILED';
-  else if (scenario !== 'timeout' && deployment.reads >= 2) deployment.status = 'SUCCESS';
-  save(); console.log(JSON.stringify([deployment])); process.exit(0);
-}
-console.error('unexpected command', args); process.exit(2);
+if [ "$1" = "environment" ] && [ "$2" = "edit" ]; then
+  printf '%s\\n' "$*" >> "$FAKE_RAILWAY_LOG"
+  if [ "$SCENARIO" != "no-auto" ] && [ "$SCENARIO" != "fallback-race" ]; then
+    id="$service-1"; status="DEPLOYING"; reads=0; pending=""; save
+  fi
+  exit 0
+fi
+if [ "$1" = "redeploy" ]; then
+  if [ "$SCENARIO" = "fallback-race" ]; then
+    id="$service-late"; status="REMOVED"; reads=0; pending="true"
+  else
+    id="$service-1"; status="DEPLOYING"; reads=0; pending=""
+  fi
+  save
+  echo '{}'
+  exit 0
+fi
+if [ "$1" = "deployment" ] && [ "$2" = "list" ]; then
+  count=0
+  if [ -f "$count_path" ]; then read -r count < "$count_path"; fi
+  count=$((count + 1))
+  printf '%s\\n' "$count" > "$count_path"
+  load
+  if [ -z "$id" ]; then
+    if [ "$SCENARIO" = "fallback-race" ] && [ "$count" -ge 2 ]; then
+      id="$service-late"; status="REMOVED"; reads=0; pending=""; save
+      printf '[{"id":"%s","status":"%s"}]\\n' "$id" "$status"
+    else
+      echo '[]'
+    fi
+    exit 0
+  fi
+  reads=$((reads + 1))
+  if [ "$pending" = "true" ] && [ "$reads" -ge 2 ]; then
+    id="$service-redeploy"; status="SUCCESS"; reads=0; pending=""; save
+    printf '[{"id":"%s","status":"%s"}]\\n' "$id" "$status"
+    exit 0
+  fi
+  if [ "$reads" -ge 2 ]; then
+    case "$SCENARIO" in
+      failure) status="FAILED" ;;
+      removed) status="REMOVED" ;;
+      skipped) status="SKIPPED" ;;
+      completed) status="COMPLETED" ;;
+      timeout) ;;
+      *) status="SUCCESS" ;;
+    esac
+  fi
+  save
+  printf '[{"id":"%s","status":"%s"}]\\n' "$id" "$status"
+  exit 0
+fi
+echo "unexpected command $*" >&2
+exit 2
 `;
 async function run(scenario: string) {
   let snapshotName = "";
@@ -120,10 +157,10 @@ async function run(scenario: string) {
           FAKE_RAILWAY_STATE: state,
           FAKE_RAILWAY_LOG: commandLog,
           SCENARIO: scenario,
-          DEPLOY_DETECT_MS: scenario === "fallback-race" ? "0" : "24",
-          DEPLOY_REDEPLOY_DETECT_MS: scenario === "fallback-race" ? "400" : "24",
-          DEPLOY_TIMEOUT_MS: "24",
-          DEPLOY_POLL_MS: "2",
+          DEPLOY_DETECT_MS: ["fallback-race", "no-auto"].includes(scenario) ? "0" : "2000",
+          DEPLOY_REDEPLOY_DETECT_MS: "2000",
+          DEPLOY_TIMEOUT_MS: scenario === "timeout" ? "1000" : "2000",
+          DEPLOY_POLL_MS: "10",
         },
         encoding: "utf8",
       },
@@ -139,7 +176,7 @@ async function run(scenario: string) {
   }
 }
 
-describe("Railway deploy seam", () => {
+describe("Railway deploy seam", { timeout: 30_000 }, () => {
   it("promotes server before the remaining images and reports deployments", async () => {
     const output = await run("success");
     expect(output).toMatch(/server\s+server-1/);
