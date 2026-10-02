@@ -249,6 +249,13 @@ export function defineThreadLsContract(
       expect(secondNames).toHaveLength(10);
       expect(new Set([...(text.match(/child-\d+/g) ?? []), ...secondNames]).size).toBe(60);
     });
+    it("keeps the requested depth on the same-ref continuation", async () => {
+      const f = await fixture();
+      for (let i = 0; i < 51; i++) await f.child(f.root, `child-${i}`);
+      const text = (await f.read(f.root, { depth: 2 })) as string;
+      const call = JSON.parse((text.split("…older: thread_ls(")[1] as string).slice(0, -1));
+      expect(call).toEqual({ ref: f.root.ref, depth: 2, cursor: expect.any(String) });
+    });
     it("keeps a trashed hop in the path and inherited-cut forks under the owner", async () => {
       const f = await fixture();
       const fork = await f.fork();
