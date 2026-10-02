@@ -229,6 +229,22 @@ function documentFailureDocumentName(tool: ToolView): string | null {
   return documentDisplayName(path);
 }
 
+/**
+ * A write refused because the model last read another version of the document
+ * (live, or a Work's draft). It moved nothing and the model reads again on its
+ * own, so the writer sees a routine step rather than a failure.
+ */
+export function isRereadPause(tool: ToolView): boolean {
+  return (
+    tool.isError && tool.toolName === "write" && documentFailureStatus(tool) === "read_required"
+  );
+}
+
+/** Whether the row reports a failure to the writer. */
+export function toolRowFailed(tool: ToolView): boolean {
+  return tool.isError && !isRereadPause(tool);
+}
+
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
 export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
@@ -269,6 +285,10 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
 
+  if (isRereadPause(tool)) {
+    const verb = t`Paused to reread`;
+    return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
+  }
   if (tool.isError) {
     const verb = descriptor.failureVerb(writeMode);
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
@@ -291,6 +311,8 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 };
 
 function documentExpand(tool: ToolView): ToolExpand | null {
+  // The next rows (the read, then the retried write) say what happened.
+  if (isRereadPause(tool)) return null;
   if (tool.isError) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>

@@ -2813,6 +2813,10 @@ msgstr ""
 msgid "Paste"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Paused to reread"
+msgstr ""
+
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
 msgstr ""
