@@ -69,6 +69,9 @@ jobs:
         run: |
           gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
           node tools/deploy/manifest.ts validate "$RUNNER_TEMP/release/release-manifest.json" "v${VERSION}"
+          if [[ "${{ inputs.environment }}" == production ]]; then
+            node tools/deploy/promotion.ts require-staging "v${VERSION}" "$RUNNER_TEMP/release/release-manifest.json"
+          fi
       - name: Install pinned Railway CLI
         run: pnpm add --global "@railway/cli@$(node tools/deploy/release-identity.ts railway-version)"
       - name: Deploy digest-pinned images
@@ -104,10 +107,6 @@ jobs:
           MANIFEST_PATH: ${{ runner.temp }}/release/release-manifest.json
         run: |
           tag="v${VERSION}"
-          sha=$(node tools/deploy/release-commit.ts "$tag")
-          manifest_hash=unavailable
-          [[ ! -f "$MANIFEST_PATH" ]] || manifest_hash=$(node tools/deploy/manifest.ts sha256 "$MANIFEST_PATH")
-          state=failure
-          description="${ENVIRONMENT} deploy failed manifest-sha256=${manifest_hash}"
-          if [[ "$DEPLOY_OUTCOME" == success && "$SMOKE_OUTCOME" == success ]]; then state=success; description="${ENVIRONMENT} deploy and smoke passed manifest-sha256=${manifest_hash}"; fi
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state="$state" -f context="deploy/$ENVIRONMENT" -f description="$description" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          outcome=failure
+          if [[ "$DEPLOY_OUTCOME" == success && "$SMOKE_OUTCOME" == success ]]; then outcome=success; fi
+          node tools/deploy/promotion.ts record "$ENVIRONMENT" "$tag" "$MANIFEST_PATH" "$outcome"
