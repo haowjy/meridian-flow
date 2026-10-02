@@ -37,7 +37,9 @@ clears the reservation.
 
 A Work-scoped location (Scratch, Uploads) names its Work by id. A named Work
 also carries its slug; No Work carries its row id and no slug, which is how the
-catalog spells `@/`. Catalog installation, canonical refresh and
+catalog spells `@/`. `ResourceWorkAuthority` makes this a type rule: a Work
+id comes with its slug, `null` only for the No Work row, so a named Work's
+location cannot drop it. Catalog installation, canonical refresh and
 `authorityMatches` accept both shapes. Namespace requests do not: `requestFor`
 returns no request for a source or destination with a Work id and no slug, and
 the records policy rejects such an attempt. So a No Work Scratch document
