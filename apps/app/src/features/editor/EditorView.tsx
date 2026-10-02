@@ -16,6 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
@@ -32,7 +33,7 @@ import {
 } from "react";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
-import { linkAheadAddress } from "@/core/editor/links";
+import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -344,13 +345,24 @@ function ActiveSessionEditorView({
   const atReferenceCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
       return null;
-    const linkAhead = (name: string) => {
-      const uri = linkAheadAddress(holderUri, name);
+    const linkAhead = (name: string, folders?: readonly string[]) => {
+      const uri = linkAheadAddress(holderUri, name, folders);
       return uri && !linkableDocuments.documents.some((document) => document.uri === uri)
         ? { uri }
         : null;
     };
-    return { ...sharedReferenceCatalog, holderUri, linkAhead };
+    // What a pasted `[[Name]]` may name: the documents in Manuscript, KB,
+    // User, and this Work's Scratch, the areas a link names a document in
+    // (Uploads hold files, Unfiled holds untitled drafts). An index still
+    // loading converts nothing, rather than turning every link dashed.
+    const linkTargets = () =>
+      linkableDocuments.complete
+        ? linkableDocuments.documents.flatMap((document) => {
+            const parsed = parseContextUri(document.uri);
+            return parsed.ok && isCreatableLinkScheme(parsed.value.scheme) ? [document.uri] : [];
+          })
+        : null;
+    return { ...sharedReferenceCatalog, holderUri, linkAhead, linkTargets };
   }, [
     effectiveEditable,
     holderUri,
