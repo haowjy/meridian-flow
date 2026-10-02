@@ -13,7 +13,8 @@ import type {
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
-import { renderHistoryItem } from "../spawn/history-item.js";
+import { describeTurn } from "../spawn/history-item.js";
+import { renderHistoryResult } from "../spawn/history-result.js";
 import { listReadableThreads } from "../spawn/thread-ls.js";
 import { createToolRegistry } from "../tools/index.js";
 import { createInspectionToolRegistrations } from "../tools/inspection-tools.js";
@@ -125,24 +126,26 @@ describe("conversation summarizer", () => {
     handoff.input.incomingAgentName = "Editor";
     await handoff.service.summarize(handoff.input);
 
-    const history = renderHistoryItem({
-      turn: {
-        id: "turn",
-        role: "user",
-        origin: "writer",
-        status: "complete",
-        position: 18,
-        createdAt: "2026-01-02T03:04:05.000Z",
-      } as Turn,
-      block: {
-        turnId: "turn",
-        blockType: "text",
-        sequence: 0,
-        textContent: "Continue the chapter.",
-      } as Block,
-      include: new Set(),
-      registry: createToolRegistry(),
-      toolPairs: new Map(),
+    const turn = {
+      id: "turn",
+      role: "user",
+      origin: "writer",
+      status: "complete",
+      position: 18,
+      createdAt: "2026-01-02T03:04:05.000Z",
+    } as Turn;
+    const history = renderHistoryResult({
+      ref: "c1",
+      view: "page",
+      turns: [
+        {
+          number: 18,
+          ...describeTurn(turn),
+          items: [{ kind: "message", text: "Continue the chapter.", tokens: 5 }],
+          hiddenCount: 0,
+        },
+      ],
+      inProgress: [],
     });
 
     const repos = createInMemoryRepositories();
@@ -175,12 +178,12 @@ describe("conversation summarizer", () => {
     const modelText = [
       onlyText(compaction.requests[0], compaction.requests[0].messages.length - 1),
       onlyText(handoff.requests[0], handoff.requests[0].messages.length - 1),
-      history?.text ?? "",
+      history,
       typeof listing === "string" ? listing : "",
       listingDescription ?? "",
     ].join("\n");
     expect(modelText).not.toMatch(/writer/i);
-    expect(history?.text).toContain("[18.0] user");
+    expect(history).toContain("[18] user");
   });
 
   it.each([

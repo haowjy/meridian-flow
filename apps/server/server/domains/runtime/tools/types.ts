@@ -242,7 +242,16 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
  */
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
-  historyPreview?: (input: JsonObject, output?: JsonValue) => string;
+  /**
+   * The call's brief arguments in `thread_history`. `result` is the typed result
+   * when the tool renders one, else its output.
+   */
+  historyPreview?: (input: JsonObject, result?: JsonValue) => string;
+  /**
+   * How `thread_history` shows a call by default. A `routine` call (inspection)
+   * is hidden and counted; any other call is one receipt line. Errors always show.
+   */
+  historyKind?: "routine" | ((input: JsonObject) => "routine" | "receipt");
   /**
    * Provenance of the registration, used for collision policy. Skill
    * resolution must never bind a package skill slug to a non-skill tool.

@@ -144,6 +144,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       sequential: true,
       capability: "thread_report",
       historyPreview: threadHistoryPreview,
+      historyKind: "routine",
       advertise: true,
     },
     {
@@ -200,6 +201,9 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
+      // The child's saved report renders in its place (D6); its arguments never show.
+      historyKind: "routine",
+      historyPreview: () => "",
       advertise: false,
     },
   ];

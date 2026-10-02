@@ -469,6 +469,13 @@ export interface TurnRepository {
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
   /** Reads bounded transcript items by `(position, sequence)` across owner spans. */
   readTranscriptItems(input: ReadTranscriptItemsInput): Promise<TranscriptItemRow[]>;
+  /** Counts the turns across owner spans positioned before `beforePosition`. */
+  countTranscriptTurns(spans: readonly TranscriptSpan[], beforePosition: number): Promise<number>;
+  /** The Nth turn (from 1) across owner spans in transcript order, or null. */
+  findTranscriptTurnByOrdinal(
+    spans: readonly TranscriptSpan[],
+    ordinal: number,
+  ): Promise<Turn | null>;
   /** Finds the first unsettled turn across owner spans using the partial index. */
   findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
   /** Unsettled turns in one claimed thread, ordered by transcript position. */

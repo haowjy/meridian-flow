@@ -18,6 +18,8 @@ export function createSkillToolRegistrations(deps: {
         inputSchema: modelToolSchema(SkillToolInputSchema),
       },
       input: SkillToolInputSchema,
+      historyPreview: (input) => String(input.slug ?? ""),
+      historyKind: "routine",
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {

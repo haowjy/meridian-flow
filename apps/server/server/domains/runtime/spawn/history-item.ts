@@ -1,4 +1,8 @@
-/** Model-only history item projection. Copies are elided before any size trimming. */
+/**
+ * Model-only history projection of one turn and its blocks: labels, the
+ * visibility classifier and display items. Copies are elided before any size
+ * trimming.
+ */
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import {
   type DocumentRevisionEvidence,
@@ -10,23 +14,22 @@ import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
+import type { HistoryTurn } from "./history-result.js";
 
 export type HistoryInclude =
-  | "thinking"
+  | "routine_calls"
   | "tool_args"
   | "tool_results"
+  | "thinking"
   | "system_messages"
-  | "system_prompt";
-export interface HistoryItem {
-  text: string;
-  documents: DocumentRevisionEvidence[];
-  position: number;
-  sequence: number;
-}
+  | "system_prompt"
+  | "timestamps";
+
 const stringify = (value: JsonValue | undefined) =>
   typeof value === "string" ? value : JSON.stringify(value ?? null);
 const toolKey = (turnId: string, toolCallId: string, type: string) =>
   JSON.stringify([turnId, toolCallId, type]);
+export const historyTime = (turn: Turn) => turn.createdAt.slice(0, 16).replace("T", " ");
 
 /** Fetch pairs even when the other side lies outside the selected page. */
 export async function loadHistoryToolPairs(
@@ -40,59 +43,99 @@ export async function loadHistoryToolPairs(
     keys.set(JSON.stringify([block.turnId, toolCallId]), { turnId: block.turnId, toolCallId });
   }
   const pairs = await blocks.listToolBlocks([...keys.values()]);
+  return toolPairMap(pairs);
+}
+
+export function toolPairMap(blocks: readonly Block[]): ReadonlyMap<string, Block> {
   return new Map(
-    pairs.map((block) => [
-      toolKey(block.turnId, String((block.content as JsonObject).toolCallId), block.blockType),
-      block,
-    ]),
+    blocks
+      .filter((block) => block.blockType === "tool_use" || block.blockType === "tool_result")
+      .map((block) => [
+        toolKey(block.turnId, String((block.content as JsonObject).toolCallId), block.blockType),
+        block,
+      ]),
   );
 }
 
-export function renderHistoryItem(input: {
+/** The turn's heading and whether the whole turn is a system message. */
+export function describeTurn(turn: Turn): Pick<HistoryTurn, "role" | "label" | "failure"> & {
+  system: boolean;
+} {
+  const kind = classifyHistoryItem(turn);
+  const metadata = turn.metadata as JsonObject | null;
+  const reason =
+    turn.status === "error" && typeof metadata?.reason === "string" ? metadata.reason : undefined;
+  const failure =
+    turn.error || reason || turn.status === "error" || turn.status === "cancelled"
+      ? {
+          status: turn.status,
+          ...(turn.error ? { error: turn.error } : {}),
+          ...(reason ? { reason } : {}),
+        }
+      : undefined;
+  const base = failure ? { failure } : {};
+  if (kind.kind === "writer_request")
+    return {
+      ...base,
+      system: false,
+      role: "user",
+      label: `user${kind.delivery === "steer" ? ", steer" : ""}`,
+    };
+  if (kind.kind === "agent_request")
+    return {
+      ...base,
+      system: false,
+      role: "user",
+      label: `agent${kind.source === "child_seed" ? ", spawn prompt" : ""}`,
+    };
+  if (kind.kind === "assistant_response")
+    return { ...base, system: false, role: "assistant", label: "assistant" };
+  return {
+    ...base,
+    system: true,
+    role: "system",
+    label:
+      kind.kind === "child_completion"
+        ? `system: child ${metadata?.handle} finished (${metadata?.outcome})`
+        : kind.kind === "work_update"
+          ? "system: Work update"
+          : `system: ${kind.kind}`,
+  };
+}
+
+/** One block as a display item, before the view decides how much of it to show. */
+export type DescribedBlock =
+  /** A tool result shown on its call's line. */
+  | { kind: "merged" }
+  | { kind: "message"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "system"; label: string; text: string }
+  | {
+      kind: "tool";
+      tool: string;
+      brief: string;
+      routine: boolean;
+      /** True when the call has no result yet. */
+      open: boolean;
+      isError: boolean;
+      args: JsonObject;
+      /** The result as history may quote it: document copies elided, errors verbatim. */
+      result?: string;
+      /** Size of the result the model saw. */
+      rawResult?: string;
+      /** The call wrote a document; quoting its arguments is an edit record. */
+      write: boolean;
+      documents: DocumentRevisionEvidence[];
+    };
+
+export function describeBlock(input: {
   turn: Turn;
-  block: Block | null;
-  ownerRef?: string;
-  include: ReadonlySet<HistoryInclude>;
-  expand?: boolean;
+  block: Block;
   registry: ToolRegistry;
   toolPairs: ReadonlyMap<string, Block>;
-}): HistoryItem | null {
-  const { turn, block, ownerRef, include, expand, registry, toolPairs } = input;
-  const kind = classifyHistoryItem(turn);
-  const sequence = block?.sequence ?? -1;
-  const handle = `${turn.position}${sequence < 0 ? "" : `.${sequence}`}`;
-  const documents: DocumentRevisionEvidence[] = [];
-  const metadata = turn.metadata as JsonObject | null;
-  const failureReason =
-    turn.status === "error" && typeof metadata?.reason === "string" ? metadata.reason : undefined;
-  const cardKind =
-    block?.blockType === "custom" && kind.kind === "assistant_response"
-      ? String((block.content as JsonObject).kind)
-      : null;
-  const systemLabel = cardKind
-    ? `system: ${cardKind}`
-    : kind.kind === "child_completion"
-      ? `system: child ${metadata?.handle} finished (${metadata?.outcome})`
-      : kind.kind === "work_update"
-        ? "system: Work update"
-        : `system: ${kind.kind}`;
-  let label: string;
-  let body = "";
-  const system =
-    cardKind !== null ||
-    !["writer_request", "agent_request", "assistant_response"].includes(kind.kind);
-  if (system && !expand && !include.has("system_messages")) return null;
-  if (!block) {
-    label = system
-      ? systemLabel
-      : turn.role === "assistant"
-        ? "assistant"
-        : kind.kind === "writer_request"
-          ? "user"
-          : "agent";
-    body = `${turn.status}${turn.error ? `: ${turn.error}` : ""}${failureReason ? `\nfailure reason: ${failureReason}` : ""}`;
-  } else if (block.blockType === "tool_use" || block.blockType === "tool_result") {
-    if (block.blockType === "tool_result" && !expand && !include.has("tool_results")) return null;
+}): DescribedBlock {
+  const { turn, block, registry, toolPairs } = input;
+  if (block.blockType === "tool_use" || block.blockType === "tool_result") {
     const content = block.content as JsonObject;
     const pair = toolPairs.get(
       toolKey(
@@ -101,84 +144,118 @@ export function renderHistoryItem(input: {
         block.blockType === "tool_use" ? "tool_result" : "tool_use",
       ),
     );
-    const call = (block.blockType === "tool_use" ? content : pair?.content) as
-      | JsonObject
-      | undefined;
+    if (block.blockType === "tool_result" && pair) return { kind: "merged" };
+    const call = (block.blockType === "tool_use" ? content : undefined) as JsonObject | undefined;
     const result = (block.blockType === "tool_result" ? content : pair?.content) as
       | JsonObject
       | undefined;
-    const name = String(call?.toolName ?? content.toolName);
+    const name = String(content.toolName ?? result?.toolName ?? "unknown");
     const args = (call?.input ?? {}) as JsonObject;
     const registration = registry.getRegistration(name);
     const policy = registration?.documentText;
-    const refs = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
+    const documents = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
       []) as DocumentRevisionEvidence[];
-    if (block.blockType === "tool_result") {
-      label = `tool_result ${name}`;
-      body =
-        (!call || !registration) && !result?.isError
-          ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
-          : stringify(
-              !result?.isError && policy
-                ? policy.elide({ input: args, output: result?.output }, refs, "history").output
-                : result?.output,
-            );
-    } else {
-      label = `tool_call ${name}`;
-      if (expand || include.has("tool_args")) {
-        body = JSON.stringify(args);
-        if (policy?.kind === "write") {
-          body = `edit record from ${turn.createdAt.slice(0, 16).replace("T", " ")}; the document may have changed since\n${body}`;
-          const evidence = refs.length
-            ? refs
-            : [
-                {
-                  documentId: String(args.path ?? "unknown document"),
-                  uri: typeof args.path === "string" ? args.path : null,
-                  revision: null,
-                },
-              ];
-          documents.push(...evidence.map((ref) => ({ ...ref, revision: null })));
-        }
-      } else
-        label += ` ${registration?.historyPreview?.(args, result?.output) ?? JSON.stringify(args).slice(0, 80)}`;
-    }
-  } else if (block.blockType === "reasoning") {
-    if (!expand && !include.has("thinking")) return null;
-    label = "thinking";
-    body = block.textContent ?? String((block.content as JsonObject)?.text ?? "");
-  } else {
-    label = cardKind
-      ? systemLabel
-      : kind.kind === "writer_request"
-        ? `user${kind.delivery === "steer" ? ", steer" : ""}`
-        : kind.kind === "agent_request"
-          ? `agent${kind.source === "child_seed" ? ", spawn prompt" : ""}`
-          : kind.kind === "assistant_response"
-            ? "assistant"
-            : systemLabel;
-    const modelText =
-      block.blockType === "custom"
-        ? componentHistoryText(block.content as ComponentBlockContent)
-        : null;
-    const reference = referenceOccurrenceContent(block);
-    if (modelText) body = modelText;
-    else if (reference) {
-      const elidedRead = reference.read
-        ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
-        : null;
-      body = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
-    } else if (block.blockType === "image")
-      body = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
-    else body = block.textContent ?? stringify(block.content);
+    const isError = result?.isError === true;
+    const typed = (result?.result ?? result?.output) as JsonValue | undefined;
+    const kind = registration?.historyKind;
+    return {
+      kind: "tool",
+      tool: name,
+      brief: call
+        ? (registration?.historyPreview?.(args, typed) ?? JSON.stringify(args).slice(0, 80))
+        : "",
+      routine: typeof kind === "function" ? kind(args) === "routine" : kind === "routine",
+      open: !result,
+      isError,
+      args,
+      write: policy?.kind === "write",
+      documents,
+      ...(result
+        ? {
+            rawResult: stringify(result.output as JsonValue),
+            result:
+              (!call || !registration) && !isError
+                ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
+                : stringify(
+                    !isError && policy
+                      ? policy.elide(
+                          { input: args, output: result.output as JsonValue },
+                          documents,
+                          "history",
+                        ).output
+                      : (result.output as JsonValue),
+                  ),
+          }
+        : {}),
+    };
   }
-  if (kind.kind === "compaction" && typeof metadata?.instructions === "string") {
-    body = `instructions: ${metadata.instructions}${body ? `\n${body}` : ""}`;
+  if (block.blockType === "reasoning")
+    return {
+      kind: "thinking",
+      text: block.textContent ?? String((block.content as JsonObject)?.text ?? ""),
+    };
+  const cardKind =
+    block.blockType === "custom" && classifyHistoryItem(turn).kind === "assistant_response"
+      ? String((block.content as JsonObject).kind)
+      : null;
+  const modelText =
+    block.blockType === "custom"
+      ? componentHistoryText(block.content as ComponentBlockContent)
+      : null;
+  const reference = referenceOccurrenceContent(block);
+  let text: string;
+  if (modelText) text = modelText;
+  else if (reference) {
+    const elidedRead = reference.read
+      ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
+      : null;
+    text = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
+  } else if (block.blockType === "image")
+    text = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
+  else text = block.textContent ?? stringify(block.content);
+  const metadata = turn.metadata as JsonObject | null;
+  if (classifyHistoryItem(turn).kind === "compaction" && typeof metadata?.instructions === "string")
+    text = `instructions: ${metadata.instructions}${text ? `\n${text}` : ""}`;
+  return cardKind
+    ? { kind: "system", label: `system: ${cardKind}`, text }
+    : { kind: "message", text };
+}
+
+/** Quoting a write's arguments is a record of an edit, never the document's current text. */
+export function editRecord(turn: Turn, args: JsonObject) {
+  return `edit record from ${historyTime(turn)}; the document may have changed since\n${JSON.stringify(args)}`;
+}
+
+/** Evidence for a quoted edit; revisions are dropped because the text may be stale. */
+export function editEvidence(described: Extract<DescribedBlock, { kind: "tool" }>) {
+  const evidence = described.documents.length
+    ? described.documents
+    : [
+        {
+          documentId: String(described.args.path ?? "unknown document"),
+          uri: typeof described.args.path === "string" ? described.args.path : null,
+          revision: null,
+        },
+      ];
+  return evidence.map((ref) => ({ ...ref, revision: null }));
+}
+
+/** Display numbers for a whole turn: every block except a tool result shown on its call. */
+export function displayIndexes(blocks: readonly Block[]): ReadonlyMap<number, number> {
+  const calls = new Set(
+    blocks
+      .filter((block) => block.blockType === "tool_use")
+      .map((block) => String((block.content as JsonObject).toolCallId)),
+  );
+  const indexes = new Map<number, number>();
+  let index = 0;
+  for (const block of [...blocks].sort((left, right) => left.sequence - right.sequence)) {
+    if (
+      block.blockType === "tool_result" &&
+      calls.has(String((block.content as JsonObject).toolCallId))
+    )
+      continue;
+    indexes.set(block.sequence, ++index);
   }
-  return {
-    position: turn.position,
-    sequence,
-    documents,
-    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}${body ? `\n${body}` : ""}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
-  };
+  return indexes;
 }
