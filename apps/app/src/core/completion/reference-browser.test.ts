@@ -118,6 +118,20 @@ describe("the link-ahead row", () => {
     expect(items(browse("", { linkAhead })).some((row) => row.kind === "link-ahead")).toBe(false);
   });
 
+  it("is never the default highlight, so a bare Enter is the host's", () => {
+    const onLinkAhead = vi.fn();
+    const alone = browse("Kael meet me at the gate", { linkAhead, onLinkAhead });
+    expect(alone.menu.snapshot().activeIndex).toBe(-1);
+    expect(alone.menu.chooseActive("enter")).toBe(false);
+    expect(onLinkAhead).not.toHaveBeenCalled();
+    expect(alone.menu.move(1)).toBe(true);
+    expect(alone.menu.chooseActive("enter")).toBe(true);
+    expect(onLinkAhead).toHaveBeenCalledTimes(1);
+
+    const withFiles = browse("chapter", { linkAhead });
+    expect(withFiles.menu.snapshot().activeIndex).toBe(0);
+  });
+
   it("is chosen through the host's callback, with the trigger range", () => {
     const onLinkAhead = vi.fn();
     const onSelect = vi.fn();
