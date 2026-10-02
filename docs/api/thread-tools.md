@@ -61,7 +61,7 @@ pizza
 
 [2] assistant
 I looked around to see what "pizza" might point at, ...
-(10 routine tool calls hidden: thread_history({"ref":"c2","expand":2}))
+(10 routine tool calls hidden; list them with thread_history({"ref":"c2","expand":2}))
 
 [3] user
 can u test a subagent using from and ask it to summarize the conversation so far
