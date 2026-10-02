@@ -10,6 +10,7 @@ import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-stat
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
+import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
 import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
@@ -96,9 +97,7 @@ function teardownSessions(store: TmuxSessionStore, names: string[]): void {
     if (store.sessionExists(name))
       requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
   }
-  const prune = store.run("pnpm", ["exec", "portless", "prune"]);
-  if (prune.status !== 0 && prune.stderr.trim())
-    console.warn(`portless prune warning: ${prune.stderr.trim()}`);
+  prunePortlessRoutes(repoRoot);
 }
 
 async function releaseBackendPorts(plan: DevSessionPlan): Promise<void> {
@@ -258,6 +257,7 @@ async function main(): Promise<void> {
     return;
   }
   await stopOrphanDevSessions(repoRoot, collectOrphanDevSessions(repoRoot));
+  prunePortlessRoutes(repoRoot);
 
   if (!active) {
     await assertDevInfraReady();
