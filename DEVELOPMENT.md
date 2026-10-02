@@ -155,6 +155,8 @@ teardown. Same-user descendants are tracked through the TERM grace period,
 including detached children spawned during shutdown. After tmux teardown,
 captured survivors are briefly stopped for a stable descendant census, then
 force-killed; an ownership refusal resumes any processes this invocation paused.
+A still-present PID with changed identity (including an executable change) refuses
+cleanup instead of counting as exited. Inspect the reported PID before retrying.
 Processes that reparent before their identity or ancestry can be captured are
 not guessed at.
 
