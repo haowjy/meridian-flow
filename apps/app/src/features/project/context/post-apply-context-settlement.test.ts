@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
+import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
 const identity = {
@@ -81,6 +82,68 @@ describe("post-Apply context settlement", () => {
       kind: "apply-disposition-pending",
     });
     expect(getContextTabs("project-a")).toEqual(before);
+  });
+
+  it("closes a discarded draft-only tab and replaces its address with the adjacent tab", async () => {
+    const neighbor = {
+      kind: "tracked" as const,
+      documentId: "document-b",
+      scheme: "manuscript" as const,
+      path: "/next.md",
+      name: "next.md",
+      editable: true as const,
+      filetype: "markdown" as const,
+      schemaType: "document" as const,
+    };
+    useContextTabsStore.getState().openTab("project-a", neighbor);
+    await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
+    let search: ProjectSearch = {
+      screen: "context",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      work: "work-a",
+    };
+    const replaceAddress = vi.fn(
+      (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
+        search = update(search);
+      },
+    );
+    const coordinator = new ContextRemovalCoordinator("account-a", {
+      route: {
+        readSearch: () => search,
+        updateSearch: replaceAddress,
+        transition: async () => ({ kind: "applied" }),
+      },
+    });
+    coordinator.registerRoutePort(
+      "project-a",
+      {
+        readSearch: () => search,
+        updateSearch: replaceAddress,
+        transition: async () => ({ kind: "applied" }),
+      },
+      "work-a",
+    );
+    const revision = coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/chapter.md",
+      workId: "work-a",
+    });
+    coordinator.bindRouteSelection("project-a", revision, {
+      kind: "server",
+      documentId: "document-a",
+    });
+
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toMatchObject({
+      kind: "active-fallback",
+      fallback: { documentId: "document-b" },
+    });
+    expect(getContextTabs("project-a")).toMatchObject({
+      tabs: [{ documentId: "document-b" }],
+      selectedTabIdByWork: { "work-a": "document-b" },
+    });
+    expect(search).toMatchObject({ screen: "context", scheme: "manuscript", path: "/next.md" });
+    expect(replaceAddress).toHaveBeenCalledOnce();
   });
 
   it("settles only the exact tab token and treats a replacement as an obsolete old obligation", async () => {

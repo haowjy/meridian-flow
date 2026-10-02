@@ -86,11 +86,12 @@ export type DraftReviewCommandPorts = {
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
+  draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
     code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
-  ) => void;
+  ) => Promise<void> | void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
 
@@ -186,12 +187,13 @@ export class DraftReviewSession {
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+    ports.draftDiscardStarted(selection);
     try {
       await ports.discard(selection);
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
     } catch {
-      ports.draftFailed(selection, "discard-offline");
+      await ports.draftFailed(selection, "discard-offline");
       return { kind: "failed", code: "discard-offline" };
     }
   }

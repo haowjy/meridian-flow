@@ -175,7 +175,12 @@ project document therefore cannot resolve this Work's draft-only tab.
   the disposition lock remains held. Controls must not re-enable before that
   local resolution; draft-group absence alone cannot distinguish Apply from
   Discard.
-- Whole-draft Discard removes the owning draft-only tab through the coordinator.
+- Whole-draft Discard removes the owning draft-only tab through the coordinator
+  before dispatching the server command. The coordinator applies the ordinary
+  adjacent-tab/empty-Editor close fallback and repairs the current address in
+  place. A server refusal reopens the exact tab and review address before the
+  existing discard error is shown. Header, composer-strip, and bulk Discard all
+  use this same controller command lifecycle.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
   Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab
