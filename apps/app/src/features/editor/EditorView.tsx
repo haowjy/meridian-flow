@@ -339,37 +339,46 @@ function ActiveSessionEditorView({
     active ? workId : null,
     t`Reference a file`,
   );
-  // Read when the `@` menu opens. The Editor's `@` also links ahead: a name no
-  // document carries gets a row that writes a link beside this document, which
-  // stays dashed until a follow's Create makes the document.
-  const atReferenceCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
-      return null;
-    const linkAhead = (name: string, folders?: readonly string[]) => {
+  // Where a link to a document nobody has written goes, unless a document is
+  // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
+  // names nothing (with folders, for a path link). Dashed until a follow's
+  // Create makes the document.
+  const linkAhead = useCallback(
+    (name: string, folders?: readonly string[]) => {
       const uri = linkAheadAddress(holderUri, name, folders);
       return uri && !linkableDocuments.documents.some((document) => document.uri === uri)
         ? { uri }
         : null;
-    };
-    // What a pasted `[[Name]]` may name: the documents in Manuscript, KB,
-    // User, and this Work's Scratch, the areas a link names a document in
-    // (Uploads hold files, Unfiled holds untitled drafts). An index still
-    // loading converts nothing, rather than turning every link dashed.
-    const linkTargets = () =>
-      linkableDocuments.complete
-        ? linkableDocuments.documents.flatMap((document) => {
-            const parsed = parseContextUri(document.uri);
-            return parsed.ok && isCreatableLinkScheme(parsed.value.scheme) ? [document.uri] : [];
-          })
-        : null;
-    return { ...sharedReferenceCatalog, holderUri, linkAhead, linkTargets };
-  }, [
-    effectiveEditable,
-    holderUri,
-    identity.schemaType,
-    linkableDocuments,
-    sharedReferenceCatalog,
-  ]);
+    },
+    [holderUri, linkableDocuments],
+  );
+  // Read when the `@` menu opens.
+  const atReferenceCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
+      return null;
+    return { ...sharedReferenceCatalog, holderUri, linkAhead: (name: string) => linkAhead(name) };
+  }, [effectiveEditable, holderUri, identity.schemaType, linkAhead, sharedReferenceCatalog]);
+  // What a pasted `[[Name]]` may name: the Editor's link index (the same one
+  // its links resolve against and link-ahead checks), in Manuscript, KB, User,
+  // and this Work's Scratch, the areas a link names a document in (Uploads
+  // hold files, Unfiled holds untitled drafts).
+  const pasteTargets = useMemo(
+    () =>
+      linkableDocuments.documents.flatMap((document) => {
+        const parsed = parseContextUri(document.uri);
+        return parsed.ok && isCreatableLinkScheme(parsed.value.scheme) ? [document.uri] : [];
+      }),
+    [linkableDocuments],
+  );
+  // Read at paste time. An index still loading converts nothing, rather than
+  // turning every link dashed.
+  const wikilinkPasteCatalog = useCallback(
+    () =>
+      identity.schemaType === "document" && linkableDocuments.complete
+        ? { holderUri, targets: pasteTargets, linkAhead }
+        : null,
+    [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
+  );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
@@ -391,6 +400,7 @@ function ActiveSessionEditorView({
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     atReferenceCatalog,
+    wikilinkPasteCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });

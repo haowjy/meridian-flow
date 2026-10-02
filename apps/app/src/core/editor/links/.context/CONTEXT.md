@@ -333,14 +333,13 @@ Pasting into an Editor document turns each `[[…]]` into a standard link (D15),
 so a note brought over from Obsidian keeps its links. A typed `[[`, what the AI
 writes, and text already stored stay text; so does a drag inside the editor.
 
-- **Where.** `transformPasted`, the one prop every paste kind reaches once and
-  after parsing (Markdown through the paste door, plain prose, HTML whose text
-  holds the brackets). The plugin rides `AtReferenceExtension` because it reads
-  the `@` catalog: `linkTargets()` (the Editor's document index across
-  Manuscript, KB, User, and this Work's Scratch) and the link-ahead row's own
-  `linkAhead`. A catalog without `linkTargets` (the chat composer) converts
-  nothing, and while the index loads `linkTargets()` is null and the brackets
-  stay text rather than all turning dashed.
+- **Where.** `WikilinkPasteExtension`'s `transformPasted`, the one prop every
+  paste kind reaches once and after parsing (Markdown through the paste door,
+  plain prose, HTML whose text holds the brackets). Only the Editor mounts it.
+  Its catalog is the Editor's: the holder, the link index across Manuscript,
+  KB, User, and this Work's Scratch, and the same `linkAhead` the `@` menu's
+  link-ahead row uses. While the index loads the catalog is null and the
+  brackets stay text rather than all turning dashed.
 - **Syntax** (`parseWikilinks`): `[[target]]`, `[[target|label]]` (also the
   table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
   target, `.md` implied without an extension. The label is the alias or the

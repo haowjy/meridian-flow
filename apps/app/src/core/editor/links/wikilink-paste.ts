@@ -40,7 +40,7 @@ export type WikilinkOccurrence = {
 export type WikilinkPasteCatalog = {
   /** The holder's address; null while it has none. */
   holderUri: string | null;
-  /** The addresses a pasted link may name: the documents the `@` menu offers. */
+  /** The addresses a pasted link may name: the Editor's link index, in the areas a link names. */
   targets: readonly string[];
   /** Where a link to a document nobody has written goes (the link-ahead row's rule). */
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
