@@ -9,7 +9,7 @@
  * writes is the document the other makes.
  */
 
-import { canonicalContextUri, resolveDocumentHref } from "@meridian/contracts";
+import { canonicalContextUri, parseContextUri, resolveDocumentHref } from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { classifyFiletype, filetypeForKnownPath } from "@meridian/contracts/protocol";
 
@@ -29,32 +29,41 @@ export function linkTargetAddress(target: LinkTarget, baseUri: string | null): s
   return resolved?.uri ?? null;
 }
 
-/** A writer's name as a document filename: kept when it is one, else with `.md`. */
-export function documentFileName(name: string): string {
-  const filetype = filetypeForKnownPath(name);
-  const classification = filetype ? classifyFiletype(filetype) : null;
-  return classification?.kind === "tracked" && classification.schemaType === "document"
-    ? name
-    : `${name}.md`;
+/** The areas a follow's Create can make a document in; uploads and Unfiled are not. */
+export const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
+export type CreatableLinkScheme = (typeof CREATABLE_LINK_SCHEMES)[number];
+
+export function isCreatableLinkScheme(scheme: string): scheme is CreatableLinkScheme {
+  return (CREATABLE_LINK_SCHEMES as readonly string[]).includes(scheme);
 }
 
 /**
- * Where a new document named `name` goes beside its holder: the holder's
- * folder, in the holder's area. A holder with no address yet (an unplaced
- * document) puts it at the manuscript's root.
+ * A writer's name as a document filename: kept when it already is one, with
+ * `.md` when it carries no known extension, and null when it names another
+ * kind of file (`map.png` never becomes `map.png.md`).
  */
-export function siblingDocumentAddress(holderUri: string | null, name: string): string | null {
-  const filename = documentFileName(name);
-  if (!holderUri) return canonicalContextUri("manuscript", filename);
-  return resolveDocumentHref(encodeURIComponent(filename), holderUri)?.uri ?? null;
+export function documentFileName(name: string): string | null {
+  const filetype = filetypeForKnownPath(name);
+  if (!filetype) return `${name}.md`;
+  const classification = classifyFiletype(filetype);
+  return classification.kind === "tracked" && classification.schemaType === "document"
+    ? name
+    : null;
 }
 
 /**
  * Where a link to a not-yet-written document a writer named goes: beside its
- * holder, or null when the name cannot be a filename.
+ * holder, so Create later makes it in the same folder. A holder with no
+ * address yet, or in an area Create refuses (Uploads, Unfiled), puts it at the
+ * manuscript's root. Null when the name cannot be a document filename.
  */
 export function linkAheadAddress(holderUri: string | null, name: string): string | null {
   const trimmed = name.trim();
   if (!validateContextEntryName(trimmed).ok) return null;
-  return siblingDocumentAddress(holderUri, trimmed);
+  const filename = documentFileName(trimmed);
+  if (!filename) return null;
+  const holder = holderUri ? parseContextUri(holderUri) : null;
+  if (!holder?.ok || !isCreatableLinkScheme(holder.value.scheme))
+    return canonicalContextUri("manuscript", filename);
+  return resolveDocumentHref(encodeURIComponent(filename), holderUri)?.uri ?? null;
 }

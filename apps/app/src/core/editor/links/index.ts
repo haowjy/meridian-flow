@@ -14,7 +14,9 @@ export {
   openLinkForm,
 } from "./LinkSurfaceExtension";
 export {
+  type CreatableLinkScheme,
   documentFileName,
+  isCreatableLinkScheme,
   linkAheadAddress,
   linkTargetAddress,
 } from "./link-address";
