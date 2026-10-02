@@ -4,7 +4,9 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
 
 - A reference reads in text as a standard Markdown link to its canonical URI,
   `[label](uri)` (`referenceSpelling`): the occurrence a sent message carries,
-  which is what the model reads, and the plain clipboard form. Rich clipboard
+  which is what the model reads, and the plain clipboard form. The destination
+  is `spellDocumentHref(null, uri)`, never the raw URI, so a `#` or `%` in a
+  name stays part of the address. Rich clipboard
   HTML preserves selected reference identity. HTML metadata is untrusted; turn
   admission authorizes identity and clipboard cannot grant access.
 - A copied occurrence never owns the source draft's upload lifecycle.
