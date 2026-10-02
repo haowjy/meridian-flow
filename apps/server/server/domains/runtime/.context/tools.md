@@ -47,10 +47,15 @@ behavior; schema-only stubs are not advertised.
   Agent's Mars policy allows it (`project-tool-policy.ts`). The interrupt
   runtime and the app's interrupt card remain; re-enabling is that one line.
 - Documents have two tools (D1): `read({ path, in?, around?, format? })` never
-  changes a document, and every `write` command (`create`, `insert`,
+  changes a document, and every `write` command (`create`, `copy`, `insert`,
   `replace`, `remove`, `undo`, `redo`) does. Both parse their zod `input` in the
-  executor; the handlers map `path` to the engine's `file`. `read` and the
-  reference reader share one `readDocument` (D18). Their handlers return the
+  executor; the handlers map `path` to the engine's `file`. `read`, the
+  reference reader and copy sources (`from`) share one `readDocument` (D18).
+  `from` on `insert`/`replace` and `copy` read the source as nodes and hand
+  them to agent-edit, so copied text never passes through the model (D23,
+  D24); a tracked `copy` is a staged create, a binary one goes through
+  `domains/context/binary-copy.ts`. A source read never carries the write's
+  tool call id, which keys the write's idempotency. Their handlers return the
   typed agent-edit result, and the registration's `renderResult` makes the
   model's text; the typed result is persisted beside it as `result` (D43).
   Reading does not expand URI, object, Project, owner, or document

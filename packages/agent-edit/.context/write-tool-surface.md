@@ -10,7 +10,7 @@ second model protocol. Block groups carry shared semantics as
 `{ extent, relation, items: [{ hash, body }] }`, so multiline bodies cannot
 collide with adjacent blocks without repeating metadata on every item. The only
 group kinds are full `document`, `changed`, or `swept` bodies and prefix
-`context`; concurrent bodies and tombstones live under `concurrent.runs`, where
+`context` or `copied`; concurrent bodies and tombstones live under `concurrent.runs`, where
 their placement already conveys the concurrent relation. Full and outline reads
 derive diagnostic text and typed items from one batch serialization. Hashes are
 model/tool targeting tokens: expose them in tool arguments and results, never as
@@ -113,6 +113,19 @@ the server response owner.
 The command schemas run it in `superRefine`, so hosts refuse a bad combination
 before dispatch and the resolver never re-checks it. Field descriptions state
 each rule, because refinements don't export to JSON Schema.
+
+**Copies are nodes, not markup (D23, D24).** `insert`/`replace` take `from`
+instead of `content`, and `copy` creates a document from another. The engine
+never reads the source: the host reads it with `WriteContext.includeNodes`
+(the read returns `WriteOutcome.nodes`) and passes the blocks back as
+`copiedNodes`. They are inserted as ProseMirror nodes, so blank paragraphs and
+whitespace survive and every copy gets a fresh hash; a `replace` with `from`
+reuses none of the replaced blocks. `copy` runs through `create`, so it stages,
+rolls back and undoes like one. `tool/copy-rules.ts` holds the `from` rules.
+A copy's receipt is bounded (`tool/copy-receipt.ts`): `copied: { from, blocks }`
+plus, for a block copy, the first and last new block as a short `copied`
+prefix group. The staged write keeps the summary so the settled receipt says
+the same. An undo that leaves the document empty notes that it still exists.
 
 `tool/interaction-mode.ts` is the sole owner of `mutationMode` and
 `interactionContextForAttempt`. The mode (`"threadPeer"` plus
