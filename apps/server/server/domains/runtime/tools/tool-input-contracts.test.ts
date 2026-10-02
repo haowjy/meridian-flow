@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
+import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
 import type { ToolRegistration } from "./types.js";
@@ -21,6 +22,12 @@ function registrations(): ToolRegistration[] {
       search: unused,
       ask_user: unused,
     } as CoreToolHandlers),
+    ...createInspectionToolRegistrations({
+      repos: {} as never,
+      statusReader: {} as never,
+      registry: {} as never,
+      tokenizer: async () => "anthropic",
+    }),
   ];
 }
 
@@ -89,5 +96,19 @@ describe("search", () => {
     await expectRefused("search", { pattern: "" }, ["pattern: must not be empty"]);
     await expectRefused("search", { pattern: "x", scope: "" }, ["scope: must not be empty"]);
     await expectRefused("search", { pattern: "x", regex: true }, ["regex: unknown argument"]);
+  });
+});
+
+describe("thread_ls", () => {
+  it("delivers the depth default and an explicit current ref", async () => {
+    await expectDelivered("thread_ls", {}, { depth: 1 });
+    await expectDelivered("thread_ls", { ref: "current", depth: 2 }, { ref: "current", depth: 2 });
+  });
+
+  it("refuses an out-of-range depth, an empty ref and unknown keys", async () => {
+    await expectRefused("thread_ls", { depth: 4 }, ["depth: must be at most 3"]);
+    await expectRefused("thread_ls", { depth: 1.5 }, ["depth: expected a whole number, got 1.5"]);
+    await expectRefused("thread_ls", { ref: "" }, ["ref: must not be empty"]);
+    await expectRefused("thread_ls", { limit: 5 }, ["limit: unknown argument"]);
   });
 });

@@ -2,6 +2,7 @@
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
+import type { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
@@ -27,6 +28,7 @@ export function createInspectionToolRegistrations(deps: {
           "List connected conversations: the path from the root to ref, and ref's children.",
         inputSchema: modelToolSchema(ThreadLsInputSchema),
       },
+      input: ThreadLsInputSchema,
       sequential: true,
       historyPreview: threadLsHistoryPreview,
       execution: {
@@ -41,7 +43,7 @@ export function createInspectionToolRegistrations(deps: {
           const result = await listReadableThreads({
             ...deps,
             caller,
-            input: ThreadLsInputSchema.parse(input),
+            input: input as z.output<typeof ThreadLsInputSchema>,
           });
           return typeof result !== "string" ? toolFailureResult(result) : result;
         },
