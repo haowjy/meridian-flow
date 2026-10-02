@@ -164,6 +164,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "read_required" ||
     status === "internal_error"
   );
 }

@@ -42,7 +42,11 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  isInDrizzleTransaction,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -820,8 +824,11 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
     async appendBatch(entries) {
       if (entries.length === 0) return [];
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      // Inside a reply's save the rows join its one transaction (D42) and stay
+      // staged until it commits; otherwise this call owns a durable transaction.
+      const journalCommitKind = isInDrizzleTransaction() ? "staged" : "durable";
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
@@ -926,16 +933,20 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           );
         }
 
-        const results: Array<{ seq: number; journalCommitKind: "durable"; wId?: number }> = [];
+        const results: Array<{
+          seq: number;
+          journalCommitKind: typeof journalCommitKind;
+          wId?: number;
+        }> = [];
         let mutIdx = 0;
         for (let i = 0; i < entries.length; i++) {
           const seq = updateRows[i].id;
           const mv = mutationValues[mutIdx];
           if (mv && mv.index === i) {
-            results.push({ seq, wId: mv.wId, journalCommitKind: "durable" });
+            results.push({ seq, wId: mv.wId, journalCommitKind });
             mutIdx += 1;
           } else {
-            results.push({ seq, journalCommitKind: "durable" });
+            results.push({ seq, journalCommitKind });
           }
         }
         return results;

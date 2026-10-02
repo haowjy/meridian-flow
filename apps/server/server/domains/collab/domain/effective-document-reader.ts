@@ -24,6 +24,7 @@ type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
   responseId?: string | null;
+  destination: "live" | "draft";
 };
 
 export function createEffectiveDocumentReader(input: {
@@ -70,17 +71,32 @@ export function createEffectiveDocumentReader(input: {
     read: (doc: DocHandle) => Promise<T>,
     fallback: () => Promise<Result<T, E>>,
   ): Promise<Result<T, E>> {
-    if (command.threadId) {
-      const isStagedOnlyCreatedDocument = Boolean(
+    const isStagedOnlyCreatedDocument = Boolean(
+      command.responseId &&
+        input.agentEdit
+          .responseDocuments(command.responseId, command.threadId ?? undefined)
+          .created.includes(command.documentId),
+    );
+    if (isStagedOnlyCreatedDocument) {
+      const stagedOnly = readStagedResponseOnly(command, read);
+      if (stagedOnly !== null) return Ok(await stagedOnly);
+    }
+    if (command.destination === "live") {
+      // Live reads ignore any Work draft, kept or not (D40), but still see this
+      // reply's own staged writes.
+      if (
         command.responseId &&
-          input.agentEdit
-            .responseDocuments(command.responseId, command.threadId)
-            .created.includes(command.documentId),
-      );
-      if (isStagedOnlyCreatedDocument) {
-        const stagedOnly = readStagedResponseOnly(command, read);
-        if (stagedOnly !== null) return Ok(await stagedOnly);
+        input.agentEdit.hasResponseDocument(command.responseId, command.documentId)
+      ) {
+        return Ok(
+          await input.liveCoordinator.withDocument(command.documentId, (doc) =>
+            readWithStagedResponseOverlay(doc, command, read),
+          ),
+        );
       }
+      return fallback();
+    }
+    if (command.threadId) {
       try {
         const existingPeer = await input.branches.resolveThreadBranch(
           command.documentId,
@@ -151,7 +167,8 @@ export function createEffectiveDocumentReader(input: {
     async readEffectiveRevision(command) {
       try {
         const result = await readEffective(
-          command,
+          // Revision callers pass a thread only for a draft-mode Work.
+          { ...command, destination: command.threadId ? "draft" : "live" },
           async (doc) => documentRevision(unwrapDoc(doc)),
           () =>
             input.liveCoordinator.withDocument(command.documentId, async (doc) =>

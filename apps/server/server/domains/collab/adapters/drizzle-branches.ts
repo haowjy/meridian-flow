@@ -8,6 +8,7 @@ import {
   type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
+import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -39,6 +40,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
+import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type AppendBranchJournalInput,
@@ -307,6 +309,7 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeWorkDraft(input.documentId, input.workId);
     if (existing) return existing;
+    await assertDraftedSource(input.documentId);
     const seed = await replicatedSnapshotFrom(input.liveDoc);
     return insertBranch({
       id: `branch_${randomUUID()}`,
@@ -320,6 +323,19 @@ export function createDrizzleBranchStore(
       ...seed,
       schemaVersion: await liveSchemaVersion(input.documentId),
     });
+  }
+
+  /** Callers route scratch and uploads live (D9); reaching here with one is a routing bug. */
+  async function assertDraftedSource(documentId: DocumentId): Promise<void> {
+    const [row] = await currentDrizzleDb(db)
+      .select({ scheme: contextSources.slug })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(eq(documents.id, documentId))
+      .limit(1);
+    if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme)) {
+      throw new Error(`Document ${documentId} is in ${row.scheme}://, which is never drafted`);
+    }
   }
 
   async function ensureThreadPeerBranch(input: {

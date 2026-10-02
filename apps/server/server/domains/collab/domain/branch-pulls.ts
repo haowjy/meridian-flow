@@ -28,6 +28,8 @@ export type WorkDraftLookup = {
 
 export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
+  /** Drops debounced pulls that haven't started; in-flight pulls finish. */
+  cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
     branchGeneration: number;
@@ -150,6 +152,16 @@ export function createBranchPullService(input: {
         backgroundPull(documentId);
       }, maxDebounceMs);
       timers.set(documentId, entry);
+    },
+
+    cancelScheduledPulls() {
+      for (const [documentId, entry] of timers) {
+        if (entry.debounce) clearTimeout(entry.debounce);
+        if (entry.max) clearTimeout(entry.max);
+        entry.debounce = undefined;
+        entry.max = undefined;
+        if (!entry.running && !entry.queued) timers.delete(documentId);
+      }
     },
 
     flushLivePull(documentId) {
