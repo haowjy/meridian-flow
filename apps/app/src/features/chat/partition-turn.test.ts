@@ -51,7 +51,8 @@ const spawnResult = (sequence: number, useSequence: number) =>
     sequence,
     content: {
       toolCallId: `spawn-${useSequence}`,
-      output: { status: "completed", report: { threadId: "child-1", summary: "2+2=4." } },
+      output: "Subagent p1\n\nReport (completed)\n\n2+2=4.",
+      result: { status: "completed", report: { threadId: "child-1", summary: "2+2=4." } },
     },
   });
 const spawnCard = (sequence: number) =>
@@ -90,7 +91,8 @@ const threadMessageResult = (sequence: number, useSequence: number) =>
     sequence,
     content: {
       toolCallId: `thread-message-${useSequence}`,
-      output: { status: "completed", report: { threadId: "child-1", summary: "Done." } },
+      output: "Subagent p3\n\nReport (completed)\n\nDone.",
+      result: { status: "completed", report: { threadId: "child-1", summary: "Done." } },
     },
   });
 
@@ -182,7 +184,7 @@ describe("partitionTurn", () => {
     const returnResult = block({
       blockType: "tool_result",
       sequence: 2,
-      content: { toolCallId: "return-1", output: { ok: true } },
+      content: { toolCallId: "return-1", output: "ok", result: { ok: true } },
     });
     const items = partitionTurn([returnUse, returnResult]);
 
@@ -191,6 +193,30 @@ describe("partitionTurn", () => {
       kind: "report",
       block: { sequence: 1 },
       report: { summary: "First line.\nFull report.", payload: { answer: 42 }, partial: false },
+    });
+  });
+
+  it("reads a refused return_result as a partial report with its reason", () => {
+    const returnUse = block({
+      blockType: "tool_use",
+      sequence: 1,
+      content: { toolCallId: "return-1", toolName: "return_result", input: { summary: "Half." } },
+    });
+    const returnResult = block({
+      blockType: "tool_result",
+      sequence: 2,
+      content: {
+        toolCallId: "return-1",
+        output: "Report already captured",
+        result: { ok: false, message: "Report already captured" },
+        isError: true,
+      },
+    });
+    const [item] = partitionTurn([returnUse, returnResult]);
+
+    expect(item).toMatchObject({
+      kind: "report",
+      report: { summary: "Half.", partial: true, reason: "Report already captured" },
     });
   });
 
@@ -214,7 +240,8 @@ describe("partitionTurn", () => {
       sequence: 2,
       content: {
         toolCallId: "thread-message-1",
-        output: { status: "background", handle: "p3", agentSlug: "critic", notifiesCaller: true },
+        output: "Message queued. You'll be notified when p3 finishes.",
+        result: { status: "background", handle: "p3", agentSlug: "critic", notifiesCaller: true },
       },
     });
     const items = partitionTurn([use, result, prose(3, "Carrying on.")]);
@@ -313,7 +340,8 @@ describe("partitionTurn", () => {
         sequence: 2,
         content: {
           toolCallId: "report-1",
-          output: { deliveryMode, outcome: "succeeded", summary: "Report summary" },
+          output: "p3 succeeded.\n\nReport summary",
+          result: { deliveryMode, outcome: "succeeded", summary: "Report summary" },
         },
       });
       const items = partitionTurn([reportUse, reportResult]);

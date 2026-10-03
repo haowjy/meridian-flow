@@ -139,7 +139,7 @@ describe("SpawnReportCard", () => {
       toolCallId: callId,
       toolName: "spawn",
       input: { mode: "foreground", name: "Repeat-read comparison" },
-      output: null,
+      result: null,
       isError: false,
     });
     const card = block("p17-card", 2, "custom", {
@@ -159,7 +159,8 @@ describe("SpawnReportCard", () => {
     });
     const result = block("p17-result", 3, "tool_result", {
       toolCallId: callId,
-      output: {
+      output: "Subagent p17",
+      result: {
         report: { handle: "p17", summary: "Read the document 21 times. All reads matched." },
         status: "completed",
         outcome: "succeeded",
@@ -232,7 +233,7 @@ describe("SpawnReportCard", () => {
     const use = block("use", 0, "tool_use", {
       toolCallId: callId,
       toolName: "spawn",
-      output: null,
+      result: null,
     });
     const card = block("card", 1, "custom", {
       kind: "helper-result",
@@ -251,7 +252,8 @@ describe("SpawnReportCard", () => {
     });
     const result = block("result", 2, "tool_result", {
       toolCallId: callId,
-      output: {
+      output: "Child run failed (spawn_failed)",
+      result: {
         status: "error",
         execution,
         outcome: "failed",

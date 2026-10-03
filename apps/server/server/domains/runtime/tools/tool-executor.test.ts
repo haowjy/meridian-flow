@@ -100,14 +100,14 @@ describe("input parsing before dispatch", () => {
     expect(result).toEqual({
       toolCallId: "call-1",
       isError: true,
-      output: {
+      output: [
+        "Invalid arguments for probe:",
+        '- mode: expected "foreground" or "background", got "invalid"',
+        "- count: expected a whole number, got 1.5",
+        "- extra: unknown argument",
+      ].join("\n"),
+      result: {
         error: "invalid_arguments",
-        message: [
-          "Invalid arguments for probe:",
-          '- mode: expected "foreground" or "background", got "invalid"',
-          "- count: expected a whole number, got 1.5",
-          "- extra: unknown argument",
-        ].join("\n"),
         issues: [
           { path: "mode", message: 'expected "foreground" or "background", got "invalid"' },
           { path: "count", message: "expected a whole number, got 1.5" },
@@ -125,5 +125,15 @@ describe("input parsing before dispatch", () => {
     );
     expect(handler).toHaveBeenCalledWith({ mode: "foreground" }, expect.anything());
     expect(result.output).toEqual({ mode: "foreground" });
+  });
+
+  it("keeps the typed result beside the output for a tool with no renderer", async () => {
+    const { executor } = parsingExecutor();
+    const result = await executor.executeTool(
+      { id: "call-1", name: "probe", arguments: { count: 2 } },
+      { ...executionBase, agentSlug: null },
+    );
+    expect(result.result).toEqual({ mode: "foreground", count: 2 });
+    expect(result.output).toEqual(result.result);
   });
 });

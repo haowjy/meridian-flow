@@ -29,8 +29,9 @@ export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
 export { createInspectionToolRegistrations } from "./inspection-tools.js";
 export {
   type InvalidArgumentIssue,
-  type InvalidArgumentsOutput,
-  invalidArgumentsOutput,
+  type InvalidArgumentsResult,
+  invalidArgumentsResult,
+  renderInvalidArguments,
 } from "./invalid-arguments.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
