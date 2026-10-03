@@ -724,7 +724,12 @@ function revisionOf(ctx: ConcreteResolveContext): string {
 }
 
 function scopeError(result: ScopeFailure): ResolveWriteResultWithoutIr {
-  return error(result.code === "ambiguous" ? "ambiguous_match" : result.code, result.message);
+  if (result.code === "ambiguous") return error("ambiguous_match", result.message);
+  return error(
+    result.code,
+    result.message,
+    result.documentBlocks === undefined ? undefined : { documentBlocks: result.documentBlocks },
+  );
 }
 
 function findError(

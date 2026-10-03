@@ -38,6 +38,23 @@ describe("assembleComposedSystemPrompt", () => {
     expect(prompt).not.toContain("\nStory Review\n");
   });
 
+  it("lists a preloaded skill's resources as calls that load them", () => {
+    const prompt = assembleComposedSystemPrompt({
+      basePrompt: "You are Critic.",
+      preloadedSkills: [
+        {
+          slug: "story-review",
+          description: "Review drafts.",
+          body: "Review body.\n",
+          resources: ["resources/line-edit.md"],
+        },
+      ],
+    });
+    expect(prompt).toContain(
+      'skill invoked: story-review\n\ndescription: Review drafts.\n\nReview body.\n\nResources:\nskill({"slug":"story-review","resource":"resources/line-edit.md"})',
+    );
+  });
+
   it("omits the available-skills section when no skills are listed", () => {
     const withSkills = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",

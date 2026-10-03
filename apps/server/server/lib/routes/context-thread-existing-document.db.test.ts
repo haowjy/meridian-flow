@@ -471,6 +471,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.members).toContain(stat.value.documentId);
     });
 
+    it("names an unknown scheme on read as not found with the known schemes", async () => {
+      const fixture = await createFixture();
+      const read = await fixture.callTool("read", {
+        path: "skill://story-review/resources/line-edit.md",
+      });
+      expect(read.result).toMatchObject({
+        status: "document_not_found",
+        message:
+          'Unknown scheme "skill". Known schemes: manuscript://, kb://, user://, unfiled://, scratch://, uploads://',
+      });
+    });
+
     it("names an unknown Work in a URI on read and ls", async () => {
       const UNKNOWN_WORK =
         /^Unknown Work @ghost-arc\. Valid Work slugs: (@direct, @draft|@draft, @direct)$/;
@@ -484,6 +496,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listed = await fixture.callTool("ls", { path: "scratch://@ghost-arc" });
       expect(listed.result).toMatchObject({
         code: "invalid_uri",
+        message: expect.stringMatching(UNKNOWN_WORK),
+      });
+
+      const switched = await fixture.callTool("work", { command: "switch", target: "@ghost-arc" });
+      expect(switched.result).toMatchObject({
+        code: "work_not_found",
         message: expect.stringMatching(UNKNOWN_WORK),
       });
     });

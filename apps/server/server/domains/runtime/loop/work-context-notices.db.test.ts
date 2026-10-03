@@ -169,6 +169,34 @@ else
       await expect(delivery().selectPending(otherThreadId)).resolves.toEqual([]);
     });
 
+    it("skips the thread whose own call changed the Work and refreshes the rest", async () => {
+      const siblingThreadId = "00000000-0000-4000-8000-000000000480" as typeof ids.threadId;
+      await db.insert(schema.threads).values({
+        id: siblingThreadId,
+        rootThreadId: siblingThreadId,
+        projectId: ids.projectId,
+        createdByUserId: ids.userId,
+        title: "Sibling Work thread",
+        kind: "primary",
+        status: "idle",
+      });
+      await repos.threadWorks.addMembership(siblingThreadId, ids.workId, true);
+      const notices = delivery();
+
+      await updateWorkTransition(
+        { works, workContextNotices: notices },
+        ids.workId,
+        { status: "Drafting" },
+        { originThreadId: ids.threadId },
+      );
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true, {
+        originThreadId: ids.threadId,
+      });
+
+      await expect(notices.selectPending(ids.threadId)).resolves.toEqual([]);
+      await expect(notices.selectPending(siblingThreadId)).resolves.toHaveLength(2);
+    });
+
     it("publishes archive and unarchive context refreshes", async () => {
       const notices = delivery();
       await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true);
