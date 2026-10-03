@@ -2,7 +2,9 @@
 name: Reader-sim
 description: Background helper that simulates reader experience and engagement.
 mode: subagent
-skills: []
+skills:
+  available:
+    - writing-principles
 subagents: []
 effort: low
 ---

@@ -23,8 +23,17 @@ export interface AvailableSkillListing {
 export class SkillUnavailableError extends Error {
   readonly name = "SkillUnavailableError";
 
-  constructor(slug: string) {
-    super(`Skill "${slug}" is not available`);
+  /** `loadable` is the model's own catalog, named so a refused load points at what will work. */
+  constructor(slug: string, loadable?: readonly string[]) {
+    super(
+      loadable === undefined
+        ? `Skill "${slug}" is not available`
+        : `Skill "${slug}" is not available. ${
+            loadable.length > 0
+              ? `Skills you can load: ${loadable.join(", ")}.`
+              : "This agent has no skills to load."
+          }`,
+    );
   }
 }
 
@@ -150,12 +159,13 @@ export async function loadModelSkillBody(input: {
   const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
   if (binding) {
     const modelSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
-    if (modelSkill) {
-      if (!modelSkill.modelInvocable) throw new SkillUnavailableError(input.slug);
-      return modelSkill;
-    }
+    if (modelSkill?.modelInvocable) return modelSkill;
   }
-  throw new SkillUnavailableError(input.slug);
+  const loadable = await resolveThreadModelAvailableSkills(input);
+  throw new SkillUnavailableError(
+    input.slug,
+    loadable.map((skill) => skill.slug),
+  );
 }
 
 async function listUserInvocableSkills(input: {

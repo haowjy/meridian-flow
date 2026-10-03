@@ -5,7 +5,10 @@ mode: primary
 tools:
   edit: deny
   ask_user: allow
-skills: []
+skills:
+  available:
+    - writing-principles
+    - story-review
 subagents: []
 effort: medium
 ---
