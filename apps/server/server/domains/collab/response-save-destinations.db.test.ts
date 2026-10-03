@@ -382,6 +382,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
     });
 
+    it("refuses a reply's only document when its Work was archived, and saves nothing", async () => {
+      const collab = createTestCollab();
+      await seed(collab);
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "notes.md",
+            documentId: SCRATCH_ID,
+            content: "Agent notes.",
+          },
+          { ...context(live), responseId: RESPONSE_ID },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+
+      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+
+      expect(committed).toMatchObject({
+        status: "committed",
+        documents: [],
+        refused: [{ documentId: SCRATCH_ID, reason: "work_archived", workSlug: "rewrite" }],
+      });
+      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
+      expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
+    });
+
     it("refuses a write after a switch to auto-apply until the document is read again", async () => {
       const collab = createTestCollab();
       await seed(collab);

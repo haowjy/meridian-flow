@@ -452,9 +452,12 @@ export function createThreadPeerCorePool(input: {
       return input.responseTransactions.run(
         input.commitThreadResponseAtomically,
         async () => {
+          // A core whose every document was refused has already closed this
+          // reply on its side; only a reply that never wrote falls back to the
+          // live core, which closes it.
+          const wrote = record.participants.size > 0;
           const refused = await screen(record);
-          const participants =
-            record.participants.size > 0 ? [...record.participants] : [input.liveUtilityCore];
+          const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
           const results: ResponseCommitSuccessResult[] = [];
           for (const core of participants) {
             results.push(await core.commitResponse(responseId, finalizeOptions()));
@@ -515,10 +518,18 @@ export function createThreadPeerCorePool(input: {
             record && record.participants.size > 0
               ? [...record.participants]
               : [input.liveUtilityCore];
+          // Every participant rolls back even when one throws, so no core keeps
+          // the reply's writes buffered.
           const results: ResponseRollbackResult[] = [];
+          const failures: unknown[] = [];
           for (const core of participants) {
-            results.push(await core.rollbackResponse(responseId, finalizeOptions()));
+            try {
+              results.push(await core.rollbackResponse(responseId, finalizeOptions()));
+            } catch (error) {
+              failures.push(error);
+            }
           }
+          if (failures.length > 0) throw failures[0];
           input.responseTransactions.enlist({
             commit: () => untrackResponse(responseId),
             abort() {},
