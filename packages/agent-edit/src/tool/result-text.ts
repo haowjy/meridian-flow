@@ -60,7 +60,10 @@ function blockCount(count: number): string {
   return count === 1 ? "1 block" : `${count} blocks`;
 }
 
-function draftedSuffix(result: AgentEditResultV1): string {
+/** ` (drafted in @work)` for a write held in a Work's draft; empty for a live one. */
+export function draftedSuffix(
+  result: Pick<AgentEditResultV1, "destination" | "draftWork">,
+): string {
   return result.destination === "draft" && result.draftWork !== undefined
     ? ` (drafted in @${result.draftWork})`
     : "";

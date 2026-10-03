@@ -1,4 +1,5 @@
 /** Compact navigation markers, never document text or drafted edit inputs. */
+import { type AgentEditResultV1, draftedSuffix } from "@meridian/agent-edit";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 export function readHistoryPreview(input: JsonObject): string {
   return String(input.path ?? "");
@@ -10,9 +11,10 @@ export function writeHistoryPreview(input: JsonObject, result?: JsonValue): stri
       : "";
   const from = (input.from as JsonObject | undefined)?.path;
   const source = typeof from === "string" ? ` from ${from}` : "";
-  const write = (result as JsonObject | undefined)?.write as JsonObject | undefined;
-  const handle = typeof write?.id === "string" ? `, ${write.id}` : "";
-  return `${input.command ?? ""} ${input.path ?? ""}${source}${size}${handle}`;
+  const typed = result as Partial<AgentEditResultV1> | undefined;
+  const handle = typeof typed?.write?.id === "string" ? `, ${typed.write.id}` : "";
+  const drafted = typed ? draftedSuffix(typed) : "";
+  return `${input.command ?? ""} ${input.path ?? ""}${source}${size}${handle}${drafted}`;
 }
 export function spawnHistoryPreview(input: JsonObject, result?: JsonValue): string {
   const output = result as JsonObject | undefined;

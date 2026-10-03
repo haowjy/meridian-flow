@@ -48,3 +48,13 @@ it("names a copy's source next to its destination", () => {
     }),
   ).toBe("insert ch12.md from ch11.md");
 });
+
+it("says a write was drafted, as its receipt does", () => {
+  const input = { command: "replace", path: "ch3.md", content: "Twelve words here." };
+  expect(
+    writeHistoryPreview(input, { write: { id: "w4" }, destination: "draft", draftWork: "rewrite" }),
+  ).toBe("replace ch3.md, 3 words, w4 (drafted in @rewrite)");
+  expect(writeHistoryPreview(input, { write: { id: "w4" }, destination: "live" })).toBe(
+    "replace ch3.md, 3 words, w4",
+  );
+});
