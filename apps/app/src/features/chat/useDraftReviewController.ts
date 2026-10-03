@@ -15,9 +15,8 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { type ContextTab, getContextTabs } from "@/client/stores";
+import { getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
-import type { DraftDiscardReceipt } from "@/features/project/context/context-removal-coordinator";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
@@ -25,6 +24,7 @@ import {
   useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
+import { clearDraftCommandError, setDraftCommandError } from "./draft-command-errors";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -139,11 +139,6 @@ export function useDraftReviewController(
     null,
   );
   const nextReviewAttemptIdRef = useRef(0);
-  const optimisticDraftDiscardRef = useRef<{
-    selection: DraftReviewSelection;
-    receipt: DraftDiscardReceipt;
-    restoreInline: boolean;
-  } | null>(null);
   stateRef.current = state;
 
   useEffect(() => {
@@ -223,6 +218,7 @@ export function useDraftReviewController(
 
   commandPortsRef.current = {
     apply: async ({ documentId, draftId }) => {
+      clearDraftCommandError({ documentId, draftId });
       let applyRoomName = reviewRoomName;
       if (!applyRoomName) {
         const preview = await getDraftPreview(projectId, workId, documentId, draftId);
@@ -312,62 +308,29 @@ export function useDraftReviewController(
     batchSettled: (error) => {
       dispatch({ type: "batchSettled", error });
     },
+    // The tab closes with the click; a refusal leaves it closed and the error
+    // on the draft (see draft-command-errors).
     draftDiscardStarted: (selection) => {
-      const tab = getContextTabs(projectId).tabs.find(
-        (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
-          candidate.kind === "tracked" &&
-          candidate.documentId === selection.documentId &&
-          candidate.draftOnly === true &&
-          candidate.reviewWorkId === workId &&
-          candidate.reviewDraftId === selection.draftId,
-      );
-      if (!tab) return;
-      const restoreInline =
-        stateRef.current.surface.kind === "inline" &&
-        stateRef.current.surface.documentId === selection.documentId &&
-        stateRef.current.surface.draftId === selection.draftId;
-      const removal = contextRemoval.discardDraft(projectId, workId, selection.documentId);
-      if (!("rollback" in removal)) return;
-      optimisticDraftDiscardRef.current = {
-        selection,
-        receipt: removal,
-        restoreInline,
-      };
+      clearDraftCommandError(selection);
+      contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
-    draftFailed: async (selection, code) => {
-      const optimistic = optimisticDraftDiscardRef.current;
-      if (
-        code === "discard-offline" &&
-        optimistic?.selection.documentId === selection.documentId &&
-        optimistic.selection.draftId === selection.draftId
-      ) {
-        optimisticDraftDiscardRef.current = null;
-        const restored = await optimistic.receipt.rollback();
-        if (restored.kind === "foreground-restored" && optimistic.restoreInline) {
-          dispatch({ type: "enterInline", ...selection });
-          loadInlineReviewRoom(selection.documentId, selection.draftId);
-        }
-      }
+    draftFailed: (selection, code) => {
+      if (code === "discard-offline") setDraftCommandError(selection, code);
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      const optimistic = optimisticDraftDiscardRef.current;
-      if (
-        optimistic?.selection.documentId === documentId &&
-        optimistic.selection.draftId === draftId
-      ) {
-        optimisticDraftDiscardRef.current = null;
-      }
+      clearDraftCommandError({ documentId, draftId });
       dispatch({ type: "discardSucceeded", draftId });
-      contextRemoval.settleDiscardedDraft(projectId, workId, documentId, draftId);
+      contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
+      clearDraftCommandError({ documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },

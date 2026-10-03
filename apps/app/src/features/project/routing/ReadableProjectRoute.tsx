@@ -229,11 +229,6 @@ export function ReadableProjectRoute({
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
-  const captureCurrentNavigation = useCallback(() => {
-    const current = latest.current.navigation;
-    const ticket = current?.capture();
-    return () => !!ticket && !!current?.isCurrent(ticket);
-  }, []);
   const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
     return projectAddressMatchesContextTarget(latest.current.address, target);
   }, []);
@@ -412,8 +407,6 @@ export function ReadableProjectRoute({
           if (options.tab) {
             const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
             if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-            if (installed.tab.kind === "tracked")
-              contextRemoval.admitDraftGeneration(projectId, installed.tab);
             await useContextTabsStore
               .getState()
               .selectTab(projectId, target.workId ?? "", installed.tab.documentId);
@@ -447,8 +440,6 @@ export function ReadableProjectRoute({
             if (options?.tab) {
               const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
               if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-              if (installed.tab.kind === "tracked")
-                contextRemoval.admitDraftGeneration(projectId, installed.tab);
             }
             const selected = options?.tab ?? tab;
             if (selected)
@@ -460,7 +451,7 @@ export function ReadableProjectRoute({
       );
       return result;
     },
-    [contextDestination, contextRemoval, projectId],
+    [contextDestination, projectId],
   );
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
@@ -547,31 +538,6 @@ export function ReadableProjectRoute({
     results: address.results ? "" : undefined,
     view: address.workView ?? address.worksView,
   };
-  const updateContextSearchWithAuthority = (update: (value: ProjectSearch) => ProjectSearch) => {
-    const next = update(search);
-    const current = latest.current;
-    if (projectSearchEquals(next, search) || !current.navigation) return undefined;
-    if (next.scheme && next.path !== undefined) {
-      const destination = contextDestination({
-        scheme: next.scheme,
-        path: next.path,
-        workId: next.work === "none" ? null : (next.work ?? workId),
-      });
-      return current.navigation.transitionWithAuthority(destination.address, {
-        replace: true,
-        state: destination.state,
-      });
-    }
-    const destination =
-      next.screen === "work"
-        ? toDestination({ kind: "works" })
-        : next.screen === "context"
-          ? toDestination({ kind: "editor" })
-          : null;
-    return destination
-      ? current.navigation.transitionWithAuthority(destination, { replace: true })
-      : undefined;
-  };
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
     // Chat reopens the current chat; with none, its index.
@@ -655,15 +621,22 @@ export function ReadableProjectRoute({
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
               readSearch: () => search,
-              captureCurrentNavigation,
-              restoreDraft: (_id, target, tab, draftId, isCurrent) =>
-                openContext(
-                  { ...target, documentId: tab.documentId },
-                  { replace: true, tab, draftId, isCurrent },
-                ),
-              updateSearchWithAuthority: (_id, update) => updateContextSearchWithAuthority(update),
               updateSearch: (_id, update) => {
-                return updateContextSearchWithAuthority(update)?.settlement;
+                const next = update(search);
+                if (projectSearchEquals(next, search)) return;
+                if (next.scheme && next.path !== undefined)
+                  void openContext(
+                    {
+                      scheme: next.scheme,
+                      path: next.path,
+                      workId: next.work === "none" ? null : (next.work ?? workId),
+                    },
+                    { replace: true },
+                  );
+                else if (next.screen === "work")
+                  void go(toDestination({ kind: "works" }), { replace: true });
+                else if (next.screen === "context")
+                  void go(toDestination({ kind: "editor" }), { replace: true });
               },
             }}
             activeLocalDocumentId={localDocumentId}

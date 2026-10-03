@@ -1073,9 +1073,8 @@ msgstr "Could not load files."
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr "Couldn't apply everything. Nothing changed, so you're still in Draft."
 
-#: src/features/chat/DraftDock.tsx
+#: src/features/chat/ReviewMessageText.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr "Couldn't apply. Check your connection and try again."
 
@@ -1135,13 +1134,12 @@ msgstr "Couldn't delete this document. Try again."
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
 
-#: src/features/chat/DraftDock.tsx
+#: src/features/chat/ReviewMessageText.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr "Couldn't discard. Check your connection and try again."
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Try again."
 msgstr "Couldn't discard. Try again."
 

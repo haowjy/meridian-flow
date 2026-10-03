@@ -9,6 +9,7 @@ import { NewBadge } from "@/components/app/NewBadge";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import type {
   DraftReviewController,
   InlineReviewMessageCode,
@@ -213,15 +214,4 @@ function currentReviewMessage(
     return { code: controller.inlineDiscardError, tone: "error" };
   }
   return null;
-}
-
-function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
-  switch (code) {
-    case "apply-failed":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
-    case "discard-offline":
-      return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
-    case "discard-failed":
-      return <Trans>Couldn't discard. Try again.</Trans>;
-  }
 }

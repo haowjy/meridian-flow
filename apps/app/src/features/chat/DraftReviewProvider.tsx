@@ -428,7 +428,7 @@ function useDraftReviewScopeOwner(
               controller.inlineReview.draftId === witness.identity.draftId
             )
               controller.exitReview();
-            contextRemoval.settleDiscardedDraft(
+            contextRemoval.discardDraft(
               projectId,
               workId,
               witness.identity.documentId,

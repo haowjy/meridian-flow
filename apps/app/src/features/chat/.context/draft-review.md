@@ -180,20 +180,21 @@ admission may enrich only the overlay with resolved live-resource metadata.
   witness and recovery settles the overlay. Controls must not re-enable before
   that local resolution; draft-group absence alone cannot distinguish Apply
   from Discard.
-- **Optimistic Discard.** Whole-draft Discard calls `discardDraft` before the
-  server command. It closes the tab with the ordinary adjacent-tab/empty-Editor
-  fallback, repairs the address in place, and returns a receipt. On refusal the
-  controller calls only `receipt.rollback()`; it never reopens the tab or
-  navigates itself. Rollback does nothing once Apply promotion, a newer review
-  admission, or a confirmed Discard superseded the receipt. It returns the
-  writer to the draft only if they have issued no navigation since the
-  fallback (even if they came back to the same address); otherwise it restores
-  the tab in the background. The refusal error is keyed to the draft and shows
-  when that draft's review opens again. Header, composer-strip, and bulk
-  Discard share this lifecycle.
-- **Confirmed and remote Discard** call `settleDiscardedDraft`, even when no
-  local tab remains. It is terminal: it retires every outstanding receipt for
-  that document and never creates one.
+- **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
+  command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
+  fallback and repairs the address in place. A refused Discard never reopens
+  the tab and never navigates: the draft is still pending, so the error shows
+  on the draft itself (below). Header, composer-strip, and bulk Discard share
+  this lifecycle.
+- **Refused Discard error.** `draft-command-errors.ts` holds it by draft
+  identity (documentId + draftId), outside any review scope, so the composer
+  strip (under the strip for one document, on the document's row for several,
+  expanding the strip) and the Work Files "Drafts to review" row both show it
+  whichever surface ran the command. It clears on the next action on that draft
+  (Discard retry, Apply, opening Review) or when the draft is discarded or
+  applied; Work Files also offers Dismiss.
+- **Confirmed and remote Discard** call the same `discardDraft`, even when no
+  local tab remains (a no-op then). It never creates or restores a tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
   a remote Apply; absence means remote Discard. A failed read leaves the tab

@@ -3,6 +3,12 @@ import { t } from "@lingui/core/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import {
+  clearDraftCommandError,
+  draftCommandErrorKey,
+  useDraftCommandErrors,
+} from "@/features/chat/draft-command-errors";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
@@ -22,6 +28,7 @@ export function WorkDrafts({
 }) {
   const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
+  const commandErrors = useDraftCommandErrors();
   const groups = activeWorkDraftGroups(
     usePostApplyDraftGroupProjections(query.groups, projectId, workId).commandEligibleGroups,
   );
@@ -43,31 +50,41 @@ export function WorkDrafts({
           className="-mx-2"
           rows={visible.map((group) => {
             const path = group.contextPath;
+            const draft = { documentId: group.documentId, draftId: group.draft.draftId };
+            const refused = commandErrors[draftCommandErrorKey(draft)];
             return {
               key: group.documentId,
               node: (
-                <button
-                  type="button"
-                  className={workFileRowClass}
-                  disabled={!path}
-                  onClick={() => {
-                    if (path)
-                      openAiDraft({
-                        workId,
-                        documentId: group.documentId,
-                        draftId: group.draft.draftId,
-                        contextPath: path,
-                        documentName: group.documentName ?? undefined,
-                        isNewDocument: group.draft.isNewDocument === true,
-                      });
-                  }}
-                >
-                  <RowIcon icon={fileKindIcon(group.documentName || path || "")} />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {group.documentName || path || t`Untitled manuscript`}
-                  </span>
-                  <span className="shrink-0 text-xs text-jade-text">{t`Pending draft`}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={workFileRowClass}
+                    disabled={!path}
+                    onClick={() => {
+                      if (path)
+                        openAiDraft({
+                          workId,
+                          documentId: group.documentId,
+                          draftId: group.draft.draftId,
+                          contextPath: path,
+                          documentName: group.documentName ?? undefined,
+                          isNewDocument: group.draft.isNewDocument === true,
+                        });
+                    }}
+                  >
+                    <RowIcon icon={fileKindIcon(group.documentName || path || "")} />
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {group.documentName || path || t`Untitled manuscript`}
+                    </span>
+                    <span className="shrink-0 text-xs text-jade-text">{t`Pending draft`}</span>
+                  </button>
+                  {refused ? (
+                    <InlineErrorRow
+                      message={<ReviewMessageText code={refused} />}
+                      onDismiss={() => clearDraftCommandError(draft)}
+                    />
+                  ) : null}
+                </>
               ),
             };
           })}
