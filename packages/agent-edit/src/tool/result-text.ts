@@ -49,7 +49,10 @@ function statusLine(result: AgentEditResultV1): string {
   }
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
-    facts.push(`blocks: ${count}`);
+    const total = result.read.documentBlocks;
+    facts.push(
+      total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
+    );
     if (result.read.version) facts.push(`version: ${result.read.version}`);
     if (result.read.format === "outline") facts.push("format: outline");
   }

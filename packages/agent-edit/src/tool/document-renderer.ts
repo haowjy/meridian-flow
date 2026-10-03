@@ -37,6 +37,8 @@ export interface RenderedRead {
   /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
   blocks: Array<{ hash: string; body: string }>;
+  /** How many blocks the whole document has, so a narrowed read can say it is partial. */
+  documentBlocks: number;
 }
 
 export type ParseForCommandResult =
@@ -96,7 +98,11 @@ export function createDocumentRenderer(deps: {
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
     const outline = headingBlocks.length > 0;
     const serialized = model.serializeBlockLines(doc, codec, outline ? headingBlocks : blocks);
-    return { format: outline ? "outline" : "full", blocks: serialized.map(modelBlockItem) };
+    return {
+      format: outline ? "outline" : "full",
+      blocks: serialized.map(modelBlockItem),
+      documentBlocks: model.getBlocks(doc).length,
+    };
   }
 
   function parseForCommand(content: string): ParseForCommandResult {

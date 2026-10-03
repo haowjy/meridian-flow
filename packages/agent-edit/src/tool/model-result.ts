@@ -81,6 +81,8 @@ export interface AgentEditModelPayload {
   };
   read?: {
     format: "full" | "outline";
+    /** The whole document's block count; the text names it when the read returned fewer. */
+    documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows drafts. */
     version?: "draft" | "live";
   };
