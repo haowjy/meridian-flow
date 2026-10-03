@@ -52,7 +52,7 @@ describe("renderAgentEditResult", () => {
           {
             extent: "full",
             relation: "document",
-            items: [item("a1b2", "# Chapter"), item("e5f6", "## Arena")],
+            items: [item("a1b2", "# Chapter"), { ...item("e5f6", "## Arena"), section: "arena" }],
           },
         ],
       },
@@ -64,7 +64,7 @@ describe("renderAgentEditResult", () => {
         "a1b2|# Chapter",
         'read({"path": "chapter.md#a1b2"})',
         "e5f6|## Arena",
-        'read({"path": "chapter.md#e5f6"})',
+        'read({"path": "chapter.md#arena"})',
       ].join("\n"),
     );
   });
@@ -155,6 +155,20 @@ describe("renderAgentEditResult", () => {
       "status: success; path: kb://notes.md; write: w2 (drafted in @rewrite)",
     );
     expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2");
+  });
+
+  it("says a reconciled undo kept later edits", () => {
+    const undo = modelResult({
+      command: "undo",
+      status: "reconciled",
+      payload: { path: "chapter.md", reversal: { direction: "undo", writes: ["w2"] } },
+    });
+    expect(renderAgentEditResult(undo)).toBe(
+      [
+        "status: reconciled; path: chapter.md; undo: w2",
+        "later edits were kept, so the text may not match how it was before the write.",
+      ].join("\n"),
+    );
   });
 
   it("renders the reversed write handles and an error message", () => {

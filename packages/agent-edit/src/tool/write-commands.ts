@@ -23,7 +23,12 @@ import {
   type PreparedMutation,
 } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
-import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
+import {
+  formatApplySuccess,
+  isDocumentEmpty,
+  status,
+  truncateCreateEcho,
+} from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
@@ -71,6 +76,12 @@ export function createWriteCommands(deps: {
 
   return { read, create, mutate };
 
+  function emptiedDocument(runtime: { doc: Y.Doc }): { documentEmpty?: true } {
+    return isDocumentEmpty(options.model, options.codec, toDocHandle(runtime.doc))
+      ? { documentEmpty: true }
+      : {};
+  }
+
   async function read(
     command: ReadCommand,
     session: ActorSession,
@@ -88,7 +99,6 @@ export function createWriteCommands(deps: {
       address.documentId,
       runtime,
       "read",
-      { filePath: address.filePath },
     );
     if (isInternalWriteResult(restored)) {
       if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
@@ -188,7 +198,6 @@ export function createWriteCommands(deps: {
       options.coordinator,
       address.documentId,
       command.command,
-      address.filePath,
       (liveDoc) =>
         options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
           ? status(
@@ -209,7 +218,6 @@ export function createWriteCommands(deps: {
         address.documentId,
         runtime,
         command.command,
-        { filePath: address.filePath },
       );
       if (isInternalWriteResult(restored)) return restored;
     }
@@ -338,6 +346,7 @@ export function createWriteCommands(deps: {
         deletedHashes,
       });
       return formatApplySuccess({
+        ...emptiedDocument(runtime),
         phase: "staged",
         writeId: writeIdentity.handle,
         settlementId: writeIdentity.durableId,
@@ -400,6 +409,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: committed.ok ? committed.revision : null,
       writeId: writeIdentity.handle,
@@ -438,13 +448,7 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
-    let synced = await requireSynced(
-      session,
-      address.documentId,
-      command.command,
-      runtime,
-      address.filePath,
-    );
+    let synced = await requireSynced(session, address.documentId, command.command, runtime);
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(
@@ -551,6 +555,7 @@ export function createWriteCommands(deps: {
           concurrent,
         );
         const result = formatApplySuccess({
+          ...emptiedDocument(runtime),
           phase: "staged",
           writeId: writeIdentity.handle,
           settlementId: writeIdentity.durableId,
@@ -650,6 +655,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: syncedMutation.revision,
       writeId: writeIdentity.handle,

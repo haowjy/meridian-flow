@@ -261,7 +261,6 @@ export function createMutationCommit(deps: {
         coordinator,
         input.docId,
         input.commandName,
-        input.docId,
         async (liveDoc) => {
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,

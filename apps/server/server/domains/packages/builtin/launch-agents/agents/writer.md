@@ -9,6 +9,7 @@ skills:
   available:
     - creative-writing-modes
     - writing-principles
+    - story-review
 subagents: []
 effort: medium
 ---

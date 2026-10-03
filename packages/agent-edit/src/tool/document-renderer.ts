@@ -5,6 +5,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
+  headingSectionFragments,
   isHeading,
   resolveScope,
   resolveSearchScope,
@@ -36,7 +37,10 @@ export interface DocumentRenderer {
 export interface RenderedRead {
   /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
-  blocks: Array<{ hash: string; body: string }>;
+  /** An outline heading's `section` is the slug fragment that reads it, when one is safe. */
+  blocks: Array<{ hash: string; body: string; section?: string }>;
+  /** How many blocks the whole document has, so a narrowed read can say it is partial. */
+  documentBlocks: number;
 }
 
 export type ParseForCommandResult =
@@ -95,8 +99,20 @@ export function createDocumentRenderer(deps: {
     const headingBlocks =
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
     const outline = headingBlocks.length > 0;
-    const serialized = model.serializeBlockLines(doc, codec, outline ? headingBlocks : blocks);
-    return { format: outline ? "outline" : "full", blocks: serialized.map(modelBlockItem) };
+    const rendered = outline ? headingBlocks : blocks;
+    const items = model.serializeBlockLines(doc, codec, rendered).map(modelBlockItem);
+    if (outline) {
+      const fragments = headingSectionFragments({ doc, model });
+      items.forEach((item, index) => {
+        const section = fragments.get(rendered[index] as BlockRef);
+        if (section !== undefined) item.section = section;
+      });
+    }
+    return {
+      format: outline ? "outline" : "full",
+      blocks: items,
+      documentBlocks: model.getBlocks(doc).length,
+    };
   }
 
   function parseForCommand(content: string): ParseForCommandResult {

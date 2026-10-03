@@ -2082,7 +2082,8 @@ else
               toolCallId: "last-tool",
               output: {
                 error: "permission_denied",
-                reason: 'Tool "unavailable_probe_tool" is not enabled.',
+                reason:
+                  "This agent has no \"unavailable_probe_tool\" tool, so it can't make this call. Tell the user you can't do this here.",
               },
               isError: true,
             },
