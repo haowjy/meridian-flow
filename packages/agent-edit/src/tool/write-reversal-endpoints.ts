@@ -100,9 +100,11 @@ export function createWriteReversalEndpoints(deps: {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
-      // This pre-reversal flush has no wrapping database transaction: the journal write is
-      // immediately durable, so it does not need the server response unit-of-work facade.
-      await responseCommitter.commitResponse(context.responseId);
+      // Undo and redo reverse saved history. The host saves the reply before
+      // one (a save boundary), so a write staged in it here is a host bug.
+      throw new Error(
+        `Invariant violation: ${direction} ran in response ${context.responseId} with staged writes; save the reply first.`,
+      );
     }
     const selection = commandSelection(command);
 

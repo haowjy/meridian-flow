@@ -64,7 +64,12 @@ const READ_FIELDS = {
 const WRITE_HANDLE_SELECTOR_FIELDS = {
   to: z.string().optional().describe("Write handle such as w3; with `since`, the end of a range."),
   since: z.string().optional().describe("With `to`: the first write handle of the range."),
-  last: z.number().int().min(1).optional().describe("The last N writes."),
+  last: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("The last N writes. For redo, the N you undid most recently."),
   all: z.boolean().optional().describe("Every write in this thread."),
 };
 

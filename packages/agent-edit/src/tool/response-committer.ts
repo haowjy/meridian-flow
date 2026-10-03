@@ -21,6 +21,7 @@ import type {
   DestructiveSweepReport,
   JournaledUpdate,
   MutationCommit,
+  OwnWriteStep,
 } from "./mutation-commit.js";
 import { formatApplySuccess } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -416,6 +417,7 @@ export function createResponseCommitter(deps: {
               interactionContext: docBuffer.interactionContext,
               ownTurnId: docBuffer.updates.at(-1)?.turnId,
               actor: lastStagedUpdate(docBuffer).actor,
+              ownWrites: ownWriteSteps(docBuffer),
             },
           ] satisfies [string, CommitPreflightInput];
         }),
@@ -447,6 +449,7 @@ export function createResponseCommitter(deps: {
                 ownTurnId: lastTurnId,
                 actor: lastStagedUpdate(docBuffer).actor,
                 update: mergeStagedUpdates(docBuffer),
+                ownWrites: ownWriteSteps(docBuffer),
                 liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
               },
               preflights.get(docBuffer.docId),
@@ -1357,6 +1360,10 @@ function responseHashes(docBuffer: ResponseDocumentBuffer): {
     for (const hash of update.deletedHashes) deletedHashes.add(hash);
   }
   return { touchedHashes, deletedHashes };
+}
+
+function ownWriteSteps(docBuffer: ResponseDocumentBuffer): OwnWriteStep[] {
+  return docBuffer.updates.map(({ preOwnSnapshot, update }) => ({ preOwnSnapshot, update }));
 }
 
 function mergeStagedUpdates(docBuffer: ResponseDocumentBuffer): Uint8Array {
