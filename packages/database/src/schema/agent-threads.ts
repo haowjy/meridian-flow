@@ -547,7 +547,7 @@ export const threadExecutionReports = pgTable(
       .where(sql`${table.publication} = 'pending'`),
     check(
       "thread_execution_reports_origin_valid",
-      sql`${table.origin} IN ('spawn','foreground_message','thread_run')`,
+      sql`${table.origin} IN ('spawn','message','thread_run')`,
     ),
     check(
       "thread_execution_reports_delivery_valid",
@@ -555,7 +555,7 @@ export const threadExecutionReports = pgTable(
     ),
     check(
       "thread_execution_reports_origin_delivery_valid",
-      sql`(${table.origin} = 'spawn' AND ${table.deliveryMode} IN ('background_notification','direct')) OR (${table.origin} = 'foreground_message' AND ${table.deliveryMode} = 'direct') OR (${table.origin} = 'thread_run' AND ${table.deliveryMode} = 'none')`,
+      sql`(${table.origin} IN ('spawn','message') AND ${table.deliveryMode} IN ('background_notification','direct')) OR (${table.origin} = 'thread_run' AND ${table.deliveryMode} = 'none')`,
     ),
     check(
       "thread_execution_reports_capture_call_coherent",

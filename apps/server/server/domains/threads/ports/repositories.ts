@@ -226,7 +226,7 @@ export interface ExecutionReportRepository {
 
 export type LatestChildExecution = Pick<
   SavedExecutionReport,
-  "childThreadId" | "deliveryMode" | "admittedAt" | "terminalAt"
+  "childThreadId" | "deliveryMode" | "callerThreadId" | "admittedAt" | "terminalAt"
 >;
 
 export interface CreateThreadInput {

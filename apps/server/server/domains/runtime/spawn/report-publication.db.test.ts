@@ -189,9 +189,64 @@ else
         summary: "secret report body",
         running: true,
         message:
-          "p1 is running again; this report is from its previous run. You'll be notified when it finishes.",
+          "p1 is running again; this report is from its previous run. You won't be notified when it finishes.",
       });
       expect(running).not.toHaveProperty("run");
+    });
+
+    it("keeps the promise to a parent that re-tasked its child in the background", async () => {
+      await terminal();
+      expect(await publisher.publish(ids.child, ids.execution)).toBe("published");
+      await inbox.ack(
+        ids.caller,
+        (await inbox.selectPending(ids.caller)).map((message) => message.id),
+      );
+      await db.insert(schema.turns).values({
+        id: ids.nextExecution,
+        threadId: ids.child,
+        position: 3,
+        parentTurnId: ids.childUserTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        executionTurnId: ids.nextExecution,
+        handle: "p1",
+        origin: "message",
+        deliveryMode: "background_notification",
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "retask-1",
+        cardBlockId: null,
+      });
+      expect(
+        await readModelThreadReport({ callerThreadId: ids.caller, ref: "p1", repos }),
+      ).toMatchObject({
+        running: true,
+        message:
+          "p1 is running again; this report is from its previous run. You'll be notified when it finishes.",
+      });
+
+      await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          turnId: ids.nextExecution,
+          cause: { kind: "success", finishReason: "end_turn" },
+        },
+      );
+      expect(await publisher.publish(ids.child, ids.nextExecution)).toBe("published");
+      const messages = await inbox.selectPending(ids.caller);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        provenance: { kind: "child", threadId: ids.child, reportId: ids.nextExecution },
+        body: {
+          kind: "text",
+          text: 'Subagent p1 finished (succeeded). Read its report with thread_report({"ref":"p1"}).',
+        },
+      });
     });
 
     it("preserves JSON-text scalar payloads through terminal A, orphan repair, and exact report reads", async () => {
@@ -561,7 +616,7 @@ else
         childThreadId: ids.child,
         executionTurnId: ids.nextExecution,
         handle: "p1",
-        origin: "foreground_message",
+        origin: "message",
         deliveryMode: "direct",
         callerThreadId: ids.caller,
         callerTurnId: ids.callerTurn,

@@ -212,7 +212,7 @@ export async function dispatchToolCall(
                     callerTurnId: ctx.state.currentTurn.id,
                     toolCallId: call.id,
                     cardBlockId: null,
-                    origin: "foreground_message" as const,
+                    origin: "message" as const,
                     deliveryMode: "direct" as const,
                   },
                 }
@@ -293,7 +293,7 @@ export async function dispatchToolCall(
   const persistedOutput: JsonValue =
     call.name === "spawn" || call.name === "thread_message"
       ? spawnOutputForTranscript(execResult.output, {
-          queuedNoReply: call.name === "thread_message",
+          queuedMessage: call.name === "thread_message",
         })
       : execResult.output;
   const persistedIsError = execResult.isError;

@@ -2,6 +2,7 @@
  * Fold row for `thread_report`: the step where the model read a subagent's
  * report. The report itself lives on the launch card; this row records the read.
  * It reads the typed `tool.result`; `tool.output` is the model's text rendering.
+ * `SubagentRefLine` names the addressed subagent for every ref-addressed row.
  */
 
 import { t } from "@lingui/core/macro";
@@ -17,15 +18,17 @@ import { SubagentIdentityName } from "./subagent/SubagentRow";
 import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
-function ThreadReportTitle({ tool }: { tool: ToolView }) {
-  const ref = stringInput(toolInputObject(tool), "ref") ?? "";
-  const subagent = useSubagentRun({ ref });
+/**
+ * The subagent a tool call addressed by ref, named the way the other subagent
+ * rows name it. The name is a door to the run's launch card when one exists.
+ */
+export function SubagentRefLine({ handle }: { handle: string }) {
+  const subagent = useSubagentRun({ ref: handle });
   const run = subagent ?? fallbackSubagentRun;
   const name = subagent?.name;
   const originTurnId = subagent?.originTurnId;
   const parentThreadId = subagent?.parentThreadId;
   const childThreadId = subagent?.threadId;
-  // The name is a door to the launch card, which holds the same report.
   const who =
     originTurnId && parentThreadId && childThreadId ? (
       <button
@@ -47,12 +50,16 @@ function ThreadReportTitle({ tool }: { tool: ToolView }) {
     ) : (
       <SubagentIdentityName run={run} />
     );
-  const line = (
+  return (
     <>
       {who}
       {name ? <span className="ml-1.5 text-muted-foreground">{name}</span> : null}
     </>
   );
+}
+
+function ThreadReportTitle({ tool }: { tool: ToolView }) {
+  const line = <SubagentRefLine handle={stringInput(toolInputObject(tool), "ref") ?? ""} />;
   if (tool.status === "partial") return <Trans>Reading report from {line}</Trans>;
   if (tool.isError || !readThreadReport(tool.result)) {
     return <Trans>Couldn't read report from {line}</Trans>;

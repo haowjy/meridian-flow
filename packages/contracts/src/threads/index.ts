@@ -172,7 +172,15 @@ export type WithdrawThreadControlResponse = {
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
 export type MessageProvenance =
   | { kind: "writer"; actorId: string }
-  | { kind: "agent"; threadId: string }
+  | {
+      kind: "agent";
+      threadId: string;
+      /**
+       * Set when a parent re-tasks its own child: the parent's invoking turn and
+       * tool call. The run that adopts the message reports back to the parent.
+       */
+      notify?: { turnId: string; toolCallId: string };
+    }
   | {
       kind: "child";
       threadId: string;

@@ -1336,6 +1336,10 @@ msgstr ""
 msgid "Couldn't search"
 msgstr ""
 
+#: src/features/chat/thread-message-renderer.tsx
+msgid "Couldn't send a message to {line}"
+msgstr ""
+
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Couldn't send your answer."
 msgstr ""
@@ -3395,6 +3399,10 @@ msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Sending your answer…"
+msgstr ""
+
+#: src/features/chat/thread-message-renderer.tsx
+msgid "Sent a message to {line}"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx

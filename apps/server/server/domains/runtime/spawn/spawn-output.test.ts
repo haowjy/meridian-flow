@@ -126,13 +126,33 @@ describe("spawnOutputForTranscript", () => {
       handle: "c1",
       threadId: "primary-1",
       agentSlug: "primary",
+      notifiesCaller: false,
     };
 
-    expect(spawnOutputForTranscript(background, { queuedNoReply: true })).toEqual({
+    expect(spawnOutputForTranscript(background, { queuedMessage: true })).toEqual({
       status: "background",
       handle: "c1",
       agentSlug: "primary",
+      notifiesCaller: false,
       note: "Message queued. No reply is pushed back; the target's response is readable in its transcript.",
+    });
+  });
+
+  it("tells a parent that re-tasked its own child it will be notified", () => {
+    const background = {
+      status: "background",
+      handle: "p3",
+      threadId: "child-3",
+      agentSlug: "critic",
+      notifiesCaller: true,
+    };
+
+    expect(spawnOutputForTranscript(background, { queuedMessage: true })).toEqual({
+      status: "background",
+      handle: "p3",
+      agentSlug: "critic",
+      notifiesCaller: true,
+      note: "Message queued. You'll be notified when p3 finishes.",
     });
   });
 });
