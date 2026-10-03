@@ -10,6 +10,8 @@ import {
 } from "./test-support/assertions.js";
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
+const EMPTY_NOTE = "document is now empty; its one blank block always stays.";
+
 describe("response staging", () => {
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
@@ -243,6 +245,39 @@ describe("response staging", () => {
     const text = renderAgentEditResult(receipt);
     expect(text).toContain("concurrent user content swept during commit; re-read required");
     expect(text).toMatch(/swept: [0-9a-f]+\|Alpha para\. SAME\\_BLOCK\\_WRITER/);
+  });
+
+  it("says in the settled receipt when a write leaves the document empty", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const responseContext = { ...context, turnId: "turn-empty", responseId: "response-empty" };
+    const staged = await ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [1, 3] },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain(EMPTY_NOTE);
+
+    const committed = await ctx.core.commitResponse("response-empty");
+    const receipt = committed.documents[0]?.receipts.at(-1)?.result;
+    if (!receipt) throw new Error("missing settled receipt");
+    expect(renderAgentEditResult(receipt)).toContain(EMPTY_NOTE);
+  });
+
+  it("says nothing about emptiness when blocks remain", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const removed = await ctx.core.write({ command: "remove", file: "chapter.md", in: 1 }, context);
+    expect(outcomeText(removed)).not.toContain(EMPTY_NOTE);
+  });
+
+  it("says when a direct write leaves the document empty", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const removed = await ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [1, 2] },
+      context,
+    );
+    expect(outcomeText(removed)).toContain(EMPTY_NOTE);
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {

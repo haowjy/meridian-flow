@@ -22,7 +22,7 @@ import type {
   JournaledUpdate,
   MutationCommit,
 } from "./mutation-commit.js";
-import { formatApplySuccess } from "./response-format.js";
+import { formatApplySuccess, isDocumentEmpty } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   DocumentCommandName,
@@ -731,6 +731,10 @@ export function createResponseCommitter(deps: {
           echo,
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
           ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
+          ...(index === lastIndex &&
+          isDocumentEmpty(deps.model, deps.codec, toDocHandle(docBuffer.runtime.doc))
+            ? { documentEmpty: true }
+            : {}),
           ...(update.copied
             ? {
                 copied: { summary: update.copied, edges: copyEdgeLines(update.copied, after) },
