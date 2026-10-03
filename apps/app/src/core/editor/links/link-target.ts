@@ -8,7 +8,8 @@
  * app, and only `external` is decided entirely on the client. The two internal
  * kinds are exactly the server's `DocumentLinkTarget`, so `documentLinkTarget()`
  * is a projection rather than a translation. `[[name]]` is not a spelling:
- * it is text wherever it appears.
+ * it is text wherever it appears, and a paste turns it into a link
+ * (`wikilink-paste.ts`) before it is ever stored.
  *
  * Two directions live here on purpose. `classifyLinkTarget` reads an href that
  * is already in the document — written by the markdown parser, by an LLM, or

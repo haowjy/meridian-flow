@@ -2,7 +2,7 @@
  * Drawing what the resolver answered, without storing any of it.
  *
  * The state rides a decoration rather than a schema attribute, which is the
- * whole point of law 9: `[[The Second Gate]]` from an LLM needs no extra
+ * whole point of law 9: `[The Second Gate](gate.md)` from an LLM needs no extra
  * attributes to render correctly, and nothing about whether it resolves ever
  * reaches the wire or another peer's document. A decoration is also the only
  * shape that can change without a write, and this one changes as soon as an

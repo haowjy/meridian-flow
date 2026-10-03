@@ -55,7 +55,7 @@ import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
-import { LinkSurfaceExtension } from "./links";
+import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
 import { sanitizePastedHTML } from "./sanitize-paste";
@@ -102,6 +102,8 @@ export type CreateEditorExtensionsOptions = {
   /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
+  /** Turns a pasted `[[Name]]` into a link; only the Editor mounts it. */
+  wikilinkPaste?: WikilinkPasteOptions;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -282,6 +284,7 @@ export function createEditorExtensions({
   agentNames,
   slashCommands,
   atReferences,
+  wikilinkPaste,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -296,6 +299,7 @@ export function createEditorExtensions({
       assetRenderContext,
       slashCommands,
       atReferences,
+      wikilinkPaste,
     }),
     ...collaboration,
     // Undo exists only alongside collaboration's UndoManager, so its owned key
@@ -315,9 +319,10 @@ export function createStandaloneEditorExtensions({
   assetRenderContext,
   slashCommands,
   atReferences,
+  wikilinkPaste,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences"
+  "schemaType" | "assetRenderContext" | "slashCommands" | "atReferences" | "wikilinkPaste"
 > = {}): Extensions {
   if (schemaType === "code") {
     return [
@@ -372,6 +377,7 @@ export function createStandaloneEditorExtensions({
           }),
         ]
       : []),
+    ...(wikilinkPaste ? [WikilinkPasteExtension.configure(wikilinkPaste)] : []),
     MarkdownAutoformatExtension,
     // Below the autoformat, which owns the delimiters this deliberately does
     // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
@@ -404,6 +410,7 @@ export function createEditorConfig({
   agentNames,
   slashCommands,
   atReferences,
+  wikilinkPaste,
   editable = true,
   autofocus = false,
   placeholder,
@@ -433,6 +440,7 @@ export function createEditorConfig({
         agentNames,
         slashCommands,
         atReferences,
+        wikilinkPaste,
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],

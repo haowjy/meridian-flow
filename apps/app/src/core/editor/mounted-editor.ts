@@ -21,6 +21,7 @@ import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
+import type { WikilinkPasteCatalog } from "./links";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
@@ -98,6 +99,8 @@ export type MountedEditorInput = {
    * is not.
    */
   atReferenceCatalog?: () => AtReferenceCatalog | null;
+  /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
+  wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -110,6 +113,7 @@ export function useMountedEditor({
   placeholder,
   slashCommandCatalog,
   atReferenceCatalog,
+  wikilinkPasteCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
@@ -120,6 +124,8 @@ export function useMountedEditor({
   catalogRef.current = slashCommandCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
   atReferenceCatalogRef.current = atReferenceCatalog;
+  const wikilinkPasteCatalogRef = useRef(wikilinkPasteCatalog);
+  wikilinkPasteCatalogRef.current = wikilinkPasteCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -140,6 +146,7 @@ export function useMountedEditor({
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
+      wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },
     });
     return {
       editorConfig,
