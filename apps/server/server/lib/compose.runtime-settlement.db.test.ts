@@ -606,6 +606,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(again.isError).toBe(true);
         expect(again.output).toContain("A binary copy can't replace an existing file.");
+
+        const missingSource = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000973",
+            name: "write",
+            arguments: {
+              command: "copy",
+              from: { path: "manuscript://no-such-source.md" },
+              path: "scratch://from-missing.md",
+            },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(missingSource.isError).toBe(true);
+        expect(missingSource.output).toBe(
+          "status: document_not_found\n\nfrom manuscript://no-such-source.md: File not found. Read the project to find the right path.",
+        );
       } finally {
         await unloadRuntime(runtime.hocuspocus);
       }
