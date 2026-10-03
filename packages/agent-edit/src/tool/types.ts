@@ -43,7 +43,7 @@ interface WriteOutcomeBase {
   writeId?: string;
   /** Unique host-only correlation for replacing a staged result with its settled receipt. */
   settlementId?: string;
-  /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
+  /** Machine-readable error detail for host observability; the model reads the rendered `result`. */
   error?: WriteErrorDetail;
   /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
