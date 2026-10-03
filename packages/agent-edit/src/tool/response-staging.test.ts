@@ -1,6 +1,5 @@
 // Response-staging lifecycle and commit/rollback contracts.
 import { describe, expect, it, vi } from "vitest";
-
 import {
   blockTexts,
   expectOutcome,
@@ -214,6 +213,30 @@ describe("response staging", () => {
 
     expect(renderedBlockBodies(review)).toEqual(["Agent waits.", "Human waits."]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha waits.", "Human waits."]);
+  });
+
+  it("keeps a writer's words typed into the block a reply replaces after the AI's text", async () => {
+    const ctx = harness({ "chapter.md": "# Race\n\nAlpha para.\n\nBeta para." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-same-block",
+      responseId: "response-same-block",
+    };
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 2, content: "Alpha AI edit." },
+      responseContext,
+    );
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 11, to: 11 }, " SAME_BLOCK_WRITER");
+
+    await ctx.core.commitResponse("response-same-block");
+
+    // The document holds the writer's text, never its markdown escapes.
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Race",
+      "Alpha AI edit. SAME_BLOCK_WRITER",
+      "Beta para.",
+    ]);
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {
