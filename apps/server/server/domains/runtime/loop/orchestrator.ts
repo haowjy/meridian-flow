@@ -103,6 +103,7 @@ import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
+import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import { invalidArgumentsOutput, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
 import {
@@ -153,7 +154,7 @@ import {
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
-import type { RunClaim, ThreadPhase } from "./ports.js";
+import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
@@ -401,20 +402,22 @@ async function admitRunExecution(
   input: RunLoopInput,
   thread: Thread,
   executionTurnId: TurnId,
+  adopted: readonly InboxMessage[] = [],
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
   }
   if (thread.kind === "subagent") {
     if (!thread.ref) throw new Error("Subagent thread has no project handle");
-    const correlation = input.executionReport?.correlation ?? {
-      callerThreadId: null,
-      callerTurnId: null,
-      toolCallId: null,
-      cardBlockId: null,
-      origin: "thread_run" as const,
-      deliveryMode: "none" as const,
-    };
+    const correlation = input.executionReport?.correlation ??
+      parentRetaskCorrelation(thread, adopted) ?? {
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+        origin: "thread_run" as const,
+        deliveryMode: "none" as const,
+      };
     await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
       executionTurnId,
@@ -695,7 +698,13 @@ async function runDrainTurn(
             {
               afterEvents: async () => {
                 if (selection.outstanding.length > 0 || input.replyTurnId)
-                  await admitRunExecution(deps, input, setupThread, reservedTurn.id);
+                  await admitRunExecution(
+                    deps,
+                    input,
+                    setupThread,
+                    reservedTurn.id,
+                    selection.outstanding,
+                  );
               },
             },
           );
@@ -1614,13 +1623,13 @@ async function executeLoop({
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
         continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
-      admit: async (turn) => {
+      admit: async (turn, adopted) => {
         if (
           thread.kind === "subagent" &&
           (!executionSelector ||
             !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
         ) {
-          await admitRunExecution(deps, input, thread, turn.id);
+          await admitRunExecution(deps, input, thread, turn.id, adopted);
           executionSelector = turn.id;
         }
       },

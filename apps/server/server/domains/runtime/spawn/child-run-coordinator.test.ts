@@ -311,7 +311,7 @@ async function fixture(
             toolCallId:
               request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
             cardBlockId: null,
-            origin: request.kind === "spawn" ? "spawn" : "foreground_message",
+            origin: request.kind === "spawn" ? "spawn" : "message",
             deliveryMode: options.mode === "background" ? "background_notification" : "direct",
           },
         },
@@ -1378,22 +1378,58 @@ describe("ChildRunCoordinator thread_message", () => {
       },
       { mode: "background" },
     );
-    expect(background.status).toBe("background");
-    if (background.status !== "background") return;
-    expect(background.handle).toBe(spawned.report.handle);
+    expect(background).toMatchObject({
+      status: "background",
+      handle: spawned.report.handle,
+      agentSlug: "critic",
+      notifiesCaller: true,
+    });
 
     const pending = await inbox.selectPending(childId);
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       threadId: childId,
       intent: "message",
-      provenance: { kind: "agent", threadId: parent.id },
+      // The parent re-tasked its own child, so the woken run reports back to it.
+      provenance: {
+        kind: "agent",
+        threadId: parent.id,
+        notify: { turnId: "turn-2", toolCallId: "call-bg" },
+      },
       body: { kind: "text", text: "run in the background" },
       idempotencyKey: "thread-message:call-bg",
     });
     // A message wakes the (asleep) target; the caller drives nothing here.
     expect(runStarter.started).toContain(childId);
     expect(turns.length).toBe(turnsBefore);
+  });
+
+  it("does not promise a notice for a background message to a thread that is not the caller's child", async () => {
+    const { coordinator, parent, inbox, repos } = await fixture();
+    if (!parent.ref) throw new Error("parent has no ref");
+    const spawned = await coordinator.runChild(
+      { kind: "spawn", parentThread: parent, parentTurnId: "turn-1" as TurnId, prompt, budget },
+      { mode: "foreground" },
+    );
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const child = await repos.threads.findById(spawned.report.threadId as ThreadId);
+    if (!child) throw new Error("child missing");
+
+    const upward = await coordinator.runChild(
+      {
+        kind: "message",
+        parentThread: child,
+        parentTurnId: "turn-3" as TurnId,
+        ref: parent.ref,
+        prompt: "status update",
+        toolCallId: "call-up",
+        budget,
+      },
+      { mode: "background" },
+    );
+    expect(upward).toMatchObject({ status: "background", notifiesCaller: false });
+    const [queued] = await inbox.selectPending(parent.id as ThreadId);
+    expect(queued?.provenance).toEqual({ kind: "agent", threadId: child.id });
   });
 
   it("does not enqueue anything for a foreground message", async () => {

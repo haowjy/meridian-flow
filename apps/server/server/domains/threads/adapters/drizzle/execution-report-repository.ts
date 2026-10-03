@@ -226,6 +226,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .selectDistinctOn([table.childThreadId], {
           childThreadId: table.childThreadId,
           deliveryMode: table.deliveryMode,
+          callerThreadId: table.callerThreadId,
           admittedAt: table.createdAt,
           terminalAt: table.terminalAt,
         })
@@ -235,6 +236,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       return rows.map((row) => ({
         childThreadId: row.childThreadId,
         deliveryMode: row.deliveryMode as SavedExecutionReport["deliveryMode"],
+        callerThreadId: row.callerThreadId,
         admittedAt: row.admittedAt.toISOString(),
         terminalAt: row.terminalAt?.toISOString() ?? null,
       }));
