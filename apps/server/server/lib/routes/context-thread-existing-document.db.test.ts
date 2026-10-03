@@ -46,7 +46,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
       await import("../../domains/projects/index.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { writeThreadContextDocument } = await import("../thread-context-route.js");
     const { createAgentEditResponseWriteLifecycle, createWiredCoreToolRegistrations } =
       await import("../wired-core-tools.js");
@@ -146,36 +148,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     beforeEach(async () => {
-      await deleteDrizzleRows(db, [
-        schema.branchPushOutboxUpdates,
-        schema.branchPushSettlementOutbox,
-        schema.turnTrailWork,
-        schema.changeTrailDeliveryOutbox,
-        schema.changeTrailDocumentDetails,
-        schema.changeTrailDocumentOccurrences,
-        schema.changeTrailShells,
-        schema.pendingNotices,
-        schema.documentYjsReversalOps,
-        schema.documentYjsReversals,
-        schema.agentEditWidCounters,
-        schema.agentEditMutations,
-        schema.branchWriteJournal,
-        schema.pushLineage,
-        schema.documentBranches,
-        schema.documentYjsCheckpoints,
-        schema.documentYjsHeads,
-        schema.documentYjsUpdates,
-        schema.modelResponses,
-        schema.threadWorks,
-        schema.turns,
-        schema.threads,
-        schema.folders,
-        schema.documents,
-        schema.contextSources,
-        schema.works,
-        schema.projects,
-        schema.users,
-      ]);
+      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-existing"));
       await db
         .insert(schema.projects)

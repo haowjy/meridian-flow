@@ -15,31 +15,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const {
-      agentEditMutations,
-      agentEditWidCounters,
-      branchPushOutboxUpdates,
-      branchPushSettlementOutbox,
       branchWriteJournal,
-      changeTrailDeliveryOutbox,
-      changeTrailDocumentDetails,
-      changeTrailDocumentOccurrences,
-      changeTrailShells,
       contextSources,
       documentBranches,
-      documentYjsCheckpoints,
-      documentYjsHeads,
-      documentYjsReversalOps,
       documentYjsReversals,
       documentYjsUpdates,
       documents,
-      folders,
       projects,
-      pushLineage,
-      pendingNotices,
       threadWorks,
       threads,
       turns,
-      turnTrailWork,
       users,
       works,
     } = await import("@meridian/database/schema");
@@ -50,7 +35,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -97,35 +84,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       hocuspocus.documents.clear();
-      await deleteDrizzleRows(db, [
-        branchPushOutboxUpdates,
-        branchPushSettlementOutbox,
-        turnTrailWork,
-        changeTrailDeliveryOutbox,
-        changeTrailDocumentDetails,
-        changeTrailDocumentOccurrences,
-        changeTrailShells,
-        pendingNotices,
-        documentYjsReversalOps,
-        documentYjsReversals,
-        agentEditWidCounters,
-        agentEditMutations,
-        branchWriteJournal,
-        pushLineage,
-        documentBranches,
-        documentYjsCheckpoints,
-        documentYjsHeads,
-        documentYjsUpdates,
-        threadWorks,
-        turns,
-        threads,
-        folders,
-        documents,
-        contextSources,
-        works,
-        projects,
-        users,
-      ]);
+      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(users).values(conformanceUserValues(USER_ID, "collab-reverse"));
       await db
         .insert(projects)
