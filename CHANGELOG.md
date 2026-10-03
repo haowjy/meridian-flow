@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
+
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
