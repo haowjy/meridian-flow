@@ -73,6 +73,9 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
   if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
+  if (result.status === "reconciled") {
+    lines.push("later edits were kept, so the text may not match how it was before the write.");
+  }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
   if (result.concurrent) {
     const shown = new Set(
