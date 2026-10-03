@@ -224,6 +224,22 @@ export function ReadableProjectRoute({
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
+  const captureCurrentNavigation = useCallback(() => {
+    const current = latest.current.navigation;
+    const ticket = current?.capture();
+    return () => !!ticket && !!current?.isCurrent(ticket);
+  }, []);
+  const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
+    const current = latest.current.address;
+    return (
+      current.destination.kind === "document" &&
+      current.destination.scheme === target.scheme &&
+      `/${current.destination.path.replace(/^\/+/, "")}` === target.path &&
+      (target.workId === null
+        ? current.work.kind === "none"
+        : current.work.kind === "id" && current.work.id === target.workId)
+    );
+  }, []);
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
       shown.current = { workId, local: localPointer };
@@ -572,6 +588,8 @@ export function ReadableProjectRoute({
       screen={activeScreen}
       openContextRoute={openContext}
       captureNavigation={captureNavigation}
+      captureCurrentNavigation={captureCurrentNavigation}
+      isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >
       <ChatNavigationProvider value={chat}>
@@ -614,7 +632,7 @@ export function ReadableProjectRoute({
                 const next = update(search);
                 if (projectSearchEquals(next, search)) return;
                 if (next.scheme && next.path !== undefined)
-                  void openContext(
+                  return openContext(
                     {
                       scheme: next.scheme,
                       path: next.path,
@@ -623,9 +641,9 @@ export function ReadableProjectRoute({
                     { replace: true },
                   );
                 else if (next.screen === "work")
-                  void go(toDestination({ kind: "works" }), { replace: true });
+                  return go(toDestination({ kind: "works" }), { replace: true });
                 else if (next.screen === "context")
-                  void go(toDestination({ kind: "editor" }), { replace: true });
+                  return go(toDestination({ kind: "editor" }), { replace: true });
               },
             }}
             activeLocalDocumentId={localDocumentId}

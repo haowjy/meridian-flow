@@ -229,7 +229,31 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 },
               };
             });
-          } else if (!reviewOverlayTab) {
+          } else if (reviewOverlayTab) {
+            // Readable-address resolution enriches the transient review tab
+            // with its live resource identity without admitting a durable
+            // shadow underneath it. Apply can then reopen that exact resource.
+            rawSet((base) => {
+              const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
+              return {
+                _reviewOverlayByProject: {
+                  ...base._reviewOverlayByProject,
+                  [projectId]: {
+                    ...overlay,
+                    tabs: overlay.tabs.map((candidate) =>
+                      candidate.documentId === tab.documentId && candidate.draftOnly
+                        ? ({
+                            ...candidate,
+                            ...tab,
+                            tabInstanceId: candidate.tabInstanceId,
+                          } as ContextTab)
+                        : candidate,
+                    ),
+                  },
+                },
+              };
+            });
+          } else {
             dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
           }
           const installed = composeProjectSlice(get(), projectId).tabs.find(
