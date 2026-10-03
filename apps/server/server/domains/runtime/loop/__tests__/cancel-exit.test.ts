@@ -44,7 +44,7 @@ describe("single cancel exit", () => {
           // The writer cancels while the tool is in flight; the loop must exit
           // through the single cancel path instead of streaming again.
           controller.abort();
-          return { toolCallId: call.id, output: { ok: true } };
+          return { toolCallId: call.id, output: { ok: true }, result: { ok: true } };
         },
       },
       responseWrites: {

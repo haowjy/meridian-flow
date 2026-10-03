@@ -105,7 +105,7 @@ import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
-import { invalidArgumentsOutput, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
+import { invalidArgumentsResult, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -1045,10 +1045,13 @@ async function persistToolRejection(input: {
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionOutput: JsonObject =
+  // The gate's invalid_arguments refusal reads exactly like the executor's.
+  const rejectionResult: JsonObject =
     input.decision.kind === "invalid_arguments"
-      ? invalidArgumentsOutput(input.call.name, input.decision.issues)
+      ? invalidArgumentsResult(input.decision.issues)
       : { error: input.decision.kind, reason: input.decision.reason };
+  const rejectionOutput: JsonValue =
+    input.decision.kind === "invalid_arguments" ? input.decision.reason : rejectionResult;
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1057,6 +1060,7 @@ async function persistToolRejection(input: {
       content: {
         toolCallId: input.call.id,
         output: rejectionOutput,
+        result: rejectionResult,
         isError: true,
       },
       status: "complete",
@@ -1080,6 +1084,7 @@ async function persistToolRejection(input: {
           type: "tool.result",
           toolCallId: input.call.id,
           output: rejectionOutput,
+          result: rejectionResult,
           isError: true,
         },
       ],
