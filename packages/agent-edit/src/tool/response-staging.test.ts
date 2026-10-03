@@ -279,6 +279,30 @@ describe("response staging", () => {
     expect(outcomeText(result)).not.toContain("swept");
   });
 
+  it("never saves a reply early for an undo; the host must save it first", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-undo-mid",
+      responseId: "response-undo-mid",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+
+    const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, responseContext);
+
+    expect(undo).toMatchObject({ status: "internal_error", isError: true });
+
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    await expect(ctx.core.commitResponse("response-undo-mid")).resolves.toMatchObject({
+      updateCount: 1,
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
   it("drops staged response buffers when invalidating a thread", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
