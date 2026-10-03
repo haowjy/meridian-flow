@@ -59,7 +59,15 @@ ref → `thread_message_target_not_found`; an out-of-lineage/out-of-subtree ref 
 the coordinator enqueues one `agent`-provenance `message` through the
 producer-facing `RuntimeDelivery` (idempotency key `thread-message:<toolCallId>`)
 and returns `{ status: "background" }` without driving anything — the target's
-own run drains it and wakes if asleep. Foreground is the existing child wait
+own run drains it and wakes if asleep. When the caller is the target's parent
+(a re-task), the message's provenance carries `notify: { turnId, toolCallId }`
+and the result carries `notifiesCaller: true`. The drain run that adopts such a
+message admits its report as `origin: "message"`,
+`deliveryMode: "background_notification"` (`spawn/retask-correlation.ts`), so
+publication B sends the parent the same completion notice a background spawn
+gets. A message to any other thread admits an ordinary `thread_run` and promises
+nothing. A re-task adopted mid-run by an already admitted execution joins that
+execution and inherits its delivery mode. Foreground is the existing child wait
 path: the coordinator's `prepareForegroundMessage` loads the target's frozen
 binding for `resolvedSlug` only and never re-resolves configuration — so
 `thread_message` carries no configuration patch and cannot escalate the target's
@@ -85,7 +93,9 @@ report body. A spawned background
 execution returns only after execution admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
-`thread_message` remains queue-only with no promised execution or reply. The
+`thread_message` returns no execution and gets no card; only a parent's re-task
+promises a completion notice. `thread_report` promises a notice only when the
+latest run reports back to the reading caller. The
 original card is bound at admission and terminally replaced by B; a missing card is not recreated,
 but a live caller still receives the notification. `return_result` captures
 candidate content with its successful ordinary `tool_result` in one

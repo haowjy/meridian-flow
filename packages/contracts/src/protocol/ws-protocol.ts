@@ -136,7 +136,11 @@ const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivi
 const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessageProvenance> = z.union(
   [
     z.object({ kind: z.literal("writer"), actorId: z.string().min(1) }),
-    z.object({ kind: z.literal("agent"), threadId: z.string().min(1) }),
+    z.object({
+      kind: z.literal("agent"),
+      threadId: z.string().min(1),
+      notify: z.object({ turnId: z.string().min(1), toolCallId: z.string().min(1) }).optional(),
+    }),
     z.object({
       kind: z.literal("child"),
       threadId: z.string().min(1),

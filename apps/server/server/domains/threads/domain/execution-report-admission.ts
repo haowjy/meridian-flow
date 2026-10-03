@@ -45,10 +45,7 @@ export function assertExecutionReportAdmission(
     return;
   }
   if (
-    (input.origin === "spawn" &&
-      input.deliveryMode !== "direct" &&
-      input.deliveryMode !== "background_notification") ||
-    (input.origin === "foreground_message" && input.deliveryMode !== "direct") ||
+    (input.deliveryMode !== "direct" && input.deliveryMode !== "background_notification") ||
     !input.callerThreadId ||
     !input.callerTurnId ||
     !input.toolCallId ||
