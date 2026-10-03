@@ -16,7 +16,7 @@ import type { Database } from "@meridian/database";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
-import { isDrafted } from "../file-policy/index.js";
+import { destination, isDrafted } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -155,19 +155,23 @@ function buildProjectContextFsAdapters(
   userId: string,
   manifestView: ManifestView,
 ): Map<ContextScheme, ContextSchemeAdapter> {
-  const { storeResolvers, commandTransaction } = assembly;
+  const { storeResolvers, commandTransaction, thread } = assembly;
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
+    // A thread whose writes to this source go live has no draft of the
+    // manifest; its membership is the live one, so it never branches it (D20).
+    const schemeView =
+      thread && destination(scheme, thread.draftMode) === "live" ? { projectId } : manifestView;
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
-        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, manifestView),
-        mutationStore: storeResolvers.resolveMutationStore(manifestView),
+        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, schemeView),
+        mutationStore: storeResolvers.resolveMutationStore(schemeView),
         commandTransaction: commandTransaction && {
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
         },
         scheme,
-        ...(listsThroughProjectManifest(scheme) ? { manifestView } : {}),
+        ...(listsThroughProjectManifest(scheme) ? { manifestView: schemeView } : {}),
       }),
     );
   }
