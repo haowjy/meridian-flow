@@ -193,7 +193,7 @@ describe("runtime store", () => {
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
 
       const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-      expect(outcomeText(undo)).toContain("status: reconciled");
+      expect(outcomeText(undo)).toContain("status: reversed");
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
       const [reversal] = await ctx.journal.readReversals("chapter.md", {
@@ -218,7 +218,7 @@ describe("runtime store", () => {
       { command: "redo", file: "chapter.md" },
       context,
     );
-    expect(outcomeText(baselineRedo)).toContain("status: reconciled");
+    expect(outcomeText(baselineRedo)).toContain("status: reversed");
     const baselineTexts = blockTexts(baseline.liveDoc("chapter.md"));
     const baselineBytes = documentBytes(baseline.liveDoc("chapter.md"));
 
@@ -246,7 +246,7 @@ describe("runtime store", () => {
         },
       },
     );
-    expect(outcomeText(restartedRedo)).toContain("status: reconciled");
+    expect(outcomeText(restartedRedo)).toContain("status: reversed");
     expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
     expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
 
@@ -289,7 +289,7 @@ describe("runtime store", () => {
     );
     expect(
       outcomeText(await initial.core.write({ command: "undo", file: "chapter.md" }, context)),
-    ).toContain("status: reconciled");
+    ).toContain("status: reversed");
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
     const coreA = createAgentEditCore({
@@ -328,7 +328,7 @@ describe("runtime store", () => {
         },
       },
     );
-    expect(outcomeText(redoA)).toContain("status: reconciled");
+    expect(outcomeText(redoA)).toContain("status: reversed");
     const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
     expect(outcomeText(redoB)).toBe("status: nothing_to_redo; path: chapter.md");
 

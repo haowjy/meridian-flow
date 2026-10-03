@@ -82,7 +82,7 @@ describe("write reversal under concurrent edits", () => {
       },
     );
 
-    expect(undo.status).toBe("reconciled");
+    expect(undo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
     expect(reports).toEqual([
       {
@@ -150,7 +150,7 @@ describe("write reversal under concurrent edits", () => {
       },
     );
 
-    expect(redo.status).toBe("reconciled");
+    expect(redo.status).toBe("reversed");
     expect(lateSweeps).toEqual([
       expect.objectContaining({
         capturedDeletedBodies: expect.arrayContaining([
@@ -200,7 +200,7 @@ describe("write reversal under concurrent edits", () => {
       },
     );
 
-    expect(undo.status).toBe("reconciled");
+    expect(undo.status).toBe("reversed");
     expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(
       persistedBefore + 1,
     );
@@ -277,7 +277,7 @@ describe("write reversal under concurrent edits", () => {
       selection: { kind: "latest" },
       actor,
     });
-    expect(redo.status).toBe("reconciled");
+    expect(redo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
   });
 
@@ -339,7 +339,7 @@ describe("write reversal under concurrent edits", () => {
       { ...context, interactionContext: { mode: "live" } },
     );
 
-    expect(undo.status).toBe("reconciled");
+    expect(undo.status).toBe("reversed");
     expect(scenario.blockTexts()).toEqual(["Base."]);
   });
 
@@ -385,19 +385,19 @@ describe("write reversal under concurrent edits", () => {
       },
       {
         step: "redo",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Agent revised.", "Human target. Human edit."],
         mutationStatus: "active",
       },
       {
         step: "undo-2",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Agent target.", "Human target. Human edit."],
         mutationStatus: "reversed",
       },
       {
         step: "redo-2",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Agent revised.", "Human target. Human edit."],
         mutationStatus: "active",
       },
@@ -443,19 +443,19 @@ describe("write reversal under concurrent edits", () => {
       },
       {
         step: "redo",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Alpha blade and ward."],
         mutationStatus: "active",
       },
       {
         step: "undo-2",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Alpha sword and ward."],
         mutationStatus: "reversed",
       },
       {
         step: "redo-2",
-        status: "reconciled",
+        status: "reversed",
         blocks: ["Alpha blade and ward."],
         mutationStatus: "active",
       },
@@ -505,7 +505,7 @@ describe("write reversal under concurrent edits", () => {
       actor,
     });
 
-    expect(undo.status).toBe("reconciled");
+    expect(undo.status).toBe("reversed");
     expect(outcomeText(undo)).toContain("undo: w1, w2, w3");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
     await expectMutationStatuses(scenario, {
@@ -595,7 +595,7 @@ async function groupedRedoScenario(): Promise<ReversalScenario> {
     selection: { kind: "all" },
     actor,
   });
-  expect(undoAll.status).toBe("reconciled");
+  expect(undoAll.status).toBe("reversed");
   expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta shield.", "Gamma cloak."]);
 
   const redoAll = await scenario.ctx.core.reverse({
@@ -605,7 +605,7 @@ async function groupedRedoScenario(): Promise<ReversalScenario> {
     selection: { kind: "all" },
     actor,
   });
-  expect(redoAll.status).toBe("reconciled");
+  expect(redoAll.status).toBe("reversed");
   expect(scenario.blockTexts()).toEqual(["Alpha blade.", "Beta ward.", "Gamma cape."]);
   expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toMatchObject({
     undo: true,

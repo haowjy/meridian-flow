@@ -34,7 +34,7 @@ describe("write reversal selectors", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redo)).toContain("status: reconciled");
+    expect(outcomeText(redo)).toContain("status: reversed");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta arrives."]);
   });
 

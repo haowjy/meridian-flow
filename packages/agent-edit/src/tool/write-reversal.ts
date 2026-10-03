@@ -1,6 +1,6 @@
 // Runs write-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
-import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import { type BlockSnapshot, diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
@@ -20,7 +20,7 @@ import {
   type ReversalPlan,
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
-import { reconstructReversalUpdate } from "../undo/reversal-reconstruction.js";
+import { reconstructReversalUpdate, reversalBaselineDoc } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -311,6 +311,8 @@ export function createWriteReversal(deps: {
     plan: Extract<ReversalPlan, { ok: true }>;
     update: Uint8Array;
     ownDiff: ReturnType<typeof diffSnapshots>;
+    /** The document after this and every earlier prepared reversal. */
+    preview: BlockSnapshot[];
   };
 
   async function prepareReversals(input: {
@@ -444,13 +446,10 @@ export function createWriteReversal(deps: {
     try {
       Y.applyUpdate(preview, Y.encodeStateAsUpdate(sourceDoc), { type: "system" });
       Y.applyUpdate(preview, update, reversalOrigin(input.actor, plan));
+      const after = snapshotBlocks(toDocHandle(preview), model, codec);
       return {
         ok: true,
-        prepared: {
-          plan,
-          update,
-          ownDiff: diffSnapshots(before, snapshotBlocks(toDocHandle(preview), model, codec)),
-        },
+        prepared: { plan, update, ownDiff: diffSnapshots(before, after), preview: after },
       };
     } finally {
       preview.destroy();
@@ -498,6 +497,7 @@ export function createWriteReversal(deps: {
     | { ok: false; response: InternalWriteResult }
   > {
     const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
+    const keptOtherEdits = otherEditsCheck(input.direction, input.plans);
     const update = Y.mergeUpdates(input.plans.map((prepared) => prepared.update));
     const deletedHashes = new Set(input.plans.flatMap(({ ownDiff }) => [...ownDiff.deleted]));
     const touchedHashes = new Set(
@@ -595,7 +595,9 @@ export function createWriteReversal(deps: {
             return {
               ...summary,
               revision: applied.revision,
-              ...(sweptContent ? { reconciled: true } : {}),
+              reconciled: keptOtherEdits(
+                snapshotBlocks(toDocHandle(input.runtime.doc), model, codec),
+              ),
             };
           };
 
@@ -617,7 +619,8 @@ export function createWriteReversal(deps: {
           });
           if (deferred) {
             projectionDeferred = true;
-            return { echo: [], reconciled: false };
+            const last = input.plans.at(-1);
+            return { echo: [], reconciled: last ? keptOtherEdits(last.preview) : false };
           }
 
           try {
@@ -651,15 +654,37 @@ export function createWriteReversal(deps: {
     }
     return {
       ok: true,
-      status:
-        projectionDeferred && input.direction === "redo"
-          ? "reconciled"
-          : mutation.reconciled
-            ? "reconciled"
-            : "reversed",
+      status: mutation.reconciled ? "reconciled" : "reversed",
       ...(projectionDeferred ? {} : { sync: mutation }),
       writeIds: reversedWriteIds(input.plans),
     };
+  }
+
+  /**
+   * `reconciled` means the reversal merged with edits it didn't make, so the
+   * text differs from how it stood right before the reversed writes (or the
+   * reversed undo). A reversal that restores that text exactly is `reversed`.
+   */
+  function otherEditsCheck(
+    direction: "undo" | "redo",
+    plans: readonly PreparedReversal[],
+  ): (after: readonly BlockSnapshot[]) => boolean {
+    const baseline = reversalBaselineDoc(
+      direction,
+      plans.map((prepared) => prepared.plan),
+    );
+    if (!baseline) return () => false;
+    let expected: string[];
+    try {
+      expected = snapshotBlocks(toDocHandle(baseline), model, codec).map(
+        (block) => block.renderedContent,
+      );
+    } finally {
+      baseline.destroy();
+    }
+    return (after) =>
+      after.length !== expected.length ||
+      after.some((block, index) => block.renderedContent !== expected[index]);
   }
 
   function surfaceColdReversalInvariant(input: {
