@@ -210,6 +210,10 @@ msgstr "{0} 词元/秒"
 #~ msgid "{0}, Archived"
 #~ msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "{binary} is a binary file."
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -3707,6 +3711,10 @@ msgstr ""
 msgid "That document couldn't be found."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "That file is binary."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That image could not be read."
 msgstr ""
@@ -3997,6 +4005,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This file is binary, so this change can't be reversed."
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts

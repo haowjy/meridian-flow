@@ -178,6 +178,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
     status === "read_required" ||
+    status === "binary_file" ||
     status === "internal_error"
   );
 }
