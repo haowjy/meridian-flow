@@ -3,6 +3,7 @@
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftDock, type DraftDockModel } from "./DraftDock";
@@ -68,6 +69,30 @@ describe("DraftDock refused Discard", () => {
       expect(rowError?.previousElementSibling?.textContent).toContain("b.md");
       expect(host.querySelectorAll("[data-draft-dock-row-error]")).toHaveLength(1);
     });
+  });
+
+  it("mounts after rendering empty, with a refusal already held", async () => {
+    const hidden = { ...dockWith([row("a"), row("b")], { b: "discard-offline" }), mounted: false };
+    const shown = dockWith([row("a"), row("b")], { b: "discard-offline" });
+    function Toggle() {
+      const [dock, setDock] = useState<DraftDockModel>(hidden as DraftDockModel);
+      return (
+        <>
+          <button type="button" data-show onClick={() => setDock(shown)} />
+          <DraftDock dock={dock} />
+        </>
+      );
+    }
+    i18n.loadAndActivate({ locale: "en", messages: {} });
+    await withReactRoot(
+      <I18nProvider i18n={i18n}>
+        <Toggle />
+      </I18nProvider>,
+      async () => {
+        await act(async () => document.querySelector<HTMLButtonElement>("[data-show]")?.click());
+        expect(document.querySelector("[data-draft-dock-row-error]")).not.toBeNull();
+      },
+    );
   });
 
   it("shows nothing when no Discard was refused", async () => {
