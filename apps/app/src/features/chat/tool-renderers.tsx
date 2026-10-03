@@ -260,6 +260,11 @@ export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
+    case "binary_file": {
+      // A block copy's binary file is its source, not the destination in `path`.
+      const binary = copySource(tool) ?? name;
+      return binary ? t`${binary} is a binary file.` : t`That file is binary.`;
+    }
     case "not_found":
     case "document_not_found": {
       // `path` names the destination, but a copy's missing document is its

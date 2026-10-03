@@ -617,7 +617,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(binaryRead.isError).toBe(true);
         expect(binaryRead.output).toBe(
-          "status: document_not_found; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be read as text.",
+          "status: binary_file; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be read as text.",
+        );
+
+        const binaryWrite = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000974",
+            name: "write",
+            arguments: { command: "insert", path: "manuscript://scan.pdf", content: "Text." },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(binaryWrite.isError).toBe(true);
+        expect(binaryWrite.output).toBe(
+          "status: binary_file; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be edited as text.",
+        );
+
+        const binaryBlockCopy = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000975",
+            name: "write",
+            arguments: {
+              command: "insert",
+              path: "scratch://notes.md",
+              from: { path: "manuscript://scan.pdf", in: 1 },
+            },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(binaryBlockCopy.isError).toBe(true);
+        expect(binaryBlockCopy.output).toBe(
+          "status: binary_file\n\nfrom manuscript://scan.pdf: The file is binary, so its blocks can't be copied.",
         );
 
         const missingSource = await runtime.app.toolExecutor.executeTool(
