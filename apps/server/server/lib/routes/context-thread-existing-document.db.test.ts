@@ -7,11 +7,10 @@
  * binary copy is always live (D24).
  */
 
+import { randomUUID } from "node:crypto";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -31,29 +30,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("thread writes onto existing documents (postgres)", () => {});
 } else {
   describe("thread writes onto existing documents (postgres)", async () => {
-    const { Hocuspocus } = await import("@hocuspocus/server");
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { createCollabDomain } = await import("../../domains/collab/composition.js");
-    const { createProductionUnifiedContextPortFactory } = await import(
-      "../../domains/context/unified-context-port-factory.js"
-    );
     const { contextPortForProjectBrowse, contextPortForThread, resolveThreadContext } =
       await import("../../domains/context/context-port-resolution.js");
-    const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
-      await import("../../domains/projects/index.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
+    const { useComposedRuntimes } = await import("../../test-support/composed-runtime.js");
     const { writeThreadContextDocument } = await import("../thread-context-route.js");
-    const { createAgentEditResponseWriteLifecycle, createWiredCoreToolRegistrations } =
-      await import("../wired-core-tools.js");
-    const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
-    const { createNoopEventSink } = await import("../../domains/observability/index.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000b01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000b02";
@@ -64,84 +52,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DRAFT_WORK_ID = "00000000-0000-4000-8000-000000000b07";
 
     const db = createDb(DATABASE_URL, { max: 6 });
-    const fixtures: Array<{
-      collab: ReturnType<typeof createCollabDomain>;
-      hocuspocus: InstanceType<typeof Hocuspocus>;
-    }> = [];
+    const runtimes = useComposedRuntimes(() => db);
 
-    function createFixture(primaryWorkId = NO_WORK_ID) {
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await collab.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          collab.storeHocuspocusDocument(documentName, document),
-      });
-      collab.bindHocuspocus(hocuspocus);
-      fixtures.push({ collab, hocuspocus });
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        db,
-        documentSync: collab,
-        manifestMembership: collab,
-      });
+    /** The production app; the thread resolves from its rows, as a request would. */
+    async function createFixture() {
+      const runtime = await runtimes.compose();
+      const { app, ports } = runtime;
       const routeDeps = {
-        contextPorts,
-        threads: {
-          findById: async (id: string) =>
-            id === THREAD_ID
-              ? ({ id: THREAD_ID, projectId: PROJECT_ID, userId: USER_ID } as never)
-              : null,
-        },
-        threadWorks: {
-          findPrimary: async (threadId: string) =>
-            threadId === THREAD_ID ? ({ threadId, workId: primaryWorkId } as never) : null,
-        },
-        works: createDrizzleProjectWorkRepository({
-          db,
-          projectionMutation: createTestWorkProjectionMutation(db),
-        }),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        contextPorts: app.contextPorts,
+        threads: app.threadRepos.threads,
+        threadWorks: app.threadRepos.threadWorks,
+        works: app.workRepo,
+        workAuthorityResolver: app.workAuthorityResolver,
       };
-      const objectStore = createInMemoryObjectStore();
-      const registrations = createWiredCoreToolRegistrations({
-        ...routeDeps,
-        threads: routeDeps.threads as never,
-        threadWorks: routeDeps.threadWorks as never,
-        documentSync: collab,
-        responseWrites: createAgentEditResponseWriteLifecycle({ documentSync: collab }),
-        drafts: collab,
-        workContextNotices: { workChanged: async () => {}, threadChanged: async () => {} },
-        stopThreadRun: async () => {},
-        eventSink: createNoopEventSink(),
-        transaction: (operation) => operation(),
-        objectStore,
-      });
-      const write = registrations.find((registration) => registration.definition.name === "write");
-      if (write?.execution.type !== "server") throw new Error("write tool is not registered");
-      const handler = write.execution.handler as (
-        input: unknown,
-        context: unknown,
-      ) => Promise<unknown>;
-      // The model's `write` tool, called as the executor would call it.
+      // The model's `write` tool through the executor, outside a reply.
       const callWrite = (input: Record<string, unknown>) =>
-        handler(write.input.parse(input), {
-          signal: new AbortController().signal,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          agentSlug: null,
-        }).then((result) => JSON.stringify(result));
-      return { collab, contextPorts, routeDeps, callWrite, objectStore };
+        app.toolExecutor.executeTool(
+          { id: randomUUID(), name: "write", arguments: input },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+      return {
+        collab: ports.documentSync,
+        contextPorts: app.contextPorts,
+        objectStore: ports.objectStore,
+        routeDeps,
+        callWrite,
+      };
     }
 
-    async function threadPort(fixture: ReturnType<typeof createFixture>) {
+    type Fixture = Awaited<ReturnType<typeof createFixture>>;
+    const succeeded = { result: { status: "success" } };
+    /** The model's create or copy onto an existing path without `overwrite`. */
+    function expectAlreadyExists(result: { isError?: boolean; output: unknown; result?: unknown }) {
+      expect(result).toMatchObject({ isError: true, result: { status: "invalid_write" } });
+      expect(result.output).toContain("File already exists");
+    }
+
+    async function threadPort(fixture: Fixture) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");
       return contextPortForThread(fixture.contextPorts, resolution, { responseId: null });
@@ -221,19 +168,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    afterEach(async () => {
-      for (const { collab, hocuspocus } of fixtures.splice(0)) {
-        hocuspocus.closeConnections();
-        hocuspocus.flushPendingStores();
-        await collab.drainHocuspocusPersistence();
-      }
-    });
-
     afterAll(async () => {
       await db.close();
     });
 
-    async function seedExisting(fixture: ReturnType<typeof createFixture>, path: string) {
+    async function seedExisting(fixture: Fixture, path: string) {
       const port = await threadPort(fixture);
       const created = await settlesWithin(
         `seed ${path}`,
@@ -259,7 +198,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ] as const) {
       it(`refuses the model's plain create onto an existing document at once (${label})`, async () => {
         await bindThread(workId);
-        const fixture = createFixture(workId);
+        const fixture = await createFixture();
         await seedExisting(fixture, "existing.md");
 
         const refused = await settlesWithin(
@@ -270,7 +209,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             content: "New text.",
           }),
         );
-        expect(refused).toContain("File already exists");
+        expectAlreadyExists(refused);
         const port = await threadPort(fixture);
         await expect(port.read("manuscript://existing.md")).resolves.toMatchObject({
           ok: true,
@@ -280,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       it(`overwrites an existing document with the model's create and copy (${label})`, async () => {
         await bindThread(workId);
-        const fixture = createFixture(workId);
+        const fixture = await createFixture();
         await seedExisting(fixture, "target.md");
         await seedExisting(fixture, "source.md");
         const port = await threadPort(fixture);
@@ -294,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             overwrite: true,
           }),
         );
-        expect(created).not.toContain("error");
+        expect(created).toMatchObject(succeeded);
         await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
           ok: true,
           value: { content: "Created over.\n" },
@@ -308,7 +247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             from: { path: "manuscript://source.md" },
           }),
         );
-        expect(refusedCopy).toContain("File already exists");
+        expectAlreadyExists(refusedCopy);
 
         const copied = await settlesWithin(
           "copy overwrite",
@@ -319,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             overwrite: true,
           }),
         );
-        expect(copied).not.toContain("error");
+        expect(copied).toMatchObject(succeeded);
         await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
           ok: true,
           value: { content: "Existing source.md.\n" },
@@ -328,7 +267,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       it(`overwrites an existing document through the writer route at once (${label})`, async () => {
         await bindThread(workId);
-        const fixture = createFixture(workId);
+        const fixture = await createFixture();
         const existingId = await seedExisting(fixture, "writer.md");
 
         await expect(
@@ -369,7 +308,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ] as const) {
       it(`keeps no .manifest thread branch for a ${label} thread`, async () => {
         await bindThread(workId);
-        const fixture = createFixture(workId);
+        const fixture = await createFixture();
         await seedExisting(fixture, "kept.md");
 
         const port = await threadPort(fixture);
@@ -388,7 +327,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               overwrite: true,
             }),
           ),
-        ).not.toContain("error");
+        ).toMatchObject(succeeded);
         expect(
           await settlesWithin(
             "create",
@@ -398,7 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               content: "Fresh.",
             }),
           ),
-        ).not.toContain("error");
+        ).toMatchObject(succeeded);
         await expect(port.read("manuscript://fresh.md")).resolves.toMatchObject({
           ok: true,
           value: { content: "Fresh.\n" },
@@ -416,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("lists a draft-mode thread's drafted create through its own manifest", async () => {
       await bindThread(DRAFT_WORK_ID);
-      const fixture = createFixture(DRAFT_WORK_ID);
+      const fixture = await createFixture();
       expect(
         await settlesWithin(
           "create",
@@ -426,7 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             content: "Drafted.",
           }),
         ),
-      ).not.toContain("error");
+      ).toMatchObject(succeeded);
 
       const port = await threadPort(fixture);
       const drafted = await port.stat("manuscript://drafted.md");
@@ -457,7 +396,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ["draft-mode Work", DRAFT_WORK_ID],
     ] as const) {
       it(`lists and moves through live membership on a writer's ${label} port`, async () => {
-        const fixture = createFixture(workId);
+        const fixture = await createFixture();
         await seedExisting(fixture, "listed.md");
         const port = await contextPortForProjectBrowse({
           deps: fixture.routeDeps,
@@ -490,7 +429,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("records a draft-mode thread's binary copy in the live manifest", async () => {
       await bindThread(DRAFT_WORK_ID);
-      const fixture = createFixture(DRAFT_WORK_ID);
+      const fixture = await createFixture();
       const bytes = new Uint8Array([37, 80, 68, 70]);
       const put = await fixture.objectStore.put(
         `uploads/${PROJECT_ID}/scan`,
@@ -516,8 +455,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           path: "kb://refs/scan.pdf",
         }),
       );
-      expect(JSON.parse(copied)).toMatchObject({
-        output: { status: "success", path: "kb://refs/scan.pdf", destination: "live" },
+      expect(copied).toMatchObject({
+        result: { status: "success", path: "kb://refs/scan.pdf", destination: "live" },
       });
 
       const port = await threadPort(fixture);
