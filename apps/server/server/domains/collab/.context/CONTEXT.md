@@ -4,13 +4,12 @@ The server collab domain supplies concrete Postgres/Hocuspocus adapters around
 `@meridian/agent-edit` and exposes `CollabDomain` to routes, runtime, context,
 and WebSocket callers.
 
-Model writes pass the frozen `ThreadExecutionContext` through `agentEdit`.
-Direct-mode contexts (`draftOwner === null`) select the live core and create no
-Work draft or thread-peer branch, including Auto-apply on No Work. Draft-mode
-contexts select the thread-peer core; Draft on No Work owns a Work draft keyed
-`(documentId, workId)`.
-Draft-only operations must cross `requireWorkDraftOwner` and return typed
-`work_required` rather than manufacturing an owner.
+Model reads and writes go through `agentEdit()`, the thread-peer core pool,
+with a destination per document (below). A `live` destination selects the
+live core and creates no Work draft or thread-peer branch: Auto-apply,
+Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
+`draft` destination selects the thread-peer core; Draft on No Work owns a Work
+draft keyed `(documentId, workId)`.
 
 ## Document revision identity
 
@@ -31,7 +30,7 @@ view. A reply's staged writes overlay only reads of the destination they were
 pinned to, so a live read never shows the reply's drafted edits. A thread rebind is resolved anew on each query. A draft read with no
 thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
-state a later `write read` forks from.
+state a later `read` forks from.
 
 ## One save per reply
 

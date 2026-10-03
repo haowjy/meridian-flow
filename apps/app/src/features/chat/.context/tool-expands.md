@@ -17,9 +17,10 @@ rendering tiers and the expand contents.
 titles, listing rows, quoted previews, terminal tails. Raw payloads are a
 debugging concern and belong behind a dev-only setting, never in chat.
 
-Tier 2 is keyed by **tool name**; the single document tool (`write`)
-carries reading, skimming, creating, editing, deleting, reverting and reviewing. Which of those a row is
-comes from `tool-command.ts`, and what to do about it comes from
+Tier 2 is keyed by **tool name**. The two document tools share one renderer:
+`read` carries reading and skimming, and `write` carries creating, copying,
+editing, removing and reverting. Which of those a row is comes from
+`tool-command.ts`, and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
 
@@ -53,7 +54,9 @@ transcript from claiming things it cannot stand behind.
 | Outcome | What changed in my manuscript? | Turn edits receipt | Change trail |
 
 **A write expand reads `tool.input.content`, never the output.** The output is
-formatted status plus diagnostics; only the input holds exactly what was sent.
+the model's text (a status line and hashlines) and the typed `tool.result` is a
+receipt; only the input holds exactly what was sent. A copy (`copy`, or
+`insert`/`replace` with `from`) submits no content, so it has no expand.
 A write can succeed as a tool call and still be superseded downstream, so
 rendering its output as a change would assert something that never landed.
 
@@ -66,10 +69,11 @@ the UI says neither "intent" nor "outcome".
 
 | Command | Expand | Cut by | Doors inside |
 |---|---|---|---|
-| `write(command: read)` | The passage that came back, as quoted prose | Height, with a fade | The document, at the fade |
-| `write(command: read, format: outline)` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
-| `create` / `insert` / `replace` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
-| `delete` / `undo` / `redo` / `diff` | Nothing | — | — |
+| `read` | The passage that came back (the typed result's `document` blocks), as quoted prose | Height, with a fade | The document, at the fade |
+| `read` with `format: outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
+| `create` / `insert` / `replace` with `content` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
+| `copy`, or `insert` / `replace` with `from` | Nothing; the verb names the source ("Copied a.md to", "Copied from a.md into") | — | — |
+| `remove` / `undo` / `redo` | Nothing | — | — |
 | `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | unknown | Nothing | — | — |

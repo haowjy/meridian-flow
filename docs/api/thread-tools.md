@@ -129,7 +129,12 @@ When a newer run is in progress the result adds `running: true` and a
 `message`: "p3 is running again; this report is from its previous run.
 You'll be notified when it finishes." With no finished report it is
 `{ ref, status: "unavailable", message }`, telling the model to wait for the
-completion notice instead of calling `thread_report` again.
+completion notice instead of calling `thread_report` again. Both promises
+appear only when the child's latest run reports back to this caller
+(background delivery with this caller, as after its own spawn or background
+re-task). Otherwise, for example a run the writer started in the child or a
+sibling reading the report, the line ends "You won't be notified when it
+finishes."
 
 The model reads a text rendering of that typed result (D8), never JSON: the
 report as history shows it (`Report (completed)`, a `reason:` line when there
