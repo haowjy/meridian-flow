@@ -58,7 +58,11 @@ import {
 } from "@meridian/contracts/interrupt";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
-import { invalidArgumentsOutput, parseToolInput } from "./invalid-arguments.js";
+import {
+  invalidArgumentsResult,
+  parseToolInput,
+  renderInvalidArguments,
+} from "./invalid-arguments.js";
 import type {
   InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -89,7 +93,8 @@ export function toolFailureResult(result: { ok: false; error: MeridianError }) {
  * Constructs the default MeridianError result for a tool call that failed.
  */
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
-  return { toolCallId, output: meridianErrorToJson(error), isError: true };
+  const value = meridianErrorToJson(error);
+  return { toolCallId, output: value, result: value, isError: true };
 }
 
 function executionErrorResult(
@@ -191,13 +196,16 @@ function successResult(
   };
 }
 
-/** The model's text for a typed result, with the result kept beside it when the tool renders one. */
+/**
+ * The typed result and what the model reads of it: the registration's
+ * rendering, or the value itself for a tool with no renderer. `result` is
+ * always set, so readers have one place to look.
+ */
 function modelOutput(
   registration: ToolRegistration,
   value: JsonValue,
 ): Pick<ToolExecutionResult, "output" | "result"> {
-  if (!registration.renderResult) return { output: value };
-  return { output: registration.renderResult(value), result: value };
+  return { output: registration.renderResult?.(value) ?? value, result: value };
 }
 
 /**
@@ -351,7 +359,8 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         if (!parsed.ok) {
           return {
             toolCallId: call.id,
-            output: toJsonValue(invalidArgumentsOutput(call.name, parsed.issues)),
+            output: renderInvalidArguments(call.name, parsed.issues),
+            result: toJsonValue(invalidArgumentsResult(parsed.issues)),
             isError: true,
           };
         }

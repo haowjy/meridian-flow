@@ -100,10 +100,11 @@ describe("document command recovery through the runtime loop", () => {
       expect.arrayContaining([
         expect.objectContaining({
           toolCallId: "retired-read",
-          output: expect.objectContaining({
+          output: expect.stringContaining("Invalid arguments for write:\n- command:"),
+          result: {
             error: "invalid_arguments",
             issues: [expect.objectContaining({ path: "command" })],
-          }),
+          },
           isError: true,
         }),
         expect.objectContaining({
@@ -124,7 +125,7 @@ describe("document command recovery through the runtime loop", () => {
         (block.content as { toolCallId?: string } | null)?.toolCallId === "retired-read",
     );
     const persistedOutput = (savedRejection?.content as { output?: unknown } | null)?.output;
-    expect(persistedOutput).toMatchObject({ error: "invalid_arguments" });
+    expect(persistedOutput).toEqual(expect.stringContaining("Invalid arguments for write:"));
     const retryMessage = requests[1]?.messages
       .flatMap((message) => message.content)
       .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");

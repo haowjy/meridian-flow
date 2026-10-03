@@ -158,7 +158,7 @@ export function describeBlock(input: {
     const documents = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
       []) as DocumentRevisionEvidence[];
     const isError = result?.isError === true;
-    const typed = (result?.result ?? result?.output) as JsonValue | undefined;
+    const typed = result?.result as JsonValue | undefined;
     const kind = registration?.historyKind;
     return {
       kind: "tool",

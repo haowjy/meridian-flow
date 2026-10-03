@@ -41,8 +41,6 @@ function reportTool(result: ModelThreadReportResult, isError = false) {
     toolCallId: "report-1",
     toolName: "thread_report",
     input: { ref: "p3" },
-    // The model's text never parses as a report; the row reads only the typed result.
-    output: "p3 succeeded.\n\nDone",
     result,
     isError,
   });
@@ -62,7 +60,7 @@ describe("thread_report presentation", () => {
   it("shows as a fold step", () => {
     expect(
       isToolViewVisible(
-        toolView({ toolCallId: "report-1", toolName: "thread_report", output: null }),
+        toolView({ toolCallId: "report-1", toolName: "thread_report", result: null }),
       ),
     ).toBe(true);
   });

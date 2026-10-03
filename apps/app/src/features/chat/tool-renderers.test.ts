@@ -8,14 +8,12 @@ import { documentToolFailureCopy, rendererFor } from "./tool-renderers";
 function documentTool(args: {
   toolName: "read" | "write";
   input: JsonValue;
-  output?: JsonValue;
   result?: JsonValue;
   isError?: boolean;
 }): ToolView {
   return {
-    ...toolView({ toolCallId: "call-1", toolName: args.toolName, output: args.output ?? null }),
+    ...toolView({ toolCallId: "call-1", toolName: args.toolName, result: args.result ?? null }),
     input: args.input,
-    result: args.result ?? null,
     isError: args.isError ?? false,
   };
 }
@@ -39,11 +37,10 @@ function readResult(format: "full" | "outline", bodies: string[]): JsonValue {
 }
 
 describe("document tool rows", () => {
-  it("opens a read card from the typed result, not the model's text", () => {
+  it("opens a read card from the typed result", () => {
     const tool = documentTool({
       toolName: "read",
       input: { path: "ch1.md" },
-      output: "status: success; path: ch1.md; blocks: 1\n\nh0|The lantern guttered.",
       result: readResult("full", ["The lantern guttered."]),
     });
 
@@ -80,7 +77,6 @@ describe("document tool rows", () => {
     const tool = documentTool({
       toolName: "write",
       input,
-      output: "status: success; path: ch12.md; write: w1; copied: 3 blocks from ch11.md",
     });
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Copied ch11.md to", parameter: "ch12.md" });
@@ -126,7 +122,6 @@ describe("document tool rows", () => {
     const tool = documentTool({
       toolName: "write",
       input: { command: "read", path: "ch1.md" },
-      output: "h0|The lantern guttered.",
     });
 
     expect(toolActivityPhrase(tool).verb).toBe("Write");
@@ -137,7 +132,6 @@ describe("document tool rows", () => {
     const notFound = documentTool({
       toolName: "read",
       input: { path: "ch9.md" },
-      output: "status: document_not_found; path: ch9.md",
       result: { schema: "meridian.agent-edit.v1", command: "read", status: "document_not_found" },
       isError: true,
     });

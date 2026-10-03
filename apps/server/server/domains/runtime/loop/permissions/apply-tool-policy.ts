@@ -3,7 +3,7 @@
 import type { Tool } from "../../gateway/index.js";
 import {
   type InvalidArgumentIssue,
-  invalidArgumentsOutput,
+  renderInvalidArguments,
 } from "../../tools/invalid-arguments.js";
 import {
   commandSetForTool,
@@ -80,12 +80,11 @@ function oneOf(commands: ReadonlySet<string>): string {
 }
 
 function invalidArguments(toolName: string, issue: InvalidArgumentIssue): PermissionDecision {
-  const output = invalidArgumentsOutput(toolName, [issue]);
   return {
     allowed: false,
     kind: "invalid_arguments",
-    reason: output.message,
-    issues: output.issues,
+    reason: renderInvalidArguments(toolName, [issue]),
+    issues: [issue],
   };
 }
 

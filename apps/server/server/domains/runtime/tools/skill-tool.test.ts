@@ -34,6 +34,7 @@ describe("skill tool", () => {
     ).resolves.toEqual({
       toolCallId: "call-1",
       output: { slug: "creative-writing-modes", body: "modes body." },
+      result: { slug: "creative-writing-modes", body: "modes body." },
     });
   });
 
@@ -46,6 +47,7 @@ describe("skill tool", () => {
     ).resolves.toEqual({
       toolCallId: "call-2",
       output: { message: 'Skill "missing" is not available' },
+      result: { message: 'Skill "missing" is not available' },
       isError: true,
     });
   });
@@ -61,7 +63,7 @@ describe("skill tool", () => {
         tools.executeTool({ id: `call-${index}`, name: "skill", arguments: args }, execution),
       ),
     );
-    expect(outputs.map(({ output }) => (output as { message: string }).message)).toEqual([
+    expect(outputs.map(({ output }) => output)).toEqual([
       "Invalid arguments for skill:\n- slug: required; expected a string",
       "Invalid arguments for skill:\n- slug: must not be empty",
       "Invalid arguments for skill:\n- extra: unknown argument",

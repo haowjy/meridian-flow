@@ -201,6 +201,7 @@ export async function persistReturnResult(
         content: {
           toolCallId: input.toolCallId,
           output,
+          result: output,
           isError,
         },
         status: "complete",
@@ -211,6 +212,7 @@ export async function persistReturnResult(
           type: "tool.result" as const,
           toolCallId: input.toolCallId,
           output,
+          result: output,
           isError,
         },
       ];

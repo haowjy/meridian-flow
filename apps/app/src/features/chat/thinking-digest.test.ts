@@ -23,7 +23,6 @@ function tool(args: {
     toolCallId: `call-${args.toolName}`,
     toolName: args.toolName,
     input: (args.input ?? null) as ToolView["input"],
-    output: null,
     result: null,
     status: "complete",
     isError: args.isError ?? false,

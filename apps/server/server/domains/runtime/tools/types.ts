@@ -106,10 +106,11 @@ export interface ToolExecutionResult {
   /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
   returnResult?: ReturnResultOutcome;
   /**
-   * The handler's typed result when the registration renders it (`renderResult`);
-   * `output` is then that rendering. Kept beside the text, never parsed from it.
+   * The tool's typed result, always set. `output` is its rendering when the
+   * registration has `renderResult`, and the value itself otherwise. Readers
+   * use this, never `output`, which may be text.
    */
-  result?: JsonValue;
+  result: JsonValue;
 }
 
 /**
