@@ -101,9 +101,11 @@ tab from stale metadata. Genuine server failure remains retryable explicitly
 and retries when the resource/catalog authority revision advances. Only the
 active desktop editor is advertised as required recovery-host demand; warm and
 persisted tabs are not hosts until they have a claim path. A draft-only tab does
-not claim the live admission while it still hosts the draft branch; the recovery
-verifier proves the published document is ready before settlement graduates the
-tab.
+not claim the live admission while it still hosts the draft branch. Local Apply
+promotes it to a durable tab as soon as the server confirms, before live
+readiness, so the host claims the admission like any other tab. Recovery
+settlement graduates a draft-only tab only when it is still an overlay, and
+treats an already-promoted overlay's obligation as obsolete.
 
 ## Unfiled materialization and recovery
 

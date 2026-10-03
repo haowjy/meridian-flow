@@ -161,11 +161,8 @@ row + Yjs state) but absent from the live tree until Apply. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
-never stored. Local disposition events and remote membership reconciliation
-both route through narrow coordinator commands. Apply calls
-`applyDraftMetadata(projectId, reviewWorkId, documentId)`; discard calls
-`discardDraft(projectId, reviewWorkId, documentId)`. The coordinator checks the
-owning Work before changing the workspace.
+never stored. `ContextRemovalCoordinator` is the only owner of draft-only tab
+membership; it checks the owning Work before changing the workspace.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
@@ -174,38 +171,32 @@ review member authoritative; it must not create a durable tab hidden underneath
 the review overlay, regardless of whether address or review admission arrives
 first. Review admission absorbs an earlier durable member; later address
 admission may enrich only the overlay with resolved live-resource metadata.
-Once the server confirms Apply, the controller graduates the member
-into the durable workspace before live-readiness recovery; the recovery owner
-then verifies the live binding and treats its old overlay obligation as
-obsolete.
 
-- Every Apply path materializes the whole branch and clears draft metadata —
-  keep the tab, drop the marker — after server confirmation and before
-  live-readiness recovery, while the disposition lock remains held. Controls
-  must not re-enable before that local resolution; draft-group absence alone
-  cannot distinguish Apply from Discard.
-- Whole-draft Discard removes the owning draft-only tab through the coordinator
-  before dispatching the server command. The coordinator applies the ordinary
-  adjacent-tab/empty-Editor close fallback and repairs the current address in
-  place. It returns a generation-qualified removal receipt that alone owns
-  rollback membership and its exact route artifacts. The fallback navigation
-  supplies operation authority that survives its own deferred history settlement
-  but not a later writer intent. A server
-  refusal reopens the exact generation only when no Apply, reopen, or later
-  removal superseded it. Apply promotion, newer-generation admission, and every
-  confirmed Discard advance the coordinator's per-document disposition epoch and
-  irreversibly retire older receipts. Confirmed and remote Discards use the
-  terminal settlement command even when no local tab remains; that path never
-  creates a rollback receipt. The optimistic fallback is the navigation baseline:
-  any later writer destination intent makes restoration background-only, even
-  if the writer eventually returns to the same fallback address. The refusal
-  error remains keyed to the draft and appears when its action is shown again.
-  Header, composer-strip, and bulk Discard all use this same controller command
-  lifecycle; controllers never reconstruct membership or infer authority from
-  address equality.
+- **Apply.** Once the server confirms a local Apply, the controller calls
+  `promoteAppliedDraft`: the overlay becomes a durable tab (keep the tab, drop
+  the marker) before live-readiness recovery, while the disposition lock is
+  still held. Recovery then verifies the live binding and treats the promoted
+  overlay's obligation as obsolete. A remote Apply records a server-applied
+  witness and recovery settles the overlay. Controls must not re-enable before
+  that local resolution; draft-group absence alone cannot distinguish Apply
+  from Discard.
+- **Optimistic Discard.** Whole-draft Discard calls `discardDraft` before the
+  server command. It closes the tab with the ordinary adjacent-tab/empty-Editor
+  fallback, repairs the address in place, and returns a receipt. On refusal the
+  controller calls only `receipt.rollback()`; it never reopens the tab or
+  navigates itself. Rollback does nothing once Apply promotion, a newer review
+  admission, or a confirmed Discard superseded the receipt. It returns the
+  writer to the draft only if they have issued no navigation since the
+  fallback (even if they came back to the same address); otherwise it restores
+  the tab in the background. The refusal error is keyed to the draft and shows
+  when that draft's review opens again. Header, composer-strip, and bulk
+  Discard share this lifecycle.
+- **Confirmed and remote Discard** call `settleDiscardedDraft`, even when no
+  local tab remains. It is terminal: it retires every outstanding receipt for
+  that document and never creates one.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
-  Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab
+  a remote Apply; absence means remote Discard. A failed read leaves the tab
   intact, and a replacement active draft for that document cancels resolution.
 - A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
   skips draftOnly tabs so a discarded path can't replay on the next visit;

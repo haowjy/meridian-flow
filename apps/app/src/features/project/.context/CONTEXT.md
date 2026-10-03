@@ -397,7 +397,10 @@ readiness suspension disables activation. A parked desktop Editor retains its
 private document and review state but is inactive: `ContextPaneController` must
 not admit its retained document or repair the address until its host is active
 again. Writer close and Work pruning are reversible, while acknowledged deletion
-and draft discard keep exact re-entry guards against stale resurrection.
+and confirmed draft discard keep exact re-entry guards against stale
+resurrection. An optimistic draft-only Discard is reversible only through its
+coordinator receipt
+([draft review](../../chat/.context/draft-review.md#the-pending-signal-and-draft-only-tab-lifecycle)).
 
 ## Project routing, identity, and controllers
 
