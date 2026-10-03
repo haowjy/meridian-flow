@@ -2,11 +2,14 @@
 
 ## Tool surface
 
-`write()` returns host metadata plus one canonical model result:
-`WriteOutcome { command, status, isError, text, result }` (`src/tool/types.ts`).
-`result` is the versioned `meridian.agent-edit.v1` JSON envelope and is the only
-representation sent to the LLM. `text` is host-facing diagnostic text, not a
-second model protocol. Block groups carry shared semantics as
+`read()` and `write()` return host metadata plus one typed result:
+`WriteOutcome { command, status, isError, result, … }` (`src/tool/types.ts`).
+`result` is the versioned `meridian.agent-edit.v1` envelope. The model never
+sees it as JSON: `renderAgentEditResult` (`src/tool/result-text.ts`) is the
+only path to the model's text (a status line, notes, the message, then
+`hash|text` blocks), and hosts keep `result` beside that text for history,
+the app and code mode. Nothing parses the text back, and there is no second
+text field. Block groups carry shared semantics as
 `{ extent, relation, items: [{ hash, body }] }`, so multiline bodies cannot
 collide with adjacent blocks without repeating metadata on every item. The only
 group kinds are full `document`, `changed`, or `swept` bodies and prefix
@@ -19,7 +22,7 @@ protocol detail.
 
 The result lifecycle is discriminated: `status: "success"` requires
 `phase: "staged" | "committed"`, while every non-success status excludes
-`phase`. Hosts must use the exported `isAgentEditResult` guard when recognizing
+`phase`. Hosts must use the exported `isAgentEditResultEnvelope` guard when recognizing
 persisted results rather than inferring validity from the schema string alone.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
@@ -35,8 +38,9 @@ updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
 receipts recomputed against the settled projection for host publication. Without
 a response id, the same command path appends and projects immediately. Undo/redo
-never buffer: a tool reversal first commits any buffered writes for that response
-so durable order matches tool order.
+never buffer, and they never save buffered writes either: the host treats a
+`write` `undo` or `redo` as a save boundary and commits the reply before it, so
+buffered writes at a reversal are an invariant error (`internal_error`).
 
 Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 
@@ -114,8 +118,8 @@ The command schemas run it in `superRefine`, so hosts refuse a bad combination
 before dispatch and the resolver never re-checks it. Field descriptions state
 each rule, because refinements don't export to JSON Schema.
 
-**Copies are nodes, not markup (D23, D24).** `insert`/`replace` take `from`
-instead of `content`, and `copy` creates a document from another. The engine
+**Copies are nodes, not markup (D23, D24).** `insert`/`replace` take exactly
+one of `content` or `from`, and `copy` creates a document from another. The engine
 never reads the source: the host reads it with `WriteContext.includeNodes`
 (the read returns `WriteOutcome.nodes`) and passes the blocks back as
 `copiedNodes`. They are inserted as ProseMirror nodes, so blank paragraphs and
@@ -187,4 +191,4 @@ idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 Undo/redo use the same versioned result envelope as writes, with typed reversal
 metadata and block records.
 
-Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N write handles (`last`, the same unit for both directions), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). Undo plans a selection at once; redo plans one undo group at a time, oldest first, and keeps going for `since`/`to`, `last`, `all` and turn selections. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.
+Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N writes (`last`; for redo, the N handles undone most recently), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). Undo plans a selection at once; redo plans one undo group at a time, oldest undo first, and keeps going for `since`/`to`, `last`, `all` and turn selections. A reversal is `reconciled` only when its result differs from the text just before the reversed writes (undo) or the reversed undo (redo); a sweep alone doesn't make it reconciled. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

@@ -63,9 +63,10 @@ the retained durable update log (plus only a seq-0 baseline checkpoint when the
 host initialized a document that way), assigns per-reconstruction `Symbol` tokens,
 creates a fresh local `Y.UndoManager`, tags only the requested target forward
 update seqs with the tracked token, runs undo/redo, and extracts update bytes.
-The target seqs come from mutation rows: undo targets currently `active` rows for
-the turn; redo targets `reversed` rows whose `undoUpdateSeq` matches the redo
-target. This journal-backed model is authoritative.
+The target seqs come from mutation rows: undo targets the selected `active`
+rows (write handles, a `since`/`to` range, the last N, or all; a turn only for
+the writer's turn undo); redo targets `reversed` rows whose `undoUpdateSeq`
+matches the redo target. This journal-backed model is authoritative.
 
 Forward agent writes still use a stable transaction origin `Symbol` per
 `(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
