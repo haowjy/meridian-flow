@@ -23,7 +23,6 @@ import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
-import { threadMessageRow } from "./thread-message-result";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
 import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
@@ -254,8 +253,6 @@ export function isRereadPause(tool: ToolView): boolean {
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  // A refused send is a typed `status: "error"` result, saved without `isError`.
-  if (tool.toolName === "thread_message") return threadMessageRow(tool)?.kind === "failed";
   return tool.isError && !isRereadPause(tool);
 }
 

@@ -16,6 +16,19 @@ export const queuedNotifyCopy = (handle: string) =>
 export const backgroundRunCopy = (handle: string) =>
   `${handle} is running in the background. You'll be notified when it finishes.`;
 
+/**
+ * A refusal (an error with no run started) goes back as an error result, so
+ * the model and the app both see a failed call. A run that started and
+ * failed is a delivered report and stays a plain result.
+ */
+export function spawnToolResult(
+  result: SpawnResult,
+): SpawnResult | { isError: true; output: SpawnResult } {
+  return result.status === "error" && result.execution === undefined
+    ? { isError: true, output: result }
+    : result;
+}
+
 export function renderSpawnOutput(value: JsonValue): string {
   if (!isSpawnResult(value)) return renderRefusal(value);
   const result = value as SpawnResult;
