@@ -1,81 +1,42 @@
 /** Pool routing per document (D19), the reply's one save (D42), and read-version checks (D41). */
-import type {
-  AgentEditCore,
-  ResponseCommitSuccessResult,
-  WriteOutcome,
-} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createFakeThreadPeerCores,
+  inProcessResponseTransactions,
+} from "../test-support/thread-peer-pool-fakes.js";
 import { type AgentEditDestination, asLiveAgentEditCore } from "./agent-edit-cores.js";
-import { enlistResponseParticipant, runResponseTransaction } from "./response-transaction.js";
 import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
 const live: AgentEditDestination = { kind: "live" };
 const draftA: AgentEditDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 const draftB: AgentEditDestination = { kind: "draft", workId: "work-b" as WorkId, workSlug: "b" };
-const success = {
-  status: "success",
-  phase: "committed",
-  isError: false,
-  result: { command: "read", status: "success", read: { format: "full" } },
-} as unknown as WriteOutcome;
-
-function stubCore(name: string) {
-  const committed = (responseId: string): ResponseCommitSuccessResult => ({
-    status: "committed",
-    responseId,
-    documentCount: 1,
-    updateCount: 1,
-    documents: [{ documentId: `${name}-doc`, updateCount: 1, receipts: [] }],
-    stagedCreates: { committed: [], discarded: [] },
-  });
-  return {
-    read: vi.fn(async () => success),
-    write: vi.fn(async () => success),
-    commitResponse: vi.fn(
-      async (
-        responseId: string,
-        options?: { deferFinalization?(participant: { commit(): void; abort(): void }): void },
-      ) => {
-        options?.deferFinalization?.({ commit() {}, abort() {} });
-        return committed(responseId);
-      },
-    ),
-    hasResponseDocument: vi.fn(() => false),
-    withResponseDocument: vi.fn(async () => name),
-    responseDocuments: vi.fn(() => ({ staged: [`${name}-doc`], created: [] })),
-    invalidateThread: vi.fn(async () => {}),
-  };
-}
-
 function createPool() {
-  const liveCore = stubCore("live");
-  const threadCore = stubCore("thread");
-  const pullThreadPeer = vi.fn(async () => ({
-    branchGeneration: 1,
-    attributionBaseline: new Uint8Array(),
-  }));
+  const { history, liveCore, threadCore } = createFakeThreadPeerCores();
   const afterLiveCommit = vi.fn();
   const atomic = { calls: 0 };
   const pool = createThreadPeerCorePool({
-    liveUtilityCore: asLiveAgentEditCore(liveCore as unknown as AgentEditCore),
-    createThreadCore: () => threadCore as unknown as AgentEditCore,
-    shouldUseLiveReversal: async () => false,
+    liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
+    createThreadCore: () => threadCore.asCore(),
+    reversalHistory: history.reader,
     discardThreadPeerBranches: async () => {},
-    pullThreadPeer,
+    pullThreadPeer: history.pullThreadPeer,
     afterLiveCommit,
     commitThreadResponseAtomically: async (operation) => {
       atomic.calls += 1;
       return operation();
     },
-    responseTransactionSettlement: {
-      deferUntilCommit: () => false,
-      deferUntilRollback: () => false,
-    },
-    responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
+    ...inProcessResponseTransactions,
   });
-  return { pool, liveCore, threadCore, pullThreadPeer, afterLiveCommit, atomic };
+  return {
+    pool,
+    liveCore,
+    threadCore,
+    pullThreadPeer: history.pullThreadPeer,
+    afterLiveCommit,
+    atomic,
+  };
 }
 
 const context = (destination: AgentEditDestination, responseId?: string) => ({
@@ -174,12 +135,47 @@ describe("thread-peer pool read versions (D41)", () => {
   });
 
   it("never checks undo and redo against the last read", async () => {
-    const { pool, threadCore } = createPool();
+    const { pool } = createPool();
     await pool.read(readCh12, context(live));
     await expect(
       pool.write({ command: "undo", file: "ch12.md", documentId: "ch12" }, context(draftA)),
     ).resolves.toMatchObject({ status: "success" });
+  });
+});
+
+describe("thread-peer pool undo and redo routing", () => {
+  const undoCh12 = { command: "undo", file: "ch12.md", documentId: "ch12" } as const;
+
+  it("sends undo to the live core for a thread that only wrote live", async () => {
+    const { pool, liveCore, threadCore } = createPool();
+    await pool.write(insertCh12, context(live));
+    liveCore.write.mockClear();
+
+    await pool.write(undoCh12, context(draftA));
+
+    expect(liveCore.write).toHaveBeenCalledOnce();
+    expect(threadCore.write).not.toHaveBeenCalled();
+  });
+
+  it("sends undo to the thread core for a thread that drafted the document", async () => {
+    const { pool, liveCore, threadCore } = createPool();
+    await pool.write(insertCh12, context(draftA));
+    threadCore.write.mockClear();
+
+    await pool.write(undoCh12, context(live));
+
     expect(threadCore.write).toHaveBeenCalledOnce();
+    expect(liveCore.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps undo live for a thread that pulled a peer but never drafted", async () => {
+    const { pool, liveCore, threadCore, pullThreadPeer } = createPool();
+    await pullThreadPeer({ documentId: "ch12" as DocumentId, threadId: THREAD_ID });
+
+    await pool.write(undoCh12, context(draftA));
+
+    expect(liveCore.write).toHaveBeenCalledOnce();
+    expect(threadCore.write).not.toHaveBeenCalled();
   });
 });
 
