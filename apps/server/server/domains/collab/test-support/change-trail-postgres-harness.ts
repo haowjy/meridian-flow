@@ -28,7 +28,9 @@ export const {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } = await import("../../../shared/drizzle-transaction.js");
-export const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
+export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+  "../../../test-support/drizzle-reset.js"
+);
 const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
@@ -126,35 +128,7 @@ export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
 export async function resetDatabase(): Promise<void> {
   // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
-  await deleteDrizzleRows(db, [
-    schema.branchPushOutboxUpdates,
-    schema.branchPushSettlementOutbox,
-    schema.turnTrailWork,
-    schema.changeTrailDeliveryOutbox,
-    schema.changeTrailDocumentDetails,
-    schema.changeTrailDocumentOccurrences,
-    schema.changeTrailShells,
-    schema.pendingNotices,
-    schema.documentYjsReversalOps,
-    schema.documentYjsReversals,
-    schema.agentEditWidCounters,
-    schema.agentEditMutations,
-    schema.branchWriteJournal,
-    schema.pushLineage,
-    schema.documentBranches,
-    schema.documentYjsCheckpoints,
-    schema.documentYjsHeads,
-    schema.documentYjsUpdates,
-    schema.threadWorks,
-    schema.turns,
-    schema.threads,
-    schema.folders,
-    schema.documents,
-    schema.contextSources,
-    schema.works,
-    schema.projects,
-    schema.users,
-  ]);
+  await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
   await seedDatabase();
 }
 

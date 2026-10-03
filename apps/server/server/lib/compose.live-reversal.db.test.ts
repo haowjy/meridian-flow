@@ -4,10 +4,8 @@
  * Their history is the live journal, since no thread-peer branch exists.
  */
 
-import { Hocuspocus } from "@hocuspocus/server";
 import { and, eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -23,8 +21,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../test-support/drizzle-reset.js"
     );
-    const { createNoopEventSink } = await import("../domains/observability/index.js");
-    const { composeAppServices, createProductionAppPorts } = await import("./compose.js");
+    const { unloadHocuspocus, useComposedRuntimes } = await import(
+      "../test-support/composed-runtime.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000c01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000c02";
@@ -49,10 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
-    const composedApps: Array<{ shutdown(): Promise<void> }> = [];
-    afterEach(async () => {
-      await Promise.all(composedApps.splice(0).map((app) => app.shutdown()));
-    });
+    const runtimes = useComposedRuntimes(() => db);
     beforeEach(async () => {
       db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "live-reversal"));
@@ -154,12 +150,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    let sequence = 0;
-    let callCount = 0;
-
     /** One model reply per step, each saved before the next starts. */
     async function startScript(thread: Thread = LIVE) {
-      const runtime = await composeRuntime();
+      const runtime = await runtimes.compose();
       await runtime.ports.documentSync.writeDocument({
         documentId: DOC_ID,
         markdown: "Writer opening.",
@@ -169,47 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
         projectId: PROJECT_ID,
       });
-      const reply = async (
-        steps: (
-          call: (name: string, args: Record<string, unknown>) => Promise<string>,
-        ) => Promise<void>,
-      ) => {
-        sequence += 1;
-        const responseId = `00000000-0000-4000-8000-0000000d${String(sequence).padStart(4, "0")}`;
-        await db.insert(schema.modelResponses).values({
-          id: responseId,
-          turnId: thread.turnId,
-          sequence,
-          provider: "runtime-test",
-          model: "runtime-test",
-          requestMessageCount: 1,
-          predictedCacheState: "cold",
-          predictedCacheReason: "facts_unavailable",
-        });
-        await steps(async (name, args) => {
-          callCount += 1;
-          const result = await runtime.app.toolExecutor.executeTool(
-            {
-              id: `00000000-0000-4000-8000-0000000e${String(callCount).padStart(4, "0")}`,
-              name,
-              arguments: args,
-            },
-            { ...thread, responseId, agentSlug: null },
-          );
-          const output = String(result.output);
-          if (result.isError) throw new Error(`${name} failed:\n${output}`);
-          return output;
-        });
-        await runtime.ports.documentSync.finalizeResponseCommit(responseId, thread as never);
-      };
-      const text = async (path: string, version?: "live") => {
-        let output = "";
-        await reply(async (call) => {
-          output = await call("read", version ? { path, version } : { path });
-        });
-        return output;
-      };
-      return { runtime, reply, text };
+      return runtimes.script(runtime, thread);
     }
 
     /** Two writes, then undo, redo and a range undo of both: every receipt in order. */
@@ -251,7 +204,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await script.text(path, version)).toMatch(/\|Writer opening\.$/);
         return outputs;
       } finally {
-        await unloadRuntime(script.runtime.hocuspocus);
+        await unloadHocuspocus(script.runtime.hocuspocus);
       }
     }
 
@@ -324,7 +277,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await script.text(CHAPTER, "live")).not.toContain("Drafted.");
         expect(outputs.slice(1).join("\n")).not.toContain("drafted in");
       } finally {
-        await unloadRuntime(script.runtime.hocuspocus);
+        await unloadHocuspocus(script.runtime.hocuspocus);
       }
     });
 
@@ -355,7 +308,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ).not.toContain("Writer opening.");
           return outputs;
         } finally {
-          await unloadRuntime(script.runtime.hocuspocus);
+          await unloadHocuspocus(script.runtime.hocuspocus);
         }
       };
       const drafted = await copyScript(DRAFTED);
@@ -367,37 +320,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         withoutDraftNote(drafted),
       );
     });
-
-    async function composeRuntime() {
-      const ports = await createProductionAppPorts({
-        db,
-        eventSink: createNoopEventSink(),
-        environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
-      });
-      const server = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await ports.documentSync.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          ports.documentSync.storeHocuspocusDocument(documentName, document),
-      });
-      ports.documentSync.bindHocuspocus(server);
-      const app = composeAppServices(ports);
-      composedApps.push(app);
-      return { ports, hocuspocus: server, app };
-    }
-
-    async function unloadRuntime(server: Hocuspocus): Promise<void> {
-      for (let pass = 0; pass < 3; pass += 1) {
-        await Promise.all(server.loadingDocuments.values());
-        await Promise.all(
-          [...server.documents.values()].map((document) => server.unloadDocument(document)),
-        );
-        await Promise.all(server.unloadingDocuments.values());
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-    }
   });
 }

@@ -26,7 +26,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createCollabDomain } = await import("./composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000a01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000a02";
@@ -78,36 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     beforeEach(async () => {
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;
-      await deleteDrizzleRows(db, [
-        schema.branchPushOutboxUpdates,
-        schema.branchPushSettlementOutbox,
-        schema.turnTrailWork,
-        schema.changeTrailDeliveryOutbox,
-        schema.changeTrailDocumentDetails,
-        schema.changeTrailDocumentOccurrences,
-        schema.changeTrailShells,
-        schema.pendingNotices,
-        schema.documentYjsReversalOps,
-        schema.documentYjsReversals,
-        schema.agentEditWidCounters,
-        schema.agentEditMutations,
-        schema.branchWriteJournal,
-        schema.pushLineage,
-        schema.documentBranches,
-        schema.documentYjsCheckpoints,
-        schema.documentYjsHeads,
-        schema.documentYjsUpdates,
-        schema.modelResponses,
-        schema.threadWorks,
-        schema.turns,
-        schema.threads,
-        schema.folders,
-        schema.documents,
-        schema.contextSources,
-        schema.works,
-        schema.projects,
-        schema.users,
-      ]);
+      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "save-destinations"));
       await db
         .insert(schema.projects)
@@ -525,7 +498,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     /** A kept Work draft of lore.md, then an AI live write to it saved in one reply. */
-    async function saveLiveWriteOverKeptDraft(collab: Collab) {
+    async function saveLiveWriteOverKeptDraft(collab: Collab, afterSave?: () => void) {
       await seed(collab);
       const agentEdit = collab.agentEdit();
       await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
@@ -540,6 +513,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { ...context(live), responseId: RESPONSE_ID },
       );
       await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      afterSave?.();
       expect(await liveText(collab, KB_ID)).toContain("Live lore.");
       expect(await liveText(collab, KB_ID)).not.toContain("Pending lore.");
 
@@ -581,11 +555,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("drops the scheduled merge into Work drafts once disposed", async () => {
-      const collab = createTestCollab({ livePullDebounceMs: 10 });
-      const draftText = await saveLiveWriteOverKeptDraft(collab);
+      // Long enough that the save returns before the pull is due.
+      const collab = createTestCollab({ livePullDebounceMs: 250 });
+      const draftText = await saveLiveWriteOverKeptDraft(collab, () => collab.dispose());
 
-      collab.dispose();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       const drafted = await draftText();
       expect(drafted).toContain("Pending lore.");
