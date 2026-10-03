@@ -402,7 +402,12 @@ function DockRowLine({
 function DockErrorLine({ code, row = false }: { code: InlineReviewMessageCode; row?: boolean }) {
   return (
     <p
-      className="border-border-subtle border-t px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-destructive text-micro"
+      className={cn(
+        "border-border-subtle border-t py-[var(--chat-card-pad-y)] text-destructive text-caption",
+        row
+          ? "pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)]"
+          : "px-[var(--chat-card-pad-x)]",
+      )}
       role="alert"
       {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-disposition-error"]: code }}
     >

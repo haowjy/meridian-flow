@@ -1078,6 +1078,17 @@ export class ContextRemovalCoordinator {
     return outcome;
   }
 
+  /**
+   * An explicit Review launch re-admits a pending draft. A refused Discard
+   * leaves its draft pending, so the removal guard that keeps Back and late
+   * address resolution from resurrecting a discarded address no longer applies.
+   */
+  admitDraftReview(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+    const state = this.projects.get(projectId);
+    if (!state || !tab.draftOnly || !tab.reviewWorkId) return;
+    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, tab.reviewWorkId)));
+  }
+
   /** Promote a server-applied draft-only overlay into the durable workspace. */
   async promoteAppliedDraft(
     projectId: string,
