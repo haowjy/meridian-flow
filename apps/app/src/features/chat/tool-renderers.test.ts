@@ -154,7 +154,22 @@ describe("document tool rows", () => {
       isError: true,
     });
 
+    const binaryRead = documentTool({
+      toolName: "read",
+      input: { path: "scan.pdf" },
+      result: { schema: "meridian.agent-edit.v1", command: "read", status: "binary_file" },
+      isError: true,
+    });
+    const binarySource = documentTool({
+      toolName: "write",
+      input: { command: "insert", path: "ch1.md", from: { path: "scan.pdf", in: 1 } },
+      result: { schema: "meridian.agent-edit.v1", command: "insert", status: "binary_file" },
+      isError: true,
+    });
+
     expect(documentToolFailureCopy(notFound)).toBe("Couldn't find ch9.");
+    expect(documentToolFailureCopy(binaryRead)).toBe("scan is a binary file.");
+    expect(documentToolFailureCopy(binarySource)).toBe("scan is a binary file.");
     expect(documentToolFailureCopy(refusedRead)).toBe("Something went wrong while reading ch1.");
     expect(documentToolFailureCopy(refusedWrite)).toBe("That change couldn't be made in ch1.");
   });

@@ -390,17 +390,14 @@ async function resolveDocumentAddress(
     return writeToolError(command, modelContextErrorMessage(ref.error, context));
   }
   if (ref.value.kind !== "tracked") {
-    // No text document lives at this path; the status union has no read-only
-    // refusal, and `invalid_write` would name a write.
-    if (command === "read") {
-      return writeToolError(
-        command,
-        "The file is binary, so it can't be read as text.",
-        "document_not_found",
-        { path },
-      );
-    }
-    return writeToolError(command, `Cannot ${command} binary file: ${path}`);
+    return writeToolError(
+      command,
+      command === "read"
+        ? "The file is binary, so it can't be read as text."
+        : "The file is binary, so it can't be edited as text.",
+      "binary_file",
+      { path },
+    );
   }
   if (!ref.value.documentId) {
     return writeToolError(command, `Document id missing for ${path}`);
@@ -566,7 +563,11 @@ async function readCopySource(
   const resolved = await resolveCopySource(deps, command, source, ctx);
   if (isToolError(resolved)) return resolved;
   if (resolved.ref.kind !== "tracked") {
-    return writeToolError(command, `Cannot copy blocks from binary file: ${source.path}`);
+    return writeToolError(
+      command,
+      fromMessage(source, "The file is binary, so its blocks can't be copied."),
+      "binary_file",
+    );
   }
   return readTrackedCopySource(deps, execution, command, source, resolved.address, ctx);
 }

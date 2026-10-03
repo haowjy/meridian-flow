@@ -210,6 +210,10 @@ msgstr "{0} tok/s"
 #~ msgid "{0}, Archived"
 #~ msgstr "{0}, Archived"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "{binary} is a binary file."
+msgstr "{binary} is a binary file."
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -3699,6 +3703,10 @@ msgstr "That did not work."
 msgid "That document couldn't be found."
 msgstr "That document couldn't be found."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "That file is binary."
+msgstr "That file is binary."
+
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That image could not be read."
 msgstr "That image could not be read."
@@ -3990,6 +3998,10 @@ msgstr "This draft is untitled and lives in your Scratch. Click to name it or mo
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr "This file holds code only."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This file is binary, so this change can't be reversed."
+msgstr "This file is binary, so this change can't be reversed."
 
 #: src/features/project/context/use-rename-entry-form.ts
 msgid "This file is unavailable. Refresh and try again."

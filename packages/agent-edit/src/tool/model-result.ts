@@ -15,6 +15,7 @@ export type WriteErrorStatus =
   | "partial_failure"
   | "cant_undo_dependent"
   | "read_required"
+  | "binary_file"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -169,6 +170,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "partial_failure":
     case "cant_undo_dependent":
     case "read_required":
+    case "binary_file":
     case "internal_error":
     case "reversed":
     case "reconciled":

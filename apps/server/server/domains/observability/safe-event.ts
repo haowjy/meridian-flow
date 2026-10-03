@@ -78,6 +78,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
   status: new Set([
     "active",
+    "binary_file",
     "cant_undo_dependent",
     "closed",
     "committed",
