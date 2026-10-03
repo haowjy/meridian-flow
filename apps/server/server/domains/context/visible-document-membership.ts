@@ -1,5 +1,5 @@
 /** Shared manifest visibility policy for manuscript observations. */
-import type { BranchPeerShadowAccess } from "../collab/index.js";
+import type { BranchPeerShadowAccess } from "../collab/contracts.js";
 import type { ContextScheme } from "./ports/context-port.js";
 
 export type ManifestMembershipResolver = Pick<BranchPeerShadowAccess, "resolveManifestMembership">;

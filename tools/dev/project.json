@@ -3,6 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "tools/dev",
   "projectType": "library",
+  "implicitDependencies": ["@meridian/server"],
   "targets": {
     "typecheck": {
       "executor": "nx:run-commands",
