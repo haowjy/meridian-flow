@@ -127,6 +127,8 @@ type CollabDomainDeps = {
   notices?: NoticePort;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workProjectionMutation: WorkProjectionMutation;
+  /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
+  livePullDebounceMs?: number;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -167,6 +169,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     concurrentJournalWatermarks,
     liveJournal: persistence.journal,
     diagnostics: createBranchPullDiagnostics(deps.eventSink),
+    ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
 
   const documentUriResolver = createDocumentUriResolver(deps.db, deps.workAuthorityResolver);
@@ -427,6 +430,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
+    lifecycle: { dispose: () => branchPulls.cancelScheduledPulls() },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,

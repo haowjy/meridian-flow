@@ -2,7 +2,7 @@
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
@@ -66,13 +66,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
-    const createTestCollab = () =>
-      createCollabDomain({
+    const collabs: Array<{ dispose(): void }> = [];
+    const createTestCollab = () => {
+      const collab = createCollabDomain({
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         documentAccess: createDrizzleDocumentAccess(db),
       });
+      collabs.push(collab);
+      return collab;
+    };
+
+    afterEach(() => {
+      for (const collab of collabs.splice(0)) collab.dispose();
+    });
 
     async function currentDraftId(
       collab: ReturnType<typeof createTestCollab>,

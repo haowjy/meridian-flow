@@ -6,7 +6,7 @@
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq, isNull } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import type { AgentEditDestination } from "./contracts.js";
@@ -56,16 +56,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
-    const createTestCollab = () => {
+    const collabs: Array<{ dispose(): void }> = [];
+    const createTestCollab = (options: { livePullDebounceMs?: number } = {}) => {
       const collab = createCollabDomain({
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         documentAccess: createDrizzleDocumentAccess(db),
+        ...options,
       });
       collab.bindHocuspocus(hocuspocus as never);
+      collabs.push(collab);
       return collab;
     };
+
+    afterEach(() => {
+      for (const collab of collabs.splice(0)) collab.dispose();
+    });
     type Collab = ReturnType<typeof createTestCollab>;
 
     beforeEach(async () => {
@@ -517,8 +524,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(JSON.stringify(toolRead.result)).not.toContain("Pending lore.");
     });
 
-    it("merges an AI live write into the document's kept Work draft", async () => {
-      const collab = createTestCollab();
+    /** A kept Work draft of lore.md, then an AI live write to it saved in one reply. */
+    async function saveLiveWriteOverKeptDraft(collab: Collab) {
       await seed(collab);
       const agentEdit = collab.agentEdit();
       await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
@@ -546,22 +553,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             isNull(schema.documentBranches.threadId),
           ),
         );
-      expect(workDraft).toBeDefined();
-      // The debounced live pull (2 s, at most 10 s) merges without any model read.
-      const deadline = Date.now() + 12_000;
-      let drafted = "";
-      while (Date.now() < deadline) {
+      if (!workDraft) throw new Error("expected a kept Work draft for lore.md");
+      return async () => {
         const [row] = await db
           .select({ state: schema.documentBranches.state })
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, workDraft.id));
-        drafted = markdownOf(row?.state);
+        return markdownOf(row?.state);
+      };
+    }
+
+    it("merges an AI live write into the document's kept Work draft", async () => {
+      const draftText = await saveLiveWriteOverKeptDraft(
+        createTestCollab({ livePullDebounceMs: 10 }),
+      );
+
+      // The scheduled live pull merges without any model read.
+      const deadline = Date.now() + 5_000;
+      let drafted = "";
+      while (Date.now() < deadline) {
+        drafted = await draftText();
         if (drafted.includes("Live lore.")) break;
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(drafted).toContain("Live lore.");
       expect(drafted).toContain("Pending lore.");
-    }, 20_000);
+    });
+
+    it("drops the scheduled merge into Work drafts once disposed", async () => {
+      const collab = createTestCollab({ livePullDebounceMs: 10 });
+      const draftText = await saveLiveWriteOverKeptDraft(collab);
+
+      collab.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const drafted = await draftText();
+      expect(drafted).toContain("Pending lore.");
+      expect(drafted).not.toContain("Live lore.");
+    });
   });
 }
 

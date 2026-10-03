@@ -385,7 +385,14 @@ export type DocumentAttribution = {
   }>;
 };
 
+/** Background work the domain schedules itself, stopped when the app shuts down. */
+export type CollabLifecycle = {
+  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
+  dispose(): void;
+};
+
 export type CollabDomain = CollabTransport &
+  CollabLifecycle &
   DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
