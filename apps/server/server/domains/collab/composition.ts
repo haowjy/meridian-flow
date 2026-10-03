@@ -313,6 +313,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
+    afterCallerCommit: (callback) => {
+      runAfterDrizzleCommit(callback);
+    },
     readAuthorityHeadGeneration: authorityGeneration,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
     onLiveUpdatePersisted: branchPulls.scheduleLivePull,
