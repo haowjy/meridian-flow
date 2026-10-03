@@ -94,6 +94,8 @@ export interface AgentEditModelPayload {
     syncOverflow?: boolean;
   };
   awarenessDegraded?: boolean;
+  /** The write left the document empty; its one blank block is the empty document, not a leftover. */
+  documentEmpty?: boolean;
 }
 
 interface AgentEditResultBase extends AgentEditModelPayload {

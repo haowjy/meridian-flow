@@ -23,7 +23,12 @@ import {
   type PreparedMutation,
 } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
-import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
+import {
+  formatApplySuccess,
+  isDocumentEmpty,
+  status,
+  truncateCreateEcho,
+} from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
@@ -70,6 +75,12 @@ export function createWriteCommands(deps: {
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
 
   return { read, create, mutate };
+
+  function emptiedDocument(runtime: { doc: Y.Doc }): { documentEmpty?: true } {
+    return isDocumentEmpty(options.model, options.codec, toDocHandle(runtime.doc))
+      ? { documentEmpty: true }
+      : {};
+  }
 
   async function read(
     command: ReadCommand,
@@ -338,6 +349,7 @@ export function createWriteCommands(deps: {
         deletedHashes,
       });
       return formatApplySuccess({
+        ...emptiedDocument(runtime),
         phase: "staged",
         writeId: writeIdentity.handle,
         settlementId: writeIdentity.durableId,
@@ -400,6 +412,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: committed.ok ? committed.revision : null,
       writeId: writeIdentity.handle,
@@ -551,6 +564,7 @@ export function createWriteCommands(deps: {
           concurrent,
         );
         const result = formatApplySuccess({
+          ...emptiedDocument(runtime),
           phase: "staged",
           writeId: writeIdentity.handle,
           settlementId: writeIdentity.durableId,
@@ -650,6 +664,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: syncedMutation.revision,
       writeId: writeIdentity.handle,

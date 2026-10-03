@@ -2,7 +2,9 @@
 import type * as Y from "yjs";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
@@ -32,6 +34,8 @@ export interface ApplySuccessResponseInput {
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: boolean;
+  /** The write left the document with no text, only the one blank block every document keeps. */
+  documentEmpty?: boolean;
   /** A copy reports this instead of echoing what it wrote; its edges are `hash|prefix` lines. */
   copied?: { summary: CopySummary; edges: readonly string[] };
 }
@@ -42,6 +46,19 @@ export interface ReversalSuccessResponseInput {
   /** Write handles actually reversed, oldest first. */
   writeIds: readonly string[];
   sync: SyncedMutationSummary;
+}
+
+/** True when the document is down to one blank block, which removing every block leaves. */
+export function isDocumentEmpty(
+  model: AgentEditModel,
+  codec: AgentEditCodec,
+  doc: DocHandle,
+): boolean {
+  const blocks = model.getBlocks(doc);
+  return (
+    blocks.length <= 1 &&
+    model.serializeBlockBodies(doc, codec, blocks).every((body) => body.trim() === "")
+  );
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -77,6 +94,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
         ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
         : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      ...(input.documentEmpty ? { documentEmpty: true } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),
