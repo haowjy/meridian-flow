@@ -1108,6 +1108,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
             { name: command.name, goal: command.goal, status: command.status },
+            { originThreadId: thread.id },
           );
           const { before, after: updated, changed } = transition;
           return {
@@ -1134,6 +1135,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
             command.command === "archive",
+            { originThreadId: thread.id },
           );
           const { before, after, changed } = transition;
           return {

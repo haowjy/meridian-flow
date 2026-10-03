@@ -14,7 +14,7 @@ import {
   WorkLockedError,
   type WorkRepository,
 } from "./ports/work-repository.js";
-import type { WorkContextNotices } from "./work-context-notices.js";
+import type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";
 
 export type UpdateWorkCommandInput = UpdateWorkInput;
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
@@ -47,6 +47,7 @@ export async function updateWorkTransition(
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
+  origin: WorkChangeOrigin = {},
 ): Promise<WorkTransition> {
   const normalized = normalizeWorkUpdateInput(input);
   const result = await deps.works.transaction(async () => {
@@ -81,7 +82,7 @@ export async function updateWorkTransition(
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
-    if (result.contextChanged) await deps.workContextNotices.workChanged(work.id);
+    if (result.contextChanged) await deps.workContextNotices.workChanged(work.id, origin);
     return result;
   });
   return { before: result.before, after: result.after, changed: result.changed };
@@ -95,6 +96,7 @@ export async function setWorkArchived(
   },
   workId: WorkId,
   archived: boolean,
+  origin: WorkChangeOrigin = {},
 ): Promise<WorkTransition> {
   return deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
@@ -105,7 +107,7 @@ export async function setWorkArchived(
     }
     const after = archived ? await deps.works.archive(workId) : await deps.works.unarchive(workId);
     const result = { before, after, changed: before.archivedAt !== after.archivedAt };
-    if (result.changed) await deps.workContextNotices.workChanged(after.id);
+    if (result.changed) await deps.workContextNotices.workChanged(after.id, origin);
     return result;
   });
 }
