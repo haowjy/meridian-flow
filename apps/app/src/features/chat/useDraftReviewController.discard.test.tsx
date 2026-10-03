@@ -1,23 +1,27 @@
 // @vitest-environment jsdom
-/** Draft-only Discard projects disappearance immediately and restores it on refusal. */
+/** Draft-only Discard closes its tab at once; a refusal leaves it closed and holds the error on the draft. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
+import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
 import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
-import type { ContextRouteTarget, ProjectSearch } from "@/features/project/routing/project-route";
+import type { ProjectSearch } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import {
+  draftCommandErrorKey,
+  resetDraftCommandErrors,
+  useDraftCommandErrors,
+} from "./draft-command-errors";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 let rejectDiscard: ((reason: unknown) => void) | null = null;
-let navigationRevision = 0;
 let currentAddress = "";
 let coordinator: ContextRemovalCoordinator;
-let restoreOpen: OpenContextRoute;
+let addressWrites = 0;
 let search: ProjectSearch;
 
 vi.mock("@/client/api/drafts-api", () => ({
@@ -100,9 +104,15 @@ const neighborTab = contextTabFromFile(
 );
 
 let controller: DraftReviewController | null = null;
+let heldErrors: ReturnType<typeof useDraftCommandErrors> = {};
+
+function heldError() {
+  return heldErrors[draftCommandErrorKey({ documentId: "document-a", draftId: "draft-a" })];
+}
 
 function CaptureController() {
   controller = useDraftReviewController("project-a", "work-a");
+  heldErrors = useDraftCommandErrors();
   return null;
 }
 
@@ -110,14 +120,7 @@ function Providers({ children, open }: { children: ReactNode; open: OpenContextR
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={queryClient}>
-      <ProjectNavigationProvider
-        openContextRoute={open}
-        captureNavigation={() => {
-          const capturedRevision = navigationRevision;
-          return () => capturedRevision === navigationRevision;
-        }}
-        screen="context"
-      >
+      <ProjectNavigationProvider openContextRoute={open} screen="context">
         {children}
       </ProjectNavigationProvider>
     </QueryClientProvider>
@@ -128,9 +131,9 @@ describe("draft-only Discard", () => {
   beforeEach(() => {
     controller = null;
     rejectDiscard = null;
-    navigationRevision = 0;
     currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
-    restoreOpen = async () => ({ kind: "superseded" });
+    addressWrites = 0;
+    resetDraftCommandErrors();
     search = {
       screen: "context",
       work: "work-a",
@@ -162,28 +165,12 @@ describe("draft-only Discard", () => {
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
-        navigationRevision += 1;
+        addressWrites += 1;
         currentAddress = search.path
           ? `/projects/project-a/@work-a/manuscript/${search.path.replace(/^\/+/, "")}`
           : "/projects/project-a/@work-a/editor";
-        return Promise.resolve();
       },
       transition: async () => ({ kind: "applied" as const }),
-      captureCurrentNavigation: () => {
-        const revision = navigationRevision;
-        return () => navigationRevision === revision;
-      },
-      restoreDraft: (
-        _projectId: string,
-        target: ContextRouteTarget,
-        tab: ContextTab,
-        draftId: string,
-        isCurrent: () => boolean,
-      ) =>
-        restoreOpen(
-          { ...target, documentId: tab?.documentId },
-          { replace: true, tab, draftId, isCurrent },
-        ),
     };
     coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-a");
@@ -198,105 +185,46 @@ describe("draft-only Discard", () => {
     });
   });
 
-  it("closes immediately, then restores the tab, review, and address when Discard fails", async () => {
-    const open = vi.fn<OpenContextRoute>(async (_target, options) => {
-      if (options?.tab) {
-        useContextTabsStore.getState().openTab("project-a", options.tab);
-        await useContextTabsStore
-          .getState()
-          .selectTab("project-a", "work-a", options.tab.documentId);
-        currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
-      }
-      return { kind: "applied" as const };
-    });
-    restoreOpen = open;
+  it("keeps the tab closed and holds the error on the draft when Discard is refused", async () => {
+    const open = vi.fn<OpenContextRoute>();
     await withReactRoot(
       <Providers open={open}>
         <CaptureController />
       </Providers>,
       async () => {
         await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
-        expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toMatchObject([
-          { documentId: "document-b" },
-        ]);
         let disposition: Promise<unknown> | undefined;
         await act(async () => {
           disposition = controller?.discard("document-a", "draft-a");
+        });
+
+        // The tab closes with the click and the neighbour takes over.
+        expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
+        expect(currentAddress).toBe("/projects/project-a/@work-a/manuscript/live-neighbor.md");
+        expect(addressWrites).toBe(1);
+
+        await act(async () => {
+          rejectDiscard?.(new Error("offline"));
+          await disposition;
         });
 
         expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
-
-        await act(async () => {
-          rejectDiscard?.(new Error("offline"));
-          await disposition;
-        });
-
-        expect(open).toHaveBeenCalledWith(
-          expect.objectContaining({ documentId: "document-a", path: "/chapter.md" }),
-          expect.objectContaining({
-            replace: true,
-            draftId: "draft-a",
-            tab: expect.objectContaining(draftTab),
-          }),
-        );
-        expect(getContextTabs("project-a").tabs).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ documentId: "document-a", draftOnly: true }),
-            expect.objectContaining({ documentId: "document-b" }),
-          ]),
-        );
-        expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-a");
-        expect(currentAddress).toBe("/projects/project-a/@work-a/manuscript/chapter.md");
-        expect(controller?.inlineReview).toMatchObject({
-          documentId: "document-a",
-          draftId: "draft-a",
-        });
-        expect(controller?.inlineReviewMessage).toEqual({
-          code: "discard-offline",
-          tone: "error",
-        });
-      },
-    );
-  });
-
-  it("restores in the background when the writer navigates after the optimistic close", async () => {
-    const open = vi.fn<OpenContextRoute>();
-    restoreOpen = open;
-    await withReactRoot(
-      <Providers open={open}>
-        <CaptureController />
-      </Providers>,
-      async () => {
-        await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
-        let disposition: Promise<unknown> | undefined;
-        await act(async () => {
-          disposition = controller?.discard("document-a", "draft-a");
-        });
-
-        navigationRevision += 1;
-        currentAddress = "/projects/project-a/@work-a/manuscript/writer-choice.md";
-        await act(async () => controller?.exitInlineReview());
-
-        await act(async () => {
-          rejectDiscard?.(new Error("offline"));
-          await disposition;
-        });
-
+        expect(addressWrites).toBe(1);
         expect(open).not.toHaveBeenCalled();
-        expect(getContextTabs("project-a").tabs).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ documentId: "document-a", draftOnly: true }),
-            expect.objectContaining({ documentId: "document-b" }),
-          ]),
-        );
-        expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-b");
-        expect(currentAddress).toBe("/projects/project-a/@work-a/manuscript/writer-choice.md");
-        expect(controller?.inlineReviewMessage).toBeNull();
-        await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
-        expect(controller?.inlineReviewMessage).toEqual({
-          code: "discard-offline",
-          tone: "error",
+        expect(heldError()).toBe("discard-offline");
+
+        // Retrying clears the held error, and a confirmed Discard leaves none.
+        let retry: Promise<unknown> | undefined;
+        await act(async () => {
+          retry = controller?.discard("document-a", "draft-a");
         });
+        expect(heldError()).toBeUndefined();
+        await act(async () => {
+          rejectDiscard?.(new Error("offline"));
+          await retry;
+        });
+        expect(heldError()).toBe("discard-offline");
+        expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
       },
     );
   });

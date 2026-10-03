@@ -398,8 +398,8 @@ private document and review state but is inactive: `ContextPaneController` must
 not admit its retained document or repair the address until its host is active
 again. Writer close and Work pruning are reversible, while acknowledged deletion
 and confirmed draft discard keep exact re-entry guards against stale
-resurrection. An optimistic draft-only Discard is reversible only through its
-coordinator receipt
+resurrection. A draft-only Discard closes its tab at once and is never
+reopened; a refusal shows on the pending draft instead
 ([draft review](../../chat/.context/draft-review.md#the-pending-signal-and-draft-only-tab-lifecycle)).
 
 ## Project routing, identity, and controllers

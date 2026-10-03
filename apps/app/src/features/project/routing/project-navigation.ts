@@ -40,11 +40,6 @@ export type PreparedWorkspaceNavigation = {
   isCurrent(): boolean;
   commit(): void;
 };
-export type ProjectNavigationOperation = {
-  settlement: Promise<NavigationSettlement>;
-  /** Remains current through this operation's own history settlement only. */
-  isCurrent(): boolean;
-};
 export type ProjectLeaveGuard = {
   request(intent: { run(): void; cancel(): void }): void;
   dirty(): boolean;
@@ -56,11 +51,9 @@ export function createProjectNavigation(
   displayed: () => DisplayedProjectSelection,
 ) {
   let revision = 0;
-  let intentRevision = 0;
   let guard: ProjectLeaveGuard | null = null;
   let cancelDecision: (() => void) | null = null;
   let departureWrite = false;
-  let ownedTraversalSettlements = 0;
   let pending: {
     id: string;
     commit?: () => void;
@@ -71,12 +64,8 @@ export function createProjectNavigation(
     if (departureWrite) return;
     cancelDecision?.();
     const operation = pending;
-    if (!operation) {
-      if (ownedTraversalSettlements === 0) intentRevision += 1;
-      return;
-    }
+    if (!operation) return;
     if (port.read().state.meridianNavigationOperation !== operation.id) {
-      intentRevision += 1;
       operation.finish({ kind: "superseded" });
       return;
     }
@@ -91,17 +80,9 @@ export function createProjectNavigation(
   });
   function claimIntent(restoreNative: boolean) {
     revision += 1;
-    intentRevision += 1;
     // Retire the old POP before cancelling its decision: its asynchronous
     // blocker callback must not cancel the replacement writer intent.
     const restoration = restoreNative ? port.settlePendingTraversal() : undefined;
-    if (restoration) {
-      ownedTraversalSettlements += 1;
-      const release = () => {
-        ownedTraversalSettlements -= 1;
-      };
-      void restoration.then(release, release);
-    }
     cancelDecision?.();
     pending?.finish({ kind: "superseded" });
     return { ticket: capture(), restoration };
@@ -171,15 +152,14 @@ export function createProjectNavigation(
     );
   }
 
-  function transitionWithAuthority(
+  function transition(
     address: ProjectAddress,
     options: { replace: boolean; state?: Record<string, unknown> },
     prepared?: PreparedWorkspaceNavigation,
-  ): ProjectNavigationOperation {
+  ): Promise<NavigationSettlement> {
     const { ticket, restoration } = claimIntent(true);
     const requestedRevision = ticket.revision;
-    const requestedIntentRevision = intentRevision;
-    const settlement = new Promise<NavigationSettlement>((resolve) => {
+    return new Promise((resolve) => {
       const dispatch = () => {
         if (revision !== requestedRevision || prepared?.isCurrent() === false) {
           resolve({ kind: "superseded" });
@@ -241,25 +221,12 @@ export function createProjectNavigation(
         () => resolve({ kind: revision === requestedRevision ? "cancelled" : "superseded" }),
       );
     });
-    return {
-      settlement,
-      isCurrent: () => intentRevision === requestedIntentRevision,
-    };
-  }
-
-  function transition(
-    address: ProjectAddress,
-    options: { replace: boolean; state?: Record<string, unknown> },
-    prepared?: PreparedWorkspaceNavigation,
-  ): Promise<NavigationSettlement> {
-    return transitionWithAuthority(address, options, prepared).settlement;
   }
 
   return {
     capture,
     beginIntent,
     transition,
-    transitionWithAuthority,
     registerGuard(next: ProjectLeaveGuard) {
       guard = next;
       return () => {

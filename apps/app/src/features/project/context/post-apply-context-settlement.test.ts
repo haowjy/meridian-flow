@@ -1,9 +1,6 @@
-import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
-import { parseProjectAddress } from "../routing/project-address";
-import { createProjectNavigation } from "../routing/project-navigation";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
@@ -100,19 +97,17 @@ describe("post-Apply context settlement", () => {
     expect(getContextTabs("project-a")).toEqual(before);
   });
 
-  it("closes a discarded draft-only tab and replaces its address with the adjacent tab", async () => {
-    const neighbor = {
-      kind: "tracked" as const,
-      documentId: "document-b",
-      scheme: "manuscript" as const,
-      path: "/next.md",
-      name: "next.md",
-      editable: true as const,
-      filetype: "markdown" as const,
-      schemaType: "document" as const,
-    };
-    useContextTabsStore.getState().openTab("project-a", neighbor);
+  it("closes a discarded last draft-only tab, selects its neighbour, and replaces the address", async () => {
+    // Order is [document-b, document-c, draft document-a]; the draft is last and selected.
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-b"));
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-c"));
+    await useContextTabsStore.getState().reorderTabs("project-a", 0, 2);
     await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
+    expect(getContextTabs("project-a").tabs.map((tab) => tab.documentId)).toEqual([
+      "document-b",
+      "document-c",
+      "document-a",
+    ]);
     let search: ProjectSearch = {
       screen: "context",
       scheme: "manuscript",
@@ -122,25 +117,15 @@ describe("post-Apply context settlement", () => {
     const replaceAddress = vi.fn(
       (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
-        return undefined;
       },
     );
-    const coordinator = new ContextRemovalCoordinator("account-a", {
-      route: {
-        readSearch: () => search,
-        updateSearch: replaceAddress,
-        transition: async () => ({ kind: "applied" }),
-      },
-    });
-    coordinator.registerRoutePort(
-      "project-a",
-      {
-        readSearch: () => search,
-        updateSearch: replaceAddress,
-        transition: async () => ({ kind: "applied" }),
-      },
-      "work-a",
-    );
+    const route = {
+      readSearch: () => search,
+      updateSearch: replaceAddress,
+      transition: async () => ({ kind: "applied" as const }),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-a");
     const revision = coordinator.beginRouteSelection("project-a", {
       scheme: "manuscript",
       path: "/chapter.md",
@@ -151,16 +136,25 @@ describe("post-Apply context settlement", () => {
       documentId: "document-a",
     });
 
-    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toMatchObject({
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a", "draft-a")).toMatchObject({
       kind: "active-fallback",
-      fallback: { documentId: "document-b" },
+      fallback: { documentId: "document-c" },
     });
-    expect(getContextTabs("project-a")).toMatchObject({
-      tabs: [{ documentId: "document-b" }],
-      selectedTabIdByWork: { "work-a": "document-b" },
+    expect(getContextTabs("project-a").tabs.map((tab) => tab.documentId)).toEqual([
+      "document-b",
+      "document-c",
+    ]);
+    expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-c");
+    expect(search).toMatchObject({
+      screen: "context",
+      scheme: "manuscript",
+      path: "/document-c.md",
     });
-    expect(search).toMatchObject({ screen: "context", scheme: "manuscript", path: "/next.md" });
     expect(replaceAddress).toHaveBeenCalledOnce();
+    // A confirmed Discard arrives after the optimistic close and finds nothing left.
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a", "draft-a")).toEqual({
+      kind: "noop",
+    });
   });
 
   it("settles only the exact tab token and treats a replacement as an obsolete old obligation", async () => {
@@ -212,316 +206,31 @@ describe("post-Apply context settlement", () => {
     );
   });
 
-  it("replaces an address-first durable member with the one draft-only membership", () => {
-    useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
-    useContextTabsStore.getState().openTab("project-a", liveTab("document-a", "/chapter.md"));
-    useContextTabsStore.getState().openTab("project-a", draftTab());
+  it("keeps one draft-only membership whichever admission arrives first", () => {
+    const store = useContextTabsStore.getState();
+    const durable = () => useContextTabsStore.getState().byProject["project-a"]?.tabs ?? [];
+    for (const overlayFirst of [false, true]) {
+      useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
+      if (overlayFirst) {
+        store.openTab("project-a", draftTab());
+        store.openTab("project-a", liveTab("document-a", "/chapter.md"));
+      } else {
+        store.openTab("project-a", liveTab("document-a", "/chapter.md"));
+        store.openTab("project-a", draftTab());
+      }
 
-    expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toEqual([]);
-    expect(getContextTabs("project-a").tabs).toMatchObject([
-      { documentId: "document-a", draftOnly: true },
-    ]);
-    const receipt = new ContextRemovalCoordinator("account-a").discardDraft(
-      "project-a",
-      "work-a",
-      "document-a",
-    );
-    expect(receipt.kind).not.toBe("noop");
-    expect(getContextTabs("project-a").tabs).toEqual([]);
-  });
-
-  it("uses the original order when the selected last draft falls back", async () => {
-    useContextTabsStore.getState().openTab("project-a", liveTab("document-b"));
-    useContextTabsStore.getState().openTab("project-a", liveTab("document-c"));
-    // Put the draft at the end so the ordinary close rule chooses its previous neighbour.
-    const original = getContextTabs("project-a").tabs;
-    await useContextTabsStore.getState().reorderTabs("project-a", 0, 2);
-    expect(original).toHaveLength(3);
-    await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
-    const route = {
-      readSearch: (): ProjectSearch => ({ screen: "work", work: "work-a" }),
-      updateSearch: () => undefined,
-      transition: async () => ({ kind: "applied" as const }),
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort("project-a", route, "work-a");
-
-    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toMatchObject({
-      kind: "active-fallback",
-      fallback: { documentId: "document-c" },
-    });
-  });
-
-  it("restores the last discarded draft in front when only its own chooser navigation occurred", async () => {
-    let navigationRevision = 0;
-    let restored = 0;
-    let search: ProjectSearch = {
-      screen: "context",
-      scheme: "manuscript",
-      path: "/chapter.md",
-      work: "work-a",
-    };
-    const route = {
-      readSearch: () => search,
-      updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
-        search = update(search);
-        navigationRevision += 1;
-        return Promise.resolve();
-      },
-      transition: async () => ({ kind: "applied" as const }),
-      captureCurrentNavigation: () => {
-        const captured = navigationRevision;
-        return () => navigationRevision === captured;
-      },
-      restoreDraft: async () => {
-        restored += 1;
-        return { kind: "applied" as const };
-      },
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort("project-a", route, "work-a");
-    const revision = coordinator.beginRouteSelection("project-a", {
-      scheme: "manuscript",
-      path: "/chapter.md",
-      workId: "work-a",
-    });
-    coordinator.bindRouteSelection("project-a", revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "foreground-restored" });
-    expect(restored).toBe(1);
-    expect(getContextTabs("project-a").tabs).toMatchObject([
-      { documentId: "document-a", draftOnly: true },
-    ]);
-  });
-
-  it("keeps a refused old Discard from covering a newer applied generation", async () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-    useContextTabsStore.getState().openTab("project-a", draftTab("new-generation"));
-    const replacement = getContextTabs("project-a").tabs[0];
-    if (replacement?.kind !== "tracked") throw new Error("Expected replacement draft");
-    await coordinator.promoteAppliedDraft("project-a", replacement);
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "superseded" });
-    expect(getContextTabs("project-a").tabs[0]).not.toHaveProperty("draftOnly");
-  });
-
-  it("keeps an Apply terminal after its live tab is later closed", async () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-    useContextTabsStore.getState().openTab("project-a", draftTab("new-generation"));
-    const replacement = getContextTabs("project-a").tabs[0];
-    if (replacement?.kind !== "tracked") throw new Error("Expected replacement draft");
-    await coordinator.promoteAppliedDraft("project-a", replacement);
-    coordinator.writerClose("project-a", "document-a");
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "superseded" });
-    expect(getContextTabs("project-a").tabs).toEqual([]);
-  });
-
-  it("records a successful Discard without membership and retires every pending receipt", async () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-
-    expect(
-      coordinator.settleDiscardedDraft("project-a", "work-a", "document-a", "draft-a"),
-    ).toEqual({ kind: "noop" });
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "superseded" });
-    expect(
-      (coordinator as unknown as { draftDiscardAuthority: Map<string, unknown> })
-        .draftDiscardAuthority.size,
-    ).toBe(0);
-  });
-
-  it("retires only a refused receipt's route fence after a newer generation is admitted", async () => {
-    let search: ProjectSearch = {
-      screen: "context",
-      work: "work-a",
-      scheme: "manuscript",
-      path: "/chapter.md",
-    };
-    const route = {
-      readSearch: () => search,
-      updateSearch: (_id: string, update: (value: ProjectSearch) => ProjectSearch) => {
-        search = update(search);
-        return undefined;
-      },
-      transition: async () => ({ kind: "applied" as const }),
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort("project-a", route, "work-a");
-    let revision = coordinator.beginRouteSelection("project-a", {
-      scheme: "manuscript",
-      path: "/chapter.md",
-      workId: "work-a",
-    });
-    coordinator.bindRouteSelection("project-a", revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-    const replacement = draftTab("replacement");
-    useContextTabsStore.getState().openTab("project-a", replacement);
-    coordinator.admitDraftGeneration("project-a", replacement);
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "superseded" });
-    search = { screen: "context", work: "work-a", scheme: "manuscript", path: "/chapter.md" };
-    revision = coordinator.beginRouteSelection("project-a", {
-      scheme: "manuscript",
-      path: "/chapter.md",
-      workId: "work-a",
-    });
-    coordinator.bindRouteSelection("project-a", revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
-
-    expect(search.path).toBe("/chapter.md");
-    expect(getContextTabs("project-a").tabs).toHaveLength(1);
-  });
-
-  it.each([
-    false,
-    true,
-  ])("restores a refusal in front after its own deferred fallback (adjacent: %s)", async (adjacent) => {
-    const projectId = "550e8400-e29b-41d4-a716-446655440000";
-    const workId = "123e4567-e89b-42d3-a456-426614174000";
-    useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
-    useContextTabsStore.getState().openTab(projectId, {
-      ...draftTab(),
-      reviewWorkId: workId,
-    });
-    if (adjacent) useContextTabsStore.getState().openTab(projectId, liveTab("document-b"));
-    await useContextTabsStore.getState().selectTab(projectId, workId, "document-a");
-    const start = `/p/${projectId}/editor/manuscript/chapter.md?work=${workId}`;
-    const history = createMemoryHistory({ initialEntries: [start] });
-    const router = createRouter({ history, routeTree: createRootRoute() });
-    let finish!: (restored: boolean) => void;
-    const restoration = new Promise<boolean>((resolve) => {
-      finish = resolve;
-    });
-    const navigation = createProjectNavigation(
-      {
-        read: () => ({
-          href: history.location.href,
-          key: history.location.state.__TSR_key ?? "",
-          state: { ...history.location.state },
-        }),
-        subscribe: (listener) => history.subscribe(listener),
-        flush: () => history.flush(),
-        settlePendingTraversal: () => restoration,
-        replaceEntry: (href, state) => history.replace(href, state),
-        navigate: (href, options) =>
-          router.navigate({
-            href,
-            replace: options.replace,
-            state: options.state,
-            ignoreBlocker: true,
-          }),
-      },
-      () => ({ workId: workId as never }),
-    );
-    let search: ProjectSearch = {
-      screen: "context",
-      work: workId,
-      scheme: "manuscript",
-      path: "/chapter.md",
-    };
-    const targetHref = adjacent
-      ? `/p/${projectId}/editor/manuscript/document-b.md?work=${workId}`
-      : `/p/${projectId}/editor?work=${workId}`;
-    const parsed = parseProjectAddress(...(targetHref.split("?") as [string, string]));
-    if (parsed.kind !== "valid") throw new Error("Invalid test address");
-    const restoreDraft = vi.fn(async () => ({ kind: "applied" as const }));
-    const route = {
-      readSearch: () => search,
-      updateSearch: () => undefined,
-      updateSearchWithAuthority: (_id: string, update: (value: ProjectSearch) => ProjectSearch) => {
-        search = update(search);
-        return navigation.transitionWithAuthority(parsed.address, { replace: true });
-      },
-      transition: async () => ({ kind: "applied" as const }),
-      restoreDraft,
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort(projectId, route, workId);
-    const revision = coordinator.beginRouteSelection(projectId, {
-      scheme: "manuscript",
-      path: "/chapter.md",
-      workId,
-    });
-    coordinator.bindRouteSelection(projectId, revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
-    const receipt = coordinator.discardDraft(projectId, workId, "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-    finish(true);
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "foreground-restored" });
-    expect(restoreDraft).toHaveBeenCalledOnce();
-    navigation.dispose();
-    router.history.destroy();
-  });
-
-  it("restores in the background after later writer navigation even if it returns to the fallback", async () => {
-    useContextTabsStore.getState().openTab("project-a", liveTab("document-b"));
-    await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
-    let navigationRevision = 0;
-    const route = {
-      readSearch: (): ProjectSearch => ({
-        screen: "context",
-        scheme: "manuscript",
-        path: "/chapter.md",
-        work: "work-a",
-      }),
-      updateSearch: () => {
-        navigationRevision += 1;
-        return Promise.resolve();
-      },
-      transition: async () => ({ kind: "applied" as const }),
-      captureCurrentNavigation: () => {
-        const captured = navigationRevision;
-        return () => navigationRevision === captured;
-      },
-      restoreDraft: vi.fn(async () => ({ kind: "applied" as const })),
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort("project-a", route, "work-a");
-    const revision = coordinator.beginRouteSelection("project-a", {
-      scheme: "manuscript",
-      path: "/chapter.md",
-      workId: "work-a",
-    });
-    coordinator.bindRouteSelection("project-a", revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
-    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
-    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
-    navigationRevision += 2; // B to C to B is still later writer authority.
-
-    await expect(receipt.rollback()).resolves.toEqual({ kind: "background-restored" });
-    expect(route.restoreDraft).not.toHaveBeenCalled();
-    expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-b");
-  });
-
-  it("makes a second Discard against the consumed generation a no-op", () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
-    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toHaveProperty(
-      "rollback",
-    );
-    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toEqual({
-      kind: "noop",
-    });
+      expect(durable()).toEqual([]);
+      expect(getContextTabs("project-a").tabs).toMatchObject([
+        { documentId: "document-a", draftOnly: true },
+      ]);
+      const outcome = new ContextRemovalCoordinator("account-a").discardDraft(
+        "project-a",
+        "work-a",
+        "document-a",
+        "draft-a",
+      );
+      expect(outcome.kind).not.toBe("noop");
+      expect(getContextTabs("project-a").tabs).toEqual([]);
+    }
   });
 });

@@ -92,11 +92,6 @@ unexpected native movement or destruction resolves it as superseded. Application
 navigation waits for restoration before writing its departure snapshot and
 destination. It never repairs the browser with a second URL normalizer.
 
-A caller that must later ask whether its own navigation still owns the screen
-uses the operation from `transitionWithAuthority`. Its `isCurrent` stays true
-through that operation's own deferred history settlement and turns false on any
-later writer intent.
-
 The route's shared guard owns Save/Discard/Keep editing. Retiring a decision
 dismisses the dialog without clearing the draft. Native Back/Forward uses the
 same decision owner; Settings remains its existing routed overlay.

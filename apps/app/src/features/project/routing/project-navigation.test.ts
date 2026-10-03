@@ -45,30 +45,6 @@ function setup(
 }
 
 describe("project navigation", () => {
-  it("keeps operation authority through its deferred native restoration", async () => {
-    let finish!: (restored: boolean) => void;
-    const restoration = new Promise<boolean>((resolve) => {
-      finish = resolve;
-    });
-    const { navigation } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      undefined,
-      () => restoration,
-    );
-
-    const operation = navigation.transitionWithAuthority(
-      address("/p/550e8400-e29b-41d4-a716-446655440000/works"),
-      { replace: true },
-    );
-    finish(true);
-
-    await expect(operation.settlement).resolves.toEqual({ kind: "applied" });
-    expect(operation.isCurrent()).toBe(true);
-    navigation.beginIntent();
-    expect(operation.isCurrent()).toBe(false);
-    navigation.dispose();
-  });
-
   it.each([
     true,
     false,
