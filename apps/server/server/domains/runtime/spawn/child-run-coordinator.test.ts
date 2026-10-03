@@ -1054,8 +1054,12 @@ describe("ChildRunCoordinator thread_message", () => {
     }
 
     expect(transcript.allBlocks).toHaveLength(1);
+    // The writer reads this reason on the card, which already names the subagent.
     expect((await repos.blocks.findById(transcript.allBlocks[0].id))?.content).toMatchObject({
-      props: { reason: expect.any(String), terminalAt: expect.any(String) },
+      props: {
+        reason: "Still working on its last task, so this message wasn't sent.",
+        terminalAt: expect.any(String),
+      },
     });
     expect((await repos.blocks.findById(transcript.allBlocks[0].id))?.content).not.toHaveProperty(
       "props.childThreadId",
