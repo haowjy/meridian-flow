@@ -312,7 +312,7 @@ export async function dispatchToolCall(
         content: {
           toolCallId: execResult.toolCallId,
           output: persistedOutput,
-          ...(persistedResult !== undefined ? { result: persistedResult } : {}),
+          result: persistedResult,
           ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
@@ -326,7 +326,7 @@ export async function dispatchToolCall(
             type: "tool.result",
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
-            ...(persistedResult !== undefined ? { result: persistedResult } : {}),
+            result: persistedResult,
             isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },

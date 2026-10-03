@@ -1,7 +1,8 @@
 /**
- * The one `invalid_arguments` result: the executor's input parse and the
- * permission gate's command check both refuse a call in this shape, so the
- * model sees the same text and fields whichever layer caught the mistake.
+ * The one `invalid_arguments` refusal: the executor's input parse and the
+ * permission gate's command check both refuse a call this way, so the model
+ * sees the same text and the app the same typed result whichever layer caught
+ * the mistake. The text is rendered from the result (D8).
  */
 import type { ZodError, z } from "zod";
 
@@ -12,24 +13,26 @@ export type InvalidArgumentIssue = {
   message: string;
 };
 
-export type InvalidArgumentsOutput = {
+export type InvalidArgumentsResult = {
   error: "invalid_arguments";
-  message: string;
   issues: InvalidArgumentIssue[];
 };
 
-export function invalidArgumentsOutput(
+export function invalidArgumentsResult(
+  issues: readonly InvalidArgumentIssue[],
+): InvalidArgumentsResult {
+  return { error: "invalid_arguments", issues: [...issues] };
+}
+
+/** The model's text for an `invalid_arguments` refusal. */
+export function renderInvalidArguments(
   toolName: string,
   issues: readonly InvalidArgumentIssue[],
-): InvalidArgumentsOutput {
-  return {
-    error: "invalid_arguments",
-    message: [
-      `Invalid arguments for ${toolName}:`,
-      ...issues.map(({ path, message }) => `- ${path}: ${message}`),
-    ].join("\n"),
-    issues: [...issues],
-  };
+): string {
+  return [
+    `Invalid arguments for ${toolName}:`,
+    ...issues.map(({ path, message }) => `- ${path}: ${message}`),
+  ].join("\n");
 }
 
 /** Parse a tool's input, reporting the received value so issues can quote it. */

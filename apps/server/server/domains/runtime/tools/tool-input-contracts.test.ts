@@ -56,9 +56,9 @@ async function expectRefused(name: string, args: Record<string, unknown>, issues
   const result = await call(name, args);
   expect(handler).not.toHaveBeenCalled();
   expect(result.isError).toBe(true);
-  expect(result.output).toMatchObject({ error: "invalid_arguments" });
+  expect(result.result).toMatchObject({ error: "invalid_arguments" });
   expect(
-    (result.output as { issues: Array<{ path: string; message: string }> }).issues.map(
+    (result.result as { issues: Array<{ path: string; message: string }> }).issues.map(
       ({ path, message }) => `${path}: ${message}`,
     ),
   ).toEqual(issues);
