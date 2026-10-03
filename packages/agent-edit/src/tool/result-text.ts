@@ -49,7 +49,10 @@ function statusLine(result: AgentEditResultV1): string {
   }
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
-    facts.push(`blocks: ${count}`);
+    const total = result.read.documentBlocks;
+    facts.push(
+      total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
+    );
     if (result.read.version) facts.push(`version: ${result.read.version}`);
     if (result.read.format === "outline") facts.push("format: outline");
   }
@@ -73,6 +76,10 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
   if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
+  if (result.status === "reconciled") {
+    lines.push("later edits were kept, so the text may not match how it was before the write.");
+  }
+  if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
   if (result.concurrent) {
     const shown = new Set(
       groups
@@ -121,7 +128,7 @@ function bodyLines(result: AgentEditResultV1, groups: readonly AgentEditBlockGro
   const { filePath } = splitDocumentFile(result.path);
   return items.flatMap((item) => [
     blockLine(item),
-    readCall(`${filePath}#${item.hash}`, result.read?.version),
+    readCall(`${filePath}#${item.section ?? item.hash}`, result.read?.version),
   ]);
 }
 

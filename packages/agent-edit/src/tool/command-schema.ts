@@ -57,12 +57,20 @@ const READ_FIELDS = {
     .min(1)
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
-  format: z.enum(["full", "outline"]).optional(),
+  format: z
+    .enum(["full", "outline"])
+    .describe("Read a long document's `outline` first, then the sections you need.")
+    .optional(),
 };
 
 // One selector at most; none means the latest write. The rule lives in `reversalSelectorIssues`.
 const WRITE_HANDLE_SELECTOR_FIELDS = {
-  to: z.string().optional().describe("Write handle such as w3; with `since`, the end of a range."),
+  to: z
+    .string()
+    .optional()
+    .describe(
+      "Write handle such as w3; with `since`, the end of a range. Handles are for you; never show them to the user.",
+    ),
   since: z.string().optional().describe("With `to`: the first write handle of the range."),
   last: z
     .number()
@@ -166,7 +174,7 @@ const MUTATION_BRANCHES = {
   },
   remove: {
     description:
-      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. Doesn't delete the document. No command deletes whole documents yet.",
+      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
     fields: { in: BlockSelectorSchema.optional() },
   },
   undo: {

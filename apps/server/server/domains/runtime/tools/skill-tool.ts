@@ -14,7 +14,8 @@ export function createSkillToolRegistrations(deps: {
       definition: {
         type: "function",
         name: "skill",
-        description: "Load a skill listed under Available skills.",
+        description:
+          "Load a skill listed under Available skills. With no such list, you have none.",
         inputSchema: modelToolSchema(SkillToolInputSchema),
       },
       input: SkillToolInputSchema,

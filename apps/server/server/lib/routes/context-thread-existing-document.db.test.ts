@@ -66,17 +66,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workAuthorityResolver: app.workAuthorityResolver,
       };
       // The model's `write` tool through the executor, outside a reply.
-      const callWrite = (input: Record<string, unknown>) =>
+      // Any model tool through the executor, outside a reply.
+      const callTool = (name: string, input: Record<string, unknown>) =>
         app.toolExecutor.executeTool(
-          { id: randomUUID(), name: "write", arguments: input },
+          { id: randomUUID(), name, arguments: input },
           { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
         );
+      const callWrite = (input: Record<string, unknown>) => callTool("write", input);
       return {
         collab: ports.documentSync,
         contextPorts: app.contextPorts,
         objectStore: ports.objectStore,
         routeDeps,
         callWrite,
+        callTool,
       };
     }
 
@@ -466,6 +469,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID as never,
       });
       expect(live.members).toContain(stat.value.documentId);
+    });
+
+    it("names an unknown Work in a URI on read and ls", async () => {
+      const UNKNOWN_WORK =
+        /^Unknown Work @ghost-arc\. Valid Work slugs: (@direct, @draft|@draft, @direct)$/;
+      const fixture = await createFixture();
+      const read = await fixture.callTool("read", { path: "scratch://@ghost-arc/backstory.md" });
+      expect(read.result).toMatchObject({
+        status: "document_not_found",
+        message: expect.stringMatching(UNKNOWN_WORK),
+      });
+
+      const listed = await fixture.callTool("ls", { path: "scratch://@ghost-arc" });
+      expect(listed.result).toMatchObject({
+        code: "invalid_uri",
+        message: expect.stringMatching(UNKNOWN_WORK),
+      });
     });
   });
 }

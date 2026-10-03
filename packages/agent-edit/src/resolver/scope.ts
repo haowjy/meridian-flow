@@ -201,17 +201,32 @@ function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
   return sectionFromHeading(ctx, found.index);
 }
 
-function headingSlugEntries(ctx: ScopeContext): Array<{ slug: string; index: number }> {
+function headingSlugEntries(
+  ctx: ScopeContext,
+): Array<{ slug: string; index: number; block: BlockRef }> {
   const counts = new Map<string, number>();
-  const out: Array<{ slug: string; index: number }> = [];
+  const out: Array<{ slug: string; index: number; block: BlockRef }> = [];
   ctx.model.getBlocks(ctx.doc).forEach((block, index) => {
     if (!isHeading(ctx.model, block)) return;
     const base = slugForHeadingText(ctx.model.getText(block));
     const seen = counts.get(base) ?? 0;
     counts.set(base, seen + 1);
-    out.push({ slug: seen === 0 ? base : `${base}-${seen}`, index });
+    out.push({ slug: seen === 0 ? base : `${base}-${seen}`, index, block });
   });
   return out;
+}
+
+/**
+ * The `#fragment` that reads each heading's section: its slug, or its hash when
+ * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
+ */
+export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
+  return new Map(
+    headingSlugEntries(ctx).map(({ slug, block }) => [
+      block,
+      HEX_HASH_RE.test(slug) ? undefined : slug,
+    ]),
+  );
 }
 
 function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResult {

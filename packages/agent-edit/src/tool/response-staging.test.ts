@@ -10,6 +10,8 @@ import {
 } from "./test-support/assertions.js";
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
+const EMPTY_NOTE = "document is now empty; its one blank block always stays.";
+
 describe("response staging", () => {
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
@@ -64,7 +66,7 @@ describe("response staging", () => {
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
     expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
-      'status: document_not_found; path: new.md\n\nFile not found. Check the path, or use write(command="create", path="new.md") to make a new one.',
+      "status: document_not_found; path: new.md\n\nFile not found. Check the path with `ls`.",
     );
   });
 
@@ -301,6 +303,39 @@ describe("response staging", () => {
       updateCount: 1,
     });
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("says in the settled receipt when a write leaves the document empty", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const responseContext = { ...context, turnId: "turn-empty", responseId: "response-empty" };
+    const staged = await ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [1, 3] },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain(EMPTY_NOTE);
+
+    const committed = await ctx.core.commitResponse("response-empty");
+    const receipt = committed.documents[0]?.receipts.at(-1)?.result;
+    if (!receipt) throw new Error("missing settled receipt");
+    expect(renderAgentEditResult(receipt)).toContain(EMPTY_NOTE);
+  });
+
+  it("says nothing about emptiness when blocks remain", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const removed = await ctx.core.write({ command: "remove", file: "chapter.md", in: 1 }, context);
+    expect(outcomeText(removed)).not.toContain(EMPTY_NOTE);
+  });
+
+  it("says when a direct write leaves the document empty", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const removed = await ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [1, 2] },
+      context,
+    );
+    expect(outcomeText(removed)).toContain(EMPTY_NOTE);
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {
