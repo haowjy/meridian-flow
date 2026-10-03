@@ -1,10 +1,12 @@
 /**
- * A thread port's create, copy, and writer write onto an existing document.
- * Each checks thread manifest membership inside the namespace-locked command
- * transaction; that check must never wait on a lock its own transaction holds.
+ * A thread port's manifest membership. Create, copy, and writer writes onto an
+ * existing document check it inside the namespace-locked command transaction;
+ * that check must never wait on a lock its own transaction holds. A thread
+ * whose writes go live checks the live manifest and drafts nothing (D20, D40).
  */
 
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -55,6 +57,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const NO_WORK_ID = "00000000-0000-4000-8000-000000000b03";
     const THREAD_ID = "00000000-0000-4000-8000-000000000b04";
     const TURN_ID = "00000000-0000-4000-8000-000000000b05";
+    const DIRECT_WORK_ID = "00000000-0000-4000-8000-000000000b06";
+    const DRAFT_WORK_ID = "00000000-0000-4000-8000-000000000b07";
 
     const db = createDb(DATABASE_URL, { max: 6 });
     const fixtures: Array<{
@@ -62,7 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       hocuspocus: InstanceType<typeof Hocuspocus>;
     }> = [];
 
-    function createFixture() {
+    function createFixture(primaryWorkId = NO_WORK_ID) {
       const collab = createCollabDomain({
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
@@ -95,7 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         threadWorks: {
           findPrimary: async (threadId: string) =>
-            threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
+            threadId === THREAD_ID ? ({ threadId, workId: primaryWorkId } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
           db,
@@ -188,6 +192,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "No Work",
         isNoWork: true,
       });
+      await db.insert(schema.works).values([
+        {
+          id: DIRECT_WORK_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Direct",
+          slug: "direct",
+          aiWriteMode: "direct",
+        },
+        {
+          id: DRAFT_WORK_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Draft",
+          slug: "draft",
+          aiWriteMode: "draft",
+        },
+      ]);
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_ID,
         id: THREAD_ID,
@@ -247,93 +269,198 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return created.value.documentId;
     }
 
-    it("refuses the model's plain create onto an existing document at once", async () => {
-      const fixture = createFixture();
-      await seedExisting(fixture, "existing.md");
+    async function bindThread(workId: string) {
+      await db
+        .update(schema.threadWorks)
+        .set({ workId })
+        .where(eq(schema.threadWorks.threadId, THREAD_ID));
+    }
 
-      const refused = await settlesWithin(
-        "create",
-        fixture.callWrite({
-          command: "create",
-          path: "manuscript://existing.md",
-          content: "New text.",
-        }),
-      );
-      expect(refused).toContain("File already exists");
-      const port = await threadPort(fixture);
-      await expect(port.read("manuscript://existing.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Existing existing.md.\n" },
-      });
-    });
+    // A draft-mode thread pulls the manifest's thread peer inside the command
+    // transaction, the path that deadlocked; a No Work thread checks live membership.
+    for (const [label, workId] of [
+      ["No Work", NO_WORK_ID],
+      ["draft-mode Work", DRAFT_WORK_ID],
+    ] as const) {
+      it(`refuses the model's plain create onto an existing document at once (${label})`, async () => {
+        await bindThread(workId);
+        const fixture = createFixture(workId);
+        await seedExisting(fixture, "existing.md");
 
-    it("overwrites an existing document with the model's create and copy", async () => {
-      const fixture = createFixture();
-      await seedExisting(fixture, "target.md");
-      await seedExisting(fixture, "source.md");
-      const port = await threadPort(fixture);
-
-      const created = await settlesWithin(
-        "create overwrite",
-        fixture.callWrite({
-          command: "create",
-          path: "manuscript://target.md",
-          content: "Created over.",
-          overwrite: true,
-        }),
-      );
-      expect(created).not.toContain("error");
-      await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Created over.\n" },
+        const refused = await settlesWithin(
+          "create",
+          fixture.callWrite({
+            command: "create",
+            path: "manuscript://existing.md",
+            content: "New text.",
+          }),
+        );
+        expect(refused).toContain("File already exists");
+        const port = await threadPort(fixture);
+        await expect(port.read("manuscript://existing.md")).resolves.toMatchObject({
+          ok: true,
+          value: { content: "Existing existing.md.\n" },
+        });
       });
 
-      const refusedCopy = await settlesWithin(
-        "copy",
-        fixture.callWrite({
-          command: "copy",
-          path: "manuscript://target.md",
-          from: { path: "manuscript://source.md" },
-        }),
-      );
-      expect(refusedCopy).toContain("File already exists");
+      it(`overwrites an existing document with the model's create and copy (${label})`, async () => {
+        await bindThread(workId);
+        const fixture = createFixture(workId);
+        await seedExisting(fixture, "target.md");
+        await seedExisting(fixture, "source.md");
+        const port = await threadPort(fixture);
 
-      const copied = await settlesWithin(
-        "copy overwrite",
-        fixture.callWrite({
-          command: "copy",
-          path: "manuscript://target.md",
-          from: { path: "manuscript://source.md" },
-          overwrite: true,
-        }),
-      );
-      expect(copied).not.toContain("error");
-      await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Existing source.md.\n" },
+        const created = await settlesWithin(
+          "create overwrite",
+          fixture.callWrite({
+            command: "create",
+            path: "manuscript://target.md",
+            content: "Created over.",
+            overwrite: true,
+          }),
+        );
+        expect(created).not.toContain("error");
+        await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
+          ok: true,
+          value: { content: "Created over.\n" },
+        });
+
+        const refusedCopy = await settlesWithin(
+          "copy",
+          fixture.callWrite({
+            command: "copy",
+            path: "manuscript://target.md",
+            from: { path: "manuscript://source.md" },
+          }),
+        );
+        expect(refusedCopy).toContain("File already exists");
+
+        const copied = await settlesWithin(
+          "copy overwrite",
+          fixture.callWrite({
+            command: "copy",
+            path: "manuscript://target.md",
+            from: { path: "manuscript://source.md" },
+            overwrite: true,
+          }),
+        );
+        expect(copied).not.toContain("error");
+        await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
+          ok: true,
+          value: { content: "Existing source.md.\n" },
+        });
       });
-    });
 
-    it("overwrites an existing document through the writer route at once", async () => {
-      const fixture = createFixture();
-      const existingId = await seedExisting(fixture, "writer.md");
+      it(`overwrites an existing document through the writer route at once (${label})`, async () => {
+        await bindThread(workId);
+        const fixture = createFixture(workId);
+        const existingId = await seedExisting(fixture, "writer.md");
 
-      await expect(
-        settlesWithin(
-          "writer route write",
-          writeThreadContextDocument(fixture.routeDeps, {
-            threadId: THREAD_ID as ThreadId,
-            userId: USER_ID as UserId,
-            uri: "manuscript://writer.md",
-            markdown: "Writer replaced this.\n",
+        await expect(
+          settlesWithin(
+            "writer route write",
+            writeThreadContextDocument(fixture.routeDeps, {
+              threadId: THREAD_ID as ThreadId,
+              userId: USER_ID as UserId,
+              uri: "manuscript://writer.md",
+              markdown: "Writer replaced this.\n",
+            }),
+          ),
+        ).resolves.toMatchObject({ documentId: existingId });
+        const port = await threadPort(fixture);
+        await expect(port.read("manuscript://writer.md")).resolves.toMatchObject({
+          ok: true,
+          value: { content: "Writer replaced this.\n" },
+        });
+      });
+    }
+
+    async function manifestThreadBranches() {
+      return db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
+        .where(
+          and(
+            eq(schema.documents.kind, "manifest"),
+            eq(schema.documentBranches.threadId, THREAD_ID),
+          ),
+        );
+    }
+
+    for (const [label, workId] of [
+      ["No Work", NO_WORK_ID],
+      ["direct-mode Work", DIRECT_WORK_ID],
+    ] as const) {
+      it(`keeps no .manifest thread branch for a ${label} thread`, async () => {
+        await bindThread(workId);
+        const fixture = createFixture(workId);
+        await seedExisting(fixture, "kept.md");
+
+        const port = await threadPort(fixture);
+        await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
+        await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
+        await expect(port.search("Existing", "manuscript://")).resolves.toMatchObject({
+          ok: true,
+        });
+        expect(
+          await settlesWithin(
+            "edit",
+            fixture.callWrite({
+              command: "create",
+              path: "manuscript://kept.md",
+              content: "Replaced.",
+              overwrite: true,
+            }),
+          ),
+        ).not.toContain("error");
+        expect(
+          await settlesWithin(
+            "create",
+            fixture.callWrite({
+              command: "create",
+              path: "manuscript://fresh.md",
+              content: "Fresh.",
+            }),
+          ),
+        ).not.toContain("error");
+        await expect(port.read("manuscript://fresh.md")).resolves.toMatchObject({
+          ok: true,
+          value: { content: "Fresh.\n" },
+        });
+
+        expect(await manifestThreadBranches()).toEqual([]);
+        const live = await fixture.collab.resolveManifestMembership({
+          projectId: PROJECT_ID as never,
+        });
+        const fresh = await port.stat("manuscript://fresh.md");
+        if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
+        expect(live.members).toContain(fresh.value.documentId);
+      });
+    }
+
+    it("lists a draft-mode thread's drafted create through its own manifest", async () => {
+      await bindThread(DRAFT_WORK_ID);
+      const fixture = createFixture(DRAFT_WORK_ID);
+      expect(
+        await settlesWithin(
+          "create",
+          fixture.callWrite({
+            command: "create",
+            path: "manuscript://drafted.md",
+            content: "Drafted.",
           }),
         ),
-      ).resolves.toMatchObject({ documentId: existingId });
+      ).not.toContain("error");
+
       const port = await threadPort(fixture);
-      await expect(port.read("manuscript://writer.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Writer replaced this.\n" },
+      const drafted = await port.stat("manuscript://drafted.md");
+      if (!drafted.ok || !drafted.value.documentId) throw new Error("drafted.md missing");
+      const live = await fixture.collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
       });
+      expect(live.members).not.toContain(drafted.value.documentId);
+      expect(await manifestThreadBranches()).toHaveLength(1);
     });
   });
 }
