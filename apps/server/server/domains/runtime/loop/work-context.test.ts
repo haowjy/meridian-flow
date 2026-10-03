@@ -33,6 +33,12 @@ function work(overrides: Partial<Work> & Pick<Work, "id" | "name">): Work {
   };
 }
 
+const DRAFT_LINES = [
+  "  writes: draft mode. Your changes wait in this Work's draft, except scratch:// changes, which go live.",
+  "  The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
+];
+const DIRECT_LINE = "  writes: auto-apply. Your changes go live right away.";
+
 describe("renderWorkContext", () => {
   it("tells the AI that the current archived Work is read-only", () => {
     const current = work({
@@ -55,7 +61,25 @@ describe("renderWorkContext", () => {
       aiWriteMode: "draft",
     });
     expect(renderWorkContext({ current: locked })).toBe(
-      ["<work_context>", "current: none (draft writes)", "</work_context>"].join("\n"),
+      ["<work_context>", "current: none", ...DRAFT_LINES, "</work_context>"].join("\n"),
+    );
+  });
+
+  it("states the write mode for a named Work", () => {
+    const drafted = work({ id: WORK_ID, name: "Arc", aiWriteMode: "draft" });
+    expect(renderWorkContext({ current: drafted })).toBe(
+      [
+        "<work_context>",
+        'current: arc: "Arc" (goal: none)',
+        ...DRAFT_LINES,
+        "</work_context>",
+      ].join("\n"),
+    );
+    const direct = work({ id: WORK_ID, name: "Arc" });
+    expect(renderWorkContext({ current: direct })).toBe(
+      ["<work_context>", 'current: arc: "Arc" (goal: none)', DIRECT_LINE, "</work_context>"].join(
+        "\n",
+      ),
     );
   });
 
@@ -70,6 +94,7 @@ describe("renderWorkContext", () => {
       [
         "<work_context>",
         'current: arc: "Arc"',
+        DIRECT_LINE,
         "  goal: |",
         "    Reach the mirror.",
         "    ",
@@ -90,6 +115,7 @@ describe("renderWorkContext", () => {
       [
         "<work_context>",
         'current: arc: "Arc"',
+        DIRECT_LINE,
         "  status: Drafting",
         "  goal: |",
         "    Finish chapter 14.",

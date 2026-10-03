@@ -11,7 +11,8 @@ exports[`frozen prompt provider requests > pins complete requests for a plain th
             "text": "Original writer.
 
 <work_context>
-current: none (direct writes)
+current: none
+  writes: auto-apply. Your changes go live right away.
 </work_context>
 
 # Meridian Markdown
@@ -80,7 +81,8 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "text": "Original writer.
 
 <work_context>
-current: none (direct writes)
+current: none
+  writes: auto-apply. Your changes go live right away.
 </work_context>
 
 # Meridian Markdown
@@ -140,7 +142,8 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "providerOptions": undefined,
             "text": "<system_update>
 <work_context>
-current: none (direct writes)
+current: none
+  writes: auto-apply. Your changes go live right away.
 </work_context>
 </system_update>",
             "type": "text",
@@ -186,7 +189,8 @@ current: none (direct writes)
             "text": "Original writer.
 
 <work_context>
-current: none (direct writes)
+current: none
+  writes: auto-apply. Your changes go live right away.
 </work_context>
 
 # Meridian Markdown
@@ -246,7 +250,8 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
             "providerOptions": undefined,
             "text": "<system_update>
 <work_context>
-current: none (direct writes)
+current: none
+  writes: auto-apply. Your changes go live right away.
 </work_context>
 </system_update>",
             "type": "text",
