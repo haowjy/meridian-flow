@@ -333,14 +333,16 @@ async function workBySlug(
   deps: ToolWiringDeps,
   projectId: string,
   slug: string,
-): Promise<Awaited<ReturnType<WorkRepository["findById"]>> | ToolErrorOutput> {
+): Promise<Work | ToolErrorOutput> {
   const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
-  const work = works.find((candidate) => candidate.slug === slug) ?? null;
+  const work = works.find((candidate) => candidate.slug === slug);
   if (work) return work;
   const validWorkSlugs = works.map((candidate) => candidate.slug);
+  // Spelled as the URI router spells it, so both paths give one error.
+  const valid = validWorkSlugs.map((candidate) => `@${candidate}`).join(", ");
   return toolError({
     code: "work_not_found",
-    message: `Unknown Work ${slug}. Valid Work slugs: ${validWorkSlugs.join(", ") || "none"}`,
+    message: `Unknown Work @${slug}. Valid Work slugs: ${valid || "none"}`,
     workSlug: slug,
     validWorkSlugs,
   });
@@ -1044,9 +1046,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           if (command.target) {
             const selected = await workBySlug(deps, thread.projectId, command.target);
             if (isToolError(selected)) return selected;
-            if (!selected) {
-              return toolError({ message: `Unknown Work ${command.target}` });
-            }
             workId = selected.id;
           } else {
             const noWork = await deps.works.findNoWork(thread.projectId);
@@ -1085,7 +1084,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         const selected = await workBySlug(deps, thread.projectId, command.work);
         if (isToolError(selected)) return selected;
-        if (!selected) return toolError({ message: `Unknown Work ${command.work}` });
 
         if (command.command === "show") {
           const [threads, drafts] = await Promise.all([

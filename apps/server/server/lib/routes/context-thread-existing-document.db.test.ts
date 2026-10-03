@@ -498,6 +498,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         code: "invalid_uri",
         message: expect.stringMatching(UNKNOWN_WORK),
       });
+
+      const switched = await fixture.callTool("work", { command: "switch", target: "@ghost-arc" });
+      expect(switched.result).toMatchObject({
+        code: "work_not_found",
+        message: expect.stringMatching(UNKNOWN_WORK),
+      });
     });
   });
 }
