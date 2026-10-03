@@ -176,7 +176,7 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma."]);
     expect(
       outcomeText(await ctx.core.write({ command: "redo", file: "chapter.md" }, context)),
-    ).toContain("status: reconciled");
+    ).toContain("status: reversed");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta.", "Gamma.", "Delta."]);
 
     await ctx.core.write(
