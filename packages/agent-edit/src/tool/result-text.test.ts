@@ -157,6 +157,20 @@ describe("renderAgentEditResult", () => {
     expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2");
   });
 
+  it("says a reconciled undo kept later edits", () => {
+    const undo = modelResult({
+      command: "undo",
+      status: "reconciled",
+      payload: { path: "chapter.md", reversal: { direction: "undo", writes: ["w2"] } },
+    });
+    expect(renderAgentEditResult(undo)).toBe(
+      [
+        "status: reconciled; path: chapter.md; undo: w2",
+        "later edits were kept, so the text may not match how it was before the write.",
+      ].join("\n"),
+    );
+  });
+
   it("renders the reversed write handles and an error message", () => {
     const undo = modelResult({
       command: "undo",
