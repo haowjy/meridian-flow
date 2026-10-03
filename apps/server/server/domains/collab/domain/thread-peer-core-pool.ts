@@ -43,7 +43,10 @@ import {
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { AutoBranchPushPort, BranchJournalReadStore } from "./branch-push-contracts.js";
-import { resolveBranchReversalScope } from "./branch-reversal-history.js";
+import {
+  type BranchReversalHistoryReader,
+  resolveBranchReversalScope,
+} from "./branch-reversal-history.js";
 import { documentRevision } from "./document-revision.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type {
@@ -149,13 +152,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
         ...input.observability,
       });
     },
-    shouldUseLiveReversal: async ({ documentId, threadId }) =>
-      (await resolveBranchReversalScope({
-        documentId,
-        threadId,
-        branches: input.branches,
-        branchRows: input.branchJournal,
-      })) === null,
+    reversalHistory: { branches: input.branches, branchRows: input.branchJournal },
     discardThreadPeerBranches: (documentId, threadId) =>
       input.branches.discardActiveThreadPeerBranches({
         documentId,
@@ -190,7 +187,8 @@ type ResponseRecord = {
 export function createThreadPeerCorePool(input: {
   liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
-  shouldUseLiveReversal(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
+  /** Undo and redo go live unless the thread owns history in its Work's draft. */
+  reversalHistory: BranchReversalHistoryReader;
   discardThreadPeerBranches(documentId: DocumentId, threadId: string): Promise<void>;
   pullThreadPeer(input: {
     documentId: DocumentId;
@@ -235,15 +233,12 @@ export function createThreadPeerCorePool(input: {
     threadId: string | undefined,
   ): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
-    if (
-      await input.shouldUseLiveReversal({
-        documentId,
-        threadId: threadId as ThreadId,
-      })
-    ) {
-      return input.liveUtilityCore;
-    }
-    return coreFor(threadId);
+    const draftHistory = await resolveBranchReversalScope({
+      documentId,
+      threadId: threadId as ThreadId,
+      ...input.reversalHistory,
+    });
+    return draftHistory ? coreFor(threadId) : input.liveUtilityCore;
   }
 
   async function evictIdleCores(): Promise<void> {

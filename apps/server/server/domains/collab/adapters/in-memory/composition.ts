@@ -21,6 +21,7 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import {
   createDocumentProjectionRefresher,
@@ -86,7 +87,15 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    shouldUseLiveReversal: async () => true,
+    reversalHistory: {
+      branches: {
+        resolveThreadBranch: async (documentId, threadId) => {
+          throw new BranchNotFoundError(documentId, threadId);
+        },
+        getBranch: async () => null,
+      },
+      branchRows: { listJournalRowsForBranch: async () => [] },
+    },
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     commitThreadResponseAtomically: (operation) => operation(),

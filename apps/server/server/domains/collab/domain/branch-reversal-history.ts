@@ -24,9 +24,8 @@ export type BranchReversalScope = {
   rows: BranchJournalRow[];
 };
 
-export async function resolveBranchReversalScope(input: {
-  documentId: DocumentId;
-  threadId: ThreadId;
+/** The branch reads that decide where a thread's undo history lives. */
+export type BranchReversalHistoryReader = {
   branches: {
     resolveThreadBranch(
       documentId: DocumentId,
@@ -42,7 +41,11 @@ export async function resolveBranchReversalScope(input: {
       generation: number;
     }): Promise<BranchJournalRow[]>;
   };
-}): Promise<BranchReversalScope | null> {
+};
+
+export async function resolveBranchReversalScope(
+  input: { documentId: DocumentId; threadId: ThreadId } & BranchReversalHistoryReader,
+): Promise<BranchReversalScope | null> {
   // No peer in the thread's current Work means it never drafted this document
   // there: its writes went live (D19), so the live journal holds its history.
   const peer = await input.branches
