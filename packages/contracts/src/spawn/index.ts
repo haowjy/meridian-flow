@@ -247,10 +247,11 @@ export type AgentReport = {
   handle: string;
   /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
+  /** Where the report came from: `return_result`, the final reply, or nothing. */
+  source: ExecutionReportSource;
   summary: string;
   payload?: JsonValue;
   artifacts?: ArtifactRef[];
-  costMillicredits: number;
 };
 
 export type SpawnResult =
