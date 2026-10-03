@@ -4,6 +4,7 @@ import {
   spawnHistoryPreview,
   threadHistoryPreview,
   threadLsHistoryPreview,
+  writeHistoryPreview,
 } from "./history-previews.js";
 
 it("names the resolved conversation, never a report run", () => {
@@ -29,4 +30,21 @@ it("previews a spawn by its handle and task name, and tolerates a pre-rename row
     '"Continuity check" → p4',
   );
   expect(spawnHistoryPreview({ description: "Old label" }, { handle: "p4" })).toBe('"" → p4');
+});
+
+it("names a copy's source next to its destination", () => {
+  const written = { write: { id: "w2" } };
+  expect(
+    writeHistoryPreview(
+      { command: "copy", path: "ch11-alt.md", from: { path: "ch11.md" } },
+      written,
+    ),
+  ).toBe("copy ch11-alt.md from ch11.md, w2");
+  expect(
+    writeHistoryPreview({
+      command: "insert",
+      path: "ch12.md",
+      from: { path: "ch11.md", in: [3, 5] },
+    }),
+  ).toBe("insert ch12.md from ch11.md");
 });

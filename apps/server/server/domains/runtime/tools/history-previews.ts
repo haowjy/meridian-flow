@@ -8,9 +8,11 @@ export function writeHistoryPreview(input: JsonObject, result?: JsonValue): stri
     typeof input.content === "string"
       ? `, ${input.content.trim().split(/\s+/u).filter(Boolean).length.toLocaleString("en-US")} words`
       : "";
+  const from = (input.from as JsonObject | undefined)?.path;
+  const source = typeof from === "string" ? ` from ${from}` : "";
   const write = (result as JsonObject | undefined)?.write as JsonObject | undefined;
   const handle = typeof write?.id === "string" ? `, ${write.id}` : "";
-  return `${input.command ?? ""} ${input.path ?? ""}${size}${handle}`;
+  return `${input.command ?? ""} ${input.path ?? ""}${source}${size}${handle}`;
 }
 export function spawnHistoryPreview(input: JsonObject, result?: JsonValue): string {
   const output = result as JsonObject | undefined;
