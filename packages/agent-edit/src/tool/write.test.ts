@@ -259,6 +259,33 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
+  it("finds the writer's text and the escaped form a read showed", async () => {
+    const ctx = harness({ "chapter.md": "Cast LIVE\\_ONLY at \\*dawn\\*.\n\nOmega." });
+    const read = await ctx.core.read({ file: "chapter.md" }, context);
+    expect(outcomeText(read)).toContain("Cast LIVE\\_ONLY at \\*dawn\\*.");
+
+    const plain = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "DRAFT_ONLY", find: "LIVE_ONLY" },
+      context,
+    );
+    expectOutcome(plain, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Cast DRAFT_ONLY at *dawn*.");
+
+    const escaped = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "dusk", find: "\\*dawn\\*" },
+      context,
+    );
+    expectOutcome(escaped, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Cast DRAFT_ONLY at dusk.");
+
+    const partial = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "-LATE", find: "_ONLY" },
+      context,
+    );
+    expectOutcome(partial, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Cast DRAFT-LATE at dusk.");
+  });
+
   it("scopes tool_use_id idempotency to the response identity", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
