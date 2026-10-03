@@ -134,7 +134,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: TURN_ID,
           agentSlug: null,
         }).then((result) => JSON.stringify(result));
-      return { collab, contextPorts, routeDeps, callWrite };
+      // Any wired tool, called as the executor would call it.
+      const callTool = (name: string, input: Record<string, unknown>) => {
+        const tool = registrations.find((registration) => registration.definition.name === name);
+        if (tool?.execution.type !== "server") throw new Error(`${name} is not registered`);
+        return (tool.execution.handler as (input: unknown, context: unknown) => Promise<unknown>)(
+          tool.input.parse(input),
+          {
+            signal: new AbortController().signal,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            agentSlug: null,
+          },
+        );
+      };
+      return { collab, contextPorts, routeDeps, callWrite, callTool };
     }
 
     async function threadPort(fixture: ReturnType<typeof createFixture>) {
@@ -461,6 +475,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(live.members).not.toContain(drafted.value.documentId);
       expect(await manifestThreadBranches()).toHaveLength(1);
+    });
+
+    it("names an unknown Work in a URI on read and ls", async () => {
+      const UNKNOWN_WORK =
+        /^Unknown Work @ghost-arc\. Valid Work slugs: (@direct, @draft|@draft, @direct)$/;
+      const fixture = createFixture();
+      const read = (await fixture.callTool("read", {
+        path: "scratch://@ghost-arc/backstory.md",
+      })) as { output: { status: string; message: string } };
+      expect(read.output.status).toBe("document_not_found");
+      expect(read.output.message).toMatch(UNKNOWN_WORK);
+
+      const listed = (await fixture.callTool("ls", { path: "scratch://@ghost-arc" })) as {
+        output: { code: string; message: string };
+      };
+      expect(listed.output).toMatchObject({
+        code: "invalid_uri",
+        message: expect.stringMatching(UNKNOWN_WORK),
+      });
     });
   });
 }

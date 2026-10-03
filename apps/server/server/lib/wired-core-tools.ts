@@ -283,9 +283,10 @@ function modelContextError(
   error: ContextError,
   context: ResolvedModelContextPort,
 ): ToolErrorOutput {
-  return toolError(
-    typeof error.uri === "string" ? { ...error, uri: modelContextUri(error.uri, context) } : error,
-  );
+  const details =
+    typeof error.uri === "string" ? { ...error, uri: modelContextUri(error.uri, context) } : error;
+  // The message is the readable reason; the error itself rides in `details`, not re-encoded.
+  return toolError({ code: error.code, message: contextErrorMessage(details), details });
 }
 
 function recordTouchInBackground(
@@ -387,7 +388,14 @@ async function resolveDocumentAddress(
         path,
       });
     }
-    return writeToolError(command, modelContextErrorMessage(ref.error, context));
+    // A URI naming no Work addresses no document; the reason lists the valid slugs.
+    const unknownWork = ref.error.code === "invalid_uri" && ref.error.workSlug !== undefined;
+    return writeToolError(
+      command,
+      modelContextErrorMessage(ref.error, context),
+      unknownWork ? "document_not_found" : "invalid_write",
+      unknownWork ? { path } : {},
+    );
   }
   if (ref.value.kind !== "tracked") {
     return writeToolError(
@@ -420,6 +428,7 @@ function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
     return workLifecycleMessage(error.reason, error.workSlug);
   }
+  if (error.code === "invalid_uri") return error.reason;
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
 }
