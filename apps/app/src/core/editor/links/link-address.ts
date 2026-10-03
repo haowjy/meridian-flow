@@ -53,17 +53,29 @@ export function documentFileName(name: string): string | null {
 
 /**
  * Where a link to a not-yet-written document a writer named goes: beside its
- * holder, so Create later makes it in the same folder. A holder with no
- * address yet, or in an area Create refuses (Uploads, Unfiled), puts it at the
- * manuscript's root. Null when the name cannot be a document filename.
+ * holder, so Create later makes it in the same folder. A name with `folders`
+ * (a pasted `[[Arc 1/Kael]]`) goes at that path from the holder's area root
+ * instead, where Obsidian makes a note for a path link. A holder with no
+ * address yet, or in an area Create refuses (Uploads, Unfiled), puts it under
+ * the manuscript's root. Null when a segment cannot be a folder name or the
+ * name cannot be a document filename.
  */
-export function linkAheadAddress(holderUri: string | null, name: string): string | null {
+export function linkAheadAddress(
+  holderUri: string | null,
+  name: string,
+  folders: readonly string[] = [],
+): string | null {
   const trimmed = name.trim();
-  if (!validateContextEntryName(trimmed).ok) return null;
+  const segments = folders.map((folder) => folder.trim());
+  if (![...segments, trimmed].every((segment) => validateContextEntryName(segment).ok)) return null;
   const filename = documentFileName(trimmed);
   if (!filename) return null;
+  const path = [...segments, filename];
   const holder = holderUri ? parseContextUri(holderUri) : null;
-  if (!holder?.ok || !isCreatableLinkScheme(holder.value.scheme))
-    return canonicalContextUri("manuscript", filename);
-  return resolveDocumentHref(encodeURIComponent(filename), holderUri)?.uri ?? null;
+  if (!holder?.ok || !holder.value.path || !isCreatableLinkScheme(holder.value.scheme))
+    return canonicalContextUri("manuscript", path.join("/"));
+  // Relative to the holder: beside it, or up its folders to the area root.
+  const depth = segments.length ? holder.value.path.split("/").length - 1 : 0;
+  const href = [...Array<string>(depth).fill(".."), ...path.map(encodeURIComponent)].join("/");
+  return resolveDocumentHref(href, holderUri)?.uri ?? null;
 }

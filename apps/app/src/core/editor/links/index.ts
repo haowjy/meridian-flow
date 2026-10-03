@@ -7,7 +7,6 @@
  */
 
 export {
-  followLinkAtSelection,
   getLinkResolution,
   getLinkSurface,
   LinkSurfaceExtension,
@@ -22,34 +21,19 @@ export {
 } from "./link-address";
 export {
   LINK_CHIP_ICONS,
-  type LinkChip,
   type LinkChipIcon,
   linkChip,
   linkChipAttributes,
-  linkChipPartAttributes,
   referenceChip,
 } from "./link-chip";
+export { clipboardLinkAddress, LINK_ADDRESS_ATTRIBUTE, linksAsAddresses } from "./link-clipboard";
 export {
-  clipboardLinkAddress,
-  LINK_ADDRESS_ATTRIBUTE,
-  linksAsAddresses,
-} from "./link-clipboard";
-export {
-  anchorLinkRange,
   commitLinkDraft,
   type LinkAnchor,
-  type LinkCommit,
-  type LinkCommitResult,
   type LinkDraft,
-  type LinkSelection,
-  linkAt,
-  linkAtSelection,
   linkAttributesAtSelection,
-  linkHref,
   mapLinkDraft,
-  relocateLink,
   removeLinkAt,
-  resolveLinkAnchor,
   resolveLinkDraft,
   selectionCoversLink,
 } from "./link-commands";
@@ -57,14 +41,7 @@ export {
   canFollowLink,
   followLink,
   type InternalLinkNavigator,
-  LINK_CLICK_SLOP_PX,
-  type LinkClickGesture,
-  type LinkClickIntent,
   type LinkFollowDisposition,
-  type LinkFollowRequest,
-  type LinkFollowResult,
-  linkClickIntent,
-  MIDDLE_BUTTON,
 } from "./link-navigation";
 export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
@@ -74,15 +51,10 @@ export {
   type LinkResolutionEntry,
 } from "./link-resolution";
 export {
-  createLinkSurface,
-  type FollowHandlers,
   type LinkFollowOutcome,
   type LinkFormRequest,
   type LinkHint,
   type LinkMenuRequest,
-  type LinkMenuTarget,
-  type LinkPoint,
-  type LinkRange,
   type LinkSurface,
   type LinkSurfaceState,
   linkMenuRange,
@@ -98,3 +70,9 @@ export {
   linkTargetLabel,
   normalizeLinkHref,
 } from "./link-target";
+export {
+  WikilinkPasteExtension,
+  type WikilinkPasteOptions,
+  wikilinkPasteParsePlugins,
+} from "./WikilinkPasteExtension";
+export type { WikilinkPasteCatalog } from "./wikilink-paste";

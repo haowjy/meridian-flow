@@ -7,7 +7,9 @@
  * headings, lists, fences, tables and links gets headings, lists, fences,
  * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
  * the wire uses, so nothing here has to know what markdown looks like. Pasted
- * `[[name]]` is text, like everywhere else.
+ * `[[Name]]` parses as text here. The wikilink paste extension, where it is
+ * mounted, contributes a parse extension that keeps an escaped `\[[` visible
+ * to its transform, which spells it out again (`links/WikilinkPasteExtension.ts`).
  *
  * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
  * and MDX reads `<` and `{` as syntax. Fiction contains both.
@@ -34,6 +36,8 @@ import {
 } from "@tiptap/pm/model";
 import type { EditorProps } from "@tiptap/pm/view";
 
+import type { PluggableList } from "unified";
+
 import { linksAsAddresses } from "./links";
 
 /**
@@ -56,6 +60,8 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
 export function markdownClipboardParser(
   schema?: Schema,
   assetPathResolver: AssetPathResolver = unresolvedAssetPathResolver,
+  /** Parse extensions other editor extensions contribute, read per paste. */
+  remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
     // Paste-without-formatting asked for the characters, and gets them.
@@ -66,6 +72,7 @@ export function markdownClipboardParser(
       blocks = markdownCodec({
         assetPathResolver,
         schema: schema ?? view.state.schema,
+        remarkPlugins: remarkPlugins(),
       }).parse(text).blocks;
     } catch {
       return defaultPlainTextPaste();

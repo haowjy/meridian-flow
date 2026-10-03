@@ -15,7 +15,10 @@ are the *internal family* — a Context URI or a path relative to the holder,
 one behavior — and are exactly the server's `DocumentLinkTarget`, so
 `documentLinkTarget()` is a projection, not a translation. `external` is the
 client's alone and never crosses the resolution port. There are no wikilinks:
-`[[name]]` is text, and nothing converts it.
+`[[name]]` is text. Only a paste into an Editor document converts it, to a
+standard link (`WikilinkPasteExtension`, which the Editor alone mounts); paste
+without formatting and a destination in code keep the characters, and an
+escaped `\[[` stays the literal brackets.
 
 **Following is a decision, then a destination.** `linkClickIntent` decides
 whether a press follows or places the caret, and where a follow goes;

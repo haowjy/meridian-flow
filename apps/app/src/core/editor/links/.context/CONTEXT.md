@@ -17,7 +17,8 @@ linkTargetHref(target: LinkTarget): string
 linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
 ```
 
-There are no wikilinks: `[[name]]` is text wherever it appears. The two
+There are no wikilinks: `[[name]]` is text wherever it appears, and only a
+paste converts it ([Pasted `[[Name]]`](#pasted-name)). The two
 internal kinds line up one-for-one with `DocumentLinkTarget` in
 `@meridian/contracts/protocol`, which is what `POST /api/projects/:projectId/
 links/resolve` takes. `baseUri` is the URI of the document holding the link;
@@ -25,7 +26,8 @@ only `relative` needs it and only the caller knows it. `linkTargetAddress`
 resolves either kind to its canonical Context URI through `resolveDocumentHref`
 (`@meridian/contracts`), the one href module both resolvers use;
 `link-address.ts` also holds the filename rule (`documentFileName`) and the
-address of a new document beside its holder (`siblingDocumentAddress`).
+address of a new document beside its holder, or at a folder path from its
+area root (`linkAheadAddress`).
 
 Two directions, one fence. `classifyLinkTarget` reads an href already in the
 document — from the markdown parser, an LLM, or this module — and asks what it
@@ -324,3 +326,65 @@ target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and
 formatting; it never persists resolver answers or manufactures document identity.
+
+## Pasted `[[Name]]`
+
+Pasting into an Editor document turns each `[[…]]` into a standard link (D15),
+so a note brought over from Obsidian keeps its links. A typed `[[`, what the AI
+writes, and text already stored stay text; so does a drag inside the editor.
+
+- **Which pastes** (`WikilinkPasteExtension`, the policy): a paste or a drop
+  from outside the editor. Three keep their characters: paste without
+  formatting (Ctrl/Cmd+Shift+V, ProseMirror's own flag in
+  `transformPastedText`, the signal the Markdown door reads as `plain`; it is
+  also how a writer pastes literal brackets), any paste or drop whose
+  destination is code, and a drag within the document. `transformPasted`
+  reads the destination itself, as every paste path resolves it (a keyed
+  paste, and the menu's `pasteHTML` and `pasteText`): a pending drop's
+  pointer, else the selection's `$from`. Only a drop's pointer is recorded,
+  in `handleDOMEvents.drop` the way ProseMirror resolves `$mouse`, and it is
+  cleared in a microtask after the event, so a drop ProseMirror abandons
+  leaves nothing behind. The plain-or-code flag from `transformPastedText` is
+  set and read within one parse of clipboard text. Code matters because
+  ProseMirror hands it a bare text slice, and a link there would keep only
+  its label.
+
+- **Where.** `transformPasted`, the one prop every paste kind reaches once and
+  after parsing (Markdown through the paste door, plain prose, HTML whose text
+  holds the brackets). Only the Editor mounts the extension. Its catalog is
+  the Editor's: the holder, its link index (what its links resolve against)
+  across Manuscript, KB, User, and this Work's Scratch, and the same
+  `linkAhead` the `@` menu's link-ahead row uses. While the index loads the
+  catalog is null and the brackets stay text rather than all turning dashed.
+- **Syntax** (`parseWikilinks`): `[[target]]`, `[[target|label]]` (also the
+  table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
+  target, `.md` implied without an extension. The label is the alias or the
+  name without `.md`; the suffix stays on the destination. `![[…]]` (no
+  transclusion) and anything in code (a fence, a code mark, or a backtick span
+  still spelled out) stay text; so does a link inside a link.
+- **Escapes.** On every paste the policy transforms, each escaped opening
+  outside code, `\[[` or `\[\[` (as Meridian's own Markdown writes literal
+  brackets), becomes the literal `[[`, closed or not and with the catalog
+  loaded or not. Paste without formatting and a code destination keep the
+  characters as pasted, backslash included. The Markdown door would turn `\[`
+  into `[` before the transform could tell an escape from a link, so the
+  extension contributes `remarkKeepWikilinkEscapes` (`wikilink-escape.ts`, a
+  micromark text construct that claims the escape ahead of the core one and
+  keeps the characters) through its storage, and the door reads it per paste
+  (`wikilinkPasteParsePlugins`). An Editor without the extension reads an
+  escape exactly as Markdown does.
+- **Which document** (`pickWikilinkTarget`; per paste, `wikilinkResolver`
+  locates the catalog once and ranks only the documents sharing a link's
+  filename): case-insensitive, by path ending.
+  `[[Name]]`: the holder's folder, then its area root, then the rest by
+  holder's area first, fewest folders, alphabetical URI. `[[a/Name]]`: that
+  path from the holder's area root, then from another area's root (Manuscript,
+  KB, User, Scratch), then path endings ordered as before. Obsidian's own last
+  step is index order; ours is fixed so a paste never depends on load order.
+  Any match links.
+- **No match**: `linkAhead(name, folders)`, which is `linkAheadAddress`: beside
+  the holder, a folder form under the holder's area root, the manuscript root
+  from a holder with no address. The link is dashed until a follow's Create
+  makes the document.
+- **Spelling**: `spellDocumentHref(holderUri, uri)` plus the suffix, as `@`
+  writes. The paste is one transaction, so one undo removes it.
