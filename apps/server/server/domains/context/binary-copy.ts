@@ -17,7 +17,10 @@ import type {
 } from "./ports/context-port.js";
 
 export interface BinaryCopyInput {
+  /** The copier's own view, where the destination path must be free. */
   port: ContextPort;
+  /** Where the file is created. Binary copies are never drafted (D24). */
+  livePort: ContextPort;
   objectStore: ObjectStorePort;
   source: BinaryFileRef;
   destinationUri: string;
@@ -49,7 +52,7 @@ export async function copyBinaryDocument(
   const put = await input.objectStore.put(key, object.value.bytes, mimeType);
   if (!put.ok) return ioError(input.destinationUri, put.error.message);
 
-  const written = await input.port.writeBinary(input.destinationUri, {
+  const written = await input.livePort.writeBinary(input.destinationUri, {
     fileType: input.source.fileType,
     storageUrl: put.value.storageUrl,
     mimeType,

@@ -62,7 +62,12 @@ export async function resolveThreadContext(
 export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
-  options: { responseId?: string | null; version?: DocumentVersion } = {},
+  options: {
+    responseId?: string | null;
+    version?: DocumentVersion;
+    /** Write live whatever the Work's mode, as a binary copy does (D24). */
+    liveWrites?: boolean;
+  } = {},
 ): ContextPort {
   if (!resolution.primaryWorkAuthority) {
     throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
@@ -75,7 +80,7 @@ export function contextPortForThread(
     {
       threadId: resolution.thread.id,
       responseId: options.responseId,
-      draftMode: resolution.primaryDraftMode,
+      draftMode: options.liveWrites ? false : resolution.primaryDraftMode,
       ...(options.version ? { version: options.version } : {}),
     },
   );

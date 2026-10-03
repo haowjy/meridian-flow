@@ -3,7 +3,8 @@
  * existing document check it inside the namespace-locked command transaction;
  * that check must never wait on a lock its own transaction holds. A thread
  * whose writes go live checks the live manifest and drafts nothing (D20, D40).
- * A person's port, with no thread, always uses the live manifest.
+ * A person's port, with no thread, always uses the live manifest, and a
+ * binary copy is always live (D24).
  */
 
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -513,5 +514,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(live.members).toContain(stat.value.documentId);
       });
     }
+
+    it("records a draft-mode thread's binary copy in the live manifest", async () => {
+      await bindThread(DRAFT_WORK_ID);
+      const fixture = createFixture(DRAFT_WORK_ID);
+      const bytes = new Uint8Array([37, 80, 68, 70]);
+      const put = await fixture.objectStore.put(
+        `uploads/${PROJECT_ID}/scan`,
+        bytes,
+        "application/pdf",
+      );
+      if (!put.ok) throw new Error(put.error.message);
+      const source = await fixture.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .writeBinary("scratch://scan.pdf", {
+          fileType: "pdf",
+          storageUrl: put.value.storageUrl,
+          mimeType: "application/pdf",
+          sizeBytes: bytes.byteLength,
+        });
+      if (!source.ok) throw new Error(JSON.stringify(source.error));
+
+      const copied = await settlesWithin(
+        "binary copy",
+        fixture.callWrite({
+          command: "copy",
+          from: { path: "scratch://@/scan.pdf" },
+          path: "kb://refs/scan.pdf",
+        }),
+      );
+      expect(JSON.parse(copied)).toMatchObject({
+        output: { status: "success", path: "kb://refs/scan.pdf", destination: "live" },
+      });
+
+      const port = await threadPort(fixture);
+      const stat = await port.stat("kb://refs/scan.pdf");
+      if (!stat.ok || !stat.value.documentId) throw new Error("kb://refs/scan.pdf missing");
+      const live = await fixture.collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(live.members).toContain(stat.value.documentId);
+    });
   });
 }

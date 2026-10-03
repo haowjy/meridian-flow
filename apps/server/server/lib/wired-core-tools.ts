@@ -147,6 +147,8 @@ type ModelWork = Pick<
 
 type ResolvedModelContextPort = {
   port: ContextPort;
+  /** The same thread's port with every write live, whatever the Work's mode. */
+  livePort: () => ContextPort;
   primaryWorkId: string | null;
 };
 
@@ -222,6 +224,8 @@ async function resolveContextPort(
       responseId,
       ...(version ? { version } : {}),
     }),
+    livePort: () =>
+      contextPortForThread(deps.contextPorts, resolution, { responseId, liveWrites: true }),
     primaryWorkId: resolution.primaryWorkId,
   };
 }
@@ -822,6 +826,7 @@ async function copyBinary(
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
+    livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
     destinationUri: splitDocumentFile(input.path).filePath,
