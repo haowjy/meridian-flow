@@ -1,5 +1,6 @@
 // Response-staging lifecycle and commit/rollback contracts.
 import { describe, expect, it, vi } from "vitest";
+import { renderAgentEditResult } from "./result-text.js";
 import {
   blockTexts,
   expectOutcome,
@@ -215,7 +216,7 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha waits.", "Human waits."]);
   });
 
-  it("keeps a writer's words typed into the block a reply replaces after the AI's text", async () => {
+  it("keeps a writer's words typed into the block a reply replaces, and says so at the save", async () => {
     const ctx = harness({ "chapter.md": "# Race\n\nAlpha para.\n\nBeta para." });
     await ctx.core.read({ file: "chapter.md" }, context);
     const responseContext = {
@@ -229,7 +230,7 @@ describe("response staging", () => {
     );
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 11, to: 11 }, " SAME_BLOCK_WRITER");
 
-    await ctx.core.commitResponse("response-same-block");
+    const committed = await ctx.core.commitResponse("response-same-block");
 
     // The document holds the writer's text, never its markdown escapes.
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
@@ -237,6 +238,11 @@ describe("response staging", () => {
       "Alpha AI edit. SAME_BLOCK_WRITER",
       "Beta para.",
     ]);
+    const receipt = committed.documents[0]?.receipts.at(-1)?.result;
+    if (!receipt) throw new Error("missing settled receipt");
+    const text = renderAgentEditResult(receipt);
+    expect(text).toContain("concurrent user content swept during commit; re-read required");
+    expect(text).toMatch(/swept: [0-9a-f]+\|Alpha para\. SAME\\_BLOCK\\_WRITER/);
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {

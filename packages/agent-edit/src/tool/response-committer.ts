@@ -16,7 +16,12 @@ import { mutationMode, responseInteractionContext } from "./interaction-mode.js"
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
 import { modelResult } from "./model-result.js";
-import type { CommitPreflightInput, JournaledUpdate, MutationCommit } from "./mutation-commit.js";
+import type {
+  CommitPreflightInput,
+  DestructiveSweepReport,
+  JournaledUpdate,
+  MutationCommit,
+} from "./mutation-commit.js";
 import { formatApplySuccess } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
@@ -456,40 +461,39 @@ export function createResponseCommitter(deps: {
           }
         }
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        const lateSweep = applied.lateSweep
+          ? {
+              ...applied.lateSweep,
+              capturedDeletedBodies: bodiesForAffectedHashes(
+                mergeCapturedBodies(
+                  applied.lateSweep.capturedDeletedBodies ?? [],
+                  mergeCapturedBodies(
+                    captureDeletedBodies(
+                      applied.concurrent.detectionSnapshot,
+                      applied.lateSweep.affectedBlockHashes,
+                      deps.model,
+                      deps.codec,
+                    ),
+                    captureDeletedBodies(
+                      docBuffer.updates[0]?.preOwnSnapshot,
+                      applied.lateSweep.affectedBlockHashes,
+                      deps.model,
+                      deps.codec,
+                    ),
+                  ),
+                ),
+                applied.lateSweep.affectedBlockHashes,
+              ),
+            }
+          : undefined;
         return {
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
-          receipts: settledWriteReceipts(docBuffer, applied.revision),
+          receipts: settledWriteReceipts(docBuffer, applied.revision, lateSweep),
           ...(applied.concurrent.detection.info
             ? { concurrentEdits: applied.concurrent.detection.info }
             : {}),
-          ...(applied.lateSweep
-            ? {
-                lateSweep: {
-                  ...applied.lateSweep,
-                  capturedDeletedBodies: bodiesForAffectedHashes(
-                    mergeCapturedBodies(
-                      applied.lateSweep.capturedDeletedBodies ?? [],
-                      mergeCapturedBodies(
-                        captureDeletedBodies(
-                          applied.concurrent.detectionSnapshot,
-                          applied.lateSweep.affectedBlockHashes,
-                          deps.model,
-                          deps.codec,
-                        ),
-                        captureDeletedBodies(
-                          docBuffer.updates[0]?.preOwnSnapshot,
-                          applied.lateSweep.affectedBlockHashes,
-                          deps.model,
-                          deps.codec,
-                        ),
-                      ),
-                    ),
-                    applied.lateSweep.affectedBlockHashes,
-                  ),
-                },
-              }
-            : {}),
+          ...(lateSweep ? { lateSweep } : {}),
         };
       };
       retryApplyDocument = (docBuffer) => applyDocument(docBuffer);
@@ -688,12 +692,18 @@ export function createResponseCommitter(deps: {
     });
   }
 
+  /**
+   * One receipt per staged write. A sweep at the save belongs to the reply's
+   * last write on the document, the one the model reads after the save.
+   */
   function settledWriteReceipts(
     docBuffer: ResponseDocumentBuffer,
     revision: string | null,
+    lateSweep?: DestructiveSweepReport,
   ): ResponseCommitDocumentResult["receipts"] {
     const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, deps.codec);
-    return docBuffer.updates.map((update) => {
+    const lastIndex = docBuffer.updates.length - 1;
+    return docBuffer.updates.map((update, index) => {
       const beforeDoc = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
@@ -720,6 +730,7 @@ export function createResponseCommitter(deps: {
           writeId: update.writeId,
           echo,
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
+          ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
           ...(update.copied
             ? {
                 copied: { summary: update.copied, edges: copyEdgeLines(update.copied, after) },
