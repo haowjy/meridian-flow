@@ -171,20 +171,26 @@ location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
 Readable-address admission for that same server document keeps the synthesized
 review member authoritative; it must not create a durable tab hidden underneath
-the review overlay. Apply is the operation that graduates the member into the
-durable workspace.
+the review overlay. It may enrich the overlay with resolved live-resource
+metadata. Once the server confirms Apply, the controller graduates the member
+into the durable workspace before live-readiness recovery; the recovery owner
+then verifies the live binding and treats its old overlay obligation as
+obsolete.
 
 - Every Apply path materializes the whole branch and clears draft metadata —
-  keep the tab, drop the marker — after the awaited draft-list refresh but while
-  the disposition lock remains held. Controls must not re-enable before that
-  local resolution; draft-group absence alone cannot distinguish Apply from
-  Discard.
+  keep the tab, drop the marker — after server confirmation and before
+  live-readiness recovery, while the disposition lock remains held. Controls
+  must not re-enable before that local resolution; draft-group absence alone
+  cannot distinguish Apply from Discard.
 - Whole-draft Discard removes the owning draft-only tab through the coordinator
   before dispatching the server command. The coordinator applies the ordinary
   adjacent-tab/empty-Editor close fallback and repairs the current address in
-  place. A server refusal reopens the exact tab and review address before the
-  existing discard error is shown. Header, composer-strip, and bulk Discard all
-  use this same controller command lifecycle.
+  place. A server refusal first clears that optimistic removal's terminal route
+  fence, then reopens the exact tab and review address before the existing
+  discard error is shown. The optimistic fallback is the baseline: if the
+  writer chooses another destination before refusal, restoration stays in the
+  background. Header, composer-strip, and bulk Discard all use this same
+  controller command lifecycle.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
   Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab

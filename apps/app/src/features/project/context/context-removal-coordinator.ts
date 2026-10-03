@@ -87,12 +87,19 @@ export interface DraftTabMutationFencePort {
 
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
-  updateSearch(projectId: string, update: (latest: ProjectSearch) => ProjectSearch): void;
+  updateSearch(
+    projectId: string,
+    update: (latest: ProjectSearch) => ProjectSearch,
+  ): Promise<unknown> | undefined;
   transition(
     projectId: string,
     target: ContextRouteTarget | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
+};
+
+type ContextRemovalExecution = ContextRemovalOutcome & {
+  navigationSettled?: Promise<unknown>;
 };
 
 type EditorWorkspacePort = {
@@ -1027,7 +1034,11 @@ export class ContextRemovalCoordinator {
     return transition.selection.status === "none" ? null : transition.selection.revision;
   }
 
-  discardDraft(projectId: string, reviewWorkId: string, documentId: string): ContextRemovalOutcome {
+  discardDraft(
+    projectId: string,
+    reviewWorkId: string,
+    documentId: string,
+  ): ContextRemovalExecution {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
@@ -1063,6 +1074,48 @@ export class ContextRemovalCoordinator {
     });
     this.publish(state);
     return outcome;
+  }
+
+  /** Roll back the route fence installed by an optimistic Discard that the server refused. */
+  restoreDiscardedDraft(
+    projectId: string,
+    reviewWorkId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+  ): void {
+    if (this.unavailable()) return;
+    const state = this.project(projectId);
+    const locator = routeTargetForTab(tab, reviewWorkId);
+    state.terminalRemovals.delete(locatorKey(locator));
+    if (state.removalFence?.removedDocumentIds.includes(tab.documentId)) {
+      state.removalFence = null;
+    }
+    this.publish(state);
+  }
+
+  /** Promote a server-applied draft-only overlay into the durable workspace. */
+  async promoteAppliedDraft(
+    projectId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+  ): Promise<boolean> {
+    if (
+      this.unavailable() ||
+      !tab.draftOnly ||
+      !tab.tabInstanceId ||
+      !tab.reviewWorkId ||
+      !tab.reviewDraftId ||
+      !tab.tabInstanceToken
+    )
+      return false;
+    const identity = {
+      documentId: tab.documentId,
+      tabInstanceId: tab.tabInstanceId,
+      reviewWorkId: tab.reviewWorkId,
+      reviewDraftId: tab.reviewDraftId,
+      tabInstanceToken: tab.tabInstanceToken,
+    };
+    const settled = await this.workspace.settleDraft(projectId, identity);
+    if (settled.kind !== "settled") return false;
+    return this.workspace.closeReviewTab(projectId, identity).kind === "consumed";
   }
 
   dispose(): void {
@@ -1130,7 +1183,7 @@ export class ContextRemovalCoordinator {
       current: ProjectTabsSlice;
       selectedTabId: string | null;
     },
-  ): ContextRemovalOutcome {
+  ): ContextRemovalExecution {
     const { intent, current, cleanup, repair } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
     const slice = consumed?.current ?? this.workspace.read(projectId);
@@ -1236,11 +1289,12 @@ export class ContextRemovalCoordinator {
           },
           next: plan.routeRepairTarget,
         };
-        route.updateSearch(projectId, (latest) =>
+        const navigationSettled = route.updateSearch(projectId, (latest) =>
           this.removalStillCurrent(projectId, current)
             ? applyContextRepairIfCurrent(repairPlan, latest)
             : latest,
         );
+        return navigationSettled ? { ...plan.outcome, navigationSettled } : plan.outcome;
       }
     }
     return plan.outcome;

@@ -17,10 +17,13 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
 import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
+  useCaptureCurrentProjectNavigation,
   useCaptureProjectNavigation,
+  useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
 import {
@@ -108,6 +111,8 @@ export function useDraftReviewController(
   const contextRemoval = useContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
   const captureNavigation = useCaptureProjectNavigation();
+  const captureCurrentNavigation = useCaptureCurrentProjectNavigation();
+  const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
@@ -141,6 +146,7 @@ export function useDraftReviewController(
     selection: DraftReviewSelection;
     tab: Extract<ContextTab, { kind: "tracked" }>;
     isCurrent: () => boolean;
+    removalSettled: Promise<unknown>;
     restoreInline: boolean;
   } | null>(null);
   stateRef.current = state;
@@ -266,6 +272,25 @@ export function useDraftReviewController(
         },
       });
       if (result.kind !== "server-applied-awaiting-live") return result;
+      if (tab?.kind === "tracked" && tab.draftOnly) {
+        await contextRemoval.promoteAppliedDraft(projectId, tab);
+      }
+      if (
+        stateRef.current.surface.kind === "inline" &&
+        stateRef.current.surface.documentId === documentId &&
+        stateRef.current.surface.draftId === draftId
+      ) {
+        dispatch({ type: "exitInline" });
+      }
+      if (tab?.kind === "tracked" && isCurrentContextRoute && openContextRoute) {
+        const target = routeTargetForTab(tab, workId);
+        if (isCurrentContextRoute(target)) {
+          await openContextRoute(target, {
+            replace: true,
+            isCurrent: () => isCurrentContextRoute(target),
+          });
+        }
+      }
       const initial = await recovery.awaitInitialOutcome(result.recovery);
       return initial.kind === "live-ready"
         ? { kind: "live-ready" }
@@ -302,16 +327,26 @@ export function useDraftReviewController(
           candidate.reviewDraftId === selection.draftId,
       );
       if (!tab) return;
+      const restoreInline =
+        stateRef.current.surface.kind === "inline" &&
+        stateRef.current.surface.documentId === selection.documentId &&
+        stateRef.current.surface.draftId === selection.draftId;
+      const removal = contextRemoval.discardDraft(projectId, workId, selection.documentId);
       optimisticDraftDiscardRef.current = {
         selection,
         tab,
-        isCurrent: captureNavigation?.() ?? (() => true),
-        restoreInline:
-          stateRef.current.surface.kind === "inline" &&
-          stateRef.current.surface.documentId === selection.documentId &&
-          stateRef.current.surface.draftId === selection.draftId,
+        // The removal's route repair is asynchronous. Compare against its
+        // planned fallback instead of treating that repair as writer
+        // navigation; any later destination command stops matching.
+        isCurrent:
+          removal.kind === "active-fallback" && isCurrentContextRoute
+            ? () =>
+                isCurrentContextRoute(routeTargetForTab(removal.fallback, workId)) ||
+                isCurrentContextRoute(routeTargetForTab(tab, workId))
+            : (captureCurrentNavigation?.() ?? captureNavigation?.() ?? (() => true)),
+        removalSettled: removal.navigationSettled ?? Promise.resolve(),
+        restoreInline,
       };
-      contextRemoval.discardDraft(projectId, workId, selection.documentId);
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
@@ -324,8 +359,11 @@ export function useDraftReviewController(
         optimistic.selection.draftId === selection.draftId
       ) {
         optimisticDraftDiscardRef.current = null;
+        await optimistic.removalSettled;
+        contextRemoval.restoreDiscardedDraft(projectId, workId, optimistic.tab);
+        const { isCurrent } = optimistic;
         let restoredByRoute = false;
-        if (optimistic.isCurrent() && openContextRoute) {
+        if (isCurrent() && openContextRoute) {
           try {
             const settlement = await openContextRoute(
               {
@@ -338,7 +376,7 @@ export function useDraftReviewController(
                 replace: true,
                 tab: optimistic.tab,
                 draftId: selection.draftId,
-                isCurrent: optimistic.isCurrent,
+                isCurrent,
               },
             );
             restoredByRoute = settlement.kind === "applied";

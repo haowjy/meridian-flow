@@ -12,6 +12,8 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 let rejectDiscard: ((reason: unknown) => void) | null = null;
+let navigationRevision = 0;
+let currentAddress = "";
 const removeDraftTab = vi.fn(() => {
   const tab = getContextTabs("project-a").tabs.find(
     (candidate) => candidate.documentId === "document-a",
@@ -31,7 +33,12 @@ const removeDraftTab = vi.fn(() => {
     reviewDraftId: tab.reviewDraftId,
     tabInstanceToken: tab.tabInstanceToken,
   });
+  navigationRevision += 1;
+  currentAddress = "/projects/project-a/@work-a/manuscript/live-neighbor.md";
+  void useContextTabsStore.getState().selectTab("project-a", "work-a", "document-b");
+  return { kind: "noop" as const };
 });
+const restoreDiscardedDraft = vi.fn();
 
 vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: vi.fn(async () => ({
@@ -52,7 +59,10 @@ vi.mock("@/client/query/useDraftReviewMutations", () => ({
 }));
 
 vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => ({ discardDraft: removeDraftTab }),
+  useContextRemovalCoordinator: () => ({
+    discardDraft: removeDraftTab,
+    restoreDiscardedDraft,
+  }),
 }));
 
 vi.mock("@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
@@ -88,6 +98,26 @@ const addressedTab = contextTabFromFile(
     editable: true,
     filetype: "markdown",
     schemaType: "document",
+    resourceHandle: "resource-a",
+    resourceState: "acknowledged",
+  },
+  "work-a",
+);
+
+const neighborTab = contextTabFromFile(
+  "manuscript",
+  {
+    kind: "file",
+    entryId: "entry-b",
+    parentId: "manuscript-root",
+    documentId: "document-b",
+    name: "live-neighbor.md",
+    path: "/live-neighbor.md",
+    uri: "manuscript://@work-a/live-neighbor.md",
+    provisionalName: false,
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
   },
   "work-a",
 );
@@ -105,7 +135,14 @@ function Providers({ children, open }: { children: ReactNode; open: OpenContextR
     <QueryClientProvider client={queryClient}>
       <ProjectNavigationProvider
         openContextRoute={open}
-        captureNavigation={() => () => true}
+        captureNavigation={() => {
+          const capturedRevision = navigationRevision;
+          return () => capturedRevision === navigationRevision;
+        }}
+        captureCurrentNavigation={() => {
+          const capturedRevision = navigationRevision;
+          return () => capturedRevision === navigationRevision;
+        }}
         screen="context"
       >
         {children}
@@ -118,7 +155,10 @@ describe("draft-only Discard", () => {
   beforeEach(() => {
     controller = null;
     rejectDiscard = null;
+    navigationRevision = 0;
+    currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
     removeDraftTab.mockClear();
+    restoreDiscardedDraft.mockClear();
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
@@ -129,12 +169,28 @@ describe("draft-only Discard", () => {
     // review launcher installs its transient tab. It must not create a hidden
     // durable member underneath the review overlay.
     useContextTabsStore.getState().openTab("project-a", addressedTab);
+    expect(getContextTabs("project-a").tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: "document-a",
+          draftOnly: true,
+          resourceHandle: "resource-a",
+        }),
+      ]),
+    );
+    useContextTabsStore.getState().openTab("project-a", neighborTab);
     void useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
   });
 
   it("closes immediately, then restores the tab, review, and address when Discard fails", async () => {
     const open = vi.fn<OpenContextRoute>(async (_target, options) => {
-      if (options?.tab) useContextTabsStore.getState().openTab("project-a", options.tab);
+      if (options?.tab) {
+        useContextTabsStore.getState().openTab("project-a", options.tab);
+        await useContextTabsStore
+          .getState()
+          .selectTab("project-a", "work-a", options.tab.documentId);
+        currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
+      }
       return { kind: "applied" as const };
     });
     await withReactRoot(
@@ -143,14 +199,16 @@ describe("draft-only Discard", () => {
       </Providers>,
       async () => {
         await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
-        expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toEqual([]);
+        expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toMatchObject([
+          { documentId: "document-b" },
+        ]);
         let disposition: Promise<unknown> | undefined;
         await act(async () => {
           disposition = controller?.discard("document-a", "draft-a");
         });
 
         expect(removeDraftTab).toHaveBeenCalledWith("project-a", "work-a", "document-a");
-        expect(getContextTabs("project-a").tabs).toEqual([]);
+        expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
 
         await act(async () => {
           rejectDiscard?.(new Error("offline"));
@@ -165,13 +223,61 @@ describe("draft-only Discard", () => {
             tab: expect.objectContaining(draftTab),
           }),
         );
-        expect(getContextTabs("project-a").tabs).toMatchObject([
-          { documentId: "document-a", draftOnly: true },
-        ]);
+        expect(restoreDiscardedDraft).toHaveBeenCalledWith(
+          "project-a",
+          "work-a",
+          expect.objectContaining({ documentId: "document-a" }),
+        );
+        expect(getContextTabs("project-a").tabs).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ documentId: "document-a", draftOnly: true }),
+            expect.objectContaining({ documentId: "document-b" }),
+          ]),
+        );
+        expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-a");
+        expect(currentAddress).toBe("/projects/project-a/@work-a/manuscript/chapter.md");
         expect(controller?.inlineReview).toMatchObject({
           documentId: "document-a",
           draftId: "draft-a",
         });
+        expect(controller?.inlineReviewMessage).toEqual({
+          code: "discard-offline",
+          tone: "error",
+        });
+      },
+    );
+  });
+
+  it("restores in the background when the writer navigates after the optimistic close", async () => {
+    const open = vi.fn<OpenContextRoute>();
+    await withReactRoot(
+      <Providers open={open}>
+        <CaptureController />
+      </Providers>,
+      async () => {
+        await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
+        let disposition: Promise<unknown> | undefined;
+        await act(async () => {
+          disposition = controller?.discard("document-a", "draft-a");
+        });
+
+        navigationRevision += 1;
+        currentAddress = "/projects/project-a/@work-a/manuscript/writer-choice.md";
+
+        await act(async () => {
+          rejectDiscard?.(new Error("offline"));
+          await disposition;
+        });
+
+        expect(open).not.toHaveBeenCalled();
+        expect(getContextTabs("project-a").tabs).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ documentId: "document-a", draftOnly: true }),
+            expect.objectContaining({ documentId: "document-b" }),
+          ]),
+        );
+        expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-b");
+        expect(currentAddress).toBe("/projects/project-a/@work-a/manuscript/writer-choice.md");
         expect(controller?.inlineReviewMessage).toEqual({
           code: "discard-offline",
           tone: "error",
