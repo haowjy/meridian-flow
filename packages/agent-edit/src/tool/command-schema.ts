@@ -57,7 +57,10 @@ const READ_FIELDS = {
     .min(1)
     .describe("Block hash to center the read on. Not with `in` or a `#fragment`.")
     .optional(),
-  format: z.enum(["full", "outline"]).optional(),
+  format: z
+    .enum(["full", "outline"])
+    .describe("Read a long document's `outline` first, then the sections you need.")
+    .optional(),
 };
 
 // One selector at most; none means the latest write. The rule lives in `reversalSelectorIssues`.

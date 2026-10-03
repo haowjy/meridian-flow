@@ -33,6 +33,8 @@ export type WriteSuccessPhase = "staged" | "committed";
 export interface AgentEditBlockItem {
   hash: string;
   body: string;
+  /** Outline headings only: the `#heading-slug` that reads this heading's section. */
+  section?: string;
 }
 
 export type AgentEditBlockGroup =

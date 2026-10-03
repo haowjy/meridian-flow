@@ -52,7 +52,7 @@ describe("renderAgentEditResult", () => {
           {
             extent: "full",
             relation: "document",
-            items: [item("a1b2", "# Chapter"), item("e5f6", "## Arena")],
+            items: [item("a1b2", "# Chapter"), { ...item("e5f6", "## Arena"), section: "arena" }],
           },
         ],
       },
@@ -64,7 +64,7 @@ describe("renderAgentEditResult", () => {
         "a1b2|# Chapter",
         'read({"path": "chapter.md#a1b2"})',
         "e5f6|## Arena",
-        'read({"path": "chapter.md#e5f6"})',
+        'read({"path": "chapter.md#arena"})',
       ].join("\n"),
     );
   });

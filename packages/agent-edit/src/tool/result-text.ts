@@ -121,7 +121,7 @@ function bodyLines(result: AgentEditResultV1, groups: readonly AgentEditBlockGro
   const { filePath } = splitDocumentFile(result.path);
   return items.flatMap((item) => [
     blockLine(item),
-    readCall(`${filePath}#${item.hash}`, result.read?.version),
+    readCall(`${filePath}#${item.section ?? item.hash}`, result.read?.version),
   ]);
 }
 

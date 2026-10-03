@@ -44,6 +44,23 @@ describe("read selection", () => {
     );
   });
 
+  it("links each outline heading by its #heading-slug", async () => {
+    const ctx = harness({
+      "chapter.md":
+        "# Chapter\n\nAlpha.\n\n## The Arena\n\nBeta.\n\n## The Arena\n\nGamma.\n\n## Cafe\n\nDelta.",
+    });
+    const outline = await ctx.core.read({ file: "chapter.md", format: "outline" }, context);
+    const text = renderAgentEditResult(outline.result);
+    const cafeHash = hashAt(ctx.liveDoc("chapter.md"), 6);
+    expect(text.split("\n").filter((line) => line.startsWith("read("))).toEqual([
+      'read({"path": "chapter.md#chapter"})',
+      'read({"path": "chapter.md#the-arena"})',
+      'read({"path": "chapter.md#the-arena-1"})',
+      // A hex-shaped slug would resolve as a block hash first, so it keeps the hash.
+      `read({"path": "chapter.md#${cafeHash}"})`,
+    ]);
+  });
+
   it("returns every candidate for a colliding hash prefix", async () => {
     const ctx = harness({ "chapter.md": collisionMarkdown() });
     const fixture = prefixCollisionFixture(model, model.getBlocks(ctx.liveDoc("chapter.md")));
