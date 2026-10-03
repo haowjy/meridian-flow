@@ -317,7 +317,6 @@ export function liveToolActivityLabel(toolName: string, input: unknown): string 
     toolCallId: null,
     toolName,
     input: (input ?? null) as ToolView["input"],
-    output: null,
     result: null,
     status: "partial",
     isError: false,

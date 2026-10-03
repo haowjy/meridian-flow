@@ -38,7 +38,10 @@ back *above* it, and prose never rolls into a fold.
    render time.
 3. **Hidden protocol** — a `tool_use`/`tool_result` whose row a custom card
    already surfaces (`ask_user`, `spawn`, `thread_message`, `return_result`) — is
-   dropped, not folded.
+   dropped, not folded. Any tool call whose helper card is in the turn is
+   hidden by its `toolCallId`. A `thread_message` refused before a child run
+   started (turn budget, no agent binding, not authorised) has no card, so its
+   failure row stays in the fold.
 4. **An `image` block and a `file` block are artifacts** (`isArtifactBlock`).
 5. **Text** flushes the open run and emits a `text` item. Empty text is dropped.
 6. **Custom cards** flush the open run and emit an `artifact` item.
@@ -93,8 +96,10 @@ advertise `ask_user` until its rework
 ([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the
 interrupt card and its response path, they are not dead code.
 
-Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
-custom card is the surface. Spawn and `return_result` protocol remain model
+Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts` per tool,
+`partitionTurn` by the card's `toolCallId`). The custom card is the surface.
+Every reader takes the typed `result`; `output` is the model's text and the app
+never parses it (`ToolView` does not carry it). Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
 
 Each card-bearing admitted invocation has one retained helper-result card,

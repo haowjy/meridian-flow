@@ -375,7 +375,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
 }
 
 function listingOrNothing(tool: ToolView): ToolExpand | null {
-  const results = normalizeListing(tool.output ?? undefined);
+  const results = normalizeListing(tool.result ?? undefined);
   if (results.rows.length === 0) return null;
   return () => <ListingRows results={results} />;
 }
@@ -387,10 +387,10 @@ function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
   // looking at the array, and leaves every section — and the totals scan —
   // for the writer who actually opens it. A settled turn holds a dozen closed
   // rows; none of them should be parsing search results.
-  const output = tool.output;
-  if (!Array.isArray(output) || output.length === 0) return null;
+  const hits = tool.result;
+  if (!Array.isArray(hits) || hits.length === 0) return null;
   return () => (
-    <ResultRows results={normalizeSearchHits(output, stringInput(inputObject(tool), "pattern"))} />
+    <ResultRows results={normalizeSearchHits(hits, stringInput(inputObject(tool), "pattern"))} />
   );
 }
 
@@ -441,8 +441,8 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
 }
 
 function workExpand(tool: ToolView): ToolExpand | null {
-  if (!tool.isError || tool.output == null) return null;
-  const message = meridianErrorFromStructuredToolOutput(tool.output).message;
+  if (!tool.isError || tool.result == null) return null;
+  const message = meridianErrorFromStructuredToolOutput(tool.result).message;
   if (!message) return null;
   return () => <div className="text-compact text-destructive">{message}</div>;
 }

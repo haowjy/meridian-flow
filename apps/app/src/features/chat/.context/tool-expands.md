@@ -49,7 +49,7 @@ transcript from claiming things it cannot stand behind.
 | Channel | Question | Surface | Source of truth |
 |---|---|---|---|
 | Process | What did the agent do? | Tool rows in the fold | Turn blocks |
-| Intent | What did it look at, or mean to write? | Row expands | Tool **input** and read output |
+| Intent | What did it look at, or mean to write? | Row expands | Tool **input** and the typed read result |
 | Outcome | What changed in my manuscript? | Turn edits receipt | Change trail |
 
 **A write expand reads `tool.input.content`, never the output.** The output is
