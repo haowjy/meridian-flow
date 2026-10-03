@@ -503,6 +503,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 }
 
 function readableFailureReason(error: unknown): string {
+  // The conflict's own message names the child thread's id; the card already names the subagent.
+  if (error instanceof TurnStartConflictError) {
+    return error.reason === "already_running"
+      ? "Still working on its last task, so this message wasn't sent."
+      : "The subagent could not start.";
+  }
   return error instanceof Error && error.message.trim()
     ? error.message
     : "The subagent could not start.";
