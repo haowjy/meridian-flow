@@ -99,7 +99,6 @@ export function createWriteCommands(deps: {
       address.documentId,
       runtime,
       "read",
-      { filePath: address.filePath },
     );
     if (isInternalWriteResult(restored)) {
       if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
@@ -199,7 +198,6 @@ export function createWriteCommands(deps: {
       options.coordinator,
       address.documentId,
       command.command,
-      address.filePath,
       (liveDoc) =>
         options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
           ? status(
@@ -220,7 +218,6 @@ export function createWriteCommands(deps: {
         address.documentId,
         runtime,
         command.command,
-        { filePath: address.filePath },
       );
       if (isInternalWriteResult(restored)) return restored;
     }
@@ -451,13 +448,7 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
-    let synced = await requireSynced(
-      session,
-      address.documentId,
-      command.command,
-      runtime,
-      address.filePath,
-    );
+    let synced = await requireSynced(session, address.documentId, command.command, runtime);
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(

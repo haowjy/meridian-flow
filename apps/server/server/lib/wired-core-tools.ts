@@ -384,7 +384,7 @@ async function resolveDocumentAddress(
   const ref = await port.stat(basePath);
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
-      return writeToolError(command, documentNotFoundMessage(command, path), "document_not_found", {
+      return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
         path,
       });
     }
@@ -597,7 +597,7 @@ async function resolveCopySource(
     if (ref.error.code === "not_found") {
       return writeToolError(
         command,
-        fromMessage(source, documentNotFoundMessage(command, source.path)),
+        fromMessage(source, documentNotFoundMessage(command)),
         "document_not_found",
       );
     }
