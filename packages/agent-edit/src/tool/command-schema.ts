@@ -65,7 +65,12 @@ const READ_FIELDS = {
 
 // One selector at most; none means the latest write. The rule lives in `reversalSelectorIssues`.
 const WRITE_HANDLE_SELECTOR_FIELDS = {
-  to: z.string().optional().describe("Write handle such as w3; with `since`, the end of a range."),
+  to: z
+    .string()
+    .optional()
+    .describe(
+      "Write handle such as w3; with `since`, the end of a range. Handles are for you; never show them to the user.",
+    ),
   since: z.string().optional().describe("With `to`: the first write handle of the range."),
   last: z.number().int().min(1).optional().describe("The last N writes."),
   all: z.boolean().optional().describe("Every write in this thread."),
