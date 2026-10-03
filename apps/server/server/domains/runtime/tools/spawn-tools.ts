@@ -11,6 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
+import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
@@ -138,23 +139,14 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "server",
         handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
           const result = await ctx.threadReport(input as ThreadReportArgs);
-          if ("ok" in result) return toolFailureResult(result);
-          if ("status" in result) return { ref: result.ref, status: result.status };
-          return {
-            ref: result.ref,
-            run: result.run,
-            outcome: result.outcome,
-            summary: result.summary,
-            ...(result.payload !== undefined ? { payload: result.payload } : {}),
-            ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
-            ...(result.reason !== null ? { reason: result.reason } : {}),
-            ...(result.source !== "return_result" ? { source: result.source } : {}),
-          };
+          return "ok" in result ? toolFailureResult(result) : result;
         },
       },
       sequential: true,
       capability: "thread_report",
+      renderResult: renderThreadReportOutput,
       historyPreview: threadHistoryPreview,
+      historyKind: "routine",
       advertise: true,
     },
     {
@@ -211,6 +203,9 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
+      // The child's saved report renders in its place (D6); its arguments never show.
+      historyKind: "routine",
+      historyPreview: () => "",
       advertise: false,
     },
   ];

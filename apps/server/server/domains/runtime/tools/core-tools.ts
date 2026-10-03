@@ -30,7 +30,7 @@ import {
 } from "@meridian/contracts/works";
 import { z } from "zod";
 import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
-import { readHistoryPreview, writeHistoryPreview } from "./history-previews.js";
+import { readHistoryPreview, workHistoryPreview, writeHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -203,6 +203,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.read },
       documentText: readDocumentText,
       historyPreview: readHistoryPreview,
+      historyKind: "routine",
       // Reads run in call order with writes, so a read after a write sees it.
       sequential: true,
       timeoutMs: 30_000,
@@ -239,6 +240,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
+      historyPreview: workHistoryPreview,
+      historyKind: (input) =>
+        input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
     },
@@ -252,6 +256,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: LsToolInputSchema,
       execution: { type: "server", handler: handlers.ls },
+      historyPreview: (input) => String(input.path ?? "/"),
+      historyKind: "routine",
       timeoutMs: 30_000,
     },
     {
@@ -266,6 +272,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.search },
       documentText: searchDocumentText,
       historyPreview: (input) => String(input.pattern ?? ""),
+      historyKind: "routine",
       timeoutMs: 30_000,
     },
     {
