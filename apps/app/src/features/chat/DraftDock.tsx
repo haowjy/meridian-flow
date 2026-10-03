@@ -137,6 +137,11 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscardAll, setConfirmingDiscardAll] = useState(false);
+  const refusedRowCount = dock.rows.filter((row) => dock.rowError(row) !== null).length;
+  // A refusal on a row opens the strip so the writer sees it.
+  useEffect(() => {
+    if (refusedRowCount > 0) setExpanded(true);
+  }, [refusedRowCount]);
 
   if (!dock.mounted) return null;
 
@@ -144,7 +149,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const single = dock.serverActiveCount === 1 && dock.rows.length === 1;
   const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
-  const refusedRowCount = dock.rows.filter((row) => dock.rowError(row) !== null).length;
   // One document: the error sits under the strip. Several: it sits on the
   // document's row, so the strip opens to show it.
   const stripError = single && firstPending ? dock.rowError(firstPending) : null;
@@ -153,10 +157,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     dock.dispositionError === "discard-offline" && refusedRowCount > 0
       ? null
       : dock.dispositionError;
-
-  useEffect(() => {
-    if (refusedRowCount > 0) setExpanded(true);
-  }, [refusedRowCount]);
 
   return (
     <div
