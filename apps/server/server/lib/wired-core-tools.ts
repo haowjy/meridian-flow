@@ -392,13 +392,15 @@ async function resolveDocumentAddress(
         path,
       });
     }
-    // A URI naming no Work addresses no document; the reason lists the valid slugs.
-    const unknownWork = ref.error.code === "invalid_uri" && ref.error.workSlug !== undefined;
+    // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
+    const unknownAddress =
+      ref.error.code === "invalid_uri" &&
+      (ref.error.workSlug !== undefined || ref.error.unknownScheme !== undefined);
     return writeToolError(
       command,
       modelContextErrorMessage(ref.error, context),
-      unknownWork ? "document_not_found" : "invalid_write",
-      unknownWork ? { path } : {},
+      unknownAddress ? "document_not_found" : "invalid_write",
+      unknownAddress ? { path } : {},
     );
   }
   if (ref.value.kind !== "tracked") {
