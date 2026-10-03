@@ -116,7 +116,7 @@ describe("thread-peer pool read versions (D41)", () => {
     expect(read.result.read).toEqual({ format: "full", version: "draft" });
   });
 
-  it("reads a document this reply drafted as published when the read asks for live", async () => {
+  it("reads the live version of a document this reply drafted when the read asks for live", async () => {
     const { pool, liveCore, threadCore } = createPool();
     await pool.write(insertCh12, context(draftA, "response-1"));
     expect(pool.responseDestination("response-1", "ch12")).toEqual(draftA);
@@ -126,11 +126,11 @@ describe("thread-peer pool read versions (D41)", () => {
     expect(pinned.result.read?.version).toBe("draft");
     expect(threadCore.read).toHaveBeenCalledOnce();
 
-    const published = await pool.read(readCh12, {
+    const liveRead = await pool.read(readCh12, {
       ...context(live, "response-1"),
-      published: true,
+      liveVersion: true,
     });
-    expect(published.result.read?.version).toBe("live");
+    expect(liveRead.result.read?.version).toBe("live");
     expect(liveCore.read).toHaveBeenCalledOnce();
   });
 

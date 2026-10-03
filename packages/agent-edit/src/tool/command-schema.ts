@@ -89,7 +89,7 @@ const WRITE_HANDLE_SELECTOR_FIELDS = {
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])
   .describe(
-    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
+    "Omit for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the text without any draft changes.",
   );
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 
@@ -119,7 +119,7 @@ const DocumentCopySourceSchema = z
   })
   .strict()
   .describe(
-    "Document to copy. Omit `version` for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the published text.",
+    "Document to copy. Omit `version` for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the text without any draft changes.",
   );
 
 const OVERWRITE = z.boolean().optional().describe("Replace an existing document's entire content.");

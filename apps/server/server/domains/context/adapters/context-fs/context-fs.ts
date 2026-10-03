@@ -932,7 +932,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private async resolveVisibleMembership(): Promise<Set<string> | null> {
     const view = this.manifestView;
     if (!view) return null;
-    // A live view lists the published manifest and never touches a draft.
+    // A live view lists the live manifest and never touches a draft.
     const live = this.readView?.version === "live" && this.readView.draftMode;
     try {
       const membership = await this.documentSync.resolveManifestMembership(
