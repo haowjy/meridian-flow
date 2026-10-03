@@ -158,10 +158,11 @@ function buildProjectContextFsAdapters(
   const { storeResolvers, commandTransaction, thread } = assembly;
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
-    // A thread whose writes to this source go live has no draft of the
-    // manifest; its membership is the live one, so it never branches it (D20).
+    // Only an AI thread whose writes to this source are drafted has a draft
+    // of the manifest. A port with no thread is a person's, and people always
+    // write live (D20). Either way the membership is live and never branches.
     const schemeView =
-      thread && destination(scheme, thread.draftMode) === "live" ? { projectId } : manifestView;
+      !thread || destination(scheme, thread.draftMode) === "live" ? { projectId } : manifestView;
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {

@@ -3,6 +3,7 @@
  * existing document check it inside the namespace-locked command transaction;
  * that check must never wait on a lock its own transaction holds. A thread
  * whose writes go live checks the live manifest and drafts nothing (D20, D40).
+ * A person's port, with no thread, always uses the live manifest.
  */
 
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -39,9 +40,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
-    const { contextPortForThread, resolveThreadContext } = await import(
-      "../../domains/context/context-port-resolution.js"
-    );
+    const { contextPortForProjectBrowse, contextPortForThread, resolveThreadContext } =
+      await import("../../domains/context/context-port-resolution.js");
     const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
       await import("../../domains/projects/index.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");
@@ -107,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       };
+      const objectStore = createInMemoryObjectStore();
       const registrations = createWiredCoreToolRegistrations({
         ...routeDeps,
         threads: routeDeps.threads as never,
@@ -118,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         stopThreadRun: async () => {},
         eventSink: createNoopEventSink(),
         transaction: (operation) => operation(),
-        objectStore: createInMemoryObjectStore(),
+        objectStore,
       });
       const write = registrations.find((registration) => registration.definition.name === "write");
       if (write?.execution.type !== "server") throw new Error("write tool is not registered");
@@ -134,7 +135,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: TURN_ID,
           agentSlug: null,
         }).then((result) => JSON.stringify(result));
-      return { collab, contextPorts, routeDeps, callWrite };
+      return { collab, contextPorts, routeDeps, callWrite, objectStore };
     }
 
     async function threadPort(fixture: ReturnType<typeof createFixture>) {
@@ -462,5 +463,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.members).not.toContain(drafted.value.documentId);
       expect(await manifestThreadBranches()).toHaveLength(1);
     });
+
+    async function manifestWorkDraftBranches(workId: string) {
+      return db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
+        .where(
+          and(
+            eq(schema.documents.kind, "manifest"),
+            eq(schema.documentBranches.workId, workId as never),
+          ),
+        );
+    }
+
+    // People always write live (D20), whatever the Work's AI write mode.
+    for (const [label, workId] of [
+      ["direct-mode Work", DIRECT_WORK_ID],
+      ["draft-mode Work", DRAFT_WORK_ID],
+    ] as const) {
+      it(`lists and moves through live membership on a writer's ${label} port`, async () => {
+        const fixture = createFixture(workId);
+        await seedExisting(fixture, "listed.md");
+        const port = await contextPortForProjectBrowse({
+          deps: fixture.routeDeps,
+          projectId: PROJECT_ID,
+          userId: USER_ID,
+          workId,
+        });
+        if (!port) throw new Error("Work port did not resolve");
+
+        await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
+        expect(await manifestWorkDraftBranches(workId)).toEqual([]);
+
+        const note = await port.write("scratch://note.md", "A note.\n");
+        if (!note.ok) throw new Error(JSON.stringify(note.error));
+        const moved = await settlesWithin(
+          "move",
+          port.move("scratch://note.md", "manuscript://note.md"),
+        );
+        if (!moved.ok) throw new Error(JSON.stringify(moved.error));
+
+        expect(await manifestWorkDraftBranches(workId)).toEqual([]);
+        const live = await fixture.collab.resolveManifestMembership({
+          projectId: PROJECT_ID as never,
+        });
+        const stat = await port.stat("manuscript://note.md");
+        if (!stat.ok || !stat.value.documentId) throw new Error("note.md missing");
+        expect(live.members).toContain(stat.value.documentId);
+      });
+    }
   });
 }
