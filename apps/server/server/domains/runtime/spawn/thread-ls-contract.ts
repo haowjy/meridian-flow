@@ -55,7 +55,9 @@ export function defineThreadLsContract(
       },
     };
     const read = (caller = root, input = {}) =>
-      listReadableThreads({ repos, statusReader, caller, input });
+      listReadableThreads({ repos, statusReader, caller, input }).then((result) =>
+        "listing" in result ? result.listing : result,
+      );
     async function requester(
       thread: Awaited<ReturnType<typeof child>> | typeof root,
       text: string,

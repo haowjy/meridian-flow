@@ -4,6 +4,8 @@
 - Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
+- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns.
+- `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 

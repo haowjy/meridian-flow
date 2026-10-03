@@ -1,0 +1,60 @@
+/** `thread_report` text is a rendering of its typed result (D8); no JSON reaches the model. */
+import { describe, expect, it } from "vitest";
+import { renderThreadReportOutput } from "./model-thread-report.js";
+
+describe("renderThreadReportOutput", () => {
+  it("renders a report as history does, with real newlines", () => {
+    expect(
+      renderThreadReportOutput({
+        ref: "p3",
+        outcome: "succeeded",
+        summary: "Eleven words.\n\nHeading excluded.",
+      }),
+    ).toBe("Report (completed)\nEleven words.\n\nHeading excluded.");
+  });
+
+  it("adds the reason, payload, artifacts and the running-again line", () => {
+    expect(
+      renderThreadReportOutput({
+        ref: "p3",
+        outcome: "failed",
+        summary: "Stopped at the gate.",
+        reason: "blocked",
+        partial: true,
+        source: "final_assistant",
+        payload: { gate: "locked" },
+        artifacts: [{ type: "object", uri: "scratch://@/notes.md", label: "Notes" }],
+        running: true,
+        message:
+          "p3 is running again; this report is from its previous run. You'll be notified when it finishes.",
+      }),
+    ).toBe(`Report (failed, final_assistant)
+reason: blocked
+Stopped at the gate.
+payload: {"gate":"locked"}
+artifact: scratch://@/notes.md (Notes)
+
+p3 is running again; this report is from its previous run. You'll be notified when it finishes.`);
+  });
+
+  it("renders unavailable and refusals as lines, not JSON", () => {
+    expect(
+      renderThreadReportOutput({
+        ref: "p3",
+        status: "unavailable",
+        message:
+          "p3 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
+      }),
+    ).toBe(
+      "p3 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
+    );
+    expect(
+      renderThreadReportOutput({
+        code: "thread_not_connected",
+        message: "Not connected",
+        source: "system",
+        retryable: false,
+      }),
+    ).toBe("Not connected (thread_not_connected)");
+  });
+});
