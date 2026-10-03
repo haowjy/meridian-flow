@@ -22,6 +22,7 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
 import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
@@ -476,6 +477,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: workExpand,
   },
+  thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,
 };
 
