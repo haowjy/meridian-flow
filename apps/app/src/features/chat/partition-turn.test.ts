@@ -207,6 +207,22 @@ describe("partitionTurn", () => {
     expect(items[1]).toMatchObject({ block: { sequence: 4 } });
   });
 
+  it("keeps a queued thread_message in the process fold, where no card stands in", () => {
+    const use = threadMessageUse(1);
+    const result = block({
+      blockType: "tool_result",
+      sequence: 2,
+      content: {
+        toolCallId: "thread-message-1",
+        output: { status: "background", handle: "p3", agentSlug: "critic", notifiesCaller: true },
+      },
+    });
+    const items = partitionTurn([use, result, prose(3, "Carrying on.")]);
+
+    expect(kinds(items)).toEqual(["process", "text"]);
+    expect(items[0]).toMatchObject({ kind: "process", runs: [{ blocks: [use, result] }] });
+  });
+
   it("drops empty reasoning and does not let it split a process run", () => {
     const items = partitionTurn([
       writeUse(1),

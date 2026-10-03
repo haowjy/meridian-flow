@@ -59,7 +59,7 @@ export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
 export type SavedOutcome = "succeeded" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
-export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
+export type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
 
 /** Durable user-facing identity carried by a child-completion turn. */
@@ -263,6 +263,12 @@ export type SpawnResult =
       name?: string;
       /** Present for a spawned execution; absent for queue-only thread_message. */
       execution?: TurnId;
+      /**
+       * Queue-only thread_message: true when the caller re-tasked its own child,
+       * so the caller gets the completion notice when that run finishes. A
+       * queued message gets no helper card either way.
+       */
+      notifiesCaller?: boolean;
     }
   | {
       status: "error";

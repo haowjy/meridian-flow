@@ -380,6 +380,36 @@ describe("inbox drain", () => {
     await execute(queued);
   });
 
+  it("admits a parent's background re-task as a run that notifies the parent", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup({ child: true });
+    const parentId = thread.parentThreadId as ThreadId;
+    const parentTurn = { id: thread.originTurnId as TurnId };
+    await inbox.enqueue({
+      ...message("re-task", thread.id),
+      provenance: {
+        kind: "agent",
+        threadId: parentId,
+        notify: { turnId: parentTurn.id, toolCallId: "call-retask" },
+      },
+    });
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    expect(
+      await repos.executionReports.findByExecution(thread.id, run.executionTurnId),
+    ).toMatchObject({
+      origin: "message",
+      deliveryMode: "background_notification",
+      callerThreadId: parentId,
+      callerTurnId: parentTurn.id,
+      toolCallId: "call-retask",
+      cardBlockId: null,
+      publication: "none",
+    });
+    await execute(run);
+    expect(
+      (await repos.executionReports.findByExecution(thread.id, run.executionTurnId))?.publication,
+    ).toBe("pending");
+  });
+
   it("persists a pending notice with a direct writer message", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup();
     await inbox.enqueue(notice("work context note", thread.id));

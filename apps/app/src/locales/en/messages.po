@@ -1336,6 +1336,10 @@ msgstr "Couldn’t save this preference."
 msgid "Couldn't search"
 msgstr "Couldn't search"
 
+#: src/features/chat/thread-message-renderer.tsx
+msgid "Couldn't send a message to {line}"
+msgstr "Couldn't send a message to {line}"
+
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
@@ -3396,6 +3400,10 @@ msgstr "Sending"
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Sending your answer…"
 msgstr "Sending your answer…"
+
+#: src/features/chat/thread-message-renderer.tsx
+msgid "Sent a message to {line}"
+msgstr "Sent a message to {line}"
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Session expired. Please refresh."

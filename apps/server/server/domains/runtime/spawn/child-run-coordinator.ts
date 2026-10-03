@@ -294,7 +294,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       correlation.callerThreadId !== request.parentThread.id ||
       correlation.callerTurnId !== request.parentTurnId ||
       correlation.cardBlockId !== null ||
-      correlation.origin !== (request.kind === "spawn" ? "spawn" : "foreground_message") ||
+      correlation.origin !== (request.kind === "spawn" ? "spawn" : "message") ||
       (request.kind === "message" && correlation.toolCallId !== request.toolCallId) ||
       correlation.deliveryMode !== (background ? "background_notification" : "direct")
     ) {
@@ -345,7 +345,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   /**
    * Background thread_message is a queue producer only: authorize, enqueue a
    * durable message, return. The target's own run (woken by the inbox) drains it;
-   * nothing is driven in the caller's process.
+   * nothing is driven in the caller's process. A parent re-tasking its own child
+   * stamps its invocation on the message, so the run that adopts it reports back
+   * with the same completion notice a background spawn gets.
    */
   async function sendBackgroundMessage(
     request: {
@@ -361,10 +363,23 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     if (!authorized.ok) return { status: "error", error: authorized.error };
 
     const target = authorized.target;
+    const notifiesCaller =
+      target.kind === "subagent" && target.parentThreadId === request.parentThread.id;
+    const agentSlug =
+      target.kind === "subagent"
+        ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
+          GENERIC_SUBAGENT_SLUG)
+        : target.kind;
     await deps.delivery.enqueue({
       threadId: target.id as ThreadId,
       intent: "message",
-      provenance: { kind: "agent", threadId: request.parentThread.id as ThreadId },
+      provenance: {
+        kind: "agent",
+        threadId: request.parentThread.id as ThreadId,
+        ...(notifiesCaller
+          ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
+          : {}),
+      },
       body: { kind: "text", text: request.prompt },
       idempotencyKey: `thread-message:${request.toolCallId}`,
     });
@@ -376,7 +391,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       status: "background",
       handle: target.ref ?? "",
       threadId: target.id,
-      agentSlug: target.kind === "subagent" ? GENERIC_SUBAGENT_SLUG : target.kind,
+      agentSlug,
+      notifiesCaller,
     };
   }
 

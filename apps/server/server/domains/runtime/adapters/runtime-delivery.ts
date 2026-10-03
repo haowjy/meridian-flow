@@ -538,7 +538,8 @@ export function createDeliveryAdapter(
           {
             afterEvents: async () => {
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
-              if (adoption.selection.outstanding.length > 0) await input.admit?.(next);
+              if (adoption.selection.outstanding.length > 0)
+                await input.admit?.(next, adoption.selection.outstanding);
             },
           },
         );
