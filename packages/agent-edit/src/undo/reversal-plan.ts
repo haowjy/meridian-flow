@@ -298,10 +298,14 @@ async function selectRedoGroup(input: {
   const { groups, selection } = input;
   if (selection.kind === "latest") return { ok: true, group: groups.at(-1) };
   if (selection.kind === "last") {
-    // The last N write handles, so `last` counts the same unit as undo. A group
+    // The N most recently undone write handles, so `last: 1` redoes what a
+    // plain redo does. `last` counts handles, the same unit as undo. A group
     // holding any of them is redone whole; callers plan the groups oldest first.
     const handles = new Set(
-      sortHandles(input.eligibleGroups.flatMap((group) => group.writeIds)).slice(-selection.count),
+      input.eligibleGroups
+        .flatMap((group) => group.writeIds)
+        .reverse()
+        .slice(0, selection.count),
     );
     return {
       ok: true,
