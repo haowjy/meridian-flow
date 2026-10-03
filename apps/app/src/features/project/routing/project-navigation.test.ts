@@ -2,7 +2,7 @@
  * Native browser replace/push coalescing requires separate runtime verification. */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
 
@@ -45,6 +45,30 @@ function setup(
 }
 
 describe("project navigation", () => {
+  it("keeps operation authority through its deferred native restoration", async () => {
+    let finish!: (restored: boolean) => void;
+    const restoration = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+    const { navigation } = setup(
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor",
+      undefined,
+      () => restoration,
+    );
+
+    const operation = navigation.transitionWithAuthority(
+      address("/p/550e8400-e29b-41d4-a716-446655440000/works"),
+      { replace: true },
+    );
+    finish(true);
+
+    await expect(operation.settlement).resolves.toEqual({ kind: "applied" });
+    expect(operation.isCurrent()).toBe(true);
+    navigation.beginIntent();
+    expect(operation.isCurrent()).toBe(false);
+    navigation.dispose();
+  });
+
   it.each([
     true,
     false,
@@ -173,7 +197,7 @@ describe("project navigation", () => {
       address: { work: { kind: "none" } },
     });
     await navigation.replaceIfCurrent(navigation.capture(), empty);
-    expect(changes).toEqual(["replace:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
+    expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
     await navigation.navigate(
       address(
         "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
@@ -424,5 +448,31 @@ it("revalidates the member before dispatching a held navigation", async () => {
   expect(await pending).toEqual({ kind: "superseded" });
   expect(committed).toBe(false);
   expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a");
+  navigation.dispose();
+});
+
+it("address replacement neither prompts nor supersedes a pending writer navigation", async () => {
+  const { navigation, changes } = setup(
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a",
+  );
+  let decision!: { run(): void; cancel(): void };
+  const request = vi.fn((intent: { run(): void; cancel(): void }) => {
+    decision = intent;
+  });
+  navigation.registerGuard({ request, dirty: () => true, cancel: () => undefined });
+  const pending = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
+    replace: false,
+  });
+  expect(
+    await navigation.replaceIfCurrent(
+      navigation.capture(),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?draft=draft-a"),
+    ),
+  ).toEqual({ kind: "superseded" });
+  expect(request).toHaveBeenCalledOnce();
+  expect(changes).toEqual([]);
+  decision.run();
+  await expect(pending).resolves.toEqual({ kind: "applied" });
+  expect(changes.at(-1)).toContain("push:/p/550e8400-e29b-41d4-a716-446655440000/works");
   navigation.dispose();
 });

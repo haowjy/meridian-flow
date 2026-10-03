@@ -15,10 +15,16 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { getContextTabs } from "@/client/stores";
+import { type ContextTab, getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import type { DraftDiscardReceipt } from "@/features/project/context/context-removal-coordinator";
+import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import {
+  useIsCurrentContextRoute,
+  useOpenContextRoute,
+} from "@/features/project/routing/ProjectNavigationContext";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -102,6 +108,8 @@ export function useDraftReviewController(
   const accountId = usePostApplyAccountId();
   const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
+  const openContextRoute = useOpenContextRoute();
+  const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
@@ -131,6 +139,11 @@ export function useDraftReviewController(
     null,
   );
   const nextReviewAttemptIdRef = useRef(0);
+  const optimisticDraftDiscardRef = useRef<{
+    selection: DraftReviewSelection;
+    receipt: DraftDiscardReceipt;
+    restoreInline: boolean;
+  } | null>(null);
   stateRef.current = state;
 
   useEffect(() => {
@@ -254,6 +267,25 @@ export function useDraftReviewController(
         },
       });
       if (result.kind !== "server-applied-awaiting-live") return result;
+      if (tab?.kind === "tracked" && tab.draftOnly) {
+        await contextRemoval.promoteAppliedDraft(projectId, tab);
+      }
+      if (
+        stateRef.current.surface.kind === "inline" &&
+        stateRef.current.surface.documentId === documentId &&
+        stateRef.current.surface.draftId === draftId
+      ) {
+        dispatch({ type: "exitInline" });
+      }
+      if (tab?.kind === "tracked" && isCurrentContextRoute && openContextRoute) {
+        const target = routeTargetForTab(tab, workId);
+        if (isCurrentContextRoute(target)) {
+          await openContextRoute(target, {
+            replace: true,
+            isCurrent: () => isCurrentContextRoute(target),
+          });
+        }
+      }
       const initial = await recovery.awaitInitialOutcome(result.recovery);
       return initial.kind === "live-ready"
         ? { kind: "live-ready" }
@@ -280,15 +312,57 @@ export function useDraftReviewController(
     batchSettled: (error) => {
       dispatch({ type: "batchSettled", error });
     },
+    draftDiscardStarted: (selection) => {
+      const tab = getContextTabs(projectId).tabs.find(
+        (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
+          candidate.kind === "tracked" &&
+          candidate.documentId === selection.documentId &&
+          candidate.draftOnly === true &&
+          candidate.reviewWorkId === workId &&
+          candidate.reviewDraftId === selection.draftId,
+      );
+      if (!tab) return;
+      const restoreInline =
+        stateRef.current.surface.kind === "inline" &&
+        stateRef.current.surface.documentId === selection.documentId &&
+        stateRef.current.surface.draftId === selection.draftId;
+      const removal = contextRemoval.discardDraft(projectId, workId, selection.documentId);
+      if (!("rollback" in removal)) return;
+      optimisticDraftDiscardRef.current = {
+        selection,
+        receipt: removal,
+        restoreInline,
+      };
+    },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
-    draftFailed: (selection, code) => {
+    draftFailed: async (selection, code) => {
+      const optimistic = optimisticDraftDiscardRef.current;
+      if (
+        code === "discard-offline" &&
+        optimistic?.selection.documentId === selection.documentId &&
+        optimistic.selection.draftId === selection.draftId
+      ) {
+        optimisticDraftDiscardRef.current = null;
+        const restored = await optimistic.receipt.rollback();
+        if (restored.kind === "foreground-restored" && optimistic.restoreInline) {
+          dispatch({ type: "enterInline", ...selection });
+          loadInlineReviewRoom(selection.documentId, selection.draftId);
+        }
+      }
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
+      const optimistic = optimisticDraftDiscardRef.current;
+      if (
+        optimistic?.selection.documentId === documentId &&
+        optimistic.selection.draftId === draftId
+      ) {
+        optimisticDraftDiscardRef.current = null;
+      }
       dispatch({ type: "discardSucceeded", draftId });
-      void contextRemoval.discardDraft(projectId, workId, documentId);
+      contextRemoval.settleDiscardedDraft(projectId, workId, documentId, draftId);
     },
   };
 

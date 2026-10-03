@@ -285,7 +285,7 @@ function useDraftReviewScopeOwner(
       controller.exitReview();
       return;
     }
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
+    const activeDrafts = drafts.drafts ?? rawGroups.map((group) => group.draft);
     if (
       activeDrafts.some(
         (draft) =>
@@ -331,7 +331,7 @@ function useDraftReviewScopeOwner(
       return;
     }
     const tabs = getContextTabs(projectId).tabs;
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
+    const activeDrafts = drafts.drafts ?? rawGroups.map((group) => group.draft);
     const candidates = dispositionSnapshot.remoteDraftWitnesses.flatMap((witness) => {
       if (
         witness.identity.accountId !== accountId ||
@@ -428,7 +428,12 @@ function useDraftReviewScopeOwner(
               controller.inlineReview.draftId === witness.identity.draftId
             )
               controller.exitReview();
-            void contextRemoval.discardDraft(projectId, workId, witness.identity.documentId);
+            contextRemoval.settleDiscardedDraft(
+              projectId,
+              workId,
+              witness.identity.documentId,
+              witness.identity.draftId,
+            );
           }
         }
       })

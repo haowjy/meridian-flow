@@ -44,17 +44,105 @@ function admission(
   };
 }
 
-function Host({ expose }: { expose(binding: LiveDocumentHostBinding): void }) {
+function Host({
+  expose,
+  connect = true,
+}: {
+  expose(binding: LiveDocumentHostBinding): void;
+  connect?: boolean;
+}) {
   const binding = useLiveDocumentBinding({
     projectId: "project-a",
     documentId: "document-a",
     owner: "desktop-server-tab",
+    connect,
   });
   useEffect(() => expose(binding), [binding, expose]);
   return null;
 }
 
 describe("useLiveDocumentBinding", () => {
+  it("lets a resource-backed host adopt Apply admission without opening a parallel binding", async () => {
+    const owners: string[] = [];
+    const releases: Array<ReturnType<typeof vi.fn>> = [];
+    const opener = { open: vi.fn() };
+    let host!: LiveDocumentHostBinding;
+
+    await withReactRoot(
+      <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+        <Host
+          connect={false}
+          expose={(value) => {
+            host = value;
+          }}
+        />
+      </ProjectDocumentLiveOpenerContext.Provider>,
+      async () => {
+        await act(async () => undefined);
+        expect(opener.open).not.toHaveBeenCalled();
+        expect(host.state).toEqual({ kind: "absent" });
+
+        let result: unknown;
+        await act(async () => {
+          result = await host.adoptAndAcknowledge(admission("2", session(), owners, releases), {
+            signal: new AbortController().signal,
+          });
+        });
+        await act(async () => undefined);
+        expect(result).toMatchObject({ kind: "acknowledged", generation: "2" });
+        expect(host.state).toMatchObject({ kind: "opened", documentId: "document-a" });
+      },
+    );
+    expect(releases[0]).toHaveBeenCalledOnce();
+  });
+
+  it("waits for an admitted cached session to reconnect before binding it", async () => {
+    const snapshot = { status: "syncing", schemaFence: null };
+    let finishSync!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      finishSync = () => {
+        snapshot.status = "synced";
+        resolve();
+      };
+    });
+    const cached = session(
+      snapshot,
+      vi.fn(async () => waiting),
+    );
+    const owners: string[] = [];
+    const releases: Array<ReturnType<typeof vi.fn>> = [];
+    const opener = { open: vi.fn() };
+    let host!: LiveDocumentHostBinding;
+
+    await withReactRoot(
+      <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+        <Host
+          connect={false}
+          expose={(value) => {
+            host = value;
+          }}
+        />
+      </ProjectDocumentLiveOpenerContext.Provider>,
+      async () => {
+        await act(async () => undefined);
+        const acknowledgement = host.adoptAndAcknowledge(admission("2", cached, owners, releases), {
+          signal: new AbortController().signal,
+        });
+        await act(async () => undefined);
+        expect(cached.waitForCurrentSync).toHaveBeenCalledOnce();
+        expect(host.state).toEqual({ kind: "absent" });
+
+        let result: unknown;
+        await act(async () => {
+          finishSync();
+          result = await acknowledgement;
+        });
+        expect(result).toMatchObject({ kind: "acknowledged", generation: "2" });
+        expect(host.state).toMatchObject({ kind: "opened", session: cached });
+      },
+    );
+  });
+
   it("atomically adopts the exact synced same session under a unique owner", async () => {
     const sharedSession = session();
     const owners: string[] = [];

@@ -86,11 +86,12 @@ export type DraftReviewCommandPorts = {
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
+  draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
     code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
-  ) => void;
+  ) => Promise<void> | void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
 
@@ -186,12 +187,13 @@ export class DraftReviewSession {
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+    ports.draftDiscardStarted(selection);
     try {
       await ports.discard(selection);
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
     } catch {
-      ports.draftFailed(selection, "discard-offline");
+      await ports.draftFailed(selection, "discard-offline");
       return { kind: "failed", code: "discard-offline" };
     }
   }
@@ -258,6 +260,8 @@ export type DraftReviewState = {
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
+  /** Command failures follow the draft even while its review surface is backgrounded. */
+  draftCommandErrors: Readonly<Record<string, InlineReviewMessageCode>>;
 };
 
 export type DraftReviewAction =
@@ -282,6 +286,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   inlineReviewMessage: null,
   inlineDiscardError: null,
   dockDispositionError: null,
+  draftCommandErrors: {},
 };
 
 export function draftReviewReducer(
@@ -293,7 +298,9 @@ export function draftReviewReducer(
       return {
         ...state,
         surface: inlineSurfaceForEnter(state.surface, action),
-        inlineReviewMessage: null,
+        inlineReviewMessage: state.draftCommandErrors[draftSelectionKey(action)]
+          ? { code: state.draftCommandErrors[draftSelectionKey(action)], tone: "error" }
+          : null,
         inlineDiscardError: null,
       };
     case "inlineModelAvailable":
@@ -312,9 +319,16 @@ export function draftReviewReducer(
     case "batchSettled":
       return { ...state, dockDispositionError: action.error };
     case "draftCommandFailed":
-      return surfaceMatchesDraft(state.surface, action.selection)
-        ? { ...state, inlineReviewMessage: { code: action.code, tone: "error" } }
-        : state;
+      return {
+        ...state,
+        draftCommandErrors: {
+          ...state.draftCommandErrors,
+          [draftSelectionKey(action.selection)]: action.code,
+        },
+        inlineReviewMessage: surfaceMatchesDraft(state.surface, action.selection)
+          ? { code: action.code, tone: "error" }
+          : state.inlineReviewMessage,
+      };
     case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
@@ -347,11 +361,15 @@ function inlineSurfaceForEnter(
 
 function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {
   const currentDraftId = state.surface.kind === "none" ? null : state.surface.draftId;
+  const draftCommandErrors = Object.fromEntries(
+    Object.entries(state.draftCommandErrors).filter(([key]) => !key.endsWith(`\u0000${draftId}`)),
+  );
   return {
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     inlineReviewMessage: currentDraftId === draftId ? null : state.inlineReviewMessage,
     inlineDiscardError: currentDraftId === draftId ? null : state.inlineDiscardError,
+    draftCommandErrors,
   };
 }
 
@@ -383,6 +401,10 @@ function surfaceMatchesDraft(
   selection: DraftReviewSelection,
 ): boolean {
   return surface.kind !== "none" && selectionMatches(surface, selection);
+}
+
+function draftSelectionKey(selection: DraftReviewSelection): string {
+  return `${selection.documentId}\u0000${selection.draftId}`;
 }
 
 function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {

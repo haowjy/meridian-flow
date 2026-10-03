@@ -30,7 +30,7 @@ export type DisplayedProjectSelection = {
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
-  | { kind: "failed"; ticket: ProjectNavigationTicket };
+  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
 export type NavigationSettlement =
@@ -39,6 +39,11 @@ export type NavigationSettlement =
 export type PreparedWorkspaceNavigation = {
   isCurrent(): boolean;
   commit(): void;
+};
+export type ProjectNavigationOperation = {
+  settlement: Promise<NavigationSettlement>;
+  /** Remains current through this operation's own history settlement only. */
+  isCurrent(): boolean;
 };
 export type ProjectLeaveGuard = {
   request(intent: { run(): void; cancel(): void }): void;
@@ -51,9 +56,11 @@ export function createProjectNavigation(
   displayed: () => DisplayedProjectSelection,
 ) {
   let revision = 0;
+  let intentRevision = 0;
   let guard: ProjectLeaveGuard | null = null;
   let cancelDecision: (() => void) | null = null;
   let departureWrite = false;
+  let ownedTraversalSettlements = 0;
   let pending: {
     id: string;
     commit?: () => void;
@@ -64,8 +71,12 @@ export function createProjectNavigation(
     if (departureWrite) return;
     cancelDecision?.();
     const operation = pending;
-    if (!operation) return;
+    if (!operation) {
+      if (ownedTraversalSettlements === 0) intentRevision += 1;
+      return;
+    }
     if (port.read().state.meridianNavigationOperation !== operation.id) {
+      intentRevision += 1;
       operation.finish({ kind: "superseded" });
       return;
     }
@@ -80,9 +91,17 @@ export function createProjectNavigation(
   });
   function claimIntent(restoreNative: boolean) {
     revision += 1;
+    intentRevision += 1;
     // Retire the old POP before cancelling its decision: its asynchronous
     // blocker callback must not cancel the replacement writer intent.
     const restoration = restoreNative ? port.settlePendingTraversal() : undefined;
+    if (restoration) {
+      ownedTraversalSettlements += 1;
+      const release = () => {
+        ownedTraversalSettlements -= 1;
+      };
+      void restoration.then(release, release);
+    }
     cancelDecision?.();
     pending?.finish({ kind: "superseded" });
     return { ticket: capture(), restoration };
@@ -152,14 +171,15 @@ export function createProjectNavigation(
     );
   }
 
-  function transition(
+  function transitionWithAuthority(
     address: ProjectAddress,
     options: { replace: boolean; state?: Record<string, unknown> },
     prepared?: PreparedWorkspaceNavigation,
-  ): Promise<NavigationSettlement> {
+  ): ProjectNavigationOperation {
     const { ticket, restoration } = claimIntent(true);
     const requestedRevision = ticket.revision;
-    return new Promise((resolve) => {
+    const requestedIntentRevision = intentRevision;
+    const settlement = new Promise<NavigationSettlement>((resolve) => {
       const dispatch = () => {
         if (revision !== requestedRevision || prepared?.isCurrent() === false) {
           resolve({ kind: "superseded" });
@@ -221,12 +241,25 @@ export function createProjectNavigation(
         () => resolve({ kind: revision === requestedRevision ? "cancelled" : "superseded" }),
       );
     });
+    return {
+      settlement,
+      isCurrent: () => intentRevision === requestedIntentRevision,
+    };
+  }
+
+  function transition(
+    address: ProjectAddress,
+    options: { replace: boolean; state?: Record<string, unknown> },
+    prepared?: PreparedWorkspaceNavigation,
+  ): Promise<NavigationSettlement> {
+    return transitionWithAuthority(address, options, prepared).settlement;
   }
 
   return {
     capture,
     beginIntent,
     transition,
+    transitionWithAuthority,
     registerGuard(next: ProjectLeaveGuard) {
       guard = next;
       return () => {
@@ -280,7 +313,9 @@ export function createProjectNavigation(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
     ): Promise<ProjectAddressReplacement> {
-      if (!isCurrent(ticket)) return { kind: "superseded" };
+      // Address ownership effects may race a writer's destination command. A
+      // delayed repair must never retire that command or ask its leave guard.
+      if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
       const href = projectAddressHref(address);
       const state = projectAddressState(address, entry.state);
@@ -290,10 +325,12 @@ export function createProjectNavigation(
           JSON.stringify(entry.state.meridianProjectEmptySelection)
       )
         return { kind: "replaced" };
-      const result = await transition(address, { replace: true, state });
-      if (result.kind === "applied") return { kind: "replaced" };
-      if (result.kind === "failed") return { kind: "failed", ticket: result.ticket };
-      return { kind: "superseded" };
+      try {
+        port.replaceEntry(href, state);
+        return { kind: "replaced" };
+      } catch (error) {
+        return { kind: "failed", error, ticket: capture() };
+      }
     },
     dispose() {
       claimIntent(false);

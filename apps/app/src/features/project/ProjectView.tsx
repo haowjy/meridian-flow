@@ -62,12 +62,14 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
+import { activeEditorDocumentId } from "./context/active-editor-document";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
+import { EditorReviewAddressOwner } from "./dock/EditorReviewAddressOwner";
 import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
@@ -156,6 +158,8 @@ export type ProjectViewProps = {
   activeContextFolder: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
+  /** Draft identity persisted by an Editor document address. */
+  reviewDraftId?: string;
   /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -166,6 +170,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
+  onSetEditorReviewDraftId: (draftId: string | null) => void;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };
@@ -404,7 +409,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const chatReviewState = useDraftReviewStateOwner();
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
-  const { tabs } = useContextTabs(props.projectId);
+  const { tabs, selectedTabIdByWork } = useContextTabs(props.projectId);
   const requestedMobileDocumentRoute = useMobileDocumentRoute({
     enabled:
       usePhone === true &&
@@ -462,16 +467,36 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     [props.availableWorks],
   );
   if (usePhone === null) return null;
+  const activeDesktopDocumentId =
+    activeEditorDocumentId(
+      props.activeLocalDocumentId,
+      selectedTabIdByWork[props.editorWorkId ?? ""],
+    ) ?? null;
   const desktopHostDocumentIds =
-    usePhone || props.editorScope.status !== "ready" || !props.contextLive
+    usePhone ||
+    props.activeScreen !== "context" ||
+    props.editorScope.status !== "ready" ||
+    !props.contextLive ||
+    props.routeIssues?.editor
       ? []
       : tabs.flatMap((tab) =>
-          tab.kind === "tracked" && isEditorTab(tab, props.editorWorkId) ? [tab.documentId] : [],
+          tab.documentId === activeDesktopDocumentId &&
+          (tab.kind === "tracked" || tab.kind === "new") &&
+          !("draftOnly" in tab && tab.draftOnly) &&
+          isEditorTab(tab, props.editorWorkId)
+            ? [tab.documentId]
+            : [],
         );
   const inlineDocumentIds = [
     inlineReviewFromState(chatReviewState.state)?.documentId,
     inlineReviewFromState(editorReviewState.state)?.documentId,
-  ].filter((documentId): documentId is string => Boolean(documentId));
+  ].filter(
+    (documentId): documentId is string =>
+      Boolean(documentId) &&
+      !tabs.some(
+        (tab) => tab.documentId === documentId && "draftOnly" in tab && Boolean(tab.draftOnly),
+      ),
+  );
   return (
     <ProjectDraftApplyRecoveryExecutor
       projectId={props.projectId}
@@ -524,7 +549,19 @@ function HydratedReviewControllers({
     threadId: null,
   });
   const scopedProps = { ...props, chatReview, editorReview, mobileDocumentRoute };
-  return usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />;
+  return (
+    <>
+      <EditorReviewAddressOwner
+        review={editorReview}
+        requestedDraftId={props.reviewDraftId}
+        activeScreen={props.activeScreen}
+        activeScheme={props.activeContextScheme}
+        activePath={props.activeContextPath}
+        onSetDraftId={props.onSetEditorReviewDraftId}
+      />
+      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+    </>
+  );
 }
 
 /** A PaneHeader expand control derived from a stable surface id. */

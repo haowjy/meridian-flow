@@ -16,7 +16,7 @@ export function projectPostApplyDraftGroups(
 ): DraftGroupProjections {
   if (!groups) return { serverActiveGroups: null, commandEligibleGroups: null };
   const matches = (
-    draft: ThreadDraftGroup["drafts"][number],
+    draft: ThreadDraftGroup["draft"],
     identity: {
       accountId: string;
       projectId: string;
@@ -30,11 +30,8 @@ export function projectPostApplyDraftGroups(
     identity.workId === workId &&
     identity.documentId === draft.documentId &&
     identity.draftId === draft.draftId;
-  const filter = (excluded: (draft: ThreadDraftGroup["drafts"][number]) => boolean) =>
-    groups.flatMap((group) => {
-      const drafts = group.drafts.filter((draft) => !excluded(draft));
-      return drafts.length > 0 ? [{ ...group, drafts }] : [];
-    });
+  const filter = (excluded: (draft: ThreadDraftGroup["draft"]) => boolean) =>
+    groups.filter((group) => !excluded(group.draft));
   const serverActiveGroups = filter(
     (draft) =>
       snapshot.items.some((item) => matches(draft, item.identity)) ||

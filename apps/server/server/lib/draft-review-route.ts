@@ -9,6 +9,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
@@ -30,6 +31,27 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
   };
+}
+
+export function scheduleDraftCatalogRefresh(
+  app: Pick<AppServices, "contextCatalogRefresh" | "eventSink">,
+  projectId: ProjectId,
+  waitUntil: (task: Promise<void>) => void,
+): void {
+  waitUntil(
+    new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
+      try {
+        await app.contextCatalogRefresh.refreshProjectDocuments(projectId);
+      } catch (cause) {
+        emitEvent(app.eventSink, {
+          level: "error",
+          source: "draft-review",
+          name: "CatalogRefreshFailure",
+          payload: { projectId, ...unknownToEventPayload(cause) },
+        });
+      }
+    }),
+  );
 }
 
 export async function requireDraftWorkAccess(

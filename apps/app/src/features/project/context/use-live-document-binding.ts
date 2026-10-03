@@ -32,10 +32,14 @@ export function useLiveDocumentBinding({
   projectId,
   documentId,
   owner,
+  connect = true,
 }: {
   projectId: string;
   documentId: string | null;
   owner: "desktop-server-tab" | "mobile-project-document-host";
+  /** A resource-backed host can wait for an Apply admission without opening a
+   * second ordinary server binding. */
+  connect?: boolean;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
@@ -153,9 +157,15 @@ export function useLiveDocumentBinding({
     pendingRef.current?.abort.abort();
     currentRef.current?.binding.release();
     currentRef.current = null;
-    if (!documentId) {
+    if (!documentId || !connect) {
       setState({ kind: "absent" });
-      return;
+      return () => {
+        if (desiredRef.current.generation !== generation) return;
+        desiredRef.current = { projectId, documentId, generation: generation + 1, mounted: false };
+        pendingRef.current?.abort.abort();
+        currentRef.current?.binding.release();
+        currentRef.current = null;
+      };
     }
 
     const abort = new AbortController();
@@ -192,7 +202,7 @@ export function useLiveDocumentBinding({
         currentRef.current = null;
       }
     };
-  }, [documentId, opener, projectId, retryGeneration, runCandidate]);
+  }, [connect, documentId, opener, projectId, retryGeneration, runCandidate]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   const adoptAndAcknowledge = useCallback(
