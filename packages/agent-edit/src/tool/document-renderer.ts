@@ -21,7 +21,7 @@ export interface DocumentRenderAddress {
 
 export type ReadBlockSelection =
   | { ok: true; blocks: Array<BlockRef> }
-  | { ok: false; code: "not_found" | "invalid_write"; message: string };
+  | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
 
 export interface DocumentRenderer {
   selectReadBlocks(

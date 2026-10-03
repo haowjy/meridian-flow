@@ -44,6 +44,21 @@ describe("read selection", () => {
     );
   });
 
+  it("gives the document's size when a range runs past the end", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+    const read = await ctx.core.read({ file: "chapter.md", in: [2, 5] }, context);
+    expect(renderAgentEditResult(read.result)).toBe(
+      "status: not_found; path: chapter.md\n\nBlock 5 is past the end. chapter.md has 3 blocks.",
+    );
+    const removed = await ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [4, 6] },
+      context,
+    );
+    expect(renderAgentEditResult(removed.result)).toBe(
+      "status: not_found; path: chapter.md\n\nBlock 4 is past the end. chapter.md has 3 blocks.",
+    );
+  });
+
   it("links each outline heading by its #heading-slug", async () => {
     const ctx = harness({
       "chapter.md":
