@@ -161,7 +161,7 @@ const MUTATION_BRANCHES = {
   },
   remove: {
     description:
-      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. Doesn't delete the document. No command deletes whole documents yet.",
+      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
     fields: { in: BlockSelectorSchema.optional() },
   },
   undo: {
