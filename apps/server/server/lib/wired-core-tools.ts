@@ -390,6 +390,16 @@ async function resolveDocumentAddress(
     return writeToolError(command, modelContextErrorMessage(ref.error, context));
   }
   if (ref.value.kind !== "tracked") {
+    // No text document lives at this path; the status union has no read-only
+    // refusal, and `invalid_write` would name a write.
+    if (command === "read") {
+      return writeToolError(
+        command,
+        "The file is binary, so it can't be read as text.",
+        "document_not_found",
+        { path },
+      );
+    }
     return writeToolError(command, `Cannot ${command} binary file: ${path}`);
   }
   if (!ref.value.documentId) {

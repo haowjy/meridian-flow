@@ -607,6 +607,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(again.isError).toBe(true);
         expect(again.output).toContain("A binary copy can't replace an existing file.");
 
+        const binaryRead = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "00000000-0000-4000-8000-000000000972",
+            name: "read",
+            arguments: { path: "manuscript://scan.pdf" },
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(binaryRead.isError).toBe(true);
+        expect(binaryRead.output).toBe(
+          "status: document_not_found; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be read as text.",
+        );
+
         const missingSource = await runtime.app.toolExecutor.executeTool(
           {
             id: "00000000-0000-4000-8000-000000000973",
