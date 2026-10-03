@@ -5,6 +5,7 @@ import {
   collisionMarkdown,
   prefixCollisionFixture,
 } from "../resolver/test-support/hash-collision.js";
+import { renderAgentEditResult } from "./result-text.js";
 import { hashAt } from "./test-support/assertions.js";
 import { context, harness, model } from "./test-support/write-tool-harness.js";
 
@@ -27,8 +28,20 @@ describe("read selection", () => {
     ]);
 
     const outline = await ctx.core.read({ file: "chapter.md", format: "outline" }, context);
-    expect(outline.result.read).toEqual({ format: "outline" });
+    expect(outline.result.read).toEqual({ format: "outline", documentBlocks: 4 });
     expect(outline.result.blocks?.[0]?.items.map((item) => item.body)).toContain("## Arena");
+  });
+
+  it("reports the document's block count when a read returns only some blocks", async () => {
+    const ctx = harness({ "chapter.md": "# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits." });
+    const narrowed = await ctx.core.read({ file: "chapter.md", in: 1 }, context);
+    expect(renderAgentEditResult(narrowed.result).split("\n")[0]).toBe(
+      "status: success; path: chapter.md; blocks: 1 of 4",
+    );
+    const full = await ctx.core.read({ file: "chapter.md" }, context);
+    expect(renderAgentEditResult(full.result).split("\n")[0]).toBe(
+      "status: success; path: chapter.md; blocks: 4",
+    );
   });
 
   it("returns every candidate for a colliding hash prefix", async () => {

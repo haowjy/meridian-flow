@@ -44,7 +44,7 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
     status: "success",
     phase: "committed",
     model: {
-      read: { format: read.format },
+      read: { format: read.format, documentBlocks: read.documentBlocks },
       blocks:
         read.blocks.length > 0
           ? [
