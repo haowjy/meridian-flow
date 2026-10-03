@@ -27,7 +27,13 @@ export interface BlockScope {
 export type ScopeResult = { ok: true; scope: BlockScope } | ScopeFailure;
 
 export type ScopeFailure =
-  | { ok: false; code: "not_found" | "invalid_write"; message: string }
+  | {
+      ok: false;
+      code: "not_found" | "invalid_write";
+      message: string;
+      /** Set when a block number ran past the end, so the reply gives the size, not a re-read. */
+      documentBlocks?: number;
+    }
   | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
 
 export function resolveSearchScope(
@@ -184,6 +190,17 @@ function tupleEndpointIndex(ctx: ScopeContext, value: unknown): BlockIndexResult
     return { ok: true, index: value - 1 };
   }
   if (typeof value === "string") return blockIndexForHash(ctx, value);
+  if (typeof value === "number" && Number.isInteger(value) && value > blocks.length) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        code: "not_found",
+        message: `Block ${value} is past the end`,
+        documentBlocks: blocks.length,
+      },
+    };
+  }
   return { ok: false, error: notFound("Tuple range endpoint not found") };
 }
 

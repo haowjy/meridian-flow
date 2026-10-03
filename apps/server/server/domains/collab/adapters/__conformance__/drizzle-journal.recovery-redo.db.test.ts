@@ -276,7 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual(["Alpha blade.", "Beta ward."]);
 
       const undoLater = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undoLater).toContain("status: reconciled");
+      expect(undoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta shield."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
         { wId: 1, status: "active" },
@@ -289,7 +289,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "status: nothing_to_undo",
       );
       const redoLater = outcomeText(await core.write({ command: "redo", file: DOC_ID }, context));
-      expect(redoLater).toContain("status: reconciled");
+      expect(redoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta ward."]);
     });
 
@@ -319,7 +319,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(
         outcomeText(
@@ -330,7 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
 
@@ -356,7 +356,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reconciled");
+      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reversed");
 
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
@@ -397,7 +397,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       const undo = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undo).toContain("status: reconciled");
+      expect(undo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "reversed", wId: 1, reversedBy: "agent" },
@@ -425,7 +425,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));
-      expect(redo).toContain("status: reconciled");
+      expect(redo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null, reversedBy: null },

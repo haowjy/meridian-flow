@@ -247,7 +247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           direction,
           actor: { type: "user", userId: USER_ID },
         });
-        expect(outcome.status).toBe(direction === "undo" ? "reversed" : "reconciled");
+        expect(outcome.status).toBe("reversed");
       }
       await expectMarkdown(collab, DOC_ID, "Live undo target.");
     });
@@ -298,7 +298,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "redo",
         actor: { type: "user", userId: USER_ID },
       });
-      expect(redo.status).toBe("reconciled");
+      expect(redo.status).toBe("reversed");
       expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
     });
 

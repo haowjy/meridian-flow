@@ -54,7 +54,11 @@ export interface ParsedContextUri {
   normalized: string;
 }
 
-type ContextUriParseError = { ok: false; error: { uri: string; reason: string } };
+type ContextUriParseError = {
+  ok: false;
+  /** `unknownScheme` marks a URI that names no context scheme, so it addresses no document. */
+  error: { uri: string; reason: string; unknownScheme?: string };
+};
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
   | { ok: true; value: { authority: ParsedContextAuthority; rawPath: string } }
@@ -126,7 +130,14 @@ export function parseContextUri(
   if (schemeMatch) {
     const parsedScheme = schemeMatch[1] ?? "";
     if (!isContextScheme(parsedScheme, schemes)) {
-      return invalidContextUri(raw, `Unknown scheme "${parsedScheme}"`);
+      return {
+        ok: false,
+        error: {
+          uri: raw,
+          reason: `Unknown scheme "${parsedScheme}". Known schemes: ${schemes.map((known) => `${known}://`).join(", ")}`,
+          unknownScheme: parsedScheme,
+        },
+      };
     }
     scheme = parsedScheme;
     rawPath = schemeMatch[2] ?? "";

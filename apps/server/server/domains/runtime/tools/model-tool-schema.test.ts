@@ -31,7 +31,10 @@ function allRegistrations(): ToolRegistration[] {
       tokenizer: async () => "anthropic",
     }),
     ...createSpawnToolRegistrations(),
-    ...createSkillToolRegistrations({ loadBody: async () => ({ slug: "", body: "" }) }),
+    ...createSkillToolRegistrations({
+      loadBody: async () => ({ slug: "", body: "", resources: [] }),
+      loadResource: async () => "",
+    }),
   ];
 }
 
@@ -187,6 +190,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`17218`);
+    expect(characters).toMatchInlineSnapshot(`17349`);
   });
 });

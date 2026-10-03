@@ -110,7 +110,13 @@ export function createWriteCommands(deps: {
     markSynced(session, address.documentId, runtime);
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
-    if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
+    if (!selection.ok)
+      return errorResponse(
+        selection.code,
+        selection.message,
+        address.filePath,
+        selection.documentBlocks,
+      );
     return {
       ...readSuccess(
         renderer.renderRead(
@@ -268,7 +274,12 @@ export function createWriteCommands(deps: {
             },
       );
       if (!resolved.ok) {
-        return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
+        return errorResponse(
+          resolved.error.code,
+          resolved.error.message,
+          address.filePath,
+          documentBlocksDetail(resolved.error.details),
+        );
       }
       validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       semanticEditIr = resolved.ir;
@@ -477,7 +488,12 @@ export function createWriteCommands(deps: {
       },
     );
     if (!resolved.ok) {
-      return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
+      return errorResponse(
+        resolved.error.code,
+        resolved.error.message,
+        address.filePath,
+        documentBlocksDetail(resolved.error.details),
+      );
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
 
@@ -791,4 +807,8 @@ function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array):
   const restored = new Y.Doc({ gc: false });
   Y.applyUpdate(restored, snapshot, { type: "system" });
   runtime.doc = restored;
+}
+
+function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
+  return typeof details?.documentBlocks === "number" ? details.documentBlocks : undefined;
 }
