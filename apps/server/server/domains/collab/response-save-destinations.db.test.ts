@@ -279,6 +279,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       });
       expect(reviewable.map((item) => item.documentId)).toEqual([KB_ID]);
+      // Positive control for the failed-save case: a save does reach open editors.
+      expect(hocuspocus.broadcasts.some((name) => name.includes(SCRATCH_ID))).toBe(true);
+      expect(hocuspocus.broadcasts.some((name) => name.includes(KB_ID))).toBe(false);
     });
 
     it("undoes scratch in the reply after a mixed save, and keeps the drafted kb write", async () => {
