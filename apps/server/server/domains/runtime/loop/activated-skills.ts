@@ -30,6 +30,8 @@ export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
+  /** Files the model can open with `skill`; empty when it can't load this skill. */
+  resources?: readonly string[];
 }
 
 /** Metadata stamped on the hidden turn carrying activated skill bodies. */
@@ -68,6 +70,23 @@ function formatInvokedSkill(skill: ActivatedSkillBody): string {
     `skill invoked: ${skill.slug}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
-    skill.body,
+    withSkillResources(skill),
+  ].join("\n");
+}
+
+/** A skill body followed by one copyable `skill` call per resource, the form every body load shares. */
+export function withSkillResources(skill: {
+  slug: string;
+  body: string;
+  resources?: readonly string[];
+}): string {
+  if (!skill.resources?.length) return skill.body;
+  return [
+    skill.body.trimEnd(),
+    "",
+    "Resources:",
+    ...skill.resources.map(
+      (resource) => `skill(${JSON.stringify({ slug: skill.slug, resource })})`,
+    ),
   ].join("\n");
 }

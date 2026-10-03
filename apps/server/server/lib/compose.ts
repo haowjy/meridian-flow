@@ -161,6 +161,7 @@ import {
 } from "../domains/runtime/index.js";
 import {
   loadModelSkillBody,
+  loadModelSkillResource,
   resolveThreadUserInvocableSkills,
   SkillUnavailableError,
   unavailableActivatedSkillSlugs,
@@ -715,6 +716,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       return loadModelSkillBody({
         thread,
         slug,
+        agentRevisions: ports.agentRevisions,
+      });
+    },
+    async loadResource(threadId, slug, resource) {
+      const thread = await ports.threadRepos.threads.findById(threadId as never);
+      if (!thread) throw new SkillUnavailableError(slug);
+      return loadModelSkillResource({
+        thread,
+        slug,
+        resource,
         agentRevisions: ports.agentRevisions,
       });
     },

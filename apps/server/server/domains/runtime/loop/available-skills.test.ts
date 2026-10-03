@@ -11,7 +11,9 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories, hashPromptBakeContent } from "../../threads/index.js";
 import {
   loadModelSkillBody,
+  loadModelSkillResource,
   loadUserSkillBody,
+  modelSkillResources,
   resolveSelectionUserInvocableSkills,
   resolveThreadModelAvailableSkills,
   resolveThreadPreloadedSkills,
@@ -474,8 +476,14 @@ You are Critic.
     "skills/hidden-from-model/SKILL.md": skillMd("hidden-from-model", "Hidden from skill().", {
       modelInvocable: false,
     }),
+    "skills/story-review/resources/line-edit.md": "Line edit method.\n",
+    "skills/story-review/resources/developmental-edit.md": "Developmental edit method.\n",
+    "skills/story-review/resources/prose-critique/voice.md": "Voice critique.\n",
+    "skills/story-review/resources/cover.png": { encoding: "base64", data: "AAEC" },
+    "skills/writing-principles/resources/reward.md": "Reader reward.\n",
+    "skills/creative-writing-modes/resources/draft.md": "Draft mode.\n",
   },
-};
+} as AgentSourceSnapshot;
 
 /** A subagent thread under a Writer chat, bound to Critic's own configuration. */
 async function spawnCritic() {
@@ -558,6 +566,121 @@ describe("subagent skills", () => {
     const loaded = await resolveThreadPreloadedSkills({ thread, agentRevisions });
     expect(loaded.map((skill) => [skill.slug, skill.body])).toEqual([
       ["writing-principles", "writing-principles body.\n"],
+    ]);
+  });
+});
+
+describe("skill resources", () => {
+  it("lists the text files beside SKILL.md on a loaded body", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    const review = await loadModelSkillBody({ thread, slug: "story-review", agentRevisions });
+    expect(review.resources).toEqual([
+      "resources/developmental-edit.md",
+      "resources/line-edit.md",
+      "resources/prose-critique/voice.md",
+    ]);
+    const preloaded = await resolveThreadPreloadedSkills({ thread, agentRevisions });
+    expect(preloaded.map((skill) => skill.resources)).toEqual([["resources/reward.md"]]);
+  });
+
+  it("loads a resource of an available or preloaded skill", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "story-review",
+        resource: "resources/developmental-edit.md",
+        agentRevisions,
+      }),
+    ).resolves.toBe("Developmental edit method.\n");
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "story-review",
+        resource: "./resources/prose-critique/../line-edit.md",
+        agentRevisions,
+      }),
+    ).resolves.toBe("Line edit method.\n");
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "writing-principles",
+        resource: "resources/reward.md",
+        agentRevisions,
+      }),
+    ).resolves.toBe("Reader reward.\n");
+  });
+
+  it("refuses an unknown resource with the skill's resources", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "story-review",
+        resource: "resources/missing.md",
+        agentRevisions,
+      }),
+    ).rejects.toThrow(
+      'Skill "story-review" has no resource "resources/missing.md". Its resources: resources/developmental-edit.md, resources/line-edit.md, resources/prose-critique/voice.md.',
+    );
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "story-review",
+        resource: "resources/cover.png",
+        agentRevisions,
+      }),
+    ).rejects.toThrow('Skill "story-review" has no resource "resources/cover.png".');
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "story-review",
+        resource: "SKILL.md",
+        agentRevisions,
+      }),
+    ).rejects.toThrow('Skill "story-review" has no resource "SKILL.md".');
+  });
+
+  it("refuses a path outside the skill's directory", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    for (const resource of [
+      "../writing-principles/resources/reward.md",
+      "resources/../../creative-writing-modes/resources/draft.md",
+      "/skills/story-review/resources/line-edit.md",
+    ]) {
+      await expect(
+        loadModelSkillResource({ thread, slug: "story-review", resource, agentRevisions }),
+      ).rejects.toThrow(`Resource "${resource}" is outside skill "story-review".`);
+    }
+  });
+
+  it("refuses resources of a skill the agent cannot load", async () => {
+    const { thread, agentRevisions } = await spawnCritic();
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "creative-writing-modes",
+        resource: "resources/draft.md",
+        agentRevisions,
+      }),
+    ).rejects.toThrow(
+      'Skill "creative-writing-modes" is not available. Skills you can load: story-review.',
+    );
+    await expect(
+      loadModelSkillResource({
+        thread,
+        slug: "hidden-from-model",
+        resource: "resources/x.md",
+        agentRevisions,
+      }),
+    ).rejects.toBeInstanceOf(SkillUnavailableError);
+    expect(
+      await modelSkillResources({ thread, slug: "creative-writing-modes", agentRevisions }),
+    ).toEqual([]);
+    expect(await modelSkillResources({ thread, slug: "story-review", agentRevisions })).toEqual([
+      "resources/developmental-edit.md",
+      "resources/line-edit.md",
+      "resources/prose-critique/voice.md",
     ]);
   });
 });

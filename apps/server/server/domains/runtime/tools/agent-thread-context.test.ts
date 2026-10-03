@@ -83,7 +83,8 @@ async function boundContext(metadata: {
     }),
     ...createSpawnToolRegistrations(),
     ...createSkillToolRegistrations({
-      loadBody: async (_threadId, slug) => ({ slug, body: "" }),
+      loadBody: async (_threadId, slug) => ({ slug, body: "", resources: [] }),
+      loadResource: async () => "",
     }),
   ])
     registry.register(registration);
