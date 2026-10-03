@@ -18,6 +18,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import {
   type DocumentAddress,
+  documentNotFoundMessage,
   formatDocumentFile,
   modelResult,
   splitDocumentFile,
@@ -192,10 +193,11 @@ function writeToolError(
   command: AgentEditResultCommand,
   message: string,
   status: WriteErrorStatus = "invalid_write",
+  payload: { path?: string } = {},
 ): WriteToolErrorOutput {
   return {
     isError: true,
-    output: modelResult({ command, status, payload: { message } }),
+    output: modelResult({ command, status, payload: { ...payload, message } }),
   };
 }
 
@@ -380,11 +382,12 @@ async function resolveDocumentAddress(
 
   const ref = await port.stat(basePath);
   if (!ref.ok) {
-    return writeToolError(
-      command,
-      modelContextErrorMessage(ref.error, context),
-      ref.error.code === "not_found" ? "document_not_found" : "invalid_write",
-    );
+    if (ref.error.code === "not_found") {
+      return writeToolError(command, documentNotFoundMessage(command, path), "document_not_found", {
+        path,
+      });
+    }
+    return writeToolError(command, modelContextErrorMessage(ref.error, context));
   }
   if (ref.value.kind !== "tracked") {
     return writeToolError(command, `Cannot ${command} binary file: ${path}`);
@@ -571,10 +574,16 @@ async function resolveCopySource(
   const { filePath: basePath, fragment } = splitDocumentFile(source.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {
+    if (ref.error.code === "not_found") {
+      return writeToolError(
+        command,
+        fromMessage(source, documentNotFoundMessage(command, source.path)),
+        "document_not_found",
+      );
+    }
     return writeToolError(
       command,
       fromMessage(source, modelContextErrorMessage(ref.error, context)),
-      ref.error.code === "not_found" ? "document_not_found" : "invalid_write",
     );
   }
   if (ref.value.kind === "tracked" && !ref.value.documentId) {

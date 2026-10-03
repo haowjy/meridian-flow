@@ -26,13 +26,17 @@ export function documentNotFound(
   commandName: DocumentCommandName,
   filePath: string,
 ): InternalWriteResult {
-  if (commandName === "read") {
-    return status(
-      "document_not_found",
-      `File not found. Check the path, or use write(command="create", path="${filePath}") to make a new one.`,
-    );
-  }
-  return status("document_not_found", "File not found. Read the project to find the right path.");
+  return status("document_not_found", documentNotFoundMessage(commandName, filePath));
+}
+
+/** The one sentence every missing-document result gives the model. */
+export function documentNotFoundMessage(
+  commandName: DocumentCommandName,
+  filePath: string,
+): string {
+  return commandName === "read"
+    ? `File not found. Check the path, or use write(command="create", path="${filePath}") to make a new one.`
+    : "File not found. Read the project to find the right path.";
 }
 
 export function isInternalWriteResult(value: unknown): value is InternalWriteResult {

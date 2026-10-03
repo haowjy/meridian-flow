@@ -66,6 +66,7 @@ export {
   WriteToolInputSchema,
   writeCommandName,
 } from "./tool/command-schema.js";
+export { documentNotFoundMessage } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
