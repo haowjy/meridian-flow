@@ -1030,7 +1030,20 @@ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/command-descriptor.ts
 msgid "Copied"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Copied {source} to"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Copied file"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Copied from {source} into"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1065,6 +1078,18 @@ msgstr ""
 msgid "Copy removed text"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Copying"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Copying {source} to"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Copying from {source} into"
+msgstr ""
+
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr ""
@@ -1093,6 +1118,10 @@ msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't copy"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1159,6 +1188,14 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't find {name}."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't find {source} or {destination}."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't find {source}."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts

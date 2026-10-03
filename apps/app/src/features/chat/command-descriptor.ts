@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
+  Copy,
   FilePlus2,
   FolderTree,
   Layers,
@@ -19,6 +20,7 @@ import {
 import { documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
+  copySourcePath,
   humanizeSkillSlug,
   stringInput,
   type ToolCommand,
@@ -113,6 +115,16 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't write`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
     expand: "submitted-content",
+  },
+  // The destination rides the row's document door, so the verb names the source
+  // and the direction: a whole-document copy reads "Copied a.md to", a block
+  // copy "Copied from a.md into". The model's `from` stays the only input read.
+  copy: {
+    Icon: Copy,
+    phrases: copyTenses,
+    failureVerb: () => t`Couldn't copy`,
+    pathlessTitle: () => t`Copied file`,
+    expand: "none",
   },
   edit: {
     Icon: PenLine,
@@ -250,6 +262,24 @@ function documentTenses(
   return {
     active: { verb: activeVerb, parameter: `${name}…` },
     complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+/** A copy's phrases: the source in the verb, the destination as the parameter. */
+function copyTenses(tool: ToolView): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const sourcePath = copySourcePath(input);
+  const destination = documentTarget(input);
+  if (!sourcePath) return documentTenses(tool, t`Copying`, t`Copied`);
+  const source = documentFileName(sourcePath);
+  const wholeDocument = stringInput(input, "command") === "copy";
+  const active = wholeDocument ? t`Copying ${source} to` : t`Copying from ${source} into`;
+  const complete = wholeDocument ? t`Copied ${source} to` : t`Copied from ${source} into`;
+  if (!destination) return tenses(`${active}…`, complete);
+  const name = documentFileName(destination);
+  return {
+    active: { verb: active, parameter: `${name}…` },
+    complete: { verb: complete, parameter: name },
   };
 }
 

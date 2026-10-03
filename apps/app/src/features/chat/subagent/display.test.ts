@@ -64,7 +64,7 @@ describe("subagent display", () => {
     ).toBe("Editing story-b.md…");
     expect(
       subagentCurrentToolLabel("write", { command: "copy", path: "manuscript://story-c.md" }),
-    ).toBe("Writing story-c.md…");
+    ).toBe("Copying story-c.md…");
     expect(subagentCurrentToolLabel("search", null)).toBe("Searching…");
     expect(subagentCurrentToolLabel("spawn", null)).toContain("Waiting on");
     expect(subagentCurrentToolLabel("return_result", { summary: "Done" })).toBe("Reporting back…");

@@ -71,6 +71,57 @@ describe("document tool rows", () => {
     expect(toolActivityPhrase(tool).verb).toBe("Edited");
   });
 
+  it("labels a whole-document copy by its source and gives it no content card", () => {
+    const input = {
+      command: "copy",
+      path: "manuscript://ch12.md",
+      from: { path: "manuscript://ch11.md" },
+    };
+    const tool = documentTool({
+      toolName: "write",
+      input,
+      output: "status: success; path: ch12.md; write: w1; copied: 3 blocks from ch11.md",
+    });
+
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Copied ch11.md to", parameter: "ch12.md" });
+    expect(toolActivityPhrase({ ...tool, status: "partial" })).toEqual({
+      verb: "Copying ch11.md to",
+      parameter: "ch12.md…",
+    });
+    expect(rendererFor("write").expand?.(tool)).toBeNull();
+  });
+
+  it("labels insert and replace with from as copies, not as written text", () => {
+    for (const command of ["insert", "replace"]) {
+      const tool = documentTool({
+        toolName: "write",
+        input: { command, path: "ch12.md", from: { path: "ch11.md", in: "#the-gate" } },
+      });
+      expect(toolActivityPhrase(tool)).toEqual({
+        verb: "Copied from ch11.md into",
+        parameter: "ch12.md",
+      });
+    }
+    const typed = documentTool({
+      toolName: "write",
+      input: { command: "insert", path: "ch12.md", content: "New line." },
+    });
+    expect(toolActivityPhrase(typed).verb).toBe("Edited");
+  });
+
+  it("names the source when a copy's document is missing", () => {
+    const missing = (command: string) =>
+      documentTool({
+        toolName: "write",
+        input: { command, path: "ch12.md", from: { path: "ch11.md" } },
+        result: { schema: "meridian.agent-edit.v1", command, status: "document_not_found" },
+        isError: true,
+      });
+
+    expect(documentToolFailureCopy(missing("copy"))).toBe("Couldn't find ch11.");
+    expect(documentToolFailureCopy(missing("insert"))).toBe("Couldn't find ch11 or ch12.");
+  });
+
   it("renders an old write(command: read) row without a card", () => {
     const tool = documentTool({
       toolName: "write",

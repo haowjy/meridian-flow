@@ -19,6 +19,13 @@ direct and draft lineage may produce the same receipt. A draft proposal
 with neither live lineage nor settled trail documents produces no card; after
 Apply, the committed receipt remains visible across reload.
 
+The receipt reads server lineage, never tool results. A binary copy (an upload
+such as a PDF, copied at once with no write handle) leaves no journal row, so it
+is not counted as an edit and offers no Undo. Undoing a text copy reverses its
+staged create and leaves an empty document, the same as undoing any create
+(document delete is not in the tool surface); the receipt shows it as undone
+and the document stays openable.
+
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
 it is available. Unavailable actions render a compact `Can't undo` pill; the

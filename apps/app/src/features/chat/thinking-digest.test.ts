@@ -50,6 +50,25 @@ describe("countFoldTools", () => {
     expect(counts.steps).toBe(0);
   });
 
+  it("counts a copy, whole or by blocks, as an edit of its destination", () => {
+    const counts = countFoldTools([
+      tool({
+        toolName: "write",
+        input: { command: "copy", path: "ch2.md", from: { path: "ch1.md" } },
+      }),
+      tool({
+        toolName: "write",
+        input: { command: "insert", path: "ch3.md", from: { path: "ch1.md" } },
+      }),
+    ]);
+
+    expect([...counts.editedDocuments].sort()).toEqual([
+      "manuscript://ch2.md",
+      "manuscript://ch3.md",
+    ]);
+    expect(counts.steps).toBe(0);
+  });
+
   it("counts an old row's write(command: read) as a step, not a read or an edit", () => {
     const counts = countFoldTools([
       tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),

@@ -23,7 +23,7 @@ import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -223,6 +223,16 @@ function documentFailureStatus(tool: ToolView): string | null {
   return asString(result.status) ?? null;
 }
 
+function copySource(tool: ToolView): string | null {
+  const source = copySourcePath(inputObject(tool));
+  return source ? documentDisplayName(source) : null;
+}
+
+function copyNotFoundCopy(tool: ToolView, source: string, destination: string | null): string {
+  if (stringInput(inputObject(tool), "command") === "copy") return t`Couldn't find ${source}.`;
+  return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
+}
+
 function documentFailureDocumentName(tool: ToolView): string | null {
   const path = asString(inputObject(tool).path);
   if (!path) return null;
@@ -251,8 +261,13 @@ export function documentToolFailureCopy(tool: ToolView): string {
   const status = documentFailureStatus(tool);
   switch (status) {
     case "not_found":
-    case "document_not_found":
+    case "document_not_found": {
+      // `path` names the destination, but a copy's missing document is its
+      // source (or, for a block copy, either one), so the copy says which.
+      const source = copySource(tool);
+      if (source) return copyNotFoundCopy(tool, source, name);
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
+    }
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
