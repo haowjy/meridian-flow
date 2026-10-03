@@ -24,6 +24,7 @@ import {
   useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
+import { clearDraftCommandError, setDraftCommandError } from "./draft-command-errors";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -217,6 +218,7 @@ export function useDraftReviewController(
 
   commandPortsRef.current = {
     apply: async ({ documentId, draftId }) => {
+      clearDraftCommandError({ documentId, draftId });
       let applyRoomName = reviewRoomName;
       if (!applyRoomName) {
         const preview = await getDraftPreview(projectId, workId, documentId, draftId);
@@ -306,20 +308,29 @@ export function useDraftReviewController(
     batchSettled: (error) => {
       dispatch({ type: "batchSettled", error });
     },
+    // The tab closes with the click; a refusal leaves it closed and the error
+    // on the draft (see draft-command-errors).
+    draftDiscardStarted: (selection) => {
+      clearDraftCommandError(selection);
+      contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
+    },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftFailed: (selection, code) => {
+      if (code === "discard-offline") setDraftCommandError(selection, code);
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
+      clearDraftCommandError({ documentId, draftId });
       dispatch({ type: "discardSucceeded", draftId });
-      void contextRemoval.discardDraft(projectId, workId, documentId);
+      contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
+      clearDraftCommandError({ documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },

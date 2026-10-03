@@ -921,6 +921,8 @@ export class ContextRemovalCoordinator {
       const outcome = this.executePlanning(projectId, { ...transition.planning, repair }, [], {
         removed: [tab],
         current: consumed.current,
+        selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+        originalTabs: slice.tabs,
       });
       this.publish(state);
       return outcome;
@@ -1026,47 +1028,65 @@ export class ContextRemovalCoordinator {
     return transition.selection.status === "none" ? null : transition.selection.revision;
   }
 
-  async discardDraft(
+  /**
+   * Removes a draft-only overlay the writer discarded. Runs when Discard
+   * starts (optimistic close) and again on server confirmation or a remote
+   * discard, where it finds nothing left to remove. A refused Discard does not
+   * come back here: the tab stays closed and the error lives on the draft.
+   */
+  discardDraft(
     projectId: string,
     reviewWorkId: string,
     documentId: string,
-  ): Promise<ContextRemovalOutcome> {
+    reviewDraftId: string,
+  ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
     if (
       tab === undefined ||
-      tab.kind === "new" ||
+      tab.kind !== "tracked" ||
       !tab.draftOnly ||
-      tab.reviewWorkId !== reviewWorkId
+      tab.reviewWorkId !== reviewWorkId ||
+      tab.reviewDraftId !== reviewDraftId ||
+      !tab.tabInstanceId ||
+      !tab.tabInstanceToken
     )
       return { kind: "noop" };
-    if (!tab.tabInstanceId || !tab.reviewDraftId || !tab.tabInstanceToken) return { kind: "noop" };
     const identity = {
       documentId,
       tabInstanceId: tab.tabInstanceId,
       reviewWorkId,
-      reviewDraftId: tab.reviewDraftId,
+      reviewDraftId,
       tabInstanceToken: tab.tabInstanceToken,
     };
-    const settled = await this.workspace.settleDraft(projectId, identity, "discarded");
-    if (settled.kind !== "settled" || this.unavailable()) return { kind: "noop" };
     const consumed = this.workspace.closeReviewTab(projectId, identity);
     if (consumed.kind !== "consumed" || this.unavailable()) return { kind: "noop" };
-    const intent = { cause: "draft-discard" as const, documentIds: [documentId] };
     const state = this.project(projectId);
-    const transition = reduceRepresentedRemoval(
-      state.selection,
-      [tab, ...consumed.current.tabs],
-      intent,
-    );
+    const transition = reduceRepresentedRemoval(state.selection, [tab, ...consumed.current.tabs], {
+      cause: "draft-discard",
+      documentIds: [documentId],
+    });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning, [], {
       removed: [tab],
       current: consumed.current,
+      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+      originalTabs: slice.tabs,
     });
     this.publish(state);
     return outcome;
+  }
+
+  /**
+   * An explicit Review launch re-admits a pending draft. A refused Discard
+   * leaves its draft pending, so the removal guard that keeps Back and late
+   * address resolution from resurrecting a discarded address no longer applies.
+   */
+  admitDraftReview(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+    const state = this.projects.get(projectId);
+    if (!state || !tab.draftOnly || !tab.reviewWorkId) return;
+    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, tab.reviewWorkId)));
   }
 
   /** Promote a server-applied draft-only overlay into the durable workspace. */
@@ -1160,7 +1180,12 @@ export class ContextRemovalCoordinator {
     projectId: string,
     effect: RemovalPlanningEffect,
     additionalRemovedLocators: readonly WorkingSetRoute[] = [],
-    consumed?: { removed: readonly ContextTab[]; current: ProjectTabsSlice },
+    consumed?: {
+      removed: readonly ContextTab[];
+      current: ProjectTabsSlice;
+      selectedTabId: string | null;
+      originalTabs: readonly ContextTab[];
+    },
   ): ContextRemovalOutcome {
     const { intent, current, cleanup, repair } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
@@ -1168,8 +1193,9 @@ export class ContextRemovalCoordinator {
     const state = this.project(projectId);
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
-      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+      tabs: consumed?.originalTabs ?? slice.tabs,
+      selectedTabId:
+        consumed?.selectedTabId ?? slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
       admitted: state.admitted,
       route: { cleanup, current },
       intent,
@@ -1201,6 +1227,14 @@ export class ContextRemovalCoordinator {
     if (!consumed)
       this.workspace.commit(projectId, {
         documentIds: plan.outcome.removed.map((tab) => tab.documentId),
+        workspaceSelection: {
+          workId: state.activeWorkId ?? "",
+          documentId: plan.nextSelectedTabId,
+        },
+      });
+    else
+      this.workspace.commit(projectId, {
+        documentIds: [],
         workspaceSelection: {
           workId: state.activeWorkId ?? "",
           documentId: plan.nextSelectedTabId,

@@ -51,8 +51,9 @@ owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
 
-Review mode is the dock's `Changes` view plus a full-width Editor; there is no
-in-editor review split. `useAiDraftLauncher` submits an explicit Work/document/
+Review mode is a full-width Editor; the dock remains in the writer's chosen
+open/collapsed state and view. There is no in-editor review split.
+`useAiDraftLauncher` submits an explicit Work/document/
 draft/path command to the route-level Editor handoff rather than commanding the
 ambient Chat controller. The handoff holds one provider-lifetime, latest-wins
 intent, navigates atomically to its Work and manuscript path, and lets the
@@ -160,24 +161,43 @@ row + Yjs state) but absent from the live tree until Apply. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
-never stored. Local disposition events and remote membership reconciliation
-both route through narrow coordinator commands. Apply calls
-`applyDraftMetadata(projectId, reviewWorkId, documentId)`; discard calls
-`discardDraft(projectId, reviewWorkId, documentId)`. The coordinator checks the
-owning Work before changing the workspace.
+never stored. `ContextRemovalCoordinator` is the only owner of draft-only tab
+membership; it checks the owning Work before changing the workspace.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
+Readable-address admission for that same server document keeps the synthesized
+review member authoritative; it must not create a durable tab hidden underneath
+the review overlay, regardless of whether address or review admission arrives
+first. Review admission absorbs an earlier durable member; later address
+admission may enrich only the overlay with resolved live-resource metadata.
 
-- Every Apply path materializes the whole branch and clears draft metadata —
-  keep the tab, drop the marker — after the awaited draft-list refresh but while
-  the disposition lock remains held. Controls must not re-enable before that
-  local resolution; draft-group absence alone cannot distinguish Apply from
-  Discard.
-- Whole-draft Discard removes the owning draft-only tab through the coordinator.
+- **Apply.** Once the server confirms a local Apply, the controller calls
+  `promoteAppliedDraft`: the overlay becomes a durable tab (keep the tab, drop
+  the marker) before live-readiness recovery, while the disposition lock is
+  still held. Recovery then verifies the live binding and treats the promoted
+  overlay's obligation as obsolete. A remote Apply records a server-applied
+  witness and recovery settles the overlay. Controls must not re-enable before
+  that local resolution; draft-group absence alone cannot distinguish Apply
+  from Discard.
+- **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
+  command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
+  fallback and repairs the address in place. A refused Discard never reopens
+  the tab and never navigates: the draft is still pending, so the error shows
+  on the draft itself (below). Header, composer-strip, and bulk Discard share
+  this lifecycle.
+- **Refused Discard error.** `draft-command-errors.ts` holds it by draft
+  identity (documentId + draftId), outside any review scope, so the composer
+  strip (under the strip for one document, on the document's row for several,
+  expanding the strip) and the Work Files "Drafts to review" row both show it
+  whichever surface ran the command. It clears on the next action on that draft
+  (Discard retry, Apply, opening Review) or when the draft is discarded or
+  applied; Work Files also offers Dismiss.
+- **Confirmed and remote Discard** call the same `discardDraft`, even when no
+  local tab remains (a no-op then). It never creates or restores a tab.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
-  Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab
+  a remote Apply; absence means remote Discard. A failed read leaves the tab
   intact, and a replacement active draft for that document cancels resolution.
 - A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
   skips draftOnly tabs so a discarded path can't replay on the next visit;

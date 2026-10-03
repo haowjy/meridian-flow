@@ -189,7 +189,20 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
+          const reviewOverlayTab = get()._reviewOverlayByProject[projectId]?.tabs.find(
+            (candidate) => candidate.documentId === tab.documentId && candidate.draftOnly,
+          );
           if (tab.draftOnly) {
+            const durableMember = sliceFor(get(), projectId).tabs.find(
+              (candidate) => candidate.documentId === tab.documentId,
+            );
+            if (durableMember?.tabInstanceId) {
+              dispatchResult(() => ({
+                kind: "close",
+                projectId,
+                tabInstanceId: durableMember.tabInstanceId as string,
+              }));
+            }
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
               const index = overlay.tabs.findIndex(
@@ -223,6 +236,30 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 _reviewOverlayByProject: {
                   ...base._reviewOverlayByProject,
                   [projectId]: { ...overlay, tabs },
+                },
+              };
+            });
+          } else if (reviewOverlayTab) {
+            // Readable-address resolution enriches the transient review tab
+            // with its live resource identity without admitting a durable
+            // shadow underneath it. Apply can then reopen that exact resource.
+            rawSet((base) => {
+              const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
+              return {
+                _reviewOverlayByProject: {
+                  ...base._reviewOverlayByProject,
+                  [projectId]: {
+                    ...overlay,
+                    tabs: overlay.tabs.map((candidate) =>
+                      candidate.documentId === tab.documentId && candidate.draftOnly
+                        ? ({
+                            ...candidate,
+                            ...tab,
+                            tabInstanceId: candidate.tabInstanceId,
+                          } as ContextTab)
+                        : candidate,
+                    ),
+                  },
                 },
               };
             });

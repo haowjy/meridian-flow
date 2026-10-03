@@ -8,10 +8,9 @@
 ## [Unreleased]
 
 - Draft review: Work Files "Drafts to review" rows open review; repeated "Review draft" launches settle once; reload restores review from `?draft=` and repairs a stale one; leaving the document exits review; launches across documents push history.
-
 - Draft review: Apply returns the editor to live without unmounting warm editors or showing "Couldn't open this document"; a failed live attach can be retried.
-
 - Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
+- Draft review: Discard of a never-applied document closes its tab at once and selects the neighbouring tab; a refused Discard leaves the tab closed and shows the error on the draft in the composer strip and Work Files.
 
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 

@@ -86,6 +86,7 @@ export type DraftReviewCommandPorts = {
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
+  draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
@@ -186,6 +187,7 @@ export class DraftReviewSession {
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+    ports.draftDiscardStarted(selection);
     try {
       await ports.discard(selection);
       ports.draftDiscarded(selection);

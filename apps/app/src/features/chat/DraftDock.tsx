@@ -21,7 +21,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { usePostApplySnapshot } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { projectDraftDispositionRows } from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
@@ -31,7 +31,10 @@ import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
+import { draftCommandErrorKey, useDraftCommandErrors } from "./draft-command-errors";
+import type { InlineReviewMessageCode } from "./draft-review-session";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
+import { ReviewMessageText } from "./ReviewMessageText";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
@@ -40,6 +43,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const { openAiDraft } = useAiDraftLauncher();
   const dispositionSnapshot = usePostApplySnapshot();
   const recovery = useProjectDraftApplyRecovery();
+  const commandErrors = useDraftCommandErrors();
 
   const applyDraft = useCallback(
     (row: DockRow) => {
@@ -92,6 +96,11 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       projectDraftDispositionRows(dispositionSnapshot, controller.projectId).length > 0,
     isBusy: controller.isDisposing,
     dispositionError: controller.dockDispositionError,
+    /** A refused command on this row's draft, shown on the row it belongs to. */
+    rowError: (row: DockRow) =>
+      commandErrors[
+        draftCommandErrorKey({ documentId: row.documentId, draftId: row.draft.draftId })
+      ] ?? null,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -128,6 +137,11 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscardAll, setConfirmingDiscardAll] = useState(false);
+  const refusedRowCount = dock.rows.filter((row) => dock.rowError(row) !== null).length;
+  // A refusal on a row opens the strip so the writer sees it.
+  useEffect(() => {
+    if (refusedRowCount > 0) setExpanded(true);
+  }, [refusedRowCount]);
 
   if (!dock.mounted) return null;
 
@@ -135,6 +149,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const single = dock.serverActiveCount === 1 && dock.rows.length === 1;
   const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
+  // One document: the error sits under the strip. Several: it sits on the
+  // document's row, so the strip opens to show it.
+  const stripError = single && firstPending ? dock.rowError(firstPending) : null;
+  // The batch-level discard message repeats what a row already says.
+  const batchError =
+    dock.dispositionError === "discard-offline" && refusedRowCount > 0
+      ? null
+      : dock.dispositionError;
 
   return (
     <div
@@ -236,17 +258,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </div>
           </div>
 
-          {dock.dispositionError ? (
-            <p
-              className="border-border-subtle border-t px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-destructive text-micro"
-              data-draft-dock-disposition-error={dock.dispositionError}
-            >
-              {dock.dispositionError === "apply-failed" ? (
-                <Trans>Couldn't apply. Check your connection and try again.</Trans>
-              ) : (
-                <Trans>Couldn't discard. Check your connection and try again.</Trans>
-              )}
-            </p>
+          {batchError ? (
+            <DockErrorLine code={batchError} />
+          ) : stripError ? (
+            <DockErrorLine code={stripError} />
           ) : null}
 
           {multi && expanded ? (
@@ -255,6 +270,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 <DockRowLine
                   key={row.documentId}
                   row={row}
+                  error={dock.rowError(row)}
                   busy={dock.isBusy}
                   onOpen={() => dock.openRow(row)}
                   onReview={() => dock.reviewRow(row)}
@@ -341,11 +357,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
  */
 function DockRowLine({
   row,
+  error,
   busy,
   onOpen,
   onReview,
 }: {
   row: DockRow;
+  error: InlineReviewMessageCode | null;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
@@ -354,26 +372,47 @@ function DockRowLine({
   const stats = draftStats(row.draft);
 
   return (
-    <DockRowShell onOpen={onOpen} className="text-prose-foreground">
-      <span aria-hidden className="shrink-0 text-ink-subtle">
-        ○
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        {name}
-        {stats ? (
-          <>
-            {" "}
-            <DraftStatsLabel stats={stats} wordsSuffix={false} />
-          </>
+    <>
+      <DockRowShell onOpen={onOpen} className="text-prose-foreground">
+        <span aria-hidden className="shrink-0 text-ink-subtle">
+          ○
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {name}
+          {stats ? (
+            <>
+              {" "}
+              <DraftStatsLabel stats={stats} wordsSuffix={false} />
+            </>
+          ) : null}
+        </span>
+        {busy ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
         ) : null}
-      </span>
-      {busy ? (
-        <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
-      ) : null}
-      <RowClickFence className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-        <ReviewPill onClick={onReview} disabled={busy} />
-      </RowClickFence>
-    </DockRowShell>
+        <RowClickFence className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <ReviewPill onClick={onReview} disabled={busy} />
+        </RowClickFence>
+      </DockRowShell>
+      {error ? <DockErrorLine code={error} row /> : null}
+    </>
+  );
+}
+
+/** A refused command, in the strip's error voice. */
+function DockErrorLine({ code, row = false }: { code: InlineReviewMessageCode; row?: boolean }) {
+  return (
+    <p
+      className={cn(
+        "border-border-subtle border-t py-[var(--chat-card-pad-y)] text-destructive text-caption",
+        row
+          ? "pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)]"
+          : "px-[var(--chat-card-pad-x)]",
+      )}
+      role="alert"
+      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-disposition-error"]: code }}
+    >
+      <ReviewMessageText code={code} />
+    </p>
   );
 }
 
