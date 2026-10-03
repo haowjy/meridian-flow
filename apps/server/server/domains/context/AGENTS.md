@@ -77,7 +77,9 @@ authenticated thread socket; focus and bounded polling repair dropped hints.
 Project-catalog Manuscript files are filtered through the same live-manifest
 membership policy as ContextFS reads and lists. Draft Apply and Discard reconcile
 the project catalog after changing that membership so mounted trees receive a
-wake hint. Manuscript mutation refresh waits for the aggregate commit before it
+wake hint; the route schedules that refresh after its response
+(`scheduleDraftCatalogRefresh` in `server/lib/draft-review-route.ts`), never
+inside the Apply or Discard transaction. Manuscript mutation refresh waits for the aggregate commit before it
 reads membership, avoiding row-first visibility and cross-transaction lock
 cycles; KB, User, Unfiled, and Work catalogs keep their own visibility rules.
 Routes authenticate and translate transport only; catalog transaction and replay

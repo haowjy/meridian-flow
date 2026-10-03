@@ -163,7 +163,9 @@ the viewer, and the contained dock switch can return to Chat or close the file.
 `viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
 Scratch and Uploads. The Files tab shows Drafts and Scratch only; Work Uploads
 have no Files tab surface (composer attachments still land there, see
-[TODO](TODO)). Files search uses one name matcher across drafts and Scratch;
+[TODO](TODO)). A "Drafts to review" row launches review through the same
+`useAiDraftLauncher` handoff as the other review launchers, not a plain
+document open. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
 (`compareTreePlaces`), a new note sorted by the path it will land at, so a
@@ -447,7 +449,9 @@ unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
 `?draft=` belongs only to a document destination. It names a pending draft in
 the addressed Work and document, never a separate document. A cross-document
-review launch pushes history. The review address owner replaces the current
+review launch pushes history; a launch on the current document replaces the
+entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
+Work: the same path under another Work is a different destination. The review address owner replaces the current
 entry when it adds or removes `?draft=`, so Back does not toggle review.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.

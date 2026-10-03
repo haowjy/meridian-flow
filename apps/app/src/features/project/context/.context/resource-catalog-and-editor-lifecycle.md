@@ -90,8 +90,12 @@ readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
 An active resource-backed host also claims a post-Apply live admission. It
-atomically installs the admitted live binding before acknowledging recovery and
-then presents that session in place of the cached one. A local cache-open
+waits for current server sync on the admitted session, even when that session is
+the one it already shows from the local cache, then atomically installs the live
+binding before acknowledging recovery and presents that session in place of the
+cached one. An availability recheck that returns terminal, deleted, or
+schema-mismatch releases the cached handle and its resource ownership lease
+rather than leaving the stale session mounted. A local cache-open
 failure falls through to exact server availability instead of terminalizing the
 tab from stale metadata. Genuine server failure remains retryable explicitly
 and retries when the resource/catalog authority revision advances. Only the
