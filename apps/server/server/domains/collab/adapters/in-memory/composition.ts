@@ -151,6 +151,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
+    lifecycle: { dispose: () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,
