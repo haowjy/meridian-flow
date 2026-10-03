@@ -188,9 +188,15 @@ obsolete.
   before dispatching the server command. The coordinator applies the ordinary
   adjacent-tab/empty-Editor close fallback and repairs the current address in
   place. It returns a generation-qualified removal receipt that alone owns
-  rollback membership, route-fence cleanup, and navigation authority. A server
+  rollback membership and its exact route artifacts. The fallback navigation
+  supplies operation authority that survives its own deferred history settlement
+  but not a later writer intent. A server
   refusal reopens the exact generation only when no Apply, reopen, or later
-  removal superseded it. The optimistic fallback is the navigation baseline:
+  removal superseded it. Apply promotion, newer-generation admission, and every
+  confirmed Discard advance the coordinator's per-document disposition epoch and
+  irreversibly retire older receipts. Confirmed and remote Discards use the
+  terminal settlement command even when no local tab remains; that path never
+  creates a rollback receipt. The optimistic fallback is the navigation baseline:
   any later writer destination intent makes restoration background-only, even
   if the writer eventually returns to the same fallback address. The refusal
   error remains keyed to the draft and appears when its action is shown again.

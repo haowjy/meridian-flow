@@ -412,6 +412,8 @@ export function ReadableProjectRoute({
           if (options.tab) {
             const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
             if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+            if (installed.tab.kind === "tracked")
+              contextRemoval.admitDraftGeneration(projectId, installed.tab);
             await useContextTabsStore
               .getState()
               .selectTab(projectId, target.workId ?? "", installed.tab.documentId);
@@ -445,6 +447,8 @@ export function ReadableProjectRoute({
             if (options?.tab) {
               const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
               if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+              if (installed.tab.kind === "tracked")
+                contextRemoval.admitDraftGeneration(projectId, installed.tab);
             }
             const selected = options?.tab ?? tab;
             if (selected)
@@ -456,7 +460,7 @@ export function ReadableProjectRoute({
       );
       return result;
     },
-    [contextDestination, projectId],
+    [contextDestination, contextRemoval, projectId],
   );
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
@@ -542,6 +546,31 @@ export function ReadableProjectRoute({
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     results: address.results ? "" : undefined,
     view: address.workView ?? address.worksView,
+  };
+  const updateContextSearchWithAuthority = (update: (value: ProjectSearch) => ProjectSearch) => {
+    const next = update(search);
+    const current = latest.current;
+    if (projectSearchEquals(next, search) || !current.navigation) return undefined;
+    if (next.scheme && next.path !== undefined) {
+      const destination = contextDestination({
+        scheme: next.scheme,
+        path: next.path,
+        workId: next.work === "none" ? null : (next.work ?? workId),
+      });
+      return current.navigation.transitionWithAuthority(destination.address, {
+        replace: true,
+        state: destination.state,
+      });
+    }
+    const destination =
+      next.screen === "work"
+        ? toDestination({ kind: "works" })
+        : next.screen === "context"
+          ? toDestination({ kind: "editor" })
+          : null;
+    return destination
+      ? current.navigation.transitionWithAuthority(destination, { replace: true })
+      : undefined;
   };
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
@@ -632,22 +661,9 @@ export function ReadableProjectRoute({
                   { ...target, documentId: tab.documentId },
                   { replace: true, tab, draftId, isCurrent },
                 ),
+              updateSearchWithAuthority: (_id, update) => updateContextSearchWithAuthority(update),
               updateSearch: (_id, update) => {
-                const next = update(search);
-                if (projectSearchEquals(next, search)) return;
-                if (next.scheme && next.path !== undefined)
-                  return openContext(
-                    {
-                      scheme: next.scheme,
-                      path: next.path,
-                      workId: next.work === "none" ? null : (next.work ?? workId),
-                    },
-                    { replace: true },
-                  );
-                else if (next.screen === "work")
-                  return go(toDestination({ kind: "works" }), { replace: true });
-                else if (next.screen === "context")
-                  return go(toDestination({ kind: "editor" }), { replace: true });
+                return updateContextSearchWithAuthority(update)?.settlement;
               },
             }}
             activeLocalDocumentId={localDocumentId}
