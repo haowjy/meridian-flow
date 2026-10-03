@@ -158,8 +158,7 @@ describe("thread_message presentation", () => {
       status: "error",
       error: { code: "thread_message_not_authorized", message: "Not authorised" },
     };
-    // The refusal is a typed result, saved without `isError`.
-    const tool = messageTool({ result: refused, input: foreground });
+    const tool = messageTool({ result: refused, input: foreground, isError: true });
     expect(isToolViewVisible(tool)).toBe(true);
     expect(toolRowFailed(tool)).toBe(true);
     expect(renderTitle(tool)).toBe("Couldn't send a message to CriticReview chapter 12");
@@ -186,6 +185,7 @@ describe("thread_message presentation", () => {
   it("says when a background message couldn't be sent", () => {
     const failed = messageTool({
       result: { status: "error", error: { message: "Thread not found" } },
+      isError: true,
     });
     expect(isToolViewVisible(failed)).toBe(true);
     expect(toolRowFailed(failed)).toBe(true);

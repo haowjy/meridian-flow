@@ -11,7 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
-import { renderSpawnOutput } from "../spawn/model-spawn-result.js";
+import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
@@ -162,7 +162,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) =>
-          ctx.spawn(input as SpawnToolArgs),
+          spawnToolResult(await ctx.spawn(input as SpawnToolArgs)),
       },
       sequential: true,
       capability: "spawn",
@@ -181,9 +181,8 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       input: ThreadMessageInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) => {
-          return ctx.threadMessage(input as ThreadMessageArgs);
-        },
+        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) =>
+          spawnToolResult(await ctx.threadMessage(input as ThreadMessageArgs)),
       },
       sequential: true,
       capability: "thread_message",
