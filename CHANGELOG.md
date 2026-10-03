@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Draft review: Apply returns the editor to live without unmounting warm editors or showing "Couldn't open this document"; a failed live attach can be retried.
+
 - Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
 
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.

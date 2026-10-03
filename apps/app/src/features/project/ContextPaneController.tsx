@@ -15,6 +15,7 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
+import { activeEditorDocumentId } from "./context/active-editor-document";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
 import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
@@ -83,7 +84,10 @@ export function ContextViewerSurfaceController({
   const postApplyCommands = useOptionalProjectDraftApplyRecovery();
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
+  const selectedDocumentId = activeEditorDocumentId(
+    localDocumentId,
+    selectedTabIdByWork[routeWorkId ?? ""],
+  );
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();

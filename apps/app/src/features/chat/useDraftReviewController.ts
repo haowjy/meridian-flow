@@ -254,6 +254,16 @@ export function useDraftReviewController(
         },
       });
       if (result.kind !== "server-applied-awaiting-live") return result;
+      if (tab?.kind === "tracked" && tab.draftOnly) {
+        await contextRemoval.promoteAppliedDraft(projectId, tab);
+      }
+      if (
+        stateRef.current.surface.kind === "inline" &&
+        stateRef.current.surface.documentId === documentId &&
+        stateRef.current.surface.draftId === draftId
+      ) {
+        dispatch({ type: "exitInline" });
+      }
       const initial = await recovery.awaitInitialOutcome(result.recovery);
       return initial.kind === "live-ready"
         ? { kind: "live-ready" }

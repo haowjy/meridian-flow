@@ -113,4 +113,21 @@ describe("post-Apply context settlement", () => {
     ).resolves.toMatchObject({ kind: "obsolete-obligation", dispositionToken: 9 });
     expect(getContextTabs("project-a")).toEqual(before);
   });
+  it("promotes an applied draft overlay before live-readiness recovery", async () => {
+    const { coordinator } = rig();
+    const tab = getContextTabs("project-a").tabs[0];
+    if (tab?.kind !== "tracked") throw new Error("Expected tracked draft tab");
+
+    await expect(coordinator.promoteAppliedDraft("project-a", tab)).resolves.toBe(true);
+
+    expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs ?? []).toEqual(
+      [],
+    );
+    expect(useContextTabsStore.getState().byProject["project-a"]?.tabs).toMatchObject([
+      { documentId: "document-a" },
+    ]);
+    expect(useContextTabsStore.getState().byProject["project-a"]?.tabs[0]).not.toHaveProperty(
+      "draftOnly",
+    );
+  });
 });

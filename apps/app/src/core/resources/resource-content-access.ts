@@ -227,8 +227,15 @@ export class ResourceContentAccess {
           throw new Error("Resource session has not transferred to registry ownership");
         }
         const prior = existing.ownership.ownershipByProject.get(projectId);
-        if (prior) ownership.release();
-        else existing.ownership.ownershipByProject.set(projectId, ownership);
+        if (
+          prior?.lease.generation === ownership.lease.generation &&
+          prior.persistenceGeneration === ownership.persistenceGeneration
+        ) {
+          ownership.release();
+        } else {
+          existing.ownership.ownershipByProject.set(projectId, ownership);
+          prior?.release();
+        }
         return;
       }
     }

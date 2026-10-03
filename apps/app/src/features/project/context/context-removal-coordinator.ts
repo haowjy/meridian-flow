@@ -1069,6 +1069,37 @@ export class ContextRemovalCoordinator {
     return outcome;
   }
 
+  /** Promote a server-applied draft-only overlay into the durable workspace. */
+  async promoteAppliedDraft(
+    projectId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+  ): Promise<boolean> {
+    if (
+      this.unavailable() ||
+      !tab.draftOnly ||
+      !tab.tabInstanceId ||
+      !tab.reviewWorkId ||
+      !tab.reviewDraftId ||
+      !tab.tabInstanceToken
+    )
+      return false;
+    const identity = {
+      documentId: tab.documentId,
+      tabInstanceId: tab.tabInstanceId,
+      reviewWorkId: tab.reviewWorkId,
+      reviewDraftId: tab.reviewDraftId,
+      tabInstanceToken: tab.tabInstanceToken,
+    };
+    const settled = await this.workspace.settleDraft(projectId, identity);
+    if (settled.kind !== "settled") return false;
+    const promoted = this.workspace.closeReviewTab(projectId, identity).kind === "consumed";
+    if (promoted) {
+      const state = this.projects.get(projectId);
+      if (state) this.publish(state);
+    }
+    return promoted;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

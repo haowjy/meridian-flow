@@ -55,6 +55,8 @@ type AcknowledgeLiveBinding = (
 
 const AcknowledgeLiveBindingContext = createContext<AcknowledgeLiveBinding | null>(null);
 const LiveBindingHandoffContext = createContext<LiveBindingHandoff | null>(null);
+const LIVE_BINDING_CLAIM_TIMEOUT_MS = 1_000;
+const LIVE_BINDING_COMPLETION_TIMEOUT_MS = 15_000;
 
 export function EditorReviewHandoffProvider({
   projectId,
@@ -74,6 +76,8 @@ export function EditorReviewHandoffProvider({
     sequence: number;
     owner: object | null;
     abort: AbortController;
+    claimTimeout: ReturnType<typeof globalThis.setTimeout>;
+    completionTimeout: ReturnType<typeof globalThis.setTimeout>;
     settle: (result: LiveDocumentAcknowledgement) => void;
   } | null>(null);
   const [advertisedBinding, setAdvertisedBinding] = useState<LiveBindingRequest | null>(null);
@@ -125,11 +129,19 @@ export function EditorReviewHandoffProvider({
     const abort = new AbortController();
     return new Promise<LiveDocumentAcknowledgement>((resolve) => {
       let settled = false;
-      const timeout = globalThis.setTimeout(() => settle({ kind: "unclaimed" }), 1_000);
+      const claimTimeout = globalThis.setTimeout(
+        () => settle({ kind: "unclaimed" }),
+        LIVE_BINDING_CLAIM_TIMEOUT_MS,
+      );
+      const completionTimeout = globalThis.setTimeout(
+        () => settle({ kind: "unusable" }),
+        LIVE_BINDING_COMPLETION_TIMEOUT_MS,
+      );
       const settle = (result: LiveDocumentAcknowledgement) => {
         if (settled) return;
         settled = true;
-        globalThis.clearTimeout(timeout);
+        globalThis.clearTimeout(claimTimeout);
+        globalThis.clearTimeout(completionTimeout);
         abort.abort();
         signal.removeEventListener("abort", cancel);
         if (bindingRequest.current?.sequence === requestSequence) {
@@ -144,6 +156,8 @@ export function EditorReviewHandoffProvider({
         sequence: requestSequence,
         owner: null,
         abort,
+        claimTimeout,
+        completionTimeout,
         settle,
       };
       if (signal.aborted) {
@@ -157,6 +171,7 @@ export function EditorReviewHandoffProvider({
     const request = bindingRequest.current;
     if (!request || request.sequence !== requestSequence || request.owner) return false;
     request.owner = owner;
+    globalThis.clearTimeout(request.claimTimeout);
     return true;
   }, []);
   const completeLiveBinding = useCallback(
