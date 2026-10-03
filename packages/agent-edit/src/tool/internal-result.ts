@@ -22,20 +22,14 @@ interface InternalWriteResultBase {
   error?: WriteErrorDetail;
 }
 
-export function documentNotFound(
-  commandName: DocumentCommandName,
-  filePath: string,
-): InternalWriteResult {
-  return status("document_not_found", documentNotFoundMessage(commandName, filePath));
+export function documentNotFound(commandName: DocumentCommandName): InternalWriteResult {
+  return status("document_not_found", documentNotFoundMessage(commandName));
 }
 
 /** The one sentence every missing-document result gives the model. */
-export function documentNotFoundMessage(
-  commandName: DocumentCommandName,
-  filePath: string,
-): string {
+export function documentNotFoundMessage(commandName: DocumentCommandName): string {
   return commandName === "read"
-    ? `File not found. Check the path, or use write(command="create", path="${filePath}") to make a new one.`
+    ? "File not found. Check the path with `ls`."
     : "File not found. Read the project to find the right path.";
 }
 

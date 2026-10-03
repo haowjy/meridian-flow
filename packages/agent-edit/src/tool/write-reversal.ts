@@ -512,7 +512,6 @@ export function createWriteReversal(deps: {
         deps.coordinator,
         input.docId,
         input.commandName,
-        input.docId,
         async (liveDoc) => {
           const first = input.plans[0];
           if (!first) throw new Error("Prepared reversal group must not be empty");
@@ -606,7 +605,6 @@ export function createWriteReversal(deps: {
                 deps.coordinator,
                 input.docId,
                 input.commandName,
-                input.docId,
                 (committedDoc) => applyToLiveDocument(committedDoc),
               );
               if (!projected || "status" in projected) {

@@ -370,7 +370,6 @@ export function createResponseCommitter(deps: {
           coordinator,
           docBuffer.docId,
           docBuffer.commandName,
-          docBuffer.docId,
           (liveDoc) =>
             mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
@@ -433,7 +432,6 @@ export function createResponseCommitter(deps: {
           coordinator,
           docBuffer.docId,
           docBuffer.commandName,
-          docBuffer.docId,
           (liveDoc) =>
             mutationCommit.applyCommittedUpdateWithRecheck(
               liveDoc,
@@ -666,7 +664,6 @@ export function createResponseCommitter(deps: {
         coordinator,
         docBuffer.docId,
         docBuffer.commandName,
-        docBuffer.docId,
         (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input, beforeRecoverySnapshot),
       );
       if (isInternalWriteResult(rechecked) || !rechecked) {
@@ -770,7 +767,6 @@ export function createResponseCommitter(deps: {
         coordinator,
         docBuffer.docId,
         docBuffer.commandName,
-        docBuffer.docId,
         (liveDoc) => Y.encodeStateAsUpdate(liveDoc),
       );
       if (isInternalWriteResult(snapshot) || !snapshot) {
