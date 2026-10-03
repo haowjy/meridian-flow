@@ -37,6 +37,72 @@ async function currentDraftId(
   return draft.draftId;
 }
 
+type Harness = ReturnType<typeof createHarness>;
+
+// A live write records its authoring response, so these replies are real response rows.
+const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
+const MIXED_OUTER_RESPONSE = "00000000-0000-4000-8000-000000000832";
+
+/** Stages a reply with a live beta write and a drafted alpha write, and records every surface. */
+async function stageMixedSave(harness: Harness, responseId: string) {
+  await harness.seedAndStage(responseId, { liveBeta: true });
+  return {
+    ...(await harness.captureState()),
+    liveBeta: await harness.liveMarkdown(BETA_ID),
+    liveBetaRows: await harness.liveAgentWriteRows(BETA_ID),
+    changeTrailRows: await harness.changeTrailRowCounts(),
+  };
+}
+
+/** D42: a mixed save that never committed left nothing, live or drafted, anywhere. */
+async function expectMixedSaveRolledBack(
+  harness: Harness,
+  responseId: string,
+  before: Awaited<ReturnType<typeof stageMixedSave>>,
+) {
+  // Staging claims the write's mutation row and handle; the save adds the rest.
+  expect(before.liveBetaRows).toMatchObject({ updates: 0, reversals: 0 });
+  expect(await harness.responseJournalRows()).toEqual([]);
+  expect(await harness.databaseBranchHashes()).toEqual(before.databaseBranchHashes);
+  expect(await harness.threadPeerMarkdown()).toEqual(before.threadPeerMarkdown);
+  expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
+  expect(await harness.liveMarkdown(BETA_ID)).toBe(before.liveBeta);
+  expect(await harness.liveAgentWriteRows(BETA_ID)).toEqual(before.liveBetaRows);
+  expect(await harness.changeTrailRowCounts()).toEqual(before.changeTrailRows);
+  expect(harness.stagedUpdates(responseId)).toEqual([[ALPHA_ID], [BETA_ID]]);
+  expect(harness.pendingWatermarkDocuments()).toEqual([]);
+  expect(harness.responseEvents(responseId)).not.toContainEqual(
+    expect.objectContaining({ transition: "closed" }),
+  );
+  expect(harness.afterCommitEffects()).toEqual({
+    autoPushSchedules: [],
+    branchBroadcasts: [],
+    watermarkCommits: [],
+  });
+  // Open editors saw nothing, and no live-to-draft pull was scheduled.
+  expect(harness.liveRoomBroadcasts()).toEqual([]);
+  expect(harness.scheduledLivePulls()).toEqual([]);
+  expect(await harness.noticeRows()).toEqual([]);
+}
+
+/** The retained reply saves on retry: beta live and in open editors, alpha in the draft. */
+async function expectMixedSaveCommitted(harness: Harness, responseId: string) {
+  await expect(harness.commit(responseId)).resolves.toMatchObject({
+    status: "committed",
+    documents: expect.arrayContaining([
+      expect.objectContaining({ documentId: ALPHA_ID }),
+      expect.objectContaining({ documentId: BETA_ID }),
+    ]),
+  });
+  expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
+  expect(await harness.liveAgentWriteRows(BETA_ID)).toMatchObject({ updates: 1 });
+  expect(harness.liveRoomBroadcasts()).toContain(BETA_ID);
+  expect(harness.scheduledLivePulls()).toEqual([BETA_ID]);
+  expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Agent alpha.");
+  expect(await harness.responseJournalRows()).toHaveLength(1);
+  expect(harness.stagedUpdates(responseId)).toEqual([[], []]);
+}
+
 describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
@@ -85,6 +151,36 @@ describe("change trail (postgres)", () => {
       ]),
     });
     await harness.expectSuccessfulCommit("retry-response");
+  });
+
+  it("rolls back a live and a drafted document when the save fails after the live append", async () => {
+    const harness = createHarness();
+    const before = await stageMixedSave(harness, MIXED_RETRY_RESPONSE);
+
+    // Beta's live append runs first; alpha's branch journal insert then fails.
+    harness.failJournalInsertAt = 1;
+    await expect(harness.commit(MIXED_RETRY_RESPONSE)).rejects.toThrow(
+      "injected branch journal failure",
+    );
+
+    await expectMixedSaveRolledBack(harness, MIXED_RETRY_RESPONSE, before);
+    harness.failJournalInsertAt = null;
+    await expectMixedSaveCommitted(harness, MIXED_RETRY_RESPONSE);
+  });
+
+  it("rolls back a live and a drafted document when an outer transaction rolls back later", async () => {
+    const harness = createHarness();
+    const before = await stageMixedSave(harness, MIXED_OUTER_RESPONSE);
+
+    await expect(
+      runInDrizzleTransaction(db, async () => {
+        await harness.commit(MIXED_OUTER_RESPONSE);
+        throw new Error("later outer failure");
+      }),
+    ).rejects.toThrow("later outer failure");
+
+    await expectMixedSaveRolledBack(harness, MIXED_OUTER_RESPONSE, before);
+    await expectMixedSaveCommitted(harness, MIXED_OUTER_RESPONSE);
   });
 
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {

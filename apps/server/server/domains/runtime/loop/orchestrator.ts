@@ -1373,7 +1373,20 @@ function buildGenerateRequestFromAssembled(input: {
   };
 }
 
-/** Staged edits belong to a response scope, which rotates at a Work switch. */
+/**
+ * A call that must see the reply's writes saved first. A Work switch changes
+ * where later writes go; an undo or redo reverses saved history, so it can't
+ * reach a write still staged in this reply.
+ */
+function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
+  const args = call.arguments;
+  if (!args || typeof args !== "object" || !("command" in args)) return false;
+  if (call.name === "work") return args.command === "switch";
+  if (call.name === "write") return args.command === "undo" || args.command === "redo";
+  return false;
+}
+
+/** Staged edits belong to a response scope, which rotates at a save boundary. */
 function createResponseScope(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -2206,14 +2219,7 @@ async function executeLoop({
               return cancelExit();
             }
 
-            if (
-              call.name === "work" &&
-              call.arguments &&
-              typeof call.arguments === "object" &&
-              "command" in call.arguments &&
-              call.arguments.command === "switch" &&
-              scope.hasWrites
-            ) {
+            if (scope.hasWrites && isSaveBoundary(call)) {
               const boundary = await scope.commit();
 
               if (boundary.status === "draft_closed") {

@@ -279,6 +279,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
       });
       expect(reviewable.map((item) => item.documentId)).toEqual([KB_ID]);
+      // Positive control for the failed-save case: a save does reach open editors.
+      expect(hocuspocus.broadcasts.some((name) => name.includes(SCRATCH_ID))).toBe(true);
+      expect(hocuspocus.broadcasts.some((name) => name.includes(KB_ID))).toBe(false);
+    });
+
+    it("undoes scratch in the reply after a mixed save, and keeps the drafted kb write", async () => {
+      const collab = createTestCollab();
+      await stageMixedReply(collab);
+      // The orchestrator saves the reply before an undo and runs it in a fresh reply.
+      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      const nextResponseId = "00000000-0000-4000-8000-000000000a12";
+      await db.insert(schema.modelResponses).values({
+        id: nextResponseId as never,
+        turnId: TURN_ID as never,
+        sequence: 2,
+        provider: "fixture",
+        model: "fixture",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      const agentEdit = collab.agentEdit();
+
+      await expect(
+        agentEdit.write(
+          { command: "undo", file: "notes.md", documentId: SCRATCH_ID },
+          { ...context(live), responseId: nextResponseId },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        agentEdit.write(
+          { command: "insert", file: "notes.md", documentId: SCRATCH_ID, content: "Agent retry." },
+          { ...context(live), responseId: nextResponseId },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await expect(collab.finalizeResponseCommit(nextResponseId, ctx)).resolves.toMatchObject({
+        status: "committed",
+      });
+
+      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
+      expect(await liveText(collab, SCRATCH_ID)).toContain("Agent retry.");
+      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
     });
 
     it("saves nothing and shows nothing in open editors when the transaction fails", async () => {
@@ -378,6 +420,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(committed.documents.map((document) => document.documentId)).toEqual([KB_ID]);
       expect(await liveText(collab, KB_ID)).toContain("Agent lore.");
+      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
+      expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
+    });
+
+    it("refuses a reply's only document when its Work was archived, and saves nothing", async () => {
+      const collab = createTestCollab();
+      await seed(collab);
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "notes.md",
+            documentId: SCRATCH_ID,
+            content: "Agent notes.",
+          },
+          { ...context(live), responseId: RESPONSE_ID },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+
+      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+
+      expect(committed).toMatchObject({
+        status: "committed",
+        documents: [],
+        refused: [{ documentId: SCRATCH_ID, reason: "work_archived", workSlug: "rewrite" }],
+      });
       expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
       expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
     });
