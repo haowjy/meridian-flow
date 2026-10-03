@@ -233,4 +233,45 @@ describe("post-Apply context settlement", () => {
       expect(getContextTabs("project-a").tabs).toEqual([]);
     }
   });
+
+  it("lets an explicit Review re-open the draft of a refused Discard at the same address", () => {
+    const search: ProjectSearch = {
+      screen: "context",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      work: "work-a",
+    };
+    const updateSearch = vi.fn();
+    const route = {
+      readSearch: () => search,
+      updateSearch,
+      transition: async () => ({ kind: "applied" as const }),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-a");
+    const target = { scheme: "manuscript" as const, path: "/chapter.md", workId: "work-a" };
+    const select = () => {
+      const revision = coordinator.beginRouteSelection("project-a", target);
+      coordinator.bindRouteSelection("project-a", revision, {
+        kind: "server",
+        documentId: "document-a",
+      });
+    };
+    select();
+    coordinator.discardDraft("project-a", "work-a", "document-a", "draft-a");
+    expect(getContextTabs("project-a").tabs).toEqual([]);
+    updateSearch.mockClear();
+
+    // The refused draft is still pending: Review installs its overlay again.
+    const opened = useContextTabsStore.getState().openTab("project-a", draftTab("reopened"));
+    if (opened.kind !== "opened" || opened.tab.kind !== "tracked") throw new Error("not opened");
+    coordinator.admitDraftReview("project-a", opened.tab);
+    select();
+
+    // The removal guard no longer repairs the address away from the draft.
+    expect(updateSearch).not.toHaveBeenCalled();
+    expect(getContextTabs("project-a").tabs).toMatchObject([
+      { documentId: "document-a", draftOnly: true },
+    ]);
+  });
 });

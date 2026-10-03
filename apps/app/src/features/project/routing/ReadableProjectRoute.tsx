@@ -407,6 +407,8 @@ export function ReadableProjectRoute({
           if (options.tab) {
             const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
             if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+            if (installed.tab.kind === "tracked")
+              contextRemoval.admitDraftReview(projectId, installed.tab);
             await useContextTabsStore
               .getState()
               .selectTab(projectId, target.workId ?? "", installed.tab.documentId);
@@ -440,6 +442,8 @@ export function ReadableProjectRoute({
             if (options?.tab) {
               const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
               if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+              if (installed.tab.kind === "tracked")
+                contextRemoval.admitDraftReview(projectId, installed.tab);
             }
             const selected = options?.tab ?? tab;
             if (selected)
@@ -451,7 +455,7 @@ export function ReadableProjectRoute({
       );
       return result;
     },
-    [contextDestination, projectId],
+    [contextDestination, contextRemoval, projectId],
   );
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
