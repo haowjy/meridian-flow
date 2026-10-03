@@ -245,6 +245,40 @@ describe("response staging", () => {
     expect(text).toMatch(/swept: [0-9a-f]+\|Alpha para\. SAME\\_BLOCK\\_WRITER/);
   });
 
+  it("reports no sweep when a reply removes and replaces the writer's text it asked to", async () => {
+    const ctx = harness({ "chapter.md": "# Race\n\nAlpha para.\n\nBeta para.\n\nGamma para." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-own-removal",
+      responseId: "response-own-removal",
+    };
+    await ctx.core.write({ command: "remove", file: "chapter.md", in: [2, 3] }, responseContext);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 2, content: "Gamma AI edit." },
+      responseContext,
+    );
+
+    const committed = await ctx.core.commitResponse("response-own-removal");
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Gamma AI edit."]);
+    expect(committed.documents[0]?.lateSweep).toBeUndefined();
+    for (const receipt of committed.documents[0]?.receipts ?? []) {
+      expect(renderAgentEditResult(receipt.result)).not.toContain("swept");
+    }
+  });
+
+  it("reports no sweep when a write outside a reply removes the writer's text it asked to", async () => {
+    const ctx = harness({ "chapter.md": "# Race\n\nAlpha para.\n\nBeta para." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+
+    const result = await ctx.core.write({ command: "remove", file: "chapter.md", in: 2 }, context);
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Beta para."]);
+    expect(outcomeText(result)).not.toContain("swept");
+  });
+
   it("drops staged response buffers when invalidating a thread", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);

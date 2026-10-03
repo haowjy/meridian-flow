@@ -82,7 +82,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("commits a fresh-process destructive write and reports the writer sweep", async () => {
+  it("commits a fresh-process destructive write without calling its own edit a sweep", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const responseContext = {
       ...context,
@@ -110,9 +110,7 @@ describe("runtime store", () => {
     );
 
     expect(outcomeText(edit)).toContain("status: success");
-    expect(outcomeText(edit)).toContain("swept:");
-    expect(outcomeText(edit)).toContain("Alpha sword.");
-    expect(outcomeText(edit)).toContain("Beta shield.");
+    expect(outcomeText(edit)).not.toContain("swept");
     expect(
       edit.result.blocks?.some((group) =>
         group.items.some((block) => block.body === "Beta shield."),
