@@ -189,6 +189,9 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
+          const reviewOverlayTab = get()._reviewOverlayByProject[projectId]?.tabs.find(
+            (candidate) => candidate.documentId === tab.documentId && candidate.draftOnly,
+          );
           if (tab.draftOnly) {
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
@@ -226,7 +229,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 },
               };
             });
-          } else {
+          } else if (!reviewOverlayTab) {
             dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
           }
           const installed = composeProjectSlice(get(), projectId).tabs.find(

@@ -169,6 +169,10 @@ owning Work before changing the workspace.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
+Readable-address admission for that same server document keeps the synthesized
+review member authoritative; it must not create a durable tab hidden underneath
+the review overlay. Apply is the operation that graduates the member into the
+durable workspace.
 
 - Every Apply path materializes the whole branch and clears draft metadata —
   keep the tab, drop the marker — after the awaited draft-list refresh but while

@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
+import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
 import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -63,20 +65,32 @@ vi.mock("@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecut
   }),
 }));
 
-const draftTab = {
-  kind: "tracked" as const,
+const draftTab = contextTabFromDraftGroup({
+  workId: "work-a",
   documentId: "document-a",
-  scheme: "manuscript" as const,
-  path: "/chapter.md",
-  name: "chapter.md",
-  editable: true as const,
-  filetype: "markdown" as const,
-  schemaType: "document" as const,
-  draftOnly: true,
-  reviewWorkId: "work-a",
-  reviewDraftId: "draft-a",
-  tabInstanceToken: "token-a",
-};
+  draftId: "draft-a",
+  contextPath: "/chapter.md",
+  isNewDocument: true,
+});
+if (!draftTab) throw new Error("Draft tab fixture must be editable");
+
+const addressedTab = contextTabFromFile(
+  "manuscript",
+  {
+    kind: "file",
+    entryId: "entry-a",
+    parentId: "manuscript-root",
+    documentId: "document-a",
+    name: "chapter.md",
+    path: "/chapter.md",
+    uri: "manuscript://@work-a/chapter.md",
+    provisionalName: false,
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  },
+  "work-a",
+);
 
 let controller: DraftReviewController | null = null;
 
@@ -111,6 +125,11 @@ describe("draft-only Discard", () => {
       _workspaceHydrated: false,
     });
     useContextTabsStore.getState().openTab("project-a", draftTab);
+    // The readable address owner resolves the same server document after the
+    // review launcher installs its transient tab. It must not create a hidden
+    // durable member underneath the review overlay.
+    useContextTabsStore.getState().openTab("project-a", addressedTab);
+    void useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
   });
 
   it("closes immediately, then restores the tab, review, and address when Discard fails", async () => {
@@ -124,6 +143,7 @@ describe("draft-only Discard", () => {
       </Providers>,
       async () => {
         await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
+        expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toEqual([]);
         let disposition: Promise<unknown> | undefined;
         await act(async () => {
           disposition = controller?.discard("document-a", "draft-a");
