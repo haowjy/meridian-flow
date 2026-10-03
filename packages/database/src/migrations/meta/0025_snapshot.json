@@ -1,5 +1,5 @@
 {
-  "id": "ead1f927-0745-43f3-82f2-5a6c975c0cad",
+  "id": "e0fee2d3-ae1e-4453-9bd3-f0826ebbdecc",
   "prevId": "ec4a4adc-80e4-4342-9df1-0baf46f0da4b",
   "version": "7",
   "dialect": "postgresql",
@@ -1818,7 +1818,7 @@
       "checkConstraints": {
         "thread_execution_reports_origin_valid": {
           "name": "thread_execution_reports_origin_valid",
-          "value": "\"thread_execution_reports\".\"origin\" IN ('spawn','foreground_message','thread_run')"
+          "value": "\"thread_execution_reports\".\"origin\" IN ('spawn','message','thread_run')"
         },
         "thread_execution_reports_delivery_valid": {
           "name": "thread_execution_reports_delivery_valid",
@@ -1826,7 +1826,7 @@
         },
         "thread_execution_reports_origin_delivery_valid": {
           "name": "thread_execution_reports_origin_delivery_valid",
-          "value": "(\"thread_execution_reports\".\"origin\" = 'spawn' AND \"thread_execution_reports\".\"delivery_mode\" IN ('background_notification','direct')) OR (\"thread_execution_reports\".\"origin\" = 'foreground_message' AND \"thread_execution_reports\".\"delivery_mode\" = 'direct') OR (\"thread_execution_reports\".\"origin\" = 'thread_run' AND \"thread_execution_reports\".\"delivery_mode\" = 'none')"
+          "value": "(\"thread_execution_reports\".\"origin\" IN ('spawn','message') AND \"thread_execution_reports\".\"delivery_mode\" IN ('background_notification','direct')) OR (\"thread_execution_reports\".\"origin\" = 'thread_run' AND \"thread_execution_reports\".\"delivery_mode\" = 'none')"
         },
         "thread_execution_reports_capture_call_coherent": {
           "name": "thread_execution_reports_capture_call_coherent",
