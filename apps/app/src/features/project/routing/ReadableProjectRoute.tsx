@@ -30,7 +30,12 @@ import {
   useProjectChatNavigation,
 } from "./chat-navigation";
 import { editorDefaultWorkPending } from "./editor-default-work";
-import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
+import {
+  canonicalDocumentPath,
+  projectAddressMatchesContextTarget,
+  reconcileDocumentAddress,
+  resolveLocalDocumentAddress,
+} from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -224,6 +229,9 @@ export function ReadableProjectRoute({
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
+  const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
+    return projectAddressMatchesContextTarget(latest.current.address, target);
+  }, []);
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
       shown.current = { workId, local: localPointer };
@@ -324,13 +332,14 @@ export function ReadableProjectRoute({
     return {
       ...address,
       destination: next,
+      draftId: undefined,
       workView: next.kind === "work" ? address.workView : undefined,
       worksView: undefined,
       results: false,
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteTarget, preparedTab?: ContextTab) => {
+    (target: ContextRouteTarget, preparedTab?: ContextTab, draftId?: string) => {
       const current = latest.current;
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
@@ -365,9 +374,10 @@ export function ReadableProjectRoute({
         address: {
           ...current.address,
           destination: target.path
-            ? { kind: "document", scheme: target.scheme, path: target.path.replace(/^\/+/, "") }
+            ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
             : { kind: "editor" },
           work: workIdSelection(target.workId),
+          draftId,
           results: false,
         } as ProjectAddress,
         state,
@@ -382,7 +392,23 @@ export function ReadableProjectRoute({
     ): Promise<NavigationSettlement> => {
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
-      const next = contextDestination(target, options?.tab);
+      const next = contextDestination(target, options?.tab, options?.draftId);
+      const alreadyOnDocument = projectAddressMatchesContextTarget(current.address, target);
+      if (
+        options?.replace === undefined &&
+        options?.replaceIfSameDocument === true &&
+        alreadyOnDocument
+      ) {
+        const replacement = await current.navigation.replaceIfCurrent(
+          current.navigation.capture(),
+          next.address,
+        );
+        if (replacement.kind === "replaced") {
+          return { kind: "applied" };
+        }
+        if (replacement.kind === "failed") return replacement;
+        return { kind: "superseded" };
+      }
       const workspace = getContextTabs(projectId);
       const tab = target.documentId
         ? workspace.tabs.find((tab) => tab.documentId === target.documentId)
@@ -391,7 +417,11 @@ export function ReadableProjectRoute({
           );
       const result = await current.navigation.transition(
         next.address,
-        { replace: options?.replace ?? false, state: next.state },
+        {
+          replace:
+            options?.replace ?? (options?.replaceIfSameDocument === true && alreadyOnDocument),
+          state: next.state,
+        },
         {
           isCurrent: () =>
             options?.canCommit?.() !== false &&
@@ -416,6 +446,15 @@ export function ReadableProjectRoute({
     },
     [contextDestination, projectId],
   );
+  const setEditorReviewDraftId = useCallback((draftId: string | null) => {
+    const current = latest.current;
+    if (!current.navigation) return;
+    const ticket = current.navigation.capture();
+    void current.navigation.replaceIfCurrent(ticket, {
+      ...current.address,
+      draftId: draftId ?? undefined,
+    });
+  }, []);
   const closeDestination = useCallback(
     (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;
@@ -536,6 +575,7 @@ export function ReadableProjectRoute({
       screen={activeScreen}
       openContextRoute={openContext}
       captureNavigation={captureNavigation}
+      isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >
       <ChatNavigationProvider value={chat}>
@@ -596,12 +636,14 @@ export function ReadableProjectRoute({
             activeContextScheme={search.scheme ?? null}
             activeContextFolder={search.folder ?? null}
             activeContextPath={search.path ?? null}
+            reviewDraftId={address.draftId}
             resultsOpen={address.results}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
+            onSetEditorReviewDraftId={setEditorReviewDraftId}
             onOpenResults={() => go({ ...address, results: true }, { replace: true })}
             onCloseResults={() => go({ ...address, results: false }, { replace: true })}
           />

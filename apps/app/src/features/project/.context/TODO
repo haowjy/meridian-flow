@@ -19,3 +19,16 @@
   the Work `uploads://` scheme:
   [#631](https://github.com/haowjy/meridian-flow/issues/631). Uploading into
   the file tree is [#630](https://github.com/haowjy/meridian-flow/issues/630).
+- Review address exits on a transient path mismatch: `dock/EditorReviewAddressOwner.tsx`
+  exits review whenever the reviewed draft's path differs from the Editor
+  address, including mid-rename or while the Work drafts list refetches and
+  briefly drops the group. Distinguish "draft gone" from "path not known yet"
+  before exiting. Not reproduced; found in review of draft-review-repair.
+- Cross-document launch during review has no test: launching review on B while
+  reviewing A ends in the right state but does two extra history replaces
+  (`EditorReviewAddressOwner.tsx` strips `?draft=` without checking
+  `pendingDraftId`). Add the test and skip the strip while a launch is pending.
+- Header Apply still flashes "Stop" for about a second on an existing
+  document (`features/editor/DraftReviewHeader.tsx`, the recovery item from
+  `usePostApplySnapshot`). The draft-review redesign (work
+  draft-review-repair, PR 2) replaces this header; settle the flash there.

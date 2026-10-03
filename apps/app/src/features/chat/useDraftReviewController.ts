@@ -17,8 +17,13 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import {
+  useIsCurrentContextRoute,
+  useOpenContextRoute,
+} from "@/features/project/routing/ProjectNavigationContext";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -102,6 +107,8 @@ export function useDraftReviewController(
   const accountId = usePostApplyAccountId();
   const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
+  const openContextRoute = useOpenContextRoute();
+  const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
@@ -263,6 +270,15 @@ export function useDraftReviewController(
         stateRef.current.surface.draftId === draftId
       ) {
         dispatch({ type: "exitInline" });
+      }
+      if (tab?.kind === "tracked" && isCurrentContextRoute && openContextRoute) {
+        const target = routeTargetForTab(tab, workId);
+        if (isCurrentContextRoute(target)) {
+          await openContextRoute(target, {
+            replace: true,
+            isCurrent: () => isCurrentContextRoute(target),
+          });
+        }
       }
       const initial = await recovery.awaitInitialOutcome(result.recovery);
       return initial.kind === "live-ready"

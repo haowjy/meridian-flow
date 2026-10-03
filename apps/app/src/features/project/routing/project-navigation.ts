@@ -30,7 +30,7 @@ export type DisplayedProjectSelection = {
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
-  | { kind: "failed"; ticket: ProjectNavigationTicket };
+  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
 export type NavigationSettlement =
@@ -280,7 +280,9 @@ export function createProjectNavigation(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
     ): Promise<ProjectAddressReplacement> {
-      if (!isCurrent(ticket)) return { kind: "superseded" };
+      // Address ownership effects may race a writer's destination command. A
+      // delayed repair must never retire that command or ask its leave guard.
+      if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
       const href = projectAddressHref(address);
       const state = projectAddressState(address, entry.state);
@@ -290,10 +292,12 @@ export function createProjectNavigation(
           JSON.stringify(entry.state.meridianProjectEmptySelection)
       )
         return { kind: "replaced" };
-      const result = await transition(address, { replace: true, state });
-      if (result.kind === "applied") return { kind: "replaced" };
-      if (result.kind === "failed") return { kind: "failed", ticket: result.ticket };
-      return { kind: "superseded" };
+      try {
+        port.replaceEntry(href, state);
+        return { kind: "replaced" };
+      } catch (error) {
+        return { kind: "failed", error, ticket: capture() };
+      }
     },
     dispose() {
       claimIntent(false);

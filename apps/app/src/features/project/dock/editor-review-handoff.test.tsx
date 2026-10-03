@@ -78,7 +78,7 @@ function ScopeProbe({ name }: { name: string }) {
 function reviewValue(workId: string, enterInlineReview = vi.fn()): DraftReviewContextValue {
   const documentId = draftA.documentId;
   const draftId = workId === "work-a" ? draftA.draftId : draftB.draftId;
-  const groups = [{ documentId, drafts: [{ draftId }] }];
+  const groups = [{ documentId, draft: { draftId } }];
   return {
     controller: {
       workId,
@@ -396,7 +396,7 @@ describe("Editor review handoff", () => {
     });
   });
 
-  it("does not advertise an already-matching intent when navigation rejects", async () => {
+  it("enters an already-committed matching review without waiting for navigation", async () => {
     const route = deferred();
     const navigate = vi.fn(() => route.promise);
     await withHarness(async ({ enterB }) => {
@@ -405,12 +405,41 @@ describe("Editor review handoff", () => {
       await act(async () => {
         pending = openReview?.(draftB);
       });
-      expect(enterB).not.toHaveBeenCalled();
+      expect(enterB).toHaveBeenCalledWith(draftB.documentId, draftB.draftId);
 
       route.reject(new Error("route rejected"));
       await act(async () => {
         await expect(pending).rejects.toThrow("route rejected");
       });
+      expect(enterB).toHaveBeenCalledOnce();
+    }, navigate);
+  });
+
+  it("retries a superseded route settlement once with the review address", async () => {
+    const navigate = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: "superseded" })
+      .mockResolvedValueOnce({ kind: "applied" });
+    await withHarness(async ({ enterB }) => {
+      await act(async () => showEditor?.(draftB));
+      await act(async () => openReview?.(draftB));
+      expect(enterB).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(navigate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ documentId: draftB.documentId }),
+        expect.objectContaining({ replaceIfSameDocument: true, draftId: draftB.draftId }),
+      );
+    }, navigate);
+  });
+
+  it("settles a cancelled route quietly without retrying", async () => {
+    const navigate = vi.fn().mockResolvedValue({ kind: "cancelled" });
+    await withHarness(async ({ enterB }) => {
+      await act(async () => {
+        await expect(openReview?.(draftB)).resolves.toBeUndefined();
+      });
+      expect(navigate).toHaveBeenCalledOnce();
+      await act(async () => showEditor?.(draftB));
       expect(enterB).not.toHaveBeenCalled();
     }, navigate);
   });

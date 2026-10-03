@@ -7,13 +7,32 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ProjectDestination } from "./project-address";
+import type { ProjectAddress, ProjectDestination } from "./project-address";
+import type { ContextRouteTarget } from "./project-route";
 
 type DocumentDestination = Extract<ProjectDestination, { kind: "document" }>;
 type AvailableDocumentAuthority = Extract<
   ProjectContextIdentityResolution,
   { kind: "available" }
 >["authority"];
+
+export function canonicalDocumentPath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+export function projectAddressMatchesContextTarget(
+  address: ProjectAddress,
+  target: ContextRouteTarget,
+): boolean {
+  return (
+    address.destination.kind === "document" &&
+    address.destination.scheme === target.scheme &&
+    canonicalDocumentPath(address.destination.path) === canonicalDocumentPath(target.path) &&
+    (target.workId === null
+      ? address.work.kind === "none"
+      : address.work.kind === "id" && address.work.id === target.workId)
+  );
+}
 
 export function resolveLocalDocumentAddress(
   projectId: string,
@@ -22,7 +41,7 @@ export function resolveLocalDocumentAddress(
   catalog: CatalogContextView | null,
 ): { result: DocumentAddressResult; file: CatalogFile } | undefined {
   if (!catalog) return undefined;
-  const file = catalog.findPath(`/${destination.path.replace(/^\/+/, "")}`);
+  const file = catalog.findPath(`/${canonicalDocumentPath(destination.path)}`);
   if (file?.kind !== "file" || !file.editable || !file.localContent) return undefined;
   const entry = catalog.normalized.entries.get(file.documentId);
   if (entry?.kind !== "file") return undefined;
