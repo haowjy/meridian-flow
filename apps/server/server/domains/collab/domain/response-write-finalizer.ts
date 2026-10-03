@@ -77,6 +77,8 @@ export function createResponseWriteFinalizer(input: {
   branches: ResponseBranchFinalization;
   projections: DocumentProjectionRefreshService;
   notices: PostDurabilityNoticeService;
+  /** Queues a callback for after the ambient transaction commits; false when there is none. */
+  deferUntilCommit?(callback: () => Promise<void>): boolean;
 }): ResponseWriteFinalizer {
   const mapResult = (result: ResponseSaveResult): ResponseWriteCommitFinalizeResult => ({
     status: "committed",
@@ -119,11 +121,19 @@ export function createResponseWriteFinalizer(input: {
             ctx.threadId,
           );
         }
-        await input.projections.refresh(
-          { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
-          "collab.response_finalize",
-        );
       }
+      // The refresh reads the live document, which loads journal rows into
+      // open rooms. Inside the save's transaction that would show open
+      // editors a reply a later rollback never saves, so it waits for commit.
+      const refresh = async () => {
+        for (const document of result.documents) {
+          await input.projections.refresh(
+            { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
+            "collab.response_finalize",
+          );
+        }
+      };
+      if (!input.deferUntilCommit?.(refresh)) await refresh();
       return mapResult(result);
     },
 

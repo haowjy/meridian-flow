@@ -352,6 +352,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     projections: projectionRefresher,
     notices: postDurabilityNotices,
+    deferUntilCommit: deferUntilDrizzleCommit,
   });
   const drafts = createWorkDraftReviewService({
     discardWorkDraft: createDrizzleWorkDraftDiscard(
