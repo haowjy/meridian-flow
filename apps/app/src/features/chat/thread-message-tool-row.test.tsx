@@ -10,6 +10,7 @@ import { block, toolView } from "./report-test-fixtures";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { countFoldTools } from "./thinking-digest";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
+import { toolRowFailed } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -124,6 +125,7 @@ describe("thread_message presentation", () => {
   it("shows a queued message as a fold step", () => {
     const tool = messageTool({ result: queued });
     expect(isToolViewVisible(tool)).toBe(true);
+    expect(toolRowFailed(tool)).toBe(false);
     // The fold digest counts exactly the rows it shows.
     expect(countFoldTools([tool]).steps).toBe(1);
   });
@@ -156,8 +158,10 @@ describe("thread_message presentation", () => {
       status: "error",
       error: { code: "thread_message_not_authorized", message: "Not authorised" },
     };
-    const tool = messageTool({ result: refused, input: foreground, isError: true });
+    // The refusal is a typed result, saved without `isError`.
+    const tool = messageTool({ result: refused, input: foreground });
     expect(isToolViewVisible(tool)).toBe(true);
+    expect(toolRowFailed(tool)).toBe(true);
     expect(renderTitle(tool)).toBe("Couldn't send a message to CriticReview chapter 12");
 
     const items = partitionTurn(foregroundTurn(refused, { withCard: false }));
@@ -182,9 +186,9 @@ describe("thread_message presentation", () => {
   it("says when a background message couldn't be sent", () => {
     const failed = messageTool({
       result: { status: "error", error: { message: "Thread not found" } },
-      isError: true,
     });
     expect(isToolViewVisible(failed)).toBe(true);
+    expect(toolRowFailed(failed)).toBe(true);
     expect(renderTitle(failed)).toBe("Couldn't send a message to CriticReview chapter 12");
   });
 });
