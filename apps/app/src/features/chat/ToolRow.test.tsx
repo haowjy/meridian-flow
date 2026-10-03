@@ -25,7 +25,7 @@ function refusedWrite(status: string) {
     message: "You last read ch12.md live, but your writes now go to @x's draft.",
   };
   return {
-    ...toolView({ toolCallId: "call-1", toolName: "write", output: null }),
+    ...toolView({ toolCallId: "call-1", toolName: "write", result: null }),
     input: { command: "replace", path: "ch12.md", content: "The gate held." },
     result,
     isError: true,

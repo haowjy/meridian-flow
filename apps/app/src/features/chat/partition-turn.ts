@@ -1,7 +1,14 @@
 /** partition-turn — turns an ordered `Block[]` into the ordered render items the transcript draws. */
-import { type Block, blockContentRecord, blockPlainText } from "@meridian/contracts/protocol";
+import { parseInvocationCard } from "@meridian/contracts/components";
+import {
+  type Block,
+  blockContentRecord,
+  blockPlainText,
+  type JsonValue,
+} from "@meridian/contracts/protocol";
 import { isArtifactRef } from "./ArtifactGrid";
 import { isToolDeliveryBlock } from "./block-kind";
+import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import type { ReportContentValue } from "./ReportContent";
 import { isArtifactBlock } from "./tool-kind";
@@ -43,15 +50,14 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
         : [];
     }),
   );
-  const resultByCall = new Map<
-    string,
-    Record<string, import("@meridian/contracts/protocol").JsonValue>
-  >();
+  // return_result's typed result: `{ ok: true }`, `{ ok: false, message }`,
+  // or an executor error `{ code, message }`.
+  const resultByCall = new Map<string, Record<string, JsonValue>>();
   for (const block of blocks) {
     if (block.blockType !== "tool_result") continue;
     const content = blockContentRecord(block);
-    if (typeof content.toolCallId === "string" && isRecord(content.output)) {
-      resultByCall.set(content.toolCallId, content.output);
+    if (typeof content.toolCallId === "string" && isRecord(content.result)) {
+      resultByCall.set(content.toolCallId, content.result);
     }
   }
   const items: RenderItem[] = [];
@@ -75,7 +81,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
       if (block.blockType === "tool_use" && content.toolName === "return_result") {
         const input = isRecord(content.input) ? content.input : {};
         const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
-        const output = isRecord(result) && isRecord(result.output) ? result.output : result;
         flushProcess();
         items.push({
           kind: "report",
@@ -84,12 +89,8 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
             summary: typeof input.summary === "string" ? input.summary : "",
             ...(input.payload === undefined ? {} : { payload: input.payload }),
             artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-            partial: result?.ok === false || content.isError === true || output?.partial === true,
-            ...(typeof output?.reason === "string"
-              ? { reason: output.reason }
-              : typeof result?.message === "string"
-                ? { reason: result.message }
-                : {}),
+            partial: result?.ok === false || content.isError === true,
+            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
           },
         });
         continue;
@@ -137,14 +138,23 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
   return items;
 }
 
-function isRecord(
-  value: unknown,
-): value is Record<string, import("@meridian/contracts/protocol").JsonValue> {
+function isRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+/**
+ * Tool calls the writer sees elsewhere: a call whose helper card is in the
+ * turn shows as that card alone, and the per-tool policy covers the rest. A
+ * `thread_message` refused before it started has no card, so its failure row
+ * stays.
+ */
 function hiddenToolCallIds(blocks: Block[]): Set<string> {
   const hidden = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType !== "custom") continue;
+    const card = parseInvocationCard(componentBlockContent(block.content));
+    if (card) hidden.add(card.toolCallId);
+  }
   for (const segment of groupDeliverySegments(blocks)) {
     const tools =
       segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];

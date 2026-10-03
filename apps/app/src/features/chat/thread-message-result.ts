@@ -1,11 +1,11 @@
 /**
- * Reads a `thread_message` call that queued its message (background mode).
- * A foreground re-task is shown by its helper card; a queued one has no card,
- * so its tool row is the writer's only sign of it.
+ * Reads a `thread_message` call's typed `result` into its fold row.
+ * A queued message (background mode) has no card, so its row is the writer's
+ * only sign of it. A foreground re-task that ran is shown by its helper card.
+ * A failed call gets a row; when the turn holds its helper card (a busy
+ * target), `partitionTurn` hides the row and the card stands alone.
  *
- * `thread_message` has no text renderer: its `output` is the typed spawn result
- * (`status: "background"`), not model prose, so it is read here alongside a
- * `result` a future renderer would keep.
+ * `tool.output` is the model's text and is never parsed here.
  */
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
@@ -22,19 +22,13 @@ export type ThreadMessageRow =
   | { kind: "queued"; message: QueuedThreadMessage }
   | { kind: "failed"; handle: string | null };
 
-/** The writer-facing row for a background `thread_message`, or null when a card stands in or it is still running. */
+/** The writer-facing row for a queued or failed `thread_message`, or null when it ran in the foreground or is still running. */
 export function threadMessageRow(tool: ToolView): ThreadMessageRow | null {
   if (tool.toolName !== "thread_message" || tool.status === "partial") return null;
-  const typed = tool.result ?? tool.output;
-  const queued = parseQueuedThreadMessage(typed);
+  const queued = parseQueuedThreadMessage(tool.result);
   if (queued) return { kind: "queued", message: queued };
-  const input = toolInputObject(tool);
-  // Mode defaults to background. A failed foreground call may still own a
-  // card (the child ran and failed), and its transcript output no longer says
-  // which, so only background failures get this row.
-  if (stringInput(input, "mode") === "foreground") return null;
-  if (tool.isError || statusOf(typed) === "error") {
-    return { kind: "failed", handle: stringInput(input, "ref") ?? null };
+  if (tool.isError || statusOf(tool.result) === "error") {
+    return { kind: "failed", handle: stringInput(toolInputObject(tool), "ref") ?? null };
   }
   return null;
 }

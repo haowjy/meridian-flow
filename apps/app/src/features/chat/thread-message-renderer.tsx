@@ -1,7 +1,8 @@
 /**
- * Fold row for a background `thread_message`: the step where the model sent a
- * subagent a message and moved on. A foreground re-task is shown by its helper
- * card instead, and `tool-view-visibility` hides its row.
+ * Fold row for a `thread_message` with no card: a queued message (the model
+ * sent a subagent a message and moved on) or a call refused before any child
+ * run started. A foreground re-task that ran is shown by its helper card
+ * instead, and `tool-view-visibility` and `partitionTurn` hide its row.
  */
 
 import { Trans } from "@lingui/react/macro";
