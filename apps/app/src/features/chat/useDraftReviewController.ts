@@ -359,11 +359,10 @@ export function useDraftReviewController(
         optimistic?.selection.documentId === documentId &&
         optimistic.selection.draftId === draftId
       ) {
-        optimistic.receipt.commit();
         optimisticDraftDiscardRef.current = null;
       }
       dispatch({ type: "discardSucceeded", draftId });
-      contextRemoval.discardDraft(projectId, workId, documentId);
+      contextRemoval.settleDiscardedDraft(projectId, workId, documentId, draftId);
     },
   };
 

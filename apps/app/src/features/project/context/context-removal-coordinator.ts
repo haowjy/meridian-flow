@@ -30,6 +30,7 @@ import {
 import type {
   NavigationSettlement,
   PreparedWorkspaceNavigation,
+  ProjectNavigationOperation,
 } from "../routing/project-navigation";
 import {
   applyContextRepairIfCurrent,
@@ -92,6 +93,10 @@ export type ContextRemovalRoutePort = {
     projectId: string,
     update: (latest: ProjectSearch) => ProjectSearch,
   ): Promise<unknown> | undefined;
+  updateSearchWithAuthority?(
+    projectId: string,
+    update: (latest: ProjectSearch) => ProjectSearch,
+  ): ProjectNavigationOperation | undefined;
   transition(
     projectId: string,
     target: ContextRouteTarget | { kind: "clear" },
@@ -110,6 +115,7 @@ export type ContextRemovalRoutePort = {
 
 type ContextRemovalExecution = ContextRemovalOutcome & {
   navigationSettled?: Promise<unknown>;
+  navigationAuthority?: () => boolean;
 };
 
 type EditorWorkspacePort = {
@@ -147,10 +153,6 @@ export type DraftDiscardRollbackResult =
   | { kind: "superseded" };
 
 export type DraftDiscardReceipt = ContextRemovalExecution & {
-  removedTab: Extract<ContextTab, { kind: "tracked" }>;
-  tabInstanceToken: string;
-  issuedNavigation: ContextRouteTarget | { kind: "clear" } | null;
-  commit(): void;
   rollback(): Promise<DraftDiscardRollbackResult>;
 };
 
@@ -298,7 +300,9 @@ export class ContextRemovalCoordinator {
     string,
     Promise<ContextAvailabilitySessionEffectResult>
   >();
-  private readonly draftDiscardAuthority = new Map<string, symbol>();
+  private readonly draftDiscardAuthority = new Map<string, Set<symbol>>();
+  private readonly draftDisposition = new Map<string, { epoch: number; generation: string }>();
+  private readonly draftReceiptCleanup = new Map<symbol, () => void>();
   private disposed = false;
   private suspended = false;
 
@@ -1077,6 +1081,9 @@ export class ContextRemovalCoordinator {
     )
       return { kind: "noop" };
     if (!tab.tabInstanceId || !tab.reviewDraftId || !tab.tabInstanceToken) return { kind: "noop" };
+    const authorityKey = draftDispositionKey(projectId, documentId);
+    const generation = draftGeneration(tab);
+    const epoch = this.observeDraftGeneration(authorityKey, generation);
     const identity = {
       documentId,
       tabInstanceId: tab.tabInstanceId,
@@ -1101,47 +1108,56 @@ export class ContextRemovalCoordinator {
       originalTabs: slice.tabs,
     });
     const authority = Symbol(`${projectId}/${documentId}/${tab.tabInstanceToken}`);
-    const authorityKey = `${projectId}/${documentId}`;
-    this.draftDiscardAuthority.set(authorityKey, authority);
+    const authorities = this.draftDiscardAuthority.get(authorityKey) ?? new Set<symbol>();
+    authorities.add(authority);
+    this.draftDiscardAuthority.set(authorityKey, authorities);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    const navigationIsCurrent = route?.captureCurrentNavigation?.() ?? (() => true);
-    const issuedNavigation =
-      outcome.kind === "active-fallback"
-        ? routeTargetForTab(outcome.fallback, reviewWorkId)
-        : outcome.kind === "empty-workspace"
-          ? ({ kind: "clear" } as const)
-          : null;
+    const navigationIsCurrent =
+      "navigationAuthority" in outcome && outcome.navigationAuthority
+        ? outcome.navigationAuthority
+        : (route?.captureCurrentNavigation?.() ?? (() => true));
+    const locator = routeTargetForTab(tab, reviewWorkId);
+    const terminalRemoval = state.terminalRemovals.get(locatorKey(locator));
+    const fenceRevision = state.removalFence?.transitionRevision ?? null;
+    this.draftReceiptCleanup.set(authority, () => {
+      if (state.terminalRemovals.get(locatorKey(locator)) === terminalRemoval) {
+        state.terminalRemovals.delete(locatorKey(locator));
+      }
+      if (fenceRevision !== null && state.removalFence?.transitionRevision === fenceRevision) {
+        state.removalFence = null;
+      }
+    });
     this.publish(state);
     return {
       ...outcome,
-      removedTab: tab,
-      tabInstanceToken: tab.tabInstanceToken,
-      issuedNavigation,
-      commit: () => {
-        if (this.draftDiscardAuthority.get(authorityKey) === authority) {
-          this.draftDiscardAuthority.delete(authorityKey);
-        }
-      },
       rollback: async () => {
         try {
           await outcome.navigationSettled;
         } catch {
           // Refusal rollback still owns membership when fallback navigation fails.
         }
-        if (
-          this.unavailable() ||
-          this.draftDiscardAuthority.get(authorityKey) !== authority ||
-          this.workspace.read(projectId).tabs.some((member) => member.documentId === documentId)
-        ) {
+        const admitted = this.workspace
+          .read(projectId)
+          .tabs.find(
+            (member): member is Extract<ContextTab, { kind: "tracked" }> =>
+              member.documentId === documentId &&
+              member.kind === "tracked" &&
+              Boolean(member.draftOnly),
+          );
+        if (admitted?.reviewDraftId && admitted.reviewWorkId && admitted.tabInstanceToken) {
+          this.observeDraftGeneration(authorityKey, draftGeneration(admitted));
+        }
+        const stillCurrent =
+          !this.unavailable() &&
+          this.draftDisposition.get(authorityKey)?.epoch === epoch &&
+          this.draftDisposition.get(authorityKey)?.generation === generation &&
+          this.draftDiscardAuthority.get(authorityKey)?.has(authority) === true;
+        this.retireDraftReceipt(authorityKey, authority);
+        if (!stillCurrent) {
+          this.publish(state);
           return { kind: "superseded" };
         }
-        this.draftDiscardAuthority.delete(authorityKey);
         if (!this.workspace.restoreReviewTab?.(projectId, tab)) return { kind: "superseded" };
-        const locator = routeTargetForTab(tab, reviewWorkId);
-        state.terminalRemovals.delete(locatorKey(locator));
-        if (state.removalFence?.removedDocumentIds.includes(tab.documentId)) {
-          state.removalFence = null;
-        }
         this.publish(state);
         if (!navigationIsCurrent() || !route?.restoreDraft) {
           return { kind: "background-restored" };
@@ -1163,6 +1179,45 @@ export class ContextRemovalCoordinator {
           : { kind: "background-restored" };
       },
     };
+  }
+
+  /** Records a confirmed server Discard and removes any matching local overlay irreversibly. */
+  settleDiscardedDraft(
+    projectId: string,
+    reviewWorkId: string,
+    documentId: string,
+    reviewDraftId: string,
+  ): ContextRemovalExecution {
+    if (this.unavailable()) return { kind: "noop" };
+    const authorityKey = draftDispositionKey(projectId, documentId);
+    this.advanceDraftDisposition(authorityKey);
+    const tab = this.workspace
+      .read(projectId)
+      .tabs.find(
+        (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
+          candidate.documentId === documentId &&
+          candidate.kind === "tracked" &&
+          Boolean(candidate.draftOnly) &&
+          candidate.reviewWorkId === reviewWorkId &&
+          candidate.reviewDraftId === reviewDraftId,
+      );
+    if (!tab) {
+      const state = this.projects.get(projectId);
+      if (state) this.publish(state);
+      return { kind: "noop" };
+    }
+    return this.removeDraftTab(projectId, reviewWorkId, tab);
+  }
+
+  /** Records review admission so an older optimistic removal can never restore over it. */
+  admitDraftGeneration(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+    if (!tab.draftOnly || !tab.reviewDraftId || !tab.reviewWorkId || !tab.tabInstanceToken) return;
+    this.observeDraftGeneration(
+      draftDispositionKey(projectId, tab.documentId),
+      draftGeneration(tab),
+    );
+    const state = this.projects.get(projectId);
+    if (state) this.publish(state);
   }
 
   /** Promote a server-applied draft-only overlay into the durable workspace. */
@@ -1188,7 +1243,75 @@ export class ContextRemovalCoordinator {
     };
     const settled = await this.workspace.settleDraft(projectId, identity);
     if (settled.kind !== "settled") return false;
-    return this.workspace.closeReviewTab(projectId, identity).kind === "consumed";
+    const promoted = this.workspace.closeReviewTab(projectId, identity).kind === "consumed";
+    if (promoted) {
+      this.advanceDraftDisposition(draftDispositionKey(projectId, tab.documentId));
+      const state = this.projects.get(projectId);
+      if (state) this.publish(state);
+    }
+    return promoted;
+  }
+
+  private removeDraftTab(
+    projectId: string,
+    reviewWorkId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+  ): ContextRemovalExecution {
+    if (!tab.tabInstanceId || !tab.reviewDraftId || !tab.tabInstanceToken) return { kind: "noop" };
+    const slice = this.workspace.read(projectId);
+    const identity = {
+      documentId: tab.documentId,
+      tabInstanceId: tab.tabInstanceId,
+      reviewWorkId,
+      reviewDraftId: tab.reviewDraftId,
+      tabInstanceToken: tab.tabInstanceToken,
+    };
+    const consumed = this.workspace.closeReviewTab(projectId, identity);
+    if (consumed.kind !== "consumed" || this.unavailable()) return { kind: "noop" };
+    const state = this.project(projectId);
+    const transition = reduceRepresentedRemoval(state.selection, [tab, ...consumed.current.tabs], {
+      cause: "draft-discard",
+      documentIds: [tab.documentId],
+    });
+    state.selection = transition.selection;
+    const outcome = this.executePlanning(projectId, transition.planning, [], {
+      removed: [tab],
+      current: consumed.current,
+      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+      originalTabs: slice.tabs,
+    });
+    this.publish(state);
+    return outcome;
+  }
+
+  private observeDraftGeneration(authorityKey: string, generation: string): number {
+    const current = this.draftDisposition.get(authorityKey);
+    if (!current) {
+      this.draftDisposition.set(authorityKey, { epoch: 0, generation });
+      return 0;
+    }
+    if (current.generation === generation) return current.epoch;
+    this.advanceDraftDisposition(authorityKey, generation);
+    return this.draftDisposition.get(authorityKey)?.epoch ?? current.epoch + 1;
+  }
+
+  private advanceDraftDisposition(authorityKey: string, generation?: string): void {
+    const current = this.draftDisposition.get(authorityKey);
+    this.draftDisposition.set(authorityKey, {
+      epoch: (current?.epoch ?? 0) + 1,
+      generation: generation ?? current?.generation ?? "terminal",
+    });
+    const authorities = this.draftDiscardAuthority.get(authorityKey);
+    if (!authorities) return;
+    for (const authority of [...authorities]) this.retireDraftReceipt(authorityKey, authority);
+  }
+
+  private retireDraftReceipt(authorityKey: string, authority: symbol): void {
+    this.draftReceiptCleanup.get(authority)?.();
+    this.draftReceiptCleanup.delete(authority);
+    const authorities = this.draftDiscardAuthority.get(authorityKey);
+    authorities?.delete(authority);
+    if (authorities?.size === 0) this.draftDiscardAuthority.delete(authorityKey);
   }
 
   dispose(): void {
@@ -1202,6 +1325,12 @@ export class ContextRemovalCoordinator {
     state?.listeners.clear();
     this.projects.delete(projectId);
     this.routePorts.delete(projectId);
+    const prefix = `${projectId}\u0000`;
+    for (const key of [...this.draftDisposition.keys()]) {
+      if (!key.startsWith(prefix)) continue;
+      this.advanceDraftDisposition(key);
+      this.draftDisposition.delete(key);
+    }
   }
 
   private readWorkPruneEvidence(
@@ -1363,11 +1492,18 @@ export class ContextRemovalCoordinator {
           },
           next: plan.routeRepairTarget,
         };
-        const navigationSettled = route.updateSearch(projectId, (latest) =>
+        const update = (latest: ProjectSearch) =>
           this.removalStillCurrent(projectId, current)
             ? applyContextRepairIfCurrent(repairPlan, latest)
-            : latest,
-        );
+            : latest;
+        const operation = route.updateSearchWithAuthority?.(projectId, update);
+        if (operation)
+          return {
+            ...plan.outcome,
+            navigationSettled: operation.settlement,
+            navigationAuthority: operation.isCurrent,
+          };
+        const navigationSettled = route.updateSearch(projectId, update);
         return navigationSettled ? { ...plan.outcome, navigationSettled } : plan.outcome;
       }
     }
@@ -1509,6 +1645,14 @@ export class ContextRemovalCoordinator {
 
 function locatorKey(locator: ContextRouteTarget): string {
   return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId ?? ""}`;
+}
+
+function draftDispositionKey(projectId: string, documentId: string): string {
+  return `${projectId}\u0000${documentId}`;
+}
+
+function draftGeneration(tab: Extract<ContextTab, { kind: "tracked" }>): string {
+  return `${tab.reviewWorkId ?? ""}\u0000${tab.reviewDraftId ?? ""}\u0000${tab.tabInstanceToken ?? ""}`;
 }
 
 function availabilityDocumentId(command: ProjectDocumentAvailabilityCommand): string {

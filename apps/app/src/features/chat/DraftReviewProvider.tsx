@@ -428,7 +428,12 @@ function useDraftReviewScopeOwner(
               controller.inlineReview.draftId === witness.identity.draftId
             )
               controller.exitReview();
-            void contextRemoval.discardDraft(projectId, workId, witness.identity.documentId);
+            contextRemoval.settleDiscardedDraft(
+              projectId,
+              workId,
+              witness.identity.documentId,
+              witness.identity.draftId,
+            );
           }
         }
       })
