@@ -549,7 +549,7 @@ async function readDocument(
       threadId: ctx.threadId,
       turnId: ctx.turnId,
       destination,
-      ...(options.version === "live" ? { published: true } : {}),
+      ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),

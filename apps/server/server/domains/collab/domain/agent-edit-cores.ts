@@ -23,11 +23,11 @@ export type AgentEditDestination =
 export type RoutedWriteContext = WriteContext & { destination: AgentEditDestination };
 
 /**
- * A read's context. `published` marks a `version: "live"` read (D3): it reads
+ * A read's context. `liveVersion` marks a `version: "live"` read (D3): it reads
  * the live document even when this reply already drafted it, where a default
  * read follows the reply's pinned destination.
  */
-export type RoutedReadContext = RoutedWriteContext & { published?: boolean };
+export type RoutedReadContext = RoutedWriteContext & { liveVersion?: boolean };
 
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument = {

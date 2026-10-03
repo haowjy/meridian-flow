@@ -327,13 +327,13 @@ export function createThreadPeerCorePool(input: {
   }
 
   async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
-    const { destination: requested, published, ...context } = routed;
+    const { destination: requested, liveVersion, ...context } = routed;
     const documentId = documentIdFromCommand(command);
     const pinned =
-      documentId && context.responseId && !published
+      documentId && context.responseId && !liveVersion
         ? responses.get(context.responseId)?.documents.get(documentId)
         : undefined;
-    const destination = published
+    const destination = liveVersion
       ? ({ kind: "live" } as const)
       : (pinned?.destination ?? requested);
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));

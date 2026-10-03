@@ -34,7 +34,7 @@ export type ContextScheme = ContextUriScheme;
 /**
  * How one thread reads every source through its port. Reads follow the
  * version that thread's writes change, per document (D14, D20), or the
- * published text when `version` is `live`.
+ * live text, without draft changes, when `version` is `live`.
  */
 export interface ThreadContextView {
   threadId: string;

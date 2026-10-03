@@ -98,7 +98,7 @@ describe("ContextFS drafted-source effective view", () => {
     ]);
   });
 
-  it("reads published text and membership when the view asks for live in draft mode", async () => {
+  it("reads live text and membership when the view asks for live in draft mode", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     for (const [id, name] of [
