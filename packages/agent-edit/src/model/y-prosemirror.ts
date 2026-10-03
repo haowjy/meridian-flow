@@ -217,15 +217,22 @@ export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newTex
   const segments = collectTextSegments(block);
   const insertAttrs = attributesAtFlatOffset(segments, span.from);
 
-  for (const segment of [...segments].reverse()) {
-    const from = Math.max(span.from, segment.start);
-    const to = Math.min(span.to, segment.start + segment.length);
-    if (from < to) segment.text.delete(from - segment.start, to - from);
+  // Insert before deleting: an insert into an already-deleted run anchors
+  // after it, beside any writer text typed at its end, and Yjs then orders
+  // the two by client id, which can put the writer's words in front.
+  if (newText.length > 0) {
+    const insertion = insertionPoint(block, segments, span.from);
+    insertion.text.insert(insertion.offset, newText, insertAttrs);
   }
-
-  if (newText.length === 0) return;
-  const insertion = insertionPoint(block, segments, span.from);
-  insertion.text.insert(insertion.offset, newText, insertAttrs);
+  const from = span.from + newText.length;
+  const to = span.to + newText.length;
+  for (const segment of collectTextSegments(block).reverse()) {
+    const segmentFrom = Math.max(from, segment.start);
+    const segmentTo = Math.min(to, segment.start + segment.length);
+    if (segmentFrom < segmentTo) {
+      segment.text.delete(segmentFrom - segment.start, segmentTo - segmentFrom);
+    }
+  }
 }
 
 export function applyBlockDiff(

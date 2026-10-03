@@ -8,6 +8,7 @@ export type WriteErrorStatus =
   | "partial_failure"
   | "cant_undo_dependent"
   | "read_required"
+  | "binary_file"
   | "internal_error";
 
 export type UndoRedoOutcome =

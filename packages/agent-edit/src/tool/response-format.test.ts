@@ -11,6 +11,7 @@ const ERROR_STATUSES = {
   partial_failure: true,
   cant_undo_dependent: true,
   read_required: true,
+  binary_file: true,
   internal_error: true,
 } satisfies Record<WriteErrorStatus, true>;
 

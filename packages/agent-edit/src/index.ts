@@ -42,6 +42,7 @@ export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";
+export { markdownPlainText } from "./model/markdown-text-view.js";
 export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
 export {
   decodeNavigationPosition,
@@ -66,6 +67,7 @@ export {
   WriteToolInputSchema,
   writeCommandName,
 } from "./tool/command-schema.js";
+export { documentNotFoundMessage } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
