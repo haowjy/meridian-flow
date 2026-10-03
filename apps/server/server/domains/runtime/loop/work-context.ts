@@ -72,12 +72,23 @@ function currentWorkLines(
   return lines;
 }
 
+/** Where this Work's AI writes land (D9, D40). An archived Work takes none, and says so. */
+function writeModeLines(work: Pick<Work, "archivedAt" | "aiWriteMode">): string[] {
+  if (isWorkArchived(work)) return [];
+  if (work.aiWriteMode === "direct")
+    return ["  writes: auto-apply. Your changes go live right away."];
+  return [
+    "  writes: draft mode. Your changes wait in this Work's draft, except scratch:// changes, which go live.",
+    "  The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
+  ];
+}
+
 function currentLines(
   work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork">,
 ): string[] {
-  if (work.isNoWork) return [`current: none (${work.aiWriteMode} writes)`];
-  const [identity, ...goalLines] = currentWorkLines(work);
-  return [`current: ${identity}`, ...goalLines];
+  if (work.isNoWork) return ["current: none", ...writeModeLines(work)];
+  const [identity, ...detailLines] = currentWorkLines(work);
+  return [`current: ${identity}`, ...writeModeLines(work), ...detailLines];
 }
 
 export function renderWorkContext(input: {
