@@ -29,6 +29,19 @@ function draftTab(token = "tab-a") {
   };
 }
 
+function liveTab(documentId: string, path = `/${documentId}.md`) {
+  return {
+    kind: "tracked" as const,
+    documentId,
+    scheme: "manuscript" as const,
+    path,
+    name: path.slice(1),
+    editable: true as const,
+    filetype: "markdown" as const,
+    schemaType: "document" as const,
+  };
+}
+
 function rig() {
   const owner = new AccountPostApplyDispositionOwner("account-a", {
     replaceExactRoomNames: () => undefined,
@@ -194,5 +207,157 @@ describe("post-Apply context settlement", () => {
     expect(useContextTabsStore.getState().byProject["project-a"]?.tabs[0]).not.toHaveProperty(
       "draftOnly",
     );
+  });
+
+  it("replaces an address-first durable member with the one draft-only membership", () => {
+    useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-a", "/chapter.md"));
+    useContextTabsStore.getState().openTab("project-a", draftTab());
+
+    expect(useContextTabsStore.getState().byProject["project-a"]?.tabs ?? []).toEqual([]);
+    expect(getContextTabs("project-a").tabs).toMatchObject([
+      { documentId: "document-a", draftOnly: true },
+    ]);
+    const receipt = new ContextRemovalCoordinator("account-a").discardDraft(
+      "project-a",
+      "work-a",
+      "document-a",
+    );
+    expect(receipt.kind).not.toBe("noop");
+    expect(getContextTabs("project-a").tabs).toEqual([]);
+  });
+
+  it("uses the original order when the selected last draft falls back", async () => {
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-b"));
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-c"));
+    // Put the draft at the end so the ordinary close rule chooses its previous neighbour.
+    const original = getContextTabs("project-a").tabs;
+    await useContextTabsStore.getState().reorderTabs("project-a", 0, 2);
+    expect(original).toHaveLength(3);
+    await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
+    const route = {
+      readSearch: (): ProjectSearch => ({ screen: "work", work: "work-a" }),
+      updateSearch: () => undefined,
+      transition: async () => ({ kind: "applied" as const }),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-a");
+
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toMatchObject({
+      kind: "active-fallback",
+      fallback: { documentId: "document-c" },
+    });
+  });
+
+  it("restores the last discarded draft in front when only its own chooser navigation occurred", async () => {
+    let navigationRevision = 0;
+    let restored = 0;
+    let search: ProjectSearch = {
+      screen: "context",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      work: "work-a",
+    };
+    const route = {
+      readSearch: () => search,
+      updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
+        search = update(search);
+        navigationRevision += 1;
+        return Promise.resolve();
+      },
+      transition: async () => ({ kind: "applied" as const }),
+      captureCurrentNavigation: () => {
+        const captured = navigationRevision;
+        return () => navigationRevision === captured;
+      },
+      restoreDraft: async () => {
+        restored += 1;
+        return { kind: "applied" as const };
+      },
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-a");
+    const revision = coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/chapter.md",
+      workId: "work-a",
+    });
+    coordinator.bindRouteSelection("project-a", revision, {
+      kind: "server",
+      documentId: "document-a",
+    });
+    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
+    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
+
+    await expect(receipt.rollback()).resolves.toEqual({ kind: "foreground-restored" });
+    expect(restored).toBe(1);
+    expect(getContextTabs("project-a").tabs).toMatchObject([
+      { documentId: "document-a", draftOnly: true },
+    ]);
+  });
+
+  it("keeps a refused old Discard from covering a newer applied generation", async () => {
+    const coordinator = new ContextRemovalCoordinator("account-a");
+    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
+    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
+    useContextTabsStore.getState().openTab("project-a", draftTab("new-generation"));
+    const replacement = getContextTabs("project-a").tabs[0];
+    if (replacement?.kind !== "tracked") throw new Error("Expected replacement draft");
+    await coordinator.promoteAppliedDraft("project-a", replacement);
+
+    await expect(receipt.rollback()).resolves.toEqual({ kind: "superseded" });
+    expect(getContextTabs("project-a").tabs[0]).not.toHaveProperty("draftOnly");
+  });
+
+  it("restores in the background after later writer navigation even if it returns to the fallback", async () => {
+    useContextTabsStore.getState().openTab("project-a", liveTab("document-b"));
+    await useContextTabsStore.getState().selectTab("project-a", "work-a", "document-a");
+    let navigationRevision = 0;
+    const route = {
+      readSearch: (): ProjectSearch => ({
+        screen: "context",
+        scheme: "manuscript",
+        path: "/chapter.md",
+        work: "work-a",
+      }),
+      updateSearch: () => {
+        navigationRevision += 1;
+        return Promise.resolve();
+      },
+      transition: async () => ({ kind: "applied" as const }),
+      captureCurrentNavigation: () => {
+        const captured = navigationRevision;
+        return () => navigationRevision === captured;
+      },
+      restoreDraft: vi.fn(async () => ({ kind: "applied" as const })),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-a");
+    const revision = coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/chapter.md",
+      workId: "work-a",
+    });
+    coordinator.bindRouteSelection("project-a", revision, {
+      kind: "server",
+      documentId: "document-a",
+    });
+    const receipt = coordinator.discardDraft("project-a", "work-a", "document-a");
+    if (!("rollback" in receipt)) throw new Error("Expected an optimistic discard receipt");
+    navigationRevision += 2; // B to C to B is still later writer authority.
+
+    await expect(receipt.rollback()).resolves.toEqual({ kind: "background-restored" });
+    expect(route.restoreDraft).not.toHaveBeenCalled();
+    expect(getContextTabs("project-a").selectedTabIdByWork["work-a"]).toBe("document-b");
+  });
+
+  it("makes a second Discard against the consumed generation a no-op", () => {
+    const coordinator = new ContextRemovalCoordinator("account-a");
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toHaveProperty(
+      "rollback",
+    );
+    expect(coordinator.discardDraft("project-a", "work-a", "document-a")).toEqual({
+      kind: "noop",
+    });
   });
 });

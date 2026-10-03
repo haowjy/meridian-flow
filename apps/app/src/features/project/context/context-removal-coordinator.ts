@@ -18,6 +18,7 @@ import {
   type ReviewOverlayConsumeReceipt,
   type ReviewOverlayTabIdentity,
   type ServerContextTab,
+  useContextTabsStore,
 } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -96,6 +97,15 @@ export type ContextRemovalRoutePort = {
     target: ContextRouteTarget | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
+  /** Captures the intent issued immediately before this call. Later writer intent invalidates it. */
+  captureCurrentNavigation?(): () => boolean;
+  restoreDraft?(
+    projectId: string,
+    target: ContextRouteTarget,
+    tab: ContextTab,
+    draftId: string,
+    isCurrent: () => boolean,
+  ): Promise<NavigationSettlement>;
 };
 
 type ContextRemovalExecution = ContextRemovalOutcome & {
@@ -124,11 +134,24 @@ type EditorWorkspacePort = {
     projectId: string,
     identity: ReviewOverlayTabIdentity,
   ): ReviewOverlayConsumeReceipt;
+  restoreReviewTab?(projectId: string, tab: ContextTab): boolean;
   applyAvailability(
     projectId: string,
     prior: ProjectTabsSlice,
     next: ProjectTabsSlice,
   ): Promise<void> | void;
+};
+
+export type DraftDiscardRollbackResult =
+  | { kind: "foreground-restored" | "background-restored" }
+  | { kind: "superseded" };
+
+export type DraftDiscardReceipt = ContextRemovalExecution & {
+  removedTab: Extract<ContextTab, { kind: "tracked" }>;
+  tabInstanceToken: string;
+  issuedNavigation: ContextRouteTarget | { kind: "clear" } | null;
+  commit(): void;
+  rollback(): Promise<DraftDiscardRollbackResult>;
 };
 
 type RemovalFence = {
@@ -250,6 +273,8 @@ const productionWorkspace: EditorWorkspacePort = {
   settleDraft: commitDraftApplyMetadata,
   closeReviewTab: commitReviewOverlayClose,
   previewReviewTab: previewReviewOverlayClose,
+  restoreReviewTab: (projectId, tab) =>
+    useContextTabsStore.getState().openTab(projectId, tab).kind === "opened",
   applyAvailability: commitContextAvailability,
 };
 
@@ -273,6 +298,7 @@ export class ContextRemovalCoordinator {
     string,
     Promise<ContextAvailabilitySessionEffectResult>
   >();
+  private readonly draftDiscardAuthority = new Map<string, symbol>();
   private disposed = false;
   private suspended = false;
 
@@ -929,6 +955,7 @@ export class ContextRemovalCoordinator {
         removed: [tab],
         current: consumed.current,
         selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+        originalTabs: slice.tabs,
       });
       this.publish(state);
       return outcome;
@@ -1038,13 +1065,13 @@ export class ContextRemovalCoordinator {
     projectId: string,
     reviewWorkId: string,
     documentId: string,
-  ): ContextRemovalExecution {
+  ): ContextRemovalExecution | DraftDiscardReceipt {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
     if (
       tab === undefined ||
-      tab.kind === "new" ||
+      tab.kind !== "tracked" ||
       !tab.draftOnly ||
       tab.reviewWorkId !== reviewWorkId
     )
@@ -1071,25 +1098,71 @@ export class ContextRemovalCoordinator {
       removed: [tab],
       current: consumed.current,
       selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+      originalTabs: slice.tabs,
     });
+    const authority = Symbol(`${projectId}/${documentId}/${tab.tabInstanceToken}`);
+    const authorityKey = `${projectId}/${documentId}`;
+    this.draftDiscardAuthority.set(authorityKey, authority);
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    const navigationIsCurrent = route?.captureCurrentNavigation?.() ?? (() => true);
+    const issuedNavigation =
+      outcome.kind === "active-fallback"
+        ? routeTargetForTab(outcome.fallback, reviewWorkId)
+        : outcome.kind === "empty-workspace"
+          ? ({ kind: "clear" } as const)
+          : null;
     this.publish(state);
-    return outcome;
-  }
-
-  /** Roll back the route fence installed by an optimistic Discard that the server refused. */
-  restoreDiscardedDraft(
-    projectId: string,
-    reviewWorkId: string,
-    tab: Extract<ContextTab, { kind: "tracked" }>,
-  ): void {
-    if (this.unavailable()) return;
-    const state = this.project(projectId);
-    const locator = routeTargetForTab(tab, reviewWorkId);
-    state.terminalRemovals.delete(locatorKey(locator));
-    if (state.removalFence?.removedDocumentIds.includes(tab.documentId)) {
-      state.removalFence = null;
-    }
-    this.publish(state);
+    return {
+      ...outcome,
+      removedTab: tab,
+      tabInstanceToken: tab.tabInstanceToken,
+      issuedNavigation,
+      commit: () => {
+        if (this.draftDiscardAuthority.get(authorityKey) === authority) {
+          this.draftDiscardAuthority.delete(authorityKey);
+        }
+      },
+      rollback: async () => {
+        try {
+          await outcome.navigationSettled;
+        } catch {
+          // Refusal rollback still owns membership when fallback navigation fails.
+        }
+        if (
+          this.unavailable() ||
+          this.draftDiscardAuthority.get(authorityKey) !== authority ||
+          this.workspace.read(projectId).tabs.some((member) => member.documentId === documentId)
+        ) {
+          return { kind: "superseded" };
+        }
+        this.draftDiscardAuthority.delete(authorityKey);
+        if (!this.workspace.restoreReviewTab?.(projectId, tab)) return { kind: "superseded" };
+        const locator = routeTargetForTab(tab, reviewWorkId);
+        state.terminalRemovals.delete(locatorKey(locator));
+        if (state.removalFence?.removedDocumentIds.includes(tab.documentId)) {
+          state.removalFence = null;
+        }
+        this.publish(state);
+        if (!navigationIsCurrent() || !route?.restoreDraft) {
+          return { kind: "background-restored" };
+        }
+        let settlement: NavigationSettlement;
+        try {
+          settlement = await route.restoreDraft(
+            projectId,
+            locator,
+            tab,
+            tab.reviewDraftId as string,
+            navigationIsCurrent,
+          );
+        } catch {
+          return { kind: "background-restored" };
+        }
+        return settlement.kind === "applied"
+          ? { kind: "foreground-restored" }
+          : { kind: "background-restored" };
+      },
+    };
   }
 
   /** Promote a server-applied draft-only overlay into the durable workspace. */
@@ -1182,6 +1255,7 @@ export class ContextRemovalCoordinator {
       removed: readonly ContextTab[];
       current: ProjectTabsSlice;
       selectedTabId: string | null;
+      originalTabs: readonly ContextTab[];
     },
   ): ContextRemovalExecution {
     const { intent, current, cleanup, repair } = effect;
@@ -1190,7 +1264,7 @@ export class ContextRemovalCoordinator {
     const state = this.project(projectId);
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
+      tabs: consumed?.originalTabs ?? slice.tabs,
       selectedTabId:
         consumed?.selectedTabId ?? slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
       admitted: state.admitted,

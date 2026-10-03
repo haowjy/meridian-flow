@@ -30,7 +30,12 @@ import {
   useProjectChatNavigation,
 } from "./chat-navigation";
 import { editorDefaultWorkPending } from "./editor-default-work";
-import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
+import {
+  canonicalDocumentPath,
+  projectAddressMatchesContextTarget,
+  reconcileDocumentAddress,
+  resolveLocalDocumentAddress,
+} from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -230,15 +235,7 @@ export function ReadableProjectRoute({
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
-    const current = latest.current.address;
-    return (
-      current.destination.kind === "document" &&
-      current.destination.scheme === target.scheme &&
-      `/${current.destination.path.replace(/^\/+/, "")}` === target.path &&
-      (target.workId === null
-        ? current.work.kind === "none"
-        : current.work.kind === "id" && current.work.id === target.workId)
-    );
+    return projectAddressMatchesContextTarget(latest.current.address, target);
   }, []);
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
@@ -382,7 +379,7 @@ export function ReadableProjectRoute({
         address: {
           ...current.address,
           destination: target.path
-            ? { kind: "document", scheme: target.scheme, path: target.path.replace(/^\/+/, "") }
+            ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
             : { kind: "editor" },
           work: workIdSelection(target.workId),
           draftId,
@@ -401,14 +398,7 @@ export function ReadableProjectRoute({
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
       const next = contextDestination(target, options?.tab, options?.draftId);
-      const alreadyOnDocument =
-        current.address.destination.kind === "document" &&
-        next.address.destination.kind === "document" &&
-        current.address.destination.scheme === next.address.destination.scheme &&
-        current.address.destination.path === next.address.destination.path &&
-        (target.workId === null
-          ? current.address.work.kind === "none"
-          : current.address.work.kind === "id" && current.address.work.id === target.workId);
+      const alreadyOnDocument = projectAddressMatchesContextTarget(current.address, target);
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
@@ -418,7 +408,16 @@ export function ReadableProjectRoute({
           current.navigation.capture(),
           next.address,
         );
-        if (replacement.kind === "replaced") return { kind: "applied" };
+        if (replacement.kind === "replaced") {
+          if (options.tab) {
+            const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
+            if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+            await useContextTabsStore
+              .getState()
+              .selectTab(projectId, target.workId ?? "", installed.tab.documentId);
+          }
+          return { kind: "applied" };
+        }
         if (replacement.kind === "failed") return replacement;
         return { kind: "superseded" };
       }
@@ -588,7 +587,6 @@ export function ReadableProjectRoute({
       screen={activeScreen}
       openContextRoute={openContext}
       captureNavigation={captureNavigation}
-      captureCurrentNavigation={captureCurrentNavigation}
       isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >
@@ -628,6 +626,12 @@ export function ReadableProjectRoute({
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
               readSearch: () => search,
+              captureCurrentNavigation,
+              restoreDraft: (_id, target, tab, draftId, isCurrent) =>
+                openContext(
+                  { ...target, documentId: tab.documentId },
+                  { replace: true, tab, draftId, isCurrent },
+                ),
               updateSearch: (_id, update) => {
                 const next = update(search);
                 if (projectSearchEquals(next, search)) return;
