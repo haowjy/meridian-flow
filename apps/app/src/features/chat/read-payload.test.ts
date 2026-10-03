@@ -41,6 +41,7 @@ describe("readPayloadMarkup", () => {
       blocks: [
         { extent: "full", relation: "document", items: [{ hash: "h1", body: "Kept." }] },
         { extent: "full", relation: "swept", items: [{ hash: "h2", body: "Swept." }] },
+        { extent: "prefix", relation: "copied", items: [{ hash: "h3", body: "Copied." }] },
       ],
     } satisfies JsonValue;
     expect(readPayloadMarkup(result)).toBe("Kept.");

@@ -52,7 +52,13 @@ function isReadCommand(command: ToolCommand): boolean {
 
 /** A command that changed a document, including putting a change back. */
 function isEditCommand(command: ToolCommand): boolean {
-  return command === "create" || command === "edit" || command === "undo" || command === "redo";
+  return (
+    command === "create" ||
+    command === "copy" ||
+    command === "edit" ||
+    command === "undo" ||
+    command === "redo"
+  );
 }
 
 export function thinkingDigest(
