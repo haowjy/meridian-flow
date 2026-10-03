@@ -193,6 +193,16 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             (candidate) => candidate.documentId === tab.documentId && candidate.draftOnly,
           );
           if (tab.draftOnly) {
+            const durableMember = sliceFor(get(), projectId).tabs.find(
+              (candidate) => candidate.documentId === tab.documentId,
+            );
+            if (durableMember?.tabInstanceId) {
+              dispatchResult(() => ({
+                kind: "close",
+                projectId,
+                tabInstanceId: durableMember.tabInstanceId as string,
+              }));
+            }
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
               const index = overlay.tabs.findIndex(

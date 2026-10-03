@@ -171,8 +171,10 @@ location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
 Readable-address admission for that same server document keeps the synthesized
 review member authoritative; it must not create a durable tab hidden underneath
-the review overlay. It may enrich the overlay with resolved live-resource
-metadata. Once the server confirms Apply, the controller graduates the member
+the review overlay, regardless of whether address or review admission arrives
+first. Review admission absorbs an earlier durable member; later address
+admission may enrich only the overlay with resolved live-resource metadata.
+Once the server confirms Apply, the controller graduates the member
 into the durable workspace before live-readiness recovery; the recovery owner
 then verifies the live binding and treats its old overlay obligation as
 obsolete.
@@ -185,12 +187,16 @@ obsolete.
 - Whole-draft Discard removes the owning draft-only tab through the coordinator
   before dispatching the server command. The coordinator applies the ordinary
   adjacent-tab/empty-Editor close fallback and repairs the current address in
-  place. A server refusal first clears that optimistic removal's terminal route
-  fence, then reopens the exact tab and review address before the existing
-  discard error is shown. The optimistic fallback is the baseline: if the
-  writer chooses another destination before refusal, restoration stays in the
-  background. Header, composer-strip, and bulk Discard all use this same
-  controller command lifecycle.
+  place. It returns a generation-qualified removal receipt that alone owns
+  rollback membership, route-fence cleanup, and navigation authority. A server
+  refusal reopens the exact generation only when no Apply, reopen, or later
+  removal superseded it. The optimistic fallback is the navigation baseline:
+  any later writer destination intent makes restoration background-only, even
+  if the writer eventually returns to the same fallback address. The refusal
+  error remains keyed to the draft and appears when its action is shown again.
+  Header, composer-strip, and bulk Discard all use this same controller command
+  lifecycle; controllers never reconstruct membership or infer authority from
+  address equality.
 - When a selected row disappears remotely from the active-only list, the
   provider forces a fresh live-manuscript manifest read. Membership means
   Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab

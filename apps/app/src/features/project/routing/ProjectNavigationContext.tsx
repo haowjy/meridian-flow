@@ -26,7 +26,6 @@ const ProjectNavigationContext = createContext<{
   screen?: ScreenKey;
   open: OpenContextRoute;
   capture?: () => () => boolean;
-  captureCurrent?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
 
@@ -34,7 +33,6 @@ export function ProjectNavigationProvider({
   children,
   openContextRoute,
   captureNavigation,
-  captureCurrentNavigation,
   isCurrentContextRoute,
   screen,
   registerLeaveGuard,
@@ -43,7 +41,6 @@ export function ProjectNavigationProvider({
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
-  captureCurrentNavigation?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
@@ -53,7 +50,6 @@ export function ProjectNavigationProvider({
         screen,
         open: openContextRoute,
         capture: captureNavigation,
-        captureCurrent: captureCurrentNavigation,
         isCurrentContextRoute,
         registerLeaveGuard,
       }}
@@ -70,11 +66,6 @@ export function useOpenContextRoute(): OpenContextRoute | null {
 /** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
-}
-
-/** Snapshot the current settled destination without beginning a new navigation intent. */
-export function useCaptureCurrentProjectNavigation() {
-  return useContext(ProjectNavigationContext)?.captureCurrent;
 }
 
 /** Whether the browser still shows a specific readable Editor destination. */

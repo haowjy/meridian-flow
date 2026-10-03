@@ -35,6 +35,11 @@ export function ProjectContextRemovalController({
       readSearch: (registeredProjectId) => latestRouteRef.current.readSearch(registeredProjectId),
       updateSearch: (registeredProjectId, update) =>
         latestRouteRef.current.updateSearch(registeredProjectId, update),
+      captureCurrentNavigation: () =>
+        latestRouteRef.current.captureCurrentNavigation?.() ?? (() => true),
+      restoreDraft: (projectId, target, tab, draftId, isCurrent) =>
+        latestRouteRef.current.restoreDraft?.(projectId, target, tab, draftId, isCurrent) ??
+        Promise.resolve({ kind: "superseded" as const }),
     }),
     [],
   );

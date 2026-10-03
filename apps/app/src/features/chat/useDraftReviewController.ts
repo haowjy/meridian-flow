@@ -15,14 +15,13 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
+import { type ContextTab, getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import type { DraftDiscardReceipt } from "@/features/project/context/context-removal-coordinator";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
-  useCaptureCurrentProjectNavigation,
-  useCaptureProjectNavigation,
   useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
@@ -110,8 +109,6 @@ export function useDraftReviewController(
   const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
-  const captureNavigation = useCaptureProjectNavigation();
-  const captureCurrentNavigation = useCaptureCurrentProjectNavigation();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
@@ -144,9 +141,7 @@ export function useDraftReviewController(
   const nextReviewAttemptIdRef = useRef(0);
   const optimisticDraftDiscardRef = useRef<{
     selection: DraftReviewSelection;
-    tab: Extract<ContextTab, { kind: "tracked" }>;
-    isCurrent: () => boolean;
-    removalSettled: Promise<unknown>;
+    receipt: DraftDiscardReceipt;
     restoreInline: boolean;
   } | null>(null);
   stateRef.current = state;
@@ -332,19 +327,10 @@ export function useDraftReviewController(
         stateRef.current.surface.documentId === selection.documentId &&
         stateRef.current.surface.draftId === selection.draftId;
       const removal = contextRemoval.discardDraft(projectId, workId, selection.documentId);
+      if (!("rollback" in removal)) return;
       optimisticDraftDiscardRef.current = {
         selection,
-        tab,
-        // The removal's route repair is asynchronous. Compare against its
-        // planned fallback instead of treating that repair as writer
-        // navigation; any later destination command stops matching.
-        isCurrent:
-          removal.kind === "active-fallback" && isCurrentContextRoute
-            ? () =>
-                isCurrentContextRoute(routeTargetForTab(removal.fallback, workId)) ||
-                isCurrentContextRoute(routeTargetForTab(tab, workId))
-            : (captureCurrentNavigation?.() ?? captureNavigation?.() ?? (() => true)),
-        removalSettled: removal.navigationSettled ?? Promise.resolve(),
+        receipt: removal,
         restoreInline,
       };
     },
@@ -359,38 +345,10 @@ export function useDraftReviewController(
         optimistic.selection.draftId === selection.draftId
       ) {
         optimisticDraftDiscardRef.current = null;
-        await optimistic.removalSettled;
-        contextRemoval.restoreDiscardedDraft(projectId, workId, optimistic.tab);
-        const { isCurrent } = optimistic;
-        let restoredByRoute = false;
-        if (isCurrent() && openContextRoute) {
-          try {
-            const settlement = await openContextRoute(
-              {
-                scheme: optimistic.tab.scheme,
-                path: optimistic.tab.path,
-                workId,
-                documentId: optimistic.tab.documentId,
-              },
-              {
-                replace: true,
-                tab: optimistic.tab,
-                draftId: selection.draftId,
-                isCurrent,
-              },
-            );
-            restoredByRoute = settlement.kind === "applied";
-            if (restoredByRoute && optimistic.restoreInline) {
-              dispatch({ type: "enterInline", ...selection });
-              loadInlineReviewRoom(selection.documentId, selection.draftId);
-            }
-          } catch {
-            // The Discard refusal remains the writer-facing error. Preserve the
-            // tab in the background if its restoration navigation also failed.
-          }
-        }
-        if (!restoredByRoute) {
-          useContextTabsStore.getState().openTab(projectId, optimistic.tab);
+        const restored = await optimistic.receipt.rollback();
+        if (restored.kind === "foreground-restored" && optimistic.restoreInline) {
+          dispatch({ type: "enterInline", ...selection });
+          loadInlineReviewRoom(selection.documentId, selection.draftId);
         }
       }
       dispatch({ type: "draftCommandFailed", selection, code });
@@ -400,8 +358,10 @@ export function useDraftReviewController(
       if (
         optimistic?.selection.documentId === documentId &&
         optimistic.selection.draftId === draftId
-      )
+      ) {
+        optimistic.receipt.commit();
         optimisticDraftDiscardRef.current = null;
+      }
       dispatch({ type: "discardSucceeded", draftId });
       contextRemoval.discardDraft(projectId, workId, documentId);
     },
