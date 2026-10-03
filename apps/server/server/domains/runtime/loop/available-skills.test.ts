@@ -527,7 +527,16 @@ describe("subagent skills", () => {
     expect(review.body).toBe("story-review body.\n");
     await expect(
       loadModelSkillBody({ thread, slug: "creative-writing-modes", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
+    ).rejects.toThrow(
+      'Skill "creative-writing-modes" is not available. Skills you can load: story-review.',
+    );
+  });
+
+  it("says when an agent has no skills to load", async () => {
+    const { thread, agentRevisions } = await launchAgentsChat("spark");
+    await expect(
+      loadModelSkillBody({ thread, slug: "story-review", agentRevisions }),
+    ).rejects.toThrow('Skill "story-review" is not available. This agent has no skills to load.');
   });
 
   it("refuses a model-invocable false skill from the subagent's available list", async () => {

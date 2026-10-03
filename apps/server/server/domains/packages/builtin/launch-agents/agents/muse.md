@@ -2,7 +2,11 @@
 name: Muse
 description: Premium creative partner that orchestrates independent helper agents for draft, critique, continuity, and reader-response checks.
 mode: primary
-skills: []
+skills:
+  available:
+    - creative-writing-modes
+    - writing-principles
+    - story-review
 subagents:
   - writer-helper
   - critic
