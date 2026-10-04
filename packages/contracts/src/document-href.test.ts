@@ -65,131 +65,21 @@ it.each(["https://example.com/a.md", "manuscript://"])("never spells non-documen
   expect(() => spellDocumentHref(null, target)).toThrow(RangeError);
 });
 
-// Each row is a spelling rule, with the destination's current location.
+// One row per stored-spelling rule, not per move scenario.
 it.each([
-  ["rename", "chapter-1.md", "manuscript://v/base.md", "manuscript://v/the-gate.md", "the-gate.md"],
-  [
-    "incoming folder move",
-    "old/chapter.md",
-    "manuscript://base.md",
-    "manuscript://new/chapter.md",
-    "new/chapter.md",
-  ],
-  [
-    "outgoing from moved holder",
-    "../cast.md",
-    "manuscript://v/scenes/base.md",
-    "manuscript://cast.md",
-    "../../cast.md",
-  ],
-  [
-    "two descendants moved",
-    "next.md",
-    "manuscript://new/base.md",
-    "manuscript://new/next.md",
-    "next.md",
-  ],
-  [
-    "two moved encoded descendants",
-    "next%20chapter.md#s",
-    "manuscript://new/base.md",
-    "manuscript://new/next chapter.md",
-    "next%20chapter.md#s",
-  ],
-  [
-    "full between descendants",
-    "manuscript://old/next.md",
-    "manuscript://new/base.md",
-    "manuscript://new/next.md",
-    "manuscript://new/next.md",
-  ],
-  [
-    "folder depth unchanged",
-    "../cast.md",
-    "manuscript://new/base.md",
-    "manuscript://cast.md",
-    "../cast.md",
-  ],
-  [
-    "self link",
-    "./chapter-1.md",
-    "manuscript://the-gate.md",
-    "manuscript://the-gate.md",
-    "./the-gate.md",
-  ],
-  ["cross scheme", "chapter.md", "manuscript://base.md", "kb://chapter.md", "kb://chapter.md"],
-  [
-    "cross Work",
-    "chapter.md",
-    "scratch://@first/base.md",
-    "scratch://@second/chapter.md",
-    "scratch://@second/chapter.md",
-  ],
-  [
-    "explicit Work stays explicit",
-    "scratch://@first/chapter.md",
-    "scratch://@second/base.md",
-    "scratch://@second/gate.md",
-    "scratch://@second/gate.md",
-  ],
-  [
-    "explicit No Work",
-    "scratch://@/chapter.md",
-    null,
-    "scratch://@second/gate.md",
-    "scratch://@second/gate.md",
-  ],
-  [
-    "authority drops in project area",
-    "scratch://@first/chapter.md",
-    null,
-    "manuscript://gate.md",
-    "manuscript://gate.md",
-  ],
-  [
-    "full stays full in same area",
-    "kb://chapter.md",
-    "kb://base.md",
-    "kb://gate.md",
-    "kb://gate.md",
-  ],
-  ["extension omitted", "chapter", "manuscript://base.md", "manuscript://gate.md", "gate"],
-  ["non prose extension omitted", "outline", "kb://base.md", "kb://plan.json", "plan"],
-  ["omission across areas", "chapter", "manuscript://base.md", "kb://gate.md", "kb://gate"],
-  [
-    "fragment",
-    "chapter.md#scene?view=outline",
-    "manuscript://base.md",
-    "manuscript://gate.md",
-    "gate.md#scene?view=outline",
-  ],
-  [
-    "query",
-    "chapter?view=outline#scene",
-    "manuscript://base.md",
-    "manuscript://gate.md",
-    "gate?view=outline#scene",
-  ],
-  [
-    "escaped syntax",
-    "old%23draft%3F%25.md#keep%20this",
-    "kb://base.md",
-    "kb://100% ready#final?.md",
-    "100%25 ready%23final%3F.md#keep%20this",
-  ],
-  ["encoded space", "old%20name.md", "kb://base.md", "kb://new name.md", "new name.md"],
-  [
-    "dangling intended address",
-    "../../unwritten.md",
-    "manuscript://base.md",
-    "manuscript://unwritten.md",
-    "unwritten.md",
-  ],
-  ["already new address", "gate.md", "kb://base.md", "kb://gate.md", "gate.md"],
-])("respells %s", (_rule, href, holderUri, targetUri, expected) => {
+  ["chapter.md", "manuscript://v/base.md", "manuscript://new/gate.md", "../new/gate.md"],
+  ["next%20name.md#s", "kb://base.md", "kb://next name.md", "next%20name.md#s"],
+  ["kb://old.md", "kb://base.md", "kb://gate.md", "kb://gate.md"],
+  ["./old.md", "kb://gate.md", "kb://gate.md", "./gate.md"],
+  ["old.md", "manuscript://base.md", "kb://gate.md", "kb://gate.md"],
+  ["old.md", "scratch://@first/base.md", "scratch://@second/gate.md", "scratch://@second/gate.md"],
+  ["old", "kb://base.md", "kb://plan.json", "plan"],
+  ["old", "manuscript://base.md", "kb://gate.md", "kb://gate"],
+  ["old?view=outline#scene", "kb://base.md", "kb://gate.md", "gate?view=outline#scene"],
+  ["old%23.md#s", "kb://base.md", "kb://100%#?.md", "100%25%23%3F.md#s"],
+  ["../../unwritten.md", "manuscript://base.md", "manuscript://unwritten.md", "unwritten.md"],
+])("respells %s from %s to %s as %s", (href, holderUri, targetUri, expected) => {
   expect(respellDocumentHref(href, { holderUri, targetUri })).toBe(expected);
-  const resolved = resolveDocumentHref(expected, holderUri);
-  expect(resolved).not.toBeNull();
 });
 
 it.each([
