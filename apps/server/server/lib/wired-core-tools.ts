@@ -38,7 +38,7 @@ import type {
   DocumentRevisionEvidence,
   PermissionDeniedReason,
 } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   ThreadExecutionContext,
@@ -67,6 +67,7 @@ import type {
   BinaryFileRef,
   ContextError,
   ContextPort,
+  FileEntry,
   FileRef,
 } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
@@ -140,7 +141,7 @@ export interface ToolWiringDeps {
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess">;
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
 }
@@ -1027,6 +1028,40 @@ async function writeUnderGrant(
   };
 }
 
+/**
+ * A list call's port and principal (file-access §6). A `live` listing reads
+ * no draft, so its rows are decided live.
+ */
+async function listingContext(
+  deps: ToolWiringDeps,
+  ctx: ToolHandlerContext,
+  version: DocumentVersion | undefined,
+): Promise<{ context: ResolvedModelContextPort; principal: Principal } | ToolErrorOutput> {
+  const execution = await resolveExecutionContext(deps, ctx.threadId);
+  if (isToolError(execution)) return execution;
+  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
+  if (isToolError(context)) return context;
+  const principal = await agentPrincipal(deps, context, execution);
+  if (version !== "live" || !principal.agent) return { context, principal };
+  return { context, principal: { ...principal, agent: { ...principal.agent, draftWork: null } } };
+}
+
+function listedDocumentIds(rows: readonly { documentId?: string }[]): DocumentId[] {
+  return rows.flatMap((row) => (row.documentId ? [row.documentId as DocumentId] : []));
+}
+
+/** Whether the agent may create in the folder a listing names; undefined when it names no owner. */
+async function containerReadonly(
+  deps: ToolWiringDeps,
+  principal: Principal,
+  context: ResolvedModelContextPort,
+  path: string,
+): Promise<boolean | undefined> {
+  const target = await containerTarget(deps, context, path);
+  if (!target) return undefined;
+  return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
+}
+
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const { path, format, version, ...selection } = input as ReadToolInput;
@@ -1390,26 +1425,48 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path, version } = input as LsToolInput;
-      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
-      if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.port.list(path);
-      if (!result.ok) return modelContextError(result.error, portOrError);
-      return modelContextResults(result.value, portOrError);
+      const listed = await listingContext(deps, ctx, version);
+      if (isToolError(listed)) return listed;
+      const { context, principal } = listed;
+      const result = await context.port.list(path);
+      if (!result.ok) return modelContextError(result.error, context);
+      const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(result.value));
+      const folderReadonly = path
+        ? await containerReadonly(deps, principal, context, path)
+        : undefined;
+      const entries = result.value.flatMap((entry) => {
+        const { editable: _kind, ...rest } = entry as FileEntry & { editable?: boolean };
+        if (entry.kind === "directory") {
+          return [{ ...rest, readonly: folderReadonly ?? entry.readonly ?? false }];
+        }
+        const decision = entry.documentId ? access.get(entry.documentId as DocumentId) : undefined;
+        return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
+      });
+      return modelContextResults(entries, context);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope, version } = input as SearchToolInput;
-      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
-      if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.port.search(pattern, scope);
-      if (!result.ok) return modelContextError(result.error, portOrError);
+      const listed = await listingContext(deps, ctx, version);
+      if (isToolError(listed)) return listed;
+      const { context, principal } = listed;
+      const result = await context.port.search(pattern, scope);
+      if (!result.ok) return modelContextError(result.error, context);
+      const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(result.value));
+      const hits = result.value.flatMap((hit) => {
+        const decision = hit.documentId ? access.get(hit.documentId as DocumentId) : undefined;
+        return decision ? [{ hit, readonly: decision.level !== "edit" }] : [];
+      });
       return {
         output: modelContextResults(
-          result.value.map(({ documentId: _id, revision: _revision, ...hit }) => hit),
-          portOrError,
+          hits.map(({ hit: { documentId: _id, revision: _revision, ...hit }, readonly }) => ({
+            ...hit,
+            readonly,
+          })),
+          context,
         ),
         metadata: {
-          documentRevisions: result.value.map(
-            ({ documentId, uri, revision }) =>
+          documentRevisions: hits.map(
+            ({ hit: { documentId, uri, revision } }) =>
               ({
                 documentId,
                 uri,

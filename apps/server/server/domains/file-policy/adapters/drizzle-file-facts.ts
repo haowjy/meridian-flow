@@ -21,7 +21,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
@@ -60,6 +60,35 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
 
   return {
     load,
+    async loadList(documentIds, draftWorkId) {
+      const ids = [...new Set(documentIds)].filter(isUuid);
+      const out = new Map<DocumentId, FileFacts>();
+      if (ids.length === 0) return out;
+      const rows = await documentRows(db).where(
+        and(inArray(documents.id, ids), contentDocumentPredicate()),
+      );
+      const draftRow = draftWorkId === undefined ? undefined : await readWork(db, draftWorkId);
+      for (const row of rows) {
+        if (!isContextUriScheme(row.scheme)) continue;
+        const documentId = row.documentId as DocumentId;
+        const target = { kind: "document", documentId } as const;
+        const base: FileFacts = {
+          ...documentBase(row, documentId, [], ""),
+          scheme: row.scheme,
+          target,
+        };
+        if (draftWorkId === undefined) {
+          out.set(documentId, base);
+          continue;
+        }
+        if (draftRow && draftRow.projectId !== base.projectId) continue;
+        out.set(documentId, {
+          ...base,
+          draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
+        });
+      }
+      return out;
+    },
     async loadLocked(requests) {
       const locked = new Set<string>();
       const lockFor = async (facts: readonly (FileFacts | null)[]) => {
@@ -102,10 +131,10 @@ function lockedWorkIds(facts: FileFacts | null, request: FileFactsRequest | unde
 
 type BaseFacts = Omit<FileFacts, "target" | "draftWork">;
 
-async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseFacts | null> {
-  if (!isUuid(documentId)) return null;
-  const [row] = await currentDrizzleDb(db)
+function documentRows(db: Database) {
+  return currentDrizzleDb(db)
     .select({
+      documentId: documents.id,
       name: documents.name,
       extension: documents.extension,
       folderId: documents.folderId,
@@ -128,12 +157,17 @@ async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseF
     .from(documents)
     .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
     .leftJoin(works, eq(works.id, contextSources.workId))
-    .innerJoin(projects, eq(projects.id, effectiveProjectId))
-    .where(and(eq(documents.id, documentId), contentDocumentPredicate()))
-    .limit(1);
-  if (!row || !isContextUriScheme(row.scheme)) return null;
-  const folders = row.folderId ? await readFolderChain(db, row.folderId) : [];
-  const file = row.extension ? `${row.name}.${row.extension}` : row.name;
+    .innerJoin(projects, eq(projects.id, effectiveProjectId));
+}
+
+type DocumentRow = Awaited<ReturnType<ReturnType<typeof documentRows>["where"]>>[number];
+
+function documentBase(
+  row: DocumentRow,
+  documentId: DocumentId,
+  folders: readonly FolderRow[],
+  path: string,
+): Omit<BaseFacts, "scheme"> {
   return {
     projectId: row.projectId,
     ownerAccountId: row.ownerAccountId as UserId,
@@ -143,14 +177,25 @@ async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseF
       row.documentDeletedAt !== null ||
       row.sourceDeletedAt !== null ||
       folders.some((folder) => folder.deleted),
-    scheme: row.scheme,
-    path: [...folders.map((folder) => folder.name).reverse(), file].join("/"),
+    path,
     self: { kind: "document", id: documentId },
     ancestors: [
       ...folders.map((folder): FileNode => ({ kind: "folder", id: folder.id })),
       ...sourceAncestors(row.sourceId, row.work?.id ?? null, row.projectId),
     ],
   };
+}
+
+async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseFacts | null> {
+  if (!isUuid(documentId)) return null;
+  const [row] = await documentRows(db)
+    .where(and(eq(documents.id, documentId), contentDocumentPredicate()))
+    .limit(1);
+  if (!row || !isContextUriScheme(row.scheme)) return null;
+  const folders = row.folderId ? await readFolderChain(db, row.folderId) : [];
+  const file = row.extension ? `${row.name}.${row.extension}` : row.name;
+  const path = [...folders.map((folder) => folder.name).reverse(), file].join("/");
+  return { ...documentBase(row, documentId, folders, path), scheme: row.scheme };
 }
 
 async function loadContainer(

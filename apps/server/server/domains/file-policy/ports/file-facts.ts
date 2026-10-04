@@ -1,5 +1,5 @@
 /** Port: load the facts the file policy decides on (file-access §2, §5). */
-import type { WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { FileFacts, FileTarget } from "../domain/types.js";
 
 export interface FileFactsRequest {
@@ -14,6 +14,16 @@ export interface FileFactsRequest {
 export interface FileFactsPort {
   /** Unlocked read; null when the target doesn't exist. */
   load(request: FileFactsRequest): Promise<FileFacts | null>;
+  /**
+   * The list path (file-access §6): many documents' facts in one query, each
+   * through `draftWorkId`'s draft when given. Folders are left out of
+   * `ancestors` and `path`: a listed row is already visible, and v1 grants
+   * sit on the project. Missing documents are absent from the map.
+   */
+  loadList(
+    documentIds: readonly DocumentId[],
+    draftWorkId?: WorkId,
+  ): Promise<Map<DocumentId, FileFacts>>;
   /**
    * Inside the ambient transaction: lock every named Work that owns a target
    * or its draft `FOR NO KEY UPDATE`, sorted by id, then read the facts under
