@@ -31,7 +31,8 @@ export function DocumentName({
   // Bare paths (`chapter.md`) are what `write` input carries most of the time;
   // the route predicate requires a scheme, so normalize before asking.
   const uri = contextUriFromWritePath(path);
-  const isDoor = !insideDoor && openContextUri !== null && canOpenContextUri?.(uri) === true;
+  const isDoor =
+    uri !== null && !insideDoor && openContextUri !== null && canOpenContextUri?.(uri) === true;
 
   const openLabel = t`Open ${title}`;
   // The inner span carries the truncation so the door's padding, which grows

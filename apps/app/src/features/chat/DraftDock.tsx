@@ -73,8 +73,9 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const openContextUri = useChatContextNavigation();
   const openRow = useCallback(
     (row: DockRow) => {
-      if (!openContextUri || !row.contextPath) return;
-      openContextUri(contextUriFromWritePath(row.contextPath));
+      const uri = row.contextPath ? contextUriFromWritePath(row.contextPath) : null;
+      if (!openContextUri || !uri) return;
+      openContextUri(uri);
     },
     [openContextUri],
   );
