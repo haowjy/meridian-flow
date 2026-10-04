@@ -96,8 +96,6 @@ function requestFor(
   const source = resource.canonical;
   if (!source) return null;
   if (intent.desired.kind === "delete") {
-    if (isWorkScopedProjectContextScheme(source.scheme) && source.workId && !source.workSlug)
-      return null;
     return {
       kind: "delete",
       scheme: source.scheme,
@@ -111,13 +109,6 @@ function requestFor(
     };
   }
   const destination = intent.desired.destination;
-  if (
-    (isWorkScopedProjectContextScheme(source.scheme) && source.workId && !source.workSlug) ||
-    (isWorkScopedProjectContextScheme(destination.scheme) &&
-      destination.workId &&
-      !destination.workSlug)
-  )
-    return null;
   return {
     kind: "move",
     scheme: source.scheme,

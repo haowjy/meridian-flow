@@ -8,6 +8,7 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
+import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import type {
   NamespaceOutcome,
   ResourceMetadataStore,
@@ -594,5 +595,63 @@ describe("namespace reconciliation", () => {
     finishLookup();
     await expect(running).resolves.toBe("uncertain");
     expect(submit).not.toHaveBeenCalled();
+  });
+});
+
+it("puts a No Work Scratch sync failure on the acted-on document", async () => {
+  const before = local();
+  before.resource.canonical = {
+    scheme: "scratch",
+    path: "/before.md",
+    name: "before.md",
+    workId: "no-work",
+    workSlug: null,
+  };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [
+    {
+      ...before.intents[0],
+      intentId: "move",
+      desired: {
+        kind: "set-location",
+        destination: {
+          scheme: "scratch",
+          folderPath: "",
+          name: "after.md",
+          workId: "no-work",
+          workSlug: null,
+        },
+      },
+    },
+  ];
+  const store = new MemoryStore(before);
+  const result = await reconcileResourceNamespace({
+    key: before.resource,
+    metadata: asMetadata(store),
+    lock: immediateLock,
+    newAttemptIds: () => ({ attemptId: "attempt", operationId: "operation" }),
+    transport: transport({
+      submit: async () => ({
+        kind: "operation",
+        receipt: {
+          operationId: "operation",
+          command: {
+            kind: "move",
+            sourceUri: "scratch://@/before.md",
+            destinationUri: "scratch://@/after.md",
+            expected: { kind: "file", nodeId: "document" },
+          },
+          result: { ok: false, error: { code: "conflict", uri: "scratch://@/after.md" } },
+        },
+      }),
+    }),
+  });
+  expect(result).toBe("needs-repair");
+  expect(store.record.resource.identity.documentId).toBe("document");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceNeedsRepair("project", store.record)).toEqual({
+    intentId: "move",
+    kind: "set-location",
+    name: "after.md",
   });
 });
