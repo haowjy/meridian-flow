@@ -410,3 +410,25 @@ it("aborts an in-flight request and installs no late checkpoint after close", as
   expect(metadata.catalogs.size).toBe(0);
   expect(metadata.catalogCommits).toBe(0);
 });
+
+it("acquireAfter observes after an older in-flight acquisition instead of joining it", async () => {
+  const metadata = new MemoryMetadata();
+  let resolveStale: (value: CatalogSnapshot) => void = () => undefined;
+  const stale = new Promise<CatalogSnapshot>((resolve) => {
+    resolveStale = resolve;
+  });
+  const catalogTransport = transport({ snapshot: vi.fn(() => stale) });
+  const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
+
+  const older = acquisition.acquire(projectId, scope);
+  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1));
+  const fresh = acquisition.acquireAfter(projectId, scope);
+  const alsoFresh = acquisition.acquireAfter(projectId, scope);
+  expect(catalogTransport.changes).not.toHaveBeenCalled();
+  resolveStale(snapshot("stale.md", "1"));
+
+  await Promise.all([older, fresh, alsoFresh]);
+  // One new observation, shared by both callers, after the older one settled.
+  expect(catalogTransport.changes).toHaveBeenCalledTimes(1);
+  expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1);
+});
