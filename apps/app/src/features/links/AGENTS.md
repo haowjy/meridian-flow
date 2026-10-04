@@ -43,6 +43,10 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   project, Work, base URI, or catalog revision changes; registering is the
   cache's only invalidation. A move or delete is a scope change: the link is
   spelled the same, and its old answer is now the wrong document or none.
+  An Editor's scope also carries its document's change revision (local, never
+  sent), because a rename rewrites the text an answer was given for. Its
+  server fallbacks name the holding document so the server can answer through
+  a pending redirect; chat has no holder.
 - **No component invalidates the link cache.** A create or rename anywhere is a
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
