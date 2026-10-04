@@ -130,6 +130,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("refreshes the projection after WebSocket typing and authority replacement", async () => {
+      const runtime = await composeRuntime();
+      try {
+        await runtime.ports.documentSync.writeDocument({
+          documentId: DOC_ID,
+          markdown: "Before typing.",
+          origin: { type: "user", actorUserId: USER_ID },
+        });
+        const [before] = await db
+          .select()
+          .from(schema.documents)
+          .where(eq(schema.documents.id, DOC_ID));
+        expect(before?.markdownProjection).toBe("Before typing.\n");
+        const checkpoint = await runtime.ports.documentSync.checkpoint(DOC_ID, "before typing");
+        if (!checkpoint.ok) throw new Error(JSON.stringify(checkpoint.error));
+        const room = await runtime.hocuspocus.openDirectConnection(DOC_ID);
+        if (!room.document) throw new Error("Missing writer room");
+        const writer = new Y.Doc({ gc: false });
+        Y.applyUpdate(writer, Y.encodeStateAsUpdate(room.document));
+        const fragment = writer.getXmlFragment("prosemirror");
+        fragment.delete(0, fragment.length);
+        const paragraph = new Y.XmlElement("paragraph");
+        paragraph.push([new Y.XmlText("After writer typing.")]);
+        fragment.push([paragraph]);
+        const update = Y.encodeStateAsUpdate(writer);
+        await runtime.ports.documentSync.admitLiveWriterUpdate({
+          documentId: DOC_ID,
+          document: room.document,
+          update,
+          origin: { type: "user", userId: USER_ID },
+          expectedGeneration: 1n,
+        });
+        Y.applyUpdate(room.document, update);
+        writer.destroy();
+        await expect
+          .poll(
+            async () => {
+              const [row] = await db
+                .select()
+                .from(schema.documents)
+                .where(eq(schema.documents.id, DOC_ID));
+              return row?.markdownProjection;
+            },
+            { timeout: 5000 },
+          )
+          .toBe("After writer typing.\n");
+        const restored = await runtime.ports.documentSync.restore(DOC_ID, checkpoint.value);
+        expect(restored.ok).toBe(true);
+        await expect
+          .poll(
+            async () => {
+              const [row] = await db
+                .select()
+                .from(schema.documents)
+                .where(eq(schema.documents.id, DOC_ID));
+              return row?.markdownProjection;
+            },
+            { timeout: 5000 },
+          )
+          .toBe("Before typing.\n");
+      } finally {
+        await runtime.ports.documentSync.documentDerivations.stop();
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));

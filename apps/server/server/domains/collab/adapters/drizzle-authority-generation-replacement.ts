@@ -22,6 +22,7 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
   db: Database;
   coordinator: DocumentCoordinator;
   checkpoints: CheckpointReader;
+  onReplaced(documentId: DocumentId): void;
   disconnectGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
 }): NonNullable<
   Parameters<
@@ -53,7 +54,10 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
             checkpointId: Number(checkpoint.checkpointId),
             expectedGeneration,
           });
-          if (result.ok) return result.generation;
+          if (result.ok) {
+            input.onReplaced(documentId);
+            return result.generation;
+          }
           throw new DocumentMutationPolicyError(
             result.code === "authority_head_busy"
               ? "authority_head_busy"

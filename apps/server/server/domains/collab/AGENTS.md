@@ -32,6 +32,9 @@ editor UI or transport-shell policy.
   struct history.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
+- Derive live read models from a journal-locked durable cut, never a warm room
+  paired with a database watermark. The recovery sweep owns freshness; triggers
+  only reduce latency. Push derivation joins its completion transaction.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the

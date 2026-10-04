@@ -186,7 +186,7 @@ describe("ContextFS createUntitledDocument", () => {
 
   it("ignores untitled suffixes that cannot be safely incremented", async () => {
     const { fs, store } = createUntitledFs({});
-    await store.upsertDocument({
+    await store.createDocument({
       folderId: null,
       name: `Untitled ${"9".repeat(400)}`,
       extension: "md",
@@ -276,7 +276,7 @@ describe("ContextFS createUntitledDocument", () => {
     expect(writeDocument).not.toHaveBeenCalled();
     expect((await store.findDocumentById(created.value.documentId))?.document).toMatchObject({
       provisionalName: false,
-      markdown: "Opening line",
+      markdown: "",
     });
   });
 });
