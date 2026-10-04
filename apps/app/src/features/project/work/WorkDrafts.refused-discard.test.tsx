@@ -23,9 +23,6 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ status: "ready", groups: [group], refetch: vi.fn() }),
   activeWorkDraftGroups: (groups: unknown[]) => groups,
 }));
-vi.mock("../draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
-  usePostApplyDraftGroupProjections: (groups: unknown[]) => ({ commandEligibleGroups: groups }),
-}));
 vi.mock("../dock/useAiDraftLauncher", () => ({
   useAiDraftLauncher: () => ({ openAiDraft: vi.fn() }),
 }));
