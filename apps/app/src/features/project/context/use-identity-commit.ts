@@ -77,7 +77,7 @@ export function deriveIdentityCommitPlan(
  * named Work is not in the Works list, so the commit fails on the document
  * instead of queuing a placement that can never sync.
  */
-export function identityWorkAuthority(
+function identityWorkAuthority(
   destination: IdentityDestination,
   works: readonly { id: string; slug: string | null }[] | null | undefined,
 ): ResourceWorkAuthority | null {

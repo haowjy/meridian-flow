@@ -68,4 +68,4 @@ an input rule and a keymap over the existing `list_item` + `checked`, plus a
 checkbox in the list item's DOM, not the upstream nodes.
 
 Found while pinning the markdown autoformat truth table
-(`extensions/MarkdownAutoformatExtension.test.ts`); ruling 18 did not name it.
+(`extensions/MarkdownAutoformatExtension.ts`); ruling 18 did not name it.
