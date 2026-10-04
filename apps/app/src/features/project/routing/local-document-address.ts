@@ -61,6 +61,14 @@ export function reconcileDocumentAddress(
   remote: DocumentAddressResult | undefined,
 ): { result: DocumentAddressResult | undefined; localFile: CatalogFile | undefined } {
   if (remote && remote.kind !== "unavailable") {
+    // While the writer's own move is unconfirmed, the path it gave this document is its
+    // address; a server alias for that path only remembers where the document used to be.
+    if (
+      remote.kind === "alias" &&
+      local?.file.placementPending &&
+      local.file.documentId === remote.document.documentId
+    )
+      return { result: local.result, localFile: local.file };
     return {
       result: remote,
       localFile: local?.file.documentId === remote.document.documentId ? local.file : undefined,

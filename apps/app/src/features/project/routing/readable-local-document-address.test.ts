@@ -233,6 +233,25 @@ it("uses local content through lookup failure, then yields to a successful canon
   });
 });
 
+it("keeps the path of the writer's unconfirmed move over a server alias for the same document", () => {
+  const local = resolveLocalDocumentAddress(
+    "project-id",
+    { kind: "document", scheme: "kb", path: "Cached.md" },
+    null,
+    catalog(true),
+  );
+  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
+  // A rename back to a name the server still redirects answers with an alias of this document.
+  const alias = { kind: "alias" as const, document: local.result.document };
+  const pending = { ...local, file: { ...local.file, placementPending: true as const } };
+
+  expect(reconcileDocumentAddress(pending, alias)).toEqual({
+    result: local.result,
+    localFile: pending.file,
+  });
+  expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
+});
+
 it("keeps local ownership while canonical metadata replaces a stale same-ID path", () => {
   const local = catalog(true).findDocument("document-id");
   if (!local) throw new Error("Expected local file");

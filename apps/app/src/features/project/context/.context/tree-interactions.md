@@ -82,7 +82,17 @@ document removal.
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
 
-File rename and the identity bar share the durable resource-location command.
-Folder rename alone retains `context-identity-mutation.ts`. Inline operations
-keep stable entry identity. Work selection is attached only to Scratch/Uploads,
-never project-owned Manuscript/KB/User paths.
+Every rename is local first. File rename (any area, any Work) and the identity bar
+share the durable resource-location command; folder rename admits a folder
+namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
+and its descendants show their new place at once in the tree, open tabs and
+routes. A refused rename returns the entry to its old name with
+`NamespaceFailureMark` on the row and the repair name in the reopened field.
+A document under a pending move (its own or a folder above it) carries
+`placementPending`: until the server confirms, a server alias for the path the
+writer just gave it cannot pull the route back to the old name. The phone shell,
+which derives its document from the route, finds a bound document by identity
+while the URL still names the old path; the server's redirect repairs the URL
+once the move settles. Inline operations keep stable entry identity. Work
+selection is attached only to Scratch/Uploads, never project-owned
+Manuscript/KB/User paths.

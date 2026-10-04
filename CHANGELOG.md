@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item.
+
 - Add local folder-move journals and descendant catalog rebasing for instant rename integration; retain complete settled receipts for short-lived item feedback.
 
 - Index internal document links alongside certified projections, including relative links and image references; refresh their address keys when the holder moves.
