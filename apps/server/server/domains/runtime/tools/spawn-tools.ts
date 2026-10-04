@@ -33,8 +33,9 @@ const { "disallowed-tools": disallowedTools, ...invocationPatchShape } =
   invocationPatchSchema.shape;
 
 /**
- * Today's invocation patch with its one public spelling change: the model
- * writes `disallowed_tools`, the configuration keeps `disallowed-tools`.
+ * The invocation patch, published with its full typed shape (audit F2). Its one
+ * spelling change: the model writes `disallowed_tools`, the configuration keeps
+ * `disallowed-tools`.
  */
 const SpawnOverridesSchema = z
   .object({
@@ -42,7 +43,9 @@ const SpawnOverridesSchema = z
     permission: invocationPatchShape.permission.describe(
       'Lower to "read" so this run edits only its own Work\'s scratch://; it can\'t raise a read agent to "edit".',
     ),
-    disallowed_tools: disallowedTools,
+    disallowed_tools: disallowedTools.describe(
+      "Tools this run can't use, on top of the child's own.",
+    ),
   })
   .strict()
   .transform(
@@ -79,7 +82,7 @@ export const SpawnInputSchema = z
       .describe("Extra system-prompt text for this run only.")
       .optional(),
     overrides: SpawnOverridesSchema.describe(
-      "Change this run's model, effort, permission, tools, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
+      "Change this run's model, effort, permission, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
     ).optional(),
   })
   .strict();

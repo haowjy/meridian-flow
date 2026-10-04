@@ -154,7 +154,7 @@ describe("model tool schemas", () => {
     // The primary catalog as the audit exporter defines it: the default policy's advertisement.
     const definitions = advertiseTools(
       createToolRegistry({ registrations: allRegistrations() }).getDefinitions(),
-      projectToolPolicy({}),
+      projectToolPolicy({}, "primary"),
     ).flatMap((tool) => (tool.type === "function" ? [tool] : []));
     const characters = definitions.reduce(
       (total, { name, description, inputSchema }) =>
@@ -176,6 +176,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`18000`);
+    expect(characters).toMatchInlineSnapshot(`18051`);
   });
 });

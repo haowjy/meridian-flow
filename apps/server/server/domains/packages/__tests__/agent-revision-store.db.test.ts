@@ -283,7 +283,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         skills: { load: [], available: [] },
         namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
         permission: "edit" as const,
-        tools: { read: "allow" as const },
+        tools: ["read"],
       };
       const invocationOverlay = {
         appendSystemPrompt: "Appended body.",

@@ -1,11 +1,11 @@
-/** Delegation authority: a patch never grants beyond the caller, and the agent chain reads every link. */
+/** Delegation authority: a child never has a tool its parent lacks, and the agent chain reads every link. */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import type { AgentRevisionBinding } from "../../../packages/index.js";
 import { readAgentChain } from "./agent-chain.js";
-import { validateInvocationAuthority } from "./invocation-authority.js";
+import { toolsBeyondParent } from "./invocation-authority.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
   return {
@@ -17,24 +17,11 @@ function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentC
   };
 }
 
-const WRITER_MAP = { read: "allow", edit: "allow", ask_user: "allow" } as const;
-const CRITIC_MAP = { read: "allow", edit: "deny", ask_user: "allow" } as const;
-
-describe("validateInvocationAuthority", () => {
-  it("rejects a deny-removal the caller cannot itself perform", () => {
-    const baseline = config({ tools: CRITIC_MAP });
-    const patched = config({ tools: WRITER_MAP });
-    const caller = config({ tools: CRITIC_MAP });
-    const reasons = validateInvocationAuthority({ baseline, patched, caller });
-    expect(reasons.length).toBeGreaterThan(0);
-    expect(reasons).toContain('Tool "write" is not enabled for the caller.');
-  });
-
-  it("does not re-validate a named child's own definition-granted tools", () => {
-    const baseline = config({ tools: WRITER_MAP });
-    const patched = config({ tools: WRITER_MAP });
-    const caller = config({ tools: CRITIC_MAP });
-    expect(validateInvocationAuthority({ baseline, patched, caller })).toEqual([]);
+describe("toolsBeyondParent", () => {
+  it("names the child's tools its parent lacks, never return_result", () => {
+    const parent = config({ "disallowed-tools": ["write", "spawn"] });
+    expect(toolsBeyondParent(parent, config())).toEqual(["write", "spawn"]);
+    expect(toolsBeyondParent(parent, config({ tools: ["read", "return_result"] }))).toEqual([]);
   });
 });
 

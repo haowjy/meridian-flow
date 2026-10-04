@@ -1,3 +1,4 @@
+export * from "./action-policy.js";
 export * from "./agent-chain.js";
 export * from "./apply-tool-policy.js";
 export * from "./invocation-authority.js";

@@ -4,6 +4,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -62,6 +63,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation,
     });
     const threadRepos = createDrizzleRepositoriesForTest(db);

@@ -826,8 +826,10 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     },
 
     async appendWriterUpdate(docId, update, meta) {
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        // A live room binds its edit grant around each frame (file-access §7).
+        await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return appendUpdate(txDb, docId, update, meta);
       });

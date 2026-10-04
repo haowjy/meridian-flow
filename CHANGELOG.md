@@ -2,7 +2,7 @@
 
 - Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0025 renames the report column.
 - Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
-- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
+- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. 
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
 - `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
 - Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
@@ -18,6 +18,10 @@
 - An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
 - Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
+- Tool lists say only which tools an agent has: `tools` is an optional allow-list and `disallowed-tools` removes tools, both arrays of real tool names. `edit` and the allow/deny map fail to compile with the replacement named, and an unknown name makes the Agent unsupported. No tool narrows its commands; a `read` agent gets `write` and is refused per file. Critic and Writer drop their tool lists.
+- One action policy decides Work changes: a `read` agent (or any agent under a `read` parent) can't create, update, archive, unarchive or delete Works, and the model's `work switch` is refused until the writer can approve it.
+- `spawn.overrides` publishes its typed shape. `tools` is gone, `disallowed_tools` only adds denials, and a child with a tool its parent lacks is `invalid_arguments` naming it.
+- Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 

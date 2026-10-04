@@ -108,7 +108,7 @@ import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
-import { invalidArgumentsResult, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
+import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -1048,13 +1048,8 @@ async function persistToolRejection(input: {
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  // The gate's invalid_arguments refusal reads exactly like the executor's.
-  const rejectionResult: JsonObject =
-    input.decision.kind === "invalid_arguments"
-      ? invalidArgumentsResult(input.decision.issues)
-      : { error: input.decision.kind, reason: input.decision.reason };
-  const rejectionOutput: JsonValue =
-    input.decision.kind === "invalid_arguments" ? input.decision.reason : rejectionResult;
+  const rejectionResult: JsonObject = { error: input.decision.kind, reason: input.decision.reason };
+  const rejectionOutput: JsonValue = rejectionResult;
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1376,10 +1371,7 @@ function buildGenerateRequestFromAssembled(input: {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
     resolvedModel: assembled.resolvedModel,
-    permissionGate: permissionGateFromToolPolicy(
-      assembled.policy,
-      assembled.thread.kind === "subagent" ? ["return_result"] : [],
-    ),
+    permissionGate: permissionGateFromToolPolicy(assembled.policy),
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -2245,7 +2237,7 @@ async function executeLoop({
 
             // If denied, we still persist a tool_result block (with isError: true)
             // so the model sees the rejection in the next turn's context build.
-            const decision = built.permissionGate.check(call.name, call.arguments);
+            const decision = built.permissionGate.check(call.name);
             if (!decision.allowed) {
               const persistedRejection = await persistToolRejection({
                 deps,

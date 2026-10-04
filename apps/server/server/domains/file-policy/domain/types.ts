@@ -181,15 +181,10 @@ export interface FileAccessDenied {
   readonly archivedWork: WorkRef | null;
   readonly destination: FileDestination | null;
   /**
-   * The asking agent chain's lowest permission, so refusal copy offers only
-   * calls the agent may make; null for a person.
+   * The asking agent's delegation chain, so refusal copy offers only calls
+   * the action policy allows; null for a person.
    */
-  readonly agentPermission: AgentPermission | null;
-}
-
-/** A delegation chain's effective permission: its lowest link (D8). */
-export function chainPermission(chain: AgentChain): AgentPermission {
-  return chain.some((link) => link.permission === "read") ? "read" : "edit";
+  readonly agentChain: AgentChain | null;
 }
 
 export function isFileAccessDenied(value: unknown): value is FileAccessDenied {

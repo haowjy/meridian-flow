@@ -15,6 +15,7 @@ import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
@@ -80,6 +81,7 @@ async function fixture(mode: "direct" | "draft") {
     documents: effective,
     works: createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
     threadWorks: createDrizzleThreadWorksRepository(db),
