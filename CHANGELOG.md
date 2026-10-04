@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Reduced folder-journal and rename-surface fixtures while retaining refused-queue, refresh, scope and resolver-cache regressions.
+
 - Pruned rename/link-rewrite tests to stored-link contracts, transaction regressions and a real worker/move lock overlap.
 
 - Offer the latest queued file or folder name for repair when an earlier rename is refused, preserving the writer's newest request through shared journal policy.

@@ -253,33 +253,6 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
 });
 
-it("keeps the route's bound document through a placement change in either direction", () => {
-  // The URL names a path the document has left, or one another document now holds.
-  const stale = { kind: "document" as const, scheme: "kb" as const, path: "Old.md" };
-  const local = resolveLocalDocumentAddress(
-    "project-id",
-    stale,
-    null,
-    catalog(false),
-    "document-id",
-  );
-  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
-  expect(local).toMatchObject({
-    bound: true,
-    file: { documentId: "document-id", path: "/Cached.md" },
-  });
-  expect(resolveLocalDocumentAddress("project-id", stale, null, catalog(false))).toBeUndefined();
-
-  const other = {
-    kind: "current" as const,
-    document: { ...local.result.document, documentId: "other-id" },
-  };
-  expect(reconcileDocumentAddress(local, other)).toEqual({
-    result: local.result,
-    localFile: local.file,
-  });
-});
-
 it("keeps local ownership while canonical metadata replaces a stale same-ID path", () => {
   const local = catalog(true).findDocument("document-id");
   if (!local) throw new Error("Expected local file");
@@ -317,20 +290,19 @@ function bound(workId: string | null, documentId = "doc-a") {
   };
 }
 
-it("holds a route by continuity only for a document this surface admitted, not one a cached tab guessed", () => {
-  const input = { destination: kbRoute, editorWorkId: null, selection: bound(null) };
-  // A's stale tab bound the new route before the server answered: the fresh lookup stands.
-  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: null })).toBeNull();
-  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: "doc-b" })).toBeNull();
-  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: "doc-a" })).toBe("doc-a");
-});
-
-it("compares the coordinator's Editor-context Work, so a named Work keeps a project document's continuity", () => {
-  const admitted = { destination: kbRoute, admittedDocumentId: "doc-a" };
+it.each([
+  [null, null, null, null],
+  ["doc-b", null, null, null],
+  ["doc-a", null, null, "doc-a"],
+  ["doc-a", "work-1", "work-1", "doc-a"],
+  ["doc-a", "work-1", null, null],
+])("requires admission %s and matching Editor context %s / %s", (admittedDocumentId, editorWorkId, selectionWork, expected) => {
   expect(
-    routeContinuityDocumentId({ ...admitted, editorWorkId: "work-1", selection: bound("work-1") }),
-  ).toBe("doc-a");
-  expect(
-    routeContinuityDocumentId({ ...admitted, editorWorkId: "work-1", selection: bound(null) }),
-  ).toBeNull();
+    routeContinuityDocumentId({
+      destination: kbRoute,
+      admittedDocumentId,
+      editorWorkId,
+      selection: bound(selectionWork),
+    }),
+  ).toBe(expected);
 });

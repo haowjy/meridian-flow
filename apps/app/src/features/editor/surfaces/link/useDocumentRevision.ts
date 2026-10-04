@@ -17,7 +17,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-export const SETTLE_MS = 400;
+const SETTLE_MS = 400;
 
 export function useDocumentRevision(editor: Editor | null): number {
   const [revision, setRevision] = useState(0);
