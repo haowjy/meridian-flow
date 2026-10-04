@@ -17,6 +17,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -219,6 +220,31 @@ export const folders = pgTable(
     uniqueIndex("folders_context_root_name_active")
       .on(table.contextSourceId, table.name)
       .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+  ],
+);
+
+/**
+ * Closure over `folders.parent_id`: one row per folder and each of its
+ * ancestors, itself included at depth 0. List filters match grants on a
+ * file's folders with it in one join (file-access §6); moves keep it current.
+ */
+export const folderAncestors = pgTable(
+  "folder_ancestors",
+  {
+    folderId: uuid("folder_id")
+      .$type<FolderId>()
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    ancestorId: uuid("ancestor_id")
+      .$type<FolderId>()
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    depth: integer("depth").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.folderId, table.ancestorId] }),
+    index("folder_ancestors_ancestor").on(table.ancestorId),
+    check("folder_ancestors_depth_nonneg", sql`${table.depth} >= 0`),
   ],
 );
 
