@@ -112,14 +112,14 @@ export function useComposedRuntimes(db: () => Database) {
         runtime.ports.documentSync.finalizeResponseCommit(responseId, thread as never);
       return { responseId, call, save };
     };
-    const reply = async (steps: (call: ToolCallText, raw: ToolCall) => Promise<void>) => {
+    const reply = async (steps: (call: ToolCallText) => Promise<void>) => {
       const { call, save } = await begin();
       await steps(async (name, args) => {
         const result = await call(name, args);
         const output = String(result.output);
         if (result.isError) throw new Error(`${name} failed:\n${output}`);
         return output;
-      }, call);
+      });
       await save();
     };
     const text = async (path: string, version?: "live") => {
