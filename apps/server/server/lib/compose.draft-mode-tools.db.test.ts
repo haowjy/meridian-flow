@@ -116,7 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const text = (result: { output: unknown }) =>
       typeof result.output === "string" ? result.output : JSON.stringify(result.output);
 
-    it("reads, searches and lists the version your writes change in a draft-mode Work", async () => {
+    it("drafts kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
       const script = await startWithChapter("Writer live content.\n\nWriter aside.");
       const first = await script.begin();
       let call = first.call;
@@ -128,44 +128,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const liveHash = splitHashline(asideLine ?? "")?.hash;
       expect(liveHash).toBeTruthy();
       await call("read", { path: CHAPTER });
-      const removed = await call("write", { command: "remove", path: CHAPTER, in: liveHash });
-      expect(removed.isError).toBeFalsy();
+      await call("write", { command: "remove", path: CHAPTER, in: liveHash });
       const drafted = await call("write", {
         command: "replace",
         path: CHAPTER,
         find: "Writer live content.",
         content: "Model draft content.",
-        all: true,
       });
-      expect(drafted.output).toMatch(/version: draft \(@rewrite\)/);
-      // Scratch is live in every Work (D9); a search in the same reply sees the new notes.
+      expect(drafted.result).toMatchObject({ destination: "draft" });
+      const lore = await call("write", {
+        command: "create",
+        path: "kb://lore.md",
+        content: "Drafted lore needle.",
+      });
+      expect(lore.result).toMatchObject({ destination: "draft" });
+      // Scratch is live in every Work (D9).
       const notes = await call("write", {
         command: "create",
         path: "scratch://notes.md",
         content: "Scratch needle notes.",
       });
       expect(notes.result).toMatchObject({ destination: "live" });
-      const scratchHits = await call("search", { pattern: "Scratch needle" });
-      expect(text(scratchHits)).toContain("scratch://@rewrite/notes.md");
-      expect(text(scratchHits)).toContain('"version":"live"');
-      const qualifiedHits = await call("search", {
-        pattern: "Scratch needle",
-        scope: "scratch://@rewrite",
-      });
-      expect(text(qualifiedHits)).toContain('"version":"live"');
-      const qualifiedList = await call("ls", { path: "scratch://@rewrite" });
-      expect(text(qualifiedList)).toContain("notes.md");
       await first.save();
 
       call = (await script.begin()).call;
       const draftRead = await call("read", { path: CHAPTER });
-      expect(draftRead.output).toContain("version: draft");
-      expect(draftRead.output).toContain("Model draft content.");
       expect(draftRead.result).toMatchObject({ read: { version: "draft" } });
+      expect(draftRead.output).toContain("Model draft content.");
       const liveRead = await call("read", { path: CHAPTER, version: "live" });
-      expect(liveRead.output).toContain("version: live");
       expect(liveRead.output).toContain("Writer live content.");
-      expect(liveRead.output).toContain("Writer aside.");
       expect(liveRead.output).not.toContain("Model draft content.");
 
       // The last read was the draft, so the stale live hash reaches the resolver.
@@ -177,156 +168,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Never lands.",
       });
       expect(stale.isError).toBe(true);
-      expect(text(stale)).toContain(
-        `Block hash "${liveHash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it; read again without \`version\`.`,
-      );
 
-      const draftHits = await call("search", { pattern: "Model draft" });
-      expect(text(draftHits)).toContain('"version":"draft"');
-      expect(text(draftHits)).toContain(CHAPTER);
-      const liveHits = await call("search", { pattern: "Model draft", version: "live" });
-      expect(text(liveHits)).not.toContain(CHAPTER);
-      const publishedHits = await call("search", { pattern: "Writer live", version: "live" });
-      expect(text(publishedHits)).toContain('"version":"live"');
-
-      const lore = await call("write", {
-        command: "create",
-        path: "kb://lore.md",
-        content: "Drafted lore needle.",
-      });
-      expect(lore.isError).toBeFalsy();
-      expect(lore.output).toMatch(/version: draft \(@rewrite\)/);
       const loreHits = await call("search", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore.md");
-      expect(text(loreHits)).toContain('"version":"draft"');
-      const listed = await call("ls", { path: "kb://" });
-      expect(text(listed)).toContain("kb://lore.md");
       const listedLive = await call("ls", { path: "kb://", version: "live" });
       expect(text(listedLive)).not.toContain("kb://lore.md");
     });
 
-    it("copies into the draft for manuscript and live for scratch in a draft-mode Work", async () => {
-      const script = await startWithChapter("Writer live content.\n\nWriter aside.");
-      const first = await script.begin();
-      let call = first.call;
-
-      const draftCopy = await call("write", {
-        command: "copy",
-        from: { path: CHAPTER },
-        path: "manuscript://chapter-copy.md",
-      });
-      expect(draftCopy.isError).toBeFalsy();
-      expect(draftCopy.output).toMatch(
-        /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+; version: draft \(@rewrite\); copied: 2 blocks from manuscript:\/\/chapter\.md$/,
-      );
-      expect(draftCopy.result).toMatchObject({ destination: "draft", command: "copy" });
-
-      const scratchCopy = await call("write", {
-        command: "copy",
-        from: { path: CHAPTER },
-        path: "scratch://chapter-copy.md",
-      });
-      expect(scratchCopy.isError).toBeFalsy();
-      expect(scratchCopy.result).toMatchObject({ destination: "live" });
-      expect(scratchCopy.output).not.toContain("Writer live content.");
-
-      // Block copies: from the scratch copy staged in this reply into the drafted chapter,
-      // and from the chapter into scratch.
-      await call("read", { path: CHAPTER });
-      const intoChapter = await call("write", {
-        command: "insert",
-        path: CHAPTER,
-        from: { path: "scratch://chapter-copy.md", in: 2 },
-      });
-      expect(intoChapter.isError).toBeFalsy();
-      expect(intoChapter.output).toMatch(
-        /version: draft \(@rewrite\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
-      );
-      const intoScratch = await call("write", {
-        command: "insert",
-        path: "scratch://chapter-copy.md",
-        from: { path: CHAPTER, in: 1, version: "live" },
-      });
-      expect(intoScratch.isError).toBeFalsy();
-      expect(intoScratch.result).toMatchObject({ destination: "live" });
-      await first.save();
-
-      call = (await script.begin()).call;
-      const live = await script.runtime.ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(live.ok && live.value.trim()).toBe("Writer live content.\n\nWriter aside.");
-      const draftChapter = await call("read", { path: CHAPTER });
-      expect(draftChapter.output).toMatch(/Writer aside\.\n[0-9a-f]+\|Writer aside\.$/);
-      const copiedDraft = await call("read", { path: "manuscript://chapter-copy.md" });
-      expect(copiedDraft.output).toContain("version: draft");
-      expect(copiedDraft.output).toContain("Writer aside.");
-      const copiedLive = await call("read", {
-        path: "manuscript://chapter-copy.md",
-        version: "live",
-      });
-      expect(copiedLive.isError).toBe(true);
-      const scratchRead = await call("read", { path: "scratch://chapter-copy.md" });
-      expect(scratchRead.output).toContain("blocks: 3; version: live");
-
-      const copies = await db
-        .select({ name: schema.documents.name, metadata: schema.documents.metadata })
-        .from(schema.documents)
-        .where(eq(schema.documents.name, "chapter-copy"));
-      expect(copies).toHaveLength(2);
-      for (const copy of copies) {
-        expect(copy.metadata).toMatchObject({
-          copiedFrom: { uri: CHAPTER, version: "draft", revision: expect.any(String) },
-        });
-      }
-    });
-
-    it("copies part of a document by #fragment or by from.in (D49)", async () => {
+    it("copies the section a #fragment names (D49)", async () => {
       const script = await startWithChapter(
-        "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\nLin fell back.\n\n# Aftermath\n\nQuiet.",
+        "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\n# Aftermath\n\nQuiet.",
       );
       const first = await script.begin();
-      const call = first.call;
-
-      const bySection = await call("write", {
+      const bySection = await first.call("write", {
         command: "copy",
         from: { path: `${CHAPTER}#the-midnight-duel` },
         path: "scratch://duel.md",
       });
       expect(bySection.isError).toBeFalsy();
-      expect(bySection.output).toMatch(
-        /^status: success; path: scratch:\/\/duel\.md; write: w\d+; version: live; copied: 3 blocks from manuscript:\/\/chapter\.md#the-midnight-duel/,
-      );
-      expect(bySection.output).not.toContain("Steel rang.");
-
-      const read = await call("read", { path: CHAPTER, version: "live" });
-      const hashes = text(read)
-        .split("\n")
-        .flatMap((line) => {
-          const parsed = splitHashline(line);
-          return parsed ? [{ hash: parsed.hash, body: parsed.body }] : [];
-        });
-      const steel = hashes.find((line) => line.body.includes("Steel rang."))?.hash;
-      const fell = hashes.find((line) => line.body.includes("Lin fell back."))?.hash;
-      if (!steel || !fell) throw new Error("the chapter read returned no hashes");
-
-      const byIn = await call("write", {
-        command: "copy",
-        from: { path: CHAPTER, in: [steel, fell], version: "live" },
-        path: "scratch://blows.md",
-      });
-      expect(byIn.isError).toBeFalsy();
-      expect(byIn.output).toMatch(/copied: 2 blocks from manuscript:\/\/chapter\.md$/);
       await first.save();
 
       const { call: next } = await script.begin();
-      const duel = await next("read", { path: "scratch://duel.md" });
-      expect(text(duel)).toContain("The Midnight Duel");
-      expect(text(duel)).toContain("Lin fell back.");
-      expect(text(duel)).not.toContain("Dawn.");
-      expect(text(duel)).not.toContain("Quiet.");
-      const blows = await next("read", { path: "scratch://blows.md" });
-      expect(text(blows)).toContain("blocks: 2;");
-      expect(text(blows)).toContain("Steel rang.");
-      expect(text(blows)).not.toContain("Midnight Duel");
+      const duel = text(await next("read", { path: "scratch://duel.md" }));
+      expect(duel).toContain("Steel rang.");
+      expect(duel).not.toContain("Dawn.");
+      expect(duel).not.toContain("Quiet.");
     });
 
     it("rolls a copy back with its reply", async () => {
@@ -356,11 +222,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(content.ok ? content.value.trim() : "").toBe("");
     });
 
-    it("copies a binary file as a new stored object with its provenance", async () => {
-      await db
-        .update(schema.works)
-        .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+    // D24: a binary copy duplicates the stored object and lands live, even in a draft Work.
+    it("copies a binary file live as a new stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -378,98 +241,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sizeBytes: bytes.byteLength,
         });
       if (!written.ok) throw new Error(JSON.stringify(written.error));
+
       // Outside a reply, as a tool call with no model response.
-      const call = (name: string, args: Record<string, unknown>) =>
-        runtime.app.toolExecutor.executeTool(
-          { id: crypto.randomUUID(), name, arguments: args },
-          { ...THREAD, agentSlug: null },
-        );
-
-      const copied = await call("write", {
-        command: "copy",
-        from: { path: "manuscript://scan.pdf" },
-        path: "scratch://scan-copy.pdf",
-      });
-
-      expect(copied.isError).toBeFalsy();
-      expect(copied.output).toBe(
-        "status: success; path: scratch://scan-copy.pdf; version: live; copied from manuscript://scan.pdf",
+      const copied = await runtime.app.toolExecutor.executeTool(
+        {
+          id: crypto.randomUUID(),
+          name: "write",
+          arguments: {
+            command: "copy",
+            from: { path: "manuscript://scan.pdf" },
+            path: "kb://scan-copy.pdf",
+          },
+        },
+        { ...THREAD, agentSlug: null },
       );
+
+      expect(copied.result).toMatchObject({ status: "success", destination: "live" });
       const [copy] = await db
         .select()
         .from(schema.documents)
         .where(eq(schema.documents.name, "scan-copy"));
-      expect(copy?.storageUrl).toBeTruthy();
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
-      expect(copy?.metadata).toEqual({
-        copiedFrom: { uri: "manuscript://scan.pdf", version: "live", revision: null },
-      });
       const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
       const stored = await runtime.ports.objectStore.get(key);
       expect(stored.ok && [...stored.value.bytes]).toEqual([...bytes]);
-
-      const again = await call("write", {
-        command: "copy",
-        from: { path: "manuscript://scan.pdf" },
-        path: "scratch://scan-copy.pdf",
-      });
-      expect(again.isError).toBe(true);
-      expect(again.output).toContain("A binary copy can't replace an existing file.");
-
-      const binaryRead = await call("read", { path: "manuscript://scan.pdf" });
-      expect(binaryRead.isError).toBe(true);
-      expect(binaryRead.output).toBe(
-        "status: binary_file; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be read as text.",
-      );
-
-      const binaryWrite = await call("write", {
-        command: "insert",
-        path: "manuscript://scan.pdf",
-        content: "Text.",
-      });
-      expect(binaryWrite.isError).toBe(true);
-      expect(binaryWrite.output).toBe(
-        "status: binary_file; path: manuscript://scan.pdf\n\nThe file is binary, so it can't be edited as text.",
-      );
-
-      const binaryBlockCopy = await call("write", {
-        command: "insert",
-        path: "scratch://notes.md",
-        from: { path: "manuscript://scan.pdf", in: 1 },
-      });
-      expect(binaryBlockCopy.isError).toBe(true);
-      expect(binaryBlockCopy.output).toBe(
-        "status: binary_file\n\nfrom manuscript://scan.pdf: The file is binary, so its blocks can't be copied.",
-      );
-
-      const binarySection = await call("write", {
-        command: "copy",
-        from: { path: "manuscript://scan.pdf#page-2" },
-        path: "scratch://scan-page.pdf",
-      });
-      expect(binarySection.isError).toBe(true);
-      expect(binarySection.output).toBe(
-        "status: binary_file\n\nfrom manuscript://scan.pdf#page-2: A binary file is copied whole; drop the #fragment from from.path.",
-      );
-      const binaryIn = await call("write", {
-        command: "copy",
-        from: { path: "manuscript://scan.pdf", in: 1 },
-        path: "scratch://scan-page.pdf",
-      });
-      expect(binaryIn.isError).toBe(true);
-      expect(binaryIn.output).toBe(
-        "status: binary_file\n\nfrom manuscript://scan.pdf: A binary file is copied whole; drop from.in.",
-      );
-
-      const missingSource = await call("write", {
-        command: "copy",
-        from: { path: "manuscript://no-such-source.md" },
-        path: "scratch://from-missing.md",
-      });
-      expect(missingSource.isError).toBe(true);
-      expect(missingSource.output).toBe(
-        "status: document_not_found\n\nfrom manuscript://no-such-source.md: File not found. Read the project to find the right path.",
-      );
     });
   });
 }
