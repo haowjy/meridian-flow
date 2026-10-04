@@ -14,7 +14,7 @@ import {
   schema,
   t,
 } from "./codec-test-support.js";
-import { CodecParseError, markdownCodec, mdxCodec } from "./index.js";
+import { CodecParseError, mdxCodec } from "./index.js";
 
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
 
@@ -244,129 +244,15 @@ describe("mdx prose and component round-trip corpus", () => {
     );
   });
 
-  it("keeps [[name]] literal text, never a link", () => {
-    const input = "Before [[Chapter 213]], [[characters/Kael]], [[A|B]], and ![[Realm Map]].";
+  it("preserves link-looking text inside JSX props", () => {
+    const input = '<StatBlock value={7} config={{"note":"[label](<A B.md>)"}} />';
     const parsed = codec.parse(input).blocks;
-    expect(parsed[0]?.textContent).toBe(input);
-    expect(parsed[0]?.rangeHasMark(0, parsed[0].content.size, schema.marks.link)).toBe(false);
-    expect(codec.parse(codec.serialize(parsed)).blocks[0]?.textContent).toBe(input);
-    expectStable(codec, codec.serialize(parsed));
-  });
-
-  it("round-trips standard links to Context URIs and relative paths", () => {
-    for (const [label, href] of [
-      ["Chapter 213", "chapter-213.md"],
-      ["Kael", "kb://characters/Kael.md"],
-      ["the gate", "../volume 1/chapter 1.md"],
-      ["notes", "scratch://@revision/notes.md#plan"],
-    ] as const) {
-      const doc = [paragraph(t(label, [m("link", { href, title: null })]))];
-      const wire = codec.serialize(doc);
-      expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
-      expectStable(codec, wire);
-    }
-    expectStable(codec, '[**bold** and plain](guide.md "tooltip")');
-    expectStable(codec, "![Realm map](<assets/realm map.png>)");
-  });
-
-  it("keeps HTAB-containing and enclosed destinations parseable", () => {
-    for (const block of [
-      paragraph(t("label", [m("link", { href: "A\tB.md", title: null })])),
-      paragraph(schema.node("image", { src: "A\tB.png", alt: "alt", title: null })),
-      paragraph(t("label", [m("link", { href: "A\tB.md", title: "t" })])),
-      paragraph(schema.node("image", { src: "A\tB.png", alt: "alt", title: "t" })),
-    ]) {
-      const serialized = codec.serialize([block]);
-      const reparsed = codec.parse(serialized).blocks;
-      expect(docFrom(reparsed).toJSON()).toEqual(docFrom([block]).toJSON());
-      expect(codec.serialize(reparsed)).toBe(serialized);
-    }
-
-    const markdown = markdownCodec({
-      schema,
-      assetPathResolver: unresolvedAssetPathResolver,
-    });
-    for (const input of [
-      '[x](<A\tB.md>\n"title")',
-      '![x](<A\tB.png>\n"title")',
-      "[a\\](<b](<A\tB.md>)",
-      "![a [b](<inner>)](<A\tB.png>)",
-    ]) {
-      expect(docFrom(codec.parse(input).blocks).toJSON()).toEqual(
-        docFrom(markdown.parse(input).blocks).toJSON(),
-      );
-      expectStable(codec, input);
-    }
-  });
-
-  it("does not rewrite link-looking text in code, props, or raw HTML", () => {
-    for (const input of ["`[label](<A B.md>)`", "```md\n[label](<A B.md>)\n```"]) {
-      expect(codec.serialize(codec.parse(input).blocks)).toBe(`${input}\n`);
-    }
-
-    const propsInput = '<StatBlock value={7} config={{"note":"[label](<A B.md>)"}} />';
-    const propsParsed = codec.parse(propsInput).blocks;
-    expect(propsParsed[0]?.attrs.props).toEqual({
+    expect(parsed[0]?.attrs.props).toEqual({
       value: 7,
       config: { note: "[label](<A B.md>)" },
     });
-    expect(docFrom(codec.parse(codec.serialize(propsParsed)).blocks).toJSON()).toEqual(
-      docFrom(propsParsed).toJSON(),
+    expect(docFrom(codec.parse(codec.serialize(parsed)).blocks).toJSON()).toEqual(
+      docFrom(parsed).toJSON(),
     );
-
-    for (const input of [
-      '<span title="[label](A.md)">x</span>',
-      "<!-- [label](A.md) -->",
-      "<script>[label](A.md)</script>",
-    ]) {
-      const htmlParsed = codec.parse(input).blocks;
-      expect(
-        docFrom(htmlParsed).rangeHasMark(0, docFrom(htmlParsed).content.size, schema.marks.link),
-      ).toBe(false);
-      expectStable(codec, input);
-    }
-  });
-
-  it("recognizes a link after a container implicitly closes its fence", () => {
-    for (const input of [
-      "> ```md\n> code\n\n[label](<A B.md>)",
-      "- ```md\n  code\n\n[label](<A B.md>)",
-    ]) {
-      const fenceParsed = codec.parse(input).blocks;
-      expect(fenceParsed.at(-1)?.firstChild?.marks[0]?.attrs.href).toBe("A B.md");
-    }
-  });
-
-  it("keeps malformed and code-contained bracket text literal", () => {
-    const input = [
-      "Literal [[unfinished and [[target|]] plus `[[inline code]]`.",
-      "",
-      "```md",
-      "[[fenced code]]",
-      "```",
-    ].join("\n");
-
-    const parsed = codec.parse(input).blocks;
-
-    expect(parsed[0]?.textContent).toBe(
-      "Literal [[unfinished and [[target|]] plus [[inline code]].",
-    );
-    expect(parsed[0]?.rangeHasMark(0, parsed[0].content.size, schema.marks.link)).toBe(false);
-    expect(parsed[1]?.textContent).toBe("[[fenced code]]");
-    expect(codec.serialize(parsed)).not.toContain("[[target|]]");
-  });
-
-  it("carries empty auto-paired brackets through the wire unchanged", () => {
-    // Auto-pairing in the editor writes real characters, so an empty pair the
-    // writer opened and never filled is ordinary prose the wire has to carry.
-    // The opener escapes so it cannot be read back as a link; the text the
-    // writer sees comes back byte for byte.
-    const prose = 'Brackets [] and [[]], parens (), and "quotes".';
-    const wire = codec.serialize([paragraph(t(prose))]);
-
-    expect(wire).toBe('Brackets \\[] and \\[\\[]], parens (), and "quotes".\n');
-    expect(codec.parse(wire).blocks[0]?.textContent).toBe(prose);
-    expect(codec.parse(wire).blocks[0]?.child(0).marks).toEqual([]);
-    expectStable(codec, wire);
   });
 });

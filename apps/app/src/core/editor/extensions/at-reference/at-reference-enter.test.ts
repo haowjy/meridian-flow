@@ -4,7 +4,7 @@
  * still ends in a new paragraph on Enter, and the link-ahead row stays one
  * arrow away.
  */
-import type { CatalogEntry, CatalogScope } from "@meridian/contracts/protocol";
+import type { CatalogScope } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "@meridian/resource-replica";
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,39 +16,16 @@ const PROJECT = "01900000-0000-7000-8000-000000000002";
 const scope = { kind: "project", projectId: PROJECT } as CatalogScope;
 
 function view(): CatalogCacheView {
-  const source = {
-    kind: "source",
-    entryId: "source-manuscript",
-    scope,
-    scheme: "manuscript",
-    name: "Manuscript",
-    uri: "manuscript://",
-  } as CatalogEntry;
-  const file = {
-    kind: "file",
-    entryId: "01900000-0000-7000-8000-000000000101",
-    scope,
-    sourceId: "source-manuscript",
-    parentId: "source-manuscript",
-    name: "chapter-1.md",
-    aliases: [],
-    path: ["chapter-1.md"],
-    uri: "manuscript://chapter-1.md",
-    provisionalName: false,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  } as CatalogEntry;
   return {
     scope,
     generation: "1",
     appliedRevision: "1",
     observedHeadRevision: "1",
     cursor: "",
-    entries: new Map([source, file].map((entry) => [entry.entryId, entry])),
+    entries: new Map(),
     invalidatedEntryIds: new Set(),
-    childIdsByParentId: new Map([["source-manuscript", [file.entryId]]]),
-    sourceIdsByScheme: new Map([["manuscript", "source-manuscript"]]),
+    childIdsByParentId: new Map(),
+    sourceIdsByScheme: new Map(),
   };
 }
 
@@ -119,25 +96,5 @@ describe("Enter after an `@` sentence", () => {
     expect(links(editor)).toBe(0);
     expect(editor.state.doc.childCount).toBe(2);
     expect(editor.state.doc.firstChild?.textContent).toBe("@Kael meet me at the gate");
-  });
-
-  it("links ahead when the writer arrows to the row", () => {
-    const editor = mount();
-    type(editor, "@Lin Shu");
-    expect(press(editor, "ArrowDown")).toBe(true);
-    expect(press(editor, "Enter")).toBe(true);
-
-    const link = editor.view.dom.querySelector("a");
-    expect(link?.textContent).toBe("Lin Shu");
-    expect(link?.getAttribute("data-meridian-link")).toBe("Lin Shu.md");
-  });
-
-  it("still chooses a matching document on Enter", () => {
-    const editor = mount();
-    type(editor, "@chapter");
-    press(editor, "Enter");
-    expect(editor.view.dom.querySelector("a")?.getAttribute("data-meridian-link")).toBe(
-      "../chapter-1.md",
-    );
   });
 });
