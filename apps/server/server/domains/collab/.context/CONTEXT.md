@@ -109,7 +109,9 @@ runs the same derive in its ambient completion transaction, so journal, projecti
 watermark, and settlement roll back together.
 
 The store captures checkpoint plus current-generation journal under the document
-mutation lock. Never substitute a warm room: a socket admission can already be
+mutation lock. Current checkpoint selection is fenced to the head's authority and
+generation: an old room can finish checkpointing after replacement and insert a
+row with a newer ID, which must not become the current durable cut. Never substitute a warm room: a socket admission can already be
 durable while Hocuspocus has not applied it. Certification retakes the mutation
 lock, checks generation and `next_admission_sequence`, and conditionally updates
 the document at the captured `location_version`. A move increments that counter
