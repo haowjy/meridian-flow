@@ -5,6 +5,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   contextSources,
   documents,
+  documentYjsUpdates,
   linkRedirects,
   projects,
   users,
@@ -12,13 +13,15 @@ import {
 } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import {
   type AppServices,
   composeAppServices,
   createProductionAppPorts,
 } from "../../../lib/compose.js";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleCollabPersistence } from "../../collab/adapters/drizzle-journal.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { DrizzleContextTreeMutationStore } from "../adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { ContextPort } from "../index.js";
@@ -216,6 +219,61 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
       await Promise.allSettled([moving, sweeping]);
       await worker.stop();
     }
+  });
+  it("journal insertion finishes while a move holds the holder row", async () => {
+    const holder = randomUUID();
+    await db
+      .insert(documents)
+      .values({ id: holder, contextSourceId: sourceId, name: "holder", extension: "md" });
+    const journal = createDrizzleCollabPersistence(db);
+    await journal.lifecycle.ensureDocument(holder);
+    const tree = new DrizzleContextTreeMutationStore(db);
+    const source = await tree.inspect(sourceId, "holder.md");
+    if (source?.kind !== "file") throw new Error("Missing holder");
+    let rowLocked!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      rowLocked = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    tree.setBeforeDestructiveWrite(async () => {
+      rowLocked();
+      await gate;
+    });
+    const moving = tree.commitMove({
+      source,
+      destinationSourceId: sourceId,
+      destinationPath: "moved-holder.md",
+      expectedTarget: { state: "absent" },
+      overwrite: false,
+      destinationFiletype: "markdown",
+      graduateProvisionalName: false,
+      mover: { userId },
+    });
+    const doc = new Y.Doc();
+    try {
+      await locked;
+      // The journal FK takes KEY SHARE on the holder. It must finish before
+      // releasing the move's NO KEY UPDATE lock; FOR UPDATE would block it.
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db).execute(sql`SET LOCAL lock_timeout = '2s'`);
+        await journal.journal.append(holder, Y.encodeStateAsUpdate(doc), {
+          origin: `human:${userId}`,
+          seq: 0,
+        });
+      });
+    } finally {
+      release();
+      await Promise.allSettled([moving]);
+      tree.setBeforeDestructiveWrite(null);
+      doc.destroy();
+    }
+    expect(await moving).toMatchObject({ ok: true });
+    expect(
+      await db.select().from(documentYjsUpdates).where(eq(documentYjsUpdates.documentId, holder)),
+    ).toHaveLength(1);
   });
   it("backs off a failing rewrite without losing content or redirects, then succeeds", async () => {
     await create("manuscript://prologue.md");
