@@ -8,7 +8,6 @@ import { decide, levelAt } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
-  chainPermission,
   type FileAccessDenied,
   type FileDecision,
   type FileFacts,
@@ -190,7 +189,7 @@ function denied(
     level: result.level,
     archivedWork: result.archivedWork,
     destination: result.destination,
-    agentPermission: principal.agent ? chainPermission(principal.agent.chain) : null,
+    agentChain: principal.agent?.chain ?? null,
   };
 }
 
@@ -204,6 +203,6 @@ function notFound(principal: Principal, target: FileTarget, need: FileNeed): Fil
     level: "none",
     archivedWork: null,
     destination: null,
-    agentPermission: principal.agent ? chainPermission(principal.agent.chain) : null,
+    agentChain: principal.agent?.chain ?? null,
   };
 }

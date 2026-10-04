@@ -7,4 +7,9 @@ export const WS_CLOSE = {
   BRANCH_STALE: { code: 4205, reason: "branch-stale-doc" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
+  /**
+   * The room's file access changed (a Work archived, unarchived, deleted or
+   * restored). Not terminal: reconnect and take the new authenticated scope.
+   */
+  ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;

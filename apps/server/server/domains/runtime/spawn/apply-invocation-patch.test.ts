@@ -5,7 +5,6 @@ import type {
 } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
-import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
@@ -17,6 +16,9 @@ function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentC
     ...input,
   };
 }
+
+const critic = { name: "critic", definitionRevisionId: "critic-rev" };
+const noSkills = { readSource: async () => undefined };
 
 function dummyRef(slug: string): RetainedSkillReference {
   return {
@@ -37,118 +39,43 @@ async function installSkills(coordinate: string, slugs: string[]) {
 }
 
 describe("applyInvocationPatch", () => {
-  it("replaces present lists and clears with an empty list", async () => {
-    const baseline = config({
-      tools: ["read", "edit"],
-      "disallowed-tools": ["edit"],
-      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
-      skills: { load: [dummyRef("load-a")], available: [dummyRef("avail-a")] },
-    });
-    const caller = config();
-    const { revisions, packageRevisionId } = await installSkills("t/clear", []);
+  it("adds disallowed tools to the child's own denials and never lifts one", async () => {
     const result = await applyInvocationPatch({
-      baseline,
-      patch: { tools: [], "disallowed-tools": [], subagents: [] },
-      caller,
-      store: revisions,
-      packageRevisionId,
+      baseline: config({ "disallowed-tools": ["spawn"], namedTargets: [critic] }),
+      patch: { "disallowed-tools": ["write", "spawn"], subagents: [] },
+      caller: config(),
+      store: noSkills,
+      packageRevisionId: null,
     });
-    expect(result.tools).toEqual([]);
-    expect(result["disallowed-tools"]).toEqual([]);
+    expect(result["disallowed-tools"]).toEqual(["spawn", "write"]);
     expect(result.namedTargets).toEqual([]);
   });
 
-  it("keeps a present empty tools array as full tools, not a capability clear", async () => {
-    const baseline = config({ tools: ["read"] });
-    const caller = config();
-    const { revisions, packageRevisionId } = await installSkills("t/emptytools", []);
-    const result = await applyInvocationPatch({
-      baseline,
-      patch: { tools: [] },
-      caller,
-      store: revisions,
-      packageRevisionId,
-    });
-    expect(result.tools).toEqual([]);
-    const policy = projectToolPolicy(result);
-    expect(policy.tools.has("write")).toBe(true);
-    expect(policy.tools.has("spawn")).toBe(true);
-  });
-
-  it("deep-copies baseline arrays, objects, and retained skill references", async () => {
+  it("deep-copies baseline lists and retained skill references", async () => {
     const baseline = config({
-      tools: { read: "allow", edit: "deny" },
-      "disallowed-tools": ["edit"],
-      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
+      tools: ["read"],
+      "disallowed-tools": ["spawn"],
+      namedTargets: [critic],
       skills: { load: [dummyRef("load-a")], available: [dummyRef("avail-a")] },
     });
-    const caller = config();
-    const { revisions, packageRevisionId } = await installSkills("t/alias", []);
     const result = await applyInvocationPatch({
       baseline,
       patch: {},
-      caller,
-      store: revisions,
-      packageRevisionId,
+      caller: config(),
+      store: noSkills,
+      packageRevisionId: null,
     });
-    if (result.tools !== undefined && !Array.isArray(result.tools)) result.tools.edit = "allow";
-    result["disallowed-tools"]?.push("mutate");
+    result.tools?.push("write");
+    result["disallowed-tools"]?.push("work");
     const firstTarget = result.namedTargets[0];
     if (firstTarget) firstTarget.name = "mutated";
     result.skills.load[0].path = "mutated";
     result.skills.available[0].contentDigest = "mutated";
-    result.skills.load.push(dummyRef("mutated"));
-    expect(baseline.tools).toEqual({ read: "allow", edit: "deny" });
-    expect(baseline["disallowed-tools"]).toEqual(["edit"]);
+    expect(baseline.tools).toEqual(["read"]);
+    expect(baseline["disallowed-tools"]).toEqual(["spawn"]);
     expect(baseline.namedTargets[0]?.name).toBe("critic");
     expect(baseline.skills.load[0]?.path).toBe("skills/load-a/SKILL.md");
     expect(baseline.skills.available[0]?.contentDigest).toBe("digest-avail-a");
-    expect(baseline.skills.load).toHaveLength(1);
-  });
-
-  it("patches one tool-map entry and leaves unmentioned entries intact", async () => {
-    const baseline = config({ tools: { read: "allow", edit: "deny" } });
-    const caller = config();
-    const { revisions, packageRevisionId } = await installSkills("t/map", []);
-    const result = await applyInvocationPatch({
-      baseline,
-      patch: { tools: { edit: "allow" } },
-      caller,
-      store: revisions,
-      packageRevisionId,
-    });
-    expect(result.tools).toEqual({ read: "allow", edit: "allow" });
-  });
-
-  it("keeps list-baseline allow-list semantics across map deny and allow patches", async () => {
-    const caller = config();
-    const { revisions, packageRevisionId } = await installSkills("t/listmap", []);
-
-    const denied = await applyInvocationPatch({
-      baseline: config({ tools: ["edit"], "disallowed-tools": ["edit"] }),
-      patch: { tools: { edit: "deny" } },
-      caller,
-      store: revisions,
-      packageRevisionId,
-    });
-    const deniedPolicy = projectToolPolicy(denied);
-    expect(deniedPolicy.tools.has("read")).toBe(true);
-    expect(deniedPolicy.tools.has("write")).toBe(false);
-    expect(deniedPolicy.tools.has("ask_user")).toBe(false);
-    expect(deniedPolicy.tools.has("ls")).toBe(true);
-    expect(deniedPolicy.tools.has("search")).toBe(true);
-
-    const allowed = await applyInvocationPatch({
-      baseline: config({ tools: ["search"] }),
-      patch: { tools: { search: "allow" } },
-      caller,
-      store: revisions,
-      packageRevisionId,
-    });
-    const allowedPolicy = projectToolPolicy(allowed);
-    expect(allowedPolicy.tools.has("ls")).toBe(true);
-    expect(allowedPolicy.tools.has("ask_user")).toBe(false);
-    expect(allowedPolicy.tools.has("write")).toBe(false);
   });
 
   it("patches each skills list independently without disturbing the other", async () => {

@@ -1,26 +1,13 @@
 /** One execution-knob contract across compile, resolve, patch, and provider params. */
-import { invocationPatchSchema, type ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import { invocationPatchSchema } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryAgentRevisionStore,
   resolveAgentConfiguration,
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
-import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { agentGatewayMetaToGenerateParams } from "../tools/agent-thread-context.js";
 import { applyInvocationPatch } from "./apply-invocation-patch.js";
-
-function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
-  return {
-    model: "base-model",
-    skills: { load: [], available: [] },
-    namedTargets: [],
-    permission: "edit",
-    ...input,
-  };
-}
-
-const noSkills = { readSource: async () => undefined };
 
 describe("one definition across all four surfaces", () => {
   it("compiles, resolves, patches every key, and reaches provider params", async () => {
@@ -35,8 +22,8 @@ describe("one definition across all four surfaces", () => {
             model: "muse-model",
             effort: "max",
             mode: "primary",
-            tools: { edit: "deny" },
-            "disallowed-tools": ["bash"],
+            tools: ["read", "write", "work"],
+            "disallowed-tools": ["spawn"],
             subagents: ["critic"],
             skills: { load: ["outline"], available: ["proofread"] },
           },
@@ -76,8 +63,8 @@ describe("one definition across all four surfaces", () => {
         ],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { edit: "deny" },
-      "disallowed-tools": ["bash"],
+      tools: ["read", "write", "work"],
+      "disallowed-tools": ["spawn"],
       effort: "xhigh",
       permission: "edit",
     });
@@ -88,8 +75,7 @@ describe("one definition across all four surfaces", () => {
         model: "patched-model",
         effort: "none",
         permission: "read",
-        tools: { shell: "allow" },
-        "disallowed-tools": ["edit"],
+        "disallowed-tools": ["write"],
         subagents: ["critic"],
         skills: { load: ["outline"], available: [] },
       }),
@@ -111,8 +97,8 @@ describe("one definition across all four surfaces", () => {
         available: [],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { edit: "deny", bash: "allow" },
-      "disallowed-tools": ["edit"],
+      tools: ["read", "write", "work"],
+      "disallowed-tools": ["spawn", "write"],
       effort: "none",
       permission: "read",
     });
@@ -120,23 +106,5 @@ describe("one definition across all four surfaces", () => {
       model: "patched-model",
       reasoning: "disabled",
     });
-  });
-});
-
-describe("override alias folding and coupled merge", () => {
-  it("lifts a baseline denial when a map allow targets the same tool", async () => {
-    const baseline = config({
-      tools: { edit: "deny" },
-      "disallowed-tools": ["edit"],
-    });
-    const patched = await applyInvocationPatch({
-      baseline,
-      patch: { tools: { edit: "allow" } },
-      caller: config(),
-      store: noSkills,
-      packageRevisionId: null,
-    });
-    expect(patched["disallowed-tools"]).not.toContain("edit");
-    expect(projectToolPolicy(patched).tools.has("write")).toBe(true);
   });
 });

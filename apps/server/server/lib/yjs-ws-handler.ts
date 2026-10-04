@@ -6,7 +6,7 @@ import {
   type WebSocketLike,
 } from "@hocuspocus/server";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
@@ -21,13 +21,26 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
-import { type FileGrant, isFileAccessDenied } from "../domains/file-policy/index.js";
+import {
+  type FileAccessChanges,
+  FileEditRefusedError,
+  type FileFacts,
+  type FileGrant,
+  type FileTarget,
+  isFileAccessDenied,
+  runWithEditGrants,
+} from "../domains/file-policy/index.js";
 import {
   emitEvent,
   runWithEventCorrelation,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
+import {
+  createYjsRoomAccessIndex,
+  type YjsRoomAccessIndex,
+  type YjsRoomRegistration,
+} from "./yjs-room-access.js";
 export type BranchHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
@@ -44,10 +57,12 @@ export type YjsGatewayConnection = {
   hocuspocus: HocuspocusConnection;
   branchSyncState: Map<string, BranchHandshakeState>;
   offlineSyncUpdates: Set<string>;
+  registration: YjsRoomRegistration;
 };
 
 export type YjsGatewayServices = {
-  fileAccess: Pick<AppServices["fileAccess"], "authorize">;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit">;
+  fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
 };
@@ -70,8 +85,20 @@ type YjsAdmissionTarget =
       generation: number;
     };
 
+/**
+ * What the person may do in the room (file-access §7). An `edit` connection
+ * holds its grant for the session and every frame confirms it.
+ */
+type YjsRoomAccess = { level: "read" } | { level: "edit"; grant: FileGrant<"edit"> };
+
 type YjsConnectionAdmission =
-  | { kind: "allowed"; target: YjsAdmissionTarget }
+  | {
+      kind: "allowed";
+      target: YjsAdmissionTarget;
+      access: YjsRoomAccess;
+      /** The Works whose lifecycle decides this access: the file's owner, the draft's Work. */
+      accessWorkIds: WorkId[];
+    }
   | {
       kind: "refused";
       close: SchemaAdmissionRefusal;
@@ -88,6 +115,8 @@ type YjsConnectionContext = {
   branchSyncState: Map<string, BranchHandshakeState>;
   offlineSyncUpdates: Set<string>;
   admissionTarget?: YjsAdmissionTarget;
+  access?: YjsRoomAccess;
+  registration: YjsRoomRegistration;
   closeTransport(input: { code: number; reason: string }): void;
 };
 
@@ -196,21 +225,29 @@ function parseRoomOrDeny(documentName: string) {
 }
 
 /**
- * Room admission asks the file policy (file-access §7). Read-only rooms come
- * with live-room access in phase 5; until then `none` is the only refusal.
+ * Room admission asks the file policy (file-access §7): `edit`, `read`, or
+ * refused with the terminal `permission-denied`.
  */
-async function readGrant(
+async function roomAccess(
   services: YjsGatewayServices,
   userId: UserId,
-  documentId: DocumentId,
-): Promise<FileGrant<"read">> {
-  const grant = await services.fileAccess.authorize(
-    { accountId: userId },
-    { kind: "document", documentId },
-    "read",
-  );
-  if (isFileAccessDenied(grant)) throw permissionDenied("permission-denied");
-  return grant;
+  target: FileTarget,
+): Promise<{ access: YjsRoomAccess; facts: FileFacts }> {
+  const principal = { accountId: userId };
+  const edit = await services.fileAccess.authorize(principal, target, "edit");
+  if (!isFileAccessDenied(edit))
+    return { access: { level: "edit", grant: edit }, facts: edit.facts };
+  if (edit.level !== "read") throw permissionDenied("permission-denied");
+  const read = await services.fileAccess.authorize(principal, target, "read");
+  if (isFileAccessDenied(read)) throw permissionDenied("permission-denied");
+  return { access: { level: "read" }, facts: read.facts };
+}
+
+function accessWorkIds(facts: FileFacts): WorkId[] {
+  const ids = new Set<WorkId>();
+  if (facts.ownerWork) ids.add(facts.ownerWork.id);
+  if (facts.draftWork) ids.add(facts.draftWork.id);
+  return [...ids];
 }
 
 async function classifyYjsConnectionAdmission(input: {
@@ -222,11 +259,12 @@ async function classifyYjsConnectionAdmission(input: {
   const { services, room, userId, clientSchemaVersion } = input;
   let documentId: DocumentId;
   let headSchemaVersion: CollabSchemaVersion | null;
+  let admitted: Awaited<ReturnType<typeof roomAccess>>;
 
   if (room.kind === "live") {
     documentId = room.documentId;
-    const grant = await readGrant(services, userId, documentId);
-    const projectId = grant.facts.projectId;
+    admitted = await roomAccess(services, userId, { kind: "document", documentId });
+    const projectId = admitted.facts.projectId;
     try {
       if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
         throw permissionDenied("permission-denied");
@@ -251,7 +289,11 @@ async function classifyYjsConnectionAdmission(input: {
     if (!branch) throw permissionDenied("branch-generation-stale");
     documentId = branch.documentId;
     headSchemaVersion = branch.schemaVersion;
-    await readGrant(services, userId, documentId);
+    admitted = await roomAccess(services, userId, {
+      kind: "draft",
+      documentId,
+      workId: branch.workId,
+    });
   }
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
     return {
@@ -274,6 +316,7 @@ async function classifyYjsConnectionAdmission(input: {
     };
   }
 
+  const access = { access: admitted.access, accessWorkIds: accessWorkIds(admitted.facts) };
   if (room.kind === "live") {
     return {
       kind: "allowed",
@@ -282,10 +325,12 @@ async function classifyYjsConnectionAdmission(input: {
         documentId,
         liveGeneration: await services.documentSync.currentLiveGeneration(documentId),
       },
+      ...access,
     };
   }
   return {
     kind: "allowed",
+    ...access,
     target: {
       kind: "branch",
       branchId: room.branchId,
@@ -377,7 +422,9 @@ async function admitBranchSync(
       document: input.document,
     });
     return;
-  } catch {
+  } catch (cause) {
+    // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
+    if (cause instanceof FileEditRefusedError) throw cause;
     input.closeTransport?.({ code: 1008, reason: "branch-update-admission-failed" });
     throw permissionDenied("branch-update-admission-failed", 1008);
   }
@@ -403,7 +450,9 @@ async function admitLiveSync(
       input.context?.offlineSyncUpdates?.add(updateIdentity(input.payload));
     }
     return admission;
-  } catch {
+  } catch (cause) {
+    // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
+    if (cause instanceof FileEditRefusedError) throw cause;
     input.closeTransport?.({ code: 1013, reason: "writer-journal-admission-failed" });
     throw permissionDenied("writer-journal-admission-failed", 1013);
   }
@@ -432,13 +481,22 @@ function admittedTargetForSync(
   return target;
 }
 
-export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsConnectionContext> {
+function refuseAccessChanged(context: YjsConnectionContext): never {
+  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
+  context.closeTransport({ code, reason });
+  throw permissionDenied(reason, code);
+}
+
+export function createHocuspocus(
+  services: YjsGatewayServices,
+  rooms: YjsRoomAccessIndex = createYjsRoomAccessIndex(),
+): Hocuspocus<YjsConnectionContext> {
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
     debounce: 2000,
     maxDebounce: 10000,
-    async onConnect({ documentName, context }) {
+    async onConnect({ documentName, context, connectionConfig }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
@@ -459,6 +517,10 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
           });
         }
         context.admissionTarget = admission.target;
+        context.access = admission.access;
+        // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
+        connectionConfig.readOnly = admission.access.level === "read";
+        rooms.register(context.registration, admission.accessWorkIds);
 
         if (admission.target.kind === "branch") {
           const target = admission.target;
@@ -489,17 +551,35 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
         const target = admittedTargetForSync(context, documentName);
-        await admitWriterSync({
-          services,
-          documentName,
-          document,
-          syncType: type,
-          payload,
-          userId,
-          closeTransport: context.closeTransport,
-          expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
-          context,
-        });
+        const access = context.access;
+        if (!access) throw permissionDenied("permission-denied");
+        // Runs before Hocuspocus's own read-only check: a read connection's
+        // update must not reach the journal. Hocuspocus then drops it and
+        // answers SyncStatus(false).
+        if (
+          access.level === "read" &&
+          (type === messageYjsSyncStep2 || type === messageYjsUpdate)
+        ) {
+          return;
+        }
+        const admit = () =>
+          admitWriterSync({
+            services,
+            documentName,
+            document,
+            syncType: type,
+            payload,
+            userId,
+            closeTransport: context.closeTransport,
+            expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
+            context,
+          });
+        if (access.level === "read") {
+          await admit();
+          return;
+        }
+        const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
+        if (!admitted.ok) refuseAccessChanged(context);
       });
     },
     async onLoadDocument({ documentName, document, context }) {
@@ -576,7 +656,22 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
 
 export function createYjsGateway(services: YjsGatewayServices) {
   let acceptingConnections = true;
-  const hocuspocus = createHocuspocus(services);
+  const rooms = createYjsRoomAccessIndex();
+  const hocuspocus = createHocuspocus(services, rooms);
+  const unsubscribe = services.fileAccessChanges.subscribe(({ workId }) =>
+    rooms.revokeWork(workId),
+  );
+
+  function closeConnection(
+    connection: YjsGatewayConnection,
+    event: { code: number; reason: string },
+  ) {
+    rooms.unregister(connection.registration);
+    // Hocuspocus unloads the room once its last connection is gone.
+    connection.hocuspocus.handleClose(event);
+    connection.branchSyncState.clear();
+    connection.offlineSyncUpdates.clear();
+  }
 
   return {
     hocuspocus,
@@ -587,20 +682,31 @@ export function createYjsGateway(services: YjsGatewayServices) {
         return;
       }
 
-      const connection = {
-        branchSyncState: new Map<string, BranchHandshakeState>(),
-        offlineSyncUpdates: new Set<string>(),
+      const registration: YjsRoomRegistration = { revoke: () => undefined };
+      const branchSyncState = new Map<string, BranchHandshakeState>();
+      const offlineSyncUpdates = new Set<string>();
+      const connection: YjsGatewayConnection = {
+        branchSyncState,
+        offlineSyncUpdates,
+        registration,
+        hocuspocus: hocuspocus.handleConnection(peer.socket, peer.request, {
+          userId: peer.userId,
+          traceId: peer.traceId,
+          clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
+          branchSyncState,
+          offlineSyncUpdates,
+          registration,
+          closeTransport: ({ code, reason }: { code: number; reason: string }) =>
+            peer.close(code, reason),
+        }),
       };
-      const hocuspocusConnection = hocuspocus.handleConnection(peer.socket, peer.request, {
-        userId: peer.userId,
-        traceId: peer.traceId,
-        clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
-        branchSyncState: connection.branchSyncState,
-        offlineSyncUpdates: connection.offlineSyncUpdates,
-        closeTransport: ({ code, reason }: { code: number; reason: string }) =>
-          peer.close(code, reason),
-      });
-      return { ...connection, hocuspocus: hocuspocusConnection };
+      registration.revoke = () => {
+        // Close the socket first, so Hocuspocus's own protocol CLOSE (which the
+        // provider reports as 1000) never reaches the client ahead of 4409.
+        peer.close(WS_CLOSE.ACCESS_CHANGED.code, WS_CLOSE.ACCESS_CHANGED.reason);
+        closeConnection(connection, WS_CLOSE.ACCESS_CHANGED);
+      };
+      return connection;
     },
 
     message(connection: YjsGatewayConnection | undefined, message: Uint8Array): void {
@@ -612,23 +718,17 @@ export function createYjsGateway(services: YjsGatewayServices) {
       event?: { code?: number; reason?: string },
     ): void {
       if (!connection) return;
-      connection.hocuspocus.handleClose({
-        code: event?.code ?? 1000,
-        reason: event?.reason ?? "close",
-      });
-      connection.branchSyncState.clear();
-      connection.offlineSyncUpdates.clear();
+      closeConnection(connection, { code: event?.code ?? 1000, reason: event?.reason ?? "close" });
     },
 
     error(connection: YjsGatewayConnection | undefined): void {
       if (!connection) return;
-      connection.hocuspocus.handleClose({ code: 1011, reason: "error" });
-      connection.branchSyncState.clear();
-      connection.offlineSyncUpdates.clear();
+      closeConnection(connection, { code: 1011, reason: "error" });
     },
 
     async drain(): Promise<void> {
       acceptingConnections = false;
+      unsubscribe();
       hocuspocus.closeConnections();
       emitEvent(services.eventSink, {
         level: "info",
@@ -646,6 +746,7 @@ export type YjsGateway = ReturnType<typeof createYjsGateway>;
 export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
   return {
     fileAccess: app.fileAccess,
+    fileAccessChanges: app.fileAccessChanges,
     documentSync: app.documentSync,
     eventSink: app.eventSink,
   };

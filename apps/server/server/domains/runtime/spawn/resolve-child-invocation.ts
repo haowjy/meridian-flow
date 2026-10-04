@@ -22,7 +22,7 @@ import {
   type CompiledAgentDefinition,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
-import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
+import { toolsBeyondParent } from "../loop/permissions/invocation-authority.js";
 import { type InvalidArgumentIssue, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
@@ -133,18 +133,15 @@ export async function resolveChildInvocation(
       }
       throw error;
     }
-    const reasons = validateInvocationAuthority({
-      baseline: configuration,
-      patched,
-      caller: parentAgent.configuration,
-    });
-    if (reasons.length) {
-      return {
-        ok: false,
-        error: meridianErrorFromSystem("spawn_invocation_authority_denied", reasons.join(" ")),
-      };
-    }
     configuration = patched;
+  }
+
+  const extra = toolsBeyondParent(parentAgent.configuration, configuration);
+  if (extra.length) {
+    return {
+      ok: false,
+      error: spawnInvalidArguments([toolsBeyondParentIssue(resolvedSlug, extra)]),
+    };
   }
 
   if (revision) {
@@ -211,6 +208,21 @@ function permissionRaiseIssue(input: {
     };
   }
   return null;
+}
+
+/**
+ * A child never gets a tool its parent lacks (D13). Naming them in
+ * `overrides.disallowed_tools` is the fix, so the refusal says so instead of
+ * dropping them silently.
+ */
+function toolsBeyondParentIssue(childName: string, tools: string[]): InvalidArgumentIssue {
+  const quoted = tools.map((tool) => JSON.stringify(tool));
+  const named =
+    quoted.length === 1 ? quoted[0] : `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
+  return {
+    path: "overrides.disallowed_tools",
+    message: `${childName} has ${named} and you don't; add ${quoted.length === 1 ? "it" : "them"} here`,
+  };
 }
 
 /** An `invalid_arguments` refusal carried on the spawn result; the spawn tool unwraps it. */

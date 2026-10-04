@@ -1,7 +1,7 @@
 /**
- * The file policy at the production-composed model tools (file-access §4, §6,
- * §9): `ls` reports each file's real access, and a `read` agent edits only its
- * own scratch.
+ * The file and action policies at the production-composed model tools
+ * (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and
+ * a `read` agent has `write` but edits only its own scratch and changes no Work.
  */
 
 import { eq } from "drizzle-orm";
@@ -22,6 +22,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../test-support/drizzle-reset.js"
     );
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { resolveAgentThreadTurnContext } = await import("../domains/runtime/index.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000f01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000f02";
@@ -148,7 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("refuses a read agent on the manuscript and lets it write its own scratch", async () => {
+    it("gives a read agent write, refuses the manuscript and Work changes, and lets it write its own scratch", async () => {
       const script = await start();
       await script.runtime.ports.agentRevisions.bindThread(
         THREAD.threadId,
@@ -161,7 +162,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         null,
       );
+      const thread = await script.runtime.ports.threadRepos.threads.findById(THREAD.threadId);
+      if (!thread) throw new Error("thread missing");
+      const context = await resolveAgentThreadTurnContext({
+        thread,
+        agentRevisions: script.runtime.ports.agentRevisions,
+        threads: script.runtime.ports.threadRepos.threads,
+        toolRegistry: script.runtime.app.toolRegistry,
+        baseTools: script.runtime.app.toolExecutor.getDefinitions?.(),
+      });
+      expect(context.tools.map((tool) => (tool.type === "function" ? tool.name : ""))).toContain(
+        "write",
+      );
       const { call, save } = await script.begin();
+
+      const archive = await call("work", { command: "archive", work: "rewrite" });
+      expect(archive.isError).toBe(true);
+      expect(archive.output).toMatchObject({
+        code: "permission_denied",
+        message: "This agent can read but can't change Works. Ask the user to make this change.",
+        details: { reason: "action_denied" },
+      });
 
       await call("read", { path: "manuscript://chapter.md" });
       const refused = await call("write", {
