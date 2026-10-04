@@ -86,22 +86,32 @@ Every rename is local first. File rename (any area, any Work) and the identity b
 share the durable resource-location command; folder rename admits a folder
 namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
 and its descendants show their new place at once in the tree, open tabs and
-routes. A refused rename returns the entry to its old name with
-`NamespaceFailureMark` on the row and the repair name in the reopened field.
-A document under a pending move (its own or a folder above it) carries
-`placementPending`: until the server confirms, a server alias for the path the
-writer just gave it cannot pull the route back to the old name. The phone shell,
-which derives its document from the route, finds a bound document by identity
-while the URL still names the old path; the server's redirect repairs the URL
-once the move settles. The move's receipt carries `linkUpdate.links`. `setLocation` and
-`setFolderLocation` return the operation id issued at admission; `LinkUpdateNote`
-reads that receipt through `settledNamespaceReceipt` and shows "Updated N links"
-on its own line under the name in the tree, drawer and Work Files rows (the name
-keeps its full width and the row opens a line), inline in the phone listing, or
-after the identity path in the identity bar (for renames made there), for its
-four-second window. Zero links, a
-refused move and a move without `linkUpdate` show nothing. It announces once
-through the app's polite region and never fades under reduced motion. Inline
-operations keep stable entry identity. Work
-selection is attached only to Scratch/Uploads, never project-owned
-Manuscript/KB/User paths.
+routes, and so does the phone. One placement source, the projected catalog, serves
+every surface, and a route resolves its open document by identity: the document the
+route is bound to (the removal coordinator's bound selection) is found by id, so a
+move of it or a folder above it, that move's rollback after a refusal, or another
+document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
+returns it as `bound` and it outranks the server's answer for that path; admission
+then repairs the URL (and, on the phone, the crumbs) to its projected path, and the
+phone host finds the same document by identity meanwhile. A document under a pending
+move carries `placementPending` for the same reason: a server alias for the path the
+writer just gave it cannot pull the route back.
+
+A refused rename returns the entry to its old name with `NamespaceFailureMark` on
+the row (in the identity bar, a button that reopens the repair field). The repair
+field opens once, as the refusal arrives (`use-repair-on-fresh-failure.ts`): a
+failure already there on mount, a remount, or one that lands while another input is
+active leaves only the mark; blur dismisses the field without retrying and Enter
+retries.
+
+The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
+return the operation id issued at admission; `LinkUpdateNote` reads that receipt
+through `settledNamespaceReceipt` and shows "Updated N links" on its own line under
+the name in the tree, drawer and Work Files rows, inline in the phone listing, or
+after the identity path in the identity bar (for renames made there). It mounts and
+watches nothing until a rename returns an operation id, lives until the receipt's
+own deadline (settlement plus four seconds, however often its row remounts), ends
+its watch there, and announces once per operation through the app's polite region.
+Zero links, a refused move and a move without `linkUpdate` show nothing. Inline
+operations keep stable entry identity. Work selection is attached only to
+Scratch/Uploads, never project-owned Manuscript/KB/User paths.

@@ -20,10 +20,25 @@ export function resolveLocalDocumentAddress(
   destination: DocumentDestination,
   workId: ParsedRequestId | null,
   catalog: CatalogContextView | null,
-): { result: DocumentAddressResult; file: CatalogFile } | undefined {
+  /** The document the route is bound to: where the URL names a path the document has left, it is found by identity. */
+  boundDocumentId: string | null = null,
+): { result: DocumentAddressResult; file: CatalogFile; bound: boolean } | undefined {
   if (!catalog) return undefined;
-  const file = catalog.findPath(`/${destination.path.replace(/^\/+/, "")}`);
-  if (file?.kind !== "file" || !file.editable || !file.localContent) return undefined;
+  const requested = `/${destination.path.replace(/^\/+/, "")}`;
+  // The document the route is bound to is the route's document wherever its placement goes:
+  // an unconfirmed move of it or a folder above it, that move's rollback, or another document
+  // taking a path it holds or left. The path is its current label, and admission repairs the
+  // URL to it. It is already open, so it needs no exact local content, and the server's answer
+  // for a path in flux does not outrank it.
+  const bound = boundDocumentId ? (catalog.findDocument(boundDocumentId) ?? null) : null;
+  const file = bound ?? catalog.findPath(requested);
+  // A document under the writer's own unconfirmed move is likewise a known server document.
+  if (
+    file?.kind !== "file" ||
+    !file.editable ||
+    !(file.localContent || file.placementPending || bound)
+  )
+    return undefined;
   const entry = catalog.normalized.entries.get(file.documentId);
   if (entry?.kind !== "file") return undefined;
   let authority: AvailableDocumentAuthority;
@@ -42,6 +57,7 @@ export function resolveLocalDocumentAddress(
   }
   return {
     file,
+    bound: bound !== null,
     result: {
       kind: "current",
       document: {
@@ -60,6 +76,8 @@ export function reconcileDocumentAddress(
   local: ReturnType<typeof resolveLocalDocumentAddress>,
   remote: DocumentAddressResult | undefined,
 ): { result: DocumentAddressResult | undefined; localFile: CatalogFile | undefined } {
+  // The route's open document outranks whatever the server says about the path it holds or left.
+  if (local?.bound) return { result: local.result, localFile: local.file };
   if (remote && remote.kind !== "unavailable") {
     // While the writer's own move is unconfirmed, the path it gave this document is its
     // address; a server alias for that path only remembers where the document used to be.

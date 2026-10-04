@@ -24,8 +24,9 @@ export function resolveMobileDocumentRoute(input: {
   path: string | null;
   workId: string | null;
   /**
-   * The document this route is bound to. A rename of it or a folder above it leaves the URL
-   * naming the old path until the server confirms, so the document is found by identity.
+   * The document this route is bound to. A rename of it or a folder above it (or that
+   * rename's rollback) changes its projected path at once, so the host finds it by identity
+   * while the readable route repairs the URL to the same projected path.
    */
   boundDocumentId?: string | null;
   catalog: CatalogContextView | null;
@@ -44,12 +45,13 @@ export function resolveMobileDocumentRoute(input: {
       isFetching: false,
     };
   }
+  // The bound document is the route's document wherever its placement goes, even when another
+  // document now holds the path the URL names.
+  const bound = input.boundDocumentId
+    ? (input.catalog?.findDocument(input.boundDocumentId) ?? null)
+    : null;
   const found = input.catalog?.findPath(input.path);
-  const moved =
-    found || !input.boundDocumentId
-      ? null
-      : (input.catalog?.findDocument(input.boundDocumentId) ?? null);
-  const file = found?.kind === "file" ? found : moved;
+  const file = bound ?? (found?.kind === "file" ? found : null);
   const resolved = file ? contextTabFromFile(input.scheme, file, input.workId) : null;
   return {
     requested: true,

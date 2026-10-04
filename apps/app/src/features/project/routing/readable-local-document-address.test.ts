@@ -252,6 +252,33 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
 });
 
+it("keeps the route's bound document through a placement change in either direction", () => {
+  // The URL names a path the document has left, or one another document now holds.
+  const stale = { kind: "document" as const, scheme: "kb" as const, path: "Old.md" };
+  const local = resolveLocalDocumentAddress(
+    "project-id",
+    stale,
+    null,
+    catalog(false),
+    "document-id",
+  );
+  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
+  expect(local).toMatchObject({
+    bound: true,
+    file: { documentId: "document-id", path: "/Cached.md" },
+  });
+  expect(resolveLocalDocumentAddress("project-id", stale, null, catalog(false))).toBeUndefined();
+
+  const other = {
+    kind: "current" as const,
+    document: { ...local.result.document, documentId: "other-id" },
+  };
+  expect(reconcileDocumentAddress(local, other)).toEqual({
+    result: local.result,
+    localFile: local.file,
+  });
+});
+
 it("keeps local ownership while canonical metadata replaces a stale same-ID path", () => {
   const local = catalog(true).findDocument("document-id");
   if (!local) throw new Error("Expected local file");
