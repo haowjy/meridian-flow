@@ -8,6 +8,7 @@ import {
   mergeLocalResourceState,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
+  routeContinuityDocumentId,
 } from "./local-document-address";
 
 function catalog(localContent: boolean): CatalogContextView {
@@ -304,4 +305,32 @@ it("keeps local ownership while canonical metadata replaces a stale same-ID path
     resourceState: "acknowledged",
     localContent: true,
   });
+});
+
+const kbRoute = { kind: "document" as const, scheme: "kb" as const, path: "Original.md" };
+function bound(workId: string | null, documentId = "doc-a") {
+  return {
+    status: "bound" as const,
+    revision: 1,
+    locator: { scheme: "kb" as const, path: "/Original.md", workId },
+    identity: { kind: "server" as const, documentId },
+  };
+}
+
+it("holds a route by continuity only for a document this surface admitted, not one a cached tab guessed", () => {
+  const input = { destination: kbRoute, editorWorkId: null, selection: bound(null) };
+  // A's stale tab bound the new route before the server answered: the fresh lookup stands.
+  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: null })).toBeNull();
+  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: "doc-b" })).toBeNull();
+  expect(routeContinuityDocumentId({ ...input, admittedDocumentId: "doc-a" })).toBe("doc-a");
+});
+
+it("compares the coordinator's Editor-context Work, so a named Work keeps a project document's continuity", () => {
+  const admitted = { destination: kbRoute, admittedDocumentId: "doc-a" };
+  expect(
+    routeContinuityDocumentId({ ...admitted, editorWorkId: "work-1", selection: bound("work-1") }),
+  ).toBe("doc-a");
+  expect(
+    routeContinuityDocumentId({ ...admitted, editorWorkId: "work-1", selection: bound(null) }),
+  ).toBeNull();
 });

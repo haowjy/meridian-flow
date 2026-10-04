@@ -31,7 +31,11 @@ import {
   useProjectChatNavigation,
 } from "./chat-navigation";
 import { editorDefaultWorkPending } from "./editor-default-work";
-import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
+import {
+  reconcileDocumentAddress,
+  resolveLocalDocumentAddress,
+  routeContinuityDocumentId,
+} from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -274,16 +278,12 @@ export function ReadableProjectRoute({
     retry: false,
   });
   const { selection } = useContextRemovalProject(projectId);
-  const boundDocumentId =
-    documentDestination &&
-    selection.status === "bound" &&
-    selection.identity.kind === "server" &&
-    selection.locator.scheme === documentDestination.scheme &&
-    selection.locator.path.replace(/^\/+/, "") === documentDestination.path.replace(/^\/+/, "") &&
-    selection.locator.workId ===
-      (isWorkScopedScheme(documentDestination.scheme) ? addressWorkId : null)
-      ? selection.identity.documentId
-      : null;
+  const boundDocumentId = routeContinuityDocumentId({
+    selection,
+    admittedDocumentId: admission?.documentId ?? null,
+    destination: documentDestination,
+    editorWorkId: workId,
+  });
   const localDocumentAddress = useMemo(
     () =>
       documentDestination
