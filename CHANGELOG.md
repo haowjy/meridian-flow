@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Removed test-only link traversal exports from the collaboration public barrel.
+
 - Reduced folder-journal and rename-surface fixtures while retaining refused-queue, refresh, scope and resolver-cache regressions.
 
 - Pruned rename/link-rewrite tests to stored-link contracts, transaction regressions and a real worker/move lock overlap.

@@ -1,7 +1,7 @@
 /** Stored-link extraction and substitution contracts, independent of DB orchestration. */
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { applyDocumentLinkSubstitutions, extractDocumentLinkOccurrences } from "../index.js";
+import * as links from "./document-link-occurrences.js";
 
 function seed(paragraphs: readonly (readonly [string, string, Record<string, unknown>?][])[]) {
   const doc = new Y.Doc({ gc: false });
@@ -17,7 +17,8 @@ function seed(paragraphs: readonly (readonly [string, string, Record<string, unk
   return { doc, fragment };
 }
 const words = (fragment: Y.XmlFragment) =>
-  extractDocumentLinkOccurrences(fragment)
+  links
+    .extractDocumentLinkOccurrences(fragment)
     .filter((o) => o.kind === "text")
     .map((o) => [o.href, o.words]);
 
@@ -34,7 +35,7 @@ it.each([
     ],
   ]);
   expect(
-    applyDocumentLinkSubstitutions(
+    links.applyDocumentLinkSubstitutions(
       fragment,
       new Map([
         [
@@ -48,7 +49,7 @@ it.each([
     ),
   ).toBe(1);
   expect(words(fragment)).toEqual([["gate.md", after]]);
-  const occurrence = extractDocumentLinkOccurrences(fragment)[0];
+  const occurrence = links.extractDocumentLinkOccurrences(fragment)[0];
   if (occurrence?.kind !== "text") throw new Error("Missing text occurrence");
   expect(occurrence.runs[0]?.attributes).toMatchObject({ strong: {}, link: { title: "keep" } });
   if (!relabel) expect(occurrence.runs[1]?.attributes.em).toEqual({});
@@ -78,7 +79,7 @@ it("groups marks but not paragraphs, rewrites chains once and touches only liter
     ["five.md", { href: "six.md", oldFilename: "five.md", newFilename: "six.md" }],
     ["six.md", { href: "seven.md", oldFilename: "six.md", newFilename: "seven.md" }],
   ]);
-  expect(applyDocumentLinkSubstitutions(fragment, substitutions)).toBe(6);
+  expect(links.applyDocumentLinkSubstitutions(fragment, substitutions)).toBe(6);
   expect(words(fragment)).toEqual([
     ["six.md", "six"],
     ["seven.md", "seven"],
