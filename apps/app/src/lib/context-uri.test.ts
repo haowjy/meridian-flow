@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { canOpenContextUri, contextRouteTargetFromUri } from "@/lib/context-uri";
+import {
+  canOpenContextUri,
+  contextRouteTargetFromUri,
+  contextUriFromWritePath,
+} from "@/lib/context-uri";
 
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const ACTIVE_WORK = { id: WORK_ID, slug: "revision-pass" };
@@ -75,5 +79,13 @@ describe("canOpenContextUri", () => {
     expect(canOpenContextUri("scratch://notes/beat.md", ACTIVE_WORK)).toBe(true);
     expect(canOpenContextUri("scratch://notes/beat.md", null)).toBe(true);
     expect(canOpenContextUri("scratch://@other-work/notes/beat.md", ACTIVE_WORK)).toBe(false);
+  });
+});
+
+describe("contextUriFromWritePath", () => {
+  it("files bare paths under the manuscript and never files another scheme there", () => {
+    expect(contextUriFromWritePath("ch1.md")).toBe("manuscript://ch1.md");
+    expect(contextUriFromWritePath("kb://world/rules.md")).toBe("kb://world/rules.md");
+    expect(contextUriFromWritePath("skills://story-review/references/beats.md")).toBeNull();
   });
 });
