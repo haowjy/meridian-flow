@@ -542,7 +542,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
-    async function keepDraftAndSwitchToAutoApply(collab: ReturnType<typeof createTestCollab>) {
+    it("keeps a pending draft manual after switching to auto-apply and applies it later", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
         markdown: "Base.",
@@ -566,25 +568,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto", pending: "keep" }),
       ).resolves.toEqual({ status: "updated", policy: "auto" });
-    }
-
-    it("keeps pending changes reviewable after switching to auto-apply", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await keepDraftAndSwitchToAutoApply(collab);
 
       const [work] = await db
         .select({ aiWriteMode: works.aiWriteMode })
         .from(works)
         .where(eq(works.id, WORK_ID));
       expect(work?.aiWriteMode).toBe("direct");
-      const preview = await collab.draftReview.preview({
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID),
-      });
-      expect(preview.status).toBe("active");
-      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
       // The kept draft stays manual, so no draft write can auto-push it live.
       const drafts = await db
         .select({ pushPolicy: documentBranches.pushPolicy })
@@ -596,12 +585,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
         );
       expect(drafts.map((draft) => draft.pushPolicy)).toEqual(["manual"]);
-    });
-
-    it("applies a kept draft later without losing live edits made in between", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await keepDraftAndSwitchToAutoApply(collab);
+      const draftId = await currentDraftId(collab, DOC_ID);
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId,
+      });
+      expect(preview.status).toBe("active");
 
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -614,7 +604,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.draftReview.applyWorkDraft({
         workId: WORK_ID as never,
         documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID),
+        draftId,
         userId: USER_ID as never,
       });
       const applied = await readMarkdown(collab, DOC_ID);

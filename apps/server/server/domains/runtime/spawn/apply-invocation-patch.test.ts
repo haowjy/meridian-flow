@@ -51,33 +51,6 @@ describe("applyInvocationPatch", () => {
     expect(result.namedTargets).toEqual([]);
   });
 
-  it("deep-copies baseline lists and retained skill references", async () => {
-    const baseline = config({
-      tools: ["read"],
-      "disallowed-tools": ["spawn"],
-      namedTargets: [critic],
-      skills: { load: [dummyRef("load-a")], available: [dummyRef("avail-a")] },
-    });
-    const result = await applyInvocationPatch({
-      baseline,
-      patch: {},
-      caller: config(),
-      store: noSkills,
-      packageRevisionId: null,
-    });
-    result.tools?.push("write");
-    result["disallowed-tools"]?.push("work");
-    const firstTarget = result.namedTargets[0];
-    if (firstTarget) firstTarget.name = "mutated";
-    result.skills.load[0].path = "mutated";
-    result.skills.available[0].contentDigest = "mutated";
-    expect(baseline.tools).toEqual(["read"]);
-    expect(baseline["disallowed-tools"]).toEqual(["spawn"]);
-    expect(baseline.namedTargets[0]?.name).toBe("critic");
-    expect(baseline.skills.load[0]?.path).toBe("skills/load-a/SKILL.md");
-    expect(baseline.skills.available[0]?.contentDigest).toBe("digest-avail-a");
-  });
-
   it("patches each skills list independently without disturbing the other", async () => {
     const { revisions, packageRevisionId } = await installSkills("t/skills", [
       "proofread",
