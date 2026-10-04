@@ -1,11 +1,9 @@
-/** Mars `edit` policy projected onto the document tools and Work commands. */
+/** The one tool policy: allow-list or full catalog, minus denials and unavailable tools, plus return_result for subagents. */
 import { describe, expect, it } from "vitest";
-import { type EffectiveToolPolicy, projectToolPolicy } from "./project-tool-policy.js";
+import { projectToolPolicy } from "./project-tool-policy.js";
 
-const WORK_NAV = ["list", "show", "switch"] as const;
-const WORK_MUTATE = ["archive", "create", "delete", "unarchive", "update"] as const;
-// ask_user is not granted while disabled (#601), even when an agent allows it.
-const READ_ONLY_TOOLS = [
+// ask_user is never granted while disabled (#601).
+const PRIMARY_DEFAULT = [
   "ls",
   "read",
   "search",
@@ -16,64 +14,38 @@ const READ_ONLY_TOOLS = [
   "thread_message",
   "thread_report",
   "work",
+  "write",
 ];
-const ALL_FLOW_TOOLS = [...READ_ONLY_TOOLS, "write"].sort();
 
-const WRITER_MAP = {
-  edit: "allow",
-  ask_user: "allow",
-} as const;
-
-const CRITIC_MAP = {
-  edit: "deny",
-  ask_user: "allow",
-} as const;
-
-function snapshot(policy: EffectiveToolPolicy) {
-  return {
-    tools: [...policy.tools].sort(),
-    workCommands: [...policy.workCommands].sort(),
-  };
-}
+const names = (...args: Parameters<typeof projectToolPolicy>) =>
+  [...projectToolPolicy(...args)].sort();
 
 describe("projectToolPolicy", () => {
-  it("treats omitted tools and tools: [] as the same full set", () => {
-    const omitted = snapshot(projectToolPolicy({}));
-    expect(omitted).toEqual({
-      tools: ALL_FLOW_TOOLS,
-      workCommands: [...WORK_NAV, ...WORK_MUTATE].sort(),
-    });
-    expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(omitted);
-  });
-
-  it("gives Writer `write` and leaves Critic `read` with Work navigation", () => {
-    expect(snapshot(projectToolPolicy({ tools: WRITER_MAP }))).toEqual(
-      snapshot(projectToolPolicy({})),
-    );
-    expect(snapshot(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual({
-      tools: READ_ONLY_TOOLS,
-      workCommands: WORK_NAV,
-    });
-  });
-
-  it("uses edit, not the historical read entry, to grant `write`", () => {
-    const policy = projectToolPolicy({ tools: { read: "deny", edit: "allow" } });
-    expect(policy.tools.has("read")).toBe(true);
-    expect(policy.tools.has("write")).toBe(true);
-  });
-
-  it("keeps document inspection under restrictive retained policies", () => {
-    for (const metadata of [
-      { tools: ["bash"] as string[] },
-      { tools: ["read"] as string[] },
-      { tools: { read: "deny", edit: "deny" } as Record<string, "allow" | "deny"> },
-      { "disallowed-tools": ["read", "edit", "ls", "search"] as string[] },
-    ]) {
-      const policy = projectToolPolicy(metadata);
-      expect(policy.tools.has("read")).toBe(true);
-      expect(policy.tools.has("write")).toBe(false);
-      expect(policy.tools.has("ls")).toBe(true);
-      expect(policy.tools.has("search")).toBe(true);
-    }
+  it.each([
+    ["no lists", {}, "primary", PRIMARY_DEFAULT],
+    ["no lists, subagent", {}, "subagent", [...PRIMARY_DEFAULT, "return_result"].sort()],
+    ["an empty allow-list", { tools: [] }, "primary", []],
+    ["an empty allow-list, subagent", { tools: [] }, "subagent", ["return_result"]],
+    ["an allow-list", { tools: ["read", "write", "ask_user"] }, "primary", ["read", "write"]],
+    ["return_result on a primary", { tools: ["read", "return_result"] }, "primary", ["read"]],
+    [
+      "denials",
+      { "disallowed-tools": ["write", "spawn", "return_result"] },
+      "subagent",
+      [...PRIMARY_DEFAULT.filter((n) => n !== "write" && n !== "spawn"), "return_result"].sort(),
+    ],
+    [
+      "a denial inside the allow-list",
+      { tools: ["read", "write"], "disallowed-tools": ["write"] },
+      "primary",
+      ["read"],
+    ],
+  ] as const)("%s", (_label, configuration, kind, expected) => {
+    expect(
+      names(
+        configuration as Parameters<typeof projectToolPolicy>[0],
+        kind as Parameters<typeof projectToolPolicy>[1],
+      ),
+    ).toEqual(expected);
   });
 });

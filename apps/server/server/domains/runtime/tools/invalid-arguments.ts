@@ -1,8 +1,8 @@
 /**
- * The one `invalid_arguments` refusal: the executor's input parse and the
- * permission gate's command check both refuse a call this way, so the model
- * sees the same text and the app the same typed result whichever layer caught
- * the mistake. The text is rendered from the result (D8).
+ * The one `invalid_arguments` refusal: the executor's input parse and spawn's
+ * override checks both refuse a call this way, so the model sees the same text
+ * and the app the same typed result whichever layer caught the mistake. The
+ * text is rendered from the result (D8).
  */
 import type { ZodError, z } from "zod";
 

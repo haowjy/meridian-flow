@@ -170,7 +170,7 @@ describe("document command recovery through the runtime loop", () => {
         return binding
           ? {
               ...binding,
-              configuration: { ...binding.configuration, tools: { edit: "deny" as const } },
+              configuration: { ...binding.configuration, tools: ["read"] },
             }
           : undefined;
       },

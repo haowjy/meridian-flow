@@ -1,6 +1,7 @@
 /** Shared execution-support checks for immutable Agent selection and turn preparation. */
 import type { CompiledAgentDefinition } from "../packages/index.js";
 import type { Gateway } from "./gateway/index.js";
+import { TOOL_CATALOG } from "./loop/permissions/project-tool-policy.js";
 
 const supported = new Set([
   "name",
@@ -18,6 +19,7 @@ const supported = new Set([
   "tools",
   "disallowed-tools",
 ]);
+const catalog = new Set<string>(TOOL_CATALOG);
 export function agentExecutionUnavailableReasons(
   definition: CompiledAgentDefinition,
   gateway: Pick<Gateway, "listModels">,
@@ -44,6 +46,11 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   const meta = definition.metadata;
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
+  }
+  for (const field of ["tools", "disallowed-tools"] as const) {
+    for (const name of meta[field] ?? []) {
+      if (!catalog.has(name)) reasons.push(`Unknown tool in ${field}: ${name}`);
+    }
   }
   return reasons;
 }

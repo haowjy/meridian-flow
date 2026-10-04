@@ -1,33 +1,16 @@
-/** Validates that an invocation patch does not grant the child authority the caller lacks. */
+/** A child's tools are always a subset of its parent's, with `return_result` added (D13). */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { projectToolPolicy } from "./project-tool-policy.js";
 
-export interface ValidateInvocationAuthorityInput {
-  baseline: ResolvedAgentConfiguration;
-  patched: ResolvedAgentConfiguration;
-  caller: ResolvedAgentConfiguration;
-}
-
 /**
- * Returns reasons the patch would elevate the child beyond the caller; empty means allowed.
- * Only the delta the patch introduces is validated, never the child's definition-granted tools.
+ * The child's tools its parent doesn't have, in catalog order; empty means the
+ * spawn may run. Both sides are projected as subagents, so `return_result`
+ * never counts.
  */
-export function validateInvocationAuthority(input: ValidateInvocationAuthorityInput): string[] {
-  const baselinePolicy = projectToolPolicy(input.baseline);
-  const patchedPolicy = projectToolPolicy(input.patched);
-  const callerPolicy = projectToolPolicy(input.caller);
-  const reasons: string[] = [];
-
-  for (const tool of patchedPolicy.tools) {
-    if (!baselinePolicy.tools.has(tool) && !callerPolicy.tools.has(tool)) {
-      reasons.push(`Tool "${tool}" is not enabled for the caller.`);
-    }
-  }
-  for (const command of patchedPolicy.workCommands) {
-    if (!baselinePolicy.workCommands.has(command) && !callerPolicy.workCommands.has(command)) {
-      reasons.push(`Work command "${command}" is not enabled for the caller.`);
-    }
-  }
-
-  return reasons;
+export function toolsBeyondParent(
+  parent: ResolvedAgentConfiguration,
+  child: ResolvedAgentConfiguration,
+): string[] {
+  const parentTools = projectToolPolicy(parent, "subagent");
+  return [...projectToolPolicy(child, "subagent")].filter((tool) => !parentTools.has(tool));
 }
