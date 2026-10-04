@@ -2,7 +2,6 @@
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 import type { AgentRevisionBinding } from "../../../packages/index.js";
 import { readAgentChain } from "./agent-chain.js";
@@ -53,11 +52,6 @@ describe("readAgentChain", () => {
       ["parent", "no-work"],
       ["child", "work-x"],
     ]);
-    const works = new Map([
-      ["no-work", { id: "no-work", isNoWork: true }],
-      ["work-x", { id: "work-x", isNoWork: false }],
-      ["work-y", { id: "work-y", isNoWork: false }],
-    ]);
     const deps = {
       threads: {
         findByIdIncludingDeleted: async (id: ThreadId) =>
@@ -77,17 +71,15 @@ describe("readAgentChain", () => {
           return workId ? { workId: workId as WorkId } : null;
         },
       },
-      works: { findById: async (id: WorkId) => (works.get(id) as Work | undefined) ?? null },
     };
 
     expect(await readAgentChain(deps, "child" as ThreadId)).toEqual([
-      { threadId: "child", permission: "edit", threadWorkId: "work-x", threadWorkIsNoWork: false },
-      { threadId: "parent", permission: "read", threadWorkId: "no-work", threadWorkIsNoWork: true },
+      { threadId: "child", permission: "edit", threadWorkId: "work-x" },
+      { threadId: "parent", permission: "read", threadWorkId: "no-work" },
     ]);
     primaries.set("parent", "work-y");
     expect((await readAgentChain(deps, "child" as ThreadId))[1]).toMatchObject({
       threadWorkId: "work-y",
-      threadWorkIsNoWork: false,
     });
   });
 });

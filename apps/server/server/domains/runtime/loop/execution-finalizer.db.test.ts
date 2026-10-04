@@ -141,7 +141,7 @@ else
           runClaim: authority,
         }),
         runClaim: authority,
-        boundThreads: () => [ids.child],
+        boundThreads: () => [ids.caller, ids.child],
         gateway: {
           ...createInertGateway("gpt-4.1-mini"),
           async *stream(request) {

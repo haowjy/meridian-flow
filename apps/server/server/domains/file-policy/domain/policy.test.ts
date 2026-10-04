@@ -37,11 +37,10 @@ function file(
 }
 
 const ownerGrants: NodeGrant[] = [{ node: { kind: "project", id: PROJECT }, level: "edit" }];
-const link = (permission: "read" | "edit", workId: string, isNoWork = false): AgentLink => ({
+const link = (permission: "read" | "edit", workId: string): AgentLink => ({
   threadId: `t-${permission}-${workId}`,
   permission,
   threadWorkId: workId,
-  threadWorkIsNoWork: isNoWork,
 });
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
@@ -76,7 +75,8 @@ describe("file policy", () => {
     ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
     ["after work switch to X, X's scratch is its own", agent(link("read", "x")), file("scratch", X), "edit", null],
     ["after work switch to X, A's scratch is not", agent(link("read", "x")), file("scratch", A), "read", "agent_read_only"],
-    ["No Work has no own scratch", agent(link("read", "no-work", true)), file("scratch", NO_WORK), "read", "agent_read_only"],
+    ["No Work's scratch is a No Work agent's own", agent(link("read", "no-work")), file("scratch", NO_WORK), "edit", null],
+    ["No Work's scratch is not a named Work agent's", agent(link("read", "a")), file("scratch", NO_WORK), "read", "agent_read_only"],
     // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],

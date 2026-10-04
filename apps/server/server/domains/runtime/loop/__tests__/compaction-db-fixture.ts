@@ -39,7 +39,8 @@ export function createCompactionFixture(db: Database) {
     const claim = createDrizzleRunClaim(db, { holderId: "fixture-owner" });
     const eventWriter = createDrizzleEventJournalWriter(db);
     let threshold: number | undefined = 2500;
-    const boundThreadIds = new Set([threadId]);
+    // A child reads its spawner's binding for the chain's permission.
+    const boundThreadIds = new Set([threadId, ...(options.child ? [ids.caller] : [])]);
     const source = createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [
       ...boundThreadIds,
     ]);

@@ -48,7 +48,6 @@ export interface AgentLink {
   permission: AgentPermission;
   /** The thread's current primary Work; follows `work switch`. */
   threadWorkId: WorkId;
-  threadWorkIsNoWork: boolean;
 }
 
 /** `[calling thread, its parent, …, root]`. Each link caps the result (D8). */
