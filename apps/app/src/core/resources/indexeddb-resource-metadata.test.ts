@@ -321,20 +321,49 @@ it("recovers a projection subscriber after a transient query failure", async () 
   vi.spyOn(internals, "readAccountProjection")
     .mockRejectedValueOnce(new Error("temporary projection failure"))
     .mockImplementation(original);
-  const observed: readonly ResourceRecord[][] = [];
-  const errors = vi.fn();
-  store.observeProjection(
-    "project",
-    ({ records }) => (observed as ResourceRecord[][]).push([...records]),
-    errors,
-  );
-
-  await vi.waitFor(() => expect(errors).toHaveBeenCalledOnce());
-  await store.commitResource({ expectedRevision: null, next: resource() });
-  await vi.waitFor(
-    () => expect(observed.some((records) => records[0]?.resource.handle === "doc")).toBe(true),
-    { timeout: 2_500 },
-  );
+  let resolveRecovered!: () => void;
+  const recovered = new Promise<void>((resolve) => {
+    resolveRecovered = resolve;
+  });
+  let resolveFailed!: () => void;
+  const failed = new Promise<void>((resolve) => {
+    resolveFailed = resolve;
+  });
+  let retry!: () => void;
+  const setTimer = globalThis.setTimeout;
+  const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+    callback: () => void,
+    ms?: number,
+    ...args: unknown[]
+  ) => {
+    if (ms === 1_000) {
+      const handle = setTimer(() => {}, 60_000);
+      retry = () => {
+        clearTimeout(handle);
+        callback();
+      };
+      return handle;
+    }
+    return setTimer(callback, ms, ...args);
+  }) as typeof setTimeout);
+  const errors = vi.fn(() => resolveFailed());
+  try {
+    store.observeProjection(
+      "project",
+      ({ records }) => {
+        if (records.some((record) => record.resource.handle === "doc")) resolveRecovered();
+      },
+      errors,
+    );
+    await failed;
+    expect(errors).toHaveBeenCalledOnce();
+    await store.commitResource({ expectedRevision: null, next: resource() });
+    retry();
+    await recovered;
+    expect(errors).toHaveBeenCalledOnce();
+  } finally {
+    timer.mockRestore();
+  }
 });
 
 it("closes the account lifetime when another connection upgrades the database", async () => {

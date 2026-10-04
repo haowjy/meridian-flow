@@ -5,9 +5,9 @@
  * returns to; each deleted Work keeps its own Undo row or failure.
  */
 import type { Work } from "@meridian/contracts/works";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { archiveWork, deleteWork, listProjectWorks, restoreWork } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
@@ -35,6 +35,9 @@ vi.mock("@/client/api/projects-api", () => ({
   updateWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
+
+beforeEach(() => notifyManager.setScheduler(queueMicrotask));
+afterEach(() => notifyManager.setScheduler((callback) => setTimeout(callback, 0)));
 
 const PROJECT_ID = WORK.projectId;
 
@@ -155,9 +158,8 @@ describe("Work collection archive", () => {
           await archiveFromMenu("Arc");
 
           // Query cache notifications flush on a timer, outside the act() scope.
-          await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
-          );
+          await act(async () => {});
+          expect(document.body.textContent).toContain("Start a Work");
           expect(document.activeElement).toBe(tab("archived"));
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
@@ -166,9 +168,8 @@ describe("Work collection archive", () => {
             first.reject(new Error("Rejected"));
             await first.promise.catch(() => undefined);
           });
-          await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("No archived Work.")),
-          );
+          await act(async () => {});
+          expect(document.body.textContent).toContain("No archived Work.");
           await showTab("active");
           expect(rowNames()).toEqual(["Arc"]);
           const alert = document.querySelector('[role="alert"]');
@@ -184,9 +185,8 @@ describe("Work collection archive", () => {
             (button) => button.textContent === "Retry",
           );
           await act(async () => retry?.click());
-          await act(() =>
-            vi.waitFor(() => expect(document.body.textContent).toContain("Start a Work")),
-          );
+          await act(async () => {});
+          expect(document.body.textContent).toContain("Start a Work");
           expect(archiveWork).toHaveBeenCalledTimes(2);
           expect(archiveWork).toHaveBeenLastCalledWith(WORK.id, expect.anything());
           expect(document.querySelector('[role="alert"]')).toBeNull();
@@ -227,13 +227,15 @@ describe("Work collection delete", () => {
         </QueryClientProvider>,
         async () => {
           await deleteFromMenu("Arc");
-          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Coda"])));
+          await act(async () => {});
+          expect(rowNames()).toEqual(["Coda"]);
           await deleteFromMenu("Coda");
-          await act(() => vi.waitFor(() => expect(deleteWork).toHaveBeenCalledTimes(2)));
-          await act(() => vi.waitFor(() => expect(server.authorityRevision).toBe("3")));
-          await act(() =>
-            vi.waitFor(() => expect(undoRows()).toEqual(["Deleted CodaUndo", "Deleted ArcUndo"])),
-          );
+          await act(async () => {});
+          expect(deleteWork).toHaveBeenCalledTimes(2);
+          await act(async () => {});
+          expect(server.authorityRevision).toBe("3");
+          await act(async () => {});
+          expect(undoRows()).toEqual(["Deleted CodaUndo", "Deleted ArcUndo"]);
           // The Deleted tab leaves Works offered for Undo to their Undo rows.
           await showTab("deleted");
           expect(document.querySelector('[aria-label="Restore Arc"]')).toBeNull();
@@ -242,18 +244,19 @@ describe("Work collection delete", () => {
           const arcUndo = document.querySelectorAll('li [role="status"]')[1];
           await clickIn(arcUndo, "Undo");
           expect(restoreWork).toHaveBeenCalledWith(WORK.id, expect.anything());
-          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Arc"])));
+          await act(async () => {});
+          expect(rowNames()).toEqual(["Arc"]);
           expect(undoRows()).toEqual(["Deleted CodaUndo"]);
 
           // A rejected Undo reopens that Work's Undo row with the error.
           await act(async () => restore.reject(new Error("Rejected")));
-          await act(() =>
-            vi.waitFor(() => expect(undoRows()).toEqual(["Deleted CodaUndo", "Deleted ArcUndo"])),
-          );
+          await act(async () => {});
+          expect(undoRows()).toEqual(["Deleted CodaUndo", "Deleted ArcUndo"]);
           expect(listAlerts()).toEqual([expect.stringContaining("Couldn’t restore this Work")]);
 
           await clickIn(document.querySelectorAll('li [role="status"]')[0], "Dismiss");
-          await act(() => vi.waitFor(() => expect(undoRows()).toEqual(["Deleted ArcUndo"])));
+          await act(async () => {});
+          expect(undoRows()).toEqual(["Deleted ArcUndo"]);
           await showTab("deleted");
           expect(document.querySelector('[aria-label="Restore Coda"]')).not.toBeNull();
         },
