@@ -20,18 +20,19 @@ over retained source revisions. It is not a fifth content or execution owner.
   a presence-sensitive definition with a versioned digest. Flat skills normalize
   to `skills.load`. Agent-specific body text becomes `systemPrompt`.
 - The canonical execution-knob schemas (effort value set + `max→xhigh` alias,
-  tool policy, tool-name alias fold, tools representation) live in
+  permission, tool-name alias fold, tool lists) live in
   `@meridian/contracts/agents` (`execution-knobs.ts`). The compiler imports them
   rather than re-declaring; authoring accepts the canonical effort set including
   `xhigh`/`none`. `domain/agent-gateway-meta.ts` sources its accepted effort set
   from the same constants and keeps only a private normalize helper.
-- Compilation accepts canonical frontmatter tools as lists or allow/deny maps.
-  TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
-  clear that channel. A disallowed-list overlay replaces all baseline denials,
-  including map-form denials; an allowed-list-only overlay retains them.
-  Authoring capability names are `read`/`edit`; `write` is the model tool name
-  and is rejected as a permission, `edit` implies `read`, and only an explicit
-  `disallowed-tools` read denial contradicts it.
+- `tools` (allow-list) and `disallowed-tools` are lists of tool names only;
+  the map form is refused. Mars aliases fold first (`Task` → `agent`), and no
+  alias may equal a Flow tool name. TOML overlays use `tools.allowed` and
+  `tools.disallowed`, each replacing its list; an explicit empty list clears
+  it. Access is `permission: read | edit` (default `edit`), never a tool:
+  `edit` and its aliases are refused with a message naming `permission`.
+  Runtime support then refuses any name outside `TOOL_CATALOG`
+  ([runtime tools](../../runtime/.context/tools.md#permissions)).
 - Compilation is syntax validation. Runtime support, resource authorization,
   model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
   Unknown metadata is retained; acceptance does not establish its execution.

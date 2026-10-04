@@ -34,17 +34,22 @@ state a later `read` forks from.
 
 ## One save per reply
 
-The thread-peer pool is the only model read/write entry point. Callers pass a
-`destination` per call, computed with `domains/file-policy`; the pool never
-consults the policy. A reply pins each document to its first destination
-(reads follow the pin, except a `published` read, which is `version: "live"`
-and always reads live; results report the version read in `read.version`), may
+The thread-peer pool is the only model read/write entry point. Each call
+carries the `FileGrant` the caller got from `domains/file-policy`; its
+destination routes the call. A write that commits now runs under
+`runWithEditGrants`; a reversal whose writes landed in the other journal gets
+a fresh `authorize` at that destination. A reply pins each document to its
+first grant (reads follow the pin, except a `liveVersion` read, which is
+`version: "live"` and always reads live; results report the version read in
+`read.version`), may
 own a live core and a thread core at once, and saves both, plus the reply's
 records and the receipt callback, in one response transaction. The live
 journal joins that transaction; the live agent-edit core's coordinator works
 on a private copy of the room inside it and publishes through `recover()`
-after commit, so a rollback shows nothing. The save step first drops
-documents whose Work was archived mid-reply (D29) and reports them. The pool
+after commit, so a rollback shows nothing. The save first runs one
+`confirmEdit` over every grant the reply wrote under, drops refused documents
+(a Work archived mid-reply, D29) and reports them, then marks the rest
+confirmed for the journal's no-grant guard. The pool
 also records each document's last read version per thread (`live` or
 `draft` of a Work); a write against another version returns `read_required`.
 

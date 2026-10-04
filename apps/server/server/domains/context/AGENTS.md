@@ -19,9 +19,13 @@ the opaque authority used for stable serialization and adapter dispatch.
 `thread_works` membership selects the thread's primary Work but never grants
 context access.
 
-Archived Work identity and content remain readable, but content mutations require
-active Work under its lifecycle row lock. Context commands translate lifecycle
-loss to `context_unavailable`, not a storage error.
+Who may read or change a file is the [file policy](../file-policy/.context/CONTEXT.md),
+asked by the route or tool before it calls this domain. Context storage is a
+write seam: its transactions start with `lockSeamWorks`, which confirms the
+caller's bound edit grants before namespace and source advisory locks
+(`requireLockedActiveWorks`). Content mutations also still require their own
+Works to be active under that row lock, grant or not. Context commands translate lifecycle loss to
+`context_unavailable`, not a storage error.
 
 Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. F0 owns Uploads authority, provisioning, and resolution; F4 owns
@@ -42,8 +46,9 @@ journaling.
 
 Filesystem mutation/content routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. Most use `_helpers.ts` for
-auth, project ownership, scheme/Work resolution, canonical error translation,
-and URI construction. Writer-facing mutation input goes through the shared
+auth, project ownership, scheme/Work resolution, the file-policy grants
+(`edit` runs a write under them), canonical error translation, and URI
+construction. Writer-facing mutation input goes through the shared
 reason-coded validators in `lib/context-mutation-validation.ts`.
 
 `move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:

@@ -90,10 +90,10 @@ free of Meridian URI schemes and database concerns.
 
 | Tool | Backend |
 |---|---|
-| `write` | Command grammar (`read` / `diff` / `create` / `insert` / `replace` / `delete` / `undo` / `redo`). Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch); `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
-| `ls` | Lists the resolved unified `ContextPort` path/URI. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
-| `search` | Searches the resolved unified `ContextPort` scope. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
+| `write` | Command grammar per [runtime tools](../../domains/runtime/.context/tools.md#policy-and-cost). Each call asks the [file policy](../../domains/file-policy/.context/CONTEXT.md) for a grant on its target (a container grant for a create) and passes it to the thread-peer pool; refusals render through `file-access-denial-copy.ts`. Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
+| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch), the same schema for every agent. `actionPolicy` over the agent chain decides each command before the handler runs: Work changes are refused for a `read` chain, and the model's `switch` is always refused for now (it needs the writer's approval). `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
+| `ls` | Lists the resolved unified `ContextPort` path/URI; `listAccess` drops unreadable rows and sets each row's `readonly`. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
+| `search` | Searches the resolved unified `ContextPort` scope; hits go through `listAccess` like `ls`. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `ask_user` | Registered but never advertised until its rework ([#601](https://github.com/haowjy/meridian-flow/issues/601)); the handler creates an interrupt component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership
@@ -106,15 +106,18 @@ free of Meridian URI schemes and database concerns.
 
 Ownership gates live in domains, not in `lib/`: `requireProjectOwner` from
 `domains/projects` for project-scoped routes and `requireThreadOwner` from
-`domains/threads` for thread routes / thread WS subscriptions. Yjs document
-access uses `DocumentAccessPort.canAccessDocument()`.
+`domains/threads` for thread routes / thread WS subscriptions. File access,
+over HTTP and for Yjs rooms, is the [file policy](../../domains/file-policy/.context/CONTEXT.md);
+`file-access-http.ts` is its HTTP adapter (`requireFileGrant`,
+`withEditGrants`, status mapping) and `file-targets.ts` builds targets.
 
 ## WS handlers
 
 | File | Role |
 |---|---|
 | `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
-| `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
+| `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Admission asks the file policy for `edit`, then `read`; a `read` room is read-only. Each edit-room frame runs under its grant, and a refused frame or a Work access change closes with 4409. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
+| `yjs-room-access.ts` | Admitted rooms indexed by the Works their access depends on, so a Work's `FileAccessChanges` event closes exactly its scratch and draft rooms. |
 | `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
 
 For typed Yjs admission refusals, `YjsConnectionContext.closeTransport` is the
@@ -147,7 +150,6 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `thread-ref-route.ts` | Owner-gated `cN`/`pN` handle lookup for `GET /api/projects/:projectId/threads/by-ref/:ref`; malformed or unknown refs are 404. |
 | `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
-| `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |
 | `interrupt-boundary.ts` / `interrupt-error-handler.ts` | HTTP-facing interrupt/error mapping. |
 | `startup-guards.ts` / `process-crash-policy.ts` | Boot-time guardrails and process-level crash policy. |
@@ -174,10 +176,14 @@ requireAppUser(event)  → getApp() + WorkOS/AuthKit user provisioning
 Route destructures needed AppServices
   │
   ▼
-requireProjectOwner / requireThreadOwner / DocumentAccessPort
+requireProjectOwner / requireThreadOwner
+  │
+  ▼
+requireFileGrant per document (file policy)
   │
   ▼
 Domain API call → contract wire shape
+  (a write runs inside withEditGrants; each seam confirms the grants under lock)
 ```
 
 ## Invariants & gotchas
@@ -191,7 +197,7 @@ Domain API call → contract wire shape
 - **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
   fan-out is process-local even though journal rows are durable.
 - **Ownership gate on every route and WS subscribe.** Project workspace/thread gates run
-  after auth. Yjs uses `DocumentAccessPort` instead.
+  after auth; document routes and Yjs rooms then ask the file policy.
 - **WS upgrade is accept-then-close.** Nitro dev/httpxy crashes on non-101
   upgrade responses, so rejected upgrades are accepted and then closed with an
   error frame/close code.
