@@ -1,7 +1,8 @@
 /**
  * Production-composed model undo and redo of writes that went live (D19, D41,
- * D42): direct mode, No Work, scratch inside a draft-mode Work, and copies.
- * Their history is the live journal, since no thread-peer branch exists.
+ * D42): direct mode (No Work takes the same path), scratch inside a draft-mode
+ * Work, and copies. Their history is the live journal, since no thread-peer
+ * branch exists.
  */
 
 import { and, eq } from "drizzle-orm";
@@ -222,15 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const live = await undoRedoScript(CHAPTER);
 
       expect(withoutVersion(live)).toEqual(withoutVersion(drafted));
-      expect(await liveThreadBranches()).toEqual([]);
-    });
-
-    it("undoes and redoes No Work writes", async () => {
-      await bindLiveThread(NO_WORK_ID, "direct");
-
-      const live = await undoRedoScript(CHAPTER);
-
-      expect(live).toHaveLength(5);
       expect(await liveThreadBranches()).toEqual([]);
     });
 
