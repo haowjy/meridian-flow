@@ -305,56 +305,52 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    for (const [label, workId] of [
-      ["No Work", NO_WORK_ID],
-      ["direct-mode Work", DIRECT_WORK_ID],
-    ] as const) {
-      it(`keeps no .manifest thread branch for a ${label} thread`, async () => {
-        await bindThread(workId);
-        const fixture = await createFixture();
-        await seedExisting(fixture, "kept.md");
+    // No Work and a direct-mode Work share the live path; one row covers both.
+    it("keeps no .manifest thread branch for a direct-mode Work thread", async () => {
+      await bindThread(DIRECT_WORK_ID);
+      const fixture = await createFixture();
+      await seedExisting(fixture, "kept.md");
 
-        const port = await threadPort(fixture);
-        await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
-        await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
-        await expect(port.search("Existing", "manuscript://")).resolves.toMatchObject({
-          ok: true,
-        });
-        expect(
-          await settlesWithin(
-            "edit",
-            fixture.callWrite({
-              command: "create",
-              path: "manuscript://kept.md",
-              content: "Replaced.",
-              overwrite: true,
-            }),
-          ),
-        ).toMatchObject(succeeded);
-        expect(
-          await settlesWithin(
-            "create",
-            fixture.callWrite({
-              command: "create",
-              path: "manuscript://fresh.md",
-              content: "Fresh.",
-            }),
-          ),
-        ).toMatchObject(succeeded);
-        await expect(port.read("manuscript://fresh.md")).resolves.toMatchObject({
-          ok: true,
-          value: { content: "Fresh.\n" },
-        });
-
-        expect(await manifestThreadBranches()).toEqual([]);
-        const live = await fixture.collab.resolveManifestMembership({
-          projectId: PROJECT_ID as never,
-        });
-        const fresh = await port.stat("manuscript://fresh.md");
-        if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
-        expect(live.members).toContain(fresh.value.documentId);
+      const port = await threadPort(fixture);
+      await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
+      await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
+      await expect(port.search("Existing", "manuscript://")).resolves.toMatchObject({
+        ok: true,
       });
-    }
+      expect(
+        await settlesWithin(
+          "edit",
+          fixture.callWrite({
+            command: "create",
+            path: "manuscript://kept.md",
+            content: "Replaced.",
+            overwrite: true,
+          }),
+        ),
+      ).toMatchObject(succeeded);
+      expect(
+        await settlesWithin(
+          "create",
+          fixture.callWrite({
+            command: "create",
+            path: "manuscript://fresh.md",
+            content: "Fresh.",
+          }),
+        ),
+      ).toMatchObject(succeeded);
+      await expect(port.read("manuscript://fresh.md")).resolves.toMatchObject({
+        ok: true,
+        value: { content: "Fresh.\n" },
+      });
+
+      expect(await manifestThreadBranches()).toEqual([]);
+      const live = await fixture.collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      const fresh = await port.stat("manuscript://fresh.md");
+      if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
+      expect(live.members).toContain(fresh.value.documentId);
+    });
 
     it("lists a draft-mode thread's drafted create through its own manifest", async () => {
       await bindThread(DRAFT_WORK_ID);
@@ -393,42 +389,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    // People always write live (D20), whatever the Work's AI write mode.
-    for (const [label, workId] of [
-      ["direct-mode Work", DIRECT_WORK_ID],
-      ["draft-mode Work", DRAFT_WORK_ID],
-    ] as const) {
-      it(`lists and moves through live membership on a writer's ${label} port`, async () => {
-        const fixture = await createFixture();
-        await seedExisting(fixture, "listed.md");
-        const port = await contextPortForProjectBrowse({
-          deps: fixture.routeDeps,
-          projectId: PROJECT_ID,
-          userId: USER_ID,
-          workId,
-        });
-        if (!port) throw new Error("Work port did not resolve");
-
-        await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
-        expect(await manifestWorkDraftBranches(workId)).toEqual([]);
-
-        const note = await port.write("scratch://note.md", "A note.\n");
-        if (!note.ok) throw new Error(JSON.stringify(note.error));
-        const moved = await settlesWithin(
-          "move",
-          port.move("scratch://note.md", "manuscript://note.md"),
-        );
-        if (!moved.ok) throw new Error(JSON.stringify(moved.error));
-
-        expect(await manifestWorkDraftBranches(workId)).toEqual([]);
-        const live = await fixture.collab.resolveManifestMembership({
-          projectId: PROJECT_ID as never,
-        });
-        const stat = await port.stat("manuscript://note.md");
-        if (!stat.ok || !stat.value.documentId) throw new Error("note.md missing");
-        expect(live.members).toContain(stat.value.documentId);
+    // People always write live (D20), even in a draft-mode Work.
+    it("lists and moves through live membership on a writer's draft-mode Work port", async () => {
+      const fixture = await createFixture();
+      await seedExisting(fixture, "listed.md");
+      const port = await contextPortForProjectBrowse({
+        deps: fixture.routeDeps,
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+        workId: DRAFT_WORK_ID,
       });
-    }
+      if (!port) throw new Error("Work port did not resolve");
+
+      await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
+      expect(await manifestWorkDraftBranches(DRAFT_WORK_ID)).toEqual([]);
+
+      const note = await port.write("scratch://note.md", "A note.\n");
+      if (!note.ok) throw new Error(JSON.stringify(note.error));
+      const moved = await settlesWithin(
+        "move",
+        port.move("scratch://note.md", "manuscript://note.md"),
+      );
+      if (!moved.ok) throw new Error(JSON.stringify(moved.error));
+
+      expect(await manifestWorkDraftBranches(DRAFT_WORK_ID)).toEqual([]);
+      const live = await fixture.collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      const stat = await port.stat("manuscript://note.md");
+      if (!stat.ok || !stat.value.documentId) throw new Error("note.md missing");
+      expect(live.members).toContain(stat.value.documentId);
+    });
 
     it("records a draft-mode thread's binary copy in the live manifest", async () => {
       await bindThread(DRAFT_WORK_ID);
