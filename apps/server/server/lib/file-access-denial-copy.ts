@@ -23,6 +23,10 @@ export const UPLOADS_READ_ONLY_MESSAGE =
 export const AGENT_READ_ONLY_MESSAGE =
   "Your permission is read, so you can change only scratch://.";
 
+/** A read agent's own scratch is always writable, so a refused scratch file is another Work's. */
+export const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
+  "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
+
 /** What the model reads when the policy refused a write. */
 export function permissionDeniedMessage(denial: PermissionDenial): string {
   switch (denial.reason) {
@@ -31,7 +35,9 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
     case "uploads_read_only":
       return UPLOADS_READ_ONLY_MESSAGE;
     case "agent_read_only":
-      return AGENT_READ_ONLY_MESSAGE;
+      return denial.scheme === "scratch"
+        ? AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE
+        : AGENT_READ_ONLY_MESSAGE;
   }
 }
 
