@@ -653,6 +653,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
+    readAgentChain: (threadId) =>
+      readAgentChain(
+        {
+          threads: ports.threadRepos.threads,
+          threadWorks: ports.threadRepos.threadWorks,
+          agentRevisions: ports.agentRevisions,
+        },
+        threadId,
+      ),
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;

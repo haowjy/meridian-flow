@@ -109,7 +109,9 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     .describe("Change a Work's name, goal or status."),
   WorkSelectorSchema.extend({ command: z.literal("archive") })
     .strict()
-    .describe("Archive a Work. Its files and goal become read-only; its chats continue."),
+    .describe(
+      "Archive a Work. Its scratch://, draft and goal become read-only; its chats continue.",
+    ),
   WorkSelectorSchema.extend({ command: z.literal("unarchive") })
     .strict()
     .describe("Unarchive a Work so it can be changed again."),

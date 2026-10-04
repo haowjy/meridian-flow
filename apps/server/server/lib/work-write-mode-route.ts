@@ -4,7 +4,10 @@ import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { SetWorkPushPolicyInput, SetWorkPushPolicyResult } from "../domains/collab/index.js";
-import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
+import {
+  type WorkContextNotices,
+  WorkLifecycleUnavailableError,
+} from "../domains/projects/index.js";
 import type { AppServices } from "./app.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
@@ -20,12 +23,14 @@ type WorkWriteModeServices = {
   branchPush: {
     setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   };
+  workContextNotices: Pick<WorkContextNotices, "workChanged">;
 };
 
 export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServices {
   return {
     works: app.workRepo,
     branchPush: app.documentSync,
+    workContextNotices: app.workContextNotices,
   };
 }
 
@@ -93,6 +98,8 @@ export async function handleWorkWriteModeRequest(
     };
   }
 
+  // The Work's chats are told where their writes now land (work context).
+  if (aiWriteMode !== work.aiWriteMode) await deps.workContextNotices.workChanged(input.workId);
   return { aiWriteMode, status: "updated" };
 }
 
