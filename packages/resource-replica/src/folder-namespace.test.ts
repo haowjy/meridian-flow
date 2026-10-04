@@ -311,7 +311,7 @@ describe("folder namespace public API", () => {
     expect(projectFolderCatalog("project", entries, [store.current()])).toEqual(entries);
   });
 
-  it("recovers a refused queue after reopening durable metadata and accepts a different repair", async () => {
+  it("offers the latest queued name after refusal and retries it from accepted placement", async () => {
     const store = new MemoryFolders();
     await store.commitFolder(command());
     let started!: () => void;
@@ -352,7 +352,9 @@ describe("folder namespace public API", () => {
       "cancelled",
     ]);
     expect(projectFolderLocation(reopened.current())).toEqual(source);
-    expect(projectFolderNeedsRepair(reopened.current())?.intentId).toBe("move");
+    const offeredRepair = projectFolderNeedsRepair(reopened.current());
+    expect(offeredRepair).toEqual({ intentId: "move", name: "queued" });
+    if (!offeredRepair) throw new Error("Missing offered repair");
     for (const name of ["renamed", "queued", "chapters"]) {
       const retry = planFolderLocation({
         record: reopened.current(),
@@ -373,7 +375,7 @@ describe("folder namespace public API", () => {
       handle: "folder:chapters",
       folderId: "chapters",
       source,
-      destination: { ...destination, name: "repair" },
+      destination: { ...destination, name: offeredRepair.name },
       intentId: "repair",
       operationId: "repair",
     });
@@ -389,15 +391,16 @@ describe("folder namespace public API", () => {
         accountId: "account",
         readOutcome: async () => null,
         submit: async (_projectId, request) => {
-          expect(request).toMatchObject({ body: { path: "chapters", newName: "repair" } });
+          expect(request).toMatchObject({ body: { path: "chapters", newName: "queued" } });
           return {
             kind: "operation",
-            receipt: receipt(true, "repair", "manuscript://chapters", "manuscript://volume/repair"),
+            receipt: receipt(true, "repair", "manuscript://chapters", "manuscript://volume/queued"),
           };
         },
       }),
     ).toBe("progressed");
-    expect(projectFolderLocation(reopened.current()).name).toBe("repair");
+    expect(projectFolderLocation(reopened.current()).name).toBe("queued");
+    expect(projectFolderNeedsRepair(reopened.current())).toBeNull();
   });
 
   it("dispatches an identity-bound attempt when a foreign move arrives during receipt lookup", async () => {

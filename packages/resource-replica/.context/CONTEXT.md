@@ -92,7 +92,8 @@ Folder overlays rebase paths, URI authority, source/scope and parent ids for the
 folder and every descendant. Supply the installed destination source and parent
 catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
 use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
-old location and expose the attempted name through `projectFolderNeedsRepair`.
+old location and expose the latest requested name in the cancelled chain through
+`projectFolderNeedsRepair`, anchored to the refused intent for receipt feedback.
 Refusal cancels unsubmitted queued folder commands based on that rejected placement.
 An explicit repair supersedes rejected history and starts from the last canonical
 location, even when the chosen destination matches the currently displayed location.
