@@ -19,6 +19,24 @@ vi.mock("@/client/stores", async (importOriginal) => ({
 
 beforeEach(() => openTab.mockReset());
 
+function navigationFixture(
+  href: string,
+  overrides: Partial<Parameters<typeof createProjectNavigation>[0]> = {},
+) {
+  return createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
+      replaceEntry: () => undefined,
+      navigate: vi.fn(),
+      ...overrides,
+    },
+    () => ({ workId: null }),
+  );
+}
+
 function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   return {
     kind,
@@ -58,17 +76,10 @@ it.each([
       : "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
   const navigate = vi.fn();
   const replaceEntry = vi.fn();
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry,
-      navigate,
-    },
-    () => ({ workId: null }),
-  );
+  const navigation = navigationFixture(href, {
+    replaceEntry,
+    navigate,
+  });
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: {
@@ -123,17 +134,10 @@ it.each([
 it("preserves a proven local resource handle during readable-route admission", async () => {
   openTab.mockReturnValue({ kind: "opened" });
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn(),
-    },
-    () => ({ workId: null }),
-  );
+  const navigation = navigationFixture(href, {
+    replaceEntry: () => undefined,
+    navigate: vi.fn(),
+  });
   const localFile: CatalogFile = {
     kind: "file",
     entryId: "doc-id",
@@ -191,17 +195,10 @@ it("preserves a proven local resource handle during readable-route admission", a
 it("admits one semantic address when parent state rebuilds equivalent lookup objects", async () => {
   openTab.mockReturnValue({ kind: "opened" });
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn(),
-    },
-    () => ({ workId: null }),
-  );
+  const navigation = navigationFixture(href, {
+    replaceEntry: () => undefined,
+    navigate: vi.fn(),
+  });
   function Harness() {
     const [admission, setAdmission] = useState<AddressAdmission | null>(null);
     return (
@@ -246,19 +243,12 @@ it.each([
     if (superseded === "before-replace") navigation.beginIntent();
     return { kind: "opened" };
   });
-  navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => {
-        throw new Error("router rejected replacement");
-      },
-      navigate: vi.fn(),
+  navigation = navigationFixture(href, {
+    replaceEntry: () => {
+      throw new Error("router rejected replacement");
     },
-    () => ({ workId: null }),
-  );
+    navigate: vi.fn(),
+  });
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: { kind: "document", scheme: "kb", path: "before" },

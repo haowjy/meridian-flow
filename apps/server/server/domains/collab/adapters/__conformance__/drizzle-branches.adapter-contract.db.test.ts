@@ -87,7 +87,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
+      prepareSuite: async (db) => {
+        await deleteDrizzleRows(db, [users]);
+        await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
+        await db.insert(projects).values({
+          id: PROJECT_ID,
+          userId: USER_ID,
+          name: "Branch Project",
+          slug: "branch-project",
+        });
+        await db.insert(works).values({
+          id: WORK_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Branch Work",
+          slug: "branch-work",
+        });
+        await db.insert(contextSources).values({
+          id: SOURCE_ID,
+          projectId: PROJECT_ID,
+          name: "Manuscript",
+          slug: "manuscript",
+          scope: "project",
+          isPrimary: true,
+        });
+        await db.insert(documents).values({
+          id: DOC_ID,
+          contextSourceId: SOURCE_ID,
+          name: "chapter",
+          extension: "md",
+          fileType: "markdown",
+        });
+        await db.insert(threads).values({
+          rootThreadId: THREAD_ID,
+          id: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Thread",
+          kind: "primary",
+          status: "idle",
+        });
+        await db.insert(turns).values({
+          id: TURN_ID as never,
+          threadId: THREAD_ID as never,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db
+          .insert(threadWorks)
+          .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
+      },
     });
     let db = database.current;
     let livePersistence = createDrizzleCollabPersistence(db);
@@ -134,11 +185,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return doc;
     }
 
-    const _unusedDurableProjectionSerializer = {
-      async serializeDocument() {
-        return "";
-      },
-    };
     const markdownProjectionSerializer = (
       model: ReturnType<typeof yProsemirrorModel>,
       codec: ReturnType<typeof mdxCodec>,
@@ -177,55 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
       store = createBranchStore();
-      await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Branch Project",
-        slug: "branch-project",
-      });
-      await db.insert(works).values({
-        id: WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Branch Work",
-        slug: "branch-work",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
-      });
-      await db.insert(documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
-      await db.insert(threads).values({
-        rootThreadId: THREAD_ID,
-        id: THREAD_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Thread",
-        kind: "primary",
-        status: "idle",
-      });
-      await db.insert(turns).values({
-        id: TURN_ID as never,
-        threadId: THREAD_ID as never,
-        position: 1,
-        role: "assistant",
-        origin: "assistant",
-        status: "complete",
-      });
-      await db
-        .insert(threadWorks)
-        .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
       await store.reconcileProjectManifest(PROJECT_ID as never);
     });
 

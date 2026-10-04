@@ -140,6 +140,13 @@ describe("draft dispositions", () => {
       _reviewOverlayByProject: {},
       _workspaceHydrated: false,
     });
+    expect(draftTab).toMatchObject({
+      scheme: "manuscript",
+      documentId: "document-a",
+      draftOnly: true,
+      reviewWorkId: "work-a",
+    });
+    expect(draftTab).not.toHaveProperty("workId");
     useContextTabsStore.getState().openTab("project-a", draftTab);
     // The readable address owner resolves the same server document after the
     // review launcher installs its transient tab. It must not create a hidden
