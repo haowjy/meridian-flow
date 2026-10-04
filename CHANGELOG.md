@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Restore the journal/move foreign-key lock regression alongside the worker overwrite lock test.
+
 - Removed test-only link traversal exports from the collaboration public barrel.
 
 - Reduced folder-journal and rename-surface fixtures while retaining refused-queue, refresh, scope and resolver-cache regressions.
