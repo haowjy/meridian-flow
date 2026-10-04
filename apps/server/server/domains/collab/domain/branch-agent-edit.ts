@@ -19,6 +19,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { captureEditConfirmation } from "../../../shared/edit-confirmation.js";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { AutoBranchPushPort, BranchJournalRow } from "./branch-push-contracts.js";
@@ -931,9 +932,15 @@ function scheduleAutoPushAfterCommit(input: {
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
 }): void {
+  // Auto-apply finishes the agent's write, so it carries the write's grants;
+  // after-commit dispatch has left their scope.
+  const withWriteGrants = captureEditConfirmation();
   input.afterCommit(() => {
-    void input.branchPush
-      .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
+    void withWriteGrants(() =>
+      input.branchPush.pushAutoBranchAfterThreadPeerWrite({
+        workDraftBranchId: input.workDraftBranchId,
+      }),
+    )
       .then((result) => {
         if (
           result.status === "pushed" ||

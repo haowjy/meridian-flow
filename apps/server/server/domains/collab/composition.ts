@@ -13,6 +13,7 @@ import {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
+import { runOutsideEditConfirmation } from "../../shared/edit-confirmation.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
@@ -161,7 +162,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
-    outsideTransaction: runOutsideDrizzleTransaction,
+    // A pull isn't the write that scheduled it: it leaves that write's grants too.
+    outsideTransaction: (operation) =>
+      runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation)),
     rootTransaction: (operation) => runInRootDrizzleTransaction(deps.db, operation),
     liveCoordinator,
     branchCoordinator,
