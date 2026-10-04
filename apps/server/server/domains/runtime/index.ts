@@ -134,6 +134,13 @@ export {
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
 export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
+export {
+  isSkillsUri,
+  listSkillDir,
+  readSkillFile,
+  SKILLS_URI_ROOT,
+  type SkillFilesDeps,
+} from "./loop/skill-files.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export { threadControlRequestSchema } from "./loop/thread-control-request.js";
 export { ThreadControlError } from "./loop/thread-controls.js";
