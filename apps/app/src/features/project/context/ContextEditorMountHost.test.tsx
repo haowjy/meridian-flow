@@ -210,6 +210,48 @@ describe("ContextTabSessionBoundary", () => {
     expect(secondRelease).toHaveBeenCalledOnce();
   });
 
+  it("keeps the warm session while a review launch re-opens the tab without its resource handle", async () => {
+    const cachedSession = session();
+    resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
+    resourceReplica.openDocument.mockImplementation(async () => ({
+      kind: "opened",
+      handle: { session: cachedSession, release: vi.fn() },
+    }));
+    const opener = { open: vi.fn() };
+    let dropHandle!: () => void;
+    const observed: Array<DocumentSession | null> = [];
+
+    function Harness() {
+      const [handle, setHandle] = useState<string | undefined>("resource-a");
+      dropHandle = () => setHandle(undefined);
+      return (
+        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+          <ContextTabSessionBoundary
+            projectId="project-a"
+            documentId="document-a"
+            resourceHandle={handle}
+            availabilityRevision="document-1"
+          >
+            {(value) => {
+              observed.push(value);
+              return null;
+            }}
+          </ContextTabSessionBoundary>
+        </ProjectDocumentLiveOpenerContext.Provider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => undefined);
+      expect(observed.at(-1)).toBe(cachedSession);
+      const before = observed.length;
+      await act(async () => dropHandle());
+      await act(async () => undefined);
+      expect(observed.slice(before)).not.toContain(null);
+      expect(observed.at(-1)).toBe(cachedSession);
+    });
+  });
+
   it("releases a warm cached editor when its availability becomes terminal", async () => {
     const cachedSession = session();
     const release = vi.fn();

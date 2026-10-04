@@ -204,7 +204,9 @@ export function ContextEditorMountHost({
                     </div>
                   </div>
                 </div>
-              ) : waitingForReviewRoom ? null : (
+              ) : (
+                // While the review room resolves, the live editor stays on
+                // screen (a draft-only tab has none, so its shell holds the place).
                 <>
                   {active && isActive ? (
                     <ActiveEditorProjection
@@ -303,13 +305,16 @@ export function ContextTabSessionBoundary({
     phase: "probing" | "cached" | "server";
   }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
   const installedHandle = useRef<ResourceContentHandle | null>(null);
+  // A tab can lose its resource handle while keeping its document (a review
+  // launch re-opens it without one). Same document, same cached session: keep
+  // painting it while the exact lookup re-probes, never drop to a skeleton.
   const currentLocal =
     local.identity === resourceIdentity
       ? local
       : {
           identity: resourceIdentity,
           documentId,
-          handle: null,
+          handle: local.documentId === documentId ? local.handle : null,
           phase:
             local.documentId === documentId && local.phase === "server"
               ? ("server" as const)
@@ -321,7 +326,10 @@ export function ContextTabSessionBoundary({
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
-      handle: prior.identity === resourceIdentity ? prior.handle : null,
+      handle:
+        prior.identity === resourceIdentity || prior.documentId === documentId
+          ? prior.handle
+          : null,
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {

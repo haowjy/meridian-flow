@@ -310,6 +310,62 @@ describe("editor lifetime", () => {
     });
   });
 
+  it("never shows an empty body between live and review: live stays until review paints, then Apply reveals the warm live editor", async () => {
+    const documentId = "continuity-doc";
+    const roomName = "branch:continuity-doc:gen:1";
+    let resolveReviewSync!: () => void;
+    sessionHorizons.set(roomName, {
+      localPersistence: Promise.resolve(),
+      firstServerSync: new Promise((resolve) => {
+        resolveReviewSync = resolve;
+      }),
+    });
+    const visibleEditors = () =>
+      [...document.querySelectorAll<HTMLElement>(".ProseMirror")].filter(
+        (dom) => !dom.closest(".hidden"),
+      );
+    const visibleText = () => visibleEditors().map((dom) => dom.textContent);
+    const empty: string[] = [];
+    const observer = new MutationObserver(() => {
+      if (visibleEditors().length !== 1) empty.push(`${visibleEditors().length} visible editors`);
+    });
+
+    const initial = { documentId, projectId: "project-1", session: sessionFor(documentId) };
+    await withReactRoot(<Harness initial={initial} />, async () => {
+      await act(async () => {
+        mountedEditor().commands.insertContent("live words");
+      });
+      const liveDom = mountedEditor().view.dom;
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+      // The review room is still syncing: the live manuscript stays on screen.
+      await act(async () => {
+        applyProps({ reviewDraftId: "draft-1", reviewRoomName: roomName });
+      });
+      expect(visibleText()).toEqual(["live words"]);
+
+      // Review paints in one step.
+      await act(async () => {
+        resolveReviewSync();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const reviewDom = [
+        ...document.querySelectorAll<HTMLElement & { editor?: Editor }>(".ProseMirror"),
+      ].find((dom) => dom !== liveDom);
+      expect(visibleEditors()).toEqual([reviewDom]);
+
+      // Apply: review goes straight to the same warm live editor.
+      await act(async () => {
+        applyProps({ reviewDraftId: null, reviewRoomName: null });
+      });
+      expect(visibleEditors()).toEqual([liveDom]);
+      expect(visibleText()).toEqual(["live words"]);
+      observer.disconnect();
+      expect(empty).toEqual([]);
+    });
+  });
+
   it("opens read-only when the surface asks for it — the phone must not mount editable", async () => {
     const initial = { documentId: "document-3", projectId: "project-1", editable: false };
     await withReactRoot(<Harness initial={initial} />, async () => {

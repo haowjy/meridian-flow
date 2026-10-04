@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A draft-only document under review is hosted by its branch room alone; the live room opens once Apply promotes it. */
+/** A draft-only document under review is hosted by its branch room alone; a live document keeps painting while its review room resolves. */
 
 import { act, type ComponentProps, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -18,7 +18,11 @@ vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
 }));
-const review = vi.hoisted(() => ({ reviewing: false, publish: vi.fn() }));
+const review = vi.hoisted(() => ({
+  reviewing: false,
+  room: "review-room-a" as string | null,
+  publish: vi.fn(),
+}));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
@@ -26,7 +30,7 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
       inlineReview: review.reviewing ? { documentId: "document-a", draftId: "draft-a" } : null,
       reviewRoomError: false,
     },
-    reviewRoomNameForDraft: () => "review-room-a",
+    reviewRoomNameForDraft: () => review.room,
     setActiveEditorDocumentId: review.publish,
   }),
 }));
@@ -130,5 +134,46 @@ describe("ContextEditorMountHost draft-only review", () => {
       await act(async () => undefined);
       expect(opener.open).toHaveBeenCalledOnce();
     });
+  });
+
+  it("keeps the live editor on screen while the review room is still resolving", async () => {
+    review.reviewing = true;
+    review.room = null;
+    const opener = {
+      open: vi.fn(async () => ({
+        kind: "opened",
+        admission: {
+          projectId: "project-a",
+          documentId: "document-a",
+          generation: "1",
+          bind: async () => ({
+            projectId: "project-a",
+            documentId: "document-a",
+            generation: "1",
+            session: liveSession,
+            release: vi.fn(),
+          }),
+        },
+      })),
+    };
+    await withReactRoot(
+      <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+        <ContextEditorMountHost
+          projectId="project-a"
+          workId="work-a"
+          trackedTabs={[tab]}
+          activeTabId="document-a"
+          active
+        />
+      </ProjectDocumentLiveOpenerContext.Provider>,
+      async () => {
+        await act(async () => undefined);
+        const editor = document.querySelector("[data-editor]");
+        expect(editor?.getAttribute("data-live-session")).toBe("true");
+        expect(editor?.getAttribute("data-review-room")).toBe("");
+      },
+    );
+    review.reviewing = false;
+    review.room = "review-room-a";
   });
 });

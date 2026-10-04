@@ -51,6 +51,13 @@ owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states do not exist.
 
+`EditorView` keeps a document's live editor mounted, hidden, underneath its
+review editor. Entering review keeps the live text on screen until the review
+room has bound and its editor exists, then swaps in one step; Apply, Discard and
+Back to live reveal the warm live editor instead of rebuilding one. No review
+transition shows an empty body. A draft-only tab has no live editor to keep, so
+its shell holds the place.
+
 Review mode is a full-width Editor; the dock remains in the writer's chosen
 open/collapsed state and view. There is no in-editor review split.
 `useAiDraftLauncher` submits an explicit Work/document/

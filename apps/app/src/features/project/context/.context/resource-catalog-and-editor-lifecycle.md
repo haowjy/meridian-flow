@@ -98,6 +98,10 @@ local edits never reach the server and the pill stays silent. `SyncStatus` now
 reads a server-backed session that is still `detached` after a short grace as
 "Saved locally (offline)".
 
+A tab that loses its resource handle but keeps its document (a review launch
+re-opens it without one) keeps painting its cached session while the exact
+lookup re-probes; the boundary never drops to a skeleton for that identity flip.
+
 The desktop `ContextTabSessionBoundary` opens the ordinary live binding once its
 local session has been probed (`useLiveDocumentBinding`: open, bind, explicit
 retry). It presents the live session in place of the cached one when that
