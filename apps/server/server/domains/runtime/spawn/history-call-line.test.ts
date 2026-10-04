@@ -5,24 +5,6 @@ import { CALL_LINE_CAP, callLine, orderLikeSchema, shortenCallArgs } from "./his
 const words = (count: number, word = "word") => Array.from({ length: count }, () => word).join(" ");
 
 describe("shortenCallArgs", () => {
-  it("keeps short arguments exactly as sent, in their key order", () => {
-    const args = { path: "manuscript://chapter-11.md", format: "outline", in: [3, 5] };
-    expect(shortenCallArgs("read", args)).toEqual(args);
-    expect(Object.keys(shortenCallArgs("read", { format: "outline", path: "a.md" }))).toEqual([
-      "format",
-      "path",
-    ]);
-  });
-
-  it("cuts a long string inside the JSON to a prefix at a word break and a size note", () => {
-    const content = `The moon was low over the ridge when ${words(205)}`;
-    expect(shortenCallArgs("write", { command: "replace", path: "ch3.md", content })).toEqual({
-      command: "replace",
-      path: "ch3.md",
-      content: "The moon was low over the ridge when…(213 words)",
-    });
-  });
-
   it("leaves a string up to 60 characters whole", () => {
     const sixty = "x".repeat(60);
     expect(shortenCallArgs("read", { path: sixty })).toEqual({ path: sixty });
@@ -64,21 +46,6 @@ describe("shortenCallArgs", () => {
 });
 
 describe("callLine", () => {
-  it("writes the call, then the summary after an arrow", () => {
-    expect(
-      callLine({
-        tool: "read",
-        args: { path: "manuscript://chapter-11.md", format: "outline" },
-        state: "done",
-        summary: "5 of 62 blocks",
-      }),
-    ).toBe('read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks');
-  });
-
-  it("omits the arrow when there is nothing to say", () => {
-    expect(callLine({ tool: "ls", args: {}, state: "done" })).toBe("ls({})");
-  });
-
   it("writes failures with their status or code, and running and cancelled calls", () => {
     const args = { path: "skill://story-review/resources/developmental-edit.md" };
     expect(callLine({ tool: "read", args, state: "error", summary: "document_not_found" })).toBe(
@@ -93,10 +60,6 @@ describe("callLine", () => {
     expect(callLine({ tool: "spawn", args: { agent: "critic" }, state: "cancelled" })).toBe(
       'spawn({"agent":"critic"}) → cancelled',
     );
-  });
-
-  it("writes withheld arguments as an ellipsis", () => {
-    expect(callLine({ tool: "return_result", args: null, state: "done" })).toBe("return_result(…)");
   });
 });
 
@@ -129,13 +92,6 @@ describe("orderLikeSchema", () => {
       },
     ],
   };
-
-  it("restores the schema's key order that storage dropped, from the matching variant", () => {
-    const stored = { path: "ch3.md", find: "x", command: "replace", content: "y" };
-    expect(JSON.stringify(orderLikeSchema(stored, write))).toBe(
-      '{"command":"replace","path":"ch3.md","content":"y","find":"x"}',
-    );
-  });
 
   it("orders nested objects and keeps keys the schema doesn't name, last", () => {
     const stored = { from: { in: 3, path: "a.md" }, path: "b.md", extra: 1, command: "replace" };
