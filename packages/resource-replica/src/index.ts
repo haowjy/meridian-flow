@@ -3,6 +3,7 @@ export * from "./catalog";
 export * from "./catalog-acquisition";
 export * from "./catalog-installation";
 export * from "./catalog-scope";
+export * from "./folder-catalog-installation";
 export * from "./folder-namespace";
 export * from "./folder-projection";
 export * from "./namespace-receipts";

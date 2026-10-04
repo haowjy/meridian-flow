@@ -2,16 +2,18 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { CatalogEntry } from "@meridian/contracts/protocol";
 import { sameCatalogScope } from "./catalog-scope";
-import { type FolderNamespaceRecord, projectFolderLocation } from "./folder-namespace";
+import { projectFolderLocation } from "./folder-namespace";
 import { owningLocationIntent } from "./resource-intent-policy";
-import type { ResourceLocation } from "./resource-records";
+import type { FolderNamespaceRecord, ResourceLocation } from "./resource-records";
 import { workAuthorityOf } from "./resource-records";
 import { resourceContextAuthority } from "./resource-work-authority";
 
 function folderOverlays(projectId: string, records: readonly FolderNamespaceRecord[]) {
   return records
     .filter(
-      (record) => record.projectId === projectId && owningLocationIntent(projectId, record.intents),
+      (record) =>
+        record.projectId === projectId &&
+        owningLocationIntent(projectId, record.intents, Boolean(record.canonicalRefresh)),
     )
     .sort(
       (left, right) =>

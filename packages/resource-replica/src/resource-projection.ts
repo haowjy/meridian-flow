@@ -51,7 +51,11 @@ export function projectResourceLocation(
     record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
   )
     return null;
-  const placement = owningLocationIntent(projectId, record.intents)?.desired;
+  const placement = owningLocationIntent(
+    projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  )?.desired;
   if (placement?.kind === "set-location") {
     const folder = placement.destination.folderPath.split("/").filter(Boolean).join("/");
     return {

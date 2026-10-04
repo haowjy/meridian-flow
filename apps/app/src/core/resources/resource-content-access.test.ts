@@ -599,6 +599,7 @@ it("shares one User-catalog session across the projects that expose it", async (
           invalidatedEntryIds: [],
         },
         resources: [],
+        folders: [],
       }),
     ).toBe("committed");
   }
@@ -666,6 +667,7 @@ it("releases every project registry ownership after the final shared-content lea
           invalidatedEntryIds: [],
         },
         resources: [],
+        folders: [],
       }),
     ).toBe("committed");
   }
