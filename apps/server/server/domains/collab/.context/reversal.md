@@ -36,8 +36,16 @@ stable reversal-result identity.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
-- **Work-draft write-command reversal is branch-scoped**: while the current Work-draft
-  generation has agent rows for the thread, `write(command="undo"|"redo")`
+- **Model undo and redo reverse each write where it landed**: the pool
+  (`thread-peer-core-pool.ts`, `reversal-routing.ts`) reads which selected
+  handles sit in the thread's Work-draft rows and which in the live journal,
+  and runs the selection once per journal with that journal's share (`last: N`
+  counts per journal). Each part carries a grant at its own destination, so a
+  drafted write in an archived Work is refused with `work_archived` while live
+  parts of the same call still reverse; a mixed result is `partial` and names
+  the kept handles.
+- **Work-draft write-command reversal is branch-scoped**: for the drafted part of
+  a selection, `write(command="undo"|"redo")`
   reconstructs and stages reversals exclusively from those rows. The staged
   system row carries the Work-draft generation and becomes durable in the same
   branch commit that projects its Yjs update; it never writes the live journal.
