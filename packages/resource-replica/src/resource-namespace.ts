@@ -37,7 +37,9 @@ export type NamespaceReconcileResult =
   | "uncertain"
   | "needs-repair";
 
-function activeIntent(record: ResourceRecord): NamespaceIntent | null {
+export function activeNamespaceIntent(record: {
+  intents: readonly NamespaceIntent[];
+}): NamespaceIntent | null {
   return (
     [...record.intents]
       .sort((left, right) => left.sequence - right.sequence)
@@ -147,7 +149,7 @@ export function prepareNamespaceAttempt(
   record: ResourceRecord,
   ids: NamespaceAttemptIds,
 ): ResourceWrite | null {
-  const intent = activeIntent(record);
+  const intent = activeNamespaceIntent(record);
   if (intent?.state !== "pending") return null;
   if (record.resource.lifecycle.kind === "terminal") return null;
   if (intent.identityRevision !== record.resource.identity.revision) {
@@ -159,7 +161,7 @@ export function prepareNamespaceAttempt(
       })),
     };
   }
-  const request = requestFor(record, intent, ids.operationId);
+  const request = requestFor(record, intent, intent.operationId ?? ids.operationId);
   if (!request) return null;
   const next = replaceIntent(record, intent.intentId, (current) => ({
     ...current,
@@ -180,7 +182,10 @@ function unrecordedAttempt(attemptId: string, request: NamespaceRequest): Namesp
   }
 }
 
-function outcomeMatches(attempt: NamespaceAttempt, outcome: NamespaceOutcome): boolean {
+export function namespaceOutcomeMatches(
+  attempt: NamespaceAttempt,
+  outcome: NamespaceOutcome,
+): boolean {
   if (attempt.request.kind === "create") {
     return (
       outcome.kind === "create" &&
@@ -273,7 +278,10 @@ function receiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
   return receipt.command.kind === kind;
 }
 
-function withOutcome(attempt: NamespaceAttempt, outcome: NamespaceOutcome): NamespaceAttempt {
+export function namespaceAttemptWithOutcome(
+  attempt: NamespaceAttempt,
+  outcome: NamespaceOutcome,
+): NamespaceAttempt {
   if (attemptIs(attempt, "create") && outcome.kind === "create")
     return { attemptId: attempt.attemptId, request: attempt.request, outcome };
   if (
@@ -311,13 +319,15 @@ export function recordNamespaceOutcome(
   if (!intent || !attempt || attempt.attemptId !== attemptId)
     throw new Error("Namespace attempt is no longer current");
   if (attempt.outcome) return null;
-  if (intent.state !== "submitted" || !outcomeMatches(attempt, outcome))
+  if (intent.state !== "submitted" || !namespaceOutcomeMatches(attempt, outcome))
     throw new Error("Namespace outcome does not match current attempt");
   const next = replaceIntent(record, intentId, (current) => ({
     ...current,
     state: "received",
     attempts: current.attempts.map((candidate) =>
-      candidate.attemptId === attemptId ? withOutcome(candidate, outcome) : candidate,
+      candidate.attemptId === attemptId
+        ? namespaceAttemptWithOutcome(candidate, outcome)
+        : candidate,
     ),
   }));
   return { expectedRevision: record.resource.revision, next };
@@ -338,8 +348,11 @@ function createLocation(
 }
 
 /** Apply a recorded historical outcome without overwriting newer observed identity/location. */
-export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | null {
-  const intent = activeIntent(record);
+export function settleNamespaceOutcome(
+  record: ResourceRecord,
+  settledAt = Date.now(),
+): ResourceWrite | null {
+  const intent = activeNamespaceIntent(record);
   const attempt = intent?.attempts.at(-1);
   const outcome = attempt?.outcome;
   if (intent?.state !== "received" || !attempt || !outcome) return null;
@@ -420,6 +433,7 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
   const next = replaceIntent({ resource, intents: record.intents }, intent.intentId, (current) => ({
     ...current,
     state: repair ? "needs-repair" : "settled",
+    settledAt,
   }));
   return { expectedRevision: record.resource.revision, next };
 }
@@ -477,12 +491,46 @@ function replayEligible(
 }
 
 /** Reconcile one resource through at most one network dispatch; CAS retries never redispatch. */
-export async function reconcileResourceNamespace(input: {
+export function reconcileResourceNamespace(input: {
   key: { handle: string };
   metadata: ResourceMetadataStore;
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
   newAttemptIds: () => NamespaceAttemptIds;
+  now?: () => number;
+}): Promise<NamespaceReconcileResult> {
+  return reconcileNamespaceJournal({
+    ...input,
+    read: () => input.metadata.readResource(input.key),
+    commit: (write: ResourceWrite) => input.metadata.commitResource(write),
+    prepare: prepareNamespaceAttempt,
+    recordOutcome: recordNamespaceOutcome,
+    settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
+    replayEligible,
+  });
+}
+
+/** Shared journal replay for content resources and folder namespace records. */
+export async function reconcileNamespaceJournal<
+  Record extends { intents: readonly NamespaceIntent[] },
+  Write extends { next: Record },
+>(input: {
+  key: { handle: string };
+  metadata: { accountId: string };
+  transport: ResourceNamespaceTransport;
+  lock: ResourceNamespaceLock;
+  newAttemptIds: () => NamespaceAttemptIds;
+  read: () => Promise<Record | null>;
+  commit: (write: Write) => Promise<"committed" | "stale">;
+  prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null;
+  recordOutcome: (
+    record: Record,
+    intentId: string,
+    attemptId: string,
+    outcome: NamespaceOutcome,
+  ) => Write | null;
+  settle: (record: Record) => Write | null;
+  replayEligible: (record: Record, intent: NamespaceIntent, attempt: NamespaceAttempt) => boolean;
 }): Promise<NamespaceReconcileResult> {
   if (
     input.metadata.accountId !== input.transport.accountId ||
@@ -491,15 +539,15 @@ export async function reconcileResourceNamespace(input: {
     throw new Error("Resource namespace account mismatch");
   let captured: { intentId: string; attemptId: string; outcome: NamespaceOutcome } | undefined;
   for (;;) {
-    const record = await input.metadata.readResource(input.key);
+    const record = await input.read();
     if (!record) return "idle";
-    const intent = activeIntent(record);
+    const intent = activeNamespaceIntent(record);
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
     if (intent.state === "pending") {
-      const write = prepareNamespaceAttempt(record, input.newAttemptIds());
+      const write = input.prepare(record, input.newAttemptIds());
       if (!write) return "blocked";
-      if ((await input.metadata.commitResource(write)) === "stale") continue;
+      if ((await input.commit(write)) === "stale") continue;
       if (
         write.next.intents.find((item) => item.intentId === intent.intentId)?.state ===
         "needs-repair"
@@ -508,9 +556,9 @@ export async function reconcileResourceNamespace(input: {
       continue;
     }
     if (intent.state === "received") {
-      const write = settleNamespaceOutcome(record);
+      const write = input.settle(record);
       if (!write) return "idle";
-      if ((await input.metadata.commitResource(write)) === "stale") continue;
+      if ((await input.commit(write)) === "stale") continue;
       return write.next.intents.find((item) => item.intentId === intent.intentId)?.state ===
         "needs-repair"
         ? "needs-repair"
@@ -525,15 +573,15 @@ export async function reconcileResourceNamespace(input: {
         if (observed) return observed;
         // Identity and terminal transitions use this same lock. Re-read after
         // lookup so a transition cannot make the captured snapshot authorize dispatch.
-        const current = await input.metadata.readResource(input.key);
-        const currentIntent = current && activeIntent(current);
+        const current = await input.read();
+        const currentIntent = current && activeNamespaceIntent(current);
         const currentAttempt = currentIntent?.attempts.at(-1);
         if (
           !current ||
           currentIntent?.intentId !== intent.intentId ||
           currentAttempt?.attemptId !== attempt.attemptId ||
           currentIntent.state !== "submitted" ||
-          !replayEligible(current, currentIntent, currentAttempt)
+          !input.replayEligible(current, currentIntent, currentAttempt)
         )
           return null;
         return input.transport.submit(currentIntent.projectId, currentAttempt.request);
@@ -545,13 +593,13 @@ export async function reconcileResourceNamespace(input: {
     }
     if (intent.intentId !== captured.intentId || attempt.attemptId !== captured.attemptId)
       return "progressed";
-    const write = recordNamespaceOutcome(
+    const write = input.recordOutcome(
       record,
       captured.intentId,
       captured.attemptId,
       captured.outcome,
     );
     if (!write) continue;
-    if ((await input.metadata.commitResource(write)) === "stale") continue;
+    if ((await input.commit(write)) === "stale") continue;
   }
 }

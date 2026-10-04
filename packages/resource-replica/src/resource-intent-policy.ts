@@ -15,7 +15,7 @@ export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): b
 }
 
 export function supersedeRepairableNamespaceWork(
-  record: ResourceRecord,
+  record: Pick<ResourceRecord, "intents">,
   projectId: string,
 ): { intents: NamespaceIntent[]; repaired: boolean } {
   const repaired = record.intents.some(
@@ -46,5 +46,29 @@ export function intentOwnsDeletion(intent: NamespaceIntent): boolean {
     intent.state === "settled" &&
     outcome?.kind === "operation" &&
     !outcome.receipt.result.ok
+  );
+}
+
+/** Rejected history is evidence, never placement ownership after a retry supersedes it. */
+export function intentOwnsLocation(intent: NamespaceIntent): boolean {
+  if (intent.desired.kind !== "set-location" && intent.desired.kind !== "set-folder-location")
+    return false;
+  if (["cancelled", "settled-locally", "needs-repair"].includes(intent.state)) return false;
+  const outcome = intent.attempts.at(-1)?.outcome;
+  return !(
+    intent.state === "settled" &&
+    outcome?.kind === "operation" &&
+    !outcome.receipt.result.ok
+  );
+}
+
+export function owningLocationIntent(
+  projectId: string,
+  intents: readonly NamespaceIntent[],
+): NamespaceIntent | null {
+  return (
+    [...intents]
+      .sort((left, right) => right.sequence - left.sequence)
+      .find((intent) => intent.projectId === projectId && intentOwnsLocation(intent)) ?? null
   );
 }
