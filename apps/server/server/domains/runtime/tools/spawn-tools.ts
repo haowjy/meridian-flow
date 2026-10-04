@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
-import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
+import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type {
@@ -146,7 +146,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       sequential: true,
       capability: "thread_report",
       renderResult: renderThreadReportOutput,
-      historyPreview: threadHistoryPreview,
+      historySummary: threadHistorySummary,
       historyKind: "routine",
       advertise: true,
     },
@@ -167,7 +167,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       sequential: true,
       capability: "spawn",
       renderResult: renderSpawnOutput,
-      historyPreview: spawnHistoryPreview,
+      historySummary: spawnHistorySummary,
       advertise: true,
     },
     {
@@ -187,7 +187,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       sequential: true,
       capability: "thread_message",
       renderResult: renderSpawnOutput,
-      historyPreview: threadHistoryPreview,
+      historySummary: spawnHistorySummary,
       advertise: true,
     },
     {
@@ -205,9 +205,8 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
-      // The child's saved report renders in its place (D6); its arguments never show.
+      // The child's saved report renders in its place (D6); history withholds its arguments.
       historyKind: "routine",
-      historyPreview: () => "",
       advertise: false,
     },
   ];

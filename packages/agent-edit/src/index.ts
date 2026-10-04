@@ -83,7 +83,11 @@ export {
   modelConcurrentResult,
   modelResult,
 } from "./tool/model-result.js";
-export { draftedSuffix, readCall, renderAgentEditResult } from "./tool/result-text.js";
+export {
+  agentEditResultSummary,
+  readCall,
+  renderAgentEditResult,
+} from "./tool/result-text.js";
 export type {
   MutationActor,
   ReadFunction,

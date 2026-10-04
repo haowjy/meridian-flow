@@ -15,12 +15,12 @@ tools are in [history tools](history-tools.md).
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`) for primaries and subagents alike; it loads a SKILL.md body only when the slug is in the thread's bound `skills.available` and `model-invocable` is not false, and returns plain text: the body, then one `skill({"slug":…,"resource":…})` call per resource file. `resource` opens a UTF-8 file under an available or preloaded skill's directory. `skills.load` bodies are baked into the first prompt ([request assembly](request-assembly.md)). No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, `return_result`, and `thread_report` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. `return_result` accepts Meridian document URI strings and validates them through the contracts capture schema before mapping them to `{ type: "object", uri }`. Invalid input returns a model-correctable tool error instead of aborting the child run. Neither spawn nor thread_message accepts an escalation patch. |
 | Inspection tools | `tools/inspection-tools.ts` registers `thread_ls` and `thread_history` with repository and tokenizer ports at composition (`thread_report` registers with the spawn tools); see [history tools](history-tools.md). |
-| Document text | `tools/document-text.ts` and `tools/history-previews.ts`: each registration owns its `DocumentTextPolicy`, `historyPreview` (brief arguments) and `historyKind` (`routine` calls are hidden in history by default); see [document text in history](document-text.md) and [history tools](history-tools.md). |
+| Document text | `tools/document-text.ts` and `tools/history-summaries.ts`: each registration owns its `DocumentTextPolicy`, `historySummary` (the result after a history call line's `→`) and `historyKind` (`routine` calls are hidden in history by default); see [document text in history](document-text.md) and [history tools](history-tools.md). |
 
 Every `ToolExecutionResult` carries `output` (what the model sees) and
 `result` (the typed value, always set, errors included); dispatch persists
 `result` on the `tool_result` block and the `tool.result` event, and every
-reader (history previews, `thread_history`, the app) reads `result`, never
+reader (history summaries, `thread_history`, the app) reads `result`, never
 `output` (D8, D43). With `renderResult`, `output` is its text; without, both
 are the value. Parse failures return `invalid_arguments` with `result`
 `{ error, issues }` and a rendered text. Timeout, abort, and thrown failures

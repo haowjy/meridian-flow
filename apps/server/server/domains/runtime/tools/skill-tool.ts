@@ -33,8 +33,6 @@ export function createSkillToolRegistrations(deps: {
         inputSchema: modelToolSchema(SkillToolInputSchema),
       },
       input: SkillToolInputSchema,
-      historyPreview: (input) =>
-        [input.slug, input.resource].filter((part) => typeof part === "string").join(" "),
       historyKind: "routine",
       execution: {
         type: "server",

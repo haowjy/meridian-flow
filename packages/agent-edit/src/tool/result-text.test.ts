@@ -1,7 +1,7 @@
 // Pins the model's text for fixed typed results (D43).
 import { describe, expect, it } from "vitest";
 import { type AgentEditResultV1, modelResult } from "./model-result.js";
-import { renderAgentEditResult } from "./result-text.js";
+import { agentEditResultSummary, renderAgentEditResult } from "./result-text.js";
 
 const item = (hash: string, body: string) => ({ hash, body });
 
@@ -186,5 +186,66 @@ describe("renderAgentEditResult", () => {
     expect(renderAgentEditResult(missing)).toBe(
       'status: not_found\n\nBlock hash "dead" was not found.',
     );
+  });
+});
+
+describe("agentEditResultSummary", () => {
+  const read = (documentBlocks: number | undefined, items: number) =>
+    modelResult({
+      command: "read",
+      status: "success",
+      phase: "committed",
+      payload: {
+        path: "manuscript://chapter-11.md",
+        read: { format: "outline", ...(documentBlocks ? { documentBlocks } : {}) },
+        blocks: [
+          {
+            extent: "full",
+            relation: "document",
+            items: Array.from({ length: items }, (_, i) => item(`h${i}`, `# ${i}`)),
+          },
+        ],
+      },
+    });
+
+  it("counts a read's blocks, out of the document's when it returned fewer", () => {
+    expect(agentEditResultSummary(read(62, 5))).toBe("5 of 62 blocks");
+    expect(agentEditResultSummary(read(undefined, 1))).toBe("1 block");
+  });
+
+  it("names a write's handle, the words it sent and where it drafted", () => {
+    const drafted = modelResult({
+      command: "replace",
+      status: "success",
+      phase: "committed",
+      payload: { write: { id: "w4" }, destination: "draft", draftWork: "rewrite" },
+    });
+    expect(agentEditResultSummary(drafted, 3)).toBe("w4, 3 words, drafted in @rewrite");
+    expect(agentEditResultSummary({ ...drafted, destination: "live" }, 1)).toBe("w4, 1 word");
+  });
+
+  it("says what a copy and an undo did, and a status that isn't plain success", () => {
+    expect(
+      agentEditResultSummary(
+        modelResult({
+          command: "copy",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w2" }, copied: { from: "ch11.md", blocks: 3 } },
+        }),
+      ),
+    ).toBe("w2, copied 3 blocks");
+    expect(
+      agentEditResultSummary(
+        modelResult({
+          command: "undo",
+          status: "reconciled",
+          payload: { reversal: { direction: "undo", writes: ["w3", "w4"] } },
+        }),
+      ),
+    ).toBe("reconciled, undo: w3, w4");
+    expect(
+      agentEditResultSummary(modelResult({ command: "undo", status: "nothing_to_undo" })),
+    ).toBe("nothing_to_undo");
   });
 });

@@ -58,7 +58,7 @@ describe("renderHistoryResult", () => {
             {
               kind: "tool",
               tool: "spawn",
-              brief: '"Summarize conversation test"',
+              args: { agent: "general", name: "Summarize conversation test" },
               state: "running",
             },
           ],
@@ -78,7 +78,7 @@ I looked around to see what "pizza" might point at, ...
 can u test a subagent using from and ask it to summarize the conversation so far
 
 In progress
-[4] spawn "Summarize conversation test"`);
+[4] spawn({"agent":"general","name":"Summarize conversation test"}) → running`);
   });
 
   it("renders a saved report in place of the child's return_result, cut to its first lines", () => {
@@ -151,8 +151,43 @@ The conversation so far covers three topics: ...
         turn({
           number: 38,
           items: [
-            { kind: "tool", tool: "write", brief: "replace ch3.md, 12 words, w4", state: "done" },
-            { kind: "tool", tool: "read", brief: "ch9.md", state: "error", result: "not found" },
+            {
+              kind: "tool",
+              tool: "write",
+              args: {
+                command: "replace",
+                path: "ch3.md",
+                content: "The moon was low over the ridge…(212 words)",
+                find: "The moon was",
+              },
+              state: "done",
+              summary: "w4, 212 words, drafted in @rewrite",
+            },
+            {
+              kind: "tool",
+              tool: "read",
+              args: { path: "skill://story-review/resources/developmental-edit.md" },
+              state: "error",
+              summary: "document_not_found",
+            },
+            {
+              kind: "tool",
+              tool: "spawn",
+              args: {
+                agent: "critic",
+                prompt: "Load the story-review skill…(310 words)",
+                name: "Pacing review",
+              },
+              state: "done",
+              summary: "p8",
+            },
+            {
+              kind: "tool",
+              tool: "work",
+              args: { command: "create", name: "Rewrite" },
+              state: "done",
+              summary: "@rewrite",
+            },
           ],
         }),
       ],
@@ -168,9 +203,10 @@ A long request
 (truncated: thread_history({"ref":"c2","expand":"37.1"}))
 
 [38] assistant
-write replace ch3.md, 12 words, w4
-read ch9.md (failed)
-not found
+write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, drafted in @rewrite
+read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
+spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
+work({"command":"create","name":"Rewrite"}) → @rewrite
 
 More: thread_history({"ref":"c2","cursor":"c2:n37@40~abcdef12","include":["thinking"]})`);
   });
@@ -189,10 +225,12 @@ More: thread_history({"ref":"c2","cursor":"c2:n37@40~abcdef12","include":["think
               kind: "tool",
               index: 3,
               tool: "read",
-              brief: "ch11",
+              args: { path: "manuscript://chapter-11.md", format: "outline" },
               state: "done",
+              summary: "5 of 62 blocks",
               resultTokens: 5120,
             },
+            { kind: "tool", index: 4, tool: "ls", args: {}, state: "cancelled" },
           ],
         }),
       ],
@@ -203,7 +241,39 @@ More: thread_history({"ref":"c2","cursor":"c2:n37@40~abcdef12","include":["think
 [4] assistant
 4.1 thinking (320 tokens)
 4.2 Checking chapter eleven.
-4.3 read ch11 (5,120 tokens)`);
+4.3 read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks (5,120 tokens)
+4.4 ls({}) → cancelled`);
+  });
+
+  it("shows one call in full under its line: the arguments, then the result", () => {
+    const text = renderHistoryResult({
+      ref: "c2",
+      view: "item",
+      turns: [
+        turn({
+          number: 4,
+          items: [
+            {
+              kind: "tool",
+              index: 3,
+              tool: "read",
+              args: { path: "manuscript://ch2.md" },
+              state: "done",
+              summary: "3 blocks",
+              fullArgs: '{"path":"manuscript://ch2.md"}',
+              result: "status: success; path: manuscript://ch2.md; blocks: 3",
+            },
+          ],
+        }),
+      ],
+      inProgress: [],
+    });
+    expect(text).toBe(`Conversation c2
+
+[4] assistant
+4.3 read({"path":"manuscript://ch2.md"}) → 3 blocks
+{"path":"manuscript://ch2.md"}
+status: success; path: manuscript://ch2.md; blocks: 3`);
   });
 
   it("renders a refusal as its message and code, not JSON", () => {

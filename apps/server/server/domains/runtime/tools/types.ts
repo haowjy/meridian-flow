@@ -244,10 +244,10 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
   /**
-   * The call's brief arguments in `thread_history`. `result` is the typed result
-   * when the tool renders one, else its output.
+   * What follows a finished call's `→` in `thread_history` (D48), from its typed
+   * result; the line already quotes the arguments. Absent or undefined: no arrow.
    */
-  historyPreview?: (input: JsonObject, result?: JsonValue) => string;
+  historySummary?: (input: JsonObject, result: JsonValue) => string | undefined;
   /**
    * How `thread_history` shows a call by default. A `routine` call (inspection)
    * is hidden and counted; any other call is one receipt line. Errors always show.

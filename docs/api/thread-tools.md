@@ -42,7 +42,7 @@ Input:
   order?: "newest_first" | "oldest_first"; // default newest_first
   cursor?: string;
   limit?: number; // default 40 turns, max 200; hidden calls don't count
-  include?: ("routine_calls" | "tool_args" | "tool_results" | "thinking" |
+  include?: ("routine_calls" | "tool_results" | "thinking" |
              "system_messages" | "system_prompt" | "timestamps")[];
   expand?: number | string; // turn number 4 (or "4"), or "4.7" for item 7 of turn 4
 }
@@ -68,8 +68,33 @@ I looked around to see what "pizza" might point at, ...
 can u test a subagent using from and ask it to summarize the conversation so far
 
 In progress
-[4] spawn "Summarize conversation test"
+[4] spawn({"agent":"general","name":"Summarize conversation test"}) → running
 ```
+
+- **Call lines** (D48). Every tool call, on a page, under `routine_calls` and
+  in `expand: N`, is one line: the tool name and the arguments as the model
+  sent them, as compact JSON, then ` → ` and a short result. Postgres `jsonb`
+  drops key order, so keys follow the tool's input schema (the matching
+  `oneOf` variant), with keys it doesn't name last:
+
+  ```text
+  read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks
+  write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, drafted in @rewrite
+  read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
+  spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
+  ```
+
+  `spawn/history-call-line.ts` shortens long strings inside the JSON, at any
+  depth: a string over 60 characters keeps its first 40 (backed off to a word
+  break) and a size note, `…(212 words)` (`…(N chars)` for one word). A call
+  still over 300 characters drops the prefix to 16, then 0; keys are never
+  dropped. The result after the arrow comes from the typed result through the
+  registration's `historySummary` (`tools/history-summaries.ts`): a write's
+  handle, words sent and drafted Work, a read's block count, a spawn's child
+  ref, a Work. A failure is `→ failed: <status or code>`, a call still running
+  `→ running`, one a settled turn never finished `→ cancelled`. With nothing
+  to say there is no arrow. A child's `return_result` is written
+  `return_result(…)`: its saved report stands in for its arguments.
 
 - **Turn numbers** count conversation turns only (writer and agent requests
   and assistant replies), from 1, with no gaps (D10). One count query gives
@@ -92,7 +117,8 @@ In progress
 - **`expand: N`** lists each item of turn N on one line, numbered `N.k` in
   display order (a tool result shares its call's line), with result sizes;
   messages show up to the item cap while the expansion budget lasts.
-  **`expand: "N.k"`** shows one item in full.
+  **`expand: "N.k"`** shows one item in full: its call line, the whole
+  arguments (a write's as a dated edit record), then the result.
 - **Compaction** renders `[earlier turns summarized]` above the first turn of
   a compacted segment. Pages stop at prompt epoch boundaries; `More:` reaches
   the earlier turns. The composed prompt is opt-in, once when a cursor opens a
@@ -101,8 +127,9 @@ In progress
   is outside the stable settled-prefix cursor chain. Inherited turns name
   their source (`(from c1)`).
 
-`tool_args` and item expansion expose dated edit records, not current
-documents. Document copies never render: read results, search excerpts,
+Item expansion exposes dated edit records, not current documents. A write's
+call line quotes its (shortened) inputs, so any view that shows one carries
+the write's edit evidence with null revisions, and compaction clears it. Document copies never render: read results, search excerpts,
 reference reads and write echoes become pointers, in every view. `isError`
 results remain verbatim. Nested history results are omitted. Missing
 call/registration evidence produces a result stub instead of an unknown copy.

@@ -30,7 +30,7 @@ import {
 } from "@meridian/contracts/works";
 import { z } from "zod";
 import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
-import { readHistoryPreview, workHistoryPreview, writeHistoryPreview } from "./history-previews.js";
+import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -202,7 +202,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       input: ReadToolInputSchema,
       execution: { type: "server", handler: handlers.read },
       documentText: readDocumentText,
-      historyPreview: readHistoryPreview,
+      historySummary: documentHistorySummary,
       historyKind: "routine",
       // Reads run in call order with writes, so a read after a write sees it.
       sequential: true,
@@ -222,7 +222,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       input: WriteToolInputSchema,
       execution: { type: "server", handler: handlers.write },
       documentText: writeDocumentText,
-      historyPreview: writeHistoryPreview,
+      historySummary: documentHistorySummary,
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError((error) =>
@@ -240,7 +240,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
-      historyPreview: workHistoryPreview,
+      historySummary: workHistorySummary,
       historyKind: (input) =>
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
@@ -256,7 +256,6 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: LsToolInputSchema,
       execution: { type: "server", handler: handlers.ls },
-      historyPreview: (input) => String(input.path ?? "/"),
       historyKind: "routine",
       timeoutMs: 30_000,
     },
@@ -271,7 +270,6 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       input: SearchToolInputSchema,
       execution: { type: "server", handler: handlers.search },
       documentText: searchDocumentText,
-      historyPreview: (input) => String(input.pattern ?? ""),
       historyKind: "routine",
       timeoutMs: 30_000,
     },

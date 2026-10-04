@@ -37,8 +37,8 @@ failed edits with only a historical path.
 ## Tool-owned policy
 
 `ToolRegistration.documentText` (`tools/document-text.ts`) owns each tool's
-classification and replacement copy; `historyPreview`
-(`tools/history-previews.ts`) owns its compact navigation marker. `read`,
+classification and replacement copy; `historySummary`
+(`tools/history-summaries.ts`) owns what follows its history call line's `→`. `read`,
 `write` and `search` register policies, each with a fixed kind; references use
 `reference-context`. Error pairs are outside the policy. Tool pairing, reasoning, writer
 words, and fresh text stay. Missing tool pairing or registration fails closed
