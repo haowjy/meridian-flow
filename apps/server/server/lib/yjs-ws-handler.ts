@@ -95,6 +95,8 @@ type YjsConnectionAdmission =
   | {
       kind: "allowed";
       target: YjsAdmissionTarget;
+      /** The file the room serves, asked again once the room is registered. */
+      fileTarget: FileTarget;
       access: YjsRoomAccess;
       /** The Works whose lifecycle decides this access: the file's owner, the draft's Work. */
       accessWorkIds: WorkId[];
@@ -233,13 +235,23 @@ async function roomAccess(
   userId: UserId,
   target: FileTarget,
 ): Promise<{ access: YjsRoomAccess; facts: FileFacts }> {
+  const admitted = await findRoomAccess(services, userId, target);
+  if (!admitted) throw permissionDenied("permission-denied");
+  return admitted;
+}
+
+async function findRoomAccess(
+  services: YjsGatewayServices,
+  userId: UserId,
+  target: FileTarget,
+): Promise<{ access: YjsRoomAccess; facts: FileFacts } | null> {
   const principal = { accountId: userId };
   const edit = await services.fileAccess.authorize(principal, target, "edit");
   if (!isFileAccessDenied(edit))
     return { access: { level: "edit", grant: edit }, facts: edit.facts };
-  if (edit.level !== "read") throw permissionDenied("permission-denied");
+  if (edit.level !== "read") return null;
   const read = await services.fileAccess.authorize(principal, target, "read");
-  if (isFileAccessDenied(read)) throw permissionDenied("permission-denied");
+  if (isFileAccessDenied(read)) return null;
   return { access: { level: "read" }, facts: read.facts };
 }
 
@@ -260,10 +272,12 @@ async function classifyYjsConnectionAdmission(input: {
   let documentId: DocumentId;
   let headSchemaVersion: CollabSchemaVersion | null;
   let admitted: Awaited<ReturnType<typeof roomAccess>>;
+  let fileTarget: FileTarget;
 
   if (room.kind === "live") {
     documentId = room.documentId;
-    admitted = await roomAccess(services, userId, { kind: "document", documentId });
+    fileTarget = { kind: "document", documentId };
+    admitted = await roomAccess(services, userId, fileTarget);
     const projectId = admitted.facts.projectId;
     try {
       if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
@@ -289,11 +303,8 @@ async function classifyYjsConnectionAdmission(input: {
     if (!branch) throw permissionDenied("branch-generation-stale");
     documentId = branch.documentId;
     headSchemaVersion = branch.schemaVersion;
-    admitted = await roomAccess(services, userId, {
-      kind: "draft",
-      documentId,
-      workId: branch.workId,
-    });
+    fileTarget = { kind: "draft", documentId, workId: branch.workId };
+    admitted = await roomAccess(services, userId, fileTarget);
   }
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
     return {
@@ -316,7 +327,11 @@ async function classifyYjsConnectionAdmission(input: {
     };
   }
 
-  const access = { access: admitted.access, accessWorkIds: accessWorkIds(admitted.facts) };
+  const access = {
+    fileTarget,
+    access: admitted.access,
+    accessWorkIds: accessWorkIds(admitted.facts),
+  };
   if (room.kind === "live") {
     return {
       kind: "allowed",
@@ -521,6 +536,10 @@ export function createHocuspocus(
         // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
         connectionConfig.readOnly = admission.access.level === "read";
         rooms.register(context.registration, admission.accessWorkIds);
+        // A Work change between admission and registration reached no room.
+        // Registered now, the room hears every later change; ask once more.
+        const settled = await findRoomAccess(services, userId, admission.fileTarget);
+        if (settled?.access.level !== admission.access.level) refuseAccessChanged(context);
 
         if (admission.target.kind === "branch") {
           const target = admission.target;
