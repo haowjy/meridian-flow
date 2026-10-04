@@ -1104,7 +1104,7 @@ msgstr ""
 msgid "Couldn't delete this chat"
 msgstr ""
 
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't delete this document. Try again."
 msgstr ""
 
@@ -1230,7 +1230,7 @@ msgstr ""
 msgid "Couldn’t rename this chat. Try again."
 msgstr ""
 
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr ""
 
