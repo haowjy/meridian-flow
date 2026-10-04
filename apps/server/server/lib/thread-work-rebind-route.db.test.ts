@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createLocalFileAccessChanges } from "../domains/file-policy/index.js";
 import { createProjectRepositoryForTest } from "../domains/projects/test-support/project-repository.js";
 import {
   resetThreadWorkRaceFixture,
@@ -48,6 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const notices = createDrizzleNoticePort(db);

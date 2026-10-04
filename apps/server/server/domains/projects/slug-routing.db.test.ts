@@ -5,6 +5,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -38,6 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const workRepository = () =>
       createDrizzleWorkRepository({
         db,
+        fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation,
       });
 

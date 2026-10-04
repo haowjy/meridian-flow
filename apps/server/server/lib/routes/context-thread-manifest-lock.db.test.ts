@@ -8,6 +8,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
 import { confirmEveryGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
@@ -98,6 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         works: createDrizzleProjectWorkRepository({
           db,
+          fileAccessChanges: createLocalFileAccessChanges(),
           projectionMutation: createTestWorkProjectionMutation(db),
         }),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

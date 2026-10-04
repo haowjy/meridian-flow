@@ -1,5 +1,6 @@
 /** PostgreSQL half of the shared WorkRepository conformance suite. */
 import { beforeEach, describe, it } from "vitest";
+import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -42,6 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let now = new Date("2026-01-01T00:00:00.000Z");
       const repo = createDrizzleWorkRepository({
         db,
+        fileAccessChanges: createLocalFileAccessChanges(),
         now: () => now,
         projectionMutation: {
           async publishWorks() {},
