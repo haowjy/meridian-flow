@@ -237,7 +237,8 @@ export class DocumentSessionRegistry
     const session = state.session;
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (snapshot.schemaFence || snapshot.status === "detached") return false;
+    if (snapshot.schemaFence || snapshot.status === "detached" || session.refusedLocalEdits())
+      return false;
     if (
       snapshot.status !== "access-lost" &&
       snapshot.connectionState?.kind !== "unauthorized" &&
@@ -296,6 +297,12 @@ export class DocumentSessionRegistry
   releaseBranchRooms(ownerId: string): void {
     this.retainedBranchRoomsByOwner.delete(ownerId);
     this.reconcileBranchRooms();
+  }
+
+  async rebuildBranchRoom(roomKey: string): Promise<DocumentSession> {
+    // A reset branch session is already retired; wait out its teardown quarantine.
+    await this.teardownOwner.drainRoom({ kind: "branch", roomKey });
+    return this.getBranchRoom(roomKey);
   }
 
   getBranchRoom(roomKey: string): DocumentSession {

@@ -13,6 +13,11 @@
  * Props split in two: those that form the `EditorMountIdentity` decide which
  * editor exists (they key the mount), and the rest are surface config applied
  * to whatever editor is already running.
+ *
+ * The room's access scope is surface config too: a room the server makes
+ * read-only (an archived Work's draft or scratch) stops taking edits in place,
+ * with no remount. Only a review room whose pending edits the server refused
+ * is rebuilt, from the server's state.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -31,7 +36,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import type {
+  DocumentSession,
+  DocumentSessionAccess,
+  DocumentSessionSnapshot,
+} from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
@@ -105,6 +114,11 @@ export type EditorViewProps = {
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
+  /**
+   * The server changed this room's scope (a Work archived or unarchived). The
+   * editor already follows it; the host refreshes whatever explains it.
+   */
+  onRoomAccessChange?: (access: DocumentSessionAccess) => void;
 };
 
 let editorSessionOwnerSequence = 0;
@@ -163,7 +177,20 @@ export function EditorView(props: EditorViewProps) {
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
+    let rebuilding = false;
     return boundSession.subscribe((snapshot) => {
+      if (rebuilding) return;
+      if (boundSession.refusedLocalEdits()) {
+        // Only the refused characters are lost: the review stays open on a
+        // fresh session synced from the server.
+        rebuilding = true;
+        // Unbind before the retired session's Y.Doc is destroyed under the editor.
+        setBoundSession(null);
+        void registry
+          .rebuildBranchRoom(roomKey)
+          .then(setBoundSession, () => props.onReviewSessionUnavailable?.());
+        return;
+      }
       if (
         snapshot.status === "destroyed" ||
         snapshot.connectionState?.kind === "terminal" ||
@@ -173,7 +200,7 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, inReview, roomKey]);
+  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey]);
 
   const session = inReview
     ? boundSession?.roomKey === roomKey
@@ -185,16 +212,48 @@ export function EditorView(props: EditorViewProps) {
 
   // The one place an editor's lifetime is decided. Every input the session
   // lookup above reads is part of this key, so a session swap always arrives
-  // with a fresh mount and nothing else can force one.
+  // with a fresh mount and nothing else can force one. A review room keeps its
+  // name across a rebuild, so its session instance is part of the key.
   return (
     <SessionEditorView
-      key={editorMountKey(identity)}
+      key={
+        inReview
+          ? `${editorMountKey(identity)}|${sessionMountId(session)}`
+          : editorMountKey(identity)
+      }
       {...props}
       identity={identity}
       session={session}
       liveSession={props.session ?? null}
     />
   );
+}
+
+const sessionMountIds = new WeakMap<DocumentSession, number>();
+let sessionMountSequence = 0;
+
+function sessionMountId(session: DocumentSession): number {
+  let id = sessionMountIds.get(session);
+  if (id === undefined) {
+    id = ++sessionMountSequence;
+    sessionMountIds.set(session, id);
+  }
+  return id;
+}
+
+/** Report each change of the room's scope after the first one this mount sees. */
+function useRoomAccessChange(
+  access: DocumentSessionAccess,
+  onChange: ((access: DocumentSessionAccess) => void) | undefined,
+) {
+  const previous = useRef(access);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    if (previous.current === access) return;
+    previous.current = access;
+    onChangeRef.current?.(access);
+  }, [access]);
 }
 
 type SessionEditorViewProps = EditorViewProps & {
@@ -263,6 +322,7 @@ function ActiveSessionEditorView({
   workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
+  onRoomAccessChange,
   session,
   liveSession,
   snapshot,
@@ -277,7 +337,8 @@ function ActiveSessionEditorView({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
-  const effectiveEditable = editable && !snapshot.schemaFence;
+  const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access === "edit";
+  useRoomAccessChange(snapshot.access, onRoomAccessChange);
   effectiveEditableRef.current = effectiveEditable;
 
   // Which project and which Work this editor is open in. Everything that has to
