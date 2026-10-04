@@ -726,6 +726,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     transaction: ports.threadRepos.transaction,
     objectStore: ports.objectStore,
     fileAccess: ports.fileAccess,
+    agentRevisions: ports.agentRevisions,
     readAgentChain: (threadId: ThreadId) =>
       readAgentChain(
         {
