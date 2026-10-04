@@ -7,6 +7,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
 
 type DocumentDestination = Extract<ProjectDestination, { kind: "document" }>;
@@ -14,6 +15,32 @@ type AvailableDocumentAuthority = Extract<
   ProjectContextIdentityResolution,
   { kind: "available" }
 >["authority"];
+
+/**
+ * The document a route holds by continuity: bound to this route's locator in the Editor's
+ * context (its selected Work, named or not, whatever the document's own namespace) and
+ * actually admitted by this surface. A binding inferred from a cached tab before the server
+ * answered is a guess, not continuity, and must not override a fresh lookup.
+ */
+export function routeContinuityDocumentId(input: {
+  selection: ContextRouteSelection;
+  admittedDocumentId: string | null;
+  destination: DocumentDestination | null;
+  editorWorkId: string | null;
+}): string | null {
+  const { selection, destination } = input;
+  if (
+    !destination ||
+    selection.status !== "bound" ||
+    selection.identity.kind !== "server" ||
+    selection.identity.documentId !== input.admittedDocumentId ||
+    selection.locator.scheme !== destination.scheme ||
+    selection.locator.path.replace(/^\/+/, "") !== destination.path.replace(/^\/+/, "") ||
+    selection.locator.workId !== input.editorWorkId
+  )
+    return null;
+  return selection.identity.documentId;
+}
 
 export function resolveLocalDocumentAddress(
   projectId: string,
