@@ -6,7 +6,9 @@ import { documents, projects, uploadIntakes, users, works } from "@meridian/data
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { drizzleFileAccess } from "../../../test-support/file-grants.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
@@ -214,6 +216,66 @@ if (!RUN) {
           .from(documents)
           .where(eq(documents.id, identity.documentId as never)),
       ).toEqual([]);
+    });
+
+    it("refuses a draft delete under a grant its archived Work no longer holds", async () => {
+      const repo = await seed();
+      const reserved = await repo.reserve(reservation("archived", "work"));
+      if (reserved.kind === "conflict" || reserved.kind === "owner_unavailable") {
+        throw new Error("reservation failed");
+      }
+      const identity = reserved.reservation;
+      const [intake] = await database.current
+        .select()
+        .from(uploadIntakes)
+        .where(eq(uploadIntakes.documentId, identity.documentId as never));
+      if (!intake) throw new Error("intake missing");
+      await database.current.insert(documents).values({
+        id: identity.documentId as never,
+        contextSourceId: intake.contextSourceId,
+        name: "chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await repo.finalize(PROJECT, "archived");
+      const access = drizzleFileAccess(database.current);
+      const grant = await access.authorize(
+        { accountId: USER as never },
+        { kind: "document", documentId: identity.documentId as never },
+        "edit",
+      );
+      if ("denied" in grant) throw new Error("edit grant expected before archiving");
+      await database.current
+        .update(works)
+        .set({ archivedAt: new Date() })
+        .where(eq(works.id, WORK));
+
+      const outcome = await runWithEditGrants(access, [grant], () =>
+        repo.deleteDraft(
+          {
+            intakeId: "archived",
+            documentId: identity.documentId,
+            uri: identity.canonicalUri,
+            expectedRevision: identity.locationRevision,
+          },
+          USER,
+        ),
+      );
+
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(outcome.refusal).toBeInstanceOf(FileEditRefusedError);
+      expect(
+        await database.current
+          .select({ id: documents.id })
+          .from(documents)
+          .where(eq(documents.id, identity.documentId as never)),
+      ).toHaveLength(1);
+      const [after] = await database.current
+        .select({ state: uploadIntakes.state })
+        .from(uploadIntakes)
+        .where(eq(uploadIntakes.documentId, identity.documentId as never));
+      expect(after?.state).toBe("finalized");
     });
 
     it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {
