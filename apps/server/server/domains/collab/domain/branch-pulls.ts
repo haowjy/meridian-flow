@@ -70,8 +70,15 @@ export function createBranchPullService(input: {
   }
 
   async function liveSnapshot(documentId: DocumentId): Promise<Y.Doc> {
-    const state = await input.liveCoordinator
-      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
+    // Releasing the room checkpoints it under the document's mutation lock. In
+    // a caller's transaction that lock would outlive the snapshot and block the
+    // root pull in `run` that the caller then waits on.
+    const state = await input
+      .outsideTransaction(() =>
+        input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
+          Y.encodeStateAsUpdate(liveDoc),
+        ),
+      )
       .catch((cause: unknown) => {
         if (cause instanceof DocumentNotFoundError)
           return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
