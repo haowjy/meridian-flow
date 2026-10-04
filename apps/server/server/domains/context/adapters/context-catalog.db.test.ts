@@ -45,20 +45,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
-    it("publishes only live manuscript membership while leaving other project sources unchanged", async () => {
-      const db = database.current;
-      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
-      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
-      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-membership"));
+    async function seedProject(
+      db: typeof database.current,
+      label: string,
+      sources: typeof contextSources.$inferInsert | (typeof contextSources.$inferInsert)[] = {
+        id: SOURCE_ID,
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+      },
+    ) {
+      await db.insert(users).values(conformanceUserValues(USER_ID, label));
       await db.insert(projects).values({
         id: PROJECT_ID,
         userId: USER_ID,
         name: "Catalog Project",
         slug: "catalog-project",
       });
-      await db.insert(contextSources).values([
+      const rows = Array.isArray(sources) ? sources : [sources];
+      if (rows.length) await db.insert(contextSources).values(rows);
+    }
+
+    it("publishes only live manuscript membership while leaving other project sources unchanged", async () => {
+      const db = database.current;
+      const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
+      const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
+      const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000807";
+      const KB_DOCUMENT_ID = "00000000-0000-4000-8000-000000000808";
+      await seedProject(db, "catalog-membership", [
         { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
         { id: KB_SOURCE_ID, projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb" },
       ]);
@@ -84,11 +98,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const members = new Set([LIVE_DOCUMENT_ID]);
       let membershipFailure = false;
+      const delay = vi.fn(async (_ms: number) => {});
       const publish = vi.fn();
       const catalog = createDrizzleContextCatalog(
         db,
         { publish },
         {
+          delay,
           manifestMembership: {
             async resolveManifestMembership() {
               if (membershipFailure) throw new Error("membership unavailable");
@@ -158,6 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(catalog.refreshProjectDocuments(PROJECT_ID)).rejects.toThrow(
         "membership unavailable",
       );
+      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
       await expect(
         db
           .select()
@@ -175,19 +192,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("retries a post-Apply document refresh after the availability lock timeout", async () => {
       const db = database.current;
       const NEW_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-apply-retry"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-apply-retry");
       const members = new Set<string>();
       const catalog = createDrizzleContextCatalog(db, undefined, {
         manifestMembership: {
@@ -242,19 +247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("publishes atomically, replays whole commits, and keeps failed hints nonthrowing", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog");
       const publish = vi.fn(async () => {
         throw new Error("offline");
       });
@@ -288,19 +281,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("does not expose a reserved generation when deferred Manuscript repair fails", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-deferred-failure"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-deferred-failure");
       await db.insert(documents).values({
         id: DOCUMENT_ID,
         contextSourceId: SOURCE_ID,
@@ -308,11 +289,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
       });
       let failMembership = false;
+      let resolveFailed!: () => void;
+      const failed = new Promise<void>((resolve) => {
+        resolveFailed = resolve;
+      });
+      const delay = vi.fn(async (_ms: number) => {});
       const eventSink = createInMemoryEventSink();
+      const emit = eventSink.emit.bind(eventSink);
+      eventSink.emit = (event) => {
+        emit(event);
+        if (event.name === "DeferredRefreshFailure") resolveFailed();
+      };
       const availability = createDrizzleProjectContextAvailability(db, eventSink);
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
         eventSink,
+        delay,
         manifestMembership: {
           async resolveManifestMembership() {
             if (failMembership) throw new Error("manifest offline");
@@ -327,6 +319,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const beforeEntries = await db.select().from(contextCatalogEntries);
       const beforeHeads = await db.select().from(contextAvailabilityHeads);
 
+      delay.mockClear();
       failMembership = true;
       await runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)
@@ -336,10 +329,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await catalog.refreshSources([SOURCE_ID]);
       });
 
-      await vi.waitUntil(
-        () => eventSink.events.some((event) => event.name === "DeferredRefreshFailure"),
-        { timeout: 3_000 },
-      );
+      await failed;
+      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
       await expect(db.select().from(contextCatalogEntries)).resolves.toEqual(beforeEntries);
       await expect(db.select().from(contextAvailabilityHeads)).resolves.toEqual(beforeHeads);
       expect(eventSink.events).toContainEqual(
@@ -352,19 +343,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls catalog state back and excludes manifests and content-only changes", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-rollback"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-rollback");
       const catalog = createDrizzleContextCatalog(db);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
@@ -413,19 +392,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("preserves persisted tracked, binary, and custom classification", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-classification"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-classification");
       await db.insert(documents).values([
         {
           contextSourceId: SOURCE_ID,
@@ -500,19 +467,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls real ContextFS metadata and its catalog commit back together", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-contextfs-rollback"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-contextfs-rollback");
       const catalog = createDrizzleContextCatalog(db);
       const before = await catalog.snapshot({ kind: "project", projectId: PROJECT_ID });
       const failingCatalog = {
@@ -548,13 +503,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls back first-touch source publication with the real ContextFS command", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-source-rollback"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
+      await seedProject(db, "catalog-source-rollback", []);
       const catalog = createDrizzleContextCatalog(db);
       let refreshCalls = 0;
       let failMutationRefresh = true;
@@ -613,13 +562,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls project lifecycle and catalog revocation back at the repository seam", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-project-rollback"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
+      await seedProject(db, "catalog-project-rollback", []);
       const catalog = createDrizzleContextCatalog(db);
       const repository = createDrizzleProjectRepository({
         db,
@@ -637,13 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("projects successful Work lifecycle transitions and rolls refresh failure back", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-work-lifecycle"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
+      await seedProject(db, "catalog-work-lifecycle", []);
       const catalog = createDrizzleContextCatalog(db);
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
@@ -697,13 +634,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("publishes provisional graduation and keeps canonical URI lookup scheme-qualified", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-graduation"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
+      await seedProject(db, "catalog-graduation", []);
       const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000805";
       await db.insert(contextSources).values([
         { id: SOURCE_ID, projectId: PROJECT_ID, name: "Manuscript", slug: "manuscript" },
@@ -763,19 +694,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("returns explicit expired and gap resets after PostgreSQL retention or missing history", async () => {
       const db = database.current;
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-retention"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
+      await seedProject(db, "catalog-retention");
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const catalog = createDrizzleContextCatalog(db, undefined, { retainedCommitsPerScope: 1 });
       const oldest = await catalog.snapshot(scope);
@@ -812,13 +731,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const FILE = "00000000-0000-4000-8000-00000000080d";
       const UPLOAD_FILE = "00000000-0000-4000-8000-00000000080e";
       const NAMED_FILE = "00000000-0000-4000-8000-00000000080f";
-      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-no-work"));
-      await db.insert(projects).values({
-        id: PROJECT_ID,
-        userId: USER_ID,
-        name: "Catalog Project",
-        slug: "catalog-project",
-      });
+      await seedProject(db, "catalog-no-work", []);
       await db.insert(works).values([
         {
           id: NO_WORK,

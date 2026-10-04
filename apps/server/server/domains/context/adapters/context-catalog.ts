@@ -358,6 +358,7 @@ export function createDrizzleContextCatalog(
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
     manifestMembership?: ManifestMembershipResolver;
     eventSink?: EventSink;
+    delay?: (milliseconds: number) => Promise<void>;
   } = {},
 ): ContextCatalog &
   ContextCatalogMutationPort &
@@ -373,7 +374,9 @@ export function createDrizzleContextCatalog(
   async function retryRefresh<T>(operation: () => Promise<T>): Promise<T> {
     let lastCause: unknown;
     for (const delayMs of REFRESH_RETRY_DELAYS_MS) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await (options.delay ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(
+        delayMs,
+      );
       try {
         return await operation();
       } catch (cause) {
