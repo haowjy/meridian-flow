@@ -1,4 +1,6 @@
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
+
+import { modelResult } from "@meridian/agent-edit";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
@@ -15,10 +17,11 @@ import {
   writeDocumentText,
 } from "../tools/document-text.js";
 import {
-  readHistoryPreview,
-  spawnHistoryPreview,
-  writeHistoryPreview,
-} from "../tools/history-previews.js";
+  documentHistorySummary,
+  spawnHistorySummary,
+  threadHistorySummary,
+  workHistorySummary,
+} from "../tools/history-summaries.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
 import { type HistoryResult, renderHistoryResult } from "./history-result.js";
 import {
@@ -48,22 +51,26 @@ export function defineThreadHistoryContract(
       contentHash: "initial-hash",
     });
     const registry = createToolRegistry();
-    for (const [name, documentText, historyPreview, historyKind] of [
-      ["read", readDocumentText, readHistoryPreview, "routine"],
-      ["write", writeDocumentText, writeHistoryPreview, undefined],
+    const workKind = (input: JsonObject) =>
+      input.command === "list" || input.command === "show" ? "routine" : "receipt";
+    for (const [name, documentText, historySummary, historyKind] of [
+      ["read", readDocumentText, documentHistorySummary, "routine"],
+      ["write", writeDocumentText, documentHistorySummary, undefined],
       ["search", searchDocumentText, undefined, "routine"],
-      ["ls", undefined, (input: JsonObject) => String(input.path ?? "/"), "routine"],
-      ["thread_history", historyDocumentText, undefined, "routine"],
-      ["spawn", undefined, spawnHistoryPreview, undefined],
-      ["return_result", undefined, () => "", "routine"],
+      ["ls", undefined, undefined, "routine"],
+      ["work", undefined, workHistorySummary, workKind],
+      ["thread_history", historyDocumentText, threadHistorySummary, "routine"],
+      ["spawn", undefined, spawnHistorySummary, undefined],
+      ["return_result", undefined, undefined, "routine"],
     ] as const)
       registry.register({
         source: "core",
         definition: { type: "function", name, description: name, inputSchema: {} },
         input: z.unknown(),
         ...(documentText ? { documentText } : {}),
-        ...(historyPreview ? { historyPreview } : {}),
+        ...(historySummary ? { historySummary } : {}),
         ...(historyKind ? { historyKind } : {}),
+        ...(name === "return_result" ? { capability: "return_result" as const } : {}),
         execution: { type: "server", handler: async () => "" },
       });
     const read = (input: ThreadHistoryInput = {}, caller = thread) =>
@@ -114,6 +121,8 @@ export function defineThreadHistoryContract(
       input: JsonObject,
       output: JsonValue,
       isError = false,
+      /** The typed result beside the rendered `output` (D43); absent on older rows. */
+      typed?: JsonValue,
     ) {
       const toolCallId = crypto.randomUUID();
       const call = await block(t, "tool_use", { toolCallId, toolName: name, input });
@@ -121,6 +130,7 @@ export function defineThreadHistoryContract(
         toolCallId,
         toolName: name,
         output,
+        ...(typed !== undefined ? { result: typed } : {}),
         isError,
         metadata: {
           documentRevisions: [
@@ -176,8 +186,8 @@ export function defineThreadHistoryContract(
       const text = output(
         await f.read({ order: "oldest_first", include: ["routine_calls", "tool_results"] }),
       );
-      expect(text).toContain("read manuscript://first.md");
-      expect(text).toContain("read manuscript://second.md");
+      expect(text).toContain('read({"path":"manuscript://first.md"})');
+      expect(text).toContain('read({"path":"manuscript://second.md"})');
       expect(text).not.toContain("FIRST SECRET");
       expect(text).not.toContain("SECOND SECRET");
       // The repository boundary has one pair read per raw page, never per item.
@@ -460,7 +470,7 @@ thanks`);
       expect(oldest).toContain("[1] assistant\nreply 1\n\n[2] assistant\nreply 2");
     });
 
-    it("hides routine calls behind a count with a copyable expand handle", async () => {
+    it("hides routine calls behind a count and writes each visible call as the call itself", async () => {
       const f = await fixture();
       await f.text(await f.turn("user", null, "complete", "writer"), "pizza");
       const t = await f.turn();
@@ -468,13 +478,40 @@ thanks`);
       for (let index = 0; index < 9; index++)
         await f.tool(t, "read", { path: `manuscript://ch${index}.md` }, `chapter ${index}`);
       await f.tool(t, "ls", {}, "folders");
+      const content = `Pizza night at the inn, and ${"the cook argued with the guard ".repeat(30)}`;
       await f.tool(
         t,
         "write",
-        { command: "create", path: "manuscript://notes.md", content: "three short words" },
-        "created",
+        { command: "create", path: "manuscript://notes.md", content },
+        "status: success",
+        false,
+        modelResult({
+          command: "create",
+          status: "success",
+          phase: "committed",
+          payload: { write: { id: "w1" }, destination: "draft", draftWork: "rewrite" },
+        }) as unknown as JsonValue,
       );
-      await f.tool(t, "read", { path: "manuscript://missing.md" }, "not found", true);
+      await f.tool(
+        t,
+        "read",
+        { path: "manuscript://missing.md" },
+        "status: document_not_found\n\nNo document at manuscript://missing.md",
+        true,
+        modelResult({ command: "read", status: "document_not_found" }) as unknown as JsonValue,
+      );
+      await f.tool(
+        t,
+        "spawn",
+        { agent: "critic", name: "Pacing review", prompt: "Read chapter 3 for pacing." },
+        "Subagent p8 is running.",
+        false,
+        { status: "background", handle: "p8", threadId: "child", agentSlug: "critic" },
+      );
+      await f.tool(t, "work", { command: "create", name: "Rewrite" }, "{}", false, {
+        slug: "rewrite",
+      });
+      await f.tool(t, "work", { command: "list" }, "[]", false, [{ slug: "rewrite" }]);
       const text = output(await f.read());
       const ref = f.thread.ref;
       expect(text).toBe(`Conversation ${ref}
@@ -484,14 +521,28 @@ pizza
 
 [2] assistant
 I looked around to see what "pizza" might point at.
-write create manuscript://notes.md, 3 words
-read manuscript://missing.md (failed)
-not found
-(10 routine tool calls hidden; list them with thread_history({"ref":"${ref}","expand":2}))`);
+write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, drafted in @rewrite
+read({"path":"manuscript://missing.md"}) → failed: document_not_found
+status: document_not_found
+
+No document at manuscript://missing.md
+spawn({"agent":"critic","name":"Pacing review","prompt":"Read chapter 3 for pacing."}) → p8
+work({"command":"create","name":"Rewrite"}) → @rewrite
+(11 routine tool calls hidden; list them with thread_history({"ref":"${ref}","expand":2}))`);
       const routine = output(await f.read({ include: ["routine_calls"] }));
-      expect(routine).toContain("read manuscript://ch0.md\n");
-      expect(routine).toContain("ls /\n");
+      expect(routine).toContain('read({"path":"manuscript://ch0.md"})\n');
+      expect(routine).toContain("ls({})\n");
+      expect(routine).toContain('work({"command":"list"}) → 1 Work');
       expect(routine).not.toContain("hidden");
+      const expanded = output(await f.read({ expand: 2 }));
+      expect(expanded).toContain(
+        '2.12 write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, drafted in @rewrite (',
+      );
+      expect(expanded).toContain("2.11 ls({}) (");
+      // One call in full keeps the whole arguments as an edit record.
+      const one = output(await f.read({ expand: "2.12" }));
+      expect(one).toContain("edit record from");
+      expect(one).toContain(content.trim());
     });
 
     it("shows timestamps only on request", async () => {
@@ -559,7 +610,7 @@ not found
       await f.text(await f.turn(), "first");
       await f.text(await f.turn(), "second");
       const firstPage = output(
-        await f.read({ order, limit: 1, include: ["tool_args", "system_messages"] }),
+        await f.read({ order, limit: 1, include: ["thinking", "system_messages"] }),
       );
       const call = nextCall(firstPage);
       const next = call.cursor as string;
@@ -568,7 +619,7 @@ not found
         order,
         cursor: next,
         limit: 1,
-        include: ["tool_args", "system_messages"],
+        include: ["thinking", "system_messages"],
       });
       expect(next).toMatch(
         new RegExp(
@@ -639,14 +690,18 @@ not found
       for (const expand of [1, "1"] as const) {
         const text = output(await f.read({ expand }));
         expect(text).toContain(
-          "[1] assistant\n1.1 Reading the arc.\n1.2 read manuscript://ch1.md (",
+          '[1] assistant\n1.1 Reading the arc.\n1.2 read({"path":"manuscript://ch1.md"}) (',
         );
-        expect(text).toMatch(/^1\.11 read manuscript:\/\/ch10\.md \([\d,]+ tokens\)$/mu);
+        expect(text).toMatch(
+          /^1\.11 read\(\{"path":"manuscript:\/\/ch10\.md"\}\) \([\d,]+ tokens\)$/mu,
+        );
         expect(text).not.toContain("prose");
         expect(estimateModelPartTokens({ type: "text", text }, "anthropic")).toBeLessThan(8000);
       }
       const one = output(await f.read({ expand: "1.3" }));
-      expect(one).toContain('1.3 read manuscript://ch2.md\n{"path":"manuscript://ch2.md"}');
+      expect(one).toContain(
+        '1.3 read({"path":"manuscript://ch2.md"})\n{"path":"manuscript://ch2.md"}',
+      );
       // A document copy stays elided even in full.
       expect(one).not.toContain("prose");
     });
@@ -697,7 +752,7 @@ not found
       );
       expect(text).not.toContain("ARGUMENT SUMMARY");
       const expanded = output(await f.read({ expand: 2 }, child));
-      expect(expanded).toContain("2.2 return_result");
+      expect(expanded).toContain("2.2 return_result(…)");
       expect(expanded).toContain("SAVED LINE 25");
       expect(expanded).not.toContain("ARGUMENT SUMMARY");
     });
@@ -708,7 +763,7 @@ not found
       await f.block(live, "tool_use", {
         toolCallId: "spawn-1",
         toolName: "spawn",
-        input: { name: "Summarize conversation test" },
+        input: { agent: "general", name: "Summarize conversation test" },
       });
       const result = structured(await f.read());
       expect(result.next).toBeUndefined();
@@ -718,13 +773,13 @@ not found
 test a subagent
 
 In progress
-[2] spawn "Summarize conversation test"`);
+[2] spawn({"agent":"general","name":"Summarize conversation test"}) → running`);
     });
     it.each([
       {},
       { include: ["routine_calls", "tool_results"] },
-      { include: ["routine_calls", "tool_args", "tool_results", "system_messages"] },
-    ] as ThreadHistoryInput[])("stubs copies and only opts in to labelled edit inputs: %j", async (input) => {
+      { include: ["routine_calls", "tool_results", "system_messages"] },
+    ] as ThreadHistoryInput[])("stubs copies, and a write line carries edit evidence: %j", async (input) => {
       const f = await fixture();
       const t = await f.turn();
       await f.tool(t, "read", { path: "manuscript://chapter.md" }, "COPY SENTINEL");
@@ -759,16 +814,17 @@ In progress
       expect(text).not.toContain("COPY SENTINEL");
       expect(text).not.toContain("y1:");
       expect(text).not.toContain('"revision"');
-      if (input.include?.includes("tool_args")) {
-        expect(text).toContain("EDIT SENTINEL");
-        expect(text).toContain("edit record from");
-        expect(result).toMatchObject({
-          metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
-        });
-      } else {
-        expect(text).not.toContain("EDIT SENTINEL");
-        expect(result).toMatchObject({ metadata: { documentRevisions: [] } });
-      }
+      // The call line quotes the edit's inputs, so the page carries their evidence (D48).
+      expect(text).toContain(
+        'write({"command":"replace","path":"manuscript://chapter.md","find":"old","content":"EDIT SENTINEL"})',
+      );
+      expect(text).not.toContain("edit record from");
+      expect(result).toMatchObject({
+        metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
+      });
+      expect(await f.read({ expand: 1 })).toMatchObject({
+        metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
+      });
       if (input.include?.includes("tool_results")) {
         expect(text).toContain('"omitted":"read it for current text"');
         expect(text).not.toContain('"matches"');
@@ -783,6 +839,9 @@ In progress
       });
     });
     it("isError write output is verbatim and quoted edits clear at compaction, empty evidence stays", async () => {
+      const quiet = await fixture();
+      await quiet.text(await quiet.turn(), "no edits here");
+      const plain = await quiet.read();
       const f = await fixture();
       const t = await f.turn();
       await f.tool(
@@ -792,9 +851,10 @@ In progress
         "Write did not land: ERROR SENTINEL",
         true,
       );
-      expect(output(await f.read())).toContain("(failed)\nWrite did not land: ERROR SENTINEL");
-      for (const include of [[], ["tool_args"]] as ThreadHistoryInput["include"][]) {
-        const result = await f.read({ include });
+      expect(output(await f.read())).toContain(
+        '"path":"manuscript://chapter.md"}) → failed\nWrite did not land: ERROR SENTINEL',
+      );
+      for (const result of [await f.read(), await f.read({ expand: 1 }), plain]) {
         const r = await f.turn();
         const call = await f.block(r, "tool_use", {
           toolCallId: "history",
@@ -814,7 +874,7 @@ In progress
           current: new Map(),
           policies,
         });
-        if (include?.length)
+        if (result !== plain)
           expect(JSON.stringify(elisions)).toContain("thread_history output quoting edits");
         else expect(elisions).toEqual([]);
       }

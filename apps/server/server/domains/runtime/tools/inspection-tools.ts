@@ -13,7 +13,7 @@ import {
   type ThreadLsResult,
 } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
-import { threadHistoryPreview, threadLsHistoryPreview } from "./history-previews.js";
+import { threadHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
@@ -42,7 +42,7 @@ export function createInspectionToolRegistrations(deps: {
       },
       input: ThreadLsInputSchema,
       sequential: true,
-      historyPreview: threadLsHistoryPreview,
+      historySummary: threadHistorySummary,
       historyKind: "routine",
       renderResult: renderThreadLsOutput,
       execution: {
@@ -73,7 +73,7 @@ export function createInspectionToolRegistrations(deps: {
       },
       input: ThreadHistoryInputSchema,
       sequential: true,
-      historyPreview: threadHistoryPreview,
+      historySummary: threadHistorySummary,
       historyKind: "routine",
       documentText: historyDocumentText,
       renderResult: renderThreadHistoryOutput,
