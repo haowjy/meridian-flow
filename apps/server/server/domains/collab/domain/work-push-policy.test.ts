@@ -173,14 +173,24 @@ describe("work push policy", () => {
     });
   });
 
-  it("keeps pending work for review and switches only the Work's mode", async () => {
+  it.each([
+    { archived: false },
+    { archived: true },
+  ])("keeps pending work for review and switches only the Work's mode (archived: $archived)", async ({
+    archived,
+  }) => {
     const harness = createHarness();
     vi.mocked(harness.workDraftPending.list).mockResolvedValue(
       pendingDrafts("branch-a", "branch-b"),
     );
 
     await expect(
-      harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "keep" }),
+      harness.policy.setWorkPushPolicy({
+        workId: WORK_ID,
+        policy: "auto",
+        pending: "keep",
+        archived,
+      }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.applyPendingDraft).not.toHaveBeenCalled();
     expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).toHaveBeenCalledWith(
@@ -209,21 +219,6 @@ describe("work push policy", () => {
     ).resolves.toEqual({ status: "refused", reason: "work_archived" });
     expect(harness.applyPendingDraft).not.toHaveBeenCalled();
     expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).not.toHaveBeenCalled();
-  });
-
-  it("lets an archived Work keep its frozen drafts and switch", async () => {
-    const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(pendingDrafts("branch-a"));
-
-    await expect(
-      harness.policy.setWorkPushPolicy({
-        workId: WORK_ID,
-        policy: "auto",
-        pending: "keep",
-        archived: true,
-      }),
-    ).resolves.toEqual({ status: "updated", policy: "auto" });
-    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
   });
 
   it("does not enable auto policy when a confirmed push fails", async () => {
