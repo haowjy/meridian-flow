@@ -8,7 +8,7 @@ export {
 } from "./adapters/file-access-changes.js";
 export { createOwnerFileGrants } from "./adapters/owner-file-grants.js";
 export { createAllowAllFileAccess } from "./allow-all-file-access.js";
-export { isDrafted, sourceDestination } from "./domain/policy.js";
+export { isDrafted, skillVisible, sourceDestination } from "./domain/policy.js";
 export {
   type AgentChain,
   type AgentLink,

@@ -184,9 +184,13 @@ export function skillLevel(
   facts: SkillFacts,
   skill: string,
 ): FileAccessLevel {
-  if (!principal.agent) return "none";
-  const visible =
+  return principal.agent && skillVisible(facts, skill) ? "read" : "none";
+}
+
+/** Whether a binding lets its agent read a skill: preloaded, or available and `model-invocable`. */
+export function skillVisible(facts: SkillFacts, skill: string): boolean {
+  return (
     facts.load.includes(skill) ||
-    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable);
-  return visible ? "read" : "none";
+    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable)
+  );
 }

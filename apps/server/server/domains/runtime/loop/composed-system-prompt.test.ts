@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assembleComposedSystemPrompt } from "./composed-system-prompt.js";
 
 describe("assembleComposedSystemPrompt", () => {
-  it("joins available skill slugs and descriptions into the frozen bytes", () => {
+  it("lists available skills by their SKILL.md URIs in the frozen bytes", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
@@ -18,12 +18,23 @@ describe("assembleComposedSystemPrompt", () => {
         },
       ],
     });
-    expect(prompt.startsWith("You are Writer.\n\nAvailable skills\n\n")).toBe(true);
-    expect(prompt).toContain("creative-writing-modes\nModes for putting prose on the page.");
-    expect(prompt).toContain("writing-principles\nReader reward and LLM fiction failure modes.");
+    expect(prompt).toContain(
+      [
+        "You are Writer.",
+        "",
+        "Available skills",
+        "Read a skill's SKILL.md before doing work it covers. Paths in a skill are relative to its folder.",
+        "",
+        "skills://creative-writing-modes/SKILL.md",
+        "Modes for putting prose on the page.",
+        "",
+        "skills://writing-principles/SKILL.md",
+        "Reader reward and LLM fiction failure modes.",
+      ].join("\n"),
+    );
   });
 
-  it("lists slug as identity and name when they differ", () => {
+  it("names the skill after its URI when the name differs from the slug", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
@@ -34,11 +45,13 @@ describe("assembleComposedSystemPrompt", () => {
         },
       ],
     });
-    expect(prompt).toContain("story-review (Story Review)\nReview drafts after prose exists.");
+    expect(prompt).toContain(
+      "skills://story-review/SKILL.md (Story Review)\nReview drafts after prose exists.",
+    );
     expect(prompt).not.toContain("\nStory Review\n");
   });
 
-  it("lists a preloaded skill's resources as calls that load them", () => {
+  it("heads a preloaded skill's body with its SKILL.md URI", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Critic.",
       preloadedSkills: [
@@ -46,12 +59,12 @@ describe("assembleComposedSystemPrompt", () => {
           slug: "story-review",
           description: "Review drafts.",
           body: "Review body.\n",
-          resources: ["resources/line-edit.md"],
+          readable: true,
         },
       ],
     });
     expect(prompt).toContain(
-      'skill invoked: story-review\n\ndescription: Review drafts.\n\nReview body.\n\nResources:\nskill({"slug":"story-review","resource":"resources/line-edit.md"})',
+      "skill invoked: skills://story-review/SKILL.md\n\ndescription: Review drafts.\n\nReview body.\n",
     );
   });
 
