@@ -2083,7 +2083,7 @@ else
               output: {
                 error: "permission_denied",
                 reason:
-                  "This agent has no \"unavailable_probe_tool\" tool, so it can't make this call. Tell the user you can't do this here.",
+                  'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
               },
               isError: true,
             },
