@@ -175,8 +175,12 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
-/** The document tools' handlers and error formatter return only agent-edit results. */
+/**
+ * The document tools' handlers and error formatter return agent-edit results,
+ * except a `skills://` read, whose text is already the model's (D52).
+ */
 function renderDocumentResult(result: unknown): string {
+  if (typeof result === "string") return result;
   return renderAgentEditResult(result as AgentEditResultV1);
 }
 

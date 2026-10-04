@@ -146,7 +146,6 @@ import {
   createPrefixCacheStateService,
   createReportPublisher,
   createRunStarter,
-  createSkillToolRegistrations,
   createSpawnToolRegistrations,
   createSubagentActivityRefresher,
   createToolExecutor,
@@ -172,10 +171,8 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  loadModelSkillBody,
-  loadModelSkillResource,
+  readThreadSkillFacts,
   resolveThreadUserInvocableSkills,
-  SkillUnavailableError,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import {
@@ -461,7 +458,9 @@ export async function createProductionAppPorts(input: {
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, {
+      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
+    }),
     grants: createOwnerFileGrants(),
     readAgentChain: (threadId) =>
       readAgentChain(
@@ -723,6 +722,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     transaction: ports.threadRepos.transaction,
     objectStore: ports.objectStore,
     fileAccess: ports.fileAccess,
+    agentRevisions: ports.agentRevisions,
     readAgentChain: (threadId: ThreadId) =>
       readAgentChain(
         {
@@ -754,29 +754,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
-    toolRegistry.register(registration);
-  }
-  for (const registration of createSkillToolRegistrations({
-    async loadBody(threadId, slug) {
-      const thread = await ports.threadRepos.threads.findById(threadId as never);
-      if (!thread) throw new SkillUnavailableError(slug);
-      return loadModelSkillBody({
-        thread,
-        slug,
-        agentRevisions: ports.agentRevisions,
-      });
-    },
-    async loadResource(threadId, slug, resource) {
-      const thread = await ports.threadRepos.threads.findById(threadId as never);
-      if (!thread) throw new SkillUnavailableError(slug);
-      return loadModelSkillResource({
-        thread,
-        slug,
-        resource,
-        agentRevisions: ports.agentRevisions,
-      });
-    },
-  })) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry);
@@ -1605,7 +1582,9 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    fileAccess: createAllowAllFileAccess(),
+    fileAccess: createAllowAllFileAccess({
+      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
+    }),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,

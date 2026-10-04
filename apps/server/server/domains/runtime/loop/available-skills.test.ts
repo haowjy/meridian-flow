@@ -8,15 +8,12 @@ import {
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
-import { createInMemoryRepositories, hashPromptBakeContent } from "../../threads/index.js";
+import { createInMemoryRepositories } from "../../threads/index.js";
 import {
-  loadModelSkillBody,
-  loadModelSkillResource,
   loadUserSkillBody,
   resolveSelectionUserInvocableSkills,
   resolveThreadModelAvailableSkills,
   resolveThreadUserInvocableSkills,
-  SkillUnavailableError,
 } from "./available-skills.js";
 
 const skillMd = (
@@ -257,39 +254,6 @@ You are Writer.
       accountSkillInstalls,
     });
     expect(notes.body).toBe("account voice-notes body.");
-    await expect(
-      loadModelSkillBody({ thread, slug: "voice-notes", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
-  });
-
-  it("fails unknown model slugs without touching freeze", async () => {
-    const { thread, agentRevisions, repos } = await launchAgentsChat();
-    const content = {
-      composedSystemPrompt: "frozen",
-      bakedSkillSlugs: ["creative-writing-modes", "writing-principles"],
-      bakedTools: [],
-    };
-    await repos.threads.bakeInitialPrompt(thread.id, {
-      ...content,
-      contentHash: hashPromptBakeContent(content),
-    });
-    const frozen = await repos.threads.findById(thread.id);
-
-    await expect(
-      loadModelSkillBody({
-        thread: frozen ?? thread,
-        slug: "story-review",
-        agentRevisions,
-      }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
-
-    const after = await repos.threads.findById(thread.id);
-    expect(after?.initialPromptBakeId).toBe(frozen?.initialPromptBakeId);
-    const bake = after?.initialPromptBakeId
-      ? await repos.promptBakes.findById(after.initialPromptBakeId)
-      : null;
-    expect(bake?.composedSystemPrompt).toBe("frozen");
-    expect(bake?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
   });
 
   it("lists packaged slash skills for a selected Agent without a thread", async () => {
@@ -368,9 +332,6 @@ You are General.
       accountSkillInstalls,
     });
     expect(review.body).toBe("story-review body.\n");
-    await expect(
-      loadModelSkillBody({ thread, slug: "story-review", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
   });
 
   it("unions user-invocable skills across installed packages and lets the first package file win", async () => {
@@ -468,9 +429,6 @@ skills:
 
 You are Critic.
 `,
-    "skills/story-review/resources/line-edit.md": "Line edit method.\n",
-    "skills/story-review/resources/cover.png": { encoding: "base64", data: "AAEC" },
-    "skills/creative-writing-modes/resources/draft.md": "Draft mode.\n",
   },
 } as AgentSourceSnapshot;
 
@@ -507,43 +465,10 @@ async function spawnCritic() {
 }
 
 describe("subagent skills", () => {
-  it("loads the subagent's own available skills, not the parent's", async () => {
+  it("lists the subagent's own available skills, not the parent's", async () => {
     const { thread, agentRevisions } = await spawnCritic();
     expect(
       (await resolveThreadModelAvailableSkills({ thread, agentRevisions })).map((s) => s.slug),
     ).toEqual(["story-review"]);
-    const review = await loadModelSkillBody({ thread, slug: "story-review", agentRevisions });
-    expect(review.body).toBe("story-review body.\n");
-    await expect(
-      loadModelSkillBody({ thread, slug: "creative-writing-modes", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
-  });
-});
-
-describe("skill resources", () => {
-  it("lists the text files beside SKILL.md and loads one", async () => {
-    const { thread, agentRevisions } = await spawnCritic();
-    const review = await loadModelSkillBody({ thread, slug: "story-review", agentRevisions });
-    expect(review.resources).toEqual(["resources/line-edit.md"]);
-    await expect(
-      loadModelSkillResource({
-        thread,
-        slug: "story-review",
-        resource: "resources/line-edit.md",
-        agentRevisions,
-      }),
-    ).resolves.toBe("Line edit method.\n");
-  });
-
-  it("refuses a path outside the skill's directory", async () => {
-    const { thread, agentRevisions } = await spawnCritic();
-    await expect(
-      loadModelSkillResource({
-        thread,
-        slug: "story-review",
-        resource: "resources/../../creative-writing-modes/resources/draft.md",
-        agentRevisions,
-      }),
-    ).rejects.toThrow();
   });
 });

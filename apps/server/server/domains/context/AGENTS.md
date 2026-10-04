@@ -6,6 +6,10 @@ content (`user://`), and Work-scoped material (`scratch://`, `uploads://`), incl
 No Work. Public `@/` authority stays parse-only; resolve mints the locked Work id.
 Bare paths default to `manuscript://`.
 
+`skills://` (a thread's skill files, D52) is not a context scheme: it is
+model-only, resolved by `runtime/loop/skill-files.ts` per thread binding, and
+has no documents. Don't add it to `CONTEXT_URI_SCHEMES`.
+
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 

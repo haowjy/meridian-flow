@@ -13,7 +13,6 @@ export const TOOL_CATALOG = [
   "work",
   "ls",
   "search",
-  "skill",
   "ask_user",
   "spawn",
   "thread_message",

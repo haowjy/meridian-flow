@@ -4,6 +4,8 @@
  * and where an agent's write lands.
  *
  *   level = min(personLevel, lifecycleCap, agentCap)
+ *
+ * Skill files (`skills://`, D52) have their own rule, `skillLevel`.
  */
 
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
@@ -20,6 +22,7 @@ import {
   higherLevel,
   lowerLevel,
   type Principal,
+  type SkillFacts,
   type WorkRef,
 } from "./types.js";
 
@@ -167,4 +170,27 @@ function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
     terms.push({ cap, limit: "agent_read_only" });
   }
   return terms;
+}
+
+/**
+ * A skill's files (`skills://<skill>/…`, D52) as the calling agent sees them:
+ * `read` when its own binding preloads the skill or offers it as
+ * `model-invocable`, otherwise `none`, so an invisible skill reads as
+ * missing. Never `edit`. No person surface reads `skills://`, so a person
+ * gets `none`.
+ */
+export function skillLevel(
+  principal: Principal,
+  facts: SkillFacts,
+  skill: string,
+): FileAccessLevel {
+  return principal.agent && skillVisible(facts, skill) ? "read" : "none";
+}
+
+/** Whether a binding lets its agent read a skill: preloaded, or available and `model-invocable`. */
+export function skillVisible(facts: SkillFacts, skill: string): boolean {
+  return (
+    facts.load.includes(skill) ||
+    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable)
+  );
 }

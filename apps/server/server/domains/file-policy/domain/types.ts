@@ -74,6 +74,18 @@ export interface Principal {
 }
 
 // ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+/** The skills a thread's own binding names (D52), as the skill rule reads them. */
+export interface SkillFacts {
+  /** `skills.load`: preloaded, readable whatever their `model-invocable`. */
+  load: readonly string[];
+  /** `skills.available`, each with its `model-invocable` flag. */
+  available: readonly { slug: string; modelInvocable: boolean }[];
+}
+
+// ---------------------------------------------------------------------------
 // Targets and facts
 // ---------------------------------------------------------------------------
 

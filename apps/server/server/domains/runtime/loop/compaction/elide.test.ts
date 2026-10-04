@@ -140,7 +140,6 @@ describe("document text elisions", () => {
     for (const tool of [
       "ls",
       "work",
-      "skill",
       "thread_report",
       "spawn",
       "thread_message",

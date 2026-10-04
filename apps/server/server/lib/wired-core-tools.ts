@@ -103,9 +103,14 @@ import {
   actionPolicy,
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
+  isSkillsUri,
   type LsToolInput,
+  listSkillDir,
   type ReferenceReader,
+  readSkillFile,
   type SearchToolInput,
+  SKILLS_URI_ROOT,
+  type SkillFilesDeps,
   type ToolHandlerContext,
   type ToolRegistration,
   type WorkCommand,
@@ -144,7 +149,9 @@ export interface ToolWiringDeps {
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess">;
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "skillAccess">;
+  /** The calling thread's bound skills, read as files under `skills://` (D52). */
+  agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
 }
@@ -492,6 +499,10 @@ function contextErrorMessage(error: ContextError): string {
     return error.reason === "work_archived"
       ? `${work} is archived, so this change wasn't made.`
       : `${work} is unavailable.`;
+  }
+  // skills:// is model-only, so the shared context parser doesn't name it (D52).
+  if (error.code === "invalid_uri" && error.unknownScheme !== undefined) {
+    return `${error.reason}, ${SKILLS_URI_ROOT}`;
   }
   if (error.code === "invalid_uri") return error.reason;
   if ("message" in error && typeof error.message === "string") return error.message;
@@ -1134,8 +1145,69 @@ async function containerReadonly(
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
 }
 
+const SKILL_PART_READ = "skills:// files are read whole, without in, format or #heading.";
+const SKILL_WRITE = "Files under skills:// can only be read.";
+const SKILL_SEARCH = "search doesn't cover skills://. Use ls and read.";
+
+/**
+ * Skill files are judged on the calling thread's own binding (D52); the
+ * chain only names that thread, and no draft applies to them.
+ */
+async function skillPrincipal(
+  deps: Pick<ToolWiringDeps, "threads" | "readAgentChain">,
+  threadId: string,
+): Promise<Principal | ToolErrorOutput> {
+  const thread = await deps.threads.findById(threadId);
+  if (!thread) return toolError({ message: `Thread not found: ${threadId}` });
+  return {
+    accountId: thread.userId as Principal["accountId"],
+    agent: { chain: await deps.readAgentChain(thread.id as ThreadId), draftWork: null },
+  };
+}
+
+/** `read` of a `skills://` file: the whole file as plain text, read-only. */
+async function readSkill(
+  deps: ToolWiringDeps,
+  input: ReadToolInput,
+  ctx: ToolHandlerContext,
+): Promise<string | WriteToolErrorOutput> {
+  const { path, format, in: selector, around } = input;
+  if (
+    format !== undefined ||
+    selector !== undefined ||
+    around !== undefined ||
+    path.includes("#")
+  ) {
+    return writeToolError("read", SKILL_PART_READ, "invalid_write", { path });
+  }
+  const principal = await skillPrincipal(deps, ctx.threadId);
+  if (isToolError(principal)) return writeToolError("read", principal.output.message);
+  const file = await readSkillFile(deps, principal, ctx.threadId, path);
+  if (file.kind === "binary") {
+    return writeToolError(
+      "read",
+      "The file is binary, so it can't be read as text.",
+      "binary_file",
+      { path },
+    );
+  }
+  if (file.kind === "not_found") {
+    return writeToolError("read", documentNotFoundMessage("read"), "document_not_found", { path });
+  }
+  return `${file.uri} (read-only)\n\n${file.text}`;
+}
+
+/** Whether a `write` names a `skills://` file as its target or its `from`. */
+function writesSkill(parsed: WriteToolInput): boolean {
+  const from = "from" in parsed ? parsed.from : undefined;
+  return isSkillsUri(parsed.path) || (from !== undefined && isSkillsUri(from.path));
+}
+
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
+    if (isSkillsUri((input as ReadToolInput).path)) {
+      return readSkill(deps, input as ReadToolInput, ctx);
+    }
     const { path, format, version, ...selection } = input as ReadToolInput;
     const execution = await resolveExecutionContext(deps, ctx.threadId);
     if ("isError" in execution) return writeToolError("read", execution.output.message);
@@ -1166,6 +1238,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
   const writeHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const parsed = input as WriteToolInput;
+    if (writesSkill(parsed)) return writeToolError(parsed.command, SKILL_WRITE);
     const execution = await resolveExecutionContext(deps, ctx.threadId);
     if ("isError" in execution) return writeToolError(parsed.command, execution.output.message);
 
@@ -1527,6 +1600,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path, version } = input as LsToolInput;
+      if (path && isSkillsUri(path)) {
+        const principal = await skillPrincipal(deps, ctx.threadId);
+        if (isToolError(principal)) return principal;
+        return listSkillDir(deps, principal, ctx.threadId, path);
+      }
       const listed = await listingContext(deps, ctx, version);
       if (isToolError(listed)) return listed;
       const { context, principal } = listed;
@@ -1551,10 +1629,17 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
         }),
       );
-      return modelContextResults(entries.flat(), context);
+      const listing = modelContextResults(entries.flat(), context);
+      if (path) return listing;
+      // The root names skills:// only when the agent can see a skill.
+      const skills = await listSkillDir(deps, principal, ctx.threadId, SKILLS_URI_ROOT);
+      return skills.length > 0
+        ? [...listing, { kind: "directory", uri: SKILLS_URI_ROOT, readonly: true }]
+        : listing;
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope, version } = input as SearchToolInput;
+      if (scope && isSkillsUri(scope)) return toolError({ message: SKILL_SEARCH });
       const listed = await listingContext(deps, ctx, version);
       if (isToolError(listed)) return listed;
       const { context, principal } = listed;
