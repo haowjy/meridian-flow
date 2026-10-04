@@ -11,7 +11,7 @@ import {
   type ReferenceRow,
 } from "@/core/completion";
 import { getAtReferenceMenu } from "@/core/editor/extensions/at-reference";
-import { schemeLabel } from "@/features/project/context/context-schemes";
+import { documentLocation, schemeLabel } from "@/features/project/context/context-schemes";
 import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
 
 const NO_SUBSCRIPTION = () => () => {};
@@ -131,9 +131,8 @@ export function ReferenceSuggestionMenu({
 function rowLocation(row: ReferenceRow): string {
   if (row.kind !== "file") return row.location;
   const parsed = parseContextUri(row.action.reference.uri);
-  if (!parsed.ok || parsed.value.scheme === "manuscript") return row.location;
-  const area = schemeLabel(parsed.value.scheme);
-  return row.location ? `${area}/${row.location}` : area;
+  if (!parsed.ok) return row.location;
+  return documentLocation(parsed.value.scheme, row.location);
 }
 
 function ReferenceIcon({ row }: { row: ReferenceRow }) {

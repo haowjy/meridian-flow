@@ -47,6 +47,16 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
 }
 
 /**
+ * Where a document lives, as the `@` menu says it: its folder, after the area
+ * unless that is the manuscript. Empty for a manuscript document at the root.
+ */
+export function documentLocation(scheme: ProjectContextTreeScheme, folderPath: string): string {
+  if (scheme === "manuscript") return folderPath;
+  const area = schemeLabel(scheme);
+  return folderPath ? `${area}/${folderPath}` : area;
+}
+
+/**
  * Icons distinguish the current project-context resource families. The same
  * shapes mark a link chip's family; both read `family-icons.ts`.
  */

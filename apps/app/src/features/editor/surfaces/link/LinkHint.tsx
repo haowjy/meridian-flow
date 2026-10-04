@@ -81,7 +81,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
         <span className="meridian-link-hint__note">{resolution.document.path}</span>
       ) : null}
       {resolution?.state === "unresolved" ? (
-        <span className="meridian-link-hint__note">{t`No document at that address`}</span>
+        <span className="meridian-link-hint__note">{t`Doesn't exist yet`}</span>
       ) : null}
     </div>,
     overlay,

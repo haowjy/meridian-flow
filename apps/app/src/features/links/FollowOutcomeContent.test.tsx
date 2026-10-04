@@ -71,8 +71,8 @@ function render(outcome: LinkFollowOutcome, onClose = vi.fn(), onOpen = vi.fn())
 }
 
 function createButton(): HTMLButtonElement {
-  const button = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent === "Create the document",
+  const button = [...document.querySelectorAll("button")].find((candidate) =>
+    candidate.textContent?.startsWith("Create “"),
   );
   if (!button) throw new Error("no Create button");
   return button;
@@ -191,7 +191,7 @@ describe("Create on a missing link", () => {
   it("offers no Create for an address naming another kind of file", () => {
     render(missing("manuscript://maps/map.png"));
     expect(
-      [...document.querySelectorAll("button")].some((b) => b.textContent === "Create the document"),
+      [...document.querySelectorAll("button")].some((b) => b.textContent?.startsWith("Create “")),
     ).toBe(false);
   });
 });

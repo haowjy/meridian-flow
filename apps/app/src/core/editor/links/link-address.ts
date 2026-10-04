@@ -29,6 +29,17 @@ export function linkTargetAddress(target: LinkTarget, baseUri: string | null): s
   return resolved?.uri ?? null;
 }
 
+/**
+ * What a writer calls the document an address names: its filename without a
+ * `.md` (any other extension stays, `map.png`). Addresses hold names already
+ * decoded, so this never decodes again.
+ */
+export function addressDocumentName(address: string): string | null {
+  const parsed = parseContextUri(address);
+  const leaf = parsed.ok ? parsed.value.path.split("/").at(-1) : null;
+  return leaf ? leaf.replace(/\.md$/i, "") || leaf : null;
+}
+
 /** The areas a follow's Create can make a document in; uploads and Unfiled are not. */
 export const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
 export type CreatableLinkScheme = (typeof CREATABLE_LINK_SCHEMES)[number];

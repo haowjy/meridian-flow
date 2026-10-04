@@ -88,6 +88,14 @@ msgstr "{agentName} deleted a passage"
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "“{name}” can't be found"
+msgstr "“{name}” can't be found"
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "“{name}” doesn't exist yet"
+msgstr "“{name}” doesn't exist yet"
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -1328,6 +1336,10 @@ msgstr "Couldn't withdraw. Try again."
 msgid "Couldn't write"
 msgstr "Couldn't write"
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Create “{name}”"
+msgstr "Create “{name}”"
+
 #: src/features/home/NewProjectView.tsx
 msgid "Create a project"
 msgstr "Create a project"
@@ -1345,17 +1357,13 @@ msgid "Create file or folder"
 msgstr "Create file or folder"
 
 #: src/features/links/FollowOutcomeContent.tsx
-msgid "Create it now and the link starts working. Nothing about the link changes."
-msgstr "Create it now and the link starts working. Nothing about the link changes."
+msgid "Create it and this link opens it."
+msgstr "Create it and this link opens it."
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr "Create project"
-
-#: src/features/links/FollowOutcomeContent.tsx
-msgid "Create the document"
-msgstr "Create the document"
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Create Work"
@@ -1557,6 +1565,13 @@ msgstr "Document name and location"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/link/LinkHint.tsx
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/rich-content/TranscriptReference.tsx
+msgid "Doesn't exist yet"
+msgstr "Doesn't exist yet"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
@@ -2473,14 +2488,6 @@ msgstr "No column has been resized yet."
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
 msgstr "No context files yet."
-
-#: src/features/editor/surfaces/link/LinkForm.tsx
-#: src/features/editor/surfaces/link/LinkHint.tsx
-#: src/features/editor/surfaces/link/LinkMenu.tsx
-#: src/features/links/FollowOutcomeContent.tsx
-#: src/rich-content/TranscriptReference.tsx
-msgid "No document at that address"
-msgstr "No document at that address"
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
