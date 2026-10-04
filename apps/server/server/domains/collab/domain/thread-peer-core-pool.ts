@@ -478,11 +478,7 @@ export function createThreadPeerCorePool(input: {
         .map(([documentId]) => documentId)
         .sort(),
     );
-    return [...refusals].map(([documentId, denial]) => ({
-      documentId,
-      reason: denial.reason,
-      workSlug: denial.archivedWork?.slug ?? null,
-    }));
+    return [...refusals].map(([documentId, denial]) => ({ documentId, denial }));
   }
 
   function finalizeOptions() {

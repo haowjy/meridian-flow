@@ -197,6 +197,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "cant_undo_dependent" ||
     status === "read_required" ||
     status === "binary_file" ||
+    status === "permission_denied" ||
     status === "internal_error"
   );
 }

@@ -12,6 +12,7 @@ const ERROR_STATUSES = {
   cant_undo_dependent: true,
   read_required: true,
   binary_file: true,
+  permission_denied: true,
   internal_error: true,
 } satisfies Record<WriteErrorStatus, true>;
 

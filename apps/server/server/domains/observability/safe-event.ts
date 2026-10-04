@@ -88,6 +88,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "not_found",
     "nothing_to_redo",
     "nothing_to_undo",
+    "permission_denied",
     "reconciled",
     "redone",
     "reversed",

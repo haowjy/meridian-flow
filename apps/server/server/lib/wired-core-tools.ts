@@ -34,7 +34,10 @@ import {
   meridianErrorFromStructuredToolOutput,
   meridianErrorFromTool,
 } from "@meridian/contracts/interrupt";
-import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type {
+  DocumentRevisionEvidence,
+  PermissionDeniedReason,
+} from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
@@ -116,6 +119,7 @@ import {
   rebindThreadWork,
   threadExecutionContext,
 } from "../domains/threads/index.js";
+import { isPermissionDenial, permissionDeniedMessage } from "./file-access-denial-copy.js";
 
 export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
@@ -196,7 +200,7 @@ export type ResponseWriteLifecycleCommitResult =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
-      refused: Array<{ documentId: string; message: string }>;
+      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -519,71 +523,57 @@ async function containerTarget(
     : null;
 }
 
-/**
- * A refused grant as the tool's error. Phase 4 writes the permission copy;
- * until then each reason keeps the closest message the model already sees.
- */
+/** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
 function fileAccessDeniedError(
   command: DocumentCommandName,
   denial: FileAccessDenied,
   path?: string,
 ): WriteToolErrorOutput {
-  switch (denial.reason) {
-    case "not_found":
-      return writeToolError(
-        command,
-        documentNotFoundMessage(command),
-        "document_not_found",
-        path ? { path } : {},
-      );
-    case "work_archived":
-      return writeToolError(
-        command,
-        workLifecycleMessage("work_archived", denial.archivedWork?.slug ?? null),
-      );
-    case "uploads_read_only":
-      return writeToolError(command, UPLOADS_READ_ONLY_MESSAGE);
-    case "agent_read_only":
-      return writeToolError(command, AGENT_READ_ONLY_MESSAGE);
+  if (!isPermissionDenial(denial)) {
+    return writeToolError(
+      command,
+      documentNotFoundMessage(command),
+      "document_not_found",
+      path ? { path } : {},
+    );
   }
+  return {
+    isError: true,
+    output: modelResult({
+      command,
+      status: "permission_denied",
+      payload: {
+        ...(path ? { path } : {}),
+        reason: denial.reason,
+        message: permissionDeniedMessage(denial),
+      },
+    }),
+  };
 }
-
-const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
-const AGENT_READ_ONLY_MESSAGE =
-  "Your permission is read, so you can change only your Work's scratch:// files.";
 
 /** Why the reply's save left out a document's changes (D29, D42). */
-function refusedAtSaveMessage(refusal: {
-  reason: FileAccessDenied["reason"];
-  workSlug: string | null;
-}): string {
-  switch (refusal.reason) {
-    case "work_archived":
-      return archivedBeforeSaveMessage(refusal.workSlug);
-    case "not_found":
-      return "This file was deleted before this reply was saved, so this change wasn't saved.";
-    case "uploads_read_only":
-      return UPLOADS_READ_ONLY_MESSAGE;
-    case "agent_read_only":
-      return AGENT_READ_ONLY_MESSAGE;
+function refusedAtSave(denial: FileAccessDenied): {
+  message: string;
+  reason?: PermissionDeniedReason;
+} {
+  if (!isPermissionDenial(denial)) {
+    return {
+      message: "This file was deleted before this reply was saved, so this change wasn't saved.",
+    };
   }
-}
-
-/** D29: the reply's Work was archived before its save, so this file's change was left out. */
-function archivedBeforeSaveMessage(workSlug: string | null): string {
-  if (workSlug === null)
-    return "This chat's Work was archived before this reply was saved, so this change wasn't saved.";
-  return `Work @${workSlug} was archived before this reply was saved, so this change wasn't saved. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing its files.`;
+  return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
 ): string {
-  const identity = workSlug ? `@${workSlug}` : "the requested Work";
-  return reason === "work_archived"
-    ? `Work ${identity} is archived and read-only. Use the work unarchive command before changing its content.`
-    : `Work ${identity} is unavailable.`;
+  if (reason !== "work_archived") {
+    return workSlug ? `Work @${workSlug} is unavailable.` : "The requested Work is unavailable.";
+  }
+  return workSlug
+    ? `Work @${workSlug} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing it.`
+    : "The requested Work is archived and read-only.";
 }
 
 async function deleteCreatedTrackedDocument(input: {
@@ -861,7 +851,7 @@ export function createAgentEditResponseWriteLifecycle(
           ),
           refused: result.refused.map((refusal) => ({
             documentId: refusal.documentId,
-            message: refusedAtSaveMessage(refusal),
+            ...refusedAtSave(refusal.denial),
           })),
         };
       };

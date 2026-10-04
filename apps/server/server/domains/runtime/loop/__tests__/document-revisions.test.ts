@@ -101,7 +101,7 @@ describe("document revision settlement", () => {
   it("replaces a write's result with the refusal when the save left its document out (D29)", async () => {
     const documentId = "44444444-4444-4444-8444-444444444444";
     const uri = "scratch://notes.md";
-    const message = "Work @rewrite was archived before this reply was saved.";
+    const message = "Work @rewrite is archived and read-only. Ask the user to unarchive @rewrite.";
     const gateway = scriptedGateway({
       usage: { inputTokens: 10, outputTokens: 1 },
       results: [
@@ -152,7 +152,7 @@ describe("document revision settlement", () => {
             status: "committed" as const,
             receipts: [],
             concurrentEdits: [],
-            refused: [{ documentId, message }],
+            refused: [{ documentId, message, reason: "work_archived" as const }],
           };
           await beforeCommit?.(result);
           return result;
@@ -167,7 +167,7 @@ describe("document revision settlement", () => {
     );
     expect(block?.content).toMatchObject({
       isError: true,
-      result: { status: "invalid_write", path: uri },
+      result: { status: "permission_denied", reason: "work_archived", path: uri },
     });
   });
 });

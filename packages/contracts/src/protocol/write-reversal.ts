@@ -9,6 +9,7 @@ export type WriteErrorStatus =
   | "cant_undo_dependent"
   | "read_required"
   | "binary_file"
+  | "permission_denied"
   | "internal_error";
 
 export type UndoRedoOutcome =

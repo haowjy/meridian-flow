@@ -4,6 +4,7 @@
  */
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import type { FileAccessDenial } from "@meridian/contracts/protocol";
 import type {
   ContextSourceId,
   DocumentId,
@@ -139,15 +140,10 @@ export type FileDestination =
  * The term that held the level below `edit`, in precedence order. `deleted`
  * is logged only: every transport answers it as `not_found`.
  */
-export type FileAccessLimit =
-  | "not_found"
-  | "deleted"
-  | "work_archived"
-  | "uploads_read_only"
-  | "agent_read_only";
+export type FileAccessLimit = FileAccessDenial | "deleted";
 
-/** The reason a transport reports (§9). */
-export type FileAccessDenial = Exclude<FileAccessLimit, "deleted">;
+/** The reason a transport reports (§9); the wire type. */
+export type { FileAccessDenial };
 
 export interface FileDecision {
   level: FileAccessLevel;
@@ -184,6 +180,16 @@ export interface FileAccessDenied {
   readonly level: FileAccessLevel;
   readonly archivedWork: WorkRef | null;
   readonly destination: FileDestination | null;
+  /**
+   * The asking agent chain's lowest permission, so refusal copy offers only
+   * calls the agent may make; null for a person.
+   */
+  readonly agentPermission: AgentPermission | null;
+}
+
+/** A delegation chain's effective permission: its lowest link (D8). */
+export function chainPermission(chain: AgentChain): AgentPermission {
+  return chain.some((link) => link.permission === "read") ? "read" : "edit";
 }
 
 export function isFileAccessDenied(value: unknown): value is FileAccessDenied {
