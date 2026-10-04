@@ -6,6 +6,7 @@
  */
 
 import { Err, type Result } from "../../shared/result.js";
+import type { FileGrant } from "../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../storage/index.js";
 import type { CopiedFrom } from "./document-metadata.js";
 import type {
@@ -23,6 +24,8 @@ export interface BinaryCopyInput {
   livePort: ContextPort;
   objectStore: ObjectStorePort;
   source: BinaryFileRef;
+  /** Proof the copier may read the source (file-access §2); a copy can't skip it. */
+  sourceGrant: FileGrant<"read">;
   destinationUri: string;
   copiedFrom: CopiedFrom;
   origin?: WriteProvenance;
@@ -32,6 +35,10 @@ export interface BinaryCopyInput {
 export async function copyBinaryDocument(
   input: BinaryCopyInput,
 ): Promise<Result<ContextWriteResult, ContextError>> {
+  const granted = input.sourceGrant.target;
+  if (granted.kind === "container" || granted.documentId !== input.source.documentId) {
+    throw new Error("A binary copy's grant must name its source document");
+  }
   const existing = await input.port.stat(input.destinationUri);
   if (existing.ok) {
     return Err({
