@@ -136,6 +136,21 @@ export type ResourceRecord = {
   intents: readonly NamespaceIntent[];
 };
 
+/** A folder is namespace identity only: it never owns a document id, content or classification. */
+export type FolderNamespaceRecord = ResourceKey & {
+  projectId: string;
+  folderId: string;
+  revision: number;
+  canonical: ResourceLocation;
+  canonicalRefresh?: { operationId: string };
+  intents: readonly NamespaceIntent[];
+};
+
+export type FolderNamespaceWrite = {
+  expectedRevision: number | null;
+  next: FolderNamespaceRecord;
+};
+
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
 export type ResourceCatalogCheckpoint = Pick<
   CatalogCacheView,
@@ -156,6 +171,7 @@ export type ResourceWrite = {
 export type MetadataCommitResult = "committed" | "stale";
 export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 
@@ -172,6 +188,8 @@ export interface ResourceMetadataStore {
     expectedRevision: number | null;
     next: ResourceCatalogCheckpoint;
     resources: readonly ResourceWrite[];
+    /** Folder canonical observations commit with the checkpoint that proves them. */
+    folders: readonly FolderNamespaceWrite[];
   }): Promise<MetadataCommitResult>;
   observeProjection(
     projectId: string,

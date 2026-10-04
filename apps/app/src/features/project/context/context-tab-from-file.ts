@@ -8,9 +8,11 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
+  type FolderNamespaceRecord,
   projectResourceLocation,
   type ResourceRecord,
   type ResourceWorkAuthority,
+  rebaseFolderResourceLocation,
   resourceContextAuthority,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
@@ -76,12 +78,28 @@ export function contextTabFromFile(
   };
 }
 
+/** Where the writer sees a document: its own placement, then every folder move above it. */
+function resourcePlacement(
+  projectId: string,
+  record: ResourceRecord,
+  folders: readonly FolderNamespaceRecord[],
+) {
+  const location = projectResourceLocation(projectId, record);
+  return (
+    location && {
+      ...rebaseFolderResourceLocation(projectId, location, folders),
+      provisional: location.provisional,
+    }
+  );
+}
+
 /** One optimistic tab projection for a durable editable resource. */
 export function contextTabFromResource(
   projectId: string,
   record: ResourceRecord,
+  folders: readonly FolderNamespaceRecord[],
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
-  const location = projectResourceLocation(projectId, record);
+  const location = resourcePlacement(projectId, record, folders);
   if (!location) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
@@ -133,6 +151,7 @@ export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
+  folders: readonly FolderNamespaceRecord[],
 ): ResourceTabProjection {
   const record =
     (tab.resourceHandle
@@ -146,7 +165,7 @@ export function projectResourceTab(
       generation: record.resource.lifecycle.generation,
     };
   if (record.resource.content.kind === "unacquired") {
-    const location = projectResourceLocation(projectId, record);
+    const location = resourcePlacement(projectId, record, folders);
     if (!location || tab.kind === "new") return { kind: "removed" };
     const { resourceHandle: _resourceHandle, workId: _workId, ...existing } = tab;
     const projected = {
@@ -160,7 +179,7 @@ export function projectResourceTab(
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
-  const projected = contextTabFromResource(projectId, record);
+  const projected = contextTabFromResource(projectId, record, folders);
   return projected
     ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
     : { kind: "removed" };

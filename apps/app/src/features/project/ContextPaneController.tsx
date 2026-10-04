@@ -381,7 +381,12 @@ export function ContextViewerSurfaceController({
 
   useEffect(() => {
     for (const tab of tabs) {
-      const projection = projectResourceTab(projectId, tab, resourceProjection.records);
+      const projection = projectResourceTab(
+        projectId,
+        tab,
+        resourceProjection.records,
+        resourceProjection.folders,
+      );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
         void availability
@@ -436,6 +441,7 @@ export function ContextViewerSurfaceController({
     projectId,
     reconcileResourceTab,
     resourceProjection.records,
+    resourceProjection.folders,
     routeWorkId,
     selectedDocumentId,
     tabs,

@@ -2,10 +2,14 @@
 import type { CatalogEntry, ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  type CatalogCacheView,
   type FolderNamespaceRecord,
   type FolderNamespaceStore,
   type FolderNamespaceWrite,
+  folderObservationFence,
+  indexCatalogView,
   installFolderCanonicalRefresh,
+  planFolderCatalogInstallation,
   planFolderLocation,
   projectFolderCatalog,
   projectFolderLocation,
@@ -327,5 +331,74 @@ describe("folder namespace public API", () => {
       kind: "operation",
       receipt: fullReceipt,
     });
+  });
+
+  it("takes the folder's location from the catalog once refreshed, so a later parent move shows through", async () => {
+    const store = new MemoryFolders();
+    await store.commitFolder(command());
+    const settled = await reconcile(store, {
+      accountId: "account",
+      readOutcome: async () => ({ kind: "operation", receipt: receipt(true) }),
+      submit: async () => {
+        throw new Error("Receipt lookup must recover without redispatch");
+      },
+    });
+    expect(settled).toBe("progressed");
+    const scope = { kind: "project", projectId: "project" } as const;
+    const catalogWith = (path: string[]): CatalogCacheView =>
+      indexCatalogView({
+        scope,
+        generation: "generation",
+        appliedRevision: "1",
+        observedHeadRevision: "1",
+        cursor: "cursor",
+        invalidatedEntryIds: new Set(),
+        entries: new Map(
+          [
+            entries[0],
+            {
+              kind: "folder" as const,
+              entryId: "chapters",
+              scope,
+              sourceId: "source",
+              parentId: "source",
+              name: path.at(-1) ?? "",
+              path,
+              uri: `manuscript://${path.join("/")}`,
+              hasChildren: false,
+            },
+          ].flatMap((entry) => (entry ? [[entry.entryId, entry] as const] : [])),
+        ),
+      });
+    const install = (view: CatalogCacheView, fenced: FolderNamespaceRecord) =>
+      planFolderCatalogInstallation({
+        projectId: "project",
+        folders: [store.current()],
+        view,
+        fence: { folders: folderObservationFence([fenced]) },
+      });
+
+    // A read begun before the receipt cannot clear the barrier it never saw.
+    expect(
+      install(catalogWith(["volume", "renamed"]), {
+        ...store.current(),
+        canonicalRefresh: undefined,
+      }),
+    ).toEqual([]);
+    const [refresh] = install(catalogWith(["volume", "renamed"]), store.current());
+    if (!refresh) throw new Error("Missing refresh");
+    await store.commitFolder(refresh);
+    expect(store.current().canonicalRefresh).toBeUndefined();
+    expect(store.current().canonical.path).toBe("/volume/renamed");
+
+    // The settled move no longer owns placement: someone moving the parent shows through.
+    const moved = catalogWith(["elsewhere", "renamed"]);
+    const [follow] = install(moved, store.current());
+    if (!follow) throw new Error("Missing canonical follow");
+    await store.commitFolder(follow);
+    expect(store.current().canonical.path).toBe("/elsewhere/renamed");
+    expect(projectFolderCatalog("project", [...moved.entries.values()], [store.current()])).toEqual(
+      [...moved.entries.values()],
+    );
   });
 });

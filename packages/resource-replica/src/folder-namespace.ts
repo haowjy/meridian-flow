@@ -11,6 +11,8 @@ import {
   reconcileNamespaceJournal,
 } from "./resource-namespace";
 import type {
+  FolderNamespaceRecord,
+  FolderNamespaceWrite,
   MetadataCommitResult,
   NamespaceIntent,
   NamespaceOutcome,
@@ -23,20 +25,6 @@ import type {
 } from "./resource-records";
 import { workAuthorityOf } from "./resource-records";
 import { resourceContextAuthority } from "./resource-work-authority";
-
-export type FolderNamespaceRecord = ResourceKey & {
-  projectId: string;
-  folderId: string;
-  revision: number;
-  canonical: ResourceLocation;
-  canonicalRefresh?: { operationId: string };
-  intents: readonly NamespaceIntent[];
-};
-
-export type FolderNamespaceWrite = {
-  expectedRevision: number | null;
-  next: FolderNamespaceRecord;
-};
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
 export interface FolderNamespaceStore {
@@ -68,8 +56,20 @@ export function projectFolderNeedsRepair(
     : null;
 }
 
+/** Work that can progress without a new writer command, as `resourceNeedsBackgroundReconciliation` for files. */
+export function folderNeedsBackgroundReconciliation(record: FolderNamespaceRecord): boolean {
+  return record.intents.some(
+    (intent) =>
+      intent.state === "pending" || intent.state === "submitted" || intent.state === "received",
+  );
+}
+
 export function projectFolderLocation(record: FolderNamespaceRecord): ResourceLocation {
-  const desired = owningLocationIntent(record.projectId, record.intents)?.desired;
+  const desired = owningLocationIntent(
+    record.projectId,
+    record.intents,
+    Boolean(record.canonicalRefresh),
+  )?.desired;
   return desired?.kind === "set-folder-location"
     ? namespaceDestinationLocation(desired.destination)
     : record.canonical;

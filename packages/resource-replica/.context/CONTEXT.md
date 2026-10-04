@@ -92,6 +92,15 @@ catalogs when projecting cross-area or cross-Work moves. Readable routes and tab
 use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
 old location and expose the attempted name through `projectFolderNeedsRepair`.
 
+Catalog installation owns folder canonical state exactly as it owns files': the
+acquisition fence captures each folder's canonical location and refresh barrier
+before HTTP, and `planFolderCatalogInstallation` clears a barrier only for the
+operation id the fence saw, or follows a canonical location that changed elsewhere
+(a parent moved by anyone). A settled move owns placement only while its refresh is
+outstanding (`owningLocationIntent`); after that the installed location is truth,
+so a stale destination recorded by an old intention cannot override a later move of
+a parent.
+
 Caller-issued operation ids survive dispatch. Local settlement records
 `settledAt`; `settledNamespaceReceipt` returns the entire matching receipt for
 four seconds, including fields added by the server later, without deleting

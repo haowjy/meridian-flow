@@ -91,7 +91,11 @@ export function planResourceLocation(input: {
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
-  const latest = owningLocationIntent(input.projectId, record.intents);
+  const latest = owningLocationIntent(
+    input.projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  );
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&

@@ -62,13 +62,20 @@ export function intentOwnsLocation(intent: NamespaceIntent): boolean {
   );
 }
 
+/**
+ * The placement the writer still sees from local intentions. A settled move owns it only
+ * until a catalog read after its receipt installs the canonical location; from then on
+ * the installed location is truth, so a later move of a parent by anyone cannot be
+ * overridden by the stale destination this intention recorded.
+ */
 export function owningLocationIntent(
   projectId: string,
   intents: readonly NamespaceIntent[],
+  canonicalRefreshPending: boolean,
 ): NamespaceIntent | null {
-  return (
+  const owner =
     [...intents]
       .sort((left, right) => right.sequence - left.sequence)
-      .find((intent) => intent.projectId === projectId && intentOwnsLocation(intent)) ?? null
-  );
+      .find((intent) => intent.projectId === projectId && intentOwnsLocation(intent)) ?? null;
+  return owner?.state === "settled" && !canonicalRefreshPending ? null : owner;
 }
