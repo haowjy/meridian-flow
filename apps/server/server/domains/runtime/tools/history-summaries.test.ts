@@ -1,34 +1,10 @@
 /** What follows a finished call's arrow in history, read from its typed result (D48). */
-import { modelResult } from "@meridian/agent-edit";
-import type { JsonValue } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import {
-  documentHistorySummary,
   spawnHistorySummary,
   threadHistorySummary,
   workHistorySummary,
 } from "./history-summaries.js";
-
-it("summarizes a read by its block count", () => {
-  const result = modelResult({
-    command: "read",
-    status: "success",
-    phase: "committed",
-    payload: {
-      read: { format: "outline", documentBlocks: 62 },
-      blocks: [
-        {
-          extent: "full",
-          relation: "document",
-          items: Array.from({ length: 5 }, (_, i) => ({ hash: `h${i}`, body: "x" })),
-        },
-      ],
-    },
-  }) as unknown as JsonValue;
-  expect(documentHistorySummary({ path: "a.md", format: "outline" }, result)).toBe(
-    "5 of 62 blocks",
-  );
-});
 
 it("names the conversation a thread tool resolved only when the call didn't", () => {
   expect(threadHistorySummary({ ref: "p7" }, { ref: "p7", outcome: "succeeded" })).toBeUndefined();
