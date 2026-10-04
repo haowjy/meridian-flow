@@ -220,6 +220,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         details: { reason: "action_denied" },
       });
 
+      const root = listed(await call("ls", {}));
+      expect(root).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ uri: "manuscript://", readonly: true }),
+          expect.objectContaining({ uri: "scratch://", readonly: false }),
+        ]),
+      );
+
       await call("read", { path: "manuscript://chapter.md" });
       const refused = await call("write", {
         command: "replace",
