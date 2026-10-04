@@ -78,10 +78,12 @@ export function createLinkUpdateWorker(input: {
               .innerJoin(projects, eq(projects.id, cut.holderProjectId))
               .where(and(eq(documents.id, holder.id), eligible()));
             if (!owner || !cut.holderUri) return null;
+            // Claim the whole holder batch: substitutions must stay simultaneous even
+            // when a newer move adds a due row beside older backed-off redirects.
             const redirects = await tx
               .select()
               .from(linkRedirects)
-              .where(and(eq(linkRedirects.sourceDocumentId, holder.id), due()))
+              .where(eq(linkRedirects.sourceDocumentId, holder.id))
               .orderBy(linkRedirects.href)
               .for("update");
             const resolver = createDocumentLinkResolver({
