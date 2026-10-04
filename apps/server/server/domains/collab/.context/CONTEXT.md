@@ -115,18 +115,23 @@ lock, checks generation and `next_admission_sequence`, and conditionally updates
 the document at the captured `location_version`. A move increments that counter
 at the common `recordDocumentMove` seam, including same-source folder renames.
 Serialization runs outside the lock unless the caller already owns a transaction.
+For an initialized live document, lifecycle ensure is read-only: retaining an
+ambient head-row update lock would deadlock the subsequent root journal batch.
+The root batch still commits before live apply; derivation can then join the
+context command transaction.
 A changed cut retries three times, then remains stale for recovery.
 
 `document_derivations` certifies projection output by generation, next admission
 sequence, location version, and extractor version. Equal cuts are idempotent;
-older cuts cannot replace newer output. Derive advances both projection and links
-watermarks; future link-only publication can advance links independently. P1's
-extractor version produces projection only. Adding link extraction must bump
-that version and add its output to the existing certification transaction, not
-a second post-write hook.
+older cuts cannot replace newer output. Projection byte size comes from the same
+certified serialization. Changing the extractor invalidates older output: bump
+its version when adding link extraction and add the output and link watermarks
+to the existing certification transaction, not a second post-write hook.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
-100 documents per pass with a wraparound cursor. Scoped `flush` pages all stale
+at most 100 stale documents returned per pass with a wraparound cursor. This
+limits derivation work, not query scan work: an entirely current corpus is
+scanned in full on every idle pass. Scoped `flush` pages all stale
 documents in a project, or every project owned by `personalOwnerId`. Both ignore
 caller transactions and timer queues. Failed derives log and retain last-good
 output without advancing certification; a later sweep retries them.

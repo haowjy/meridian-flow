@@ -1,7 +1,7 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
-// Adding link extraction must bump this version so P1 watermarks rebuild.
+// Changing the extractor must bump this version to invalidate older output.
 export const DOCUMENT_EXTRACTOR_VERSION = 1;
 export type DerivationScope = { projectId: ProjectId; personalOwnerId?: UserId };
 export type DerivationWatermark = {
