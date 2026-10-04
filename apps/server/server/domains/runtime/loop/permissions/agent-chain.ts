@@ -4,22 +4,13 @@
  * permission and current Work. Policies take the minimum over the chain, so a
  * `read` parent caps every descendant.
  */
-import type { AgentPermission } from "@meridian/contracts/agents";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import type { AgentChain, AgentLink } from "../../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../../packages/index.js";
 import type { WorkRepository } from "../../../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../../threads/index.js";
 
-export interface AgentLink {
-  threadId: ThreadId;
-  permission: AgentPermission;
-  /** The thread's current primary Work; follows `work switch`. */
-  threadWorkId: WorkId;
-  threadWorkIsNoWork: boolean;
-}
-
-/** `[calling thread, its parent, …, root]`. */
-export type AgentChain = readonly AgentLink[];
+export type { AgentChain, AgentLink };
 
 export interface AgentChainDeps {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
