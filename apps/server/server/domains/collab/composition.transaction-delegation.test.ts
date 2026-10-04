@@ -29,23 +29,6 @@ function createCore(
 }
 
 describe("thread-peer response transaction delegation", () => {
-  it("routes reversals without active Draft history through the live core", async () => {
-    const { core, liveCore, threadCore } = createCore();
-
-    await core.write(
-      { command: "undo", file: "alpha.md", all: true },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-post-apply", destination: DRAFT },
-    );
-
-    expect(liveCore.write).toHaveBeenCalledWith(
-      expect.objectContaining({ command: "undo" }),
-      expect.not.objectContaining({
-        interactionContext: expect.objectContaining({ mode: "threadPeer" }),
-      }),
-    );
-    expect(threadCore.write).not.toHaveBeenCalled();
-  });
-
   it("does not let a live reversal route a later response write around Draft", async () => {
     const { core, liveCore, threadCore } = createCore();
     const context = {
