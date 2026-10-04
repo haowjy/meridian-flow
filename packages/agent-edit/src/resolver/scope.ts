@@ -90,7 +90,9 @@ export function resolveFragment(
   }
   const bySlug = resolveSlug(ctx, fragment);
   if (bySlug.ok) return bySlug;
-  return resolveHashAsBlockOrSection(ctx, fragment);
+  const byHash = resolveHashAsBlockOrSection(ctx, fragment);
+  // A slug-shaped fragment that matches nothing was meant as a slug.
+  return byHash.ok || byHash.code !== "not_found" ? byHash : bySlug;
 }
 
 export function isHeading(model: DocumentModel, block: BlockRef): boolean {
@@ -214,7 +216,11 @@ function blockIndexForHash(ctx: ScopeContext, hash: string): BlockIndexResult {
 function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
   const headings = headingSlugEntries(ctx);
   const found = headings.find((entry) => entry.slug === slug);
-  if (!found) return notFound(`Section "#${slug}" was not found`);
+  if (!found) {
+    return notFound(
+      `Section "#${slug}" was not found. A read with \`format: "outline"\` lists each heading's #slug.`,
+    );
+  }
   return sectionFromHeading(ctx, found.index);
 }
 

@@ -64,5 +64,5 @@ function ambiguousHashMessage(
  * hash from a `version: "live"` read can be missing here.
  */
 function hashNotFoundMessage(hash: string): string {
-  return `Block hash "${hash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it; read again without \`version\`.`;
+  return `Block hash "${hash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it.`;
 }

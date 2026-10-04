@@ -31,8 +31,9 @@ export function parseFileAddress(command: {
 }
 
 /**
- * A `not_found` points at a re-read, since the model's hashes are stale. A
- * block number past the end isn't stale, so it gets the document's size.
+ * A `not_found` points at a re-read, since the model's hashes are stale,
+ * unless its message already names the read to make. A block number past the
+ * end isn't stale, so it gets the document's size.
  */
 export function errorResponse(
   code: WriteErrorStatus,
@@ -46,8 +47,9 @@ export function errorResponse(
       `${message}. ${filePath} has ${documentBlocks === 1 ? "1 block" : `${documentBlocks} blocks`}.`,
     );
   }
-  const needsRead = code === "not_found" && !message.includes("read({");
-  return status(code, needsRead ? `${message}. Run ${readCall(filePath)} to re-sync.` : message);
+  const needsRead = code === "not_found" && !/\bread\b/.test(message);
+  const sentence = message.replace(/\.$/, "");
+  return status(code, needsRead ? `${sentence}. Run ${readCall(filePath)} to re-sync.` : message);
 }
 
 export function readSuccess(read: RenderedRead): InternalWriteResult {
