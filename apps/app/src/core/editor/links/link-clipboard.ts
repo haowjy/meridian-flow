@@ -41,7 +41,7 @@ const linkClipboardPluginKey = new PluginKey<LinkResolution>("meridianLinkClipbo
  * Scratch means that Work, so it is recorded with the holder's authority and
  * keeps meaning that Work wherever it is pasted.
  */
-export function linkHrefAddress(href: string, holderUri: string | null): string | null {
+function linkHrefAddress(href: string, holderUri: string | null): string | null {
   const target = classifyLinkTarget(href);
   if (!target || target.kind === "external") return null;
   const resolved =
@@ -77,13 +77,13 @@ export function clipboardLinkAddress(value: string | null): string | null {
 }
 
 /** An address spelled for the document it lands in. */
-export function spellLinkAddress(address: string, holderUri: string | null): string | null {
+function spellLinkAddress(address: string, holderUri: string | null): string | null {
   const resolved = resolveDocumentHref(address, null);
   return resolved ? spellDocumentHref(holderUri, resolved.uri) + resolved.suffix : null;
 }
 
 /** Copy, HTML flavour: record each internal link's address beside its href. */
-export function recordLinkAddresses(root: ParentNode, holderUri: string | null): void {
+function recordLinkAddresses(root: ParentNode, holderUri: string | null): void {
   for (const element of root.querySelectorAll("[data-meridian-link]")) {
     const address = linkHrefAddress(element.getAttribute("data-meridian-link") ?? "", holderUri);
     if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
@@ -91,7 +91,7 @@ export function recordLinkAddresses(root: ParentNode, holderUri: string | null):
 }
 
 /** Paste into an Editor: spell every recorded address for this holder. */
-export function respellPastedLinks(html: string, holderUri: string | null): string {
+function respellPastedLinks(html: string, holderUri: string | null): string {
   if (!html.includes(LINK_ADDRESS_ATTRIBUTE)) return html;
   const container = document.createElement("template");
   container.innerHTML = html;

@@ -53,7 +53,7 @@ export type ReferenceAvailability = {
  * indeterminate answer is left out, like a lookup still out or failed: not
  * settled, so the chip stays filled and does not follow.
  */
-export function transcriptReferenceResolutions(
+function transcriptReferenceResolutions(
   resolutions: readonly ProjectContextIdentityResolution[],
 ): ReadonlyMap<string, TranscriptReferenceResolution> {
   const projected = new Map<string, TranscriptReferenceResolution>();

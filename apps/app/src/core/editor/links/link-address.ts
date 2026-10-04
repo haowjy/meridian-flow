@@ -30,7 +30,7 @@ export function linkTargetAddress(target: LinkTarget, baseUri: string | null): s
 }
 
 /** The areas a follow's Create can make a document in; uploads and Unfiled are not. */
-export const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
+const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
 export type CreatableLinkScheme = (typeof CREATABLE_LINK_SCHEMES)[number];
 
 export function isCreatableLinkScheme(scheme: string): scheme is CreatableLinkScheme {

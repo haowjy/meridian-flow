@@ -263,7 +263,7 @@ decorations, and attribute writes ProseMirror's DOM observer would see).
 Drawing changes nothing about editing. The label stays ordinary marked text;
 the icon is a pseudo-element, so it is not in the document, the clipboard, or
 the caret's path; `inclusive: false` still keeps typing at either edge out of
-the link (`link-chip-editing.test.ts`).
+the link.
 
 ## Where the mark's own fences are
 
@@ -356,7 +356,7 @@ writes, and text already stored stay text; so does a drag inside the editor.
   across Manuscript, KB, User, and this Work's Scratch, and the same
   `linkAhead` the `@` menu's link-ahead row uses. While the index loads the
   catalog is null and the brackets stay text rather than all turning dashed.
-- **Syntax** (`parseWikilinks`): `[[target]]`, `[[target|label]]` (also the
+- **Syntax** (`scanWikilinks`): `[[target]]`, `[[target|label]]` (also the
   table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
   target, `.md` implied without an extension. The label is the alias or the
   name without `.md`; the suffix stays on the destination. `![[…]]` (no
@@ -373,7 +373,7 @@ writes, and text already stored stay text; so does a drag inside the editor.
   keeps the characters) through its storage, and the door reads it per paste
   (`wikilinkPasteParsePlugins`). An Editor without the extension reads an
   escape exactly as Markdown does.
-- **Which document** (`pickWikilinkTarget`; per paste, `wikilinkResolver`
+- **Which document** (`rankWikilinkMatches`; per paste, `wikilinkResolver`
   locates the catalog once and ranks only the documents sharing a link's
   filename): case-insensitive, by path ending.
   `[[Name]]`: the holder's folder, then its area root, then the rest by

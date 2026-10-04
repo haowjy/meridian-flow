@@ -51,7 +51,7 @@ import { classifyLinkTarget } from "./link-target";
 
 const LINK_SURFACE_NAME = "meridianLinkSurface";
 
-export const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
+const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
 type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkResolution };
 
@@ -93,7 +93,7 @@ export function openLinkForm(editor: Editor | null): boolean {
 }
 
 /** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
-export function followLinkAtSelection(editor: Editor | null): boolean {
+function followLinkAtSelection(editor: Editor | null): boolean {
   const surface = getLinkSurface(editor);
   if (!editor || !surface) return false;
   const link = linkAtSelection(editor);

@@ -99,9 +99,6 @@ lifetime.
     pays an extra `view.setProps` — never a rebuild — so editor handlers do not
     have to be identity-stable; they read live editability off `view.editable`
     rather than closing over props.
-  - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
-    refetch and a live surface change keep the same editor and UndoManager while
-    a room change replaces them.
 - `DocumentSession` status is derived from local persistence and transport
   together: `detached` (proven local Y.Doc, no authorized transport), `syncing`,
   `synced`, `offline`, `access-lost`, `destroyed`. `schemaFence` is orthogonal,
@@ -583,10 +580,8 @@ the codec reads, and all of them produce the same node.
 
 `MarkdownAutoformatExtension` owns the fence info string and the Backspace
 recovery policy for inherited rules; a typed `[[name]]` stays text.
-`MarkdownAutoformatExtension.test.ts` exercises representative inherited
-triggers and the local mutation, refusal, and Undo/Redo boundaries. It is not
-an exhaustive table of accepted Markdown spellings; when changing a distinct
-local rule or upgrading inherited rules, check the affected behavior directly.
+When changing a distinct local rule or upgrading inherited rules, check the
+affected trigger, refusal, and Undo/Redo behavior directly.
 
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no

@@ -56,7 +56,7 @@ import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReferenc
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
 /** What a chat link is resolved against, or pending while that is still loading. */
-export function chatLinkScope({
+function chatLinkScope({
   projectId,
   activeWork,
   thread,

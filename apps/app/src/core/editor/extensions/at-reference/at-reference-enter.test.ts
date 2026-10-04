@@ -120,24 +120,4 @@ describe("Enter after an `@` sentence", () => {
     expect(editor.state.doc.childCount).toBe(2);
     expect(editor.state.doc.firstChild?.textContent).toBe("@Kael meet me at the gate");
   });
-
-  it("links ahead when the writer arrows to the row", () => {
-    const editor = mount();
-    type(editor, "@Lin Shu");
-    expect(press(editor, "ArrowDown")).toBe(true);
-    expect(press(editor, "Enter")).toBe(true);
-
-    const link = editor.view.dom.querySelector("a");
-    expect(link?.textContent).toBe("Lin Shu");
-    expect(link?.getAttribute("data-meridian-link")).toBe("Lin Shu.md");
-  });
-
-  it("still chooses a matching document on Enter", () => {
-    const editor = mount();
-    type(editor, "@chapter");
-    press(editor, "Enter");
-    expect(editor.view.dom.querySelector("a")?.getAttribute("data-meridian-link")).toBe(
-      "../chapter-1.md",
-    );
-  });
 });

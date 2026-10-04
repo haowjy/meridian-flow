@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts.
+
 - Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
 - `@` is how you link a document, in the Editor and in chat; typing `[[` is plain text. In the Editor, `@` shows where each document lives and writes a standard link; for a name no document has yet, its last row links one in the same folder before it exists. Ctrl+K takes a web address, a document address, or a relative path.
 - Links in the Editor and chat: a link with nothing at its address says "No document at that address", shows the address, and offers Create, which makes the document at exactly that address and opens it (in chat, in the Editor). Uploads are never created from a link. Cancel on "Opening the link" stops the link from opening. A link that could not be checked offers Try again. Relative links in chat are plain text.

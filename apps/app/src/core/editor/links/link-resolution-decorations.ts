@@ -26,7 +26,7 @@ import { linkChip, linkChipPartAttributes } from "./link-chip";
 import type { LinkResolution } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
-export const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
+const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
 
 type LinkResolutionPluginState = {
   decorations: DecorationSet;
