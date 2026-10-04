@@ -1,6 +1,6 @@
 import type { JsonValue } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { toolActivityPhrase } from "./command-descriptor";
+import { descriptorFor, toolActivityPhrase } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
 import { toolView } from "./report-test-fixtures";
 import { documentToolFailureCopy, rendererFor } from "./tool-renderers";
@@ -49,5 +49,46 @@ describe("document tool rows", () => {
     });
     expect(documentToolFailureCopy(notFound)).toBe("Couldn't find ch9.");
     expect(documentToolFailureCopy(refusedRead)).toBe("Something went wrong while reading ch1.");
+  });
+});
+
+describe("skill reads", () => {
+  const skillBody = "skills://story-review/SKILL.md (read-only)\n\n# Story review";
+
+  it("shows a read of a skill's SKILL.md as invoking that skill, with nothing to expand", () => {
+    const tool = documentTool({
+      toolName: "read",
+      input: { path: "skills://story-review/SKILL.md" },
+      result: skillBody,
+    });
+
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Invoked the Story Review skill" });
+    expect(toolActivityPhrase({ ...tool, status: "partial" })).toEqual({
+      verb: "Invoking the Story Review skill…",
+    });
+    expect(rendererFor("read").expand?.(tool)).toBeNull();
+  });
+
+  it("names a failed skill load as the skill failing, not as a missing document", () => {
+    const tool = documentTool({
+      toolName: "read",
+      input: { path: "skills://story-review/SKILL.md" },
+      result: { schema: "meridian.agent-edit.v1", command: "read", status: "document_not_found" },
+      isError: true,
+    });
+
+    expect(descriptorFor(tool).failureVerb("direct")).toBe("Couldn't run that skill");
+    expect(rendererFor("read").expand?.(tool)).toBeNull();
+  });
+
+  it("shows a skill resource as an ordinary read and tolerates its plain-text result", () => {
+    const tool = documentTool({
+      toolName: "read",
+      input: { path: "skills://story-review/references/beats.md" },
+      result: "skills://story-review/references/beats.md (read-only)\n\nBeat one.",
+    });
+
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "beats.md" });
+    expect(rendererFor("read").expand?.(tool)).toBeNull();
   });
 });

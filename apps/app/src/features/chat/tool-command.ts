@@ -26,6 +26,7 @@ export type ToolCommand =
 export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
     case "read":
+      if (invokedSkillSlug(tool)) return "invoke";
       return stringInput(toolInputObject(tool), "format") === "outline" ? "skim" : "read";
     case "write":
       return writeCommand(toolInputObject(tool));
@@ -33,8 +34,6 @@ export function toolCommand(tool: ToolView): ToolCommand {
       return "search";
     case "ls":
       return "list";
-    case "invoke":
-      return "invoke";
     case "work":
       return workToolCommand(tool);
     default:
@@ -153,6 +152,16 @@ export function toolInputObject(tool: ToolView): Record<string, JsonValue> {
 export function stringInput(input: Record<string, JsonValue>, field: string): string | undefined {
   const value = input[field];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** A skill's body. Its other files under `skills://<slug>/` are resources, read like any file. */
+const SKILL_BODY_PATH = /^skills:\/\/([^/]+)\/SKILL\.md$/;
+
+/** The skill a `read` loaded by reading its `SKILL.md`, or `undefined` for any other read. */
+export function invokedSkillSlug(tool: ToolView): string | undefined {
+  if (tool.toolName !== "read") return undefined;
+  const path = stringInput(toolInputObject(tool), "path");
+  return path ? SKILL_BODY_PATH.exec(path)?.[1] : undefined;
 }
 
 export function humanizeSkillSlug(slug: string): string {
