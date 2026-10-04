@@ -70,8 +70,16 @@ describe("argument mapping", () => {
   it("maps spawn's published disallowed_tools key to the configuration spelling", async () => {
     await expectDelivered(
       "spawn",
+      { prompt: "Task", overrides: { disallowed_tools: ["search"] } },
+      { prompt: "Task", mode: "foreground", overrides: { "disallowed-tools": ["search"] } },
+    );
+  });
+
+  it("refuses a disallowed_tools name outside the tool catalog", async () => {
+    await expectRefused(
+      "spawn",
       { prompt: "Task", overrides: { disallowed_tools: ["bash"] } },
-      { prompt: "Task", mode: "foreground", overrides: { "disallowed-tools": ["bash"] } },
+      "overrides.disallowed_tools[0]",
     );
   });
 
