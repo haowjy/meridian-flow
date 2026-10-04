@@ -1,4 +1,5 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
+import { intentOwnsDeletion } from "./resource-intent-policy";
 import {
   type ResourceCatalogCheckpoint,
   type ResourceLocation,
@@ -46,13 +47,7 @@ export function projectResourceLocation(
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some(
-      (intent) =>
-        intent.projectId === projectId &&
-        intent.desired.kind === "delete" &&
-        intent.state !== "cancelled" &&
-        intent.state !== "needs-repair",
-    )
+    record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
   )
     return null;
   const placement = [...record.intents]
