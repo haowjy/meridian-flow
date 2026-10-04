@@ -519,6 +519,24 @@ async function agentPrincipal(
   };
 }
 
+/**
+ * An explicit `version: "draft"` outside draft mode reads the draft the Work
+ * kept when it switched to auto-apply (D40), so the result says `draft`. With
+ * no kept draft of this document it reads live, as `draft` always did there.
+ */
+async function keptDraftReader(
+  deps: Pick<ToolWiringDeps, "drafts">,
+  principal: Principal,
+  execution: ThreadExecutionContext,
+  documentId: string,
+): Promise<Principal> {
+  if (!principal.agent || principal.agent.draftWork || execution.draftOwner) return principal;
+  const { workId, workSlug } = execution.scope;
+  const drafts = await deps.drafts.draftReview.list({ workId });
+  if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
+  return { ...principal, agent: { ...principal.agent, draftWork: { id: workId, slug: workSlug } } };
+}
+
 /** The file policy's grant on a document; a denial comes back as the tool's error. */
 async function documentGrant<N extends FileNeed>(
   deps: Pick<ToolWiringDeps, "fileAccess">,
@@ -1103,7 +1121,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     const address = await resolveDocumentAddress(context, "read", path);
     if (isToolError(address)) return address;
     const principal = await agentPrincipal(deps, context, execution);
-    const grant = await documentGrant(deps, principal, "read", address, "read");
+    const reader =
+      version === "draft"
+        ? await keptDraftReader(deps, principal, execution, address.documentId)
+        : principal;
+    const grant = await documentGrant(deps, reader, "read", address, "read");
     if (isToolError(grant)) return grant;
 
     const outcome = await readDocument(
