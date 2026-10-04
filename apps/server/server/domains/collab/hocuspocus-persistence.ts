@@ -581,18 +581,25 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async disconnectLiveGeneration(documentId, _generation) {
+    async disconnectLiveGeneration(documentId, generation) {
       const hocuspocus = deps.hocuspocus();
       // Hocuspocus publishes a room only after all load hooks complete. Its
       // registered continuation publishes before this one retires and evicts it.
       void hocuspocus?.loadingDocuments?.get(documentId)?.then(
         (loaded) => {
-          retireRoom(documentId, loaded);
+          if (
+            isDocumentHandleRetired(loaded) ||
+            documentAuthority(loaded).generation <= generation
+          ) {
+            retireRoom(documentId, loaded);
+          }
         },
         () => {},
       );
       const document = hocuspocus?.documents.get(documentId);
       if (!hocuspocus || !document) return;
+      if (!isDocumentHandleRetired(document) && documentAuthority(document).generation > generation)
+        return;
       retiredStateVectors.set(documentId, Y.encodeStateVector(document));
       retireRoom(documentId, document);
     },

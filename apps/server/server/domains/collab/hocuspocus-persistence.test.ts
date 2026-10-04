@@ -71,6 +71,9 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     const current = await hp.openDirectConnection(DOCUMENT_ID, {});
     if (!current.document) throw new Error("Current room did not load");
     expect(documentAuthority(current.document).generation).toBe(2n);
+    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
+    expect(hp.documents.get(DOCUMENT_ID)).toBe(current.document);
+    expect(documentAuthority(current.document).generation).toBe(2n);
     await current.disconnect();
   });
 
