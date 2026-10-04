@@ -3,7 +3,7 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { grantedJournal, testFileGrant } from "../../test-support/file-grants.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
@@ -269,14 +269,10 @@ describe("change trail (postgres)", () => {
         last,
         fixture.markupCodec.parse("Writer concurrent insertion."),
       );
-      await grantedJournal(fixture.persistence.journal).append(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc, before),
-        {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        },
-      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
     });
 
     const preview = await fixture.collab.draftReview.preview({
@@ -435,14 +431,10 @@ describe("change trail (postgres)", () => {
         last,
         fixture.markupCodec.parse("Writer concurrent insertion."),
       );
-      await grantedJournal(fixture.persistence.journal).append(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc, before),
-        {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        },
-      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
     });
 
     const preview = await fixture.collab.draftReview.preview({
@@ -522,14 +514,10 @@ describe("change trail (postgres)", () => {
         first,
         fixture.markupCodec.parse("Writer middle insertion."),
       );
-      await grantedJournal(fixture.persistence.journal).append(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc, before),
-        {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        },
-      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
     });
 
     const preview = await fixture.collab.draftReview.preview({
@@ -611,14 +599,10 @@ describe("change trail (postgres)", () => {
         last,
         fixture.markupCodec.parse("Writer insertion after overwrite base."),
       );
-      await grantedJournal(fixture.persistence.journal).append(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc, before),
-        {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        },
-      );
+      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
     });
 
     const preview = await fixture.collab.draftReview.preview({
