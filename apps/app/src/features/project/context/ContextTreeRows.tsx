@@ -140,6 +140,10 @@ function DirRow({
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
   const isOpen = env.isExpanded(dir.entryId, depth);
+  // Like a file, a refused rename reopens the name field to try again.
+  useEffect(() => {
+    if (dir.namespaceFailure === "set-location") setRenaming(true);
+  }, [dir.namespaceFailure]);
   const toggle = () => {
     if (env.creating) env.onCreateDone();
     env.toggleEntry(dir.entryId, depth < 2);
@@ -159,6 +163,7 @@ function DirRow({
         entryId={dir.entryId}
         path={dir.path}
         currentName={dir.name}
+        repairName={dir.namespaceRepairName}
         siblingNames={siblingNames}
         kind="folder"
         depth={depth}
@@ -190,6 +195,9 @@ function DirRow({
           <Twistie expanded={isOpen} />
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
+          {dir.namespaceFailure ? (
+            <NamespaceFailureMark failure={dir.namespaceFailure} folder />
+          ) : null}
           <EntryKebabButton
             allowCreate={allowCreate}
             allowDelete={allowDelete}

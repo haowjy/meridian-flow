@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type {
   CatalogContextView,
   CatalogDirectory as ContextDir,
@@ -26,6 +26,7 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
+import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
@@ -296,7 +297,7 @@ function FolderListingBody({
     <ul className="flex flex-col">
       {folders.map((child) => (
         <MobileFolderRow
-          key={child.path}
+          key={child.entryId}
           dir={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
@@ -308,7 +309,7 @@ function FolderListingBody({
       ))}
       {files.map((child) => (
         <MobileFileRow
-          key={child.path}
+          key={child.entryId}
           file={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
@@ -382,6 +383,9 @@ function MobileFolderRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  useEffect(() => {
+    if (dir.namespaceFailure === "set-location") setRenaming(true);
+  }, [dir.namespaceFailure]);
 
   if (renaming) {
     return (
@@ -393,6 +397,7 @@ function MobileFolderRow({
           entryId={dir.entryId}
           path={dir.path}
           currentName={dir.name}
+          repairName={dir.namespaceRepairName}
           siblingNames={siblingNames}
           kind="folder"
           icon={Folder}
@@ -408,13 +413,18 @@ function MobileFolderRow({
         icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
         label={dir.name}
         trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-            }}
-          />
+          <span className="flex items-center">
+            {dir.namespaceFailure ? (
+              <NamespaceFailureMark failure={dir.namespaceFailure} folder />
+            ) : null}
+            <MobileEntryActionsMenu
+              allowDelete={scheme !== "uploads"}
+              onAction={(action) => {
+                if (action === "rename") setRenaming(true);
+                else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
+              }}
+            />
+          </span>
         }
         onClick={onDrill}
       />
@@ -442,6 +452,9 @@ function MobileFileRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const FileIcon = fileKindIcon(file);
+  useEffect(() => {
+    if (file.namespaceFailure === "set-location") setRenaming(true);
+  }, [file.namespaceFailure]);
 
   if (renaming) {
     return (
@@ -453,6 +466,7 @@ function MobileFileRow({
           entryId={file.documentId}
           path={file.path}
           currentName={file.name}
+          repairName={file.namespaceRepairName}
           siblingNames={siblingNames}
           kind="file"
           icon={FileIcon}
@@ -468,19 +482,24 @@ function MobileFileRow({
         icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
         label={file.name}
         trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else
-                onRequestDelete({
-                  name: file.name,
-                  path: file.path,
-                  kind: "file",
-                  documentId: file.documentId,
-                });
-            }}
-          />
+          <span className="flex items-center">
+            {file.namespaceFailure ? (
+              <NamespaceFailureMark failure={file.namespaceFailure} />
+            ) : null}
+            <MobileEntryActionsMenu
+              allowDelete={scheme !== "uploads"}
+              onAction={(action) => {
+                if (action === "rename") setRenaming(true);
+                else
+                  onRequestDelete({
+                    name: file.name,
+                    path: file.path,
+                    kind: "file",
+                    documentId: file.documentId,
+                  });
+              }}
+            />
+          </span>
         }
         onClick={onOpen}
       />
@@ -496,6 +515,7 @@ function MobileRenameRow({
   entryId,
   path,
   currentName,
+  repairName,
   siblingNames,
   kind,
   icon: Icon,
@@ -507,6 +527,7 @@ function MobileRenameRow({
   entryId: string;
   path: string;
   currentName: string;
+  repairName?: string;
   siblingNames: readonly string[];
   kind: ContextCreateKind;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
@@ -519,6 +540,7 @@ function MobileRenameRow({
     entryId,
     path,
     currentName,
+    repairName,
     siblingNames,
     kind,
     onDone,
