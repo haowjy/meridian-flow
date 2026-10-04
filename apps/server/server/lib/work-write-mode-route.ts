@@ -8,6 +8,7 @@ import type {
   SetWorkPushPolicyInput,
   SetWorkPushPolicyResult,
 } from "../domains/collab/index.js";
+import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import type { AppServices } from "./app.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
@@ -70,22 +71,22 @@ export async function handleWorkWriteModeRequest(
     throw createError({ statusCode: 404, message: "Work not found" });
   }
 
-  const policyResult = await deps.branchPush.setWorkPushPolicy({
-    workId: input.workId,
-    policy: aiWriteMode === "direct" ? "auto" : "manual",
-    ...(pending ? { pending } : {}),
-    archived: work.archivedAt !== null,
-    pushedByUserId: input.userId,
-  });
-  if (policyResult.status === "refused") {
-    throwHttpInterrupt(
-      meridianErrorFromSystem(
-        "work_archived",
-        "This Work is archived, so its pending changes are frozen. Keep them for review, or unarchive the Work to apply them.",
-      ),
-      409,
-    );
-  }
+  const policyResult = await deps.branchPush
+    .setWorkPushPolicy({
+      workId: input.workId,
+      policy: aiWriteMode === "direct" ? "auto" : "manual",
+      ...(pending ? { pending } : {}),
+      archived: work.archivedAt !== null,
+      pushedByUserId: input.userId,
+    })
+    .catch((cause: unknown) => {
+      // Archived after the read above: Apply's push refuses under the Work lock.
+      if (cause instanceof WorkLifecycleUnavailableError && cause.state === "archived") {
+        throwArchivedApply();
+      }
+      throw cause;
+    });
+  if (policyResult.status === "refused") throwArchivedApply();
   if (policyResult.status === "confirmation_required") {
     return {
       aiWriteMode: work.aiWriteMode,
@@ -97,6 +98,16 @@ export async function handleWorkWriteModeRequest(
   }
 
   return { aiWriteMode, status: "updated" };
+}
+
+function throwArchivedApply(): never {
+  throwHttpInterrupt(
+    meridianErrorFromSystem(
+      "work_archived",
+      "This Work is archived, so its pending changes are frozen. Keep them for review, or unarchive the Work to apply them.",
+    ),
+    409,
+  );
 }
 
 function parseAiWriteMode(value: unknown): AiWriteMode | null {
