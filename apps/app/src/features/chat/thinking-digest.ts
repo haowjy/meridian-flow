@@ -26,7 +26,7 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   for (const tool of tools) {
     const path = stringInput(toolInputObject(tool), "path");
     // `read` calls count as reads and `write` calls as edits. A write command
-    // the app doesn't know (an old row's `write(command: "read")`) is a step.
+    // the app doesn't know is a step.
     const command = toolCommand(tool);
 
     if (!tool.isError && path && isReadCommand(command)) {

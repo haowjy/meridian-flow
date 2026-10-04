@@ -102,7 +102,7 @@ function workCategoryFromInput(
  * `copy`, or an `insert`/`replace` that takes its blocks from `from`, is a copy:
  * saying it wrote text would hide where the words came from. A call whose
  * command hasn't streamed in yet reads as writing; a command this list doesn't
- * know (an old row's `write(command: "read")`, say) is `unknown`.
+ * know is `unknown`.
  */
 function writeCommand(input: Record<string, JsonValue>): ToolCommand {
   const command = stringInput(input, "command");
