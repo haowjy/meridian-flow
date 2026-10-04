@@ -290,3 +290,39 @@ it("keeps a begun handoff retryable while authority is temporarily unavailable",
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
 });
+
+it("does not label a transport-owned session offline when only the acknowledgement fails", async () => {
+  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
+  const bind = vi.mocked(adoption.bindAndAdopt).getMockImplementation();
+  if (!bind) throw new Error("Missing bind implementation");
+  vi.mocked(adoption.bindAndAdopt).mockImplementation(async (input) => {
+    const result = await bind(input);
+    created[0]?.attachTransport(() => ({
+      synced: true,
+      whenSynced: Promise.resolve(),
+      whenDurablySynced: Promise.resolve(),
+      subscribeStatus(listener) {
+        listener({ kind: "connected" });
+        return () => {};
+      },
+      destroy() {},
+    }));
+    return result;
+  });
+  const commit = metadata.commitResource.bind(metadata);
+  let failed = false;
+  vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
+    if (!failed && !write.next.resource.obligations.sessionAdoption) {
+      failed = true;
+      throw new Error("transient acknowledgement failure");
+    }
+    return commit(write);
+  });
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  verified.handle.release();
+  await created[0]?.destroy();
+});

@@ -51,6 +51,11 @@ function exactAdoption(record: ResourceRecord | null): SessionAdoption | null {
   return adoption;
 }
 
+/** Stalled means no transport owns the session yet; once one does, later failures are housekeeping. */
+function markWaitingForTransport(session: DocumentSession): void {
+  if (session.getSnapshot().status === "detached") session.setAdoptionStalled(true);
+}
+
 export class ResourceSessionAdoptionCoordinator {
   private readonly operations = new Map<string, Promise<ResourceSessionAdoptionResult>>();
   private readonly activeTransfers = new Map<
@@ -109,9 +114,11 @@ export class ResourceSessionAdoptionCoordinator {
     );
     if (opened.kind !== "opened") return opened.kind === "cancelled" ? "blocked" : "waiting";
     try {
-      return await this.reconcileOpen(key, witness, opened.handle.session);
+      const result = await this.reconcileOpen(key, witness, opened.handle.session);
+      if (result === "adopted") opened.handle.session.setAdoptionStalled(false);
+      return result;
     } catch (error) {
-      opened.handle.session.setAdoptionStalled(true);
+      markWaitingForTransport(opened.handle.session);
       throw error;
     } finally {
       opened.handle.release();
@@ -159,7 +166,7 @@ export class ResourceSessionAdoptionCoordinator {
       this.close.signal,
     );
     if (authority.kind !== "available" || authority.documentId !== witness.documentId) {
-      session.setAdoptionStalled(true);
+      markWaitingForTransport(session);
       return "waiting";
     }
     assertAvailabilityGeneration(authority.generation);
