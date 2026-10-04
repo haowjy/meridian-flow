@@ -8,6 +8,7 @@ export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
