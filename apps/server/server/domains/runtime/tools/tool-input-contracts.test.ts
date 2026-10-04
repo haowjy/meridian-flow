@@ -216,21 +216,12 @@ describe("work", () => {
     ]);
   });
 
+  // update-work.test.ts covers the shared rule; this proves the tool applies it.
   it("normalizes metadata by the shared clearing rule", async () => {
     await expectDelivered(
       "work",
       { command: "create", name: "  Arc  ", goal: "   " },
       { command: "create", name: "Arc", goal: null },
-    );
-    await expectDelivered(
-      "work",
-      { command: "update", work: "arc", goal: null, status: "  Needs\n outline " },
-      { command: "update", work: "arc", goal: null, status: "Needs outline" },
-    );
-    await expectDelivered(
-      "work",
-      { command: "update", work: "arc", status: "" },
-      { command: "update", work: "arc", status: null },
     );
   });
 
