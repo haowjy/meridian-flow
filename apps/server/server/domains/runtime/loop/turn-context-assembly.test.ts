@@ -176,10 +176,10 @@ describe("assembleNextTurnContext skill freeze", () => {
     const firstBake = await readBake(thread.id);
     expect(firstBake?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
     expect(first.systemPrompt).toContain(
-      "creative-writing-modes\nModes for putting prose on the page.",
+      "skills://creative-writing-modes/SKILL.md\nModes for putting prose on the page.",
     );
     expect(first.systemPrompt).toContain(
-      "writing-principles\nReader reward and LLM fiction failure modes.",
+      "skills://writing-principles/SKILL.md\nReader reward and LLM fiction failure modes.",
     );
 
     const second = await assemble(thread.id);
