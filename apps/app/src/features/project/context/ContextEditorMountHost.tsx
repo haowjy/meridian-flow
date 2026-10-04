@@ -65,8 +65,9 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
-  // A room's scope changes with its Work; this tab's Works catalog may not
-  // know yet, and the archived notice and its Unarchive come from it.
+  // A room's scope follows its Work. When the server names one this tab's
+  // Works catalog doesn't explain, the catalog is behind: the archived notice,
+  // its Unarchive and `readOnly` all come from it.
   const queryClient = useQueryClient();
   const refreshWorks = useCallback(() => {
     void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
@@ -221,7 +222,7 @@ export function ContextEditorMountHost({
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
                     onReviewSessionUnavailable={controller.exitInlineReview}
-                    onRoomAccessChange={refreshWorks}
+                    onRoomAccessMismatch={refreshWorks}
                   />
                 </>
               )}

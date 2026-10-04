@@ -25,10 +25,20 @@ production so observation does not create a second transport path.
 ## Access scope and 4409
 
 The server names a room's scope in Hocuspocus's authenticated message on every
-(re)connect. The transport publishes it through `subscribeAccess` (same
-synchronous-first contract as status), and `DocumentSession` carries it as
-`snapshot.access`: `edit` until the server says `readonly`. Access is not a
+(re)connect. The transport publishes only what the server names through
+`subscribeAccess` (the last named scope on subscribe, nothing before the
+first), and `DocumentSession` carries it as `snapshot.access`: `null` until
+the server names one, then the last named scope, kept across drops and
+transport restarts. An unnamed room is writable (local-first). Access is not a
 connection state: a read-only room that drops offline stays read-only.
+
+`null` is what lets a named `edit` count. The Editor host's `readOnly` comes
+from its Works catalog, which can predate the room's first connect (a tab
+that loaded while the Work was archived and whose room connected after the
+unarchive). `EditorView` checks each named scope, and each activation,
+against its `editable` prop and calls `onRoomAccessMismatch` when they
+disagree; the host refreshes its Works catalog. Its own changes to `editable`
+never ask, so the tab that archives fetches nothing extra.
 
 A 4409 `access-changed` close (a Work archived, unarchived, deleted or
 restored) is not terminal. The transport freezes the room (`read`) and lets
