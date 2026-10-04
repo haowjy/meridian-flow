@@ -111,7 +111,7 @@ publication rather than silently changing those references;
 removed pristine definitions leave retained history but no future-chat selection.
 `definition-editing.ts` edits or restores one entity within that complete source.
 The skill-availability edit versions `skills.available` on the retained Agent.
-Prompt freeze and `skill()` consume that declaration in the runtime domain.
+Prompt freeze and `skills://` visibility consume that declaration in the runtime domain.
 Slash listing walks system and owner installation heads with
 `retainedPackageSkillMaps`, then account installs; it is not the bound Agent
 package and not Agent `available`. `package-export.ts` exports retained files without reconstructing source
