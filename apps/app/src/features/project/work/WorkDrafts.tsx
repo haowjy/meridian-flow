@@ -1,13 +1,13 @@
 /** The Work Files tab's Drafts to review group: manuscript documents with pending drafts from this Work. */
 import { t } from "@lingui/core/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import {
+  clearDraftCommandFailure,
+  draftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  clearDraftCommandError,
-  draftCommandErrorKey,
-  useDraftCommandErrors,
-} from "@/features/chat/draft-command-errors";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -27,7 +27,7 @@ export function WorkDrafts({
 }) {
   const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
-  const commandErrors = useDraftCommandErrors();
+  const commandRecords = useDraftCommandRecords();
   const groups = activeWorkDraftGroups(query.groups);
   const visible = groups.filter((group) =>
     matchesSearch(group.documentName || group.contextPath || ""),
@@ -48,7 +48,7 @@ export function WorkDrafts({
           rows={visible.map((group) => {
             const path = group.contextPath;
             const draft = { documentId: group.documentId, draftId: group.draft.draftId };
-            const refused = commandErrors[draftCommandErrorKey(draft)];
+            const refused = draftCommandFailure(commandRecords, draft);
             return {
               key: group.documentId,
               node: (
@@ -78,7 +78,7 @@ export function WorkDrafts({
                   {refused ? (
                     <InlineErrorRow
                       message={<ReviewMessageText code={refused} />}
-                      onDismiss={() => clearDraftCommandError(draft)}
+                      onDismiss={() => clearDraftCommandFailure(draft)}
                     />
                   ) : null}
                 </>

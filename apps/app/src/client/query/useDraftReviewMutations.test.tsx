@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-/** Apply resolves at server confirmation; a lost response is told apart from a rejection. */
+/** Apply is done at server confirmation; a lost response stays unknown; a confirmed draft never returns from an older read. */
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { resetDraftCommandRecords } from "./draft-command-record";
 import { DraftApplyOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
+import { useWorkDrafts } from "./useWorkDrafts";
 
 const api = vi.hoisted(() => ({
   applyDraft: vi.fn(),
@@ -17,67 +20,109 @@ vi.mock("@/client/api/drafts-api", () => api);
 const input = { projectId: "project-a", workId: "work-a", documentId: "doc-a", draftId: "draft-a" };
 const lost = () => new TypeError("Failed to fetch");
 const listing = (...draftIds: string[]) => ({
-  drafts: draftIds.map((draftId) => ({ draftId, documentId: "doc-a" })),
+  drafts: draftIds.map((draftId) => ({ draftId, documentId: "doc-a" }) as ThreadDraftListItem),
 });
 
-async function apply(): Promise<unknown> {
-  let apply!: (variables: typeof input) => Promise<unknown>;
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+type Harness = {
+  apply: () => Promise<unknown>;
+  listed: () => string[];
+  queryClient: QueryClient;
+};
+
+async function withHarness(run: (harness: Harness) => Promise<void>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let mutate!: ReturnType<typeof useApplyDraft>["mutateAsync"];
+  let drafts: string[] = [];
   function Capture() {
-    apply = useApplyDraft().mutateAsync;
+    mutate = useApplyDraft().mutateAsync;
+    drafts = (useWorkDrafts("project-a", "work-a").drafts ?? []).map((draft) => draft.draftId);
     return null;
   }
-  let outcome: unknown;
   await withReactRoot(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <Capture />
     </QueryClientProvider>,
-    async () => {
-      await act(async () => {
-        outcome = await apply(input).then(
-          () => "applied",
-          (error: unknown) => error,
-        );
-      });
-    },
+    () =>
+      run({
+        apply: () =>
+          mutate(input).then(
+            () => "applied",
+            (error: unknown) => error,
+          ),
+        listed: () => drafts,
+        queryClient,
+      }),
   );
-  return outcome;
 }
 
 describe("useApplyDraft", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.listWorkDrafts.mockResolvedValue(listing());
-  });
-
-  it("is done when the server confirms", async () => {
-    api.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
-    await expect(apply()).resolves.toBe("applied");
-    expect(api.listWorkDrafts).not.toHaveBeenCalled();
-  });
-
-  it("rejects with the server's answer", async () => {
-    const rejection = new HttpResponseError("conflict", 409, null);
-    api.applyDraft.mockRejectedValue(rejection);
-    await expect(apply()).resolves.toBe(rejection);
-    expect(api.listWorkDrafts).not.toHaveBeenCalled();
-  });
-
-  it("treats a lost response as applied when the draft has left the list", async () => {
-    api.applyDraft.mockRejectedValue(lost());
-    api.listWorkDrafts.mockResolvedValue(listing());
-    await expect(apply()).resolves.toBe("applied");
-  });
-
-  it("treats a lost response as not applied while the draft is still listed", async () => {
-    const failure = lost();
-    api.applyDraft.mockRejectedValue(failure);
+    resetDraftCommandRecords();
     api.listWorkDrafts.mockResolvedValue(listing("draft-a"));
-    await expect(apply()).resolves.toBe(failure);
   });
 
-  it("keeps the outcome unknown when the list cannot be read either", async () => {
-    api.applyDraft.mockRejectedValue(lost());
-    api.listWorkDrafts.mockRejectedValue(lost());
-    await expect(apply()).resolves.toBeInstanceOf(DraftApplyOutcomeUnknownError);
+  it("is done when the server confirms, and rejects with the server's answer otherwise", async () => {
+    await withHarness(async ({ apply }) => {
+      api.applyDraft.mockResolvedValueOnce({ status: "applied", draftId: "draft-a" });
+      await act(async () => expect(await apply()).toBe("applied"));
+      const rejection = new HttpResponseError("conflict", 409, null);
+      api.applyDraft.mockRejectedValueOnce(rejection);
+      await act(async () => expect(await apply()).toBe(rejection));
+    });
+  });
+
+  it("keeps a lost response unknown even when a remote Discard emptied the list", async () => {
+    await withHarness(async ({ apply, listed }) => {
+      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
+      api.applyDraft.mockRejectedValue(lost());
+      api.listWorkDrafts.mockResolvedValue(listing());
+      await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
+      await vi.waitFor(() => expect(listed()).toEqual([]));
+    });
+  });
+
+  it("keeps a lost response unknown while the draft is still listed", async () => {
+    await withHarness(async ({ apply, listed }) => {
+      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
+      api.applyDraft.mockRejectedValue(lost());
+      await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
+      expect(listed()).toEqual(["draft-a"]);
+    });
+  });
+
+  it("drops a confirmed draft at once, and no read that started earlier brings it back", async () => {
+    await withHarness(async ({ apply, listed, queryClient }) => {
+      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
+      const confirmation = deferred<unknown>();
+      api.applyDraft.mockReturnValue(confirmation.promise);
+      const older = deferred<ReturnType<typeof listing>>();
+      api.listWorkDrafts.mockReturnValueOnce(older.promise);
+      let applied!: Promise<unknown>;
+      await act(async () => {
+        applied = apply();
+      });
+      // A read that starts while Apply is in flight, after Apply cancelled the earlier ones.
+      await act(async () => {
+        void queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
+      });
+      // Every later read stalls: only the confirmation can remove the draft.
+      api.listWorkDrafts.mockReturnValue(new Promise(() => undefined));
+      await act(async () => {
+        confirmation.resolve({ status: "applied", draftId: "draft-a" });
+        await applied;
+      });
+      expect(listed()).toEqual([]);
+      await act(async () => older.resolve(listing("draft-a")));
+      expect(listed()).toEqual([]);
+    });
   });
 });

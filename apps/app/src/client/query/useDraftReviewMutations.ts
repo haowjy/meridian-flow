@@ -5,8 +5,9 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { applyDraft, discardDraft, listWorkDrafts } from "@/client/api/drafts-api";
+import { applyDraft, discardDraft } from "@/client/api/drafts-api";
 import { httpErrorStatus } from "@/client/api/http-client";
+import { confirmDraftCommand } from "./draft-command-record";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
@@ -67,19 +68,18 @@ function invalidateDraftReviewQueries(
 }
 
 /**
- * Apply is done when the server confirms it. A rejection throws as is. A lost
- * response is settled by reading the draft list once: the draft is gone
- * (applied) or still listed (not applied). If that read is lost too, the
- * outcome stays unknown and the next list refresh shows which it was.
+ * Apply is done when the server confirms it: the confirmed draft leaves cached
+ * pending membership at once, and everything else refreshes in the background.
+ * A rejection throws as is. A response that never arrived throws the distinct
+ * unknown outcome; nothing here guesses from what the list later shows.
  */
 export function useApplyDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (variables: DraftApplyMutationInput): Promise<void> => {
-      void queryClient.cancelQueries({
-        queryKey: projectQueryKeys.workDrafts(variables.projectId, variables.workId),
-      });
+      const draftsKey = projectQueryKeys.workDrafts(variables.projectId, variables.workId);
+      void queryClient.cancelQueries({ queryKey: draftsKey });
       try {
         await applyDraft(variables.projectId, variables.workId, variables.documentId, {
           draftId: variables.draftId,
@@ -87,8 +87,12 @@ export function useApplyDraft() {
       } catch (error) {
         void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
         if (httpErrorStatus(error) !== undefined) throw error;
-        await settleLostApply(variables, error);
+        throw new DraftApplyOutcomeUnknownError();
       }
+      confirmDraftCommand(variables);
+      queryClient.setQueryData<ThreadDraftListItem[]>(draftsKey, (drafts) =>
+        drafts?.filter((draft) => draft.draftId !== variables.draftId),
+      );
       void Promise.all([
         queryClient.invalidateQueries({
           predicate: (query) => isProjectContextCatalogKey(query.queryKey, variables.projectId),
@@ -97,16 +101,6 @@ export function useApplyDraft() {
       ]).catch(() => undefined);
     },
   });
-}
-
-async function settleLostApply(variables: DraftApplyMutationInput, lost: unknown): Promise<void> {
-  let drafts: ThreadDraftListItem[];
-  try {
-    drafts = (await listWorkDrafts(variables.projectId, variables.workId)).drafts;
-  } catch {
-    throw new DraftApplyOutcomeUnknownError();
-  }
-  if (drafts.some((draft) => draft.draftId === variables.draftId)) throw lost;
 }
 
 export function useDiscardDraft() {

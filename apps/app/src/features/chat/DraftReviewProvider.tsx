@@ -14,11 +14,7 @@ import {
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import {
-  contextCatalogQueryOptions,
-  contextCatalogScope,
-  projectCatalogView,
-} from "@/client/query/useContextCatalog";
+import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
@@ -128,7 +124,7 @@ function useDraftReviewScopeOwner(
   // itself lives in the controller state machine.
   const [activeEditorProjection, setActiveEditorProjection] = useState<{
     documentId: string;
-    session: DocumentSession;
+    session: DocumentSession | null;
     inReview: boolean;
     owner: object | null;
   } | null>(null);
@@ -141,7 +137,7 @@ function useDraftReviewScopeOwner(
       owner: object | null = null,
     ) => {
       setActiveEditorProjection((current) => {
-        if (documentId && session) return { documentId, session, inReview, owner };
+        if (documentId) return { documentId, session, inReview, owner };
         return owner && current?.owner !== owner ? current : null;
       });
     },
@@ -202,17 +198,18 @@ function useDraftReviewScopeOwner(
     const activeDrafts = drafts.drafts ?? groups.map((group) => group.draft);
     if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
 
-    const treeQuery = contextCatalogQueryOptions(
-      resources,
+    const scope = contextCatalogScope(projectId, "manuscript", null) ?? {
+      kind: "project" as const,
       projectId,
-      contextCatalogScope(projectId, "manuscript", null) ?? { kind: "project", projectId },
-    );
+    };
     const attempt = new AbortController();
-    void queryClient
-      .cancelQueries({ queryKey: treeQuery.queryKey })
-      .then(() => queryClient.fetchQuery({ ...treeQuery, staleTime: 0 }))
+    // A catalog observation that starts now: joining an older in-flight one
+    // could report the pre-Apply tree and misread a remote Apply as a Discard.
+    void resources
+      .acquireCatalogAfter(projectId, scope)
       .then((view) => {
         if (attempt.signal.aborted) return;
+        queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
         const catalog = projectCatalogView(projectId, "manuscript", view);
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
@@ -301,6 +298,7 @@ function useDraftReviewScopeOwner(
   useEffect(() => {
     if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
     const session = activeEditorProjection.session;
+    if (!session) return;
     let timer: number | null = null;
     const invalidateLineage = () => {
       if (timer != null) window.clearTimeout(timer);
