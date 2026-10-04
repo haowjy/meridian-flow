@@ -262,13 +262,23 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
 }
 
 async function latestCheckpoint(db: JournalDb, documentId: string) {
+  // An old room can finish checkpointing after a restore. Its newer row ID
+  // must not select the retired generation as the current durable cut.
   const [row] = await db
-    .select()
+    .select({ checkpoint: documentYjsCheckpoints })
     .from(documentYjsCheckpoints)
+    .innerJoin(
+      documentYjsHeads,
+      and(
+        eq(documentYjsHeads.documentId, documentYjsCheckpoints.documentId),
+        eq(documentYjsHeads.authorityId, documentYjsCheckpoints.authorityId),
+        eq(documentYjsHeads.authorityGeneration, documentYjsCheckpoints.authorityGeneration),
+      ),
+    )
     .where(eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)))
     .orderBy(desc(documentYjsCheckpoints.id))
     .limit(1);
-  return row ?? null;
+  return row?.checkpoint ?? null;
 }
 
 async function latestCheckpointAtOrBefore(db: JournalDb, documentId: string, untilSeq: number) {
