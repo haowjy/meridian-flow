@@ -5,6 +5,7 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { testFileGrant } from "../../../test-support/file-grants.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -123,14 +124,14 @@ export async function runCrossWorkProbe(
     });
   });
   const contextA = {
-    destination: { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const,
+    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseId: undefined,
   };
   const contextB = {
-    destination: { kind: "draft", workId: WORK_B_ID, workSlug: "work-b" } as const,
+    grant: testFileGrant({ kind: "draft", workId: WORK_B_ID, workSlug: "work-b" }),
     sessionId: THREAD_B_ID,
     threadId: THREAD_B_ID,
     turnId: TURN_B_ID,

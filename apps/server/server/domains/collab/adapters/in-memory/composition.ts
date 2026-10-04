@@ -104,6 +104,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       deferUntilRollback: () => false,
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
+    // Memory holds no Work lifecycle and no locks: a grant minted stays good.
+    fileAccess: { confirmEdit: async (grants) => ({ confirmed: [...grants], refused: [] }) },
+    lockLiveDocuments: async () => {},
   });
   const projections = createDocumentProjectionRefresher({
     documents: runtime.markdownDocuments,

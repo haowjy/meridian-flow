@@ -27,7 +27,7 @@ import {
   type AskUserToolInput,
   interruptResolvedPropsFromAnswer,
 } from "@meridian/contracts/components";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
   askRequestFromAskUser,
   type MeridianError,
@@ -56,6 +56,7 @@ import { unknownWorkMessage } from "../domains/context/context/router.js";
 import {
   contextPortForThread,
   resolveThreadContext,
+  type ThreadContextResolution,
 } from "../domains/context/context-port-resolution.js";
 import type { CopiedFrom, DocumentCreationMetadata } from "../domains/context/document-metadata.js";
 import { MANUSCRIPT_URI } from "../domains/context/manuscript-uri.js";
@@ -66,7 +67,18 @@ import type {
   FileRef,
 } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
-import { destination as fileDestination } from "../domains/file-policy/index.js";
+import {
+  type AgentChain,
+  type FileAccess,
+  type FileAccessDenied,
+  FileEditRefusedError,
+  type FileGrant,
+  type FileNeed,
+  type FileTarget,
+  isFileAccessDenied,
+  type Principal,
+  runWithEditGrants,
+} from "../domains/file-policy/index.js";
 import {
   type EventSink,
   emitEvent,
@@ -123,6 +135,10 @@ export interface ToolWiringDeps {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
+  /** Every model read and write asks the file policy first (file-access §1). */
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  /** The calling thread's delegation chain, read fresh per call (file-access §8). */
+  readAgentChain(threadId: ThreadId): Promise<AgentChain>;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -147,6 +163,7 @@ type ModelWork = Pick<
 >;
 
 type ResolvedModelContextPort = {
+  resolution: ThreadContextResolution;
   port: ContextPort;
   /** The same thread's port with every write live, whatever the Work's mode. */
   livePort: () => ContextPort;
@@ -221,6 +238,7 @@ async function resolveContextPort(
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
+    resolution,
     port: contextPortForThread(deps.contextPorts, resolution, {
       responseId,
       ...(version ? { version } : {}),
@@ -434,6 +452,123 @@ function contextErrorMessage(error: ContextError): string {
   return `${error.code}: ${error.uri}`;
 }
 
+/**
+ * The agent a tool call acts as (file-access §8): the thread's person, its
+ * delegation chain read fresh, and the Work whose draft its drafted writes
+ * land in.
+ */
+async function agentPrincipal(
+  deps: Pick<ToolWiringDeps, "readAgentChain">,
+  context: ResolvedModelContextPort,
+  execution: ThreadExecutionContext,
+): Promise<Principal> {
+  const thread = context.resolution.thread;
+  return {
+    accountId: thread.userId as Principal["accountId"],
+    agent: {
+      chain: await deps.readAgentChain(thread.id as ThreadId),
+      draftWork: execution.draftOwner
+        ? { id: execution.draftOwner.workId, slug: execution.scope.workSlug }
+        : null,
+    },
+  };
+}
+
+/** The file policy's grant on a document; a denial comes back as the tool's error. */
+async function documentGrant<N extends FileNeed>(
+  deps: Pick<ToolWiringDeps, "fileAccess">,
+  principal: Principal,
+  command: DocumentCommandName,
+  address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
+  need: N,
+): Promise<FileGrant<N> | WriteToolErrorOutput> {
+  const grant = await deps.fileAccess.authorize(
+    principal,
+    { kind: "document", documentId: address.documentId as never },
+    need,
+  );
+  return isFileAccessDenied(grant)
+    ? fileAccessDeniedError(command, grant, address.filePath)
+    : grant;
+}
+
+/**
+ * Where a create or copy makes its file: the source and the Work or project
+ * that owns it. Null when the path names no Work; the create reports that.
+ */
+async function containerTarget(
+  deps: Pick<ToolWiringDeps, "works">,
+  context: ResolvedModelContextPort,
+  path: string,
+): Promise<FileTarget | null> {
+  const parsed = parseUnifiedContextUri(splitDocumentFile(path).filePath);
+  if (!parsed.ok) return null;
+  const { scheme, authority } = parsed.value;
+  const { thread, primaryWorkId, workAuthorities } = context.resolution;
+  if (isProjectScopedScheme(scheme)) {
+    return { kind: "container", scheme, owner: { scope: "project", projectId: thread.projectId } };
+  }
+  const workId =
+    authority.kind === "work"
+      ? workAuthorities.get(authority.workSlug as never)?.workId
+      : authority.kind === "none"
+        ? (await deps.works.findNoWork(thread.projectId))?.id
+        : primaryWorkId;
+  return workId
+    ? { kind: "container", scheme, owner: { scope: "work", workId: workId as never } }
+    : null;
+}
+
+/**
+ * A refused grant as the tool's error. Phase 4 writes the permission copy;
+ * until then each reason keeps the closest message the model already sees.
+ */
+function fileAccessDeniedError(
+  command: DocumentCommandName,
+  denial: FileAccessDenied,
+  path?: string,
+): WriteToolErrorOutput {
+  switch (denial.reason) {
+    case "not_found":
+      return writeToolError(
+        command,
+        documentNotFoundMessage(command),
+        "document_not_found",
+        path ? { path } : {},
+      );
+    case "work_archived":
+      return writeToolError(
+        command,
+        workLifecycleMessage("work_archived", denial.archivedWork?.slug ?? null),
+      );
+    case "uploads_read_only":
+      return writeToolError(command, UPLOADS_READ_ONLY_MESSAGE);
+    case "agent_read_only":
+      return writeToolError(command, AGENT_READ_ONLY_MESSAGE);
+  }
+}
+
+const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
+const AGENT_READ_ONLY_MESSAGE =
+  "Your permission is read, so you can change only your Work's scratch:// files.";
+
+/** Why the reply's save left out a document's changes (D29, D42). */
+function refusedAtSaveMessage(refusal: {
+  reason: FileAccessDenied["reason"];
+  workSlug: string | null;
+}): string {
+  switch (refusal.reason) {
+    case "work_archived":
+      return archivedBeforeSaveMessage(refusal.workSlug);
+    case "not_found":
+      return "This file was deleted before this reply was saved, so this change wasn't saved.";
+    case "uploads_read_only":
+      return UPLOADS_READ_ONLY_MESSAGE;
+    case "agent_read_only":
+      return AGENT_READ_ONLY_MESSAGE;
+  }
+}
+
 /** D29: the reply's Work was archived before its save, so this file's change was left out. */
 function archivedBeforeSaveMessage(workSlug: string | null): string {
   if (workSlug === null)
@@ -481,21 +616,6 @@ function buildAgentWriteCommand(
 /** Which blocks a read renders, as the `read` tool's selector fields. */
 type ReadSelection = Pick<ReadToolInput, "in" | "around">;
 
-/**
- * Where this thread reads and writes the document: the file policy's answer
- * for its source and the thread's Work (D20). Scratch and uploads stay live.
- */
-function documentDestination(
-  execution: ThreadExecutionContext,
-  address: ResolvedDocumentAddress,
-): AgentEditDestination {
-  const parsed = parseUnifiedContextUri(address.uri);
-  if (!parsed.ok) throw new Error(`Resolved document URI is not a context URI: ${address.uri}`);
-  const owner = execution.draftOwner;
-  if (!owner || fileDestination(parsed.value.scheme, true) === "live") return { kind: "live" };
-  return { kind: "draft", workId: owner.workId, workSlug: execution.scope.workSlug };
-}
-
 /** Writes report where they landed; a drafted write names its Work. */
 function withDestination(outcome: WriteOutcome, destination: AgentEditDestination): WriteOutcome {
   if (outcome.isError) return outcome;
@@ -517,7 +637,7 @@ function withDestination(outcome: WriteOutcome, destination: AgentEditDestinatio
  */
 async function readDocument(
   deps: Pick<ToolWiringDeps, "documentSync">,
-  execution: ThreadExecutionContext,
+  grant: FileGrant,
   address: ResolvedDocumentAddress,
   options: {
     selection?: ReadSelection;
@@ -528,8 +648,6 @@ async function readDocument(
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
 ): Promise<WriteOutcome> {
-  const destination: AgentEditDestination =
-    options.version === "live" ? { kind: "live" } : documentDestination(execution, address);
   return deps.documentSync.agentEdit().read(
     {
       ...options.selection,
@@ -541,7 +659,7 @@ async function readDocument(
       sessionId: ctx.threadId,
       threadId: ctx.threadId,
       turnId: ctx.turnId,
-      destination,
+      grant,
       ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
@@ -565,7 +683,7 @@ interface CopiedSource {
  */
 async function readCopySource(
   deps: ToolWiringDeps,
-  execution: ThreadExecutionContext,
+  principal: Principal,
   command: "insert" | "replace" | "copy",
   source: CopySource,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
@@ -579,7 +697,7 @@ async function readCopySource(
       "binary_file",
     );
   }
-  return readTrackedCopySource(deps, execution, command, source, resolved.address, ctx);
+  return readTrackedCopySource(deps, principal, command, source, resolved.address, ctx);
 }
 
 async function resolveCopySource(
@@ -623,15 +741,19 @@ async function resolveCopySource(
 
 async function readTrackedCopySource(
   deps: ToolWiringDeps,
-  execution: ThreadExecutionContext,
+  principal: Principal,
   command: "insert" | "replace" | "copy",
   source: CopySource,
   address: ResolvedDocumentAddress,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
 ): Promise<CopiedSource | WriteToolErrorOutput> {
+  const grant = await documentGrant(deps, principal, command, address, "read");
+  if (isToolError(grant)) {
+    return writeToolError(command, fromMessage(source, grant.output.message ?? ""));
+  }
   const outcome = await readDocument(
     deps,
-    execution,
+    grant,
     address,
     {
       ...(source.in !== undefined ? { selection: { in: source.in } } : {}),
@@ -651,7 +773,7 @@ async function readTrackedCopySource(
       },
     };
   }
-  const version = outcome.result.read?.version ?? documentDestination(execution, address).kind;
+  const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
     nodes: outcome.nodes ?? [],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
@@ -739,7 +861,7 @@ export function createAgentEditResponseWriteLifecycle(
           ),
           refused: result.refused.map((refusal) => ({
             documentId: refusal.documentId,
-            message: archivedBeforeSaveMessage(refusal.workSlug),
+            message: refusedAtSaveMessage(refusal),
           })),
         };
       };
@@ -809,7 +931,11 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
           ),
         };
       }
-      const outcome = await readDocument(deps, execution, address, {}, ctx);
+      const principal = await agentPrincipal(deps, context, execution);
+      const grant = await documentGrant(deps, principal, "read", address, "read");
+      if (isToolError(grant))
+        return { result: JSON.parse(JSON.stringify(grant.output)), revision: null };
+      const outcome = await readDocument(deps, grant, address, {}, ctx);
       if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
       return { result: JSON.parse(JSON.stringify(outcome.result)), revision: outcome.revision };
     },
@@ -864,6 +990,53 @@ async function copyBinary(
   };
 }
 
+function firstRefusal(refusal: FileEditRefusedError): FileAccessDenied {
+  const [denial] = refusal.refused;
+  if (!denial) throw new Error("A refused edit names at least one grant");
+  return denial;
+}
+
+/**
+ * The write itself: the edit grant on the document, then the pool call that
+ * carries it. A seam that refuses the grant under its locks reports the same
+ * error a preflight denial does.
+ */
+async function writeUnderGrant(
+  deps: ToolWiringDeps,
+  principal: Principal,
+  parsed: WriteToolInput,
+  address: ResolvedDocumentAddress,
+  copied: CopiedSource | undefined,
+  ctx: ToolHandlerContext,
+): Promise<(WriteOutcome & { isError: false }) | WriteToolErrorOutput> {
+  const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
+  if (isToolError(grant)) return grant;
+  let written: WriteOutcome;
+  try {
+    written = await deps.documentSync
+      .agentEdit()
+      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
+        sessionId: ctx.threadId,
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        responseId: ctx.responseId,
+        tool_use_id: ctx.toolCallId,
+        createdDocument: address.created === true,
+        grant,
+        ...(copied ? { copiedNodes: copied.nodes } : {}),
+      });
+  } catch (cause) {
+    if (!(cause instanceof FileEditRefusedError)) throw cause;
+    return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
+  }
+  if (written.isError) return { isError: true, output: written.result };
+  // Undo and redo go where history says, so only forward writes name a destination.
+  const reversal = parsed.command === "undo" || parsed.command === "redo";
+  return (reversal ? written : withDestination(written, grant.destination)) as WriteOutcome & {
+    isError: false;
+  };
+}
+
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   const readHandler = async (input: unknown, ctx: ToolHandlerContext) => {
     const { path, format, version, ...selection } = input as ReadToolInput;
@@ -874,10 +1047,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     if ("isError" in context) return writeToolError("read", context.output.message);
     const address = await resolveDocumentAddress(context, "read", path);
     if (isToolError(address)) return address;
+    const principal = await agentPrincipal(deps, context, execution);
+    const grant = await documentGrant(deps, principal, "read", address, "read");
+    if (isToolError(grant)) return grant;
 
     const outcome = await readDocument(
       deps,
-      execution,
+      grant,
       address,
       { selection, format, ...(version ? { version } : {}) },
       ctx,
@@ -897,6 +1073,26 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       return writeToolError(parsed.command, portOrError.output.message);
     }
 
+    const principal = await agentPrincipal(deps, portOrError, execution);
+    const creates = parsed.command === "create" || parsed.command === "copy";
+    // A create or copy needs edit on the folder it makes the file in; the
+    // namespace transaction confirms that grant under its locks (seam C).
+    let containerGrant: FileGrant<"edit"> | undefined;
+    if (creates) {
+      const target = await containerTarget(deps, portOrError, parsed.path);
+      if (target) {
+        const grant = await deps.fileAccess.authorize(principal, target, "edit");
+        if (isFileAccessDenied(grant)) return fileAccessDeniedError(parsed.command, grant);
+        containerGrant = grant;
+      }
+    }
+    const inContainer = async <T>(operation: () => Promise<T>) => {
+      if (!containerGrant) return operation();
+      const result = await runWithEditGrants(deps.fileAccess, [containerGrant], operation);
+      if (result.ok) return result.value;
+      return fileAccessDeniedError(parsed.command, firstRefusal(result.refusal));
+    };
+
     // A copy reads its source before it creates anything, so a bad source leaves no file.
     let copied: CopiedSource | undefined;
     if (parsed.command === "copy") {
@@ -907,11 +1103,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         if (selection) {
           return writeToolError(parsed.command, fromMessage(parsed.from, selection), "binary_file");
         }
-        return copyBinary(deps, portOrError, parsed, source.ref, ctx);
+        const binary = source.ref;
+        return inContainer(() => copyBinary(deps, portOrError, parsed, binary, ctx));
       }
       const read = await readTrackedCopySource(
         deps,
-        execution,
+        principal,
         parsed.command,
         parsed.from,
         source.address,
@@ -920,38 +1117,22 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if (isToolError(read)) return read;
       copied = read;
     } else if ((parsed.command === "insert" || parsed.command === "replace") && parsed.from) {
-      const read = await readCopySource(deps, execution, parsed.command, parsed.from, ctx);
+      const read = await readCopySource(deps, principal, parsed.command, parsed.from, ctx);
       if (isToolError(read)) return read;
       copied = read;
     }
 
-    const creates = parsed.command === "create" || parsed.command === "copy";
-    const address = await resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
-      deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
-      ...(parsed.command === "copy" && copied
-        ? { metadata: { copiedFrom: copied.copiedFrom } }
-        : {}),
-    });
+    const address = await inContainer(() =>
+      resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
+        deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
+        ...(parsed.command === "copy" && copied
+          ? { metadata: { copiedFrom: copied.copiedFrom } }
+          : {}),
+      }),
+    );
     if (isToolError(address)) return address;
 
-    const destination = documentDestination(execution, address);
-    const written = await deps.documentSync
-      .agentEdit()
-      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
-        sessionId: ctx.threadId,
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-        responseId: ctx.responseId,
-        tool_use_id: ctx.toolCallId,
-        createdDocument: address.created === true,
-        destination,
-        ...(copied ? { copiedNodes: copied.nodes } : {}),
-      });
-    // Undo and redo go where history says, so only forward writes name a destination.
-    const outcome =
-      parsed.command === "undo" || parsed.command === "redo"
-        ? written
-        : withDestination(written, destination);
+    const outcome = await writeUnderGrant(deps, principal, parsed, address, copied, ctx);
     const stagedCreate = creates && ctx.responseId !== undefined && address.created === true;
     if (outcome.isError) {
       if (stagedCreate) {
@@ -971,7 +1152,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           );
         }
       }
-      return { isError: true, output: outcome.result };
+      return { isError: true, output: outcome.output };
     }
     if (stagedCreate) {
       const responseId = ctx.responseId;

@@ -1,6 +1,7 @@
 /** PostgreSQL contract for project bootstrap with locked No Work. */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { confirmEveryGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
@@ -36,6 +37,7 @@ else
     });
     function collab() {
       const domain = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
@@ -52,6 +54,7 @@ else
     }
     function boundCollab() {
       const domain = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

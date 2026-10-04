@@ -22,7 +22,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../test-support/drizzle-reset.js"
     );
-    const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { bindEditAgent, useComposedRuntimes } = await import(
+      "../test-support/composed-runtime.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -243,6 +245,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!written.ok) throw new Error(JSON.stringify(written.error));
 
       // Outside a reply, as a tool call with no model response.
+      await bindEditAgent(runtime, THREAD.threadId);
       const copied = await runtime.app.toolExecutor.executeTool(
         {
           id: crypto.randomUUID(),

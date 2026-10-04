@@ -22,7 +22,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
-import { destination } from "../../../file-policy/index.js";
+import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
@@ -864,7 +864,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.readView;
     if (!view) return null;
     // Without a separate draft both versions are the same document (D3).
-    const ownVersion = destination(this.scheme, view.draftMode);
+    const ownVersion = sourceDestination(this.scheme, view.draftWork).kind;
     return {
       threadId: view.threadId,
       responseId: view.responseId,
@@ -933,7 +933,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.manifestView;
     if (!view) return null;
     // A live view lists the live manifest and never touches a draft.
-    const live = this.readView?.version === "live" && this.readView.draftMode;
+    const live = this.readView?.version === "live" && this.readView.draftWork !== null;
     try {
       const membership = await this.documentSync.resolveManifestMembership(
         live

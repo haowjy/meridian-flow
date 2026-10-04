@@ -23,9 +23,6 @@ import {
   type WorkRef,
 } from "./types.js";
 
-/** Where an agent write lands: the live document or the thread's Work draft. */
-export type WriteDestination = FileDestination["kind"];
-
 interface SourceRule {
   /** Whether a draft-mode Work holds agent writes to this source for review. */
   readonly drafted: boolean;
@@ -51,9 +48,19 @@ export function isDrafted(scheme: ContextUriScheme): boolean {
   return SOURCE_RULES[scheme].drafted;
 }
 
-/** The destination of an agent write to a file of this source. People always write live. */
-export function destination(scheme: ContextUriScheme, draftMode: boolean): WriteDestination {
-  return draftMode && isDrafted(scheme) ? "draft" : "live";
+/**
+ * Where an agent's access to a file of this source goes: its draft-mode
+ * Work's draft for a drafted source, otherwise live. People always write
+ * live. List and view paths ask this per source; tool calls carry it on
+ * their grant (`destinationFor`).
+ */
+export function sourceDestination(
+  scheme: ContextUriScheme,
+  draftWork: WorkRef | null,
+): FileDestination {
+  return draftWork && isDrafted(scheme)
+    ? { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug }
+    : { kind: "live" };
 }
 
 /** A grant on a node of the tree; v1 has only the owner's, on the project. */
@@ -71,11 +78,8 @@ export function destinationFor(principal: Principal, facts: FileFacts): FileDest
   if (target.kind === "draft") {
     return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };
   }
-  const draftWork = principal.agent?.draftWork;
-  if (target.kind === "document" && draftWork && isDrafted(facts.scheme)) {
-    return { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug };
-  }
-  return { kind: "live" };
+  if (target.kind === "container") return { kind: "live" };
+  return sourceDestination(facts.scheme, principal.agent?.draftWork ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */

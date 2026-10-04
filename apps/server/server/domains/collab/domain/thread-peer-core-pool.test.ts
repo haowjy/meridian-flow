@@ -1,6 +1,7 @@
 /** Pool routing per document (D19, D42), live undo routing, and read-version checks (D41). */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { confirmEveryGrant, testFileGrant } from "../../../test-support/file-grants.js";
 import {
   createFakeThreadPeerCores,
   inProcessResponseTransactions,
@@ -22,6 +23,8 @@ function createPool() {
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
+    fileAccess: confirmEveryGrant,
+    lockLiveDocuments: async () => {},
   });
   return { pool, liveCore, threadCore, pullThreadPeer: history.pullThreadPeer };
 }
@@ -30,7 +33,7 @@ const context = (destination: AgentEditDestination, responseId?: string) => ({
   sessionId: THREAD_ID,
   threadId: THREAD_ID,
   turnId: "turn-1",
-  destination,
+  grant: testFileGrant(destination),
   ...(responseId ? { responseId } : {}),
 });
 const readCh12 = { file: "ch12.md", documentId: "ch12" };

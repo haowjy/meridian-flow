@@ -22,6 +22,12 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
 import {
+  type FileAccess,
+  type FileAccessDenied,
+  type FileGrant,
+  runWithEditGrants,
+} from "../../file-policy/index.js";
+import {
   type AgentEditDestination,
   asThreadPeerAgentEditCore,
   type LiveAgentEditCore,
@@ -96,16 +102,14 @@ export function createBranchThreadPeerAgentEditCore(input: {
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
-  screenResponseDocuments?: Parameters<
-    typeof createThreadPeerCorePool
-  >[0]["screenResponseDocuments"];
+  fileAccess: Pick<FileAccess, "confirmEdit">;
+  lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     liveUtilityCore: input.liveUtilityCore,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
-    ...(input.screenResponseDocuments
-      ? { screenResponseDocuments: input.screenResponseDocuments }
-      : {}),
+    fileAccess: input.fileAccess,
+    lockLiveDocuments: input.lockLiveDocuments,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
@@ -169,20 +173,27 @@ type PulledThreadPeer = {
   attributionBaseline: Uint8Array;
 };
 
-/** One document's place in a reply: its destination is pinned at its first write. */
-type PinnedDocument = { core: AgentEditCore; destination: AgentEditDestination };
+/**
+ * One document's place in a reply: its grant, and with it its destination,
+ * is pinned at its first write.
+ */
+type PinnedDocument = { core: AgentEditCore; grant: FileGrant<"edit"> };
 
 type ResponseRecord = {
   threadId?: ThreadId;
   /** Every core holding this reply's buffered writes; each saves in the reply's one step. */
   participants: Set<AgentEditCore>;
   documents: Map<DocumentId, PinnedDocument>;
+  /** Drafted reversals staged in the reply; history routed them, so they pin nothing. */
+  reversals: Map<DocumentId, PinnedDocument>;
 };
 
 /**
  * The single entry point for model reads and writes in both destinations
- * (D19). The caller computes each call's destination from the file policy;
- * the pool trusts it and never consults the policy itself.
+ * (D19). Each call carries the grant the caller got from the file policy: its
+ * destination routes the call, and the write is confirmed under lock where it
+ * becomes durable (file-access §5): in the seam's own transaction for a write
+ * that commits at once, and once for the whole reply at its save (§5.2).
  */
 export function createThreadPeerCorePool(input: {
   liveUtilityCore: LiveAgentEditCore;
@@ -199,10 +210,10 @@ export function createThreadPeerCorePool(input: {
   responseTransactions: ResponseTransactionHooks;
   /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
   afterLiveCommit?(documentId: DocumentId): void;
-  /** Save-time re-check (D29): documents the save must leave out of the reply. */
-  screenResponseDocuments?(input: {
-    documents: ReadonlyArray<{ documentId: DocumentId; destination: AgentEditDestination }>;
-  }): Promise<RefusedResponseDocument[]>;
+  /** Confirms grants under lock: at a seam for a write that commits now, once at a reply's save. */
+  fileAccess: Pick<FileAccess, "confirmEdit">;
+  /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
+  lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -267,6 +278,7 @@ export function createThreadPeerCorePool(input: {
       ...(id ? { threadId: id } : {}),
       participants: new Set(),
       documents: new Map(),
+      reversals: new Map(),
     };
     responses.set(responseId, record);
     if (id) {
@@ -326,8 +338,27 @@ export function createThreadPeerCorePool(input: {
     };
   }
 
+  /**
+   * A write that commits at once (no reply, or a live reversal): the seams it
+   * reaches confirm its grant in their own transaction. A refusal drops the
+   * thread's runtime copy of the document and surfaces as the typed error.
+   */
+  async function commitNow(
+    core: AgentEditCore,
+    documentId: DocumentId | null,
+    context: WriteContext,
+    grant: FileGrant<"edit">,
+    write: () => Promise<WriteOutcome>,
+  ): Promise<WriteOutcome> {
+    const result = await runWithEditGrants(input.fileAccess, [grant], write);
+    if (result.ok) return result.value;
+    if (documentId && context.threadId) await core.invalidateThread(documentId, context.threadId);
+    throw result.refusal;
+  }
+
   async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
-    const { destination: requested, liveVersion, ...context } = routed;
+    const { grant, liveVersion, ...context } = routed;
+    const requested = grant.destination;
     const documentId = documentIdFromCommand(command);
     const pinned =
       documentId && context.responseId && !liveVersion
@@ -335,7 +366,7 @@ export function createThreadPeerCorePool(input: {
         : undefined;
     const destination = liveVersion
       ? ({ kind: "live" } as const)
-      : (pinned?.destination ?? requested);
+      : (pinned?.grant.destination ?? requested);
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
     const outcome = await core.read(command, await threadPeerContext(core, documentId, context));
     if (outcome.isError) return outcome;
@@ -350,8 +381,8 @@ export function createThreadPeerCorePool(input: {
   }
 
   async function write(command: WriteCommand, routed: RoutedWriteContext): Promise<WriteOutcome> {
-    const { destination: requested, ...context } = routed;
-    if (isReversalCommand(command)) return reverse(command, context);
+    const { grant, ...context } = routed;
+    if (isReversalCommand(command)) return reverse(command, context, grant);
     const documentId = documentIdFromCommand(command);
     const record = context.responseId
       ? responseFor(context.responseId, context.threadId)
@@ -359,7 +390,7 @@ export function createThreadPeerCorePool(input: {
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
     // mid-reply mode switch never splits it across two saves.
-    const destination = pinned?.destination ?? requested;
+    const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
       const seen = lastSeen.get(seenKey(context.threadId, documentId));
       if (seen && !sameDestination(seen, destination)) {
@@ -369,9 +400,13 @@ export function createThreadPeerCorePool(input: {
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
     if (record) {
       record.participants.add(core);
-      if (documentId && !pinned) record.documents.set(documentId, { core, destination });
+      if (documentId && !pinned) record.documents.set(documentId, { core, grant });
     }
-    const outcome = await core.write(command, await threadPeerContext(core, documentId, context));
+    const call = async () =>
+      core.write(command, await threadPeerContext(core, documentId, context));
+    const outcome = record
+      ? await call()
+      : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
     if (!outcome.isError && documentId) {
       if (context.threadId) lastSeen.set(seenKey(context.threadId, documentId), destination);
       if (!context.responseId && destination.kind === "live") input.afterLiveCommit?.(documentId);
@@ -380,40 +415,74 @@ export function createThreadPeerCorePool(input: {
   }
 
   /** History decides where a reversal goes, not the current destination. */
-  async function reverse(command: WriteCommand, context: WriteContext): Promise<WriteOutcome> {
+  async function reverse(
+    command: WriteCommand,
+    context: WriteContext,
+    grant: FileGrant<"edit">,
+  ): Promise<WriteOutcome> {
     const documentId = documentIdFromCommand(command);
     const core = documentId
       ? await reversalCoreFor(documentId, context.threadId)
       : await coreFor(context.threadId);
     // Live reversals commit immediately and never join the reply's save.
-    if (core !== input.liveUtilityCore && context.responseId) {
-      responseFor(context.responseId, context.threadId).participants.add(core);
+    const record =
+      core !== input.liveUtilityCore && context.responseId
+        ? responseFor(context.responseId, context.threadId)
+        : undefined;
+    if (record) {
+      record.participants.add(core);
+      if (documentId && !record.reversals.has(documentId)) {
+        record.reversals.set(documentId, { core, grant });
+      }
     }
-    const outcome = await core.write(command, await threadPeerContext(core, documentId, context));
+    const call = async () =>
+      core.write(command, await threadPeerContext(core, documentId, context));
+    const outcome = record ? await call() : await commitNow(core, documentId, context, grant, call);
     if (!outcome.isError && documentId && core === input.liveUtilityCore) {
       input.afterLiveCommit?.(documentId);
     }
     return outcome;
   }
 
-  async function screen(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
-    if (!input.screenResponseDocuments || record.documents.size === 0) return [];
-    const refused = await input.screenResponseDocuments({
-      documents: [...record.documents].map(([documentId, pinned]) => ({
-        documentId,
-        destination: pinned.destination,
-      })),
-    });
-    for (const { documentId } of refused) {
-      const pinned = record.documents.get(documentId);
-      if (!pinned || !record.threadId) continue;
-      await pinned.core.invalidateThread(documentId, record.threadId);
-      record.documents.delete(documentId);
-      if (![...record.documents.values()].some((other) => other.core === pinned.core)) {
-        record.participants.delete(pinned.core);
+  /**
+   * Lock once per reply (file-access §5.2): every grant the reply wrote under,
+   * confirmed together (its Works locked in id order), then its live
+   * documents' mutation locks in id order, before any participant commits. A
+   * refused document leaves the reply; the rest saves (D29, D42).
+   */
+  async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
+    const pinned = [...record.documents, ...record.reversals];
+    if (pinned.length === 0) return [];
+    const { refused } = await input.fileAccess.confirmEdit(pinned.map(([, entry]) => entry.grant));
+    const refusals = new Map<DocumentId, FileAccessDenied>();
+    for (const denial of refused) refusals.set(denialDocumentId(denial), denial);
+    for (const documentId of refusals.keys()) {
+      for (const documents of [record.documents, record.reversals]) {
+        const entry = documents.get(documentId);
+        if (!entry) continue;
+        documents.delete(documentId);
+        if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
       }
     }
-    return refused;
+    for (const core of [...record.participants]) {
+      const holds = (entry: PinnedDocument) => entry.core === core;
+      const writesElsewhere =
+        [...record.documents.values()].some(holds) || [...record.reversals.values()].some(holds);
+      if (!writesElsewhere && pinned.some(([, entry]) => holds(entry))) {
+        record.participants.delete(core);
+      }
+    }
+    await input.lockLiveDocuments(
+      [...record.documents]
+        .filter(([, entry]) => entry.core === input.liveUtilityCore)
+        .map(([documentId]) => documentId)
+        .sort(),
+    );
+    return [...refusals].map(([documentId, denial]) => ({
+      documentId,
+      reason: denial.reason,
+      workSlug: denial.archivedWork?.slug ?? null,
+    }));
   }
 
   function finalizeOptions() {
@@ -451,7 +520,7 @@ export function createThreadPeerCorePool(input: {
           // reply on its side; only a reply that never wrote falls back to the
           // live core, which closes it.
           const wrote = record.participants.size > 0;
-          const refused = await screen(record);
+          const refused = await confirmReply(record);
           const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
           const results: ResponseCommitSuccessResult[] = [];
           for (const core of participants) {
@@ -459,7 +528,7 @@ export function createThreadPeerCorePool(input: {
           }
           const drafted = new Set(
             [...record.documents]
-              .filter(([, pinned]) => pinned.destination.kind === "draft")
+              .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
               .map(([documentId]) => documentId),
           );
           const saved = mergeSaveResults(responseId, results, drafted, refused);
@@ -480,7 +549,7 @@ export function createThreadPeerCorePool(input: {
       );
     },
     responseDestination(responseId, docId) {
-      return responses.get(responseId)?.documents.get(docId as DocumentId)?.destination;
+      return responses.get(responseId)?.documents.get(docId as DocumentId)?.grant.destination;
     },
     hasResponseDocument(responseId, docId) {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);
@@ -677,4 +746,11 @@ function documentIdFromCommand(command: { file: string; documentId?: string }): 
 
 function isReversalCommand(command: WriteCommand): boolean {
   return command.command === "undo" || command.command === "redo";
+}
+
+function denialDocumentId(denial: FileAccessDenied): DocumentId {
+  if (denial.target.kind === "container") {
+    throw new Error("A reply's grants name documents, not containers");
+  }
+  return denial.target.documentId;
 }

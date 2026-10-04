@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
+import { confirmEveryGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -63,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture(options: { load?: boolean; store?: boolean } = {}) {
       const collab = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

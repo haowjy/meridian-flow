@@ -4,6 +4,7 @@ import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,7 +21,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../test-support/drizzle-reset.js"
     );
     const { createInMemoryEventSink } = await import("../domains/observability/index.js");
-    const { unloadHocuspocus, useComposedRuntimes } = await import(
+    const { bindEditAgent, unloadHocuspocus, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
 
@@ -162,6 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
       });
       const responseId = await runtimes.insertModelResponse(THREAD);
+      await bindEditAgent(runtime, THREAD_ID);
 
       const toolContext = {
         threadId: THREAD_ID,
@@ -241,7 +243,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { file: "runtime-settlement.md", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,
@@ -289,7 +291,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,
@@ -307,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,

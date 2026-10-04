@@ -3,6 +3,7 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
@@ -469,7 +470,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -553,7 +554,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,

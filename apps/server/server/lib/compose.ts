@@ -57,6 +57,12 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import {
+  createDrizzleFileFacts,
+  createFileAccess,
+  createOwnerFileGrants,
+  type FileAccess,
+} from "../domains/file-policy/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -149,6 +155,7 @@ import {
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
+  readAgentChain,
   readPendingInbox,
   requireWritableThread,
   sweepWakes,
@@ -294,6 +301,8 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** The file policy every model read and write asks (file-access §1). */
+  fileAccess: FileAccess;
   gateway: Gateway;
   summarizerConfig: { model: string };
   threadRepos: InternalThreadRepositories;
@@ -445,8 +454,18 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
+  const fileAccess = createFileAccess({
+    facts: createDrizzleFileFacts(db),
+    grants: createOwnerFileGrants(),
+    readAgentChain: (threadId) =>
+      readAgentChain(
+        { threads: threadRepos.threads, threadWorks: threadRepos.threadWorks, agentRevisions },
+        threadId,
+      ),
+  });
   const documentSync = createCollabDomain({
     db,
+    fileAccess,
     assetPathResolver,
     documentAccess,
     eventSink,
@@ -557,6 +576,7 @@ export async function createProductionAppPorts(input: {
     statusReader,
     gateway,
     summarizerConfig: { model: summarizerModel },
+    fileAccess,
     threadRepos,
     journalReader,
     journalWriter,
@@ -685,6 +705,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
     objectStore: ports.objectStore,
+    fileAccess: ports.fileAccess,
+    readAgentChain: (threadId: ThreadId) =>
+      readAgentChain(
+        {
+          threads: ports.threadRepos.threads,
+          threadWorks: ports.threadRepos.threadWorks,
+          agentRevisions: ports.agentRevisions,
+        },
+        threadId,
+      ),
   };
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
