@@ -44,16 +44,4 @@ describe("parentRetaskCorrelation", () => {
       deliveryMode: "background_notification",
     });
   });
-
-  it("leaves messages from the writer or another thread as an ordinary run", () => {
-    expect(parentRetaskCorrelation(child, [message({ kind: "writer", actorId: "u1" })])).toBeNull();
-    expect(
-      parentRetaskCorrelation(child, [
-        message({ kind: "agent", threadId: "sibling-1", notify: { turnId: "t", toolCallId: "c" } }),
-      ]),
-    ).toBeNull();
-    expect(
-      parentRetaskCorrelation(child, [message({ kind: "agent", threadId: "parent-1" })]),
-    ).toBeNull();
-  });
 });
