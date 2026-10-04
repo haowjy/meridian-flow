@@ -3,14 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import {
-  createContext,
-  type KeyboardEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { createContext, type KeyboardEvent, type ReactNode, useContext, useState } from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
@@ -26,13 +19,14 @@ import {
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import { contextTreeRowClassName } from "./context-row-geometry";
+import { contextTreeRowClassName, contextTreeRowGrowClassName } from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
 import { EntryNameField } from "./EntryNameField";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
+import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type TreeEnv = {
   projectId: string;
@@ -142,10 +136,8 @@ function DirRow({
   const [renaming, setRenaming] = useState(false);
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const isOpen = env.isExpanded(dir.entryId, depth);
-  // Like a file, a refused rename reopens the name field to try again.
-  useEffect(() => {
-    if (dir.namespaceFailure === "set-location") setRenaming(true);
-  }, [dir.namespaceFailure]);
+  // A refused rename offers its name field once, as the failure arrives.
+  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
   const toggle = () => {
     if (env.creating) env.onCreateDone();
     env.toggleEntry(dir.entryId, depth < 2);
@@ -191,19 +183,21 @@ function DirRow({
           onKeyDown={activateOnKey(toggle)}
           className={cn(
             "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
-            contextTreeRowClassName,
+            contextTreeRowGrowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 min-w-0 truncate">{dir.name}</span>
-          <LinkUpdateNote
-            projectId={env.projectId}
-            subject={{ kind: "folder", id: dir.entryId }}
-            operationId={noteOperationId}
-          />
-          <span className="flex-1" />
+          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+            <span className="truncate">{dir.name}</span>
+            <LinkUpdateNote
+              projectId={env.projectId}
+              subject={{ kind: "folder", id: dir.entryId }}
+              operationId={noteOperationId}
+              layout="stacked"
+            />
+          </span>
           {dir.namespaceFailure ? (
             <NamespaceFailureMark failure={dir.namespaceFailure} folder />
           ) : null}
@@ -234,9 +228,7 @@ function FileRow({
   const [renaming, setRenaming] = useState(false);
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const select = () => env.onSelectFile(env.scheme, file);
-  useEffect(() => {
-    if (file.namespaceFailure === "set-location") setRenaming(true);
-  }, [file.namespaceFailure]);
+  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
 
   function handleAction(action: EntryAction) {
     const parentPath = parentContextEntryPath(file.path);
@@ -282,7 +274,7 @@ function FileRow({
         onKeyDown={activateOnKey(select)}
         className={cn(
           "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm",
-          contextTreeRowClassName,
+          contextTreeRowGrowClassName,
           /* Hover is inactive-only: the active row retains its stronger fill. */
           active
             ? "bg-sidebar-accent font-medium text-foreground"
@@ -292,13 +284,15 @@ function FileRow({
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
-        <span className="ml-0.5 min-w-0 truncate">{file.name}</span>
-        <LinkUpdateNote
-          projectId={env.projectId}
-          subject={{ kind: "file", id: file.documentId }}
-          operationId={noteOperationId}
-        />
-        <span className="flex-1" />
+        <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+          <span className="truncate">{file.name}</span>
+          <LinkUpdateNote
+            projectId={env.projectId}
+            subject={{ kind: "file", id: file.documentId }}
+            operationId={noteOperationId}
+            layout="stacked"
+          />
+        </span>
         {file.namespaceFailure ? <NamespaceFailureMark failure={file.namespaceFailure} /> : null}
         <EntryKebabButton
           allowCreate={allowCreate}

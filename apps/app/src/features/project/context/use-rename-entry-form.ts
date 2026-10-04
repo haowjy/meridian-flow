@@ -118,5 +118,7 @@ export function useRenameEntryForm({
     },
     onCancel: onDone,
     select,
+    // A refused rename is retried by an explicit Enter, never by leaving the field.
+    commitOnBlur: !repairName,
   });
 }

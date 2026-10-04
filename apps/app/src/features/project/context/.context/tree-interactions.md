@@ -96,8 +96,10 @@ while the URL still names the old path; the server's redirect repairs the URL
 once the move settles. The move's receipt carries `linkUpdate.links`. `setLocation` and
 `setFolderLocation` return the operation id issued at admission; `LinkUpdateNote`
 reads that receipt through `settledNamespaceReceipt` and shows "Updated N links"
-after the name (tree rows, phone rows, Work Files rows) or after the identity path
-(identity bar, for renames made there) for its four-second window. Zero links, a
+on its own line under the name in the tree, drawer and Work Files rows (the name
+keeps its full width and the row opens a line), inline in the phone listing, or
+after the identity path in the identity bar (for renames made there), for its
+four-second window. Zero links, a
 refused move and a move without `linkUpdate` show nothing. It announces once
 through the app's polite region and never fades under reduced motion. Inline
 operations keep stable entry identity. Work

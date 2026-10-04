@@ -286,6 +286,9 @@ function projectCatalogDirectory(
   folder?: FolderNamespaceRecord,
 ): CatalogDirectory {
   const repair = folder ? projectFolderNeedsRepair(folder) : null;
+  const failureAt = repair
+    ? folder?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+    : undefined;
   return {
     kind: "dir",
     entryId: entry.entryId,
@@ -294,7 +297,11 @@ function projectCatalogDirectory(
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     ...(repair
-      ? { namespaceFailure: "set-location" as const, namespaceRepairName: repair.name }
+      ? {
+          namespaceFailure: "set-location" as const,
+          namespaceRepairName: repair.name,
+          ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
+        }
       : {}),
   };
 }
@@ -335,6 +342,9 @@ export function projectCatalogView(
       return null;
     const file = projectCatalogFile(entry);
     const repair = record ? projectResourceNeedsRepair(projectId, record) : null;
+    const repairedAt = repair
+      ? record?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+      : undefined;
     const placementPending =
       effective !== placed ||
       record?.intents.some(
@@ -367,7 +377,11 @@ export function projectCatalogView(
           ...(repair?.kind === "delete"
             ? { namespaceFailure: "delete" as const }
             : repair?.kind === "set-location"
-              ? { namespaceFailure: "set-location" as const, namespaceRepairName: repair.name }
+              ? {
+                  namespaceFailure: "set-location" as const,
+                  namespaceRepairName: repair.name,
+                  ...(repairedAt === undefined ? {} : { namespaceFailureAt: repairedAt }),
+                }
               : {}),
         }
       : file;

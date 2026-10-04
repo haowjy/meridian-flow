@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import type {
   CatalogContextView,
   CatalogDirectory as ContextDir,
@@ -31,6 +31,7 @@ import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
 export type MobileContextBrowserProps = Pick<
@@ -385,9 +386,7 @@ function MobileFolderRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
-  useEffect(() => {
-    if (dir.namespaceFailure === "set-location") setRenaming(true);
-  }, [dir.namespaceFailure]);
+  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
 
   if (renaming) {
     return (
@@ -461,9 +460,7 @@ function MobileFileRow({
   const [renaming, setRenaming] = useState(false);
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const FileIcon = fileKindIcon(file);
-  useEffect(() => {
-    if (file.namespaceFailure === "set-location") setRenaming(true);
-  }, [file.namespaceFailure]);
+  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
 
   if (renaming) {
     return (

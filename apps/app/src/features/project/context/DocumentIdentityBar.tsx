@@ -19,6 +19,7 @@ import {
   type IdentityCommitted,
   useIdentityCommit,
 } from "./use-identity-commit";
+import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
@@ -75,9 +76,11 @@ export function DocumentIdentityBar({
     repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
       ? ({ kind: "error", name: repair.name } as const)
       : null;
-  useEffect(() => {
-    if (identityFailure) setFieldOpen(true);
-  }, [identityFailure]);
+  const failureAt =
+    repair?.kind === "set-location"
+      ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+      : undefined;
+  useRepairOnFreshFailure(identityFailure ? failureAt : undefined, () => setFieldOpen(true));
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.

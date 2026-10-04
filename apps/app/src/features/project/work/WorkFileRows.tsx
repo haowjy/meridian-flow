@@ -5,7 +5,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ import { EntryNameField } from "../context/EntryNameField";
 import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
 import { RowIcon } from "../RuledList";
@@ -70,13 +71,12 @@ export function ScratchFileRow({
     (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
   );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
-  // Like the tree, a refused rename reopens the name field to try again.
-  const repairRename = edit && file.namespaceFailure === "set-location";
   const startRename = edit?.onRename;
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
-  useEffect(() => {
-    if (repairRename) startRename?.(file.path);
-  }, [repairRename, startRename, file.path]);
+  // Like the tree, a refused rename offers its name field once, as the failure arrives.
+  useRepairOnFreshFailure(edit ? file.namespaceFailureAt : undefined, () =>
+    startRename?.(file.path),
+  );
   if (edit?.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -104,14 +104,13 @@ export function ScratchFileRow({
       >
         <RowIcon icon={fileKindIcon(file)} />
         <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-baseline">
-            <span className="truncate font-medium">{file.name}</span>
-            <LinkUpdateNote
-              projectId={projectId}
-              subject={{ kind: "file", id: file.documentId }}
-              operationId={noteOperationId}
-            />
-          </span>
+          <span className="block truncate font-medium">{file.name}</span>
+          <LinkUpdateNote
+            projectId={projectId}
+            subject={{ kind: "file", id: file.documentId }}
+            operationId={noteOperationId}
+            layout="stacked"
+          />
           {folder ? (
             <span className="block truncate text-xs text-muted-foreground">{folder}</span>
           ) : null}

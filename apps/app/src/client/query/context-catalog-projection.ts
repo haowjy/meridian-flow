@@ -27,6 +27,8 @@ type CatalogFileBase = {
   /** Durable namespace work that needs the writer to retry. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;
+  /** When the refusal settled locally; separates a fresh failure from one already there on load. */
+  namespaceFailureAt?: number;
 };
 
 export type CatalogFile =
@@ -53,6 +55,7 @@ export type CatalogDirectory = {
   /** A refused rename or move put this folder back; the writer retries from here. */
   namespaceFailure?: "set-location";
   namespaceRepairName?: string;
+  namespaceFailureAt?: number;
 };
 
 export type CatalogNode = CatalogDirectory | CatalogFile;
