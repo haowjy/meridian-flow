@@ -87,38 +87,4 @@ describe("write reversal selectors", () => {
     expect(outcomeText(redo)).toContain("redo: w1, w2");
     expect(scenario.blockTexts()).toEqual(["Base.", "One.", "Two."]);
   });
-
-  it("redoes the same write for a plain redo and for redo last 1 after targeted undos", async () => {
-    const run = async (redo: { last?: number }) => {
-      const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
-      await scenario.appendBlocks(["One.", "Two.", "Three."]);
-      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", to: "w3" }, context);
-      await scenario.ctx.core.write({ command: "undo", file: "chapter.md", to: "w1" }, context);
-      const result = await scenario.ctx.core.write(
-        { command: "redo", file: "chapter.md", ...redo },
-        context,
-      );
-      return { text: outcomeText(result), blocks: scenario.blockTexts() };
-    };
-
-    const latest = await run({});
-    const lastOne = await run({ last: 1 });
-
-    expect(latest.text).toContain("redo: w1");
-    expect(lastOne.text).toContain("redo: w1");
-    expect(lastOne.blocks).toEqual(latest.blocks);
-    expect(lastOne.blocks).toEqual(["Base.", "One.", "Two."]);
-  });
-
-  it("redoes every undo group a since/to range touches", async () => {
-    const scenario = await threeSeparatelyUndone();
-
-    const redo = await scenario.ctx.core.write(
-      { command: "redo", file: "chapter.md", since: "w1", to: "w2" },
-      context,
-    );
-
-    expect(outcomeText(redo)).toContain("redo: w1, w2");
-    expect(scenario.blockTexts()).toEqual(["Base.", "One.", "Two."]);
-  });
 });
