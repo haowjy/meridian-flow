@@ -7,7 +7,8 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import type { FileDestination } from "../../file-policy/index.js";
 
 /**
  * Where a model call reads or writes one document, computed by the caller
@@ -15,9 +16,7 @@ import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
  * Work draft. The Work is part of the version, so `work switch` changes it
  * (D41). The slug only names the Work in model-facing copy.
  */
-export type AgentEditDestination =
-  | { kind: "live" }
-  | { kind: "draft"; workId: WorkId; workSlug: string | null };
+export type AgentEditDestination = FileDestination;
 
 /** A core call's context with the destination the caller computed. */
 export type RoutedWriteContext = WriteContext & { destination: AgentEditDestination };

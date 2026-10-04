@@ -1,6 +1,6 @@
 /** Shared row lock for serializing Work lifecycle changes with Work-owned mutations. */
 import { works } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
@@ -35,4 +35,19 @@ export async function requireLockedActiveWork(db: DrizzleDb, workId: string): Pr
   if (work.state !== "active") {
     throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
   }
+}
+
+/**
+ * Lock several Works in one global order, sorted by id, so writers spanning
+ * Works never deadlock each other (file-access §5).
+ */
+export async function lockWorksInIdOrder(db: DrizzleDb, workIds: readonly string[]): Promise<void> {
+  const ids = [...new Set(workIds)].sort();
+  if (ids.length === 0) return;
+  await currentDrizzleDb(db)
+    .select({ id: works.id })
+    .from(works)
+    .where(inArray(works.id, ids))
+    .orderBy(asc(works.id))
+    .for("no key update");
 }
