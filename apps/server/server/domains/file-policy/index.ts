@@ -34,4 +34,4 @@ export {
   createFileAccess,
   type FileAccess,
 } from "./file-access.js";
-export type { FileAccessChanges } from "./ports/file-access-changes.js";
+export type { FileAccessChange, FileAccessChanges } from "./ports/file-access-changes.js";
