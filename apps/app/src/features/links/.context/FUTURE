@@ -16,3 +16,13 @@
   surfaces at once, with one classifier validated by the contracts URI parser
   and used by `shouldAutoLink` and a chat remark step; linkifying in one
   surface only would make them disagree about what a link is.
+
+- External links have no shared scheme policy, so the surfaces disagree. Chat's
+  Streamdown (`rich-content/Markdown.tsx`) allows `tel:` links; the Editor's
+  classifier (`core/editor/links/link-target.ts`, `EXTERNAL_SCHEMES`) allows
+  only `http:`, `https:` and `mailto:`. A protocol-relative URL
+  (`//example.com/x`) renders as `href="/"` in chat, while the Editor
+  normalizes it to https. Neither comes from the link-follow work. Decide one
+  external-link scheme policy (allowed schemes, protocol-relative handling) in
+  `core/editor/links`, and have chat's Streamdown sanitize and `link-target.ts`
+  both use it.
