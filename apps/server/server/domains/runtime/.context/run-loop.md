@@ -90,9 +90,9 @@ child-run coordinator, interrupt registry, and `EventSink`. `backgroundTasks`
 is required and injected by the app composition or test harness. The process
 tracker is explicitly wired only into DB test fixtures. Disabled behavior is
 an explicit adapter (for example a no-op sink), never an omitted dep. Do not
-re-add a global permission gate here; names and per-tool command sets are gated
-per turn from advertised policy
-([tools](tools.md)). Provider-specific model-call behavior stays behind the
+re-add a global permission gate here; tool names are gated per turn from
+advertised policy, and file and action access per call
+([tools](tools.md#permissions)). Provider-specific model-call behavior stays behind the
 gateway port.
 
 Handoff brief generation is not a run: the orchestrator only delegates Stop
