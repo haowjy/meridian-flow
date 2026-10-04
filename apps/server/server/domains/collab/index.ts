@@ -11,6 +11,12 @@ export {
   type DocumentLinkSubstitution,
   extractDocumentLinkOccurrences,
 } from "./domain/document-link-occurrences.js";
+export type { DocumentDerivationCut } from "./domain/ports/document-derivations.js";
+export type {
+  DocumentLinkMover,
+  DocumentLinkRewriteClaim,
+  RewriteDocumentLinks,
+} from "./domain/ports/document-link-rewrite.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

@@ -190,6 +190,13 @@
       "when": 1791086277433,
       "tag": "0026_friendly_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791086977226,
+      "tag": "0027_polite_korvac",
+      "breakpoints": true
     }
   ]
 }

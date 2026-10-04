@@ -10,11 +10,22 @@
 - Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item.
 
 - Add local folder-move journals and descendant catalog rebasing for instant rename integration; retain complete settled receipts for short-lived item feedback.
+- Preserve whole-holder link batches while targets are deleted, serialize overwrite moves with maintenance, and leave personal links unresolved when their targets move into another project.
+
+- Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance. Keep each holder's pending batch together when another move arrives during backoff.
+
+- Add atomic link maintenance for committed document moves, preserving AI Undo and publishing to live rooms only after durable commit.
+- Preserve document-link targets through renames with pending identity redirects and move receipt counts; old chat addresses follow renamed documents until another document occupies them.
 
 - Index internal document links alongside certified projections, including relative links and image references; refresh their address keys when the holder moves.
 
 - Add shared href respelling and snapshot link-occurrence primitives for rename rewriting, preserving address style and exact filename labels.
 - Refresh document search and AI-context projections after writer typing and checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata.
+- Refresh document search and AI-context projections 500 ms after writer typing pauses (at most three seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
+- Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
+
+- Refresh document search, listings, sizes, download fallback, and link-index projections two seconds after writer typing pauses (at most ten seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
+- Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
 
 - No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".

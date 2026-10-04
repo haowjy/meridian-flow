@@ -47,6 +47,8 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/context-catalog.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
+  "apps/server/server/domains/context/links/move-redirects.db.test.ts",
+  "apps/server/server/domains/context/links/link-update-worker.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/context/promotion/adapters/drizzle-result-repository.db.test.ts",

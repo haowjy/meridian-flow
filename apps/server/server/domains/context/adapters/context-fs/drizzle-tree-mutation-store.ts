@@ -16,6 +16,7 @@ import {
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
+import { recordMoveRedirects } from "../../links/move-redirects.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -100,6 +101,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly eventSink?: EventSink,
+    private readonly kickLinkUpdates: () => void | Promise<void> = () => {},
   ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
@@ -347,6 +349,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const previousLocations = await readTreeLocations(this.db, input.source);
+      const linkUpdate = await recordMoveRedirects(this.db, input, previousLocations);
+      runAfterDrizzleCommit(this.kickLinkUpdates);
       const destParentId = await this.ensureFolderPath(
         input.destinationSourceId,
         treePathSegments(targetParentPath),
@@ -409,7 +413,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           [input.source.sourceId, input.destinationSourceId],
           [input.source.nodeId],
         );
-        return Ok({ movedNodeId: input.source.nodeId });
+        return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
       }
 
       if (input.source.sourceId === input.destinationSourceId) {
@@ -439,7 +443,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           destinationPath,
         );
         await this.catalogMutations?.refreshSources([input.source.sourceId], [input.source.nodeId]);
-        return Ok({ movedNodeId: input.source.nodeId });
+        return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
       }
 
       await this.runBeforeDestructiveWrite();
@@ -510,7 +514,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [input.source.nodeId],
       );
 
-      return Ok({ movedNodeId: input.source.nodeId });
+      return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
     });
   }
 
