@@ -4,7 +4,7 @@ import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
   ResourceDescriptor,
-  ResourceLocation,
+  ResourceDestination,
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
@@ -86,7 +86,7 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
-  destination: Omit<ResourceLocation, "path"> & { folderPath: string };
+  destination: ResourceDestination;
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;

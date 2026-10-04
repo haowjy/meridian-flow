@@ -146,8 +146,29 @@ delivery into ToolViews. For the full process/text/artifact contract, see
 grammar for presentation and `reference-occurrences.ts` for submitted-reference
 authority. Those are separate decisions: grammar may make syntax readable, but
 only an exact submitted `(documentId, uri)` match grants occurrence navigation.
-Syntax-only navigation still goes through the project-scoped link resolver and
-must never inherit attachment authority.
+Syntax-only navigation goes through the hosting surface's link follower
+(`TranscriptLinkNavigationContext`: `{ follow, canFollow, resolution, watch }`,
+built by `features/chat/useChatLinkFollowing.ts` over
+[`features/links`](../src/features/links/AGENTS.md)) and must
+never inherit attachment authority. `resolution` is the cache those follows
+use; a syntax link draws its chip state from it, so what it shows and what a
+click finds agree. `watch` is the surface's single requester
+(`createLinkRequester`): a shown link registers its href, and the requester
+asks about every shown link in one batched request per pass. A link never
+asks for itself. A syntax reference `canFollow` rejects (a relative path in
+chat, which has no base URI) renders as plain text with its href as a tooltip:
+no link role, no tab stop, no context menu.
+
+Every other reference is a link chip
+([`components/app/link-chip`](../src/components/app/link-chip/AGENTS.md)). An
+exact reference draws in its URI's family from the host's
+`TranscriptReferenceResolution` map. In chat that is the chat's
+`ReferenceAvailability` store (`features/chat/reference-availability.ts`):
+user turns watch their document ids, the store looks every new id up in one
+batched availability request, and the catalog revision change that
+re-registers the link resolver asks again about everything watched. Dashed
+and unfollowable once its document is gone for this writer; filled while the
+answer is out, indeterminate, or for a document that has moved since.
 
 Occurrence coordinates are offsets in the original serialized message, not in
 decoded mdast text. Keep authorized content in one source block, use
@@ -328,13 +349,19 @@ context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
 creation dialog, distinct from every UUID-addressed Work. Documents and folders
 live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
 and for Scratch and Uploads it is required because the Work is the file's
-identity. The recognized query keys are `work`, `settings`, `results`, and
-`view`. Selectors distinguish omitted, explicit no-Work (empty), a Work ID, and
-malformed input; duplicate recognized keys and malformed encodings are invalid
-rather than normalized into another destination. Older shapes have no alias and
-render the unavailable state. Case and trailing-slash canonical replacement use
-the address serializer. Settings remains the layout-owned overlay; Results
-remains auxiliary state. The full grammar is in
+identity. No Work has one Editor identity, none: the locked No Work row's id
+(which a No Work chat is bound to and a No Work Scratch address carries)
+resolves to No Work, and a No Work Scratch tab carries no Work, so it stays in
+the No Work Editor's strip however the Editor was reached. A tab carries a
+Work only when its location names one by slug (`editorTabWorkId`); every
+resource location states its Work's slug, null only for the No Work row
+(`ResourceWorkAuthority`). The recognized query keys are `work`, `settings`,
+`results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
+a Work ID, and malformed input; duplicate recognized keys and malformed
+encodings are invalid rather than normalized into another destination. Older
+shapes have no alias and render the unavailable state. Case and trailing-slash
+canonical replacement use the address serializer. Settings remains the
+layout-owned overlay; Results remains auxiliary state. The full grammar is in
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and

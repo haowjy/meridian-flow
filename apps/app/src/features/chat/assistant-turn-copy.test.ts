@@ -45,7 +45,8 @@ describe("assistant turn copy", () => {
     expect(html).toContain("<ul>");
     expect(html).toContain('<a href="https://example.com/"');
     expect(html).toContain(">Source</a>");
-    expect(html).toContain("Chapter 1");
+    // `[[name]]` is text, never a link.
+    expect(html).toContain("[[Chapter 1]]");
     expect(html).not.toContain("class=");
     expect(html).not.toContain("Interim note");
   });

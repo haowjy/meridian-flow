@@ -100,6 +100,7 @@ export function ChatSurface({
             activeWork={activeWork}
             availableWorks={availableWorks}
             onOpenContextTarget={onOpenContextTarget}
+            visible={visible}
           />
         )}
       </DockShell>

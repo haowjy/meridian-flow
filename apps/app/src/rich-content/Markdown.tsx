@@ -9,7 +9,6 @@
  * stream settles.
  */
 
-import { remarkWikiLink } from "@meridian/markup";
 import { type ComponentType, useMemo } from "react";
 import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
 
@@ -63,6 +62,10 @@ const REFERENCE_REMEND = { links: false, images: false };
 
 const CONTROLS = { code: true, table: false, mermaid: false } as const;
 
+// Streamdown's default turns its "Open external link?" modal on. Off, web links open
+// in a new tab like the Editor's.
+const LINK_SAFETY: NonNullable<StreamdownProps["linkSafety"]> = { enabled: false };
+
 /**
  * Stable identity for the common "empty" case. A fresh `[]` default would
  * change every render and bust the memoized plugin/Streamdown props.
@@ -95,7 +98,6 @@ export function Markdown({
   const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = useMemo(
     () => [
       ...Object.values(defaultRemarkPlugins),
-      remarkWikiLink,
       [remarkReferenceOccurrences, { occurrences: references, skills }],
       ...(breaks ? [remarkLineBreaks] : []),
     ],
@@ -115,6 +117,7 @@ export function Markdown({
         remend={REFERENCE_REMEND}
         shikiTheme={SHIKI_THEME}
         controls={CONTROLS}
+        linkSafety={LINK_SAFETY}
         remarkPlugins={remarkPlugins}
         allowedTags={ALLOWED_TAGS}
         components={REFERENCE_COMPONENTS}

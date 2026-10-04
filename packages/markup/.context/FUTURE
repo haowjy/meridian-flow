@@ -1,0 +1,8 @@
+# Deferred, markup
+
+- A link whose label is partly formatted serializes as several links:
+  `[*partly* italic](url)` comes out as `*[partly](url)*[ italic](url)`. It
+  parses back to one link, so the Editor is unaffected, but an LLM reading the
+  Markdown sees two links to the same place. Serialize the link mark around its
+  whole run with the inner marks inside the brackets
+  (`src/markdown/marks/link.ts` and the mark nesting in the serializer).

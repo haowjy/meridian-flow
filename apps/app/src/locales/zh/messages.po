@@ -88,9 +88,12 @@ msgstr ""
 msgid "'.' and '..' cannot be used as names"
 msgstr ""
 
-#. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-msgid "(also {0})"
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "“{name}” can't be found"
+msgstr ""
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "“{name}” doesn't exist yet"
 msgstr ""
 
 #. placeholder {0}: stats.callCount
@@ -630,8 +633,8 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/creation/CreationDialog.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -741,6 +744,11 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
+#~ msgid "Check again"
+#~ msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
@@ -816,7 +824,7 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -1317,9 +1325,8 @@ msgstr ""
 msgid "Couldn't write"
 msgstr ""
 
-#. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-msgid "Create “{0}”"
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Create “{name}”"
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
@@ -1338,17 +1345,13 @@ msgstr ""
 msgid "Create file or folder"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-msgid "Create it now and the link starts working. Nothing about the link changes."
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Create it and this link opens it."
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
-msgstr ""
-
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-msgid "Create the document"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
@@ -1377,7 +1380,6 @@ msgstr ""
 msgid "Creating project…"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "Creating…"
 msgstr ""
@@ -1551,6 +1553,13 @@ msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
+msgstr ""
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/link/LinkHint.tsx
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/rich-content/TranscriptReference.tsx
+msgid "Doesn't exist yet"
 msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
@@ -2030,6 +2039,10 @@ msgstr ""
 msgid "Invoking the {skill} skill…"
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "It may have moved or been removed."
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2097,10 +2110,6 @@ msgstr ""
 msgid "Link"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-msgid "Link a document"
-msgstr ""
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link a file"
 msgstr ""
@@ -2109,8 +2118,9 @@ msgstr ""
 msgid "Link text"
 msgstr ""
 
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-msgid "links now, page later"
+#. placeholder {0}: row.label
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "Link to “{0}” (not written yet)"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2215,7 +2225,7 @@ msgstr ""
 msgid "Log out"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Looking for the document this link names."
 msgstr ""
 
@@ -2450,17 +2460,6 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-msgid "No document answers to this name. A document can be created for it once the name works as a filename."
-msgstr ""
-
-#: src/features/chat/ChatView.tsx
-#: src/features/editor/surfaces/link/LinkForm.tsx
-#: src/features/editor/surfaces/link/LinkHint.tsx
-#: src/features/editor/surfaces/link/LinkMenu.tsx
-msgid "No document with this name yet"
-msgstr ""
-
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
 msgstr ""
@@ -2548,10 +2547,6 @@ msgstr "未找到"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
-
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-msgid "Nothing carries that name yet"
-msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
@@ -2705,7 +2700,7 @@ msgstr ""
 msgid "Opening document…"
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
 msgstr ""
 
@@ -3573,8 +3568,7 @@ msgstr ""
 msgid "That image did not upload."
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
 msgstr ""
 
@@ -3624,7 +3618,7 @@ msgstr ""
 msgid "The change could not be confirmed. Try again."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr ""
 
@@ -3648,7 +3642,7 @@ msgstr ""
 msgid "The location changed. Try again."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
 
@@ -3976,7 +3970,7 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
+#: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr ""
 
@@ -4009,10 +4003,6 @@ msgstr ""
 #: src/features/debug/llm-calls/LlmCallsViewer.tsx
 msgid "Turns {0}"
 msgstr "轮次 {0}"
-
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-msgid "two documents share this name"
-msgstr ""
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
