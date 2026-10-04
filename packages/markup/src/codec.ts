@@ -245,6 +245,7 @@ function trimOneTrailingNewline(value: string): string {
 /** Keep GFM token positions; its legacy text transform invents positionless links even from escaped URLs. */
 function positionedGfm(this: Processor): void {
   remarkGfm.call(this);
+  // Depends on remark-gfm's extension shape; the bare-prose round-trip row guards upgrades.
   const extensions = this.data().fromMarkdownExtensions ?? [];
   const removeLegacyAutolinks = (extension: Extension | Extension[]): void => {
     if (Array.isArray(extension)) {
