@@ -452,8 +452,12 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 
 function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
-    // A storage-side lifecycle refusal carries no agent chain, so it offers no call.
-    return workLifecycleMessage(error.reason, error.workSlug, false);
+    // The file policy refuses an archived Work's files first, with copy fit for
+    // the agent; this storage-side refusal only follows an archive mid-call.
+    const work = error.workSlug ? `Work @${error.workSlug}` : "The requested Work";
+    return error.reason === "work_archived"
+      ? `${work} is archived, so this change wasn't made.`
+      : `${work} is unavailable.`;
   }
   if (error.code === "invalid_uri") return error.reason;
   if ("message" in error && typeof error.message === "string") return error.message;
@@ -550,7 +554,10 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
-/** Offers the unarchive call only when the action policy would allow it. */
+/**
+ * A `work` command on an archived or gone Work. Offers the unarchive call only
+ * when the action policy would allow it.
+ */
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
@@ -1090,20 +1097,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
     const principal = await agentPrincipal(deps, portOrError, execution);
     const creates = parsed.command === "create" || parsed.command === "copy";
-    // A create or copy needs edit on the folder it makes the file in; the
-    // namespace transaction confirms that grant under its locks (seam C).
-    let containerGrant: FileGrant<"edit"> | undefined;
-    if (creates) {
-      const target = await containerTarget(deps, portOrError, parsed.path);
-      if (target) {
-        const grant = await deps.fileAccess.authorize(principal, target, "edit");
-        if (isFileAccessDenied(grant)) return fileAccessDeniedError(parsed.command, grant);
-        containerGrant = grant;
-      }
-    }
-    const inContainer = async <T>(operation: () => Promise<T>) => {
-      if (!containerGrant) return operation();
-      const result = await runWithEditGrants(deps.fileAccess, [containerGrant], operation);
+    // A create or copy needs edit on the folder it makes the file in, at the
+    // destination the file lands in; the namespace transaction confirms that
+    // grant under its locks (seam C).
+    const target = creates ? await containerTarget(deps, portOrError, parsed.path) : null;
+    const inContainer = async <T>(
+      asPrincipal: Principal,
+      operation: () => Promise<T>,
+    ): Promise<T | WriteToolErrorOutput> => {
+      if (!target) return operation();
+      const grant = await deps.fileAccess.authorize(asPrincipal, target, "edit");
+      if (isFileAccessDenied(grant)) return fileAccessDeniedError(parsed.command, grant);
+      const result = await runWithEditGrants(deps.fileAccess, [grant], operation);
       if (result.ok) return result.value;
       return fileAccessDeniedError(parsed.command, firstRefusal(result.refusal));
     };
@@ -1132,7 +1137,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             fromMessage(parsed.from, sourceGrant.output.message ?? ""),
           );
         }
-        return inContainer(() => copyBinary(deps, portOrError, parsed, binary, sourceGrant, ctx));
+        // A binary copy always lands live (D24), so its folder is judged live.
+        const livePrincipal = principal.agent
+          ? { ...principal, agent: { ...principal.agent, draftWork: null } }
+          : principal;
+        return inContainer(livePrincipal, () =>
+          copyBinary(deps, portOrError, parsed, binary, sourceGrant, ctx),
+        );
       }
       const read = await readTrackedCopySource(
         deps,
@@ -1150,7 +1161,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       copied = read;
     }
 
-    const address = await inContainer(() =>
+    const address = await inContainer(principal, () =>
       resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
         deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
