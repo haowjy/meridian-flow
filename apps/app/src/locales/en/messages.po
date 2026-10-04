@@ -116,6 +116,11 @@ msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
 #~ msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 #~ msgstr "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
 
+#. placeholder {0}: count ?? 2
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#~ msgid "{0, plural, one {Apply it now} other {Apply them now}}"
+#~ msgstr "{0, plural, one {Apply it now} other {Apply them now}}"
+
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -125,6 +130,11 @@ msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr "{0, plural, one {edited # document} other {edited # documents}}"
+
+#. placeholder {0}: count ?? 2
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#~ msgid "{0, plural, one {Keep it for review} other {Keep them for review}}"
+#~ msgstr "{0, plural, one {Keep it for review} other {Keep them for review}}"
 
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -222,6 +232,18 @@ msgstr "{0} tok/s"
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
 
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{changes, plural, one {Apply it now} other {Apply them now}}"
+msgstr "{changes, plural, one {Apply it now} other {Apply them now}}"
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{changes, plural, one {Keep it for review} other {Keep them for review}}"
+msgstr "{changes, plural, one {Keep it for review} other {Keep them for review}}"
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
+msgstr "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -283,8 +305,8 @@ msgid "{name} has pending changes waiting for review. From now on, AI changes go
 msgstr "{name} has pending changes waiting for review. From now on, AI changes go live right away."
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
-msgstr "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
+#~ msgid "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
+#~ msgstr "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away."
@@ -561,8 +583,8 @@ msgid "Apply all"
 msgstr "Apply all"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Apply them now"
-msgstr "Apply them now"
+#~ msgid "Apply them now"
+#~ msgstr "Apply them now"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
@@ -2228,8 +2250,8 @@ msgid "Keep editing"
 msgstr "Keep editing"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Keep them for review"
-msgstr "Keep them for review"
+#~ msgid "Keep them for review"
+#~ msgstr "Keep them for review"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
@@ -3705,8 +3727,12 @@ msgid "Switch"
 msgstr "Switch"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switch {name} to auto-apply?"
-msgstr "Switch {name} to auto-apply?"
+msgid "Switch {name} to <0>auto-apply?</0>"
+msgstr "Switch {name} to <0>auto-apply?</0>"
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#~ msgid "Switch {name} to auto-apply?"
+#~ msgstr "Switch {name} to auto-apply?"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
@@ -3717,8 +3743,12 @@ msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switch to auto-apply?"
-msgstr "Switch to auto-apply?"
+msgid "Switch to <0>auto-apply?</0>"
+msgstr "Switch to <0>auto-apply?</0>"
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#~ msgid "Switch to auto-apply?"
+#~ msgstr "Switch to auto-apply?"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
