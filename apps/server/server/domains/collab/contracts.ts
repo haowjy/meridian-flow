@@ -25,12 +25,20 @@ import type {
 export type { AgentEditDestination, RefusedResponseDocument };
 
 import type {
+  PendingChangesChoice,
+  SetWorkPushPolicyInput,
+  SetWorkPushPolicyResult,
+} from "./domain/branch-push-contracts.js";
+import type {
   ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+
+export type { PendingChangesChoice, SetWorkPushPolicyInput, SetWorkPushPolicyResult };
+
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
@@ -322,12 +330,7 @@ export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
-  setWorkPushPolicy(input: {
-    workId: WorkId;
-    policy: "manual" | "auto";
-    confirmedPush?: boolean;
-    pushedByUserId?: UserId;
-  }): Promise<unknown>;
+  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   markFailedResponseRollbackPending(input: {
     branchId: string;
     threadId: ThreadId;
