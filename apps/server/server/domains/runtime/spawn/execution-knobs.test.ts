@@ -79,6 +79,7 @@ describe("one definition across all four surfaces", () => {
       tools: { edit: "deny" },
       "disallowed-tools": ["bash"],
       effort: "xhigh",
+      permission: "edit",
     });
 
     const patched = await applyInvocationPatch({
@@ -86,6 +87,7 @@ describe("one definition across all four surfaces", () => {
       patch: invocationPatchSchema.parse({
         model: "patched-model",
         effort: "none",
+        permission: "read",
         tools: { shell: "allow" },
         "disallowed-tools": ["edit"],
         subagents: ["critic"],
@@ -112,6 +114,7 @@ describe("one definition across all four surfaces", () => {
       tools: { edit: "deny", bash: "allow" },
       "disallowed-tools": ["edit"],
       effort: "none",
+      permission: "read",
     });
     expect(agentGatewayMetaToGenerateParams(patched)).toEqual({
       model: "patched-model",

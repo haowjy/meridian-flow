@@ -160,6 +160,7 @@ async function fixture(
           name: "Critic",
           model: "critic-model",
           mode: "primary",
+          permission: "read",
           tools: { edit: "deny", ask_user: "allow" },
         },
         "You are Critic.",
@@ -808,6 +809,57 @@ describe("ChildRunCoordinator invocation overlay", () => {
       expect(result.error.code).toBe("spawn_invocation_authority_denied");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("lets overrides.permission lower to read and refuses a raise as invalid arguments", async () => {
+    const { coordinator, revisions, repos, parent, journal } = await fixture();
+    const spawn = (parentThread: typeof parent, agentSlug: string, permission: "read" | "edit") =>
+      coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug,
+          prompt,
+          overrides: { permission },
+          budget,
+        },
+        { mode: "foreground" },
+      );
+
+    const lowered = await spawn(parent, "", "read");
+    expect(lowered.status).toBe("completed");
+    if (lowered.status !== "completed") return;
+    const loweredBinding = await revisions.readThreadBinding(lowered.report.threadId);
+    expect(loweredBinding?.configuration.permission).toBe("read");
+
+    const spawnsBefore = journal.filter((event) => event.type === "agent.spawn").length;
+    const readParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const parentBinding = await revisions.readThreadBinding(parent.id);
+    if (!parentBinding) throw new Error("Missing parent binding");
+    await revisions.bindThread(
+      readParent.id,
+      null,
+      { ...parentBinding.configuration, permission: "read" },
+      null,
+    );
+    const underReadParent = await spawn(readParent, "", "edit");
+    const overReadProfile = await spawn(parent, "critic", "edit");
+    expect(
+      [underReadParent, overReadProfile].map((result) => result.status === "error" && result.error),
+    ).toEqual([
+      expect.objectContaining({
+        code: "invalid_arguments",
+        message:
+          'Invalid arguments for spawn:\n- overrides.permission: can only lower permission, and yours is "read"',
+      }),
+      expect.objectContaining({
+        code: "invalid_arguments",
+        message:
+          'Invalid arguments for spawn:\n- overrides.permission: can only lower permission, and critic\'s is "read"',
+      }),
+    ]);
+    expect(journal.filter((event) => event.type === "agent.spawn")).toHaveLength(spawnsBefore);
   });
 
   it("rejects an unresolvable typed override before creating a child", async () => {
