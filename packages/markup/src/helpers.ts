@@ -57,9 +57,7 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const out: MdastBlock[] = [];
   node.forEach((child) => {
     const serialized = runtime.serializeBlock(child, ctx);
-    out.push(
-      ...demoteAutolinks(parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown)).children,
-    );
+    out.push(...parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown).children);
   });
   return out;
 }
@@ -461,18 +459,27 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return false;
 }
 
-export function demoteAutolinks(tree: MdastRoot): MdastRoot {
+/** Bare GFM autolink literals stay prose; bracket and angle links are intentional. */
+export function demoteAutolinks(tree: MdastRoot, source: string): MdastRoot {
   visitChildren(tree, (node, idx, parent) => {
     const record = asRecord(node);
     if (record?.type !== "link" || idx === null || !parent) return;
+    const position = asRecord(record.position);
+    const offset = asRecord(position?.start)?.offset;
+    // Without source positions we cannot prove a link was implicit: retain it.
+    if (
+      typeof offset !== "number" ||
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset >= source.length
+    )
+      return;
+    if (source[offset] === "[" || source[offset] === "<") return;
     const children = record.children;
-    const url = record.url;
-    const title = record.title;
-    if (!Array.isArray(children) || typeof url !== "string" || title) return;
-    const first = children[0];
-    const firstRecord = asRecord(first);
-    if (children.length === 1 && firstRecord?.type === "text" && firstRecord.value === url) {
-      parent.children[idx] = { type: "text", value: url };
+    if (!Array.isArray(children) || children.length !== 1) return;
+    const text = asRecord(children[0]);
+    if (text?.type === "text" && typeof text.value === "string") {
+      parent.children[idx] = children[0];
     }
   });
   return tree;

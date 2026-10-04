@@ -12,6 +12,8 @@
 - Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
 - Draft review: a never-applied document has no live version, so its review exit reads "Close review" and closes the tab (the draft stays in your list) instead of leaving a blank editor. Only Apply and Discard in the same Work disable each other, and a Discard that fails before it is sent no longer leaves the draft locked.
 - Draft review: Discard of a never-applied document closes its tab at once and selects the neighbouring tab; a refused Discard leaves the tab closed and shows the error on the draft in the composer strip and Work Files.
+- Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
+
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
 - Chat: web links open in a new tab without a confirmation, like the Editor.
 - Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
