@@ -141,7 +141,7 @@ derives log and retain last-good rows rather than blocking the move.
 
 The move locks all mutated documents (moved identities plus any overwrite victim),
 sorted by identity, `FOR NO KEY UPDATE`, then redirects whose holder
-or target moved `FOR UPDATE`, both in identity order. The weaker document lock
+or target moved `FOR UPDATE`, ordered by holder and href (the worker's order). The weaker document lock
 keeps journal FK insertion compatible. Address candidates use the shared
 `documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
 Moved holders' relative links retain their pre-move target (or intended URI).
