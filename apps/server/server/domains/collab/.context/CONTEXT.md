@@ -104,7 +104,7 @@ from document derivation.
 
 `domain/document-derivations.ts` is the sole projection pipeline. The write hook
 runs it immediately; WebSocket admissions and generation replacement schedule it
-with a two-second trailing debounce and ten-second maximum wait. Push completion
+with a 500 ms trailing debounce and three-second maximum wait. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
 
