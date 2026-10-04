@@ -75,7 +75,9 @@ The shipped route surface covers:
   route handling.
 
 Project-scoped handlers gate through `requireProjectOwner` from
-`server/domains/projects` before reading or mutating project-owned data.
+`server/domains/projects` before reading or mutating project-owned data, then
+ask the [file policy](../server/domains/file-policy/.context/CONTEXT.md) for
+each document they read or change.
 WorkOS AuthKit is the auth boundary; alternate auth adapter route code is not part of
 Meridian Flow. The removed external execution-provider route surface is also out
 of scope for Meridian; do not port it back while filling route parity gaps.

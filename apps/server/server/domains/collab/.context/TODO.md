@@ -21,19 +21,6 @@ Affected paths: `apps/server/server/lib/yjs-ws-handler.ts` (`admitLiveSync`),
 `domains/file-policy/file-access.ts` (`confirmEdit`), the journal seam in
 `adapters/drizzle-journal.ts`.
 
-## Make archived Work documents read-only in live Yjs sessions
-
-Archived Work documents remain readable and therefore pass document access and
-live-room admission. The app mounts the archived surface read-only, but the live
-Yjs writer-ingress path does not consult Work lifecycle, so a direct or already
-connected peer can still submit updates for durable journaling. Add a read-only
-lifecycle fact to live-session admission and fence updates without revoking the
-readable room.
-
-Affected paths: `apps/server/server/lib/document-access.ts`,
-`apps/server/server/lib/yjs-ws-handler.ts`, project document opening, and live
-session availability contracts.
-
 ## Refresh the markdown projection after human Yjs writes
 
 The WebSocket persistence path durably journals and checkpoints human Yjs

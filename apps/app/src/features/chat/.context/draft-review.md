@@ -30,6 +30,11 @@ the server discard mutation with
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
 
+An archived Work's drafts are frozen (D30): the server refuses Apply and
+Discard. The controller's `draftsFrozen`, from the scope's Work, disables
+every disposition control beside the existing archived notice; Review stays
+available. A new disposition control reads the same flag.
+
 Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Apply
 addresses the current branch rather than preview operation ids or a revision
@@ -150,10 +155,8 @@ dock showed no reviewable change but the mode-switch dialog raw-counted one
 manifest journal row.
 
 Pending membership and presentation order are separate contracts.
-`activeDockedDraftGroups` stays newest-updated-first for the DraftDock. The
-composer's single **Review changes** action sorts a copy by
-`documentName ?? documentId` and opens the alphabetically first pending
-document; it must not reorder the shared projection.
+`dockRows` builds its own list sorted by `documentName ?? documentId` for the
+DraftDock and the Changes view; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until Apply. Its review tab

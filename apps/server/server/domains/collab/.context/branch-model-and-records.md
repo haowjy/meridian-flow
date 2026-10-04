@@ -10,9 +10,12 @@ as upstream. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
-Work draft capture, redo, and Apply require an active Work under the shared
-lifecycle row lock before durable mutation. Archive preserves captured evidence
-and permits Discard cleanup; it does not permit new capture or Apply. Replaying
+Work draft capture, redo, Apply and Discard require an active Work under the
+shared lifecycle row lock before durable mutation, and take the row through
+`lockSeamWorks` so bound edit grants are confirmed first
+([file policy](../../file-policy/.context/CONTEXT.md)). An archived Work's
+drafts are frozen: captured evidence stays, and nothing writes, applies or
+discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
 new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset

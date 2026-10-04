@@ -27,8 +27,8 @@ export interface FileFactsPort {
   /**
    * Inside the ambient transaction: lock every named Work that owns a target
    * or its draft `FOR NO KEY UPDATE`, sorted by id, then read the facts under
-   * those locks. An owner that changes after locking is locked and read once
-   * more; one that changes again reads as not found.
+   * those locks. A file whose owner moved between the first read and the lock
+   * reads as not found, since locking the new owner would break the id order.
    */
   loadLocked(requests: readonly FileFactsRequest[]): Promise<(FileFacts | null)[]>;
   /** The skills a thread's own binding names (D52); `skillLevel` decides which it may read. */
