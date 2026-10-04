@@ -24,7 +24,6 @@ export type ContextError =
       uri: string;
       reason: string;
       workSlug?: string;
-      validWorkSlugs?: string[];
       unknownScheme?: string;
     }
   | { code: "io_error"; uri: string; message: string };

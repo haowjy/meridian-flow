@@ -52,6 +52,7 @@ import type {
   ResponseWriteFinalizer,
 } from "../domains/collab/index.js";
 import { copyBinaryDocument } from "../domains/context/binary-copy.js";
+import { unknownWorkMessage } from "../domains/context/context/router.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -337,15 +338,7 @@ async function workBySlug(
   const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
   const work = works.find((candidate) => candidate.slug === slug);
   if (work) return work;
-  const validWorkSlugs = works.map((candidate) => candidate.slug);
-  // Spelled as the URI router spells it, so both paths give one error.
-  const valid = validWorkSlugs.map((candidate) => `@${candidate}`).join(", ");
-  return toolError({
-    code: "work_not_found",
-    message: `Unknown Work @${slug}. Valid Work slugs: ${valid || "none"}`,
-    workSlug: slug,
-    validWorkSlugs,
-  });
+  return toolError({ code: "work_not_found", message: unknownWorkMessage(slug), workSlug: slug });
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
