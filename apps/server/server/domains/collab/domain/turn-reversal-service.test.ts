@@ -41,12 +41,13 @@ function createService(input: {
       refreshDocumentProjection,
     },
     agentEdit: { reverse: agentReverse } as never,
-    branchReview: { reverseBranchTurn: vi.fn() } as never,
+    branchReview: { reverseBranchTurns: vi.fn(async () => []) } as never,
     branchJournal: { listJournalRowsForTurn: async () => [] },
     branches: { getBranch: async () => null },
     resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
     listEditedDocumentsForTurn: async () => input.lineage ?? [],
     fileAccess: visibleOnly(input.allowed),
+    isDraftWorkUnavailable: () => false,
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
@@ -143,7 +144,7 @@ describe("reverseThreadContext", () => {
 
 describe("cross-scope reversal", () => {
   it("does not reverse branch documents excluded by the authorized live lineage", async () => {
-    const reverseBranchTurn = vi.fn();
+    const reverseBranchTurns = vi.fn(async () => []);
     const liveReverse = vi.fn(async () => ({
       command: "undo",
       status: "reversed",
@@ -159,7 +160,7 @@ describe("cross-scope reversal", () => {
         refreshDocumentProjection: async () => undefined,
       },
       agentEdit: { reverse: vi.fn() } as never,
-      branchReview: { reverseBranchTurn } as never,
+      branchReview: { reverseBranchTurns } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-denied" }],
       } as never,
@@ -169,6 +170,7 @@ describe("cross-scope reversal", () => {
       resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
       listEditedDocumentsForTurn: async () => [],
       fileAccess: visibleOnly(),
+      isDraftWorkUnavailable: () => false,
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -187,7 +189,7 @@ describe("cross-scope reversal", () => {
       status: "reversed",
       documents: [{ uri: "manuscript://allowed.md", status: "reversed" }],
     });
-    expect(reverseBranchTurn).not.toHaveBeenCalled();
+    expect(reverseBranchTurns).toHaveBeenCalledWith(expect.objectContaining({ branchIds: [] }));
     expect(liveReverse).toHaveBeenCalledTimes(1);
   });
 
@@ -227,21 +229,20 @@ describe("cross-scope reversal", () => {
       },
       agentEdit: { reverse: vi.fn() } as never,
       branchReview: {
-        reverseBranchTurn: async () => ({
-          status: "cant_undo_dependent",
-          branchId: "branch-1",
-          journalIds: [1],
-        }),
+        reverseBranchTurns: async () => [
+          { status: "cant_undo_dependent", branchId: "branch-1", journalIds: [1] },
+        ],
       } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-1" }],
       } as never,
       branches: {
-        getBranch: async () => ({ documentId: "document-branch" }),
+        getBranch: async () => ({ branchId: "branch-1", documentId: "document-branch" }),
       } as never,
       resolveDocumentUri: async () => "manuscript://branch.md",
       listEditedDocumentsForTurn: async () => [],
       fileAccess: visibleOnly(),
+      isDraftWorkUnavailable: () => false,
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),

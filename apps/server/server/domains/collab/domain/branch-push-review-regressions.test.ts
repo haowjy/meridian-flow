@@ -200,6 +200,10 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     throw new Error("review regression store does not support discard");
   }
 
+  async lockDraftWorks(): Promise<ReadonlySet<string>> {
+    return new Set();
+  }
+
   async commitTurnRedo(_input: PreparedDiscardCommit): Promise<void> {
     throw new Error("review regression store does not support redo");
   }

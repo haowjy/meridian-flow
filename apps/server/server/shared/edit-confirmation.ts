@@ -25,6 +25,8 @@ export interface EditConfirmation {
   readonly workIds: readonly string[];
   /** Locks and re-checks the grants in the ambient transaction; throws on a refusal. */
   confirm(): Promise<void>;
+  /** The grants name each document, or it lies in a container they grant. */
+  covers(documentIds: readonly string[]): Promise<boolean>;
 }
 
 const scope = new AsyncLocalStorage<EditConfirmation>();
@@ -38,12 +40,23 @@ export function runWithEditConfirmation<T>(
 }
 
 /**
- * Runs a derived write (§5.1) outside the bound grants. Bookkeeping a write
- * triggers after it commits isn't that write; confirming the grants again
+ * Runs work that isn't the bound write outside its grants: what the write
+ * triggers after it commits, or on a timer. Confirming the grants again there
  * would see the write's own result, and a deleted document confirms nothing.
+ * After-commit dispatch leaves the scope this way.
  */
 export function runOutsideEditConfirmation<T>(operation: () => T): T {
   return scope.exit(operation);
+}
+
+/**
+ * Captures the bound grants for a step that is still part of this write but
+ * runs after it commits (an auto-applied draft), so the step carries them
+ * explicitly once after-commit dispatch has left the scope.
+ */
+export function captureEditConfirmation(): <T>(operation: () => T) => T {
+  const confirmation = scope.getStore();
+  return (operation) => (confirmation ? scope.run(confirmation, operation) : scope.exit(operation));
 }
 
 /** The Works the bound grants lock; a seam adds them to its own sorted Work locks. */
@@ -87,12 +100,13 @@ export class UngrantedAgentWriteError extends Error {
 }
 
 /**
- * Refuses an agent write that carries no grant: none bound to the call, and
- * the reply saving it didn't confirm these documents.
+ * Refuses an agent write that carries no grant for its documents: the grants
+ * bound to the call don't cover them, and the reply saving it didn't confirm
+ * them.
  */
-export function requireAgentWriteGrant(documentIds: readonly string[]): void {
-  if (scope.getStore()) return;
+export async function requireAgentWriteGrant(documentIds: readonly string[]): Promise<void> {
   const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed);
   if (confirmed && documentIds.every((documentId) => confirmed.has(documentId))) return;
+  if (await scope.getStore()?.covers(documentIds)) return;
   throw new UngrantedAgentWriteError(documentIds);
 }

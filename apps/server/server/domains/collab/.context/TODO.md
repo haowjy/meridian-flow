@@ -8,6 +8,19 @@ other's cores; not reproduced. PR 2 phase 3 (write seams and locking) sets the
 lock order. Affected: `domain/thread-peer-core-pool.ts`, the response
 finalizer.
 
+## Measure `confirmEdit` on every live frame
+
+Each frame an edit room persists binds the writer's grant, and the journal
+seam runs a full `confirmEdit` inside the journal transaction: two facts
+loads, the recursive folder walk and the person grants. Manuscript rooms pay
+it too, although no Work lifecycle can change their access. Measure frame
+latency under typing load before narrowing it, for example by skipping
+confirmation when the grant locks no Work. PR 2 review, finding 7.
+
+Affected paths: `apps/server/server/lib/yjs-ws-handler.ts` (`admitLiveSync`),
+`domains/file-policy/file-access.ts` (`confirmEdit`), the journal seam in
+`adapters/drizzle-journal.ts`.
+
 ## Make archived Work documents read-only in live Yjs sessions
 
 Archived Work documents remain readable and therefore pass document access and

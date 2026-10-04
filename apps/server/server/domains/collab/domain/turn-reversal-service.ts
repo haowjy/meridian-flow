@@ -53,6 +53,8 @@ export type TurnReversalServiceDeps = {
   ): Promise<Array<{ documentId: string }>>;
   /** The writer's edit grant on each document, confirmed by the seams the reversal reaches. */
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  /** A seam refused a draft write because its Work stopped being active under the seam's lock. */
+  isDraftWorkUnavailable(cause: unknown): boolean;
   threadContext: ThreadContextReversalResolver;
 };
 
@@ -70,32 +72,49 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           turnId: command.turnId,
           statuses,
         });
-        const branchIds = [...new Set(rows.map((row) => row.branchId))];
         const allowedDocumentIds = command.documentIds
           ? new Set<string>(command.documentIds)
           : undefined;
-        const branchDocuments: Array<ReversalOutcome["documents"][number]> = [];
-        for (const branchId of branchIds) {
+        const branches = [];
+        for (const branchId of new Set(rows.map((row) => row.branchId))) {
           const branch = await input.branches.getBranch(branchId);
-          if (!branch || (allowedDocumentIds && !allowedDocumentIds.has(branch.documentId))) {
-            continue;
+          if (branch && (!allowedDocumentIds || allowedDocumentIds.has(branch.documentId))) {
+            branches.push(branch);
           }
-          const result = await input.branchReview.reverseBranchTurn({
-            branchId,
-            threadId: command.threadId,
-            turnId: command.turnId,
-            direction: command.direction,
-            reviewedByUserId:
-              command.actor.type === "user" ? (command.actor.userId as UserId) : undefined,
-          });
-          branchDocuments.push({
-            uri: (await input.resolveDocumentUri(branch.documentId)) ?? branch.documentId,
-            status: result.status,
-          });
         }
+        const results = await input.branchReview.reverseBranchTurns({
+          branchIds: branches.map((branch) => branch.branchId),
+          threadId: command.threadId,
+          turnId: command.turnId,
+          direction: command.direction,
+          reviewedByUserId:
+            command.actor.type === "user" ? (command.actor.userId as UserId) : undefined,
+        });
+        const documentOfBranch = new Map(
+          branches.map((branch) => [branch.branchId, branch.documentId]),
+        );
+        // An archived Work's draft is frozen (D30): that document's whole turn
+        // stays as it is, live writes included, and the rest still reverses.
+        const frozenDocumentIds = new Set<string>();
+        const branchDocuments: Array<ReversalOutcome["documents"][number]> = [];
+        for (const result of results) {
+          const documentId = documentOfBranch.get(result.branchId) ?? result.branchId;
+          if (result.status === "permission_denied") frozenDocumentIds.add(documentId);
+          else
+            branchDocuments.push({
+              uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
+              status: result.status,
+            });
+        }
+        const frozenDocuments = await Promise.all(
+          [...frozenDocumentIds].map(async (documentId) => ({
+            uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
+            status: "permission_denied" as const,
+          })),
+        );
         const branchOutcome = {
           status: aggregateStatus(command.direction, branchDocuments),
-          documents: branchDocuments,
+          documents: [...branchDocuments, ...frozenDocuments],
         } satisfies ReversalOutcome;
         if (branchOutcome.status === "partial" || branchOutcome.status === "cant_undo_dependent") {
           throw new CrossScopeReversalRefused(branchOutcome);
@@ -103,7 +122,17 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
 
         // Branch and live durable writes share the ambient transaction. Their
         // process-local projections and broadcasts publish only after commit.
-        const liveOutcome = await reverseTurn(input.live, command);
+        const liveDocumentIds =
+          frozenDocumentIds.size === 0
+            ? command.documentIds
+            : (
+                command.documentIds ??
+                (await input.live.reversalStore.documentsForTurn(command.threadId, command.turnId))
+              ).filter((documentId) => !frozenDocumentIds.has(documentId));
+        const liveOutcome = await reverseTurn(input.live, {
+          ...command,
+          documentIds: liveDocumentIds,
+        });
         const documents = mergeDocumentScopeResults(command.direction, [
           ...liveOutcome.documents,
           ...branchDocuments,
@@ -115,10 +144,25 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         if (outcome.status === "partial" || outcome.status === "cant_undo_dependent") {
           throw new CrossScopeReversalRefused(outcome);
         }
-        return outcome;
+        if (frozenDocuments.length === 0) return outcome;
+        const withFrozen = [...documents, ...frozenDocuments];
+        return { status: aggregateStatus(command.direction, withFrozen), documents: withFrozen };
       });
     } catch (cause) {
       if (cause instanceof CrossScopeReversalRefused) return cause.outcome;
+      throw cause;
+    }
+  };
+
+  /**
+   * A draft seam found the Work archived under its own lock, after the
+   * writer's grant was confirmed: report it as refused, never as a failure.
+   */
+  const frozenAsRefused = async <T, R>(operation: Promise<T>, refused: () => R): Promise<T | R> => {
+    try {
+      return await operation;
+    } catch (cause) {
+      if (input.isDraftWorkUnavailable(cause)) return refused();
       throw cause;
     }
   };
@@ -134,6 +178,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         const { grants, refused } = await writerGrants(input.fileAccess, command.userId, [
           ...new Set(lineage.map((entry) => entry.documentId)),
         ]);
+        const grantedDocumentIds = grants.map((grant) => documentOf(grant));
         const run =
           grants.length === 0
             ? {
@@ -141,26 +186,31 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
                 value: { status: aggregateStatus(command.direction, []), documents: [] },
               }
             : await runWithEditGrants(input.fileAccess, grants, () =>
-                reverseTurnAcrossScopes({
-                  threadId: command.threadId,
-                  turnId: command.turnId,
-                  direction: command.direction,
-                  actor: { type: "user", userId: command.userId },
-                  documentIds: grants.map((grant) => documentOf(grant)),
-                }),
+                frozenAsRefused(
+                  reverseTurnAcrossScopes({
+                    threadId: command.threadId,
+                    turnId: command.turnId,
+                    direction: command.direction,
+                    actor: { type: "user", userId: command.userId },
+                    documentIds: grantedDocumentIds,
+                  }),
+                  () => null,
+                ),
               );
+        const deniedDocumentIds = refused.map(denialDocument);
         // A seam refused under its locks (archived meanwhile): nothing was reversed.
-        if (!run.ok) refused.push(...run.refusal.refused);
-        const reversed = run.ok
-          ? run.value
-          : { status: "permission_denied" as const, documents: [] };
-        if (refused.length === 0) return reversed;
+        if (!run.ok) deniedDocumentIds.push(...run.refusal.refused.map(denialDocument));
+        else if (run.value === null) deniedDocumentIds.push(...grantedDocumentIds);
+        const reversed =
+          run.ok && run.value !== null
+            ? run.value
+            : { status: "permission_denied" as const, documents: [] };
+        if (deniedDocumentIds.length === 0) return reversed;
         const documents = [
           ...reversed.documents,
           ...(await Promise.all(
-            refused.map(async (denial) => ({
-              uri:
-                (await input.resolveDocumentUri(denialDocument(denial))) ?? denialDocument(denial),
+            deniedDocumentIds.map(async (documentId) => ({
+              uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
               status: "permission_denied" as const,
             })),
           )),
@@ -189,15 +239,18 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         return { status: aggregateStatus(command.direction, documents), documents };
       }
       const run = await runWithEditGrants(input.fileAccess, grants, () =>
-        input.agentEdit.reverse({
-          docId: documentId,
-          threadId: command.threadId,
-          direction: command.direction,
-          selection,
-          actor: { type: "user", userId: command.userId },
-        }),
+        frozenAsRefused(
+          input.agentEdit.reverse({
+            docId: documentId,
+            threadId: command.threadId,
+            direction: command.direction,
+            selection,
+            actor: { type: "user", userId: command.userId },
+          }),
+          () => null,
+        ),
       );
-      if (!run.ok) {
+      if (!run.ok || run.value === null) {
         const documents = [{ uri: document.uri, status: "permission_denied" as const }];
         return { status: aggregateStatus(command.direction, documents), documents };
       }

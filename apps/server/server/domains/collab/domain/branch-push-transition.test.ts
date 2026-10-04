@@ -77,6 +77,9 @@ function fixture() {
     async commitDiscard() {
       throw new Error("push only");
     },
+    async lockDraftWorks() {
+      return new Set<string>();
+    },
     async commitTurnRedo() {
       throw new Error("push only");
     },

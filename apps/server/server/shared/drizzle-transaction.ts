@@ -1,6 +1,7 @@
 /** Ambient Drizzle transaction context shared by adapters that must participate in one app-level DB transaction. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "@meridian/database";
+import { runOutsideEditConfirmation } from "./edit-confirmation.js";
 
 export type DrizzleDatabase = Database;
 export type DrizzleTransaction = Parameters<Parameters<DrizzleDatabase["transaction"]>[0]>[0];
@@ -206,7 +207,7 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = transactionStorage.getStore();
   if (!active) {
-    void runOutsideDrizzleTransaction(callback);
+    void runAfterCommitCallback(callback);
     return false;
   }
   active.afterCommit.push(callback);
@@ -237,11 +238,14 @@ export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
 }
 
+/** After-commit work runs outside the transaction and outside the write's edit grants. */
+function runAfterCommitCallback(callback: () => void | Promise<void>): void | Promise<void> {
+  return runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(callback));
+}
+
 async function dispatchAfterCommit(callbacks: Array<() => void | Promise<void>>): Promise<void> {
   await Promise.allSettled(
-    callbacks.map((callback) =>
-      Promise.resolve().then(() => runOutsideDrizzleTransaction(() => callback())),
-    ),
+    callbacks.map((callback) => Promise.resolve().then(() => runAfterCommitCallback(callback))),
   );
 }
 
