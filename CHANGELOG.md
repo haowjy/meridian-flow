@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-- Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in, and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
+- Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
 - Chat: web links open in a new tab without a confirmation, like the Editor.
 - Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
 - `@` is how you link a document, in the Editor and in chat; typing `[[` is plain text. In the Editor, `@` shows where each document lives and writes a standard link; for a name no document has yet, its last row links one in the same folder before it exists. Ctrl+K takes a web address, a document address, or a relative path.
