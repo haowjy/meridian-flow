@@ -17,7 +17,6 @@ import {
 } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -98,14 +97,9 @@ function AvailableNewThreadControls({
   disabled: boolean;
   onModePendingChange(pending: boolean): void;
 }) {
-  const { openAiDraft } = useAiDraftLauncher();
   const mode = useSelectedWorkWriteModeToolbarControl({
     projectId,
     work,
-    openDraftReview: (group, draftId) => {
-      if (!group.contextPath) return;
-      openAiDraft({ ...group, workId: work.id, draftId, contextPath: group.contextPath });
-    },
   });
   const modePending = "interaction" in mode && mode.interaction === "busy";
   const visibleMode = disabled ? { ...mode, interaction: "busy" as const } : mode;
