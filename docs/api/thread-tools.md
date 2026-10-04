@@ -72,15 +72,16 @@ In progress
 ```
 
 - **Call lines** (D48). Every tool call, on a page, under `routine_calls` and
-  in `expand: N`, is one line: the tool name and the arguments exactly as the
-  model sent them, as compact JSON in its key order, then ` → ` and a short
-  result:
+  in `expand: N`, is one line: the tool name and the arguments as the model
+  sent them, as compact JSON, then ` → ` and a short result. Postgres `jsonb`
+  drops key order, so keys follow the tool's input schema (the matching
+  `oneOf` variant), with keys it doesn't name last:
 
   ```text
   read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks
-  write({"command":"replace","path":"ch3.md","find":"The moon was","content":"The moon was low over the ridge…(212 words)"}) → w4, 212 words, drafted in @rewrite
+  write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, drafted in @rewrite
   read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
-  spawn({"agent":"critic","name":"Pacing review","prompt":"Load the story-review skill…(310 words)"}) → p8
+  spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
   ```
 
   `spawn/history-call-line.ts` shortens long strings inside the JSON, at any

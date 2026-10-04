@@ -14,6 +14,7 @@ import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
+import { orderLikeSchema } from "./history-call-line.js";
 import type { HistoryTurn } from "./history-result.js";
 
 export type HistoryInclude =
@@ -154,8 +155,12 @@ export function describeBlock(input: {
       | JsonObject
       | undefined;
     const name = String(content.toolName ?? result?.toolName ?? "unknown");
-    const args = (call?.input ?? {}) as JsonObject;
     const registration = registry.getRegistration(name);
+    // Storage may reorder keys; history quotes them in the tool's schema order (D48).
+    const args = orderLikeSchema(
+      (call?.input ?? {}) as JsonObject,
+      registration?.definition.inputSchema,
+    ) as JsonObject;
     const policy = registration?.documentText;
     const documents = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
       []) as DocumentRevisionEvidence[];

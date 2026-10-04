@@ -8,6 +8,10 @@
  * word break) then `…(N words)`, or `…(N chars)` for a single word. `keep`
  * starts at 40, so a cut value is about 55 characters. When the call is still
  * over 300 characters, `keep` drops to 16, then 0; keys are never dropped.
+ *
+ * Postgres `jsonb` doesn't keep the key order the model sent, so the keys are
+ * put back in the tool's input-schema order (the matching `oneOf` variant's),
+ * which is the order models emit; keys the schema doesn't name come last.
  */
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
@@ -42,6 +46,58 @@ function shorten(value: JsonValue, keep: number): JsonValue {
       Object.entries(value).map(([key, item]) => [key, shorten(item as JsonValue, keep)]),
     );
   return value;
+}
+
+interface JsonSchemaNode {
+  properties?: Record<string, JsonSchemaNode>;
+  oneOf?: JsonSchemaNode[];
+  anyOf?: JsonSchemaNode[];
+  items?: JsonSchemaNode;
+  const?: unknown;
+  enum?: unknown[];
+}
+
+const accepts = (schema: JsonSchemaNode | undefined, value: JsonValue | undefined) =>
+  schema?.const !== undefined
+    ? schema.const === value
+    : schema?.enum
+      ? schema.enum.includes(value)
+      : true;
+
+/**
+ * The object schema that describes `value`: of a union's variants whose
+ * discriminators accept it, the one naming most of its keys (the first on a tie).
+ */
+function objectSchema(schema: JsonSchemaNode, value: JsonObject): JsonSchemaNode | undefined {
+  const options = schema.oneOf ?? schema.anyOf;
+  if (!options) return schema.properties ? schema : undefined;
+  let best: { option: JsonSchemaNode; named: number } | undefined;
+  for (const option of options) {
+    const properties = option.properties;
+    if (!properties) continue;
+    const keys = Object.keys(value).filter((key) => key in properties);
+    if (!keys.every((key) => accepts(properties[key], value[key]))) continue;
+    if (!best || keys.length > best.named) best = { option, named: keys.length };
+  }
+  return best?.option;
+}
+
+/** `value` with its object keys in the order `schema` declares them, at any depth. */
+export function orderLikeSchema(value: JsonValue, schema: unknown): JsonValue {
+  const node = (schema ?? {}) as JsonSchemaNode;
+  if (Array.isArray(value)) {
+    const items = node.items ?? (node.oneOf ?? node.anyOf)?.find((option) => option.items)?.items;
+    return value.map((item) => orderLikeSchema(item, items));
+  }
+  if (value === null || typeof value !== "object") return value;
+  const properties = objectSchema(node, value)?.properties ?? {};
+  const keys = [
+    ...Object.keys(properties).filter((key) => key in value),
+    ...Object.keys(value).filter((key) => !(key in properties)),
+  ];
+  return Object.fromEntries(
+    keys.map((key) => [key, orderLikeSchema(value[key] as JsonValue, properties[key])]),
+  );
 }
 
 const callText = (tool: string, args: JsonObject | null) =>

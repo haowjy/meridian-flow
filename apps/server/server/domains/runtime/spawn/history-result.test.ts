@@ -157,8 +157,8 @@ The conversation so far covers three topics: ...
               args: {
                 command: "replace",
                 path: "ch3.md",
-                find: "The moon was",
                 content: "The moon was low over the ridge…(212 words)",
+                find: "The moon was",
               },
               state: "done",
               summary: "w4, 212 words, drafted in @rewrite",
@@ -175,8 +175,8 @@ The conversation so far covers three topics: ...
               tool: "spawn",
               args: {
                 agent: "critic",
-                name: "Pacing review",
                 prompt: "Load the story-review skill…(310 words)",
+                name: "Pacing review",
               },
               state: "done",
               summary: "p8",
@@ -203,9 +203,9 @@ A long request
 (truncated: thread_history({"ref":"c2","expand":"37.1"}))
 
 [38] assistant
-write({"command":"replace","path":"ch3.md","find":"The moon was","content":"The moon was low over the ridge…(212 words)"}) → w4, 212 words, drafted in @rewrite
+write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, drafted in @rewrite
 read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
-spawn({"agent":"critic","name":"Pacing review","prompt":"Load the story-review skill…(310 words)"}) → p8
+spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
 work({"command":"create","name":"Rewrite"}) → @rewrite
 
 More: thread_history({"ref":"c2","cursor":"c2:n37@40~abcdef12","include":["thinking"]})`);
