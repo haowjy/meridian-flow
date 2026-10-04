@@ -291,7 +291,12 @@ describe("prefix stability across a growing thread", () => {
     const skillTurn = systemNoticeTurn(
       "turn-1-skill",
       formatInvokedSkills([
-        { slug: "story-review", description: "Review drafts.", body: "story-review body." },
+        {
+          slug: "story-review",
+          description: "Review drafts.",
+          body: "story-review body.",
+          readable: true,
+        },
       ]),
       2,
     );

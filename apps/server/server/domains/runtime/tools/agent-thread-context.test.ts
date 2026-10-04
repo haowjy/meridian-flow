@@ -18,7 +18,6 @@ import {
 } from "./agent-thread-context.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
-import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
@@ -75,10 +74,6 @@ async function boundContext(metadata: {
       tokenizer: async () => "anthropic",
     }),
     ...createSpawnToolRegistrations(),
-    ...createSkillToolRegistrations({
-      loadBody: async (_threadId, slug) => ({ slug, body: "", resources: [] }),
-      loadResource: async () => "",
-    }),
   ])
     registry.register(registration);
   const revision =
