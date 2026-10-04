@@ -9,7 +9,6 @@ export {
   type AgentChain,
   type AgentLink,
   atLeast,
-  chainPermission,
   type FileAccessDenial,
   type FileAccessDenied,
   type FileAccessLevel,

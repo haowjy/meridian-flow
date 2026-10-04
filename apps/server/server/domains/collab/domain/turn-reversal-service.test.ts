@@ -277,7 +277,7 @@ function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
           level: "none",
           archivedWork: null,
           destination: null,
-          agentPermission: null,
+          agentChain: null,
         };
       }
       return open.authorize(principal, target, need);
