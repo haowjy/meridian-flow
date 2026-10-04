@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text.
+- Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
 
