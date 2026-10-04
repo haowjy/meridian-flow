@@ -155,7 +155,7 @@ export function ReadableProjectRoute({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const localDocument = resolveLocalDocumentSelection({
     pointer:
-      destination.kind === "editor"
+      destination.kind === "editor" || destination.kind === "document"
         ? "meridianProjectSelection" in location.state
           ? location.state.meridianProjectSelection
           : undefined
@@ -306,8 +306,8 @@ export function ReadableProjectRoute({
         ? localDocument.kind
         : undefined) ??
       routeWorkIssue(editorWork) ??
-      documentIssue ??
-      (documentDestination
+      (localDocumentId ? undefined : documentIssue) ??
+      (documentDestination && !localDocumentId
         ? admission?.href === location.href &&
           admission.key === (location.state.__TSR_key ?? "") &&
           documentResult?.kind !== "unavailable" &&
@@ -333,7 +333,12 @@ export function ReadableProjectRoute({
     (target: ContextRouteTarget, preparedTab?: ContextTab) => {
       const current = latest.current;
       let state: Record<string, unknown> | undefined;
-      if (target.path === "") {
+      // A locally created document keeps its stable selection even when its
+      // readable address is reused or its background placement is rejected.
+      if (
+        target.path === "" ||
+        (preparedTab?.kind === "tracked" && preparedTab.origin === "local-resource")
+      ) {
         const workspace = getContextTabs(projectId);
         const documentId = target.documentId ?? workspace.selectedTabIdByWork[target.workId ?? ""];
         const tabs = preparedTab
@@ -354,7 +359,10 @@ export function ReadableProjectRoute({
           pointer,
           accountId: user.userId,
           projectId,
-          workId: target.workId,
+          workId:
+            selected.kind !== "new" && isWorkScopedScheme(selected.scheme)
+              ? (selected.workId ?? null)
+              : target.workId,
           hydrated: true,
           tabs,
         });
@@ -408,7 +416,13 @@ export function ReadableProjectRoute({
             if (selected)
               void useContextTabsStore
                 .getState()
-                .selectTab(projectId, target.workId ?? "", selected.documentId);
+                .selectTab(
+                  projectId,
+                  selected.kind !== "new" && isWorkScopedScheme(selected.scheme)
+                    ? (selected.workId ?? "")
+                    : (target.workId ?? ""),
+                  selected.documentId,
+                );
           },
         },
       );
@@ -543,7 +557,7 @@ export function ReadableProjectRoute({
           projectId={projectId}
           captureNavigation={captureNavigation}
         >
-          {documentDestination ? (
+          {documentDestination && !localDocumentId ? (
             <ProjectAddressDocument
               projectId={projectId}
               href={location.href}

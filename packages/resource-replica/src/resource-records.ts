@@ -15,10 +15,9 @@ import type { CatalogCacheView } from "./catalog";
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
 /**
- * How a location names its Work. No Work id: a project-scoped location, or a
- * Work-scoped destination in No Work. A Work id always states its slug, which
- * a durable command needs to validate canonical URI authority; `null` is only
- * the No Work row's, which has no slug.
+ * Durable Work identity asserted by a scoped catalog or checked command constructor.
+ * The type preserves the pair; only a known project snapshot can establish which
+ * row is No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
 export type ResourceWorkAuthority =
   | { workId: null; workSlug?: undefined }

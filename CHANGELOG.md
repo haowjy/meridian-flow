@@ -12,6 +12,7 @@
 - Add shared href respelling and snapshot link-occurrence primitives for rename rewriting, preserving address style and exact filename labels.
 - Refresh document search and AI-context projections after writer typing and checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata.
 
+- No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
 - Chat: web links open in a new tab without a confirmation, like the Editor.
 - Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
