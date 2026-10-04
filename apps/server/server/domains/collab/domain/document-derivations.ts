@@ -6,6 +6,7 @@ import { extractDocumentLinkOccurrences } from "./document-link-occurrences.js";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 import type {
   DerivationScope,
+  DocumentDerivationCut,
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
@@ -117,24 +118,33 @@ export async function deriveDocument(
     const doc = createCollabYDoc({ gc: false });
     try {
       Y.applyUpdate(doc, cut.state);
-      const outputs = {
-        markdown: await input.serializer.serializeDocument(documentId, doc),
-        links:
-          cut.kind === "manifest" || !cut.holderUri
-            ? []
-            : deriveDocumentLinkRows({
-                occurrences: extractDocumentLinkOccurrences(
-                  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                ),
-                holderUri: cut.holderUri,
-                holderProjectId: cut.holderProjectId,
-                personalProjectId: cut.personalProjectId,
-              }),
-      };
+      const outputs = await deriveDocumentOutputs(cut, doc, input.serializer);
       if (await input.store.certify(cut, outputs, at)) return Y.encodeStateVector(doc);
     } finally {
       doc.destroy();
     }
   }
   throw new Error("Document changed during derivation; retry on the next sweep");
+}
+
+/** Projection and link rows always describe the same private document. */
+export async function deriveDocumentOutputs(
+  cut: DocumentDerivationCut,
+  doc: Y.Doc,
+  serializer: DurableProjectionSerializer,
+) {
+  return {
+    markdown: await serializer.serializeDocument(cut.documentId, doc),
+    links:
+      cut.kind === "manifest" || !cut.holderUri
+        ? []
+        : deriveDocumentLinkRows({
+            occurrences: extractDocumentLinkOccurrences(
+              doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+            ),
+            holderUri: cut.holderUri,
+            holderProjectId: cut.holderProjectId,
+            personalProjectId: cut.personalProjectId,
+          }),
+  };
 }

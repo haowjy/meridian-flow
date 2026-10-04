@@ -26,6 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       contextSources,
       documentBranches,
       documentDerivations,
+      documentLinks,
       documentYjsCheckpoints,
       documentYjsHeads,
       documentYjsReversalOps,
@@ -277,6 +278,131 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         await collab.documentDerivations.stop();
       }
+    });
+
+    it("rewrites links atomically after an AI write without claiming its relabeled words or blocking Undo", async () => {
+      const { runInDrizzleTransaction, currentDrizzleDb } = await import(
+        "../../shared/drizzle-transaction.js"
+      );
+      const { insertionAttributions } = await import("./domain/provenance.js");
+      const { extractDocumentLinkOccurrences } = await import(
+        "./domain/document-link-occurrences.js"
+      );
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      const written = await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "AI paragraph [ch5](ch5.md) and [custom](ch6.md).",
+        },
+        { sessionId: "links", threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      expect(written.status).toBe("success");
+      const [draft] = await activeWorkDraft();
+      await collab.pushToLive({ branchId: draft.id });
+      await expectMarkdown(collab, DOC_ID, "[ch5](ch5.md)");
+      const live = hocuspocus.documents.get(DOC_ID);
+      if (!live) throw new Error("Missing loaded room");
+      const before = live.getXmlFragment("prosemirror").toString();
+      await runInDrizzleTransaction(db, async () => {
+        await collab.rewriteDocumentLinks({
+          documentId: DOC_ID as never,
+          claim: async (cut) => {
+            expect(cut.holderUri).toBe("manuscript://chapter.md");
+            return {
+              substitutions: new Map([
+                ["ch5.md", { href: "ch6.md", oldFilename: "ch5.md", newFilename: "ch6.md" }],
+                ["ch6.md", { href: "ch7.md" }],
+              ]),
+              mover: { type: "user", actorUserId: USER_ID as never },
+              consume: async () => {
+                const [row] = await currentDrizzleDb(db)
+                  .select()
+                  .from(documents)
+                  .where(eq(documents.id, DOC_ID));
+                expect(row.markdownProjection).toContain("[ch6](ch6.md)");
+              },
+            };
+          },
+        });
+        expect(live.getXmlFragment("prosemirror").toString()).toBe(before);
+      });
+      // Observe the loaded room directly, not a read that could recover from storage.
+      expect(
+        extractDocumentLinkOccurrences(live.getXmlFragment("prosemirror")).map((link) => link.href),
+      ).toEqual(["ch6.md", "ch7.md"]);
+      await expectMarkdown(collab, DOC_ID, "[ch6](ch6.md) and [custom](ch7.md)");
+      const links = await db
+        .select()
+        .from(documentLinks)
+        .where(eq(documentLinks.sourceDocumentId, DOC_ID));
+      expect(links.map((link) => link.href).sort()).toEqual(["ch6.md", "ch7.md"]);
+      const [watermark] = await db
+        .select()
+        .from(documentDerivations)
+        .where(eq(documentDerivations.documentId, DOC_ID));
+      const [head] = await db
+        .select()
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, DOC_ID));
+      expect(watermark).toMatchObject({
+        projectionGeneration: head.authorityGeneration,
+        projectionAdmissionSequence: head.nextAdmissionSequence,
+        projectionLocationVersion: 0n,
+        linksGeneration: head.authorityGeneration,
+        linksAdmissionSequence: head.nextAdmissionSequence,
+        linksLocationVersion: 0n,
+      });
+      const journal = createDrizzleJournal(db);
+      const latest = (await journal.read(DOC_ID)).updates.at(-1);
+      expect(latest?.meta).toMatchObject({ origin: "link-update", actorUserId: USER_ID });
+      const rows = await db
+        .select()
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, DOC_ID));
+      const relabel = rows.find((row) => row.originType === "link_update");
+      if (!relabel) throw new Error("Missing rewrite row");
+      const births = insertionAttributions([
+        {
+          admissionSequence: relabel.admissionSequence,
+          batchOrdinal: relabel.batchOrdinal,
+          journalRowId: BigInt(relabel.id),
+          originType: relabel.originType,
+          actorUserId: relabel.actorUserId,
+          update: relabel.updateData,
+        },
+      ]);
+      expect(births.length).toBeGreaterThan(0);
+      expect(births.every((birth) => birth.birthClass === "writer_protected")).toBe(true);
+      // AI movers receive attribution, not AI ownership or another write receipt.
+      await collab.rewriteDocumentLinks({
+        documentId: DOC_ID as never,
+        claim: async () => ({
+          substitutions: new Map([["ch7.md", { href: "ch8.md" }]]),
+          mover: { type: "agent", actorTurnId: TURN_2_ID as never },
+          consume: async () => {},
+        }),
+      });
+      expect((await journal.read(DOC_ID)).updates.at(-1)?.meta).toMatchObject({
+        origin: "link-update",
+        actorTurnId: TURN_2_ID,
+      });
+      const reversed = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(reversed.status).toBe("reversed");
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
     });
 
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {

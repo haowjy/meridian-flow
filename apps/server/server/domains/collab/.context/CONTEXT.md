@@ -104,9 +104,21 @@ from document derivation.
 
 `domain/document-derivations.ts` is the sole projection pipeline. The write hook
 runs it immediately; WebSocket admissions and generation replacement schedule it
-with a two-second trailing debounce and ten-second maximum wait. Push completion
+with a two-second trailing debounce and ten-second maximum wait. The projection
+feeds search, listings and sizes, the download fallback, and the link index;
+the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
+
+One authority generation per checkpoint and per reconstruction. Room and explicit
+checkpoint producers capture authority identity and generation before asynchronous
+snapshot work; persistence validates both under the document mutation lock and
+drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
+`stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots
+are produced under that same lock. Current reads capture the head once and constrain
+checkpoint selection, earliest retained-update selection, and replay to that identity
+and generation. Sequence bounds do not authorize retired-generation history; only
+explicit checkpoint lookup/listing and restore expose historical checkpoints.
 
 The store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be
@@ -132,6 +144,23 @@ User links name the holder owner's personal project. Manifests (and already
 soft-deleted staged-push holders without a live URI) certify with no link rows.
 Changing the extractor must bump its version to invalidate older output; never
 add a second post-write publisher.
+
+`rewriteDocumentLinks({ documentId, claim })` maintains links under one mutation
+lock and a holder-row `FOR NO KEY UPDATE` lock. The caller's claim runs after
+capture in the ambient transaction, owns its redirect locks, and returns
+substitutions, mover attribution, and consumption. The same transaction admits
+fresh writer-protected words, certifies through the shared derivation helpers at
+the post-append admission sequence, then consumes. A null claim writes nothing;
+rejection or consumption failure rolls back everything. Only after commit does
+the update reach an already-loaded room and schedule the ordinary live-to-draft
+pull. This operation neither opens a room under database locks nor owns redirect
+storage or lifecycle eligibility (the caller checks those).
+
+`link-update` journal metadata persists as `link_update` with the mover's user
+or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
+words have writer-protected birth provenance. Maintenance is excluded from both
+live overlap dependencies and reversal lineage blockers, so rewriting a link
+inside an AI paragraph does not prevent the paragraph's Undo.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This

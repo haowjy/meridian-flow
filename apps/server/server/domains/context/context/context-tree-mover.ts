@@ -99,6 +99,10 @@ export class ContextTreeMover {
   constructor(
     transaction: ContextCommandTransaction = directContextCommandTransaction,
     private readonly receipts?: ContextOperationReceipts,
+    private readonly moveLinks?: {
+      flush(source: ContextTreeDispatch): Promise<void>;
+      mover: { userId: string; turnId?: string | null; responseId?: string | null };
+    },
   ) {
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction,
@@ -157,6 +161,7 @@ export class ContextTreeMover {
           expected?: ContextLocationOptions["expected"];
         },
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    await this.moveLinks?.flush(source);
     return this.commandExecutor
       .run(
         async () => {
@@ -185,12 +190,15 @@ export class ContextTreeMover {
           const result = await callAdapter(
             destination.canonical,
             () =>
-              destination.adapter.tree?.commitPreparedMove(prepared.value) ??
-              Promise.resolve(Err({ code: "permission_denied" } as const)),
+              destination.adapter.tree?.commitPreparedMove({
+                ...prepared.value,
+                mover: this.moveLinks?.mover,
+              }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
           );
           if (!result.ok) return result;
           return Ok({
             movedNodeId: result.value.movedNodeId,
+            ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
             destinationPath: prepared.value.destinationPath,
           });
         },
