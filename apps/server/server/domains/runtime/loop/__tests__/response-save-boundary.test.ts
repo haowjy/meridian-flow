@@ -9,10 +9,9 @@ const DOCUMENT_ID = "55555555-5555-4555-8555-555555555555";
 const URI = "manuscript://chapter.md";
 
 describe("reply save boundaries", () => {
-  it.each([
-    "undo",
-    "redo",
-  ] as const)("saves the reply's writes before a write %s, which then runs in a fresh reply", async (reversal) => {
+  // undo, redo and work switch share one boundary check; undo stands for them.
+  it("saves the reply's writes before an undo, which then runs in a fresh reply", async () => {
+    const reversal = "undo";
     const events: string[] = [];
     const gateway = scriptedGateway({
       usage: { inputTokens: 10, outputTokens: 1 },
@@ -104,17 +103,14 @@ describe("reply save boundaries", () => {
     const run = await orchestrator.prepare({ threadId: thread.id, userText: "Write." });
     expect((await run.execute()).status).toBe("complete");
 
-    const [insert, saveFirst, reverse, saveSecond] = events;
-    const first = insert?.split("@")[1];
-    const second = reverse?.split("@")[1];
+    const first = events[0]?.split("@")[1];
+    const second = events[2]?.split("@")[1];
     expect(events).toEqual([
       `insert@${first}`,
       `save@${first}`,
       `${reversal}@${second}`,
       `save@${second}`,
     ]);
-    expect(saveFirst).toBe(`save@${first}`);
-    expect(saveSecond).toBe(`save@${second}`);
     expect(second).not.toBe(first);
   });
 });

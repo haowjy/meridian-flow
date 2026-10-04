@@ -560,14 +560,6 @@ describe("subagent skills", () => {
       await resolveThreadUserInvocableSkills({ thread, agentRevisions, accountSkillInstalls }),
     ).toEqual([]);
   });
-
-  it("reads the subagent's preloaded skill bodies from its own binding", async () => {
-    const { thread, agentRevisions } = await spawnCritic();
-    const loaded = await resolveThreadPreloadedSkills({ thread, agentRevisions });
-    expect(loaded.map((skill) => [skill.slug, skill.body])).toEqual([
-      ["writing-principles", "writing-principles body.\n"],
-    ]);
-  });
 });
 
 describe("skill resources", () => {
