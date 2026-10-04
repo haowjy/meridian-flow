@@ -3,7 +3,7 @@
  * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
  * re-check a write seam runs inside its transaction.
  */
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { decide, levelAt } from "./domain/policy.js";
 import {
   type AgentChain,
@@ -48,6 +48,15 @@ export interface FileAccess {
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileEditConfirmation>;
   /** The decision for facts a list adapter already loaded; the same pure policy. */
   levelOf(principal: Principal, facts: FileFacts): Promise<FileDecision>;
+  /**
+   * The list path (§6): each listed document's decision from one facts query,
+   * with an agent's draft rows decided at the draft. A document the principal
+   * can't read is absent, so callers drop it.
+   */
+  listAccess(
+    principal: Principal,
+    documentIds: readonly DocumentId[],
+  ): Promise<Map<DocumentId, FileDecision>>;
 }
 
 export function createFileAccess(deps: FileAccessDeps): FileAccess {
@@ -98,6 +107,16 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
 
     levelOf: decision,
+
+    async listAccess(principal, documentIds) {
+      const facts = await deps.facts.loadList(documentIds, principal.agent?.draftWork?.id);
+      const out = new Map<DocumentId, FileDecision>();
+      for (const [documentId, fact] of facts) {
+        const result = await decision(principal, fact);
+        if (atLeast(result.level, "read")) out.set(documentId, result);
+      }
+      return out;
+    },
   };
 }
 
