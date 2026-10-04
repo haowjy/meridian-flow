@@ -1,10 +1,11 @@
 /** Builder for assembling markdown/MDX codecs from markup plugins. */
 
+import type { Extension } from "mdast-util-from-markdown";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
-import { type PluggableList, unified } from "unified";
+import { type PluggableList, type Processor, unified } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
@@ -91,7 +92,7 @@ function buildMarkupCodec(
       throw new Error(`codec missing BlockCodec for schema node "${blockName}"`);
   }
 
-  const parseProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkPlugins);
+  const parseProcessor = unified().use(remarkParse).use(positionedGfm).use(remarkPlugins);
   const stringifyProcessor = unified()
     .use(remarkStringify, MARKDOWN_STRINGIFY_OPTIONS)
     .use(remarkGfm)
@@ -102,7 +103,10 @@ function buildMarkupCodec(
 
   const parsePreparedMarkdown = (source: string): MdastRoot => {
     try {
-      return parseProcessor.parse(source) as MdastRoot;
+      return postParsers.reduce(
+        (current, hook) => hook(current, source),
+        parseProcessor.parse(source) as MdastRoot,
+      );
     } catch (error) {
       throw toCodecParseError(error);
     }
@@ -118,10 +122,7 @@ function buildMarkupCodec(
       { schema: baseCtx.schema, assetPathResolver: baseCtx.assetPathResolver },
       runtime,
     );
-    const tree = postParsers.reduce(
-      (current, hook) => hook(current),
-      parsePreparedMarkdown(source),
-    );
+    const tree = parsePreparedMarkdown(source);
     return tree.children
       .map((child) => parseBlockAst(child, ctx))
       .filter((node): node is PMNode => node !== null);
@@ -239,4 +240,18 @@ function ensureTrailingNewline(value: string): string {
 
 function trimOneTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
+}
+
+/** Keep GFM token positions; its legacy text transform invents positionless links even from escaped URLs. */
+function positionedGfm(this: Processor): void {
+  remarkGfm.call(this);
+  const extensions = this.data().fromMarkdownExtensions ?? [];
+  const removeLegacyAutolinks = (extension: Extension | Extension[]): void => {
+    if (Array.isArray(extension)) {
+      extension.forEach(removeLegacyAutolinks);
+    } else if (extension.enter?.literalAutolink) {
+      extension.transforms = [];
+    }
+  };
+  extensions.forEach(removeLegacyAutolinks);
 }

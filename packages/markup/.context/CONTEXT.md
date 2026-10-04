@@ -49,6 +49,14 @@ normalize on first parse; canonical wire spelling then stabilizes.
 `postParse`, and `postSerializeBlock` hooks. Markdown autolink demotion is intentionally owned by the
 markdown/mdx plugins via `postParse`, not the builder; non-markdown format
 plugins do not inherit markdown-specific autolink behavior by default.
+Hooks receive the preprocessed source matching AST positions and run on internal
+reparses too. Only bare GFM autolink literals are demoted to prose; links whose
+source opens with `[` or `<` remain links even when their words equal their
+destination. Links without usable source positions are retained, not guessed.
+The GFM legacy text transform is disabled: it invents positionless links from
+escaped URL prose after tokenization. Positioned GFM literal tokens still parse
+and are demoted. MDX ingress expands CommonMark angle autolinks to bracket links
+before JSX escaping because MDX disables angle-autolink syntax.
 
 Merge order:
 
