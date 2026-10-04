@@ -52,6 +52,18 @@ appended to the log (`reason: "auto"`), and Hocuspocus `onStoreDocument` at
 `debounce: 2000` / `maxDebounce: 10000` plus last-client disconnect
 (`reason: "store"`).
 
+**Releasing a live room never waits on a database lock.** Closing the last
+connection runs `onStoreDocument` inline in the releaser's async context, often
+inside its DB transaction. The store therefore only captures the journal cut and
+encoded state; the checkpoint write runs after the releaser's transaction
+commits, in its own transaction, and is dropped on rollback (the room may hold
+that transaction's uncommitted updates) or when the live generation was retired.
+Writes queue one per document, newest snapshot wins; shutdown drains them. A
+checkpoint only caches durable journal state, so a dropped or late one costs
+replay time, never data. Thread-peer pulls also take their live snapshot outside
+the caller's transaction, so loading the room cannot leave head or lock rows held
+by a caller that then waits on the root pull transaction.
+
 **Branch mutations are durable before they reach a Hocuspocus room.** A draft
 branch room is a collaborative room: writer frames from a review editor are
 admitted like any other peer's, alongside server-side agent and disposition

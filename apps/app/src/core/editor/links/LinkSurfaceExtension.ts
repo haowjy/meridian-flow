@@ -3,7 +3,8 @@
  *
  * It owns the click (follow or caret, `link-navigation.ts` decides), the hover
  * that reveals the destination, Ctrl+K, Alt+Enter, the right-click claim, and
- * the decoration that says whether an internal link has landed anywhere yet.
+ * the decoration that says whether an internal link has landed anywhere yet,
+ * and how an internal link keeps its document across the clipboard.
  * Everything it decides is decided by the pure modules beside it; this file
  * reads the document, watches the pointer, and calls the stores.
  *
@@ -28,6 +29,7 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner } from "../chrome";
+import { linkClipboardPlugin } from "./link-clipboard";
 import {
   anchorLinkRange,
   type LinkSelection,
@@ -49,7 +51,7 @@ import { classifyLinkTarget } from "./link-target";
 
 const LINK_SURFACE_NAME = "meridianLinkSurface";
 
-export const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
+const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
 type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkResolution };
 
@@ -91,7 +93,7 @@ export function openLinkForm(editor: Editor | null): boolean {
 }
 
 /** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
-export function followLinkAtSelection(editor: Editor | null): boolean {
+function followLinkAtSelection(editor: Editor | null): boolean {
   const surface = getLinkSurface(editor);
   if (!editor || !surface) return false;
   const link = linkAtSelection(editor);
@@ -169,6 +171,7 @@ export const LinkSurfaceExtension = Extension.create({
 
     return [
       linkResolutionPlugin(resolution),
+      linkClipboardPlugin(editor.schema, resolution),
 
       new Plugin({
         key: linkSurfacePluginKey,

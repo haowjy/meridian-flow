@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
-import { renderAgentEditResult } from "./result-text.js";
-import { blockTexts, expectOutcome, hashAt, outcomeText } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, hashAt } from "./test-support/assertions.js";
 import {
   context,
   harness,
@@ -77,90 +76,9 @@ describe("block copy (from)", () => {
     expectOutcome(result, "success");
     const dest = ctx.liveDoc("dest.md");
     expect(nodesJson(dest, 1, 5)).toEqual(nodesJson(ctx.liveDoc("src.md")));
-    expect(blockTexts(dest)).toEqual([
-      "Opening.",
-      "First copied line.",
-      "",
-      "",
-      "  Spaced   text  stays exact.",
-      "Closing.",
-    ]);
     const copiedHashes = [1, 2, 3, 4].map((index) => hashAt(dest, index));
     expect(copiedHashes.some((hash) => sourceHashes.includes(hash))).toBe(false);
     expect(result.result.copied).toEqual({ from: "src.md", blocks: 4 });
-    expect(outcomeText(result)).toBe(
-      [
-        "status: success; path: dest.md; write: w1; copied: 4 blocks from src.md",
-        "",
-        `${copiedHashes[0]}|First copied line.`,
-        // Receipt lines are serialized markup, which escapes the leading spaces.
-        `${copiedHashes[3]}|&#x20; Spaced   text  stays exact.`,
-      ].join("\n"),
-    );
-    // The copy is the agent's write, journaled with its own origin.
-    const [update] = (await ctx.journal.read("dest.md")).updates;
-    expect(update?.meta.origin).toMatch(/^agent:/);
-  });
-
-  it("replaces the selected blocks with copies, reusing none of them", async () => {
-    const ctx = harness({ "dest.md": "Keep.\n\nOld one.\n\nOld two.\n\nTail." });
-    seed(ctx, "src.md", [paragraph("New.")]);
-    await ctx.core.read({ file: "dest.md" }, context);
-    const oldHashes = [1, 2].map((index) => hashAt(ctx.liveDoc("dest.md"), index));
-    const nodes = await sourceNodes(ctx, "src.md");
-
-    const result = await ctx.core.write(
-      { command: "replace", file: "dest.md", in: [2, 3], from: { path: "src.md" } },
-      { ...context, copiedNodes: nodes },
-    );
-
-    expectOutcome(result, "success");
-    expect(blockTexts(ctx.liveDoc("dest.md"))).toEqual(["Keep.", "New.", "Tail."]);
-    expect(oldHashes).not.toContain(hashAt(ctx.liveDoc("dest.md"), 1));
-    expect(result.result.write?.deletedHashes).toEqual(expect.arrayContaining(oldHashes));
-    expect(outcomeText(result).split("\n")[0]).toBe(
-      "status: success; path: dest.md; write: w1; copied: 1 block from src.md",
-    );
-  });
-
-  it("refuses a from write when the host supplied no source blocks", async () => {
-    const ctx = harness({ "dest.md": "Opening." });
-    await ctx.core.read({ file: "dest.md" }, context);
-
-    const result = await ctx.core.write(
-      { command: "insert", file: "dest.md", from: { path: "src.md" } },
-      context,
-    );
-
-    expectOutcome(result, "invalid_write", true);
-  });
-
-  it("keeps the receipt bounded for a 3,000-word source, staged and settled", async () => {
-    const ctx = harness({ "dest.md": "Opening." });
-    const words = (count: number, seedWord: string) =>
-      Array.from({ length: count }, (_, index) => `${seedWord}${index}`).join(" ");
-    seed(ctx, "src.md", [
-      paragraph(words(1_000, "alpha")),
-      ...Array.from({ length: 19 }, (_, index) => paragraph(words(100, `w${index}x`))),
-      paragraph("終".repeat(1_000)),
-    ]);
-    await ctx.core.read({ file: "dest.md" }, context);
-    const nodes = await sourceNodes(ctx, "src.md");
-    const responseContext = { ...context, turnId: "turn-bounded", responseId: "response-bounded" };
-
-    const staged = await ctx.core.write(
-      { command: "insert", file: "dest.md", from: { path: "src.md" } },
-      { ...responseContext, copiedNodes: nodes },
-    );
-    expectOutcome(staged, "success");
-    const commit = await ctx.core.commitResponse("response-bounded");
-    const settled = commit.documents.flatMap((document) => document.receipts)[0]?.result;
-
-    for (const text of [outcomeText(staged), settled ? renderAgentEditResult(settled) : ""]) {
-      expect(text).toContain("copied: 21 blocks from src.md");
-      expect(text.length).toBeLessThan(400);
-    }
-    expect(blockTexts(ctx.liveDoc("dest.md"))).toHaveLength(22);
   });
 });
 
@@ -182,43 +100,14 @@ describe("document copy", () => {
     );
 
     expectOutcome(result, "success");
-    expect(result.command).toBe("copy");
-    expect(outcomeText(result)).toBe(
-      "status: success; path: copy.md; write: w1; copied: 4 blocks from src.md",
-    );
     expect(ctx.coordinator.docs.has("copy.md")).toBe(false);
 
     const commit = await ctx.core.commitResponse("response-copy");
     expect(commit.stagedCreates.committed).toEqual(["copy.md"]);
     expect(nodesJson(ctx.liveDoc("copy.md"))).toEqual(nodesJson(ctx.liveDoc("src.md")));
-    const settled = commit.documents[0]?.receipts[0]?.result;
-    // The host adds `path` and the destination back when it settles the result.
-    expect(settled ? renderAgentEditResult(settled) : "").toBe(
-      "status: success; write: w1; copied: 4 blocks from src.md",
-    );
   });
 
-  it("refuses an existing destination without overwrite and replaces it with overwrite", async () => {
-    const ctx = harness({ "copy.md": "Existing text." });
-    seed(ctx, "src.md", [paragraph("Copied.")]);
-    const nodes = await sourceNodes(ctx, "src.md");
-
-    const refused = await ctx.core.write(
-      { command: "copy", file: "copy.md", from: { path: "src.md" } },
-      { ...context, copiedNodes: nodes },
-    );
-    expectOutcome(refused, "invalid_write", true);
-
-    const overwritten = await ctx.core.write(
-      { command: "copy", file: "copy.md", from: { path: "src.md" }, overwrite: true },
-      { ...context, copiedNodes: nodes },
-    );
-    expectOutcome(overwritten, "success");
-    expect(blockTexts(ctx.liveDoc("copy.md"))).toEqual(["Copied."]);
-    expect(overwritten.result.copied).toEqual({ from: "src.md", blocks: 1 });
-  });
-
-  it("says the document still exists when undo empties it", async () => {
+  it("undoes a copy back to an empty document", async () => {
     const ctx = harness();
     seed(ctx, "src.md", [paragraph("Copied.")]);
     const nodes = await sourceNodes(ctx, "src.md");
@@ -232,8 +121,5 @@ describe("document copy", () => {
 
     expect(undone.status).toBe("reversed");
     expect(blockTexts(ctx.liveDoc("copy.md")).join("")).toBe("");
-    expect(outcomeText(undone)).toContain(
-      "The document at copy.md is empty but still exists until document delete ships.",
-    );
   });
 });

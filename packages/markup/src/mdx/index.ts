@@ -10,7 +10,6 @@ import { demoteAutolinks } from "../helpers.js";
 import { imageCodec, tableCodec } from "../markdown/blocks/index.js";
 import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
-import { remarkWikiLink } from "../markdown/wikilink.js";
 import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,
@@ -42,7 +41,7 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   return {
     blocks: mdxBlockCodecs(options?.components),
     marks: markdownMarkCodecs,
-    remarkPlugins: [remarkMdx, remarkWikiLink],
+    remarkPlugins: [remarkMdx],
     preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
     postParse: demoteAutolinks,
     postSerializeBlock: serializeLayoutBlock,

@@ -5,9 +5,8 @@ import {
   type Turn,
 } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { Button } from "@/components/ui/button";
 import {
   useOpenProjectDocument,
@@ -18,8 +17,8 @@ import type {
   MarkdownReferenceOccurrence,
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
-import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
+import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnRecovery =
   | {
@@ -87,46 +86,12 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
-  const [resolutions, setResolutions] = useState<
-    ReadonlyMap<string, TranscriptReferenceResolution>
-  >(new Map());
-  useEffect(() => {
-    const ids = [...new Set(projected.references.map(({ documentId }) => documentId))];
-    if (!projectId || ids.length === 0) {
-      setResolutions(new Map());
-      return;
-    }
-    let current = true;
-    void lookupProjectContextAvailability(projectId, ids)
-      .then((result) => {
-        if (!current) return;
-        setResolutions(
-          new Map(
-            result.resolutions.flatMap((resolution) =>
-              resolution.kind === "available"
-                ? [
-                    [
-                      resolution.documentId,
-                      {
-                        documentId: resolution.documentId,
-                        uri: resolution.entry.uri,
-                        label: resolution.entry.name,
-                        available: true,
-                      },
-                    ] as const,
-                  ]
-                : [],
-            ),
-          ),
-        );
-      })
-      .catch(() => {
-        if (current) setResolutions(new Map());
-      });
-    return () => {
-      current = false;
-    };
-  }, [projectId, projected.references]);
+  const resolutions = useReferenceAvailability(
+    useMemo(
+      () => [...new Set(projected.references.map(({ documentId }) => documentId))],
+      [projected.references],
+    ),
+  );
 
   return (
     <article

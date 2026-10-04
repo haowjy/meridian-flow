@@ -160,6 +160,8 @@ else
         markdown: "Writer content\n",
         origin: { type: "user", actorUserId: USER_ID as never },
       });
+      // Live checkpoints land after the releasing transaction commits.
+      await documents.drainHocuspocusPersistence();
       const checkpointsBefore = await db
         .select({ id: schema.documentYjsCheckpoints.id })
         .from(schema.documentYjsCheckpoints)
@@ -170,6 +172,7 @@ else
         ok: true,
         value: "Writer content\n",
       });
+      await documents.drainHocuspocusPersistence();
       await expect(
         db
           .select({ id: schema.documentYjsCheckpoints.id })

@@ -8,6 +8,7 @@
 @import "@meridian/design-tokens/ink-jade.css";
 @import "@meridian/design-tokens/themes.css";
 @import "tw-animate-css";
+@import "../components/app/link-chip/link-chip.css";
 
 /* Components' `dark:` utilities key off the UI-theme attribute the boot
    script stamps on <html> — one switch for tokens and variants alike. */
@@ -219,13 +220,13 @@
   summary {
     cursor: pointer;
   }
-  [data-composer-reference],
+  /* Composer references are link chips (`link-chip.css`); a skill is not a
+     document link and keeps its quiet underline. */
   [data-composer-skill] {
     text-decoration: underline;
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-reference]:focus-visible,
   [data-composer-skill]:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
@@ -451,6 +452,10 @@
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
   @apply text-base leading-relaxed md:text-[15px];
+  /* The composer is a raised, page-toned surface wherever it sits, so its
+     reference chips keep the page's fill (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 
 @utility user-turn {
@@ -522,6 +527,10 @@
    surface") without per-component forks. */
 @utility bg-chat-interactive {
   background-color: var(--color-chat-interactive, var(--color-background));
+  /* A raised surface is page-toned again, so a link chip on it takes the
+     page's fill back from the dock (`link-chip.css`). */
+  --link-chip-fill: var(--color-muted);
+  --link-chip-fill-hover: var(--color-sidebar-accent);
 }
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
    own whitespace, so this wrapper sets typography without `whitespace-pre-wrap`.
@@ -616,8 +625,11 @@
     @apply border-0 border-t border-border-subtle;
     margin-block: var(--prose-space-rule);
   }
-  & a {
+  /* Streamdown draws a transcript's external link as a button (it asks before
+     leaving), so the anchor look is applied to it too. */
+  & :is(a, [data-streamdown="link"]) {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
+    font-weight: inherit;
   }
 
   /* Streamdown ships className strings only (its styles.css is keyframes we
@@ -836,6 +848,10 @@
 @utility dock-surface {
   /* Chat interactive surfaces lift above the chrome (background = page tone). */
   --color-chat-interactive: var(--color-background);
+  /* The dock's own tone is the recess, so a link chip on it would vanish; it
+     takes the next step, and hovers one further toward the ink. */
+  --link-chip-fill: var(--color-sidebar-accent);
+  --link-chip-fill-hover: color-mix(in oklab, var(--color-sidebar-accent) 90%, var(--color-foreground));
   background-color: var(--color-sidebar);
   background-image: var(--background-image-dock-airlight);
 }

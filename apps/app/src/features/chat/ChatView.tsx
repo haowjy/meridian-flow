@@ -17,8 +17,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import { resolveDocumentLink } from "@/client/api/document-links-api";
+import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
   getChatSubmissionEpoch,
@@ -28,7 +27,6 @@ import {
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import {
-  announce,
   announceError,
   useIsThreadPendingCreation,
   useThreadActions,
@@ -40,8 +38,8 @@ import {
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
-import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import { LinkFollowDialog } from "@/features/links";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -74,6 +72,7 @@ import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-v
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
+import { ReferenceAvailabilityContext } from "./reference-availability";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
@@ -81,6 +80,7 @@ import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
+import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import {
   type FailedChatSubmission,
   forgetSubmissionTurnId,
@@ -124,6 +124,8 @@ export type ChatViewProps = {
   activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
+  /** False while the chat is mounted but hidden (collapsed dock, Settings). */
+  active?: boolean;
 };
 
 export function ChatView({
@@ -137,6 +139,7 @@ export function ChatView({
   historySettled,
   activateProjection,
   composerStrip,
+  active = true,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
@@ -465,40 +468,7 @@ export function ChatView({
     [controller],
   );
 
-  const transcriptNavigation = useRef<AbortController | null>(null);
-  useEffect(() => () => transcriptNavigation.current?.abort(), [projectId, activeWork?.id]);
-  const followTranscriptLink = useCallback(
-    async (target: LinkTarget) => {
-      if (target.kind === "relative") return;
-      const request = documentLinkTarget(target, "");
-      if (!request) return;
-      transcriptNavigation.current?.abort();
-      const attempt = new AbortController();
-      transcriptNavigation.current = attempt;
-      try {
-        const result = await resolveDocumentLink(
-          projectId,
-          {
-            workId: activeWork?.id,
-            target: request,
-          },
-          { signal: attempt.signal },
-        );
-        if (attempt.signal.aborted) return;
-        if (!result.document) {
-          announce(t`No document with this name yet`);
-          return;
-        }
-        await openReferenceDocument({
-          documentId: result.document.documentId,
-          disposition: "current",
-        });
-      } catch {
-        if (!attempt.signal.aborted) announceError(t`That link could not be checked`);
-      }
-    },
-    [projectId, activeWork?.id, openReferenceDocument],
-  );
+  const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
   for (const entry of submissionRecovery.recovered) {
@@ -522,89 +492,92 @@ export function ChatView({
   }
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={followTranscriptLink}>
-      <ChatSurface
-        title={pageTitle}
-        surfaceRef={chatSurfaceRef}
-        footer={
-          <div data-debug-composer={threadId}>
-            {composerStrip ? (
-              // The composer's own border and radius, open at the bottom: the
-              // composer's top border is the strip's lower edge, so the two
-              // read as one unit. Inset like the draft dock below it.
-              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                {composerStrip}
-              </div>
-            ) : null}
-            {/* The dock strip sits BEHIND (below) the composer — narrower via
+    <TranscriptLinkNavigationContext.Provider value={links.navigation}>
+      <ReferenceAvailabilityContext.Provider value={links.references}>
+        <ChatSurface
+          title={pageTitle}
+          surfaceRef={chatSurfaceRef}
+          footer={
+            <div data-debug-composer={threadId}>
+              {composerStrip ? (
+                // The composer's own border and radius, open at the bottom: the
+                // composer's top border is the strip's lower edge, so the two
+                // read as one unit. Inset like the draft dock below it.
+                <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                  {composerStrip}
+                </div>
+              ) : null}
+              {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
-            <DraftDock dock={dock} />
-            <Composer
-              onOpenReference={(reference) => {
-                void openReferenceDocument({
-                  documentId: reference.documentId,
-                  disposition: "current",
-                });
-              }}
-              ref={composerRef}
-              variant="pinned"
-              running={run !== null}
-              referenceCatalog={referenceCatalog}
-              availableSkills={availableSkills.skills}
-              commands={chatCommands}
-              uploadPort={uploadIntakePort}
-              uploadScope={
-                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-              }
-              onSubmit={handleSubmit}
-              onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-              onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
-              onStop={handleStop}
-              toolbarLeft={
-                activeWork ? (
-                  <ChatComposerToolbar
-                    projectId={projectId}
+              <DraftDock dock={dock} />
+              <Composer
+                onOpenReference={(reference) => {
+                  void openReferenceDocument({
+                    documentId: reference.documentId,
+                    disposition: "current",
+                  });
+                }}
+                ref={composerRef}
+                variant="pinned"
+                running={run !== null}
+                referenceCatalog={referenceCatalog}
+                availableSkills={availableSkills.skills}
+                commands={chatCommands}
+                uploadPort={uploadIntakePort}
+                uploadScope={
+                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+                }
+                onSubmit={handleSubmit}
+                onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
+                onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
+                onStop={handleStop}
+                toolbarLeft={
+                  activeWork ? (
+                    <ChatComposerToolbar
+                      projectId={projectId}
+                      threadId={threadId}
+                      work={activeWork}
+                      agentName={composerAgentName}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
+          }
+        >
+          <TurnDerivationProvider value={turnDerivation}>
+            <SubagentDisclosureProvider>
+              <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                  <RunningSubagentsStrip threadId={threadId} />
+                  <TurnList
                     threadId={threadId}
-                    work={activeWork}
-                    agentName={composerAgentName}
+                    turns={turns}
+                    awaitingSubagents={runningBackgroundSubagents.length > 0}
+                    historySettled={historySettled}
+                    tailFollowRevision={tailFollowRevision}
+                    ariaLabel={t`Chat`}
+                    onRespondToInterrupt={handleRespondToInterrupt}
+                    failedSendRetry={failedSendRetry}
+                    changeTrails={changeTrails.byId}
+                    submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                    queuedWriterTurnIds={queuedWriterTurnIds}
+                    controls={controls}
+                    brief={brief}
+                    replyRetry={replyRetry}
+                    busy={liveStatus.kind === "awake" || run !== null}
+                    inherited={inheritedView}
+                    onRetryInherited={inherited.failed ? inherited.retry : null}
+                    threadUsage={snapshotThreadUsage}
                   />
-                ) : undefined
-              }
-            />
-          </div>
-        }
-      >
-        <TurnDerivationProvider value={turnDerivation}>
-          <SubagentDisclosureProvider>
-            <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-              <div className="relative flex min-h-0 flex-1 flex-col">
-                <RunningSubagentsStrip threadId={threadId} />
-                <TurnList
-                  threadId={threadId}
-                  turns={turns}
-                  awaitingSubagents={runningBackgroundSubagents.length > 0}
-                  historySettled={historySettled}
-                  tailFollowRevision={tailFollowRevision}
-                  ariaLabel={t`Chat`}
-                  onRespondToInterrupt={handleRespondToInterrupt}
-                  failedSendRetry={failedSendRetry}
-                  changeTrails={changeTrails.byId}
-                  submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-                  queuedWriterTurnIds={queuedWriterTurnIds}
-                  controls={controls}
-                  brief={brief}
-                  replyRetry={replyRetry}
-                  busy={liveStatus.kind === "awake" || run !== null}
-                  inherited={inheritedView}
-                  onRetryInherited={inherited.failed ? inherited.retry : null}
-                  threadUsage={snapshotThreadUsage}
-                />
-              </div>
-            </SubagentActivityProvider>
-          </SubagentDisclosureProvider>
-        </TurnDerivationProvider>
-      </ChatSurface>
+                </div>
+              </SubagentActivityProvider>
+            </SubagentDisclosureProvider>
+          </TurnDerivationProvider>
+        </ChatSurface>
+        <LinkFollowDialog {...links.dialog} />
+      </ReferenceAvailabilityContext.Provider>
     </TranscriptLinkNavigationContext.Provider>
   );
 }

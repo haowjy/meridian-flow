@@ -6,135 +6,61 @@ for what a link means before it reaches a component.
 
 ## What `ProjectLinkRuntime` registers
 
-Two ports, one component, mounted by `EditorView` with the document id. The
-project and the Work it reads from `useEditorScope()`.
+The Editor's adapter over [`features/links`](../../../../links/AGENTS.md), mounted
+by `EditorView` with the held document's URI (`baseUri`) and the scope's
+document index; `EditorView` finds the URI by document id in that index and
+hands the same value to the `@` catalog, so a relative link resolves against
+the holder it is spelled from. The project and the Work come from
+`useEditorScope()`. It calls `useLinkFollower` with:
 
-```ts
-resolution.registerResolver(async (target) => {
-  const request = documentLinkTarget(target, baseUri);   // the projection, not a translation
-  const { document } = await resolveDocumentLink(projectId, { workId, target: request });
-  return document;                                       // null = unresolved OR ambiguous
-});
+- the scope `{ projectId, workId, baseUri }`, or null while the editor is not
+  active or has no project;
+- `getLinkResolution(editor)`, the cache the decorations draw from;
+- the link store's `reportFollow` and `clearFollow` as the reporter;
+- `useEditorLinkDestination()`: `useOpenProjectDocument` with the editor's Work,
+  `current` or `background` from the gesture.
 
-surface.registerNavigator(({ target, disposition }) => follow(target, disposition));
-```
+It registers `follower.follow` as the store's navigator, and the follower's
+`dismiss` and `retry` as the store's follow handlers: `FollowOutcomeDialog`'s
+Close, Cancel and Escape call `surface.dismissFollow()`, and Try again calls
+`surface.retryFollow()`. Registering the navigator is also what makes the link
+menu's Open link verb exist: M7 leaves that verb absent until something can
+follow (law 5), and this registration is what fills the hole.
 
-`baseUri` is the URI of the document being edited, found by id in the document
-index below. Only a `relative` target needs it, and without one the port THROWS
-rather than answering null: an unasked question must not render as a missing
-document.
+Scope contracts, what a follow does per answer, create-on-miss, and the document
+index are the follower's:
+[`features/links/.context/CONTEXT.md`](../../../../links/.context/CONTEXT.md).
 
-`workId` is the named Work id, or null for public No Work encoding (`@/`).
-The server resolves null to the locked row for omitted `scratch://` or
-`uploads://` authority; `@/` is explicit No Work and a canonical `@<slug>`
-resolves through Project Work authority. Legacy `work://` is invalid.
-Dropping nullable scope would make contextual links resolve against the wrong
-authority even though the route contract carries the distinction.
+## Link completion catalogs
 
-Registering the navigator is also what makes the link menu's Open link verb
-exist. M7 leaves it absent on purpose (law 5); this is what fills the hole.
-
-## Resolution scope: what an answer is true of
-
-An answer is true of a scope, never of a href alone. `{ projectId, workId,
-baseUri, revision }` is the complete semantic input to every question the port
-asks — the project, the active Work, the URI of the document holding the link,
-and which documents the project holds. All four are `ProjectLinkRuntime`'s own
-inputs, so the registration effect is keyed on exactly those four and reads none
-of them through a ref.
-
-| Contract | Why |
-|---|---|
-| A scope change re-registers the resolver | `registerResolver` forgets every answer and every failure in one step, so no later request can be served from the previous scope. The alternative was a scope key inside the cache, which is a second invalidation concept for one rule. |
-| A catalog change is a scope change | `[[Old Name]]` is spelled the same after a rename, and the answer it already has is a door onto the wrong document. `revision` is the index's identity for the documents it walked, so create, rename, delete, and move all re-ask; nothing else in the app holds a line that invalidates this cache. |
-| Nothing here remounts the editor | Work is runtime scope (`editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
-| A base URI arriving IS a scope change | A relative link asked before the tree settles throws and lands in the resolution store's `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it, and the store's publish makes the decoration plugin ask the same links again. |
-| A resolved link paints plain for a frame after a switch | Answers are gone before the new ones land, which is the honest state: in the new Work nobody has asked yet. The base normally settles from cache before the document renders, so this is a deliberate Work switch and not opening a document. |
-
-The cost of the catalog contract is that one rename re-asks every internal link
-in the open document. That is the price of never showing a door onto a document
-that moved, and it is bounded by the same four-at-a-time queue and the batch
-endpoint in [`FUTURE`](FUTURE).
-
-## What a follow does
-
-| Answer | What the writer gets |
-|---|---|
-| resolved, already cached | the document opens, no surface at all |
-| resolved after a wait | the same, and the checking dialog closes if it appeared |
-| unresolved (nothing matched) | an offer to create the document now |
-| unresolved (several matched) | the same offer, which is honest: no document answers to that name unambiguously |
-| the request failed | "That link could not be checked", with Try again |
-| still in flight past 250ms | "Opening the link", with Cancel |
-
-`disposition` comes from the gesture. `current` moves the pane; `new-tab`
-(middle click, Ctrl/Cmd+click) opens the document on the tab strip and leaves
-the writer where they were. There is no browser-tab disposition: the pane
-holds a live collaborative session, and a second window costs the writer their
-place to reach a document that was one tab away.
-
-Creating from the offer writes `/<name>.md` into the manuscript, because a
-wikilink resolves by title and `documents.name` is the filename without its
-extension. A name that is not a legal filename gets the dialog without the
-button and a sentence saying why. Nothing about the link changes on creation —
-`[[Warden Ilsever]]` was always the link; the resolver simply starts finding it,
-and the dialog holds no cache call of its own to make that happen. The created
-document is a document the project did not have, which is a new catalog, which
-is a new resolution generation. Creating from the context tree gets the same
-result through the same door.
-
-## One document index, three questions
-
-`useLinkableDocuments` remains the legacy `[[` and relative-link projection.
-Canonical `@` and LinkForm completion instead read the normalized F1 catalog
-through `useReferenceBrowserCatalog` and let the F2 browser own scope,
-navigation, and ordering. LinkForm keeps editable display text separate from the
-selected destination. A catalog selection stores a scoped URI as a bracketed
-wikilink destination, so plain prose can serialize canonically as
-`[[destination|display text]]`; the label never participates in resolution.
-External links retain ordinary Markdown link spelling. The form shows a
+`useLinkableDocuments` (in `features/links`) is the relative-link base's
+projection, and it says which addresses already hold a document. `@` and
+LinkForm completion read the normalized F1 catalog through
+`useReferenceBrowserCatalog` and let the F2 browser own scope, navigation, and
+ordering. Both write a standard Markdown link: an Editor `@` choice and a
+LinkForm selection spell the destination with `spellDocumentHref(holderUri, uri)`
+(relative within the holder's area, a full Context URI across areas). The
+Editor's `@` catalog also passes `linkAhead`: for a name no document carries,
+`linkAheadAddress(holderUri, name)` beside the holder, unless the index already
+holds a document there. Its row inserts the link and creates nothing. LinkForm
+reads the holder from the resolution store's `baseUri`, which
+`ProjectLinkRuntime` registers. LinkForm keeps editable display text separate
+from the selected destination, and a typed destination may be a web URL, a
+Context URI, or a relative path. The form shows a
 destination summary with Change and observes its focused search input through the
 shared DOM suggestion transport; one Chrome-reaching lease owns its semantic
 keys and retreat, and the shared menu attaches accessibility state to that search
 input rather than to editor prose.
 
-`revision` is content, not an object identity and not a counter: the row's id,
-URI, and title joined per document. A refetch that found the same documents is
-the same revision and costs nothing, while anything that changes where a link
-could go is a different one. An identity-based revision would drop every answer
-on a poll that changed nothing; a counter would restart on remount and claim a
-change that never happened.
-
-One owner for two answers that must never disagree: what a link can reach, and
-what a relative link is relative to. Reading the base from the manuscript alone
-is what made a scratch note a document links could point at but never be written
-in.
-
-That set is also the resolver's own candidate set. Offering a document the
-resolver cannot match hands the writer a link that lands dashed the instant it is
-inserted, and withholding one it CAN match is the menu disagreeing with the link.
-
-The manuscript comes first, so a title both trees carry keeps the chapter above
-the note (ranking ties hold the order they arrive in). A scratch row says
-`Scratch` where a manuscript row says its folder, because where it lives is the
-only thing telling two similar titles apart. Two documents that answer to one
-name are still both offered and marked ambiguous — the resolver refuses both, and
-renaming one is the writer's fix.
-
-Without a Work, the menu is the manuscript alone: the scratch query is not asked
-rather than asked with a null Work.
-
-Catalog URIs remain canonical. This surface does not rewrite schemes or derive
-identity from a path or label.
-
 ## What a follow says, and who says it
 
-`ProjectLinkRuntime` answers the follow and writes the answer into
-`LinkSurfaceState.follow`; `FollowOutcomeDialog` reads it and renders through the
-chrome host as an `EditorDialog`. The split is not cosmetic — the outcome can
-appear 250ms after the click, so it must be a kernel layer or the writer ends up
-with two live surfaces and two owners of Escape. Retry goes back out through the
-registered navigator, so the dialog needs no callback from the runtime.
+`ProjectLinkRuntime`'s follower answers the follow and writes the answer into
+`LinkSurfaceState.follow`; `FollowOutcomeDialog` reads it and renders the shared
+`FollowOutcomeContent` through the chrome host as an `EditorDialog`. The split
+is not cosmetic — the outcome can appear 250ms after the click, so it must be a
+kernel layer or the writer ends up with two live surfaces and two owners of
+Escape. Close, Cancel, and Try again go back through the store's follow
+handlers, so the dialog needs no callback from the runtime.
 
 ## Why the hint reads the resolution store directly
 

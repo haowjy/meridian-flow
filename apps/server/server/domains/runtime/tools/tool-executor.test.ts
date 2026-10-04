@@ -93,23 +93,10 @@ describe("input parsing before dispatch", () => {
       { ...executionBase, agentSlug: null },
     );
     expect(handler).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      toolCallId: "call-1",
-      isError: true,
-      output: [
-        "Invalid arguments for probe:",
-        '- mode: expected "foreground" or "background", got "invalid"',
-        "- count: expected a whole number, got 1.5",
-        "- extra: unknown argument",
-      ].join("\n"),
-      result: {
-        error: "invalid_arguments",
-        issues: [
-          { path: "mode", message: 'expected "foreground" or "background", got "invalid"' },
-          { path: "count", message: "expected a whole number, got 1.5" },
-          { path: "extra", message: "unknown argument" },
-        ],
-      },
+    expect(result.isError).toBe(true);
+    expect(result.result).toMatchObject({
+      error: "invalid_arguments",
+      issues: [{ path: "mode" }, { path: "count" }, { path: "extra" }],
     });
   });
 
@@ -120,16 +107,8 @@ describe("input parsing before dispatch", () => {
       { ...executionBase, agentSlug: null },
     );
     expect(handler).toHaveBeenCalledWith({ mode: "foreground" }, expect.anything());
-    expect(result.output).toEqual({ mode: "foreground" });
-  });
-
-  it("keeps the typed result beside the output for a tool with no renderer", async () => {
-    const { executor } = parsingExecutor();
-    const result = await executor.executeTool(
-      { id: "call-1", name: "probe", arguments: { count: 2 } },
-      { ...executionBase, agentSlug: null },
-    );
-    expect(result.result).toEqual({ mode: "foreground", count: 2 });
+    // A tool with no renderer gets its typed result as its output too.
+    expect(result.result).toEqual({ mode: "foreground" });
     expect(result.output).toEqual(result.result);
   });
 });

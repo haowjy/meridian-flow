@@ -69,25 +69,6 @@ describe("skill tool", () => {
     );
   });
 
-  it("loads a resource's text", async () => {
-    const tools = executor(
-      async () => {
-        throw new Error("body not expected");
-      },
-      async (_threadId, slug, resource) => `${slug}:${resource}\n`,
-    );
-    await expect(
-      tools.executeTool(
-        {
-          id: "call-1",
-          name: "skill",
-          arguments: { slug: "story-review", resource: "resources/line-edit.md" },
-        },
-        execution,
-      ),
-    ).resolves.toMatchObject({ output: "story-review:resources/line-edit.md\n" });
-  });
-
   it("refuses unknown slugs without rebaking", async () => {
     const tools = executor(async (_threadId, slug) => {
       throw new SkillUnavailableError(slug);

@@ -14,14 +14,28 @@ import type { CatalogCacheView } from "./catalog";
 
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
-export type ResourceLocation = Readonly<{
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-  workId: string | null;
-  /** Required with a Work ID before a durable command can validate canonical URI authority. */
-  workSlug?: string;
-}>;
+/**
+ * How a location names its Work. No Work id: a project-scoped location, or a
+ * Work-scoped destination in No Work. A Work id always states its slug, which
+ * a durable command needs to validate canonical URI authority; `null` is only
+ * the No Work row's, which has no slug.
+ */
+export type ResourceWorkAuthority =
+  | { workId: null; workSlug?: undefined }
+  | { workId: string; workSlug: string | null };
+export type ResourceLocation = Readonly<
+  { scheme: ProjectContextTreeScheme; path: string; name: string } & ResourceWorkAuthority
+>;
+/** A location's Work authority alone, without its other fields. */
+export function workAuthorityOf(location: ResourceWorkAuthority): ResourceWorkAuthority {
+  return location.workId === null
+    ? { workId: null }
+    : { workId: location.workId, workSlug: location.workSlug };
+}
+/** Where `setLocation` places a document: a folder path in place of the full path. */
+export type ResourceDestination = Readonly<
+  { scheme: ProjectContextTreeScheme; folderPath: string; name: string } & ResourceWorkAuthority
+>;
 
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
@@ -100,7 +114,7 @@ export type NamespaceIntent = ResourceKey & {
   identityRevision: number;
   desired:
     | { kind: "create"; folderPath: string; provisionalName?: string }
-    | { kind: "set-location"; destination: Omit<ResourceLocation, "path"> & { folderPath: string } }
+    | { kind: "set-location"; destination: ResourceDestination }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
   state:

@@ -8,11 +8,9 @@
   `mdxCodec({ schema, components, assetPathResolver })`.
 - `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
   serialize an asset ref) and `createAssetPathResolver(entries)`.
-- `remarkWikiLink`: the same syntax grammar for read-only renderers. Consumers
-  own inline presentation and navigation authority; the parser resolves neither.
-- Both presets include the first-class `[[target]]` wikilink extension. It maps
-  to the existing link mark with `href: "[[target]]"` and `title: null`; labels
-  may be authored with `[[target|display text]]`.
+- `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
+  surfaces that spell a link without serializing a document (a chat
+  reference, a clipboard fallback). It shares the link mark's destination rule.
 - Codec author helpers for converting between ProseMirror nodes and mdast/MDX
   AST nodes.
 - Codec and AST types, `CodecParseError`, and MDX component registry types.
@@ -157,29 +155,22 @@ If MDX cannot consume the resource (for example, a link label containing
 nested link syntax), ingress keeps the delimiter escaped and the result
 deterministic instead of exposing it as a JSX opener.
 
-## Wikilinks
+## Links
 
-`[[target]]` and `[[target|display text]]` are non-GFM inline constructs shared
-by the markdown and MDX presets. Parsing stores only `[[target]]` in the ordinary
-ProseMirror `link` mark; the display text is its text content. Resolution never
-occurs in the codec. Unresolved destinations round-trip unchanged.
+A link is a standard Markdown link, `[text](destination "title")`, in both
+presets; there is no wikilink syntax. `[[anything]]` is literal text on parse
+and serializes with its openers escaped (`\[\[name]]`), so it reads back as the
+same text. Images are `![alt](src)`; uploaded pictures keep their
+`asset:<id>` identity inside the editor and travel as resolver paths.
 
-Display text is literal prose, not nested Markdown. Backslash escapes backslash,
-closing bracket, and pipe inside the label. Destinations also escape both brackets,
-pipes, and backslashes, so destination text such as `Gate|Map.png` becomes
-`[[Gate\|Map.png]]`, not an alias for `Gate`. The shared formatter/decoder owns
-this boundary for editor insertion, Composer, images, and transcript rendering.
-Empty labels and line endings are not recognized; tabs remain literal label text.
-Target outer whitespace is trimmed; label whitespace is preserved. Plain labeled Markdown links such as `[label]([[target]])` normalize
-to the pipe spelling. Rich labels and links with title metadata retain the
-ordinary Markdown resource spelling to avoid losing marks or metadata. Images
-retain `![alt]([[target]])`.
+The link mark spells its destination so the parser reads it back exactly
+(`markdownLinkDestination`): bare when it can be, else enclosed in `<…>` with
+backslashes and angle brackets escaped. Neither form may span lines, so a line
+ending travels percent-encoded, which the document href resolver
+(`@meridian/contracts` `resolveDocumentHref`) decodes back. The final bytes are
+the Markdown stringifier's: a destination with spaces goes out enclosed
+(`[x](<chapter 1.md>)`). Resolution never occurs in the codec; an unresolved destination
+round-trips unchanged.
 
-The shared micromark grammar owns recognition, including MDX ingress protection
-and read-only transcript parsing. `formatWikilink` spells plain labels;
-`wikilinkTarget` extracts a destination-only href, not a complete aliased link.
-App routing interprets scoped URI destinations without changing the label.
-
-Wire recognition does not authorize creating a Context file with that name.
-The app's shared Context entry-name validator owns filename policy separately;
-for example, it permits brackets but currently rejects pipe characters.
+Wire recognition does not authorize creating a Context file at a destination.
+The app's shared Context entry-name validator owns filename policy separately.

@@ -46,3 +46,11 @@
   search (`work/WorkChatsTab.tsx`, `work/WorkFilesTab.tsx` own it as component
   state). Keeping it means putting the Work chat search in the project address,
   as the chat index does with `q`.
+- No Work Scratch addresses write the No Work row's id (`?work=<row id>`),
+  while the address grammar names No Work with an empty `?work=`. Both now
+  open No Work (`routing/work-route.ts` resolves the row id to `none`), but
+  one destination has two spellings and the row id is an internal id in a
+  route. The move: write the empty form for No Work Scratch
+  (`routing/project-address.ts`, `ProjectAddressDocument.tsx`), look the
+  document up under the No Work row, and drop `noWorkId` from the route
+  catalog once nothing writes the id.

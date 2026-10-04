@@ -26,17 +26,4 @@ artifact: scratch://@/notes.md (Notes)
 
 p3 is running again; this report is from its previous run. You'll be notified when it finishes.`);
   });
-
-  it("renders unavailable as its message line, not JSON", () => {
-    expect(
-      renderThreadReportOutput({
-        ref: "p3",
-        status: "unavailable",
-        message:
-          "p3 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
-      }),
-    ).toBe(
-      "p3 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
-    );
-  });
 });

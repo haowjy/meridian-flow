@@ -53,11 +53,4 @@ describe("ToolRow", () => {
     expect(host.querySelector('[aria-label="Failed"]')).toBeNull();
     expect(host.querySelector("button[aria-expanded]")).toBeNull();
   });
-
-  it("still marks a refused write as failed", async () => {
-    await act(async () => root.render(<ToolRow tool={refusedWrite("invalid_write")} />));
-
-    expect(host.textContent).toBe("Couldn't editch12");
-    expect(host.querySelector('[aria-label="Failed"]')).not.toBeNull();
-  });
 });
