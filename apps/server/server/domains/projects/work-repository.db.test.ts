@@ -4,7 +4,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createLocalFileAccessChanges } from "../file-policy/index.js";
+import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -61,9 +61,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       availability,
       catalog,
     });
+    const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
       db,
-      fileAccessChanges: createLocalFileAccessChanges(),
+      fileAccessChanges,
       projectionMutation,
     });
     const threadRepos = createDrizzleRepositoriesForTest(db);
@@ -102,13 +103,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("deletes and restores archived management identity without unarchiving it", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "Archived history" });
+      // Each lifecycle change re-admits open rooms at the new access level.
+      const heard: FileAccessChange[] = [];
+      const stopHearing = fileAccessChanges.subscribe((change) => heard.push(change));
+      const announced = () => expect(heard.splice(0)).toEqual([{ workId: work.id }]);
       await works.archive(work.id);
+      announced();
       await works.softDelete(work.id);
+      announced();
       expect(await works.findById(work.id)).toMatchObject({
         archivedAt: expect.any(String),
         deletedAt: expect.any(String),
       });
       await works.restore(work.id);
+      announced();
       expect(await works.findById(work.id)).toMatchObject({
         archivedAt: expect.any(String),
         deletedAt: null,
@@ -117,6 +125,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: work.id,
       });
       await works.unarchive(work.id);
+      announced();
+      stopHearing();
       expect(await works.findById(work.id)).toMatchObject({ archivedAt: null, deletedAt: null });
     });
 
