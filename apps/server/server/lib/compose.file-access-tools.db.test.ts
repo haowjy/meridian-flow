@@ -255,6 +255,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const chapter = await script.runtime.ports.documentSync.readAsMarkdown(CHAPTER_ID);
       expect(chapter.ok && chapter.value).toContain("Writer chapter.");
       expect(await script.text("scratch://ideas.md")).toContain("Agent ideas.");
+      const { call: next } = await script.begin();
+      expect(listed(await next("ls", { path: "scratch://" }))).toContainEqual(
+        expect.objectContaining({ uri: "scratch://@rewrite/ideas.md", sizeBytes: 13 }),
+      );
     });
   });
 }
