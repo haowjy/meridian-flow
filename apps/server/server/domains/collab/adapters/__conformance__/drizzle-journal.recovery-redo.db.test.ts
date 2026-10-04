@@ -78,7 +78,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { createDrizzleJournal: createUngrantedJournal } = await import("../drizzle-journal.js");
+    const { grantedJournal } = await import("../../../../test-support/file-grants.js");
+    // These cases drive the journal seam directly, as a granted tool call does.
+    const createDrizzleJournal = (...args: Parameters<typeof createUngrantedJournal>) =>
+      grantedJournal(createUngrantedJournal(...args));
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,

@@ -4,6 +4,9 @@
  * confirms them inside its transaction before any advisory lock.
  */
 import { type EditConfirmation, runWithEditConfirmation } from "../../shared/edit-confirmation.js";
+
+export { markReplyConfirmed, UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
+
 import type { FileAccessDenied, FileGrant } from "./domain/types.js";
 import type { FileAccess } from "./file-access.js";
 
