@@ -88,7 +88,10 @@ namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
 and its descendants show their new place at once in the tree, open tabs and
 routes, and so does the phone. One placement source, the projected catalog, serves
 every surface, and a route resolves its open document by identity: the document the
-route is bound to (the removal coordinator's bound selection) is found by id, so a
+route holds by continuity (`routeContinuityDocumentId`: bound in the removal
+coordinator's Editor-context locator, whatever Work the Editor selects, and actually
+admitted by this surface; a binding a cached tab guessed before the server answered
+is not continuity) is found by id, so a
 move of it or a folder above it, that move's rollback after a refusal, or another
 document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
 returns it as `bound` and it outranks the server's answer for that path; admission
