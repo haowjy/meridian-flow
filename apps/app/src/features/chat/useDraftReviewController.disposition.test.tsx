@@ -19,6 +19,7 @@ import {
 } from "./draft-command-errors";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
+let resolveDiscard: (() => void) | null = null;
 let rejectDiscard: ((reason: unknown) => void) | null = null;
 let currentAddress = "";
 let coordinator: ContextRemovalCoordinator;
@@ -40,7 +41,8 @@ vi.mock("@/client/query/useDraftReviewMutations", async (importOriginal) => ({
   useApplyDraft: () => ({ mutateAsync: applyMutate }),
   useDiscardDraft: () => ({
     mutateAsync: () =>
-      new Promise((_resolve, reject) => {
+      new Promise<void>((resolve, reject) => {
+        resolveDiscard = resolve;
         rejectDiscard = reject;
       }),
   }),
@@ -126,6 +128,7 @@ describe("draft dispositions", () => {
     applyMutate.mockReset();
     controller = null;
     rejectDiscard = null;
+    resolveDiscard = null;
     currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
     addressWrites = 0;
     resetDraftCommandErrors();
@@ -222,10 +225,12 @@ describe("draft dispositions", () => {
         });
         expect(heldError()).toBeUndefined();
         await act(async () => {
-          rejectDiscard?.(new Error("offline"));
+          resolveDiscard?.();
           await retry;
         });
-        expect(heldError()).toBe("discard-offline");
+        expect(heldError()).toBeUndefined();
+        expect(open).not.toHaveBeenCalled();
+        expect(addressWrites).toBe(1);
         expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
       },
     );
