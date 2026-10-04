@@ -35,6 +35,7 @@ import {
   createDrizzleAssetPathResolver,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
@@ -485,6 +486,7 @@ export async function createProductionAppPorts(input: {
     db,
     documentSync,
     manifestMembership: documentSync,
+    documentDerivations: documentSync.documentDerivations,
     catalogMutations: contextCatalog,
     eventSink,
   });
@@ -570,7 +572,11 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     contextCatalogWakeHub,
-    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    documentLinks: createDocumentLinkResolver({
+      catalog: contextCatalog,
+      workAuthorityResolver,
+      history: createDrizzleDocumentLinkHistory(db),
+    }),
     projects,
     works: workRepo,
     projectRepo,
