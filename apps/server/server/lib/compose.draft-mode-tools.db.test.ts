@@ -177,6 +177,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("kb://lore.md");
     });
 
+    // D31: a create or copy would make its file in the archived Work's frozen draft.
+    it("refuses a create or copy into an archived draft-mode Work with D31's copy", async () => {
+      const script = await startWithChapter("Writer live content.");
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+      const { call } = await script.begin();
+      const frozen =
+        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch @rewrite to auto-apply.';
+
+      for (const args of [
+        { command: "create", path: "manuscript://new.md", content: "Never lands." },
+        { command: "copy", from: { path: CHAPTER }, path: "manuscript://copy.md" },
+      ]) {
+        const refused = await call("write", args);
+        expect(refused.isError).toBe(true);
+        expect(refused.result).toMatchObject({
+          status: "permission_denied",
+          reason: "work_archived",
+        });
+        expect(text(refused)).toContain(frozen);
+      }
+    });
+
     it("copies the section a #fragment names (D49)", async () => {
       const script = await startWithChapter(
         "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\n# Aftermath\n\nQuiet.",
