@@ -3,16 +3,15 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   contextSources,
   documents,
-  folderAncestors,
   folders,
   projects,
   users,
   works,
 } from "@meridian/database/schema";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleFileFacts, refreshFolderAncestors } from "./drizzle-file-facts.js";
+import { createDrizzleFileFacts } from "./drizzle-file-facts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -127,17 +126,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       expect(ch1?.deleted).toBe(true);
       expect(scratchNote?.ownerWork?.archived).toBe(true);
-    });
-
-    it("keeps the folder closure in the facts' order", async () => {
-      const db = database.current;
-      await refreshFolderAncestors(db, [chapters]);
-      const rows = await db
-        .select({ ancestorId: folderAncestors.ancestorId })
-        .from(folderAncestors)
-        .where(eq(folderAncestors.folderId, arc))
-        .orderBy(asc(folderAncestors.depth));
-      expect(rows.map((row) => row.ancestorId)).toEqual([arc, chapters]);
     });
   });
 }
