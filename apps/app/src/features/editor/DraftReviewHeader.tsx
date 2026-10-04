@@ -8,8 +8,7 @@ import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, Loader2 } from "lucide-react";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { usePostApplySnapshot } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 
 export type DraftReviewHeaderProps = {
   documentId: string;
@@ -18,31 +17,10 @@ export type DraftReviewHeaderProps = {
 
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
-  const disposition = usePostApplySnapshot();
-  const recoveryCommands = useProjectDraftApplyRecovery();
-  const recoveryItem = disposition.items.find(
-    (item) =>
-      item.identity.projectId === controller.projectId &&
-      item.identity.workId === controller.workId &&
-      item.identity.documentId === documentId &&
-      item.identity.draftId === draftId,
-  );
-  const unknown = disposition.reservations.find(
-    (item) =>
-      item.phase === "outcome-unknown" &&
-      item.identity.projectId === controller.projectId &&
-      item.identity.workId === controller.workId &&
-      item.identity.documentId === documentId &&
-      item.identity.draftId === draftId,
-  );
-  const recoveryRef = recoveryItem
-    ? { identity: recoveryItem.identity, entryVersion: recoveryItem.entryVersion }
-    : null;
   const busy = controller.isDisposing;
   const commandError =
     controller.inlineReviewMessage?.tone === "error" &&
-    (controller.inlineReviewMessage.code === "apply-failed" ||
-      controller.inlineReviewMessage.code === "discard-offline")
+    controller.inlineReviewMessage.code !== "discard-failed"
       ? controller.inlineReviewMessage.code
       : null;
 
@@ -66,85 +44,27 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
       </button>
       {commandError ? (
         <p className="text-destructive text-xs" role="alert">
-          {commandError === "apply-failed" ? (
-            <Trans>Couldn't apply. Check your connection and try again.</Trans>
-          ) : (
-            <Trans>Couldn't discard. Check your connection and try again.</Trans>
-          )}
+          <ReviewMessageText code={commandError} />
         </p>
       ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        {unknown ? (
-          <button
-            type="button"
-            className="text-button"
-            onClick={() =>
-              recoveryCommands.checkApplyOutcome({
-                identity: unknown.identity,
-                reservationVersion: unknown.reservationVersion,
-              })
-            }
-          >
-            <Trans>Check again</Trans>
-          </button>
-        ) : recoveryItem && recoveryRef ? (
-          <>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => recoveryCommands.abandon(recoveryRef)}
-            >
-              {recoveryItem.obligations.draftTab.kind === "draft-only" ? (
-                <Trans>Close</Trans>
-              ) : (
-                <Trans>Stop</Trans>
-              )}
-            </button>
-            {recoveryItem.phase.kind === "awaiting-live" ? (
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => recoveryCommands.retry(recoveryRef)}
-              >
-                <Trans>Retry</Trans>
-              </button>
-            ) : recoveryItem.phase.kind === "disposing" ? (
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => recoveryCommands.finishDisposition(recoveryRef)}
-              >
-                {recoveryItem.phase.outcome === "writer-abandoned" ? (
-                  <Trans>Finish close</Trans>
-                ) : (
-                  <Trans>Finish reopening</Trans>
-                )}
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => controller.discard(documentId, draftId)}
-              disabled={busy}
-              className="text-button"
-            >
-              <Trans>Discard all</Trans>
-            </button>
-            <button
-              type="button"
-              onClick={() => controller.apply(documentId, draftId)}
-              disabled={busy || !controller.canApplyReviewedDraft}
-              className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
-            >
-              {controller.isApplying ? (
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-              ) : null}
-              <Trans>Apply all</Trans>
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={() => controller.discard(documentId, draftId)}
+          disabled={busy}
+          className="text-button"
+        >
+          <Trans>Discard all</Trans>
+        </button>
+        <button
+          type="button"
+          onClick={() => controller.apply(documentId, draftId)}
+          disabled={busy || !controller.canApplyReviewedDraft}
+          className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          <Trans>Apply all</Trans>
+        </button>
       </div>
     </section>
   );

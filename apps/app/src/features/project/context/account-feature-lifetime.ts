@@ -2,7 +2,6 @@
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -11,7 +10,6 @@ import { reconcileRecentAvailability } from "./recent-availability";
 export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
-  readonly postApplyOwner;
   readonly removal;
   readonly availability;
   readonly resources;
@@ -28,28 +26,7 @@ export class AccountFeatureLifetime {
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId });
     this.registry = this.runtime.registry;
-    this.postApplyOwner = new AccountPostApplyDispositionOwner(accountId, {
-      replaceExactRoomNames: (roomNames) => {
-        if (roomNames.length === 0) this.registry.releaseBranchRooms("post-apply-disposition");
-        else this.registry.retainBranchRooms("post-apply-disposition", roomNames);
-      },
-    });
-    this.removal = new ContextRemovalCoordinator(accountId, {
-      sessions: this.registry,
-      draftTabFence: {
-        currentFence: (input) =>
-          this.postApplyOwner.draftTabMutationFence({
-            identity: {
-              accountId: input.accountId,
-              projectId: input.projectId,
-              workId: input.workId,
-              documentId: input.documentId,
-              draftId: input.draftId,
-            },
-            tabInstanceToken: input.tabInstanceToken,
-          }),
-      },
-    });
+    this.removal = new ContextRemovalCoordinator(accountId, { sessions: this.registry });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
@@ -97,7 +74,6 @@ export class AccountFeatureLifetime {
     const attempt = (async () => {
       if (!this.featureOwnersSettled) {
         this.featureLease.disposeIfSuspended();
-        this.postApplyOwner.dispose();
         this.featureOwnersSettled = true;
       }
       await this.runtime.finishClose();

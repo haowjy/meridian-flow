@@ -54,7 +54,6 @@ export type EditorWorkspaceCommand =
       kind: "settle-draft";
       projectId: string;
       tab: ContextTab;
-      disposition: "applied" | "discarded";
     };
 
 export type EditorWorkspaceCommandResult =
@@ -387,17 +386,6 @@ export function reduceEditorWorkspace(
   if (command.kind === "settle-draft") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     const index = workspace?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
-    if (command.disposition === "discarded") {
-      if (index < 0) return outcome("already-committed", current);
-      return replaceProject(
-        current,
-        command.projectId,
-        normalizeProject({
-          tabs: workspace.tabs.filter((_tab, candidateIndex) => candidateIndex !== index),
-          selectedTabIdByWork: workspace.selectedTabIdByWork,
-        }),
-      );
-    }
     if (command.tab.kind === "new") return outcome("stale", current);
     const settled = durableTab(command.tab);
     const conflicting = workspace.tabs.find(

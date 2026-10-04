@@ -60,11 +60,7 @@ type ContextTabsActions = {
     prior: ProjectTabsSlice,
     next: ProjectTabsSlice,
   ) => Promise<void>;
-  settleDraft: (
-    projectId: string,
-    tab: ContextTab,
-    disposition: "applied" | "discarded",
-  ) => Promise<DraftWorkspaceSettlementReceipt>;
+  settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
   consumeReviewTab: (
     projectId: string,
     identity: ReviewOverlayTabIdentity,
@@ -399,13 +395,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        settleDraft: async (projectId, tab, disposition) => {
+        settleDraft: async (projectId, tab) => {
           if (tab.kind === "new") return { kind: "not-settled" };
           const result = await dispatchResult(() => ({
             kind: "settle-draft",
             projectId,
             tab,
-            disposition,
           }));
           return result?.kind === "committed" || result?.kind === "already-committed"
             ? { kind: "settled" }
@@ -523,7 +518,6 @@ export function commitPlannedContextRemoval(
 export function commitDraftApplyMetadata(
   projectId: string,
   identity: ReviewOverlayTabIdentity,
-  disposition: "applied" | "discarded" = "applied",
 ): Promise<DraftWorkspaceSettlementReceipt> {
   const tab = useContextTabsStore
     .getState()
@@ -538,7 +532,7 @@ export function commitDraftApplyMetadata(
         candidate.tabInstanceToken === identity.tabInstanceToken,
     );
   if (!tab) return Promise.resolve({ kind: "not-settled" });
-  return useContextTabsStore.getState().settleDraft(projectId, tab, disposition);
+  return useContextTabsStore.getState().settleDraft(projectId, tab);
 }
 
 /** Explicit-close-only exact review overlay consumption. Never dispatches to the browser-local workspace. */

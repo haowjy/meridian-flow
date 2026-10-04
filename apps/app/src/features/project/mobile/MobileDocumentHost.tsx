@@ -25,11 +25,7 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
-import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
-import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import type { MobileDocumentRoute } from "./mobile-document-route";
-
-let mobileHostGeneration = 0;
 
 export type MobileDocumentHostProps = {
   projectId: string;
@@ -111,7 +107,6 @@ function MobileLocalDocumentHost({
 function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
   const projectionOwner = useRef({});
-  const hostGeneration = useRef(++mobileHostGeneration);
   const contextRemoval = useContextRemovalCoordinator();
   const removalState = useContextRemovalProject(projectId);
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
@@ -186,8 +181,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     documentId: activeTab?.editable ? activeTab.documentId : null,
     owner: "mobile-project-document-host",
   });
-  useLiveBindingAcknowledgementHost(projectId, activeEditorDocumentId, live);
-  usePostApplyHostWake(projectId, activeEditorDocumentId, hostGeneration.current);
   const liveState = live.state;
 
   useEffect(() => {

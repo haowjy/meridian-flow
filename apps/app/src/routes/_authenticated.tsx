@@ -29,7 +29,6 @@ import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
@@ -153,11 +152,9 @@ function AuthenticatedAccountProviderTree({
   );
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
-      <DraftApplyRecoveryProvider accountId={user.userId}>
-        <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
-          <AuthenticatedProviderTree now={now} user={user} />
-        </WorkingSetSyncPreferenceProvider>
-      </DraftApplyRecoveryProvider>
+      <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
+        <AuthenticatedProviderTree now={now} user={user} />
+      </WorkingSetSyncPreferenceProvider>
     </AccountFeatureComposition>
   );
 }

@@ -9,15 +9,11 @@ import {
   useDraftReview,
 } from "@/features/chat/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import type { AdmittedLiveDocument } from "../context/open-project-document";
-import type { LiveDocumentHostBinding } from "../context/use-live-document-binding";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
-  useAcknowledgeLiveBinding,
-  useLiveBindingAcknowledgementHost,
   useOpenEditorReview,
 } from "./editor-review-handoff";
 
@@ -44,28 +40,12 @@ let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 let showEditor: ((target: AiDraftLaunchTarget) => void) | null = null;
 let showChat: (() => void) | null = null;
 let observedScopes: string[] = [];
-let acknowledgeBinding:
-  | ((admission: AdmittedLiveDocument, signal: AbortSignal) => Promise<unknown>)
-  | null = null;
 
 function CommandCapture() {
   const command = useOpenEditorReview();
   useEffect(() => {
     openReview = command;
   }, [command]);
-  return null;
-}
-
-function BindingCommandCapture() {
-  const command = useAcknowledgeLiveBinding();
-  useEffect(() => {
-    acknowledgeBinding = command;
-  }, [command]);
-  return null;
-}
-
-function BindingHost({ documentId, host }: { documentId: string; host: LiveDocumentHostBinding }) {
-  useLiveBindingAcknowledgementHost("project-1", documentId, host);
   return null;
 }
 
@@ -117,7 +97,6 @@ function Harness({
   return (
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
       <CommandCapture />
-      <BindingCommandCapture />
       {view.kind === "chat" ? (
         <DraftReviewBoundary value={chatReview}>
           <ScopeProbe name="chat" />
@@ -174,216 +153,6 @@ describe("Editor review handoff", () => {
     showEditor = null;
     showChat = null;
     observedScopes = [];
-    acknowledgeBinding = null;
-  });
-
-  it.each(["desktop", "mobile"])("routes one admission to the matching %s host", async () => {
-    const adoptAndAcknowledge = vi.fn(async () => ({
-      kind: "acknowledged" as const,
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-    }));
-    const host = {
-      state: { kind: "failed", documentId: "document-1" },
-      retry: vi.fn(),
-      adoptAndAcknowledge,
-    } as LiveDocumentHostBinding;
-    const admission = {
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-      bind: vi.fn(),
-    } as AdmittedLiveDocument;
-    await withReactRoot(
-      <EditorReviewHandoffProvider
-        projectId="project-1"
-        openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-      >
-        <BindingCommandCapture />
-        <BindingHost documentId="document-1" host={host} />
-      </EditorReviewHandoffProvider>,
-      async () => {
-        await act(async () => undefined);
-        let pending: Promise<unknown> | undefined;
-        await act(async () => {
-          pending = acknowledgeBinding?.(admission, new AbortController().signal);
-        });
-        const result = await pending;
-        expect(result).toMatchObject({ kind: "acknowledged", generation: "7" });
-        expect(adoptAndAcknowledge).toHaveBeenCalledOnce();
-        expect(adoptAndAcknowledge).toHaveBeenCalledWith(
-          admission,
-          expect.objectContaining({ signal: expect.any(AbortSignal) }),
-        );
-      },
-    );
-  });
-
-  it("lets a claimed host finish live synchronization beyond the claim window", async () => {
-    let finish!: () => void;
-    const synchronization = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    const host = {
-      state: { kind: "absent" },
-      retry: vi.fn(),
-      adoptAndAcknowledge: vi.fn(async () => {
-        await synchronization;
-        return {
-          kind: "acknowledged" as const,
-          projectId: "project-1",
-          documentId: "document-1",
-          generation: "7",
-        };
-      }),
-    } as LiveDocumentHostBinding;
-    const admission = {
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-      bind: vi.fn(),
-    } as AdmittedLiveDocument;
-    vi.useFakeTimers();
-    try {
-      await withReactRoot(
-        <EditorReviewHandoffProvider
-          projectId="project-1"
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        >
-          <BindingCommandCapture />
-          <BindingHost documentId="document-1" host={host} />
-        </EditorReviewHandoffProvider>,
-        async () => {
-          await act(async () => undefined);
-          let pending: Promise<unknown> | undefined;
-          await act(async () => {
-            pending = acknowledgeBinding?.(admission, new AbortController().signal);
-          });
-          let settled = false;
-          void pending?.then(() => {
-            settled = true;
-          });
-          await act(async () => vi.advanceTimersByTime(10_000));
-          expect(settled).toBe(false);
-          await act(async () => {
-            finish();
-            await expect(pending).resolves.toMatchObject({
-              kind: "acknowledged",
-              generation: "7",
-            });
-          });
-        },
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("bounds a claimed host that never completes live admission", async () => {
-    const host = {
-      state: { kind: "absent" },
-      retry: vi.fn(),
-      adoptAndAcknowledge: vi.fn(() => new Promise<never>(() => undefined)),
-    } as LiveDocumentHostBinding;
-    const admission = {
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-      bind: vi.fn(),
-    } as AdmittedLiveDocument;
-    vi.useFakeTimers();
-    try {
-      await withReactRoot(
-        <EditorReviewHandoffProvider
-          projectId="project-1"
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        >
-          <BindingCommandCapture />
-          <BindingHost documentId="document-1" host={host} />
-        </EditorReviewHandoffProvider>,
-        async () => {
-          await act(async () => undefined);
-          let pending: Promise<unknown> | undefined;
-          await act(async () => {
-            pending = acknowledgeBinding?.(admission, new AbortController().signal);
-          });
-          await act(async () => vi.advanceTimersByTime(15_000));
-          await expect(pending).resolves.toEqual({ kind: "unusable" });
-        },
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("fails a missing-host request after the bounded acknowledgement window", async () => {
-    const admission = {
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-      bind: vi.fn(),
-    } as AdmittedLiveDocument;
-    vi.useFakeTimers();
-    try {
-      await withReactRoot(
-        <EditorReviewHandoffProvider
-          projectId="project-1"
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        >
-          <BindingCommandCapture />
-        </EditorReviewHandoffProvider>,
-        async () => {
-          await act(async () => undefined);
-          let pending: Promise<unknown> | undefined;
-          await act(async () => {
-            pending = acknowledgeBinding?.(admission, new AbortController().signal);
-          });
-          await act(async () => vi.advanceTimersByTime(10_000));
-          await expect(pending).resolves.toEqual({ kind: "unclaimed" });
-        },
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("cancels when the claimed host unmounts before acknowledgement", async () => {
-    const never = new Promise<never>(() => undefined);
-    const host = {
-      state: { kind: "failed", documentId: "document-1" },
-      retry: vi.fn(),
-      adoptAndAcknowledge: vi.fn(() => never),
-    } as LiveDocumentHostBinding;
-    const admission = {
-      projectId: "project-1",
-      documentId: "document-1",
-      generation: "7",
-      bind: vi.fn(),
-    } as AdmittedLiveDocument;
-    let hide!: () => void;
-    function BindingHarness() {
-      const [shown, setShown] = useState(true);
-      hide = () => setShown(false);
-      return (
-        <EditorReviewHandoffProvider
-          projectId="project-1"
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
-        >
-          <BindingCommandCapture />
-          {shown ? <BindingHost documentId="document-1" host={host} /> : null}
-        </EditorReviewHandoffProvider>
-      );
-    }
-    await withReactRoot(<BindingHarness />, async () => {
-      await act(async () => undefined);
-      let pending: Promise<unknown> | undefined;
-      await act(async () => {
-        pending = acknowledgeBinding?.(admission, new AbortController().signal);
-      });
-      await act(async () => hide());
-      await expect(pending).resolves.toEqual({ kind: "cancelled" });
-    });
   });
 
   it("keeps Chat B and Editor A as sibling boundaries", async () => {

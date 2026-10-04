@@ -23,9 +23,6 @@ import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { usePostApplySnapshot } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import { projectDraftDispositionRows } from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
-import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
@@ -39,10 +36,8 @@ import { ReviewMessageText } from "./ReviewMessageText";
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
 export function useDraftDock({ generating }: { generating: boolean }) {
-  const { serverActiveGroups, groups, controller } = useDraftReview();
+  const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
-  const dispositionSnapshot = usePostApplySnapshot();
-  const recovery = useProjectDraftApplyRecovery();
   const commandErrors = useDraftCommandErrors();
 
   const applyDraft = useCallback(
@@ -55,7 +50,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   );
 
   const rows = useMemo(() => dockRows(groups), [groups]);
-  const serverActiveRows = useMemo(() => dockRows(serverActiveGroups), [serverActiveGroups]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -86,14 +80,8 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const model = {
     generating,
     rows,
-    serverActiveCount: serverActiveRows.length,
-    aggregateStats: aggregateDraftStats(serverActiveRows.map((row) => row.draft)),
-    dispositionRows: projectDraftDispositionRows(dispositionSnapshot, controller.projectId),
-    dispositionSnapshot,
-    recovery,
-    mounted:
-      rows.length > 0 ||
-      projectDraftDispositionRows(dispositionSnapshot, controller.projectId).length > 0,
+    aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
+    mounted: rows.length > 0,
     isBusy: controller.isDisposing,
     dispositionError: controller.dockDispositionError,
     /** A refused command on this row's draft, shown on the row it belongs to. */
@@ -145,16 +133,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   if (!dock.mounted) return null;
 
-  const multi = dock.serverActiveCount > 1;
-  const single = dock.serverActiveCount === 1 && dock.rows.length === 1;
+  const multi = dock.rows.length > 1;
+  const single = dock.rows.length === 1;
   const firstPending = dock.rows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
   // One document: the error sits under the strip. Several: it sits on the
   // document's row, so the strip opens to show it.
   const stripError = single && firstPending ? dock.rowError(firstPending) : null;
-  // The batch-level discard message repeats what a row already says.
+  // A batch-level message repeats what a row already says.
   const batchError =
-    dock.dispositionError === "discard-offline" && refusedRowCount > 0
+    (dock.dispositionError === "discard-offline" || dock.dispositionError === "apply-unknown") &&
+    refusedRowCount > 0
       ? null
       : dock.dispositionError;
 
@@ -163,189 +152,119 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="mx-[var(--chat-space-block)] rounded-t-lg bg-dock-surface"
       data-draft-dock="settled"
     >
-      {dock.rows.length > 0 ? (
-        <>
-          {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
+      {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
           intercept their own clicks below. Tiny chevron-only targets read as
           broken affordance. */}
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
-          <div
-            onClick={multi ? () => setExpanded((value) => !value) : () => dock.reviewFirst()}
-            className={cn(
-              "flex min-h-7 items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] text-caption text-prose-foreground",
-              multi && "cursor-pointer transition-colors hover:bg-muted/50",
-            )}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
+      <div
+        onClick={multi ? () => setExpanded((value) => !value) : () => dock.reviewFirst()}
+        className={cn(
+          "flex min-h-7 items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] text-caption text-prose-foreground",
+          multi && "cursor-pointer transition-colors hover:bg-muted/50",
+        )}
+      >
+        {multi ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((value) => !value);
+            }}
+            className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
           >
-            {multi ? (
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setExpanded((value) => !value);
-                }}
-                className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
-              >
-                <ChevronRight
-                  className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                  aria-hidden
-                />
-              </button>
-            ) : null}
-            <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] overflow-hidden">
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-              {/* min() keeps the 12ch floor from padding short names with dead space */}
-              <span className="min-w-[min(12ch,max-content)] shrink truncate">
-                {single ? identity : <Trans>{dock.serverActiveCount} documents</Trans>}
-              </span>
-              {dock.aggregateStats ? (
-                <span className="shrink-0 whitespace-nowrap text-ink-subtle">
-                  <DraftStatsLabel stats={dock.aggregateStats} />
-                </span>
-              ) : null}
-            </div>
-            {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
-            <div
-              className="flex shrink-0 items-center gap-[var(--chat-space-inline)]"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {confirmingDiscardAll ? (
-                <>
-                  <span className="whitespace-nowrap text-ink-muted">
-                    <Trans>Discard all changes?</Trans>
-                  </span>
-                  <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
-                    <Trans>Keep</Trans>
-                  </QuietButton>
-                  <QuietButton
-                    onClick={() => {
-                      setConfirmingDiscardAll(false);
-                      dock.startDiscardAll();
-                    }}
-                    disabled={dock.isBusy}
-                  >
-                    <Trans>Discard</Trans>
-                  </QuietButton>
-                </>
-              ) : (
-                <>
-                  <QuietButton
-                    onClick={() => {
-                      if (single && firstPending) dock.discardRow(firstPending);
-                      else setConfirmingDiscardAll(true);
-                    }}
-                    disabled={dock.generating || dock.isBusy || !firstPending}
-                  >
-                    {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
-                  </QuietButton>
-                  <QuietButton
-                    onClick={() => {
-                      if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
-                      else dock.startApplyAll();
-                    }}
-                    disabled={dock.generating || dock.isBusy || !firstPending}
-                  >
-                    {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
-                  </QuietButton>
-                  {firstPending ? (
-                    <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
-                  ) : null}
-                </>
-              )}
-            </div>
-          </div>
-
-          {batchError ? (
-            <DockErrorLine code={batchError} />
-          ) : stripError ? (
-            <DockErrorLine code={stripError} />
-          ) : null}
-
-          {multi && expanded ? (
-            <div>
-              {dock.rows.map((row) => (
-                <DockRowLine
-                  key={row.documentId}
-                  row={row}
-                  error={dock.rowError(row)}
-                  busy={dock.isBusy}
-                  onOpen={() => dock.openRow(row)}
-                  onReview={() => dock.reviewRow(row)}
-                />
-              ))}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-      {dock.dispositionRows.map((row) => (
-        <div
-          key={
-            row.kind === "recovery"
-              ? `recovery-${row.recovery.entryVersion}`
-              : `unknown-${row.reservation.reservationVersion}`
-          }
-          className="flex min-h-8 items-center gap-[var(--chat-space-block)] border-border-subtle border-t px-[var(--chat-card-pad-x)] text-caption"
-          data-draft-disposition={row.kind}
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {row.presentation.documentName ?? <Trans>Document</Trans>}
-            {row.presentation.owningWorkLabel ? (
-              <span className="ml-1 text-ink-subtle">({row.presentation.owningWorkLabel})</span>
-            ) : null}
-            {row.kind === "recovery" ? (
-              <span className="ml-2 text-ink-subtle">
-                {row.phase.kind === "disposing" ? (
-                  row.phase.outcome === "writer-abandoned" ? (
-                    <Trans>Finishing close</Trans>
-                  ) : (
-                    <Trans>Finishing reopening</Trans>
-                  )
-                ) : (
-                  <Trans>Applied. Reopening live document.</Trans>
-                )}
-              </span>
-            ) : (
-              <span className="ml-2 text-ink-subtle">
-                <Trans>Checking whether Apply finished.</Trans>
-              </span>
-            )}
+            <ChevronRight
+              className={cn("size-3 transition-transform", expanded && "rotate-90")}
+              aria-hidden
+            />
+          </button>
+        ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] overflow-hidden">
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          {/* min() keeps the 12ch floor from padding short names with dead space */}
+          <span className="min-w-[min(12ch,max-content)] shrink truncate">
+            {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
           </span>
-          {row.kind === "apply-outcome-unknown" ? (
-            <QuietButton onClick={() => dock.recovery.checkApplyOutcome(row.reservation)}>
-              <Trans>Check again</Trans>
-            </QuietButton>
-          ) : row.phase.kind === "disposing" ? (
-            <QuietButton onClick={() => dock.recovery.finishDisposition(row.recovery)}>
-              {row.phase.outcome === "writer-abandoned" ? (
-                <Trans>Finish close</Trans>
-              ) : (
-                <Trans>Finish reopening</Trans>
-              )}
-            </QuietButton>
+          {dock.aggregateStats ? (
+            <span className="shrink-0 whitespace-nowrap text-ink-subtle">
+              <DraftStatsLabel stats={dock.aggregateStats} />
+            </span>
+          ) : null}
+        </div>
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
+        <div
+          className="flex shrink-0 items-center gap-[var(--chat-space-inline)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {confirmingDiscardAll ? (
+            <>
+              <span className="whitespace-nowrap text-ink-muted">
+                <Trans>Discard all changes?</Trans>
+              </span>
+              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
+                <Trans>Keep</Trans>
+              </QuietButton>
+              <QuietButton
+                onClick={() => {
+                  setConfirmingDiscardAll(false);
+                  dock.startDiscardAll();
+                }}
+                disabled={dock.isBusy}
+              >
+                <Trans>Discard</Trans>
+              </QuietButton>
+            </>
           ) : (
             <>
-              <QuietButton onClick={() => dock.recovery.abandon(row.recovery)}>
-                {row.recovery.identity.documentId &&
-                dock.dispositionSnapshot.items.find(
-                  (item) => item.entryVersion === row.recovery.entryVersion,
-                )?.obligations.draftTab.kind === "draft-only" ? (
-                  <Trans>Close</Trans>
-                ) : (
-                  <Trans>Stop</Trans>
-                )}
+              <QuietButton
+                onClick={() => {
+                  if (single && firstPending) dock.discardRow(firstPending);
+                  else setConfirmingDiscardAll(true);
+                }}
+                disabled={dock.generating || dock.isBusy || !firstPending}
+              >
+                {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
               </QuietButton>
-              {row.phase.kind === "awaiting-live" ? (
-                <QuietButton onClick={() => dock.recovery.retry(row.recovery)}>
-                  <Trans>Retry</Trans>
-                </QuietButton>
+              <QuietButton
+                onClick={() => {
+                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
+                  else dock.startApplyAll();
+                }}
+                disabled={dock.generating || dock.isBusy || !firstPending}
+              >
+                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
+              </QuietButton>
+              {firstPending ? (
+                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
               ) : null}
             </>
           )}
         </div>
-      ))}
+      </div>
+
+      {batchError ? (
+        <DockErrorLine code={batchError} />
+      ) : stripError ? (
+        <DockErrorLine code={stripError} />
+      ) : null}
+
+      {multi && expanded ? (
+        <div>
+          {dock.rows.map((row) => (
+            <DockRowLine
+              key={row.documentId}
+              row={row}
+              error={dock.rowError(row)}
+              busy={dock.isBusy}
+              onOpen={() => dock.openRow(row)}
+              onReview={() => dock.reviewRow(row)}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

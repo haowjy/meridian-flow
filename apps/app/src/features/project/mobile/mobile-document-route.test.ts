@@ -3,7 +3,7 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import { mobileEditableDocumentId, resolveMobileDocumentRoute } from "./mobile-document-route";
+import { resolveMobileDocumentRoute } from "./mobile-document-route";
 
 function catalogWith(file: CatalogFile): CatalogContextView {
   return {
@@ -47,21 +47,5 @@ describe("mobile document route composition", () => {
       path: file.path,
       ...(workId ? { workId } : {}),
     });
-    expect(mobileEditableDocumentId(route)).toBe(file.documentId);
-  });
-
-  it("publishes no demand when the phone route has no document", () => {
-    const route = resolveMobileDocumentRoute({
-      enabled: true,
-      scheme: "scratch",
-      path: null,
-      workId: "work-a",
-      catalog: catalogWith(file),
-      isError: false,
-      isFetching: false,
-    });
-
-    expect(route.tab).toBeNull();
-    expect(mobileEditableDocumentId(route)).toBeNull();
   });
 });

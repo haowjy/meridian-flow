@@ -79,7 +79,3 @@ export function useMobileDocumentRoute(input: {
     [catalog, input.enabled, input.path, input.scheme, input.workId, isError, isFetching],
   );
 }
-
-export function mobileEditableDocumentId(route: MobileDocumentRoute): string | null {
-  return route.tab?.editable ? route.tab.documentId : null;
-}
