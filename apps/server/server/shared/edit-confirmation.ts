@@ -25,6 +25,8 @@ export interface EditConfirmation {
   readonly workIds: readonly string[];
   /** Locks and re-checks the grants in the ambient transaction; throws on a refusal. */
   confirm(): Promise<void>;
+  /** The grants name each document, or it lies in a container they grant. */
+  covers(documentIds: readonly string[]): Promise<boolean>;
 }
 
 const scope = new AsyncLocalStorage<EditConfirmation>();
@@ -98,12 +100,13 @@ export class UngrantedAgentWriteError extends Error {
 }
 
 /**
- * Refuses an agent write that carries no grant: none bound to the call, and
- * the reply saving it didn't confirm these documents.
+ * Refuses an agent write that carries no grant for its documents: the grants
+ * bound to the call don't cover them, and the reply saving it didn't confirm
+ * them.
  */
-export function requireAgentWriteGrant(documentIds: readonly string[]): void {
-  if (scope.getStore()) return;
+export async function requireAgentWriteGrant(documentIds: readonly string[]): Promise<void> {
   const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed);
   if (confirmed && documentIds.every((documentId) => confirmed.has(documentId))) return;
+  if (await scope.getStore()?.covers(documentIds)) return;
   throw new UngrantedAgentWriteError(documentIds);
 }

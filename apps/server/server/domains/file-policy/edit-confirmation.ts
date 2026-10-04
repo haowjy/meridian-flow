@@ -7,7 +7,13 @@ import { type EditConfirmation, runWithEditConfirmation } from "../../shared/edi
 
 export { markReplyConfirmed, UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 
-import type { FileAccessDenied, FileGrant } from "./domain/types.js";
+import {
+  type FileAccessDenied,
+  type FileFacts,
+  type FileGrant,
+  type FileTarget,
+  isFileAccessDenied,
+} from "./domain/types.js";
 import type { FileAccess } from "./file-access.js";
 
 /** A seam refused a grant under its locks; the write didn't happen. */
@@ -33,7 +39,7 @@ export function grantWorkIds(grants: readonly FileGrant[]): string[] {
  * even when the write path caught the error and turned it into an outcome.
  */
 export async function runWithEditGrants<T>(
-  access: Pick<FileAccess, "confirmEdit">,
+  access: Pick<FileAccess, "authorize" | "confirmEdit">,
   grants: readonly FileGrant<"edit">[],
   operation: () => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
@@ -46,6 +52,7 @@ export async function runWithEditGrants<T>(
       refusal = new FileEditRefusedError(refused);
       throw refusal;
     },
+    covers: (documentIds) => grantsCover(access, grants, documentIds),
   };
   try {
     const value = await runWithEditConfirmation(confirmation, operation);
@@ -54,4 +61,41 @@ export async function runWithEditGrants<T>(
     if (refusal) return { ok: false, refusal };
     throw cause;
   }
+}
+
+/**
+ * Whether the grants cover a write to each document: a document grant names
+ * it, or a container grant (a create) holds it, as the file just created.
+ */
+async function grantsCover(
+  access: Pick<FileAccess, "authorize">,
+  grants: readonly FileGrant<"edit">[],
+  documentIds: readonly string[],
+): Promise<boolean> {
+  const named = new Set<string>();
+  const containers: Array<Extract<FileTarget, { kind: "container" }>> = [];
+  for (const { target } of grants) {
+    if (target.kind === "container") containers.push(target);
+    else named.add(target.documentId);
+  }
+  const [grant] = grants;
+  for (const documentId of documentIds) {
+    if (named.has(documentId)) continue;
+    if (!grant || containers.length === 0) return false;
+    const found = await access.authorize(
+      grant.principal,
+      { kind: "document", documentId: documentId as never },
+      "read",
+    );
+    if (isFileAccessDenied(found)) return false;
+    if (!containers.some((container) => holds(container, found.facts))) return false;
+  }
+  return true;
+}
+
+function holds(container: Extract<FileTarget, { kind: "container" }>, facts: FileFacts): boolean {
+  if (container.scheme !== facts.scheme) return false;
+  return container.owner.scope === "project"
+    ? facts.ownerWork === null && facts.projectId === container.owner.projectId
+    : facts.ownerWork?.id === container.owner.workId;
 }
