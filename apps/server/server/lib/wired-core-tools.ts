@@ -366,6 +366,47 @@ async function workBySlug(
   return toolError({ code: "work_not_found", message: unknownWorkMessage(slug), workSlug: slug });
 }
 
+/**
+ * The Work a `switch` names. An unknown Work points to `work list` (D51), an
+ * archived one can't be switched to by anyone, and the chat's current Work
+ * needs no switch.
+ */
+async function resolveSwitchTarget(
+  deps: ToolWiringDeps,
+  projectId: string,
+  threadId: ThreadId,
+  slug: string | null | undefined,
+): Promise<{ work: Work } | { unchanged: { message: string } } | ToolErrorOutput> {
+  let work: Work;
+  if (slug) {
+    const found = await workBySlug(deps, projectId, slug);
+    if (isToolError(found)) return found;
+    if (workLifecycleState(found) === "deleted") {
+      return toolError({
+        code: "work_not_found",
+        message: unknownWorkMessage(slug),
+        workSlug: slug,
+      });
+    }
+    work = found;
+  } else {
+    const noWork = await deps.works.findNoWork(projectId);
+    if (!noWork) return toolError({ message: "No Work is missing for this project" });
+    work = noWork;
+  }
+  const named = work.slug ? `@${work.slug}` : "No Work";
+  if (workLifecycleState(work) === "archived") {
+    return toolError({
+      code: "work_archived",
+      message: `Work ${named} is archived, so this chat can't switch to it until the user unarchives it.`,
+    });
+  }
+  const current = await deps.threadWorks.findPrimary(threadId);
+  const currentId = current?.workId ?? (work.isNoWork ? work.id : null);
+  if (currentId === work.id) return { unchanged: { message: `This chat is already in ${named}.` } };
+  return { work };
+}
+
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
   return (
     typeof value === "object" &&
@@ -1234,6 +1275,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const command = input as WorkCommand;
       const thread = await deps.threads.findById(ctx.threadId);
       if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
+      // A switch that couldn't happen says why before the policy asks for approval (D37).
+      const switchTarget =
+        command.command === "switch"
+          ? await resolveSwitchTarget(deps, thread.projectId, thread.id as ThreadId, command.work)
+          : null;
+      if (switchTarget && "isError" in switchTarget) return switchTarget;
+      if (switchTarget && "unchanged" in switchTarget) return switchTarget.unchanged;
       const chain = await deps.readAgentChain(thread.id as ThreadId);
       const decision = actionPolicy(chain, `work.${command.command}`);
       if (decision !== "allow") {
@@ -1280,16 +1328,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "switch") {
-          let workId: Work["id"];
-          if (command.target) {
-            const selected = await workBySlug(deps, thread.projectId, command.target);
-            if (isToolError(selected)) return selected;
-            workId = selected.id;
-          } else {
-            const noWork = await deps.works.findNoWork(thread.projectId);
-            if (!noWork) return toolError({ message: "No Work is missing for this project" });
-            workId = noWork.id;
-          }
+          if (!switchTarget) throw new Error("A switch resolves its target first");
+          const workId = switchTarget.work.id;
           const rebound = await deps.transaction(() =>
             rebindThreadWork(
               {
@@ -1439,7 +1479,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             code: error.state === "archived" ? "work_archived" : "work_not_found",
             message: workLifecycleMessage(
               reason,
-              "work" in command ? command.work : (error.workSlug ?? null),
+              "work" in command && command.work ? command.work : (error.workSlug ?? null),
               actionPolicy(chain, "work.unarchive") === "allow",
             ),
           });

@@ -51,6 +51,6 @@ export function workActionRefusal(
   if (decision === "deny") {
     return "This agent can read but can't change Works. Ask the user to make this change.";
   }
-  const target = command.command === "switch" && command.target ? `@${command.target}` : "No Work";
+  const target = command.command === "switch" && command.work ? `@${command.work}` : "No Work";
   return `Switching this chat's Work needs the user's approval. Ask them to switch it to ${target} from the chat.`;
 }
