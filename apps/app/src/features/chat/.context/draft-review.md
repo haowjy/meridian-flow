@@ -180,7 +180,10 @@ admission may enrich only the overlay with resolved live-resource metadata.
   held. Bulk Apply counts a draft as applied at that same moment; it never waits
   for an editor to report paintable content. The ordinary live-document host
   then shows "Connecting", its own disconnect state, or its retryable open
-  error, exactly as for any document.
+  error, exactly as for any document. A draft-only document is reviewed behind
+  a live room the server refuses until Apply; `useLiveDocumentBinding` retries a
+  failed open or a refused room once when the document's availability revision
+  advances, so Apply needs nothing special to bind the now-live room.
 - **Rejected and unknown Apply.** A response with a status is a rejection
   ("Couldn't apply", never the confirmed path). A request that got no answer is
   settled by one read of the draft list in `useApplyDraft`: the draft is gone
