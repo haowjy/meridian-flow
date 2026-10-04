@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - Add atomic link maintenance for committed document moves, preserving AI Undo and publishing to live rooms only after durable commit.
+- Preserve document-link targets through renames with pending identity redirects and move receipt counts; old chat addresses follow renamed documents until another document occupies them.
 
 - Index internal document links alongside certified projections, including relative links and image references; refresh their address keys when the holder moves.
 
