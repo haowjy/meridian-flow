@@ -7,7 +7,7 @@
  */
 
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -60,6 +60,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ctx = { threadId: THREAD_ID as never, turnId: TURN_ID as never };
 
     const db = createDb(DATABASE_URL, { max: 6 });
+    // A backend in this database blocked on a row lock (the save behind the archive).
+    const lockWaiting = async () =>
+      (
+        await db.execute(
+          sql`select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        )
+      ).length > 0;
     // Threads here carry no Agent binding; each acts as an `edit` agent in its Work.
     const chains = new Map<string, AgentChain>();
     const fileAccess = createFileAccess({
@@ -359,10 +366,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const save = collab.finalizeResponseCommit(RESPONSE_ID, ctx).finally(() => {
         saved = true;
       });
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(saved).toBe(false);
-      releaseArchive();
-      await archive;
+      try {
+        // Released in `finally`: a held Work row would block every later reset.
+        const deadline = Date.now() + 5_000;
+        while (!(await lockWaiting())) {
+          expect(saved).toBe(false);
+          if (Date.now() > deadline) throw new Error("the save never waited for the archive");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      } finally {
+        releaseArchive();
+        await archive;
+      }
       const committed = await save;
 
       expect(committed).toMatchObject({
