@@ -115,6 +115,8 @@ export type CollabTransport = {
   ): Promise<{
     branchId: string;
     documentId: DocumentId;
+    /** The Work whose draft the room is; its lifecycle caps the room's access. */
+    workId: WorkId;
     generation: number;
     schemaVersion: CollabSchemaVersion;
     status: "active";
