@@ -29,6 +29,7 @@ export function ProjectAddressDocument({
   address,
   result,
   localFile,
+  draftOnlyId,
   workId,
   navigation,
   onAdmission,
@@ -39,21 +40,30 @@ export function ProjectAddressDocument({
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
   localFile?: CatalogFile;
+  /** Pending draft that alone proposes this document: it has no live view, only review. */
+  draftOnlyId?: string;
   workId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
-  const admissionInput = useRef({ address, result, localFile });
-  admissionInput.current = { address, result, localFile };
+  const admissionInput = useRef({ address, result, localFile, draftOnlyId });
+  admissionInput.current = { address, result, localFile, draftOnlyId };
   // Address/catalog projections are rebuilt from JSON snapshots. Their object
   // identity is not an admission event; only their serialized meaning is.
-  const admissionFingerprint = JSON.stringify({ result, localFile });
+  const admissionFingerprint = JSON.stringify({ result, localFile, draftOnlyId });
   useEffect(() => {
-    const { address, result, localFile } = admissionInput.current;
+    const { address, result, localFile, draftOnlyId } = admissionInput.current;
     if (!navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
+    if (draftOnlyId) {
+      // No tab and no live room: the address carries the draft and
+      // EditorReviewAddressOwner opens its review.
+      if (address.draftId !== draftOnlyId)
+        void navigation.replaceIfCurrent(ticket, { ...address, draftId: draftOnlyId });
+      return;
+    }
     const identity = { href, key: entryKey, documentId: result.document.documentId };
     const controller = new AbortController();
     const isCurrent = () => !controller.signal.aborted && navigation.isCurrent(ticket);

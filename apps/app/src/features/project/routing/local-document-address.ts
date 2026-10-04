@@ -7,6 +7,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import type { ContextRouteTarget } from "./project-route";
 
@@ -104,4 +105,27 @@ export function mergeLocalResourceState(
     ...(local.namespaceFailure ? { namespaceFailure: local.namespaceFailure } : {}),
     ...(local.namespaceRepairName ? { namespaceRepairName: local.namespaceRepairName } : {}),
   };
+}
+
+/**
+ * The server resolves every tree node, including a new document that only a
+ * pending draft proposes and one whose draft was discarded. The live manifest
+ * lists what can open live. A manuscript document missing from it has no live
+ * view: its pending new-document draft opens as review, and with no such draft
+ * the address is unavailable. Never a blank live editor.
+ */
+export function gateLiveView(
+  result: DocumentAddressResult | undefined,
+  scheme: string,
+  manifest: { catalog: CatalogContextView | null; isComplete: boolean },
+  drafts: { status: string; groups: ThreadDraftGroup[] | null },
+): { result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup } {
+  if (scheme !== "manuscript" || !result || result.kind === "unavailable") return { result };
+  const documentId = result.document.documentId;
+  if (manifest.catalog?.normalized.entries.has(documentId)) return { result };
+  // Absence is only proof once the manifest is complete and the drafts are read.
+  if (!manifest.isComplete || drafts.status === "loading") return { result: undefined };
+  const group = drafts.groups?.find((candidate) => candidate.documentId === documentId);
+  if (group && pendingReviewDraft(group)?.isNewDocument) return { result, draftOnly: group };
+  return { result: { kind: "unavailable" } };
 }
