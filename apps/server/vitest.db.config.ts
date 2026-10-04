@@ -89,6 +89,7 @@ const expectedSuites = [
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
   "apps/server/server/lib/routes/context-create-read.db.test.ts",
   "apps/server/server/lib/routes/context-thread-existing-document.db.test.ts",
+  "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts",
   "apps/server/server/lib/routes/context-create-untitled.db.test.ts",
   "apps/server/server/lib/routes/context-move.db.test.ts",
   "apps/server/server/test-support/drizzle-reset.db.test.ts",

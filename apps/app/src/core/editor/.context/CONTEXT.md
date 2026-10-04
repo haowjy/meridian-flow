@@ -391,8 +391,10 @@ lifetime.
   reintroduce markup the schema would accept.
 - Clipboard **text** goes through `markdown-paste.ts` and comes out as the
   document it describes. It is the same `markdownCodec` the wire uses, so
-  headings, lists, quotes, fences, tables, links and `[[wikilinks]]` all arrive
-  as themselves and nothing in the app has to know what markdown looks like.
+  headings, lists, quotes, fences, tables and links all arrive as themselves and
+  nothing in the app has to know what markdown looks like. A pasted `[[Name]]`
+  becomes a standard link afterwards, in `transformPasted`
+  ([`links/.context/CONTEXT.md`](../links/.context/CONTEXT.md)).
   `markdownCodec` rather than `mdxCodec`: clipboard text comes from anywhere and
   MDX reads `<` and `{` as syntax, which fiction contains.
   Three refusals bound it, and each is a behaviour, not an implementation detail:
@@ -533,7 +535,7 @@ a menu from retaining state for a block that has been deleted.
 
 Colocated under `extensions/slash/`, with its own
 [`AGENTS.md`](../extensions/slash/AGENTS.md). It is one spec over the lane
-mechanism in `extensions/suggestion/`, which `[[` shares, so the first two
+mechanism in `extensions/suggestion/`, which `@` shares, so the first two
 contracts below hold for every lane; the store and catalog a lane publishes
 through are `core/completion/`. Two contracts cross this boundary:
 
@@ -579,24 +581,13 @@ writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
 well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
 the codec reads, and all of them produce the same node.
 
-`MarkdownAutoformatExtension` owns completed wikilinks, the fence info string,
-and the Backspace recovery policy for inherited rules.
+`MarkdownAutoformatExtension` owns the fence info string and the Backspace
+recovery policy for inherited rules; a typed `[[name]]` stays text.
 `MarkdownAutoformatExtension.test.ts` exercises representative inherited
 triggers and the local mutation, refusal, and Undo/Redo boundaries. It is not
 an exhaustive table of accepted Markdown spellings; when changing a distinct
 local rule or upgrading inherited rules, check the affected behavior directly.
 
-- Completing `[[target]]` or `[[target|display text]]` in manuscript prose
-  parses the shared wire grammar into an ordinary link mark without a catalog
-  choice. Automatic closers alone do not complete it. Missing targets use the
-  existing unresolved decoration after resolution; no resolution state is stored.
-  Code, existing links and ranges containing inline objects are not converted.
-  The input-rule string may contain synthetic leaf text with a different length
-  from document positions, so reject such ranges before mutation.
-- Wikilink conversion uses ordinary Undo/Redo, with capture boundaries on both
-  sides so subsequent typing is a separate item. Undo restores the literal
-  source. Generic `undoInputRule` Backspace replay would duplicate the final
-  auto-paired bracket, so this rule does not participate in that replay.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting

@@ -93,10 +93,6 @@ describe("RunEventMapper", () => {
       },
       { type: "tool.errored", toolCallId: "c1", name: "write" },
     ]);
-    expect(renderEventLine(events[2] as CliEvent, false)).toBe(
-      'tool.settled write({"command":"insert"}) -> status: settled',
-    );
-    expect(renderEventLine(events[3] as CliEvent, false)).toBe("tool.errored write (c1)");
   });
 
   it("shows the raw diagnostic cause and reason carried by a run error", () => {

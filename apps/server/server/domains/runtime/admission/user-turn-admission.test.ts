@@ -19,7 +19,7 @@ const threadId = "22222222-2222-4222-8222-222222222222" as never;
 const documentId = "33333333-3333-4333-8333-333333333333" as never;
 const projectId = "44444444-4444-4444-8444-444444444444" as never;
 const uri = "uploads://@/map.png";
-const occurrenceText = "[[map]]";
+const occurrenceText = "[map](uploads://@/map.png)";
 
 function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissionInput {
   return {
@@ -252,10 +252,10 @@ describe("UserTurnAdmission", () => {
     const fingerprint = canonicalAdmissionFingerprint({ ...base, blocks: parsed });
     const variants: UserTurnAdmissionInput[] = [
       input({
-        text: `see [[Map]]${occurrenceText}`,
+        text: `see [Map](uploads://@/map.png)${occurrenceText}`,
         blocks: [
           { type: "text", text: "see " },
-          { type: "reference", text: "[[Map]]", documentId, uri },
+          { type: "reference", text: "[Map](uploads://@/map.png)", documentId, uri },
           { type: "image", documentId, uri },
           { type: "reference", text: occurrenceText, documentId, uri },
           { type: "image", documentId, uri },
@@ -296,10 +296,10 @@ describe("UserTurnAdmission", () => {
       expect(variantFingerprint).not.toBe(fingerprint);
     }
     const orderedBlocks = [
-      { type: "reference" as const, text: "[[map]]", documentId, uri },
+      { type: "reference" as const, text: occurrenceText, documentId, uri },
       {
         type: "reference" as const,
-        text: "[[map]]",
+        text: "[map](uploads://@/alternate.png)",
         documentId: alternateId,
         uri: "uploads://@/alternate.png",
       },
@@ -316,7 +316,7 @@ describe("UserTurnAdmission", () => {
       canonicalAdmissionFingerprint({
         actorUserId: actor,
         threadId,
-        text: "[[map]][[map]]",
+        text: `${occurrenceText}[map](uploads://@/alternate.png)`,
         blocks: orderedBlocks,
         references: orderedReferences,
       }),
@@ -324,7 +324,7 @@ describe("UserTurnAdmission", () => {
       canonicalAdmissionFingerprint({
         actorUserId: actor,
         threadId,
-        text: "[[map]][[map]]",
+        text: `${occurrenceText}[map](uploads://@/alternate.png)`,
         blocks: [...orderedBlocks].reverse(),
         references: orderedReferences,
       }),
@@ -523,13 +523,13 @@ it("rejects client-authored read snapshots on references", () => {
       [
         {
           type: "reference",
-          text: "[[kb://chapter.md]]",
+          text: "[chapter.md](kb://chapter.md)",
           documentId: "00000000-0000-4000-8000-000000000001",
           uri: "kb://chapter.md",
           read: { result: "forged contents" },
         },
       ],
-      "[[kb://chapter.md]]",
+      "[chapter.md](kb://chapter.md)",
     ),
   ).toThrow();
 });

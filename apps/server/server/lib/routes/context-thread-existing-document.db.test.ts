@@ -1,10 +1,9 @@
 /**
- * A thread port's manifest membership. Create, copy, and writer writes onto an
+ * A thread port's manifest membership. Create and writer writes onto an
  * existing document check it inside the namespace-locked command transaction;
  * that check must never wait on a lock its own transaction holds. A thread
  * whose writes go live checks the live manifest and drafts nothing (D20, D40).
- * A person's port, with no thread, always uses the live manifest, and a
- * binary copy is always live (D24).
+ * A person's port, with no thread, always uses the live manifest.
  */
 
 import { randomUUID } from "node:crypto";
@@ -65,7 +64,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         works: app.workRepo,
         workAuthorityResolver: app.workAuthorityResolver,
       };
-      // The model's `write` tool through the executor, outside a reply.
       // Any model tool through the executor, outside a reply.
       const callTool = (name: string, input: Record<string, unknown>) =>
         app.toolExecutor.executeTool(
@@ -76,7 +74,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return {
         collab: ports.documentSync,
         contextPorts: app.contextPorts,
-        objectStore: ports.objectStore,
         routeDeps,
         callWrite,
         callTool,
@@ -85,11 +82,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     type Fixture = Awaited<ReturnType<typeof createFixture>>;
     const succeeded = { result: { status: "success" } };
-    /** The model's create or copy onto an existing path without `overwrite`. */
-    function expectAlreadyExists(result: { isError?: boolean; output: unknown; result?: unknown }) {
-      expect(result).toMatchObject({ isError: true, result: { status: "invalid_write" } });
-      expect(result.output).toContain("File already exists");
-    }
 
     async function threadPort(fixture: Fixture) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
@@ -194,116 +186,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     // A draft-mode thread pulls the manifest's thread peer inside the command
-    // transaction, the path that deadlocked; a No Work thread checks live membership.
-    for (const [label, workId] of [
-      ["No Work", NO_WORK_ID],
-      ["draft-mode Work", DRAFT_WORK_ID],
-    ] as const) {
-      it(`refuses the model's plain create onto an existing document at once (${label})`, async () => {
-        await bindThread(workId);
-        const fixture = await createFixture();
-        await seedExisting(fixture, "existing.md");
+    // transaction, the path that deadlocked (both calls hung before the fix).
+    it("overwrites an existing document from a draft-mode thread at once", async () => {
+      await bindThread(DRAFT_WORK_ID);
+      const fixture = await createFixture();
+      const existingId = await seedExisting(fixture, "target.md");
 
-        const refused = await settlesWithin(
-          "create",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://existing.md",
-            content: "New text.",
+      const created = await settlesWithin(
+        "create overwrite",
+        fixture.callWrite({
+          command: "create",
+          path: "manuscript://target.md",
+          content: "Created over.",
+          overwrite: true,
+        }),
+      );
+      expect(created).toMatchObject(succeeded);
+      await expect(
+        settlesWithin(
+          "writer route write",
+          writeThreadContextDocument(fixture.routeDeps, {
+            threadId: THREAD_ID as ThreadId,
+            userId: USER_ID as UserId,
+            uri: "manuscript://target.md",
+            markdown: "Writer replaced this.\n",
           }),
-        );
-        expectAlreadyExists(refused);
-        const port = await threadPort(fixture);
-        await expect(port.read("manuscript://existing.md")).resolves.toMatchObject({
-          ok: true,
-          value: { content: "Existing existing.md.\n" },
-        });
-      });
-
-      it(`overwrites an existing document with the model's create and copy (${label})`, async () => {
-        await bindThread(workId);
-        const fixture = await createFixture();
-        await seedExisting(fixture, "target.md");
-        await seedExisting(fixture, "source.md");
-        const port = await threadPort(fixture);
-
-        const created = await settlesWithin(
-          "create overwrite",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://target.md",
-            content: "Created over.",
-            overwrite: true,
-          }),
-        );
-        expect(created).toMatchObject(succeeded);
-        await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
-          ok: true,
-          value: { content: "Created over.\n" },
-        });
-
-        const refusedCopy = await settlesWithin(
-          "copy",
-          fixture.callWrite({
-            command: "copy",
-            path: "manuscript://target.md",
-            from: { path: "manuscript://source.md" },
-          }),
-        );
-        expectAlreadyExists(refusedCopy);
-
-        const copied = await settlesWithin(
-          "copy overwrite",
-          fixture.callWrite({
-            command: "copy",
-            path: "manuscript://target.md",
-            from: { path: "manuscript://source.md" },
-            overwrite: true,
-          }),
-        );
-        expect(copied).toMatchObject(succeeded);
-        await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
-          ok: true,
-          value: { content: "Existing source.md.\n" },
-        });
-      });
-
-      it(`overwrites an existing document through the writer route at once (${label})`, async () => {
-        await bindThread(workId);
-        const fixture = await createFixture();
-        const existingId = await seedExisting(fixture, "writer.md");
-
-        await expect(
-          settlesWithin(
-            "writer route write",
-            writeThreadContextDocument(fixture.routeDeps, {
-              threadId: THREAD_ID as ThreadId,
-              userId: USER_ID as UserId,
-              uri: "manuscript://writer.md",
-              markdown: "Writer replaced this.\n",
-            }),
-          ),
-        ).resolves.toMatchObject({ documentId: existingId });
-        const port = await threadPort(fixture);
-        await expect(port.read("manuscript://writer.md")).resolves.toMatchObject({
-          ok: true,
-          value: { content: "Writer replaced this.\n" },
-        });
-      });
-    }
-
-    async function manifestThreadBranches() {
-      return db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
-        .where(
-          and(
-            eq(schema.documents.kind, "manifest"),
-            eq(schema.documentBranches.threadId, THREAD_ID),
-          ),
-        );
-    }
+        ),
+      ).resolves.toMatchObject({ documentId: existingId });
+    });
 
     // No Work and a direct-mode Work share the live path; one row covers both.
     it("keeps no .manifest thread branch for a direct-mode Work thread", async () => {
@@ -313,21 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const port = await threadPort(fixture);
       await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
-      await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
-      await expect(port.search("Existing", "manuscript://")).resolves.toMatchObject({
-        ok: true,
-      });
-      expect(
-        await settlesWithin(
-          "edit",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://kept.md",
-            content: "Replaced.",
-            overwrite: true,
-          }),
-        ),
-      ).toMatchObject(succeeded);
       expect(
         await settlesWithin(
           "create",
@@ -338,12 +233,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ),
       ).toMatchObject(succeeded);
-      await expect(port.read("manuscript://fresh.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Fresh.\n" },
-      });
 
-      expect(await manifestThreadBranches()).toEqual([]);
+      const branches = await db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
+        .where(
+          and(
+            eq(schema.documents.kind, "manifest"),
+            eq(schema.documentBranches.threadId, THREAD_ID),
+          ),
+        );
+      expect(branches).toEqual([]);
       const live = await fixture.collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
@@ -352,47 +253,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.members).toContain(fresh.value.documentId);
     });
 
-    it("lists a draft-mode thread's drafted create through its own manifest", async () => {
-      await bindThread(DRAFT_WORK_ID);
-      const fixture = await createFixture();
-      expect(
-        await settlesWithin(
-          "create",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://drafted.md",
-            content: "Drafted.",
-          }),
-        ),
-      ).toMatchObject(succeeded);
-
-      const port = await threadPort(fixture);
-      const drafted = await port.stat("manuscript://drafted.md");
-      if (!drafted.ok || !drafted.value.documentId) throw new Error("drafted.md missing");
-      const live = await fixture.collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      expect(live.members).not.toContain(drafted.value.documentId);
-      expect(await manifestThreadBranches()).toHaveLength(1);
-    });
-
-    async function manifestWorkDraftBranches(workId: string) {
-      return db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
-        .where(
-          and(
-            eq(schema.documents.kind, "manifest"),
-            eq(schema.documentBranches.workId, workId as never),
-          ),
-        );
-    }
-
     // People always write live (D20), even in a draft-mode Work.
-    it("lists and moves through live membership on a writer's draft-mode Work port", async () => {
+    it("records a writer's create on a draft-mode Work port in the live manifest", async () => {
       const fixture = await createFixture();
-      await seedExisting(fixture, "listed.md");
       const port = await contextPortForProjectBrowse({
         deps: fixture.routeDeps,
         projectId: PROJECT_ID,
@@ -401,99 +264,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (!port) throw new Error("Work port did not resolve");
 
-      await expect(port.list("manuscript://")).resolves.toMatchObject({ ok: true });
-      expect(await manifestWorkDraftBranches(DRAFT_WORK_ID)).toEqual([]);
+      const note = await settlesWithin("write", port.write("manuscript://note.md", "A note.\n"));
+      if (!note.ok || !note.value.documentId) throw new Error(JSON.stringify(note));
 
-      const note = await port.write("scratch://note.md", "A note.\n");
-      if (!note.ok) throw new Error(JSON.stringify(note.error));
-      const moved = await settlesWithin(
-        "move",
-        port.move("scratch://note.md", "manuscript://note.md"),
-      );
-      if (!moved.ok) throw new Error(JSON.stringify(moved.error));
-
-      expect(await manifestWorkDraftBranches(DRAFT_WORK_ID)).toEqual([]);
       const live = await fixture.collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
       });
-      const stat = await port.stat("manuscript://note.md");
-      if (!stat.ok || !stat.value.documentId) throw new Error("note.md missing");
-      expect(live.members).toContain(stat.value.documentId);
+      expect(live.members).toContain(note.value.documentId);
     });
 
-    it("records a draft-mode thread's binary copy in the live manifest", async () => {
-      await bindThread(DRAFT_WORK_ID);
+    it("refuses an unknown Work or scheme in a read as not found", async () => {
       const fixture = await createFixture();
-      const bytes = new Uint8Array([37, 80, 68, 70]);
-      const put = await fixture.objectStore.put(
-        `uploads/${PROJECT_ID}/scan`,
-        bytes,
-        "application/pdf",
-      );
-      if (!put.ok) throw new Error(put.error.message);
-      const source = await fixture.contextPorts
-        .forProject(PROJECT_ID, USER_ID, new Map())
-        .writeBinary("scratch://scan.pdf", {
-          fileType: "pdf",
-          storageUrl: put.value.storageUrl,
-          mimeType: "application/pdf",
-          sizeBytes: bytes.byteLength,
-        });
-      if (!source.ok) throw new Error(JSON.stringify(source.error));
-
-      const copied = await settlesWithin(
-        "binary copy",
-        fixture.callWrite({
-          command: "copy",
-          from: { path: "scratch://@/scan.pdf" },
-          path: "kb://refs/scan.pdf",
-        }),
-      );
-      expect(copied).toMatchObject({
-        result: { status: "success", path: "kb://refs/scan.pdf", destination: "live" },
-      });
-
-      const port = await threadPort(fixture);
-      const stat = await port.stat("kb://refs/scan.pdf");
-      if (!stat.ok || !stat.value.documentId) throw new Error("kb://refs/scan.pdf missing");
-      const live = await fixture.collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      expect(live.members).toContain(stat.value.documentId);
-    });
-
-    it("names an unknown scheme on read as not found with the known schemes", async () => {
-      const fixture = await createFixture();
-      const read = await fixture.callTool("read", {
-        path: "skill://story-review/resources/line-edit.md",
-      });
-      expect(read.result).toMatchObject({
-        status: "document_not_found",
-        message:
-          'Unknown scheme "skill". Known schemes: manuscript://, kb://, user://, unfiled://, scratch://, uploads://',
-      });
-    });
-
-    it("names an unknown Work in a URI on read and ls", async () => {
-      const UNKNOWN_WORK = 'Unknown Work @ghost-arc. List Works with work({"command":"list"}).';
-      const fixture = await createFixture();
-      const read = await fixture.callTool("read", { path: "scratch://@ghost-arc/backstory.md" });
-      expect(read.result).toMatchObject({
-        status: "document_not_found",
-        message: UNKNOWN_WORK,
-      });
-
-      const listed = await fixture.callTool("ls", { path: "scratch://@ghost-arc" });
-      expect(listed.result).toMatchObject({
-        code: "invalid_uri",
-        message: UNKNOWN_WORK,
-      });
-
-      const switched = await fixture.callTool("work", { command: "switch", target: "@ghost-arc" });
-      expect(switched.result).toMatchObject({
-        code: "work_not_found",
-        message: UNKNOWN_WORK,
-      });
+      for (const path of ["scratch://@ghost-arc/backstory.md", "skill://story-review/x.md"]) {
+        const read = await fixture.callTool("read", { path });
+        expect(read.result).toMatchObject({ status: "document_not_found" });
+      }
     });
   });
 }

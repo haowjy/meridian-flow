@@ -71,7 +71,13 @@ function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceL
   if (!isWorkScopedProjectContextScheme(scheme))
     throw new Error("Catalog file URI is not Work scoped");
   if (authority.kind === "none") {
-    return { scheme, path: displayedPath(path), name: entry.name, workId: view.scope.workId };
+    return {
+      scheme,
+      path: displayedPath(path),
+      name: entry.name,
+      workId: view.scope.workId,
+      workSlug: null,
+    };
   }
   if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
   return {

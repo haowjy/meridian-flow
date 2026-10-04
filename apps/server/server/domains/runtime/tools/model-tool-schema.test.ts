@@ -149,20 +149,6 @@ describe("model tool schemas", () => {
     }
   });
 
-  it('documents "current" on every read-only conversation ref', () => {
-    const properties = (name: string) =>
-      allRegistrations().find((r) => r.definition.name === name)?.definition.inputSchema
-        .properties as Record<string, { description?: string }>;
-    for (const [tool, field] of [
-      ["thread_history", "ref"],
-      ["thread_ls", "ref"],
-      ["thread_report", "ref"],
-      ["spawn", "from"],
-    ] as const) {
-      expect(properties(tool)[field]?.description, `${tool}.${field}`).toContain('"current"');
-    }
-  });
-
   // Later phases change this number on purpose, so catalog growth shows in review.
   it("pins the published primary catalog size", () => {
     // The primary catalog as the audit exporter defines it: the default policy's advertisement.

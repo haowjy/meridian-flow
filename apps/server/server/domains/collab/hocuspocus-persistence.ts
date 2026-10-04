@@ -28,6 +28,18 @@ type PendingAppend = {
   promise: Promise<void>;
 };
 
+type PendingCheckpoint = {
+  document: Y.Doc;
+  generation: bigint | undefined;
+  state: Uint8Array;
+  upToSeq: number;
+};
+
+type CheckpointSlot = {
+  next?: PendingCheckpoint;
+  running: Promise<void>;
+};
+
 type HocuspocusPersistenceDeps = {
   journal: UpdateJournal;
   branchStore?: BranchStore;
@@ -36,6 +48,12 @@ type HocuspocusPersistenceDeps = {
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
+  /**
+   * Runs `callback` once the caller's ambient DB transaction commits, outside
+   * it, and drops it on rollback; with no ambient transaction it runs now.
+   * Defaults to running now, for adapters without transactions.
+   */
+  afterCallerCommit?(callback: () => void): void;
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
@@ -75,6 +93,8 @@ export function createHocuspocusPersistenceService(
   const retiredStateVectors = new Map<string, Uint8Array>();
   const retiredLiveDocuments = new WeakSet<Y.Doc>();
   const liveGenerations = new Map<string, bigint>();
+  const checkpointSlots = new Map<string, CheckpointSlot>();
+  const afterCallerCommit = deps.afterCallerCommit ?? ((callback: () => void) => callback());
   const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
 
@@ -163,6 +183,55 @@ export function createHocuspocusPersistenceService(
       correlation: { documentId },
       payload: unknownToEventPayload(cause),
     });
+  }
+
+  function emitCheckpointFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "checkpoint.failed",
+      correlation: { documentId },
+      payload: unknownToEventPayload(cause),
+    });
+  }
+
+  /**
+   * Writes live checkpoints in the background, one at a time per document; a
+   * snapshot that arrives while one is writing replaces any queued one.
+   */
+  function startCheckpoint(documentId: string, pending: PendingCheckpoint): void {
+    const slot = checkpointSlots.get(documentId);
+    if (slot) {
+      slot.next = pending;
+      return;
+    }
+    const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
+    checkpointSlots.set(documentId, created);
+    created.running = (async () => {
+      while (created.next) {
+        const { document, generation, state, upToSeq } = created.next;
+        created.next = undefined;
+        // A retired room's state belongs to an authority generation that has
+        // since been replaced.
+        if (retiredLiveDocuments.has(document) || liveGenerations.get(documentId) !== generation) {
+          continue;
+        }
+        try {
+          await deps.journal.checkpoint(documentId, state, upToSeq);
+        } catch (cause) {
+          emitCheckpointFailure(documentId, cause);
+        }
+      }
+    })().finally(() => {
+      checkpointSlots.delete(documentId);
+    });
+  }
+
+  async function drainCheckpoints(): Promise<void> {
+    while (checkpointSlots.size > 0) {
+      await Promise.allSettled([...checkpointSlots.values()].map((slot) => slot.running));
+    }
   }
 
   function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
@@ -421,7 +490,21 @@ export function createHocuspocusPersistenceService(
       const upToSeq = await deps.latestUpdateSeq(documentId);
       // upToSeq must be ≤ the updates reflected in state; appends after this
       // point are intentionally replayed when the document reloads.
-      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
+      const pending: PendingCheckpoint = {
+        document,
+        generation: liveGenerations.get(documentId),
+        state: Y.encodeStateAsUpdate(document),
+        upToSeq,
+      };
+      // Releasing a server-side room runs this hook inline in the releaser's
+      // async context, often inside its DB transaction. The checkpoint takes the
+      // document's mutation lock, so writing it here either holds that lock for
+      // the rest of the caller's transaction or waits on a lock the caller holds;
+      // either way a caller that then waits on another connection deadlocks.
+      // A checkpoint only caches durable journal state, so it is written after
+      // the caller commits, and skipped if the caller rolls back, since the
+      // room may hold that transaction's uncommitted updates.
+      afterCallerCommit(() => startCheckpoint(documentId, pending));
     },
 
     async storeHocuspocusBranch(branchId, _document) {
@@ -431,8 +514,9 @@ export function createHocuspocusPersistenceService(
       // and re-enter the branch critical section.
     },
 
-    drainHocuspocusPersistence() {
-      return drainPending();
+    async drainHocuspocusPersistence() {
+      await drainPending();
+      await drainCheckpoints();
     },
 
     drainHocuspocusBranchPersistence(branchId) {

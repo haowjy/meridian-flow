@@ -98,22 +98,6 @@ function autoClosedAt(state: EditorState, pos: number): AutoClosedPair | null {
 }
 
 /**
- * How many closers this plugin wrote sit in an unbroken run at `pos`.
- *
- * A surface that replaces a range the writer typed — the `[[` menu replacing
- * its own trigger text — has to replace the closers that came with it too, or
- * it leaves `]]` stranded after the link it just wrote.
- */
-export function autoClosedRunLength(state: EditorState, pos: number): number {
-  let length = 0;
-  for (;;) {
-    const entry = autoClosedAt(state, pos + length);
-    if (!entry) return length;
-    length += entry.spec.close.length;
-  }
-}
-
-/**
  * The caret this keystroke lands at, or null when it is replacing something.
  *
  * ProseMirror reports the range the typed text replaces, and that range is

@@ -1,7 +1,10 @@
-/** One atomic occurrence owns its context actions; TipTap supplies its live position. */
+/**
+ * One atomic occurrence owns its context actions; TipTap supplies its live
+ * position. It draws as the shared link chip: a composer reference is exact,
+ * so its family is its URI's.
+ */
 
 import { t } from "@lingui/core/macro";
-import { formatWikilink } from "@meridian/markup";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -21,6 +24,7 @@ import {
   createReferenceBrowserController,
 } from "@/core/completion";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
+import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { type ComposerReferenceAttrs, composerReferenceContent } from "./composer-document";
@@ -85,6 +89,7 @@ export function ComposerReferenceMenu({
               <span
                 ref={trigger}
                 data-composer-reference=""
+                {...linkChipAttributes(referenceChip(reference.uri))}
                 tabIndex={0}
                 role="link"
                 aria-disabled={!follow}
@@ -181,7 +186,6 @@ function ReferenceReplacement({
         onSelect: ({ row }) =>
           selectRef.current({
             ...row.action.reference,
-            spelling: row.ambiguous ? row.action.reference.uri : formatWikilink(row.label),
             imageCapable: row.fileKind === "asset" && row.action.reference.fileType === "image",
             upload: null,
           }),

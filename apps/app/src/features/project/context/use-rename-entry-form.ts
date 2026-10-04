@@ -63,7 +63,7 @@ export function useRenameEntryForm({
           scheme,
           folderPath: parentContextEntryPath(path),
           name,
-          workId: ownedWorkId,
+          workId: null,
         });
         return;
       }

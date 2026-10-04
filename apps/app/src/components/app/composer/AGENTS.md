@@ -2,12 +2,18 @@
 
 This directory owns authored text, reference atoms, skill atoms, and pending/failed uploads.
 
-- Rich clipboard HTML preserves selected reference identity. Plain clipboard text
-  uses canonical scoped wikilinks with display text. HTML metadata is untrusted;
-  turn admission authorizes identity and clipboard cannot grant access.
+- A reference reads in text as a standard Markdown link to its canonical URI,
+  `[label](uri)` (`referenceSpelling`): the occurrence a sent message carries,
+  which is what the model reads, and the plain clipboard form. The destination
+  is `spellDocumentHref(null, uri)`, never the raw URI, so a `#` or `%` in a
+  name stays part of the address. Rich clipboard
+  HTML preserves selected reference identity. HTML metadata is untrusted; turn
+  admission authorizes identity and clipboard cannot grant access.
 - A copied occurrence never owns the source draft's upload lifecycle.
 - Manuscript marks carry targets, not admitted attachment identity. Preserve their
-  Markdown on paste without inventing a Composer attachment.
+  Markdown on paste without inventing a Composer attachment, spelled with the
+  link's recorded full address (`data-meridian-address`) when the Editor copied
+  one: chat has no folder for a relative href to mean anything in.
 - Submission keys belong at document scope in the editor kernel, below suggestion
   keys. A React capture handler must not submit before a suggestion can choose.
 - Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.

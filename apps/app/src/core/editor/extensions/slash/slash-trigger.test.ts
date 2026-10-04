@@ -3,7 +3,7 @@
  * the spec is this list: a row that changes here changes the product's
  * contract, which is the point of moving the envelope out of a plugin config.
  *
- * The prose containers and the source refusals are the envelope `[[` shares,
+ * The prose containers and the source refusals are the envelope `@` shares,
  * and they live in `suggestion/trigger-envelope-test-support.ts`. What stays
  * here is what makes `/` itself: the word boundary.
  */

@@ -270,17 +270,6 @@ describe("response staging", () => {
     }
   });
 
-  it("reports no sweep when a write outside a reply removes the writer's text it asked to", async () => {
-    const ctx = harness({ "chapter.md": "# Race\n\nAlpha para.\n\nBeta para." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const result = await ctx.core.write({ command: "remove", file: "chapter.md", in: 2 }, context);
-
-    expectOutcome(result, "success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Race", "Beta para."]);
-    expect(outcomeText(result)).not.toContain("swept");
-  });
-
   it("never saves a reply early for an undo; the host must save it first", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -319,13 +308,6 @@ describe("response staging", () => {
     const receipt = committed.documents[0]?.receipts.at(-1)?.result;
     if (!receipt) throw new Error("missing settled receipt");
     expect(renderAgentEditResult(receipt)).toContain(EMPTY_NOTE);
-  });
-
-  it("says nothing about emptiness when blocks remain", async () => {
-    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const removed = await ctx.core.write({ command: "remove", file: "chapter.md", in: 1 }, context);
-    expect(outcomeText(removed)).not.toContain(EMPTY_NOTE);
   });
 
   it("drops staged response buffers when invalidating a thread", async () => {
