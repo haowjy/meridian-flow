@@ -5,6 +5,7 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { cancelRefusedLocationChain } from "./namespace-journal-policy";
 import type {
   NamespaceAttempt,
   NamespaceIntent,
@@ -17,7 +18,6 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-
 import { resourceContextAuthority } from "./resource-work-authority";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
@@ -435,6 +435,8 @@ export function settleNamespaceOutcome(
     state: repair ? "needs-repair" : "settled",
     settledAt,
   }));
+  if (repair && outcome.kind === "operation" && !outcome.receipt.result.ok)
+    next.intents = cancelRefusedLocationChain(next.intents, intent);
   return { expectedRevision: record.resource.revision, next };
 }
 

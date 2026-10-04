@@ -94,7 +94,10 @@ catalogs when projecting cross-area or cross-Work moves. Readable routes and tab
 use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
 old location and expose the latest requested name in the cancelled chain through
 `projectFolderNeedsRepair`, anchored to the refused intent for receipt feedback.
-Refusal cancels unsubmitted queued folder commands based on that rejected placement.
+File repair uses the same destination rule through `projectResourceNeedsRepair`.
+Shared namespace journal policy cancels unsubmitted queued placement commands
+for the refused identity revision and offers the newest cancelled destination,
+without changing immutable intentions or the failed receipt anchor.
 An explicit repair supersedes rejected history and starts from the last canonical
 location, even when the chosen destination matches the currently displayed location.
 Replay remains bound to stable folder identity, not a stale source-path comparison:

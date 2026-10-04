@@ -18,6 +18,7 @@ import type {
   ResourceWrite,
 } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
+import { planResourceLocation } from "./resource-state";
 
 function local(): ResourceRecord {
   return {
@@ -702,4 +703,96 @@ it("restores a rejected delete after retry and admits another delete", async () 
     expect(projectResourceLocation("project", store.record)?.path).toBe("/note.md");
   }
   expect(planResourceDeletion(store.record, "project", "delete-3")).not.toBeNull();
+});
+
+it("offers the latest queued file name after refusal and retries from accepted placement", () => {
+  const before = local();
+  const source = { scheme: "manuscript" as const, path: "/A.md", name: "A.md", workId: null };
+  before.resource.canonical = source;
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [];
+  const location = (record: ResourceRecord, name: string) => {
+    const write = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: name,
+      operationId: name,
+      eligibleAt: 1,
+      destination: { scheme: "manuscript", folderPath: "", name, workId: null },
+    });
+    if (!write) throw new Error("Missing location command");
+    validateResourceRecordUpdate(record, write.next);
+    return write.next;
+  };
+  const renamed = location(before, "B.md");
+  const submitted = prepareNamespaceAttempt(renamed, { attemptId: "attempt", operationId: "B.md" });
+  if (!submitted) throw new Error("Missing submission");
+  const queued = location(submitted.next, "C.md");
+  const received = recordNamespaceOutcome(queued, "B.md", "attempt", {
+    kind: "operation",
+    receipt: {
+      operationId: "B.md",
+      command: {
+        kind: "move",
+        sourceUri: "manuscript://A.md",
+        destinationUri: "manuscript://B.md",
+        expected: { kind: "file", nodeId: "document" },
+      },
+      result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+    },
+  });
+  if (!received) throw new Error("Missing receipt");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Missing settlement");
+  expect(settled.next.intents.map(({ state }) => state)).toEqual(["needs-repair", "cancelled"]);
+  validateResourceRecordUpdate(received.next, settled.next);
+  const reopened = structuredClone(settled.next);
+  expect(projectResourceLocation("project", reopened)).toEqual({ ...source, provisional: false });
+  const offered = projectResourceNeedsRepair("project", reopened);
+  expect(offered).toEqual({
+    intentId: "B.md",
+    kind: "set-location",
+    name: "C.md",
+  });
+  if (!offered) throw new Error("Missing offered repair");
+  // The caller retries the offered destination, keeping the original receipt as evidence.
+  const repair = planResourceLocation({
+    record: reopened,
+    projectId: "project",
+    intentId: "repair",
+    operationId: "repair",
+    eligibleAt: 1,
+    destination: { scheme: "manuscript", folderPath: "", name: offered.name, workId: null },
+  });
+  if (!repair) throw new Error("Missing repair");
+  validateResourceRecordUpdate(reopened, repair.next);
+  expect(repair.next.intents.map(({ state }) => state)).toEqual([
+    "settled",
+    "cancelled",
+    "pending",
+  ]);
+  const retry = prepareNamespaceAttempt(repair.next, { attemptId: "retry", operationId: "repair" });
+  if (!retry) throw new Error("Missing retry");
+  expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
+    body: { path: "A.md", newName: "C.md" },
+  });
+  const accepted = recordNamespaceOutcome(retry.next, "repair", "retry", {
+    kind: "operation",
+    receipt: {
+      operationId: "repair",
+      command: {
+        kind: "move",
+        sourceUri: "manuscript://A.md",
+        destinationUri: "manuscript://C.md",
+        expected: { kind: "file", nodeId: "document" },
+      },
+      result: { ok: true, value: { movedNodeId: "document", destinationPath: "C.md" } },
+    },
+  });
+  if (!accepted) throw new Error("Missing accepted receipt");
+  const landed = settleNamespaceOutcome(accepted.next);
+  if (!landed) throw new Error("Missing accepted settlement");
+  validateResourceRecordUpdate(accepted.next, landed.next);
+  expect(projectResourceLocation("project", landed.next)?.name).toBe("C.md");
+  expect(projectResourceNeedsRepair("project", landed.next)).toBeNull();
 });
