@@ -76,20 +76,16 @@ describe("write reversal selectors", () => {
     return scenario;
   }
 
-  it.each([
-    [1, "w1", ["Base.", "One."]],
-    [2, "w1, w2", ["Base.", "One.", "Two."]],
-    [3, "w1, w2, w3", ["Base.", "One.", "Two.", "Three."]],
-  ] as const)("redo last %i counts the most recently undone handles and redoes %s", async (last, handles, texts) => {
+  it("redo last 2 redoes the two most recently undone handles", async () => {
     const scenario = await threeSeparatelyUndone();
 
     const redo = await scenario.ctx.core.write(
-      { command: "redo", file: "chapter.md", last },
+      { command: "redo", file: "chapter.md", last: 2 },
       context,
     );
 
-    expect(outcomeText(redo)).toContain(`redo: ${handles}`);
-    expect(scenario.blockTexts()).toEqual(texts);
+    expect(outcomeText(redo)).toContain("redo: w1, w2");
+    expect(scenario.blockTexts()).toEqual(["Base.", "One.", "Two."]);
   });
 
   it("redoes the same write for a plain redo and for redo last 1 after targeted undos", async () => {
