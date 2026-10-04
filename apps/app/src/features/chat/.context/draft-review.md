@@ -103,6 +103,9 @@ reusable manifest branch may remain active while carrying only bookkeeping.
 Closed lifecycle rows, bookkeeping-only branches, and draft-level Undo receipts
 are not part of this boundary.
 
+Apply and Discard outcomes, the command record, and the rejected post-Apply
+recovery protocol are recorded in
+[Draft Apply Is Done When the Server Confirms It](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-apply-done-at-server-confirmation.md).
 See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 for product decisions and the
@@ -162,16 +165,17 @@ refuses a live room for it, so review hosts the draft branch room alone: the
 desktop host opens no live binding for a `draftOnly` tab. The ordinary live room
 opens once Apply promotes the tab. There is no live version to go back to, so the
 header's exit for such a tab reads "Close review" and closes the tab (the draft
-stays in the Work's list to reopen), and a dead branch session leaves the tab for
-the writer to close rather than falling back to an empty live editor. **The phone
+stays in the Work's list to reopen), and a failed branch room offers Retry or
+closing the tab rather than falling back to an empty live editor. **The phone
 does not host a new-document draft review yet:** its route tab comes only from the
 live catalog, which does not list the document until Apply (tracked separately).
 Phone review works for drafts of documents that already exist. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
-never stored. `ContextRemovalCoordinator` is the only owner of draft-only tab
-membership; it checks the owning Work before changing the workspace.
+never stored. The launcher's `openTab` puts it in the review overlay;
+`ContextRemovalCoordinator` alone closes or promotes it, and checks the owning
+Work and exact tab instance before changing the workspace.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.
@@ -241,9 +245,14 @@ admission may enrich only the overlay with resolved live-resource metadata.
   live and the tab is promoted; absence means a Discard and the tab closes. A
   failed read leaves the tab intact. The tab and the catalog are the whole
   evidence: no account-level witness is kept.
-- A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
-  skips draftOnly tabs so a discarded path can't replay on the next visit;
-  the coordinator repairs the route when disposition removes the route-active tab.
+- Draft-only tabs live only in the review overlay. The durable workspace never
+  opens, persists, or restores one, and route continuity (the removal planner's
+  route target and fallback) skips them, so a discarded path can't replay on
+  the next visit. Only Apply promotion drops the marker; a later `openTab` for
+  the same document enriches the overlay instead. The coordinator repairs the
+  route when disposition removes the route-active tab.
+- While a local disposition is in flight the provider does not classify
+  remote ones.
 
 Server-side twin: discarding a new-document draft also removes its entry from
 the work manifest branch. Later Apply operations publish the manifest as well as
