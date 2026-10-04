@@ -77,6 +77,8 @@ export type DraftCommandOutcome =
 export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
 export type DraftReviewCommandPorts = {
+  /** The Work these commands act in; part of every command record's identity. */
+  scope: { projectId: string; workId: string };
   /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
   apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
@@ -115,9 +117,10 @@ export class DraftReviewSession {
     return this.withReservation(
       { kind: "discard-operation", ...selection, operationId },
       async (_reservation, ports) => {
-        if (!beginDraftCommand(selection)) return { kind: "blocked" };
-        ports.operationDiscardStarted();
+        const draft = { ...ports.scope, ...selection };
+        if (!beginDraftCommand(draft)) return { kind: "blocked" };
         try {
+          ports.operationDiscardStarted();
           await ports.discard(selection, {
             operationIds: [operationId],
           });
@@ -125,7 +128,7 @@ export class DraftReviewSession {
         } catch {
           return { kind: "failed", code: "discard-offline" };
         } finally {
-          releaseDraftCommand(selection);
+          releaseDraftCommand(draft);
         }
       },
     );
@@ -167,21 +170,29 @@ export class DraftReviewSession {
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
-    if (!beginDraftCommand(selection)) return { kind: "blocked" };
-    this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
+    const draft = { ...ports.scope, ...selection };
+    if (!beginDraftCommand(draft)) return { kind: "blocked" };
+    // Whatever throws after the claim, the finally gives it back unless the
+    // command already turned it into a confirmation or a held failure.
     try {
-      // A confirmed Apply already turned the claim into the confirmed record.
-      if ((await ports.apply(selection)) === "unknown") {
-        failDraftCommand(selection, "apply-unknown");
+      this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
+      let result: "applied" | "unknown";
+      try {
+        result = await ports.apply(selection);
+      } catch {
+        releaseDraftCommand(draft);
+        ports.draftFailed(selection, "apply-failed");
+        return { kind: "failed", code: "apply-failed" };
+      }
+      if (result === "unknown") {
+        failDraftCommand(draft, "apply-unknown");
         ports.draftFailed(selection, "apply-unknown");
         return { kind: "apply-outcome-unknown" };
       }
       ports.draftApplied(selection);
       return { kind: "applied" };
-    } catch {
-      releaseDraftCommand(selection);
-      ports.draftFailed(selection, "apply-failed");
-      return { kind: "failed", code: "apply-failed" };
+    } finally {
+      releaseDraftCommand(draft);
     }
   }
 
@@ -190,18 +201,25 @@ export class DraftReviewSession {
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
-    if (!beginDraftCommand(selection)) return { kind: "blocked" };
-    this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
-    ports.draftDiscardStarted(selection);
+    const draft = { ...ports.scope, ...selection };
+    if (!beginDraftCommand(draft)) return { kind: "blocked" };
     try {
-      await ports.discard(selection);
-      releaseDraftCommand(selection);
+      this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+      // The optimistic callback runs under the claim: if it throws, nothing was
+      // dispatched and the claim must not outlive the call.
+      ports.draftDiscardStarted(selection);
+      try {
+        await ports.discard(selection);
+      } catch {
+        failDraftCommand(draft, "discard-offline");
+        ports.draftFailed(selection, "discard-offline");
+        return { kind: "failed", code: "discard-offline" };
+      }
+      releaseDraftCommand(draft);
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
-    } catch {
-      failDraftCommand(selection, "discard-offline");
-      ports.draftFailed(selection, "discard-offline");
-      return { kind: "failed", code: "discard-offline" };
+    } finally {
+      releaseDraftCommand(draft);
     }
   }
 

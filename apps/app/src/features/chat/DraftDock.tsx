@@ -87,6 +87,8 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     /** A refused command on this row's draft, shown on the row it belongs to. */
     rowError: (row: DockRow) =>
       draftCommandFailure(commandRecords, {
+        projectId: controller.projectId,
+        workId: controller.workId,
         documentId: row.documentId,
         draftId: row.draft.draftId,
       }),

@@ -99,29 +99,28 @@ describe("useApplyDraft", () => {
     });
   });
 
-  it("drops a confirmed draft at once, and no read that started earlier brings it back", async () => {
+  it("drops a confirmed draft at once, and no initial read that started earlier brings it back", async () => {
+    // No cached list: nothing but the read fence can keep the older read's
+    // draft out, since a later refetch would be cancelled by the invalidation.
+    api.listWorkDrafts.mockReturnValue(new Promise(() => undefined));
     await withHarness(async ({ apply, listed, queryClient }) => {
-      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
       const confirmation = deferred<unknown>();
       api.applyDraft.mockReturnValue(confirmation.promise);
       const older = deferred<ReturnType<typeof listing>>();
-      api.listWorkDrafts.mockReturnValueOnce(older.promise);
       let applied!: Promise<unknown>;
       await act(async () => {
         applied = apply();
       });
-      // A read that starts while Apply is in flight, after Apply cancelled the earlier ones.
+      api.listWorkDrafts.mockReturnValueOnce(older.promise);
       await act(async () => {
         void queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
       });
-      // Every later read stalls: only the confirmation can remove the draft.
-      api.listWorkDrafts.mockReturnValue(new Promise(() => undefined));
       await act(async () => {
         confirmation.resolve({ status: "applied", draftId: "draft-a" });
         await applied;
       });
-      expect(listed()).toEqual([]);
       await act(async () => older.resolve(listing("draft-a")));
+      await new Promise((resolve) => setTimeout(resolve, 30));
       expect(listed()).toEqual([]);
     });
   });

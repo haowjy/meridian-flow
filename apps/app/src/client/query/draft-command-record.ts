@@ -1,49 +1,70 @@
 /**
- * The one command record per draft (documentId + draftId), shared by every
- * surface (composer strip, editor header, Work Files) and every review scope.
+ * The one command record per draft (project, Work, document, draft), shared by
+ * every surface (composer strip, editor header, Work Files) and every review
+ * scope. A surface is disabled only by commands inside its own Work.
  *
- * - `pending`: an Apply or Discard is dispatched. Every surface disables, and a
- *   second dispatch for the same draft is refused instead of sent twice.
+ * - `pending`: an Apply or Discard is dispatched. Every surface of that Work
+ *   disables, and a second dispatch for the same draft is refused instead of
+ *   sent twice.
  * - `failed`: a Discard was refused, or an Apply response was lost
  *   (`apply-unknown`). The draft is still listed, so its row shows the message.
  *   It clears on the next action on the draft (Discard retry, Apply, opening
- *   Review). A draft leaving the list is not evidence of Apply (a remote
- *   Discard looks the same), so the record never turns unknown into success.
+ *   Review), and when a later draft-list read no longer lists the draft. That
+ *   absence is not evidence of Apply (a remote Discard looks the same), so the
+ *   record never turns unknown into success; it only stops showing a message
+ *   on a row that is gone.
  * - `confirmed`: the server confirmed Apply. Draft-list reads that started
- *   before the confirmation can no longer bring the draft back. A read that
- *   started after it is authoritative, because the server reuses a draft id for
- *   the next generation of proposals.
+ *   before the confirmation can no longer bring the draft back, so the record
+ *   lives only until those reads settle. A read that started after it is
+ *   authoritative, because the server reuses a draft id for the next
+ *   generation of proposals.
+ *
+ * The store belongs to one account: `bindDraftCommandAccount` empties it when
+ * the signed-in account changes.
  */
 import { create } from "zustand";
 
-type DraftRef = { documentId: string; draftId: string };
+type DraftScope = { projectId: string; workId: string };
+type DraftRef = DraftScope & { documentId: string; draftId: string };
+type ListedDraft = { documentId: string; draftId: string };
 
 export type DraftCommandFailureCode = "apply-unknown" | "discard-offline";
 
 type DraftCommandRecord =
   | { phase: "pending" }
-  | { phase: "failed"; code: DraftCommandFailureCode }
+  | { phase: "failed"; code: DraftCommandFailureCode; at: number }
   | { phase: "confirmed"; at: number };
 
 type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
 
-const useDraftCommandStore = create<{ records: DraftCommandRecords; sequence: number }>(() => ({
+const useDraftCommandStore = create<{ records: DraftCommandRecords; clock: number }>(() => ({
   records: {},
-  sequence: 0,
+  clock: 0,
 }));
 
-export function draftCommandKey({ documentId, draftId }: DraftRef): string {
-  return `${documentId}\u0000${draftId}`;
+let boundAccountId: string | null = null;
+/** Draft-list reads that have started and not settled, by the clock they started at. */
+const readsInFlight = new Set<{ fence: number }>();
+
+function scopePrefix({ projectId, workId }: DraftScope): string {
+  return `${projectId}\u0000${workId}\u0000`;
 }
 
-function setRecord(draft: DraftRef, record: DraftCommandRecord | null): void {
+export function draftCommandKey(draft: DraftRef): string {
+  return `${scopePrefix(draft)}${draft.documentId}\u0000${draft.draftId}`;
+}
+
+function setRecord(
+  draft: DraftRef,
+  record: (clock: number) => DraftCommandRecord | null,
+  advance = false,
+): void {
   const key = draftCommandKey(draft);
   useDraftCommandStore.setState((state) => {
     const { [key]: _prior, ...rest } = state.records;
-    return {
-      records: record ? { ...rest, [key]: record } : rest,
-      sequence: record?.phase === "confirmed" ? record.at : state.sequence,
-    };
+    const clock = advance ? state.clock + 1 : state.clock;
+    const next = record(clock);
+    return { records: next ? { ...rest, [key]: next } : rest, clock };
   });
 }
 
@@ -51,43 +72,84 @@ function recordFor(draft: DraftRef): DraftCommandRecord | undefined {
   return useDraftCommandStore.getState().records[draftCommandKey(draft)];
 }
 
-/** Claim the draft for one command; false when one is already in flight anywhere. */
+/** Claim the draft for one command; false when one is already in flight on it. */
 export function beginDraftCommand(draft: DraftRef): boolean {
   if (recordFor(draft)?.phase === "pending") return false;
-  setRecord(draft, { phase: "pending" });
+  setRecord(draft, () => ({ phase: "pending" }));
   return true;
 }
 
 /** Release a claim that ended without a confirmation or a held failure. */
 export function releaseDraftCommand(draft: DraftRef): void {
-  if (recordFor(draft)?.phase === "pending") setRecord(draft, null);
+  if (recordFor(draft)?.phase === "pending") setRecord(draft, () => null);
 }
 
 export function failDraftCommand(draft: DraftRef, code: DraftCommandFailureCode): void {
-  setRecord(draft, { phase: "failed", code });
+  setRecord(draft, (at) => ({ phase: "failed", code, at }), true);
 }
 
 /** Drop a held failure (opening Review, dismissing it); never touches a claim. */
 export function clearDraftCommandFailure(draft: DraftRef): void {
-  if (recordFor(draft)?.phase === "failed") setRecord(draft, null);
+  if (recordFor(draft)?.phase === "failed") setRecord(draft, () => null);
 }
 
 export function confirmDraftCommand(draft: DraftRef): void {
-  setRecord(draft, { phase: "confirmed", at: useDraftCommandStore.getState().sequence + 1 });
+  setRecord(draft, (at) => ({ phase: "confirmed", at }), true);
+  retireConfirmations();
 }
 
-/** Token for a read about to start; pass it to `withoutConfirmedSince` with the result. */
-export function draftReadFence(): number {
-  return useDraftCommandStore.getState().sequence;
-}
-
-/** Remove drafts confirmed after the read behind `fence` started. */
-export function withoutConfirmedSince<T extends DraftRef>(fence: number, drafts: T[]): T[] {
+/** A confirmation only fences reads that started before it; drop it once none is left. */
+function retireConfirmations(): void {
+  const oldest = Math.min(...Array.from(readsInFlight, (read) => read.fence));
   const { records } = useDraftCommandStore.getState();
-  return drafts.filter((draft) => {
-    const record = records[draftCommandKey(draft)];
-    return record?.phase !== "confirmed" || record.at <= fence;
-  });
+  const kept = Object.entries(records).filter(
+    ([, record]) => record.phase !== "confirmed" || record.at > oldest,
+  );
+  if (kept.length < Object.keys(records).length) {
+    useDraftCommandStore.setState({ records: Object.fromEntries(kept) });
+  }
+}
+
+/**
+ * Run one Work draft-list read. Drafts confirmed after the read started are
+ * removed from its result, and failures held for drafts the read no longer
+ * lists are dropped.
+ */
+export async function readDraftsAfterCommands<T extends ListedDraft>(
+  scope: DraftScope,
+  read: () => Promise<T[]>,
+): Promise<T[]> {
+  const inFlight = { fence: useDraftCommandStore.getState().clock };
+  readsInFlight.add(inFlight);
+  try {
+    const listed = await read();
+    const { records } = useDraftCommandStore.getState();
+    const drafts = listed.filter((draft) => {
+      const record = records[draftCommandKey({ ...scope, ...draft })];
+      return record?.phase !== "confirmed" || record.at <= inFlight.fence;
+    });
+    const stillListed = new Set(drafts.map((draft) => draftCommandKey({ ...scope, ...draft })));
+    const prefix = scopePrefix(scope);
+    const gone = Object.entries(records).filter(
+      ([key, record]) =>
+        record.phase === "failed" &&
+        record.at <= inFlight.fence &&
+        key.startsWith(prefix) &&
+        !stillListed.has(key),
+    );
+    if (gone.length > 0) {
+      const dropped = new Set(gone.map(([key]) => key));
+      useDraftCommandStore.setState((state) => ({
+        records: Object.fromEntries(
+          Object.entries(state.records).filter(([key]) => !dropped.has(key)),
+        ),
+      }));
+    }
+    return drafts;
+  } finally {
+    readsInFlight.delete(inFlight);
+    retireConfirmations();
+  }
 }
 
 /** Every held record; look rows up with `draftCommandKey`. */
@@ -103,10 +165,21 @@ export function draftCommandFailure(
   return record?.phase === "failed" ? record.code : null;
 }
 
-export function anyDraftCommandPending(records: DraftCommandRecords): boolean {
-  return Object.values(records).some((record) => record.phase === "pending");
+/** A command is in flight on any draft of this project's Work. */
+export function draftCommandPendingIn(records: DraftCommandRecords, scope: DraftScope): boolean {
+  const prefix = scopePrefix(scope);
+  return Object.entries(records).some(
+    ([key, record]) => record.phase === "pending" && key.startsWith(prefix),
+  );
+}
+
+/** Empty the store when a different account signs in; a no-op for the same one. */
+export function bindDraftCommandAccount(accountId: string): void {
+  if (boundAccountId === accountId) return;
+  boundAccountId = accountId;
+  resetDraftCommandRecords();
 }
 
 export function resetDraftCommandRecords(): void {
-  useDraftCommandStore.setState({ records: {}, sequence: 0 });
+  useDraftCommandStore.setState({ records: {} });
 }

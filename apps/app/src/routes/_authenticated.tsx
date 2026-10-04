@@ -10,6 +10,7 @@ import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { bindDraftCommandAccount } from "@/client/query/draft-command-record";
 import { bindAccountRecents } from "@/client/recents";
 import {
   loadProjectList,
@@ -123,6 +124,7 @@ function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   bindAccountRecents(user.userId);
   bindChatSubmissions(user.userId);
+  bindDraftCommandAccount(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same

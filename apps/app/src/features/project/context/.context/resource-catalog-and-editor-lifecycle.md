@@ -109,8 +109,9 @@ terminalizing the tab from stale metadata. Genuine server failure remains
 retryable explicitly and retries when the resource/catalog authority revision
 advances. A draft-only tab (a new document proposed by a draft)
 opens no live binding at all: it has no live manifest membership and the server
-refuses a room for it, so review hosts the draft branch room alone, on desktop
-and phone. Once the server confirms Apply the tab is promoted to a durable tab
+refuses a room for it, so review hosts the draft branch room alone, on desktop.
+The phone cannot host a new-document draft review yet: its route tab comes only
+from the live catalog (tracked separately). Once the server confirms Apply the tab is promoted to a durable tab
 and this host opens its live room like any other document. Whether that open is slow, fails, or
 disconnects is the host's business and never changes whether Apply completed.
 

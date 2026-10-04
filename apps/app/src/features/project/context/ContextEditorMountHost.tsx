@@ -170,7 +170,11 @@ export function ContextEditorMountHost({
                       <Trans>Couldn't open review mode.</Trans>
                     </p>
                     <p className="text-muted-foreground text-xs">
-                      <Trans>Try again, or return to the live document.</Trans>
+                      {branchOnly ? (
+                        <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
+                      ) : (
+                        <Trans>Try again, or return to the live document.</Trans>
+                      )}
                     </p>
                     <div className="flex justify-center gap-2">
                       <Button
@@ -187,14 +191,16 @@ export function ContextEditorMountHost({
                       >
                         <Trans>Retry</Trans>
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => controller.exitInlineReview()}
-                      >
-                        <Trans>Back to live</Trans>
-                      </Button>
+                      {branchOnly ? null : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => controller.exitInlineReview()}
+                        >
+                          <Trans>Back to live</Trans>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -230,7 +236,11 @@ export function ContextEditorMountHost({
                     reviewDraftId={reviewDraftId}
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
-                    onReviewSessionUnavailable={controller.exitInlineReview}
+                    // Leaving review would strand a draft-only tab on an empty
+                    // editor; the writer closes it from the tab bar instead.
+                    onReviewSessionUnavailable={
+                      branchOnly ? undefined : controller.exitInlineReview
+                    }
                   />
                 </>
               )}

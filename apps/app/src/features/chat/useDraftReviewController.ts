@@ -14,8 +14,8 @@ import {
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import {
-  anyDraftCommandPending,
   clearDraftCommandFailure,
+  draftCommandPendingIn,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -118,6 +118,9 @@ export function useDraftReviewController(
   const localStateOwner = useDraftReviewStateOwner();
   const { state, dispatch } = stateOwner ?? localStateOwner;
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
+  // One session per Work: the controller outlives navigation between Works, and
+  // a command still in flight in the Work left behind must not keep the new
+  // Work's controls disabled.
   const reviewSession = useMemo(
     () =>
       new DraftReviewSession(() => {
@@ -125,7 +128,7 @@ export function useDraftReviewController(
         if (!ports) throw new Error("Draft review command ports are not ready.");
         return ports;
       }),
-    [],
+    [projectId, workId],
   );
   const dispositionLock = reviewSession.disposition;
   const disposition = useSyncExternalStore(
@@ -161,9 +164,10 @@ export function useDraftReviewController(
   const isDiscarding = activeDisposition?.kind === "discard-draft";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isApplying || isDiscarding;
-  // Any command in flight on this draft, from any surface, disables this one.
+  // A command in flight on any draft of this Work, from any surface, disables this one.
   const commandRecords = useDraftCommandRecords();
-  const isDisposing = disposition.busy || anyDraftCommandPending(commandRecords);
+  const isDisposing =
+    disposition.busy || draftCommandPendingIn(commandRecords, { projectId, workId });
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
   const pendingInlineDiscardIds = useCallback(
@@ -243,6 +247,7 @@ export function useDraftReviewController(
   }
 
   commandPortsRef.current = {
+    scope: { projectId, workId },
     apply: async ({ documentId, draftId }) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
@@ -296,11 +301,11 @@ export function useDraftReviewController(
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      clearDraftCommandFailure({ documentId, draftId });
+      clearDraftCommandFailure({ projectId, workId, documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },
-    [loadInlineReviewRoom],
+    [loadInlineReviewRoom, projectId, workId],
   );
 
   const exitInlineReview = useCallback(() => {
