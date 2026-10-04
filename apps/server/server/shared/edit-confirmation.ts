@@ -38,12 +38,23 @@ export function runWithEditConfirmation<T>(
 }
 
 /**
- * Runs a derived write (§5.1) outside the bound grants. Bookkeeping a write
- * triggers after it commits isn't that write; confirming the grants again
+ * Runs work that isn't the bound write outside its grants: what the write
+ * triggers after it commits, or on a timer. Confirming the grants again there
  * would see the write's own result, and a deleted document confirms nothing.
+ * After-commit dispatch leaves the scope this way.
  */
 export function runOutsideEditConfirmation<T>(operation: () => T): T {
   return scope.exit(operation);
+}
+
+/**
+ * Captures the bound grants for a step that is still part of this write but
+ * runs after it commits (an auto-applied draft), so the step carries them
+ * explicitly once after-commit dispatch has left the scope.
+ */
+export function captureEditConfirmation(): <T>(operation: () => T) => T {
+  const confirmation = scope.getStore();
+  return (operation) => (confirmation ? scope.run(confirmation, operation) : scope.exit(operation));
 }
 
 /** The Works the bound grants lock; a seam adds them to its own sorted Work locks. */
