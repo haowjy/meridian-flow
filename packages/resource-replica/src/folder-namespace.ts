@@ -51,8 +51,20 @@ export function projectFolderNeedsRepair(
   record: FolderNamespaceRecord,
 ): { intentId: string; name: string } | null {
   const failed = record.intents.find((intent) => intent.state === "needs-repair");
-  return failed?.desired.kind === "set-folder-location"
-    ? { intentId: failed.intentId, name: failed.desired.destination.name }
+  if (failed?.desired.kind !== "set-folder-location") return null;
+  // Keep the refused receipt as the repair anchor, but offer the writer's newest
+  // destination from the cancelled chain without rewriting immutable intentions.
+  const latest = record.intents.reduce(
+    (candidate, intent) =>
+      intent.state === "cancelled" &&
+      intent.desired.kind === "set-folder-location" &&
+      intent.sequence > candidate.sequence
+        ? intent
+        : candidate,
+    failed,
+  );
+  return latest.desired.kind === "set-folder-location"
+    ? { intentId: failed.intentId, name: latest.desired.destination.name }
     : null;
 }
 
