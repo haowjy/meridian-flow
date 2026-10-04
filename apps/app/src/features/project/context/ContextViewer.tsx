@@ -1,7 +1,9 @@
 /**
  * Renders the Editor destination and its active document. A file of an
- * archived Work opens read-only under the archived notice. The Editor shows
- * only its own Work's files, so the Editor's Work is that file's Work.
+ * archived Work, and a review of its draft, open read-only under the archived
+ * notice. The Editor shows only its own Work's files and drafts, so the
+ * Editor's Work is that file's Work. Archiving here freezes them at once; the
+ * server's own read-only scope follows.
  */
 import { Trans } from "@lingui/react/macro";
 import {
@@ -107,8 +109,6 @@ export function ContextViewer({
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
   const activeFileInWork =
     activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
-  const archivedWork =
-    activeFileInWork && editorWork && isWorkArchived(editorWork) ? editorWork : null;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
@@ -117,6 +117,10 @@ export function ContextViewer({
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
       : null;
+  const editorWorkArchived = editorWork && isWorkArchived(editorWork) ? editorWork : null;
+  // A review edits the Editor Work's draft, which archiving freezes (D30); the
+  // reviewed file itself may be project-owned and keeps its identity bar.
+  const archivedWork = activeFileInWork || activeReviewDraftId ? editorWorkArchived : null;
 
   return (
     <div
@@ -163,7 +167,7 @@ export function ContextViewer({
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
-            readOnly={Boolean(archivedWork)}
+            readOnly={Boolean(activeFileInWork && archivedWork)}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />

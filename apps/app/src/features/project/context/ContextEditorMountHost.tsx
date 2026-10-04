@@ -1,7 +1,9 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
@@ -62,6 +64,12 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  // A room's scope changes with its Work; this tab's Works catalog may not
+  // know yet, and the archived notice and its Unarchive come from it.
+  const queryClient = useQueryClient();
+  const refreshWorks = useCallback(() => {
+    void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
+  }, [projectId, queryClient]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -205,7 +213,6 @@ export function ContextEditorMountHost({
                     active={active && isActive}
                     editable={!readOnly}
                     showToolbar={!readOnly}
-                    showCollaborationDecorations={!readOnly}
                     detached={tab.kind === "new"}
                     localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
@@ -213,6 +220,7 @@ export function ContextEditorMountHost({
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
                     onReviewSessionUnavailable={controller.exitInlineReview}
+                    onRoomAccessChange={refreshWorks}
                   />
                 </>
               )}
