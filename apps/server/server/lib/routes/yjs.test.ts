@@ -4,7 +4,10 @@ import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
@@ -19,6 +22,7 @@ const payload = new Uint8Array([1, 2, 3]);
 function services(stale: boolean) {
   return {
     fileAccess: {} as never,
+    fileAccessChanges: createLocalFileAccessChanges(),
     eventSink: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
@@ -30,9 +34,14 @@ function services(stale: boolean) {
 function gatewayServices() {
   return {
     fileAccess: {} as never,
+    fileAccessChanges: createLocalFileAccessChanges(),
     eventSink: {} as never,
     documentSync: { bindHocuspocus: () => undefined } as never,
   };
+}
+
+function connectionConfig() {
+  return { readOnly: false, isAuthenticated: false };
 }
 
 describe("Yjs branch handshake route guard", () => {
@@ -125,11 +134,13 @@ describe("Yjs branch handshake route guard", () => {
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
     const hocuspocus = createHocuspocus({
       fileAccess: createAllowAllFileAccess(),
+      fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: {
         bindHocuspocus: vi.fn(),
         resolveBranchHocuspocusRoom: vi.fn(async () => ({
           branchId: "branch_1",
           documentId: "document-1",
+          workId: "work-1",
           generation: 3,
           schemaVersion: COLLAB_SCHEMA_VERSION,
           status: "active",
@@ -142,6 +153,7 @@ describe("Yjs branch handshake route guard", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName,
         context: { userId: "user-1", clientSchemaVersion: COLLAB_SCHEMA_VERSION },
       } as never),
@@ -504,5 +516,118 @@ describe("Yjs live writer admission", () => {
       joinedSettlement: false,
     });
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Yjs room access", () => {
+  const liveRoom = "00000000-0000-4000-8000-000000000201";
+
+  function roomServices(input: { readOnly?: boolean } = {}) {
+    const allowAll = createAllowAllFileAccess();
+    const documentSync = {
+      bindHocuspocus: vi.fn(),
+      resolveManifestMembership: vi.fn(async () => ({ members: [liveRoom] })),
+      reconcileProjectManifest: vi.fn(async () => undefined),
+      headSchemaVersion: vi.fn(async () => null),
+      currentLiveGeneration: vi.fn(async () => 1n),
+      admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),
+      resolveBranchHocuspocusRoom: vi.fn(async () => ({
+        branchId: "branch_1",
+        documentId: liveRoom,
+        workId: "work-1",
+        generation: 3,
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+        status: "active",
+      })),
+      flushBranchLivePull: vi.fn(async () => undefined),
+    };
+    return {
+      fileAccess: {
+        ...allowAll,
+        // An archived Work's file: readable, not editable.
+        authorize: (async (principal, target, need) =>
+          input.readOnly && need === "edit"
+            ? { denied: true, level: "read", reason: "work_archived", target, need }
+            : allowAll.authorize(principal, target, need)) as typeof allowAll.authorize,
+      },
+      fileAccessChanges: createLocalFileAccessChanges(),
+      documentSync: documentSync as never,
+      eventSink: { emit() {} } as never,
+      admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
+    };
+  }
+
+  function roomPeer() {
+    return {
+      request: new Request("https://server.localhost/ws/yjs", {
+        headers: {
+          "sec-websocket-protocol": formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION),
+        },
+      }),
+      userId: "user-1" as never,
+      traceId: "trace-1",
+      close: vi.fn(),
+      socket: { send: vi.fn(), close: vi.fn(), readyState: 1 },
+    };
+  }
+
+  it("admits a read-only room and keeps its updates out of the journal", async () => {
+    const services = roomServices({ readOnly: true });
+    const hocuspocus = createHocuspocus(services);
+    const context = {
+      userId: "user-1",
+      clientSchemaVersion: COLLAB_SCHEMA_VERSION,
+      closeTransport: vi.fn(),
+    };
+    const config = connectionConfig();
+
+    await hocuspocus.configuration.onConnect?.({
+      documentName: liveRoom,
+      context,
+      connectionConfig: config,
+    } as never);
+    expect(config.readOnly).toBe(true);
+
+    await expect(
+      hocuspocus.configuration.beforeSync?.({
+        documentName: liveRoom,
+        document: new Y.Doc(),
+        type: messageYjsUpdate,
+        payload,
+        context,
+      } as never),
+    ).resolves.toBeUndefined();
+    expect(services.admitLiveWriterUpdate).not.toHaveBeenCalled();
+  });
+
+  it("closes a Work's draft room with 4409 when its access changes, not a manuscript room", async () => {
+    const services = roomServices();
+    const gateway = createYjsGateway(services);
+    const handleClose = vi.fn();
+    const handleConnection = vi
+      .spyOn(gateway.hocuspocus, "handleConnection")
+      .mockReturnValue({ handleClose } as never);
+    const draftPeer = roomPeer();
+    const manuscriptPeer = roomPeer();
+    gateway.connect(draftPeer);
+    gateway.connect(manuscriptPeer);
+    const [draftContext, manuscriptContext] = handleConnection.mock.calls.map((call) => call[2]);
+
+    for (const [room, context] of [
+      [documentName, draftContext],
+      [liveRoom, manuscriptContext],
+    ] as const) {
+      await gateway.hocuspocus.configuration.onConnect?.({
+        documentName: room,
+        context,
+        connectionConfig: connectionConfig(),
+      } as never);
+    }
+    await services.fileAccessChanges.publish({ workId: "work-1" as never });
+
+    expect(draftPeer.close).toHaveBeenCalledWith(4409, "access-changed");
+    expect(handleClose).toHaveBeenCalledOnce();
+    expect(handleClose).toHaveBeenCalledWith({ code: 4409, reason: "access-changed" });
+    expect(manuscriptPeer.close).not.toHaveBeenCalled();
   });
 });

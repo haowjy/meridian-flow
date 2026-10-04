@@ -8,6 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { DocumentSchemaMajorMismatchError } from "../../domains/collab/index.js";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
 import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
@@ -34,6 +38,7 @@ function versionGateServices(
     resolveBranchHocuspocusRoom: vi.fn(async (branchId: string, generation: number) => ({
       branchId,
       documentId: liveDocumentName,
+      workId: "00000000-0000-4000-8000-000000000107",
       generation,
       schemaVersion: input.branchHead ?? COLLAB_SCHEMA_VERSION,
       status: "active" as const,
@@ -51,12 +56,8 @@ function versionGateServices(
     flushBranchLivePull: vi.fn(async () => undefined),
   };
   return {
-    fileAccess: {
-      authorize: vi.fn(async (_principal: unknown, target: unknown) => ({
-        target,
-        facts: { projectId: "00000000-0000-4000-8000-000000000103" },
-      })),
-    } as never,
+    fileAccess: createAllowAllFileAccess(),
+    fileAccessChanges: createLocalFileAccessChanges(),
     documentSync,
     eventSink: createInMemoryEventSink(),
   };
@@ -76,6 +77,10 @@ function staleSchemaError() {
     version(1, 0),
     COLLAB_SCHEMA_VERSION,
   );
+}
+
+function connectionConfig() {
+  return { readOnly: false, isAuthenticated: false };
 }
 
 describe("Yjs connect-time schema version gate", () => {
@@ -108,6 +113,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context: staleClientContext,
       } as never),
@@ -118,6 +124,7 @@ describe("Yjs connect-time schema version gate", () => {
     });
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
@@ -132,6 +139,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context: connectContext(SENTINEL_SCHEMA_VERSION),
       } as never),
@@ -164,6 +172,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context,
       } as never),
@@ -182,6 +191,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context: connectContext(SENTINEL_SCHEMA_VERSION),
       } as never),
@@ -200,6 +210,7 @@ describe("Yjs connect-time schema version gate", () => {
     const payload = new Uint8Array([1, 2, 3]);
 
     await hocuspocus.configuration.onConnect?.({
+      connectionConfig: connectionConfig(),
       documentName: liveDocumentName,
       context,
     } as never);
@@ -225,6 +236,7 @@ describe("Yjs connect-time schema version gate", () => {
     const context = connectContext(COLLAB_SCHEMA_VERSION);
 
     await hocuspocus.configuration.onConnect?.({
+      connectionConfig: connectionConfig(),
       documentName: liveDocumentName,
       context,
     } as never);
@@ -248,6 +260,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: branchRoomName,
         context: staleClientContext,
       } as never),
@@ -258,6 +271,7 @@ describe("Yjs connect-time schema version gate", () => {
     });
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: branchRoomName,
         context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
@@ -275,7 +289,11 @@ describe("Yjs connect-time schema version gate", () => {
     for (const room of [liveDocumentName, branchRoomName]) {
       const context = connectContext(COLLAB_SCHEMA_VERSION);
       await expect(
-        hocuspocus.configuration.onConnect?.({ documentName: room, context } as never),
+        hocuspocus.configuration.onConnect?.({
+          documentName: room,
+          context,
+          connectionConfig: connectionConfig(),
+        } as never),
       ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
       expect(context.closeTransport).toHaveBeenCalledWith({
         code: 4407,
@@ -291,6 +309,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: branchRoomName,
         context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
@@ -319,6 +338,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context,
       } as never),
@@ -337,6 +357,7 @@ describe("Yjs connect-time schema version gate", () => {
 
     await expect(
       hocuspocus.configuration.onConnect?.({
+        connectionConfig: connectionConfig(),
         documentName: liveDocumentName,
         context,
       } as never),
