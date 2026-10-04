@@ -364,6 +364,7 @@ function createProductionStoreResolvers(
   manifestMembership: ManifestMembershipPort,
   catalogMutations: ContextCatalogMutationPort,
   eventSink?: EventSink,
+  kickLinkUpdates?: () => void,
 ): ContextStoreResolvers {
   const membershipObserverFor = (
     manifestView: ManifestView,
@@ -419,6 +420,7 @@ function createProductionStoreResolvers(
         manifestView ? membershipObserverFor(manifestView) : undefined,
         catalogMutations,
         eventSink,
+        kickLinkUpdates,
       );
     },
   };
@@ -465,6 +467,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
+  kickLinkUpdates?: () => void;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
 }): UnifiedContextPortFactory {
@@ -478,6 +481,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.manifestMembership,
     catalogMutations,
     options.eventSink,
+    options.kickLinkUpdates,
   );
 
   function moveLinks(projectId: string, userId: string, responseId?: string | null) {

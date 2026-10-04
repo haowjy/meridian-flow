@@ -86,3 +86,8 @@ win over the address, including an unavailable target that must not fall through
 Moves flush durable link derivation before namespace locking, then lock moved
 document rows `FOR NO KEY UPDATE` before redirect rows. Never use `FOR UPDATE`
 for those document locks: journal FK inserts must remain compatible.
+
+Move redirects are consumed by `links/link-update-worker.ts` through collab atomic
+maintenance. Post-commit kicks and the recovery sweep share one worker. It skips
+archived/deleted Work holders and unavailable targets, retries failures with
+backoff, and credits the newest consumed mover without holder permission checks.

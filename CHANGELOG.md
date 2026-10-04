@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance.
+
 - Add atomic link maintenance for committed document moves, preserving AI Undo and publishing to live rooms only after durable commit.
 - Preserve document-link targets through renames with pending identity redirects and move receipt counts; old chat addresses follow renamed documents until another document occupies them.
 
