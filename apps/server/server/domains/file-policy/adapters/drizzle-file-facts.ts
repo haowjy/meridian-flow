@@ -1,8 +1,8 @@
 /**
  * Postgres file facts (file-access §2, §5): follows
  * `documents → folders → context_sources → (project | work → project)` with
- * every lifecycle on the way, and keeps the `folder_ancestors` closure that
- * list filters join on (§6).
+ * every lifecycle on the way. Ancestors come from walking `folders.parent_id`
+ * (D56); a list query over a folder's subtree recurses the same way.
  */
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -299,44 +299,4 @@ function workFacts(row: WorkRow): FileWorkFacts {
 /** A purged Work reads as deleted, never as a free pass. */
 function missingWork(id: WorkId): FileWorkFacts {
   return { id, slug: null, isNoWork: false, archived: false, deleted: true };
-}
-
-/**
- * Rebuild the closure rows for these folders and everything below them.
- * Seam C calls it in the transaction that creates or moves folders.
- */
-export async function refreshFolderAncestors(
-  db: Database,
-  folderIds: readonly FolderId[],
-): Promise<void> {
-  if (folderIds.length === 0) return;
-  const roots = sql.join(
-    folderIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  const tx = currentDrizzleDb(db);
-  await tx.execute(sql`
-    WITH RECURSIVE subtree AS (
-      SELECT id FROM folders WHERE id IN (${roots})
-      UNION
-      SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
-    )
-    DELETE FROM folder_ancestors WHERE folder_id IN (SELECT id FROM subtree)
-  `);
-  await tx.execute(sql`
-    WITH RECURSIVE subtree AS (
-      SELECT id FROM folders WHERE id IN (${roots})
-      UNION
-      SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
-    ),
-    up AS (
-      SELECT id AS folder_id, id AS ancestor_id, 0 AS depth FROM subtree
-      UNION ALL
-      SELECT up.folder_id, f.parent_id, up.depth + 1
-      FROM up JOIN folders f ON f.id = up.ancestor_id
-      WHERE f.parent_id IS NOT NULL
-    )
-    INSERT INTO folder_ancestors (folder_id, ancestor_id, depth)
-    SELECT folder_id, ancestor_id, depth FROM up
-  `);
 }

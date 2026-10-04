@@ -1,9 +1,6 @@
 /** Barrel: the file-policy domain's public surface. */
 
-export {
-  createDrizzleFileFacts,
-  refreshFolderAncestors,
-} from "./adapters/drizzle-file-facts.js";
+export { createDrizzleFileFacts } from "./adapters/drizzle-file-facts.js";
 export { createOwnerFileGrants } from "./adapters/owner-file-grants.js";
 export { matchAncestors, nodeChain } from "./domain/ancestors.js";
 export { isDrafted, type NodeGrant, sourceDestination } from "./domain/policy.js";
