@@ -11,6 +11,7 @@ import {
   type ResourceNamespaceLock,
   type ResourceRecord,
 } from "@meridian/resource-replica";
+import type { DocumentSession } from "@/core/editor/document-session";
 import type {
   LocalDocumentSessionAdoptionPort,
   LocalDocumentSessionHandoff,
@@ -108,7 +109,10 @@ export class ResourceSessionAdoptionCoordinator {
     );
     if (opened.kind !== "opened") return opened.kind === "cancelled" ? "blocked" : "waiting";
     try {
-      return await this.reconcileOpen(key, witness);
+      return await this.reconcileOpen(key, witness, opened.handle.session);
+    } catch (error) {
+      opened.handle.session.setAdoptionStalled(true);
+      throw error;
     } finally {
       opened.handle.release();
     }
@@ -117,6 +121,7 @@ export class ResourceSessionAdoptionCoordinator {
   private async reconcileOpen(
     key: ResourceKey,
     witness: SessionAdoption,
+    session: DocumentSession,
   ): Promise<ResourceSessionAdoptionResult> {
     const transfer = await this.content.reserveTransfer(
       {
@@ -153,8 +158,10 @@ export class ResourceSessionAdoptionCoordinator {
       witness.documentId,
       this.close.signal,
     );
-    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
+    if (authority.kind !== "available" || authority.documentId !== witness.documentId) {
+      session.setAdoptionStalled(true);
       return "waiting";
+    }
     assertAvailabilityGeneration(authority.generation);
     const authorityState = await this.adoption.inspect({
       documentId: witness.documentId,
