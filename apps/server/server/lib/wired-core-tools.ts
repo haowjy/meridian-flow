@@ -938,6 +938,7 @@ async function copyBinary(
   context: ResolvedModelContextPort,
   input: Extract<WriteToolInput, { command: "copy" }>,
   source: BinaryFileRef,
+  sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ) {
   // Binary files have no drafts or revisions, so the copy always reads the live file.
@@ -946,6 +947,7 @@ async function copyBinary(
     livePort: context.livePort(),
     objectStore: deps.objectStore,
     source,
+    sourceGrant,
     destinationUri: splitDocumentFile(input.path).filePath,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });
@@ -1111,7 +1113,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           return writeToolError(parsed.command, fromMessage(parsed.from, selection), "binary_file");
         }
         const binary = source.ref;
-        return inContainer(() => copyBinary(deps, portOrError, parsed, binary, ctx));
+        const sourceGrant = await documentGrant(
+          deps,
+          principal,
+          parsed.command,
+          source.address,
+          "read",
+        );
+        if (isToolError(sourceGrant)) {
+          return writeToolError(
+            parsed.command,
+            fromMessage(parsed.from, sourceGrant.output.message ?? ""),
+          );
+        }
+        return inContainer(() => copyBinary(deps, portOrError, parsed, binary, sourceGrant, ctx));
       }
       const read = await readTrackedCopySource(
         deps,
