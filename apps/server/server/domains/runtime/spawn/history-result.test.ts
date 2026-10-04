@@ -161,7 +161,7 @@ The conversation so far covers three topics: ...
                 find: "The moon was",
               },
               state: "done",
-              summary: "w4, 212 words, drafted in @rewrite",
+              summary: "w4, 212 words, version: draft (@rewrite)",
             },
             {
               kind: "tool",
@@ -203,7 +203,7 @@ A long request
 (truncated: thread_history({"ref":"c2","expand":"37.1"}))
 
 [38] assistant
-write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, drafted in @rewrite
+write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, version: draft (@rewrite)
 read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
 spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
 work({"command":"create","name":"Rewrite"}) → @rewrite
