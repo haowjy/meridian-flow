@@ -1,0 +1,28 @@
+# Deferred, link following
+
+- One request per distinct internal target per open document, four at a time.
+  A chapter with dozens of links pays dozens of round trips on open, and each
+  is a query over the project's documents. A batch endpoint would collapse
+  them; the client cache already keeps it to once per target, per catalog. That
+  last part is the new weight: a rename anywhere in the project starts a new
+  resolution generation, so the chapter pays those round trips again. A batch
+  endpoint is what makes the honest invalidation cheap.
+
+- Bare `manuscript://…` and `scratch://@slug/…` strings in prose are not links
+  in either surface: the Editor's `shouldAutoLink`
+  (`core/editor/extensions/meridian-extensions.ts`) admits external URLs only,
+  and chat's transcript renderer has no remark step for them. Markdown links
+  and autolinks (`<manuscript://…>`) already work in both. Decide for both
+  surfaces at once, with one classifier validated by the contracts URI parser
+  and used by `shouldAutoLink` and a chat remark step; linkifying in one
+  surface only would make them disagree about what a link is.
+
+- External links have no shared scheme policy, so the surfaces disagree. Chat's
+  Streamdown (`rich-content/Markdown.tsx`) allows `tel:` links; the Editor's
+  classifier (`core/editor/links/link-target.ts`, `EXTERNAL_SCHEMES`) allows
+  only `http:`, `https:` and `mailto:`. A protocol-relative URL
+  (`//example.com/x`) renders as `href="/"` in chat, while the Editor
+  normalizes it to https. Neither comes from the link-follow work. Decide one
+  external-link scheme policy (allowed schemes, protocol-relative handling) in
+  `core/editor/links`, and have chat's Streamdown sanitize and `link-target.ts`
+  both use it.

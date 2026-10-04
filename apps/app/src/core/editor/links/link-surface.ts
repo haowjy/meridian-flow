@@ -85,9 +85,18 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
  * is a second owner of Escape.
  */
 export type LinkFollowOutcome = {
-  state: "checking" | "missing" | "failed";
+  state: "checking" | "failed" | "missing";
   target: LinkTarget;
+  /**
+   * The canonical Context URI the link names (a relative path resolved
+   * against its holder), or null when it names none. `missing` means
+   * nothing is there.
+   */
+  address: string | null;
 };
+
+/** What the app's follower does when the writer acts on a follow's outcome. */
+export type FollowHandlers = { dismiss: () => void; retry: () => void };
 
 export type LinkSurfaceState = {
   hint: LinkHint | null;
@@ -115,6 +124,16 @@ export type LinkSurface = {
   /** A follow that has something to say. Reported by whoever answered it. */
   reportFollow: (outcome: LinkFollowOutcome) => void;
   clearFollow: () => void;
+  /**
+   * The writer closed what a follow said (Close, Cancel, Escape). The follower
+   * that answered decides what that means: a still-asking follow is stopped,
+   * so its answer can neither open the document nor bring the dialog back.
+   * Without a registered follower it only clears.
+   */
+  dismissFollow: () => void;
+  /** Try again: the follower follows the shown link anew, as the dialog's owner. */
+  retryFollow: () => void;
+  registerFollowHandlers: (handlers: FollowHandlers) => () => void;
 
   /**
    * Where an internal link goes. Absent is a real state, not a bug: until the
@@ -133,6 +152,7 @@ export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
   let state = EMPTY_STATE;
   let navigator: InternalLinkNavigator | null = null;
+  let followHandlers: FollowHandlers | null = null;
   let sequence = 0;
 
   const set = (next: Partial<LinkSurfaceState>) => {
@@ -192,6 +212,19 @@ export function createLinkSurface(): LinkSurface {
     clearFollow() {
       set({ follow: null });
     },
+    dismissFollow() {
+      if (followHandlers) followHandlers.dismiss();
+      else set({ follow: null });
+    },
+    retryFollow() {
+      followHandlers?.retry();
+    },
+    registerFollowHandlers(handlers) {
+      followHandlers = handlers;
+      return () => {
+        if (followHandlers === handlers) followHandlers = null;
+      };
+    },
 
     get navigator() {
       return navigator;
@@ -206,6 +239,7 @@ export function createLinkSurface(): LinkSurface {
     destroy() {
       listeners.clear();
       navigator = null;
+      followHandlers = null;
       state = EMPTY_STATE;
     },
   };

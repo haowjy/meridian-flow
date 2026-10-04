@@ -1,18 +1,24 @@
 # core/editor/links — the link system, headless
 
 What a link means, what pressing one does, and which surface is open. React
-lives in [`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md);
-nothing here renders.
+lives in [`features/editor/surfaces/link/`](../../../features/editor/surfaces/link/AGENTS.md),
+and following a link (scope, resolver, outcomes) is
+[`features/links/`](../../../features/links/AGENTS.md); nothing here renders.
 
 ## Mental model
 
-**One classifier, four kinds.** `classifyLinkTarget` turns an href into
-`wikilink | scheme | relative | external`, and every consumer reads that one
-answer: the click, the hover hint, the menu, the mark's own rendering, the
-paste sanitizer. The first three are the *internal family* — three spellings,
-one behavior (§5.5) — and are exactly the server's `DocumentLinkTarget`, so
+**One classifier, three kinds.** A link is a standard Markdown link to an
+address. `classifyLinkTarget` turns an href into `scheme | relative |
+external`, and every consumer reads that one answer: the click, the hover
+hint, the menu, the mark's own rendering, the paste sanitizer. The first two
+are the *internal family* — a Context URI or a path relative to the holder,
+one behavior — and are exactly the server's `DocumentLinkTarget`, so
 `documentLinkTarget()` is a projection, not a translation. `external` is the
-client's alone and never crosses the resolution port.
+client's alone and never crosses the resolution port. There are no wikilinks:
+`[[name]]` is text. Only a paste into an Editor document converts it, to a
+standard link (`WikilinkPasteExtension`, which the Editor alone mounts); paste
+without formatting and a destination in code keep the characters, and an
+escaped `\[[` stays the literal brackets.
 
 **Following is a decision, then a destination.** `linkClickIntent` decides
 whether a press follows or places the caret, and where a follow goes;
@@ -20,6 +26,14 @@ whether a press follows or places the caret, and where a follow goes;
 navigator the app registers. No navigator is a real state, not a bug — the
 click falls through to the caret and the menu omits Open link rather than
 offering a dead verb.
+
+**Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
+target and its resolution answer to a state (filled, or dashed when nothing is
+at that address) and a family icon name; every surface emits its
+attributes (the Editor on the decoration spans inside its `<a>`) and the look
+lives in
+[`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
+Core names families and imports no icons.
 
 **The store is the surface policy.** `link-surface.ts` holds which link is
 being approached and which of the two summoned surfaces is open;
@@ -46,17 +60,20 @@ pointer, and calls into it.
   the surface acts on whatever slid into the coordinates.
 - **Unresolved is normal, not an error.** Serial writers link chapters before
   they write them, so an internal target that resolves to nothing is a state
-  the UI renders, never a failure it reports. A request that *failed* is a
-  third thing: no answer at all, rendered as an ordinary link.
+  the UI renders, never a failure it reports. Addresses are unique, so there
+  is no "several documents" state. A request that *failed* is a further
+  thing: no answer at all, rendered as an ordinary link.
 - **Invalidation is a registration, and a registration is a generation.**
   Registering the port starts a generation that owns its answers, its one
   question per href, its queue, and its in-flight counter; a question settles
   against the generation that asked it, never against whatever is waiting under
   that href now. The app registers again when the scope or the project's
   document catalog changes, so there is no `refresh`-shaped verb to call and no
-  reason for a mutation site to reach in here.
+  reason for a mutation site to reach in here. A question a click waits on
+  (`resolve()`) is carried into the next generation and asked again; one only
+  the decorations asked is dropped with its generation.
 - **No resolution is ever stored.** The state rides a decoration, not a schema
-  attribute (law 9), so `[[Chapter 214]]` from an LLM needs no extra
+  attribute (law 9), so `[Chapter 214](chapter-214.md)` from an LLM needs no extra
   attributes and no peer receives an answer that was true in someone else's
   project.
 - **The decorations are mapped on an ordinary keystroke and rebuilt only when
@@ -64,6 +81,10 @@ pointer, and calls into it.
   landing. The exception is a remote write: mapping across the whole-document
   replace reports every position deleted and would erase the drawing, so
   `isRemoteDocumentRebuild` rebuilds instead.
+- **A copied link keeps its document.** The clipboard records each internal
+  link's address beside its href, and every paste target spells it for itself
+  (`link-clipboard.ts`); never paste a relative href into a different holder
+  as written.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 
@@ -77,6 +98,6 @@ pointer, and calls into it.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) — the seam, the behavior matrix,
   the resolution port, and how a state nobody stored gets drawn
-→ [`../extensions/wikilink/AGENTS.md`](../extensions/wikilink/AGENTS.md) — the
-  `[[` trigger that writes one of these links
+→ [`../extensions/at-reference/AGENTS.md`](../extensions/at-reference/AGENTS.md) —
+  the Editor's `@`, the one way a writer inserts one of these links
 → [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — the kernel this registers with

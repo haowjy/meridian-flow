@@ -13,7 +13,7 @@ document, and which keys the menu owns all live in
 Rows, and nothing else. The writer never leaves the sentence — focus stays in
 the prose, the query is the document text after the `/`, the arrow keys belong
 to the trigger — and every bit of that is
-[`chrome/SuggestionMenu`](../../chrome/SuggestionMenu.tsx), which the `[[` menu
+[`chrome/SuggestionMenu`](../../chrome/SuggestionMenu.tsx), which the `@` menu
 shares. This file answers two questions: what a row says, and when a group
 heading opens above one.
 

@@ -1,10 +1,9 @@
 /**
  * document-links-api — HTTP client for internal link resolution.
  *
- * One call: hand the server a wikilink name, a scheme URI, or a relative path
- * and get back the project document it addresses. `{ document: null }` is a
- * normal answer, not an error — it covers both "nothing matched" and "several
- * did", because an ambiguous name resolves to nothing rather than to a guess.
+ * One call: hand the server a Context URI or a relative path and get back the
+ * project document at that address. `{ document: null }` is a normal answer,
+ * not an error: nothing is there yet.
  */
 
 import {

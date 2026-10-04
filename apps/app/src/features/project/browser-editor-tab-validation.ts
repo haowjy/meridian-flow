@@ -17,7 +17,11 @@ import {
 import { reconcileContextRoutes } from "@/client/working-set";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { workingSetRouteForTab } from "./context/context-removal-planner";
-import { contextTabFromFile, contextTabFromResource } from "./context/context-tab-from-file";
+import {
+  contextTabFromFile,
+  contextTabFromResource,
+  editorTabWorkId,
+} from "./context/context-tab-from-file";
 
 export type EditorTabValidationScope = {
   projectId: string;
@@ -52,14 +56,11 @@ function availableTab(
 ): ContextTab {
   const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
   if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
-  const workId = isWorkScopedProjectContextScheme(scheme)
-    ? resolution.authority.kind === "work"
-      ? resolution.authority.workId
-      : undefined
-    : undefined;
-  if (isWorkScopedProjectContextScheme(scheme) && workId === undefined) {
+  if (isWorkScopedProjectContextScheme(scheme) && resolution.authority.kind !== "work") {
     throw new TypeError("Invalid available route authority");
   }
+  const workId =
+    resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : undefined;
   return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId);
 }
 

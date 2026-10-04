@@ -568,14 +568,14 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });
 
-  it("round-trips wikilinks and wikilink images inside an HTML table cell", () => {
-    const link = schema.marks.link.create({ href: "[[Chapter 7]]", title: null });
+  it("round-trips document links and pictures inside an HTML table cell", () => {
+    const link = schema.marks.link.create({ href: "../volume 1/chapter 7.md", title: null });
     const original = oneCellTable(
       paragraph(
         t("Chapter 7", [link]),
         t(" "),
         schema.node("image", {
-          src: "[[Realm map]]",
+          src: "assets/realm map.png",
           alt: "Realm map",
           title: null,
           width: null,
@@ -584,8 +584,8 @@ describe("tables and Layout round-trip corpus", () => {
     );
     const html = codec.serializeBlock(original);
 
-    expect(html).toContain('<a href="[[Chapter 7]]">Chapter 7</a>');
-    expect(html).toContain('<img src="[[Realm map]]" alt="Realm map" />');
+    expect(html).toContain('<a href="../volume 1/chapter 7.md">Chapter 7</a>');
+    expect(html).toContain('<img src="assets/realm map.png" alt="Realm map" />');
     expect(firstParsedBlock(codec, html).toJSON()).toEqual(original.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, html))).toBe(html);
   });

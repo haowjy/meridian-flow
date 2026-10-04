@@ -162,6 +162,12 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   return { tabs: parsedTabs, selectedTabIdByWork: selections };
 }
 
+function withoutWork(tab: ContextTab): ContextTab {
+  if (tab.kind === "new" || !("workId" in tab)) return tab;
+  const { workId: _work, ...rest } = tab;
+  return rest as ContextTab;
+}
+
 export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapshot | null {
   if (!raw) return null;
   try {
@@ -469,8 +475,10 @@ export function reduceEditorWorkspace(
           );
     const index = sameDocumentIndex >= 0 ? sameDocumentIndex : occupiedLocatorIndex;
     const existing = index >= 0 ? workspace.tabs[index] : undefined;
+    // The opened tab states its Work: a Scratch tab opened with none is No
+    // Work's, and must not keep a Work a stale tab for the document carried.
     const existingWithoutResourceOwnership = existing
-      ? withoutResourceOwnership(existing)
+      ? withoutWork(withoutResourceOwnership(existing))
       : undefined;
     const merged = existing
       ? ({

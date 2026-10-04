@@ -1,39 +1,30 @@
 /**
- * What a follow says when the document it named is not there.
+ * The Editor's host for what a follow says: the shared outcome presenter inside
+ * an `EditorDialog`.
  *
- * A follow that finds nothing is the interesting case. Serial writers link
- * chapters before they write them, so the honest answer is an offer to write the
- * page now rather than an error: mockup 06 state A, and §5.5's "opening one
- * offers to create the document and link it". Nothing about the link changes when
- * the document appears — `[[Warden Ilsever]]` was always the link, and the
- * resolver simply starts finding it.
- *
- * A chrome surface like any other, and that part is load-bearing: this dialog can
- * arrive a quarter second after the click, by which time the writer may have
- * summoned the slash menu or the link form. Registering as a layer is what makes
- * the kernel replace that surface instead of leaving two of them claiming Escape
- * (law 4). `ProjectLinkRuntime` answers the follow; this only reads the answer.
+ * A chrome surface like any other, and that part is load-bearing: this dialog
+ * can arrive a quarter second after the click, by which time the writer may
+ * have summoned the slash menu or the link form. Registering as a layer is what
+ * makes the kernel replace that surface instead of leaving two of them claiming
+ * Escape (law 4). `ProjectLinkRuntime` answers the follow; this only reads the
+ * answer.
  */
 
-import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import type { Editor } from "@tiptap/core";
-import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
-import { useAccountResourceReplica } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { linkTargetHref } from "@/core/editor/links";
+import { FollowOutcomeContent, followOutcomeTitle } from "@/features/links";
 
 import { EditorDialog } from "../../chrome";
 import { useEditorScope } from "../../editor-scope";
+import { useEditorLinkDestination } from "./ProjectLinkRuntime";
 import { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 
 export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   const surface = useLinkSurface(editor);
   const { follow } = useLinkSurfaceState(editor);
+  const { projectId, workId } = useEditorScope();
+  const open = useEditorLinkDestination();
 
   // Mounted only while there is something to say. A dialog that sat closed in
   // every open editor would make every editor depend on the mutation behind its
@@ -41,144 +32,29 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   if (!surface || !follow) return null;
 
   return (
-    <FollowOutcome
+    <EditorDialog
       // One dialog per link: following a second link must not open wearing the
       // first one's failed-to-create notice. A checking answer that settles into
       // a missing one keeps the same dialog rather than flashing a new one.
       key={linkTargetHref(follow.target)}
       editor={editor}
-      outcome={follow}
-      onClose={() => surface.clearFollow()}
-      onRetry={() => surface.navigator?.({ target: follow.target, disposition: "current" })}
-    />
-  );
-}
-
-function FollowOutcome({
-  editor,
-  outcome,
-  onClose,
-  onRetry,
-}: {
-  editor: Editor;
-  outcome: LinkFollowOutcome;
-  onClose: () => void;
-  onRetry: () => void;
-}) {
-  const { projectId, workId } = useEditorScope();
-  const resources = useAccountResourceReplica();
-  const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  const [failedToCreate, setFailedToCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
-
-  const { target } = outcome;
-  const name = target.kind === "wikilink" ? target.name : null;
-  // A wikilink resolves by title, so creating the document means creating a file
-  // with exactly that name. A name that cannot be a filename cannot be created
-  // from here, and the dialog says so rather than offering a button that would
-  // fail.
-  const creatable = name !== null && validateContextEntryName(name).ok;
-
-  return (
-    <EditorDialog
-      editor={editor}
       id="link-follow-outcome"
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) surface.dismissFollow();
       }}
       showTitle
       className="sm:max-w-md"
-      title={
-        outcome.state === "checking" ? (
-          <Trans>Opening the link</Trans>
-        ) : outcome.state === "failed" ? (
-          <Trans>That link could not be checked</Trans>
-        ) : (
-          <Trans>Nothing carries that name yet</Trans>
-        )
-      }
+      title={followOutcomeTitle(follow)}
     >
-      <DialogDescription>
-        {outcome.state === "checking" ? (
-          <Trans>Looking for the document this link names.</Trans>
-        ) : outcome.state === "failed" ? (
-          <Trans>The project could not be reached. The link itself is fine.</Trans>
-        ) : creatable ? (
-          <Trans>Create it now and the link starts working. Nothing about the link changes.</Trans>
-        ) : (
-          <Trans>
-            No document answers to this name. A document can be created for it once the name works
-            as a filename.
-          </Trans>
-        )}
-      </DialogDescription>
-
-      <p className="rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
-        {linkTargetHref(target)}
-      </p>
-
-      {failedToCreate ? (
-        <p className="text-destructive text-xs" role="alert">
-          <Trans>The document could not be created. Try again.</Trans>
-        </p>
-      ) : null}
-
-      <DialogFooter>
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-          {outcome.state === "checking" ? t`Cancel` : t`Close`}
-        </Button>
-        {outcome.state === "failed" ? (
-          <Button type="button" size="sm" onClick={onRetry}>
-            {t`Try again`}
-          </Button>
-        ) : null}
-        {outcome.state === "missing" && creatable && name ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={creating}
-            onClick={async () => {
-              if (!projectId || creating) return;
-              setFailedToCreate(false);
-              setCreating(true);
-              let documentId: string | null = null;
-              try {
-                const reservation = await resources.reserveDocument(projectId);
-                if (reservation.content.kind !== "opened")
-                  throw new Error("Local document content is unavailable");
-                documentId = reservation.content.handle.documentId;
-                try {
-                  await resources.setLocation(projectId, reservation.key, {
-                    scheme: "manuscript",
-                    folderPath: "",
-                    name: `${name}.md`,
-                    workId: null,
-                  });
-                } finally {
-                  reservation.content.handle.release();
-                }
-              } catch {
-                documentId = null;
-              } finally {
-                setCreating(false);
-              }
-              if (!documentId) {
-                setFailedToCreate(true);
-                return;
-              }
-              onClose();
-              // Every dashed link to this name in every open document is about
-              // to be right, and nothing here has to say so: the project holds a
-              // document it did not, which is a new document catalog, and the
-              // resolution scope is registered against catalogs.
-              await openDocument({ documentId, workId });
-            }}
-          >
-            {creating ? t`Creating…` : t`Create the document`}
-          </Button>
-        ) : null}
-      </DialogFooter>
+      <FollowOutcomeContent
+        outcome={follow}
+        projectId={projectId}
+        workId={workId}
+        onClose={() => surface.dismissFollow()}
+        onRetry={() => surface.retryFollow()}
+        onOpen={(document) => open(document, "current")}
+      />
     </EditorDialog>
   );
 }

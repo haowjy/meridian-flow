@@ -371,17 +371,30 @@ if (!RUN) {
       });
       const uri = await seedUpload(DOCUMENT, "commit");
       const rollbackUri = await seedUpload(ROLLBACK_DOCUMENT, "rollback");
+      // The composer spells a reference as a standard Markdown link to its
+      // canonical URI; that occurrence text is what the model reads.
+      const spelled = (referenceUri: string) => `[Gate Map](${referenceUri})`;
       const admission = (threadId: typeof THREAD, documentId: string, referenceUri: string) => ({
         actorUserId: USER as never,
         threadId,
         submissionId: `occurrences-${documentId}`,
-        text: "Compare [[Gate Map]]\nwith [[Gate Map]]",
+        text: `Compare ${spelled(referenceUri)}\nwith ${spelled(referenceUri)}`,
         blocks: [
           { type: "text" as const, text: "Compare " },
-          { type: "reference" as const, text: "[[Gate Map]]", documentId, uri: referenceUri },
+          {
+            type: "reference" as const,
+            text: spelled(referenceUri),
+            documentId,
+            uri: referenceUri,
+          },
           { type: "image" as const, documentId, uri: referenceUri },
           { type: "text" as const, text: "\nwith " },
-          { type: "reference" as const, text: "[[Gate Map]]", documentId, uri: referenceUri },
+          {
+            type: "reference" as const,
+            text: spelled(referenceUri),
+            documentId,
+            uri: referenceUri,
+          },
           { type: "image" as const, documentId, uri: referenceUri },
         ],
         references: [
@@ -415,20 +428,20 @@ if (!RUN) {
       expect(persisted.map((block) => block.sequence)).toEqual([0, 1, 2, 3, 4, 5]);
       expect(persisted[1]).toMatchObject({
         blockType: "text",
-        modelText: "[[Gate Map]]",
+        modelText: spelled(uri),
         content: {
           type: "reference",
-          text: "[[Gate Map]]",
+          text: spelled(uri),
           documentId: DOCUMENT,
           uri,
         },
       });
       expect(persisted[4]).toMatchObject({
         blockType: "text",
-        modelText: "[[Gate Map]]",
+        modelText: spelled(uri),
         content: {
           type: "reference",
-          text: "[[Gate Map]]",
+          text: spelled(uri),
           documentId: DOCUMENT,
           uri,
         },
@@ -441,9 +454,11 @@ if (!RUN) {
       await expect(
         service.admit({
           ...request,
-          text: "Compare [[Moved Map]]\nwith [[Gate Map]]",
+          text: `Compare [Moved Map](${uri})\nwith ${spelled(uri)}`,
           blocks: request.blocks.map((block, index) =>
-            index === 1 && block.type === "reference" ? { ...block, text: "[[Moved Map]]" } : block,
+            index === 1 && block.type === "reference"
+              ? { ...block, text: `[Moved Map](${uri})` }
+              : block,
           ),
         }),
       ).rejects.toMatchObject({ code: "idempotency_conflict" });

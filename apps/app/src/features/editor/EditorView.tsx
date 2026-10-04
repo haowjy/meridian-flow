@@ -16,6 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
@@ -32,6 +33,7 @@ import {
 } from "react";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
+import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -41,6 +43,7 @@ import {
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useLinkableDocuments } from "@/features/links";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
@@ -53,7 +56,7 @@ import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
-import { ProjectLinkRuntimeWithIndex, useLinkableDocuments } from "./surfaces/link";
+import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
@@ -89,7 +92,7 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /**
    * The Work this editor is open in — the active editing context, not a review's
-   * ownership. It scopes what a `[[` menu offers, what the resolver is asked, and
+   * ownership. It scopes what the `@` menu offers, what the resolver is asked, and
    * where a followed link is looked for. Runtime scope: changing it never
    * remounts the editor.
    */
@@ -278,7 +281,7 @@ function ActiveSessionEditorView({
   effectiveEditableRef.current = effectiveEditable;
 
   // Which project and which Work this editor is open in. Everything that has to
-  // reach past the document — the `[[` candidates, the resolver, a followed
+  // reach past the document — the `@` candidates, the resolver, a followed
   // link — reads this one value, and none of it is a reason to remount.
   const scope = useMemo<EditorScope>(
     () => ({ projectId: projectId ?? null, workId }),
@@ -317,25 +320,66 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // Read when the `[[` menu opens, for the same reason as the slash catalog:
-  // the label resolves against whatever locale is active then, and the document
-  // list changes every time the writer creates or renames a file.
+  // The scope's document index: what this document's relative links resolve
+  // against, and which addresses already hold a document.
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  const { documents: wikilinkDocuments } = linkableDocuments;
-  const wikilinkCatalog = useCallback(() => {
-    if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
-    return { label: t`Link a document`, documents: wikilinkDocuments };
-  }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+  // This document's own address: what its relative links resolve against and
+  // what a link inserted into it is spelled relative to. Null until the tree
+  // carrying it arrives, or while it has no address yet, which spells full URIs.
+  const holderUri = useMemo(
+    () =>
+      linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
+      null,
+    [linkableDocuments, documentId],
+  );
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? workId : null,
     t`Reference a file`,
   );
-  const atReferenceCatalog = useCallback(
-    () => (identity.schemaType === "document" && effectiveEditable ? sharedReferenceCatalog : null),
-    [effectiveEditable, identity.schemaType, sharedReferenceCatalog],
+  // Where a link to a document nobody has written goes, unless a document is
+  // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
+  // names nothing (with folders, for a path link). Dashed until a follow's
+  // Create makes the document.
+  const occupied = useMemo(
+    () => new Set(linkableDocuments.documents.map((document) => document.uri)),
+    [linkableDocuments],
+  );
+  const linkAhead = useCallback(
+    (name: string, folders?: readonly string[]) => {
+      const uri = linkAheadAddress(holderUri, name, folders);
+      return uri && !occupied.has(uri) ? { uri } : null;
+    },
+    [holderUri, occupied],
+  );
+  // Read when the `@` menu opens.
+  const atReferenceCatalog = useCallback(() => {
+    if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
+      return null;
+    return { ...sharedReferenceCatalog, holderUri, linkAhead: (name: string) => linkAhead(name) };
+  }, [effectiveEditable, holderUri, identity.schemaType, linkAhead, sharedReferenceCatalog]);
+  // What a pasted `[[Name]]` may name: the Editor's link index (the same one
+  // its links resolve against and link-ahead checks), in Manuscript, KB, User,
+  // and this Work's Scratch, the areas a link names a document in (Uploads
+  // hold files, Unfiled holds untitled drafts).
+  const pasteTargets = useMemo(
+    () =>
+      linkableDocuments.documents.flatMap((document) => {
+        const parsed = parseContextUri(document.uri);
+        return parsed.ok && isCreatableLinkScheme(parsed.value.scheme) ? [document.uri] : [];
+      }),
+    [linkableDocuments],
+  );
+  // Read at paste time. An index still loading converts nothing, rather than
+  // turning every link dashed.
+  const wikilinkPasteCatalog = useCallback(
+    () =>
+      identity.schemaType === "document" && linkableDocuments.complete
+        ? { holderUri, targets: pasteTargets, linkAhead }
+        : null,
+    [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
   );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
@@ -357,8 +401,8 @@ function ActiveSessionEditorView({
     agentNames,
     placeholder: t`Start writing…`,
     slashCommandCatalog,
-    wikilinkCatalog,
     atReferenceCatalog,
+    wikilinkPasteCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });
@@ -470,9 +514,9 @@ function ActiveSessionEditorView({
         {/* Where an internal link goes, and where a picture's bytes go. Ports, not
           surfaces: each renders nothing, and what a writer sees from either lane
           mounts through the host above. */}
-        <ProjectLinkRuntimeWithIndex
+        <ProjectLinkRuntime
           editor={editor}
-          documentId={documentId}
+          baseUri={holderUri}
           index={linkableDocuments}
           active={active}
         />

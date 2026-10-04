@@ -1,4 +1,4 @@
-/** Public API for canonical Markdown/MDX codecs and asset/wikilink helpers. */
+/** Public API for canonical Markdown/MDX codecs and asset/link helpers. */
 
 export { createAssetPathResolver, unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 export type * from "./ast.js";
@@ -17,8 +17,7 @@ export {
   stringifyBlock,
 } from "./helpers.js";
 export { markdownCodec } from "./markdown/index.js";
-export { remarkWikiLink } from "./markdown/wikilink.js";
-export { formatWikilink, wikilinkTarget } from "./markdown/wikilink-target.js";
+export { formatMarkdownLink } from "./markdown/marks/link.js";
 export { mdxCodec } from "./mdx/index.js";
 export type {
   AssetPathResolver,
