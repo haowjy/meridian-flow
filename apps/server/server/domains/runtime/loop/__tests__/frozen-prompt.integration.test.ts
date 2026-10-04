@@ -817,6 +817,7 @@ describe("frozen prompt provider requests", () => {
         model: "gpt-4.1-mini",
         skills: { load: [], available: [] },
         namedTargets: [],
+        permission: "edit",
       },
       null,
     );

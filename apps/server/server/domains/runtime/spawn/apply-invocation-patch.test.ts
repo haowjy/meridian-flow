@@ -9,7 +9,13 @@ import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
-  return { model: "base-model", skills: { load: [], available: [] }, namedTargets: [], ...input };
+  return {
+    model: "base-model",
+    skills: { load: [], available: [] },
+    namedTargets: [],
+    permission: "edit",
+    ...input,
+  };
 }
 
 function dummyRef(slug: string): RetainedSkillReference {

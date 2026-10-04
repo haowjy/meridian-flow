@@ -282,6 +282,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         model: "fixture-model",
         skills: { load: [], available: [] },
         namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
+        permission: "edit" as const,
         tools: { read: "allow" as const },
       };
       const invocationOverlay = {
@@ -474,4 +475,5 @@ const bindingConfiguration = {
   model: "fixture-model",
   skills: { load: [], available: [] },
   namedTargets: [],
+  permission: "edit" as const,
 };

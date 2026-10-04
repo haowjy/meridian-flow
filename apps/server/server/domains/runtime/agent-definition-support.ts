@@ -10,6 +10,7 @@ const supported = new Set([
   "autocompact_pct",
   "effort",
   "mode",
+  "permission",
   "model-invocable",
   "user-invocable",
   "skills",

@@ -69,6 +69,17 @@ describe("Agent definition compiler", () => {
       "xhigh",
     );
   });
+  it("compiles permission as read or edit, leaves it unset by default and names the allowed values", () => {
+    expect(compile({ permission: "read" }).definition.metadata.permission).toBe("read");
+    // Resolution, not the compiler, applies the `edit` default (agent-configuration).
+    expect(compile({}).definition.metadata).not.toHaveProperty("permission");
+    expect(compileAgentDefinition({ body: "", meta: { permission: "write" } })).toEqual({
+      ok: false,
+      diagnostics: [
+        { field: "meta.permission", message: 'Expected "read" or "edit", got "write"' },
+      ],
+    });
+  });
   it("normalizes skill lists and aliases without introducing defaults", () => {
     expect(compile({}).definition.metadata).toEqual({});
     expect(compile({ skills: [], model_invocable: false }).definition.metadata).toEqual({

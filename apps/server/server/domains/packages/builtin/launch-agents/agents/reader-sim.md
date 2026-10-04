@@ -1,6 +1,7 @@
 ---
 name: Reader-sim
 description: Background helper that simulates reader experience and engagement.
+permission: read
 mode: subagent
 skills:
   available:

@@ -1,7 +1,8 @@
 /** Resolve conversation-owned execution values from retained source, never live package records. */
-import type {
-  ResolvedAgentConfiguration,
-  RetainedSkillReference,
+import {
+  DEFAULT_AGENT_PERMISSION,
+  type ResolvedAgentConfiguration,
+  type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { sha256 } from "./helpers.js";
@@ -138,5 +139,6 @@ export async function resolveAgentDependencies(input: {
       ? { "disallowed-tools": meta["disallowed-tools"] }
       : {}),
     ...(meta.effort !== undefined ? { effort: meta.effort } : {}),
+    permission: meta.permission ?? DEFAULT_AGENT_PERMISSION,
   };
 }

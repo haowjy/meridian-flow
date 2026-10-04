@@ -106,6 +106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             model: "removed-history-model",
             skills: { load: [], available: [] },
             namedTargets: [],
+            permission: "edit" as const,
           },
           null,
         );

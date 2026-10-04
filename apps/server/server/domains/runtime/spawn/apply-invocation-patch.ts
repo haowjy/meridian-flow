@@ -39,6 +39,8 @@ type PatchMerge<K extends keyof InvocationPatch> = (
 const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
   model: (value) => ({ model: value }),
   effort: (value) => ({ effort: value }),
+  // Lowering only; resolve-child-invocation refuses a raise before the merge.
+  permission: (value) => ({ permission: value }),
   // tools and disallowed-tools are coupled: a map `allow` lifts the name from the
   // baseline denial list. Each entry returns the full patchTools result so either
   // key present alone still applies the lift; patchTools is pure in
@@ -60,6 +62,7 @@ export async function applyInvocationPatch(
     model: baseline.model,
     skills: copySkills(baseline.skills),
     namedTargets: copyNamedTargets(baseline.namedTargets),
+    permission: baseline.permission,
   };
   if (baseline.tools !== undefined) result.tools = copyTools(baseline.tools);
   if (baseline["disallowed-tools"] !== undefined) {

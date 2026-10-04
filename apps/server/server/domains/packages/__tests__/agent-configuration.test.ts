@@ -25,6 +25,7 @@ describe("resolveAgentDependencies named targets", () => {
     await expect(resolveAgentDependencies({ revision: muse, store: revisions })).resolves.toEqual({
       skills: { load: [], available: [] },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
+      permission: "edit",
     });
   });
 
@@ -63,6 +64,7 @@ describe("resolveAgentDependencies execution fields", () => {
       {
         skills: { load: [], available: [] },
         namedTargets: [],
+        permission: "edit",
         tools: { edit: "deny" },
         "disallowed-tools": ["bash"],
         effort: "high",

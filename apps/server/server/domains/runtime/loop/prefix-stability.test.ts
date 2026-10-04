@@ -205,7 +205,12 @@ describe("prefix stability across a growing thread", () => {
     await agentRevisions.bindThread(
       thread0.id,
       null,
-      { model: MODEL_ID, skills: { load: [], available: [] }, namedTargets: [] },
+      {
+        model: MODEL_ID,
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
       null,
     );
 
@@ -468,7 +473,12 @@ describe("prefix stability across a growing thread", () => {
     await agentRevisions.bindThread(
       thread0.id,
       null,
-      { model: "no-caching-model", skills: { load: [], available: [] }, namedTargets: [] },
+      {
+        model: "no-caching-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
       null,
     );
     const thread = (await repos.threads.findById(thread0.id)) as Thread;

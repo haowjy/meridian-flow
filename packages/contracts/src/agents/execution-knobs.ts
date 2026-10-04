@@ -40,6 +40,19 @@ export const agentEffortAuthoringSchema = z
   .pipe(z.enum(AGENT_EFFORT_AUTHORING_VALUES))
   .transform((value) => (value === "max" ? ("xhigh" as const) : value));
 
+/**
+ * What an agent may change (file-access §8). `read` agents still edit their own
+ * Work's `scratch://`; delegation applies the minimum over the agent chain.
+ */
+export const AGENT_PERMISSION_VALUES = ["read", "edit"] as const;
+export type AgentPermission = (typeof AGENT_PERMISSION_VALUES)[number];
+/** An unset permission resolves to this. */
+export const DEFAULT_AGENT_PERMISSION: AgentPermission = "edit";
+export const agentPermissionSchema = z.enum(AGENT_PERMISSION_VALUES, {
+  error: (issue) =>
+    `Expected "read" or "edit", got ${JSON.stringify((issue as { input?: unknown }).input)}`,
+});
+
 export const TOOL_POLICIES = ["allow", "deny"] as const;
 export type ToolPolicy = (typeof TOOL_POLICIES)[number];
 export const toolPolicySchema = z.enum(TOOL_POLICIES);
@@ -220,6 +233,7 @@ export const resolvedAgentConfigurationSchema = z.object({
   tools: resolvedToolsSchema.optional(),
   "disallowed-tools": z.array(z.string()).optional(),
   effort: agentEffortSchema.optional(),
+  permission: agentPermissionSchema,
 });
 export type ResolvedAgentConfiguration = z.infer<typeof resolvedAgentConfigurationSchema>;
 
@@ -228,6 +242,7 @@ export const invocationPatchSchema = z
   .object({
     model: z.string().optional(),
     effort: agentEffortSchema.optional(),
+    permission: agentPermissionSchema.optional(),
     tools: toolRepresentationSchema.optional(),
     "disallowed-tools": z.array(toolReferenceSchema).optional(),
     subagents: z.array(z.string()).optional(),

@@ -11,7 +11,13 @@ import { agentGatewayMetaToGenerateParams } from "../tools/agent-thread-context.
 import { applyInvocationPatch } from "./apply-invocation-patch.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
-  return { model: "base-model", skills: { load: [], available: [] }, namedTargets: [], ...input };
+  return {
+    model: "base-model",
+    skills: { load: [], available: [] },
+    namedTargets: [],
+    permission: "edit",
+    ...input,
+  };
 }
 
 const noSkills = { readSource: async () => undefined };

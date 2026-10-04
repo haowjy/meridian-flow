@@ -207,6 +207,7 @@ async function fixture(
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
+    permission: "edit" as const,
     tools: { edit: "deny" } as const,
     effort: "high" as const,
   };
@@ -583,6 +584,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       model: "parent-model",
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
+      permission: "edit" as const,
       tools: { edit: "deny" } as const,
       effort: "high" as const,
     };
@@ -784,6 +786,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [],
+        permission: "edit" as const,
         tools: { edit: "deny" },
       },
       null,
@@ -835,6 +838,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
       writerParent.id,
       null,
       {
+        permission: "edit" as const,
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],

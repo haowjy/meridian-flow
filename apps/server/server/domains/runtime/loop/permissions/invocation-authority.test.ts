@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import { validateInvocationAuthority } from "./invocation-authority.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
-  return { model: "m", skills: { load: [], available: [] }, namedTargets: [], ...input };
+  return {
+    model: "m",
+    skills: { load: [], available: [] },
+    namedTargets: [],
+    permission: "edit",
+    ...input,
+  };
 }
 
 const WRITER_MAP = { read: "allow", edit: "allow", ask_user: "allow" } as const;
