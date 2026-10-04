@@ -33,7 +33,6 @@ export {
   invalidArgumentsResult,
   renderInvalidArguments,
 } from "./invalid-arguments.js";
-export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,
   SpawnInputSchema,

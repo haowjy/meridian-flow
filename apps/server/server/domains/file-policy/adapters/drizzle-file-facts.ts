@@ -3,6 +3,8 @@
  * `documents → folders → context_sources → (project | work → project)` with
  * every lifecycle on the way. Ancestors come from walking `folders.parent_id`
  * (D56); a list query over a folder's subtree recurses the same way.
+ * Skill facts are the binding lookup, passed in; without it the thread names
+ * no skills.
  */
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -41,7 +43,10 @@ type WorkRow = {
 
 type FolderRow = { id: FolderId; name: string; deleted: boolean };
 
-export function createDrizzleFileFacts(db: Database): FileFactsPort {
+export function createDrizzleFileFacts(
+  db: Database,
+  options: Pick<Partial<FileFactsPort>, "skillFacts"> = {},
+): FileFactsPort {
   async function load(request: FileFactsRequest): Promise<FileFacts | null> {
     const target = request.target;
     const base =
@@ -60,6 +65,7 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
 
   return {
     load,
+    skillFacts: options.skillFacts ?? (async () => ({ load: [], available: [] })),
     async loadList(documentIds, draftWorkId) {
       const ids = [...new Set(documentIds)].filter(isUuid);
       const out = new Map<DocumentId, FileFacts>();

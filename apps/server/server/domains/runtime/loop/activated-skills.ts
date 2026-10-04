@@ -30,8 +30,8 @@ export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
-  /** Files the model can open with `skill`; empty when it can't load this skill. */
-  resources?: readonly string[];
+  /** Whether the model can read the skill's files under `skills://` (D52). */
+  readable: boolean;
 }
 
 /** Metadata stamped on the hidden turn carrying activated skill bodies. */
@@ -66,27 +66,16 @@ export function formatInvokedSkills(skills: readonly ActivatedSkillBody[]): stri
 
 function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
+  const identity = skill.readable ? skillFileUri(skill.slug) : skill.slug;
   return [
-    `skill invoked: ${skill.slug}`,
+    `skill invoked: ${identity}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
-    withSkillResources(skill),
+    skill.body,
   ].join("\n");
 }
 
-/** A skill body followed by one copyable `skill` call per resource, the form every body load shares. */
-export function withSkillResources(skill: {
-  slug: string;
-  body: string;
-  resources?: readonly string[];
-}): string {
-  if (!skill.resources?.length) return skill.body;
-  return [
-    skill.body.trimEnd(),
-    "",
-    "Resources:",
-    ...skill.resources.map(
-      (resource) => `skill(${JSON.stringify({ slug: skill.slug, resource })})`,
-    ),
-  ].join("\n");
+/** A skill's `SKILL.md` as the model reads it. */
+export function skillFileUri(slug: string): string {
+  return `skills://${slug}/SKILL.md`;
 }

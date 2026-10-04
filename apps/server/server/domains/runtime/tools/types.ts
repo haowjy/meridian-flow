@@ -257,7 +257,7 @@ export interface ToolRegistration {
    * Provenance of the registration, used for collision policy. Skill
    * resolution must never bind a package skill slug to a non-skill tool.
    */
-  source: "core" | "spawn" | "skill";
+  source: "core" | "spawn";
   definition: FunctionTool;
   /**
    * The tool's one input contract. `definition.inputSchema` is its
