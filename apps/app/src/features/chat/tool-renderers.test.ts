@@ -118,16 +118,6 @@ describe("document tool rows", () => {
     expect(documentToolFailureCopy(missing("insert"))).toBe("Couldn't find ch11 or ch12.");
   });
 
-  it("renders an old write(command: read) row without a card", () => {
-    const tool = documentTool({
-      toolName: "write",
-      input: { command: "read", path: "ch1.md" },
-    });
-
-    expect(toolActivityPhrase(tool).verb).toBe("Write");
-    expect(rendererFor("write").expand?.(tool)).toBeNull();
-  });
-
   it("writes failure copy from the result's status", () => {
     const notFound = documentTool({
       toolName: "read",

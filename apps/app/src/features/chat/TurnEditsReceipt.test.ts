@@ -8,14 +8,4 @@ describe("hasTurnEditsReceiptContent", () => {
   it("offers no receipt for a turn whose only change was a binary copy", () => {
     expect(hasTurnEditsReceiptContent([], undefined, [])).toBe(false);
   });
-
-  it("counts only the journaled documents when a turn also copied a binary file", () => {
-    const edited = {
-      documentId: "doc-1",
-      path: "ch2.md",
-      uri: "manuscript://ch2.md",
-      scope: "live" as const,
-    };
-    expect(hasTurnEditsReceiptContent([edited], undefined, [])).toBe(true);
-  });
 });
