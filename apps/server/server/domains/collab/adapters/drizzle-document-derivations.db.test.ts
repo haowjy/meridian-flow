@@ -8,6 +8,7 @@ import {
   documentLinks,
   documents,
   documentYjsCheckpoints,
+  documentYjsUpdates,
   folders,
   projects,
   users,
@@ -23,6 +24,7 @@ import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import { replaceDocumentAuthorityHeadGeneration } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
+import { createDrizzleDocumentLinkRewrite } from "./drizzle-document-link-rewrite.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -179,6 +181,66 @@ describe("durable document derivations", () => {
     await service.derive(documentId);
     expect(await links()).toEqual([]);
     expect(await projection()).toBe("old new");
+    doc.destroy();
+  });
+
+  it("rolls back rejected certification and failed consumption without publishing, and skips a null claim", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+    const text = new Y.XmlText();
+    paragraph.push([text]);
+    text.insert(0, "next", { link: { href: "next.md" } });
+    await append(doc, "before");
+    await service.derive(documentId);
+    const beforeRows = await db.select().from(documentYjsUpdates);
+    const beforeLinks = await links();
+    const beforeWatermarks = await db.select().from(documentDerivations);
+    let publications = 0;
+    let consumes = 0;
+    const rewrite = createDrizzleDocumentLinkRewrite({
+      db,
+      resolveUri: (tx, id) =>
+        resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+      serializer: { serializeDocument: async () => "rewritten" },
+      publish: () => {
+        publications++;
+      },
+    });
+    const claimed = {
+      substitutions: new Map([
+        ["next.md", { href: "renamed.md", oldFilename: "next.md", newFilename: "renamed.md" }],
+      ]),
+      mover: { type: "user" as const, actorUserId: userId },
+      consume: async () => {
+        consumes++;
+        throw new Error("consume failed");
+      },
+    };
+    await expect(rewrite({ documentId, claim: async () => claimed })).rejects.toThrow(
+      "consume failed",
+    );
+    expect(consumes).toBe(1);
+    // Force the real CAS to reject using a location change inside the claim transaction.
+    await expect(
+      rewrite({
+        documentId,
+        claim: async () => {
+          await currentDrizzleDb(db)
+            .update(documents)
+            .set({ locationVersion: 1n })
+            .where(eq(documents.id, documentId));
+          return claimed;
+        },
+      }),
+    ).rejects.toThrow("certification rejected");
+    expect(consumes).toBe(1);
+    await rewrite({ documentId, claim: async () => null });
+    expect(await db.select().from(documentYjsUpdates)).toEqual(beforeRows);
+    expect(await links()).toEqual(beforeLinks);
+    expect(await db.select().from(documentDerivations)).toEqual(beforeWatermarks);
+    expect(await projection()).toBe("before");
+    expect(publications).toBe(0);
     doc.destroy();
   });
 

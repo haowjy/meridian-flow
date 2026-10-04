@@ -64,7 +64,7 @@ type JournalDb = Pick<
   "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction" | "execute"
 >;
 
-type OriginType = "agent" | "human" | "system";
+type OriginType = "agent" | "human" | "system" | "link_update";
 type UpdateMetaMode = "journal" | "latest";
 
 export type FacadeCheckpointRecord = {
@@ -147,6 +147,13 @@ function parseOrigin(meta: UpdateMeta): {
           : {}),
       }
     : {};
+  if (meta.origin === "link-update") {
+    return {
+      originType: "link_update",
+      actorTurnId: asOptionalTurnId(meta.actorTurnId),
+      ...(meta.actorUserId ? { actorUserId: asUserId(meta.actorUserId) } : {}),
+    };
+  }
   if (meta.origin === "system") {
     return { originType: "system", actorTurnId: asOptionalTurnId(meta.actorTurnId), ...reversal };
   }
@@ -182,6 +189,14 @@ function metaFromUpdateRow(
       : row.reversalActorType === "agent"
         ? ({ type: "agent" } as const)
         : undefined;
+  if (row.originType === "link_update") {
+    return {
+      origin: "link-update",
+      seq: row.id,
+      ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+      ...(row.actorUserId ? { actorUserId: row.actorUserId } : {}),
+    };
+  }
   if (row.originType === "reconcile") {
     return {
       origin: "system:reconcile",

@@ -133,6 +133,23 @@ soft-deleted staged-push holders without a live URI) certify with no link rows.
 Changing the extractor must bump its version to invalidate older output; never
 add a second post-write publisher.
 
+`rewriteDocumentLinks({ documentId, claim })` maintains links under one mutation
+lock and a holder-row `FOR NO KEY UPDATE` lock. The caller's claim runs after
+capture in the ambient transaction, owns its redirect locks, and returns
+substitutions, mover attribution, and consumption. The same transaction admits
+fresh writer-protected words, certifies through the shared derivation helpers at
+the post-append admission sequence, then consumes. A null claim writes nothing;
+rejection or consumption failure rolls back everything. Only after commit does
+the update reach an already-loaded room and schedule the ordinary live-to-draft
+pull. This operation neither opens a room under database locks nor owns redirect
+storage or lifecycle eligibility (the caller checks those).
+
+`link-update` journal metadata persists as `link_update` with the mover's user
+or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
+words have writer-protected birth provenance. Maintenance is excluded from both
+live overlap dependencies and reversal lineage blockers, so rewriting a link
+inside an AI paragraph does not prevent the paragraph's Undo.
+
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
 limits derivation work, not query scan work: an entirely current corpus is
