@@ -35,11 +35,20 @@ export async function recordMoveRedirects(
   const moved = previous.filter((entry) => entry.kind === "file");
   if (!moved.length) return { links: 0, documents: 0 };
   const ids = moved.map((entry) => entry.id).sort();
+  const mutatedIds = [
+    ...new Set([
+      ...ids,
+      ...(input.expectedTarget.state === "occupied" && input.expectedTarget.token.kind === "file"
+        ? [input.expectedTarget.token.nodeId]
+        : []),
+    ]),
+  ].sort();
+  // Lock every document mutated (including overwrite victims) before redirects.
   // NO KEY UPDATE is compatible with the journal's holder FK KEY SHARE.
   await tx
     .select({ id: documents.id })
     .from(documents)
-    .where(inArray(documents.id, ids))
+    .where(inArray(documents.id, mutatedIds))
     .orderBy(documents.id)
     .for("no key update");
   await tx
@@ -236,8 +245,17 @@ export async function recordMoveRedirects(
       })
       .onConflictDoNothing()
       .returning({ id: linkRedirects.sourceDocumentId });
+    const holderProjectId = relocated.has(row.sourceDocumentId)
+      ? (destination.projectId ?? destination.workProjectId)
+      : scope.projectId;
+    const targetProjectId =
+      targetId && relocated.has(targetId)
+        ? (destination.projectId ?? destination.workProjectId)
+        : row.targetProjectId;
+    const representable = targetUri.startsWith("user://") || targetProjectId === holderProjectId;
     if (
       inserted.length &&
+      representable &&
       scope.kind !== "manifest" &&
       !scope.documentDeletedAt &&
       !scope.archivedAt &&

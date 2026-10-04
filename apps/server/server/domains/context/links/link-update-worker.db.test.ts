@@ -17,9 +17,12 @@ import {
   composeAppServices,
   createProductionAppPorts,
 } from "../../../lib/compose.js";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../../observability/index.js";
+import { DrizzleContextTreeMutationStore } from "../adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { ContextPort } from "../index.js";
+import { createLinkUpdateWorker } from "./link-update-worker.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (postgres)", () => {
@@ -115,6 +118,188 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
       "[the-gate.md](manuscript://the-gate.md) and [enter the story](manuscript://the-gate.md).\n",
     );
     expect(await db.select().from(linkRedirects)).toEqual([]);
+  });
+  it("defers a whole renumber batch until its deleted target is restored", async () => {
+    const a = await port.createTrackedDocument("manuscript://ch6.md", "A.");
+    expect(a.ok).toBe(true);
+    if (!a.ok) throw new Error("Missing A");
+    await port.createTrackedDocument("manuscript://ch5.md", "B.");
+    const holder = await port.createTrackedDocument(
+      "scratch://@draft/holder.md",
+      "[A](manuscript://ch6.md) and [B](manuscript://ch5.md).",
+    );
+    if (!holder.ok) throw new Error("Missing holder");
+    const before = await projection(holder.value.documentId);
+    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
+    expect(await port.move("manuscript://ch6.md", "manuscript://ch7.md")).toMatchObject({
+      ok: true,
+    });
+    await app.linkUpdates.sweep();
+    expect(await port.move("manuscript://ch5.md", "manuscript://ch6.md")).toMatchObject({
+      ok: true,
+    });
+    await app.linkUpdates.sweep();
+    await db
+      .update(documents)
+      .set({ deletedAt: new Date() })
+      .where(eq(documents.id, a.value.documentId));
+    await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
+    expect(await app.linkUpdates.sweep()).toBe(0);
+    expect(await projection(holder.value.documentId)).toBe(before);
+    const pending = await db.select().from(linkRedirects);
+    expect(pending).toHaveLength(2);
+    expect(pending.every((row) => row.attempts === 0 && row.retryAfter === null)).toBe(true);
+    await db.update(documents).set({ deletedAt: null }).where(eq(documents.id, a.value.documentId));
+    expect(await app.linkUpdates.sweep()).toBe(1);
+    expect(await projection(holder.value.documentId)).toBe(
+      "[A](manuscript://ch7.md) and [B](manuscript://ch6.md).\n",
+    );
+    expect(await db.select().from(linkRedirects)).toEqual([]);
+  });
+  it("leaves another project's personal link dashed instead of naming its same-named occupant", async () => {
+    const projectB = randomUUID();
+    await db.insert(projects).values({ id: projectB, userId, name: "Other", slug: "other" });
+    await db
+      .insert(works)
+      .values({ projectId: projectB, createdByUserId: userId, name: "No Work", isNoWork: true });
+    const other = app.contextPorts.forProject(projectB, userId, new Map());
+    const target = await port.createTrackedDocument("user://cast.md", "Personal cast.");
+    expect(target.ok).toBe(true);
+    const localHolder = await port.createTrackedDocument(
+      "manuscript://holder.md",
+      "[cast](user://cast.md).",
+    );
+    if (!localHolder.ok) throw new Error("Missing local holder");
+    expect(
+      await other.createTrackedDocument("manuscript://cast.md", "Unrelated cast."),
+    ).toMatchObject({ ok: true });
+    const holder = await other.createTrackedDocument(
+      "manuscript://holder.md",
+      "[cast](user://cast.md).",
+    );
+    if (!holder.ok) throw new Error("Missing holder");
+    const before = await projection(holder.value.documentId);
+    if (!target.ok) throw new Error("Missing personal target");
+    const [personalRow] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, target.value.documentId));
+    const [localRow] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, localHolder.value.documentId));
+    if (!personalRow || !localRow) throw new Error("Missing source rows");
+    const tree = new DrizzleContextTreeMutationStore(db);
+    const source = await tree.inspect(personalRow.contextSourceId, "cast.md");
+    if (source?.kind !== "file") throw new Error("Missing personal source");
+    // Exercise the canonical move commit directly: the existing aggregate's
+    // destination membership check rejects personal-to-project port moves.
+    const moved = await tree.commitMove({
+      source,
+      destinationSourceId: localRow.contextSourceId,
+      destinationPath: "cast.md",
+      expectedTarget: { state: "absent" },
+      overwrite: false,
+      destinationFiletype: "markdown",
+      graduateProvisionalName: false,
+      mover: { userId },
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved.error));
+    expect(moved).toMatchObject({
+      ok: true,
+      value: { linkUpdate: { links: 1, documents: 1 } },
+    });
+    await app.linkUpdates.sweep();
+    expect(await projection(localHolder.value.documentId)).toBe("[cast](manuscript://cast.md).\n");
+    expect(await projection(holder.value.documentId)).toBe(before);
+    expect(await db.select().from(linkRedirects)).toEqual([]);
+    expect(
+      await app.documentLinks.resolve({
+        projectId: projectB,
+        userId,
+        holder: { documentId: holder.value.documentId, href: "user://cast.md" },
+        target: { kind: "scheme", uri: "user://cast.md" },
+      }),
+    ).toBeNull();
+  });
+  it("serializes an overwrite with a worker holding the victim of a committed redirect", async () => {
+    await app.linkUpdates.stop();
+    await port.createTrackedDocument("manuscript://a0.md", "A.");
+    const holder = await port.createTrackedDocument("manuscript://b.md", "[A](a0.md).");
+    if (!holder.ok) throw new Error("Missing B");
+    expect(await port.move("manuscript://a0.md", "manuscript://a.md")).toMatchObject({ ok: true });
+    expect(await db.select().from(linkRedirects)).toHaveLength(1);
+    let ready!: (pid: number) => void;
+    const holding = new Promise<number>((resolve) => {
+      ready = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const worker = createLinkUpdateWorker({
+      db,
+      eventSink: createNoopEventSink(),
+      rewriteDocumentLinks: (input) =>
+        app.documentSync.rewriteDocumentLinks({
+          ...input,
+          claim: async (cut) => {
+            const rows = await currentDrizzleDb(db).execute(sql`select pg_backend_pid() as pid`);
+            ready(Number(rows[0]?.pid));
+            await gate;
+            return input.claim(cut);
+          },
+        }),
+    });
+    const tree = new DrizzleContextTreeMutationStore(db);
+    const [sourceRow] = await db
+      .select()
+      .from(contextSources)
+      .where(eq(contextSources.projectId, projectId));
+    if (!sourceRow) throw new Error("Missing source");
+    const source = await tree.inspect(sourceRow.id, "a.md");
+    const victim = await tree.inspect(sourceRow.id, "b.md");
+    if (source?.kind !== "file" || victim?.kind !== "file") throw new Error("Missing move entries");
+    const sweeping = worker.sweep();
+    const pid = await holding;
+    const moving = tree.commitMove({
+      source,
+      destinationSourceId: sourceRow.id,
+      destinationPath: "b.md",
+      expectedTarget: { state: "occupied", token: victim },
+      overwrite: true,
+      destinationFiletype: "markdown",
+      graduateProvisionalName: false,
+      mover: { userId },
+    });
+    // Observe a real lock overlap, not a timing assumption. Before the fix the
+    // move owns the redirect while waiting on B, closing a cycle on release.
+    try {
+      await expect
+        .poll(async () => {
+          const rows = await db.execute(sql`select exists (
+          select 1 from pg_stat_activity where ${pid} = any(pg_blocking_pids(pid))
+        ) as blocked`);
+          return rows[0]?.blocked;
+        })
+        .toBe(true);
+    } finally {
+      release();
+    }
+    try {
+      expect(await moving).toMatchObject({ ok: true });
+      expect(await sweeping).toBe(1);
+      // The move captures a fresh a.md redirect after the worker consumed a0.md.
+      // Its holder is now deleted, so that new redirect legitimately stays pending.
+      expect(await db.select().from(linkRedirects)).toMatchObject([{ href: "a.md", attempts: 0 }]);
+      const [deleted] = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, holder.value.documentId));
+      expect(deleted?.deletedAt).not.toBeNull();
+    } finally {
+      await worker.stop();
+    }
   });
   it("backs off a failing rewrite without losing content or redirects, then succeeds", async () => {
     expect(await port.createTrackedDocument("manuscript://prologue.md", "Prologue.")).toMatchObject(
