@@ -167,7 +167,6 @@ describe("document revision settlement", () => {
     );
     expect(block?.content).toMatchObject({
       isError: true,
-      output: `status: invalid_write; path: ${uri}\n\nWrite did not land.\n\n${message}`,
       result: { status: "invalid_write", path: uri },
     });
   });

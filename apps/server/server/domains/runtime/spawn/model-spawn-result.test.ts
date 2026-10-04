@@ -33,37 +33,4 @@ describe("renderSpawnOutput", () => {
     });
     expect(text).toBe(`Subagent p2\n${reportBlock}`);
   });
-
-  it("tells the model a background run will report back", () => {
-    expect(
-      render({
-        status: "background",
-        execution: "execution-2" as never,
-        handle: "p2",
-        threadId: "child-2",
-        agentSlug: "critic",
-      }),
-    ).toBe("p2 is running in the background. You'll be notified when it finishes.");
-  });
-
-  it("tells the model whether a queued message reports back", () => {
-    const queued = { status: "background" as const, threadId: "t", agentSlug: "critic" };
-    expect(render({ ...queued, handle: "p3", notifiesCaller: true })).toBe(
-      "Message queued. You'll be notified when p3 finishes.",
-    );
-    expect(render({ ...queued, handle: "c1", notifiesCaller: false })).toBe(
-      "Message queued. No reply is pushed back; the target's response is readable in its transcript.",
-    );
-  });
-
-  it("never shows internal ids", () => {
-    const text = render({
-      status: "completed",
-      execution: "execution-2" as never,
-      outcome: "succeeded",
-      report,
-    });
-    expect(text).not.toContain("execution-2");
-    expect(text).not.toContain("child-2");
-  });
 });

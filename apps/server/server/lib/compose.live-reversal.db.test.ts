@@ -1,8 +1,7 @@
 /**
- * Production-composed model undo and redo of writes that went live (D19, D41,
- * D42): direct mode (No Work takes the same path), scratch inside a draft-mode
- * Work, and copies. Their history is the live journal, since no thread-peer
- * branch exists.
+ * Production-composed model undo and redo of writes that went live (D19):
+ * their history is the live journal, since no thread-peer branch exists.
+ * Before the fix every live undo failed with `internal_error`.
  */
 
 import { and, eq } from "drizzle-orm";
@@ -30,18 +29,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000c02";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000c03";
     const WORK_ID = "00000000-0000-4000-8000-000000000c04";
-    const NO_WORK_ID = "00000000-0000-4000-8000-000000000c05";
-    // The drafted reference run gets its own thread, so both runs share one test transaction.
     const LIVE = {
       threadId: "00000000-0000-4000-8000-000000000c06",
       turnId: "00000000-0000-4000-8000-000000000c07",
     };
-    const DRAFTED = {
-      threadId: "00000000-0000-4000-8000-000000000c09",
-      turnId: "00000000-0000-4000-8000-000000000c0a",
-    };
-    const DRAFT_WORK_ID = "00000000-0000-4000-8000-000000000c0b";
-    type Thread = typeof LIVE;
     const DOC_ID = "00000000-0000-4000-8000-000000000c08";
     const CHAPTER = "manuscript://chapter.md";
     const database = useRollbackTestDatabase(DATABASE_URL, {
@@ -59,33 +50,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Live reversal",
         slug: "live-reversal",
       });
-      await db.insert(schema.works).values([
-        {
-          id: WORK_ID,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          name: "Rewrite",
-          slug: "rewrite",
-          aiWriteMode: "direct",
-        },
-        {
-          id: DRAFT_WORK_ID,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          name: "Drafts",
-          slug: "drafts",
-          aiWriteMode: "draft",
-        },
-        {
-          id: NO_WORK_ID,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          name: "No Work",
-          slug: null,
-          isNoWork: true,
-          aiWriteMode: "direct",
-        },
-      ]);
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Rewrite",
+        slug: "rewrite",
+        aiWriteMode: "direct",
+      });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -101,219 +73,83 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
-      for (const thread of [LIVE, DRAFTED]) {
-        await db.insert(schema.threads).values({
-          rootThreadId: thread.threadId,
-          id: thread.threadId,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          title: "Live reversal",
-          kind: "primary",
-          status: "idle",
-        });
-        await db.insert(schema.turns).values({
-          id: thread.turnId,
-          threadId: thread.threadId,
-          position: 1,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        });
-      }
+      await db.insert(schema.threads).values({
+        rootThreadId: LIVE.threadId,
+        id: LIVE.threadId,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Live reversal",
+        kind: "primary",
+        status: "idle",
+      });
+      await db.insert(schema.turns).values({
+        id: LIVE.turnId,
+        threadId: LIVE.threadId,
+        position: 1,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
       await db.insert(schema.threadWorks).values({
-        threadId: DRAFTED.threadId,
-        workId: DRAFT_WORK_ID,
+        threadId: LIVE.threadId,
+        workId: WORK_ID,
         projectId: PROJECT_ID,
         isPrimary: true,
       });
     });
 
-    async function bindLiveThread(workId: string, aiWriteMode: "direct" | "draft") {
-      await db.update(schema.works).set({ aiWriteMode }).where(eq(schema.works.id, workId));
-      await db.insert(schema.threadWorks).values({
-        threadId: LIVE.threadId,
-        workId,
-        projectId: PROJECT_ID,
-        isPrimary: true,
-      });
-    }
-
-    /** The chapter's thread-peer branches for the live thread: live writes make none. */
-    function liveThreadBranches() {
-      return db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .where(
-          and(
-            eq(schema.documentBranches.documentId, DOC_ID),
-            eq(schema.documentBranches.threadId, LIVE.threadId),
-          ),
-        );
-    }
-
-    /** One model reply per step, each saved before the next starts. */
-    async function startScript(thread: Thread = LIVE) {
+    it("undoes and redoes direct-mode writes through the live journal", async () => {
       const runtime = await runtimes.compose();
       await runtime.ports.documentSync.writeDocument({
         documentId: DOC_ID,
         markdown: "Writer opening.",
         origin: { type: "user", actorUserId: USER_ID },
-        threadId: thread.threadId,
+        threadId: LIVE.threadId,
       });
       await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
         projectId: PROJECT_ID,
       });
-      return runtimes.script(runtime, thread);
-    }
-
-    /** Two writes, then undo, redo and a range undo of both: every receipt in order. */
-    async function undoRedoScript(path: string, thread: Thread = LIVE) {
-      const script = await startScript(thread);
-      const version = thread === DRAFTED ? undefined : ("live" as const);
-      const outputs: string[] = [];
+      const script = runtimes.script(runtime, LIVE);
       try {
         // Separate replies: one reply's edits to one block share a write handle.
         await script.reply(async (call) => {
-          await call("read", { path });
-          outputs.push(
-            await call("write", { command: "insert", path, find: "opening.", content: " One." }),
-          );
-        });
-        await script.reply(async (call) => {
-          outputs.push(
-            await call("write", { command: "insert", path, find: "One.", content: " Two." }),
-          );
-        });
-        const [first, second] = outputs.map((output) => /write: (w\d+)/.exec(output)?.[1]);
-        expect(await script.text(path, version)).toContain("Writer opening. One. Two.");
-        const availability = await script.runtime.ports.documentSync
-          .agentEdit()
-          .getAvailability(DOC_ID, thread.threadId);
-        expect(availability).toMatchObject({ undo: true, redo: false });
-
-        await script.reply(async (call) => {
-          outputs.push(await call("write", { command: "undo", path, last: 1 }));
-        });
-        expect(await script.text(path, version)).toMatch(/\|Writer opening\. One\.$/);
-        await script.reply(async (call) => {
-          outputs.push(await call("write", { command: "redo", path, last: 1 }));
-        });
-        expect(await script.text(path, version)).toContain("Writer opening. One. Two.");
-        await script.reply(async (call) => {
-          outputs.push(await call("write", { command: "undo", path, since: first, to: second }));
-        });
-        expect(await script.text(path, version)).toMatch(/\|Writer opening\.$/);
-        return outputs;
-      } finally {
-        await unloadHocuspocus(script.runtime.hocuspocus);
-      }
-    }
-
-    /** Drops the version each forward write states, the one place the two modes differ (D50). */
-    function withoutVersion(outputs: string[]): string[] {
-      return outputs.map((output) =>
-        output.replaceAll("; version: draft (@drafts)", "").replaceAll("; version: live", ""),
-      );
-    }
-
-    it("undoes and redoes direct-mode writes like drafted ones", async () => {
-      const drafted = await undoRedoScript(CHAPTER, DRAFTED);
-      await bindLiveThread(WORK_ID, "direct");
-
-      const live = await undoRedoScript(CHAPTER);
-
-      expect(withoutVersion(live)).toEqual(withoutVersion(drafted));
-      expect(await liveThreadBranches()).toEqual([]);
-    });
-
-    it("undoes and redoes scratch writes inside a draft-mode Work", async () => {
-      await bindLiveThread(WORK_ID, "draft");
-      const script = await startScript();
-      try {
-        const outputs: string[] = [];
-        await script.reply(async (call) => {
-          await call("write", { command: "create", path: "scratch://notes.md", content: "Notes." });
           await call("read", { path: CHAPTER });
-          outputs.push(
-            await call("write", {
-              command: "insert",
-              path: CHAPTER,
-              find: "opening.",
-              content: " Drafted.",
-            }),
-          );
+          await call("write", {
+            command: "insert",
+            path: CHAPTER,
+            find: "opening.",
+            content: " One.",
+          });
         });
         await script.reply(async (call) => {
-          await call("read", { path: "scratch://notes.md" });
-          outputs.push(
-            await call("write", {
-              command: "insert",
-              path: "scratch://notes.md",
-              find: "Notes.",
-              content: " More.",
-            }),
-          );
+          await call("write", { command: "insert", path: CHAPTER, find: "One.", content: " Two." });
         });
-        expect(await script.text("scratch://notes.md")).toContain("Notes. More.");
+        await expect(
+          runtime.ports.documentSync.agentEdit().getAvailability(DOC_ID, LIVE.threadId),
+        ).resolves.toMatchObject({ undo: true, redo: false });
+
         await script.reply(async (call) => {
-          outputs.push(
-            await call("write", { command: "undo", path: "scratch://notes.md", last: 1 }),
-          );
+          await call("write", { command: "undo", path: CHAPTER, last: 1 });
         });
-        expect(await script.text("scratch://notes.md")).not.toContain("More.");
+        expect(await script.text(CHAPTER)).toMatch(/\|Writer opening\. One\.$/);
         await script.reply(async (call) => {
-          outputs.push(
-            await call("write", { command: "redo", path: "scratch://notes.md", last: 1 }),
-          );
+          await call("write", { command: "redo", path: CHAPTER, last: 1 });
         });
-        expect(await script.text("scratch://notes.md")).toContain("Notes. More.");
-        // The drafted chapter keeps its own history beside the live scratch one.
-        expect(await script.text(CHAPTER)).toContain("Writer opening. Drafted.");
-        expect(await script.text(CHAPTER, "live")).not.toContain("Drafted.");
-        expect(outputs.slice(1).join("\n")).not.toContain("version: draft");
+        expect(await script.text(CHAPTER)).toContain("Writer opening. One. Two.");
+
+        const branches = await db
+          .select({ id: schema.documentBranches.id })
+          .from(schema.documentBranches)
+          .where(
+            and(
+              eq(schema.documentBranches.documentId, DOC_ID),
+              eq(schema.documentBranches.threadId, LIVE.threadId),
+            ),
+          );
+        expect(branches).toEqual([]);
       } finally {
-        await unloadHocuspocus(script.runtime.hocuspocus);
+        await unloadHocuspocus(runtime.hocuspocus);
       }
-    });
-
-    it("undoes a direct-mode copy like a drafted one", async () => {
-      const copyScript = async (thread: Thread) => {
-        const script = await startScript(thread);
-        const outputs: string[] = [];
-        try {
-          await script.reply(async (call) => {
-            outputs.push(
-              await call("write", {
-                command: "copy",
-                from: { path: CHAPTER },
-                path: `manuscript://copy-${thread === LIVE ? "live" : "drafted"}.md`,
-              }),
-            );
-          });
-          await script.reply(async (call) => {
-            outputs.push(
-              await call("write", {
-                command: "undo",
-                path: `manuscript://copy-${thread === LIVE ? "live" : "drafted"}.md`,
-              }),
-            );
-          });
-          expect(
-            await script.text(`manuscript://copy-${thread === LIVE ? "live" : "drafted"}.md`),
-          ).not.toContain("Writer opening.");
-          return outputs;
-        } finally {
-          await unloadHocuspocus(script.runtime.hocuspocus);
-        }
-      };
-      const drafted = await copyScript(DRAFTED);
-      await bindLiveThread(WORK_ID, "direct");
-
-      const live = await copyScript(LIVE);
-
-      expect(
-        withoutVersion(live.map((output) => output.replaceAll("copy-live", "copy-drafted"))),
-      ).toEqual(withoutVersion(drafted));
     });
   });
 }

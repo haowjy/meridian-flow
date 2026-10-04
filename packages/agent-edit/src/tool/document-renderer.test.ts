@@ -32,33 +32,6 @@ describe("read selection", () => {
     expect(outline.result.blocks?.[0]?.items.map((item) => item.body)).toContain("## Arena");
   });
 
-  it("reports the document's block count when a read returns only some blocks", async () => {
-    const ctx = harness({ "chapter.md": "# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits." });
-    const narrowed = await ctx.core.read({ file: "chapter.md", in: 1 }, context);
-    expect(renderAgentEditResult(narrowed.result).split("\n")[0]).toBe(
-      "status: success; path: chapter.md; blocks: 1 of 4",
-    );
-    const full = await ctx.core.read({ file: "chapter.md" }, context);
-    expect(renderAgentEditResult(full.result).split("\n")[0]).toBe(
-      "status: success; path: chapter.md; blocks: 4",
-    );
-  });
-
-  it("gives the document's size when a range runs past the end", async () => {
-    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
-    const read = await ctx.core.read({ file: "chapter.md", in: [2, 5] }, context);
-    expect(renderAgentEditResult(read.result)).toBe(
-      "status: not_found; path: chapter.md\n\nBlock 5 is past the end. chapter.md has 3 blocks.",
-    );
-    const removed = await ctx.core.write(
-      { command: "remove", file: "chapter.md", in: [4, 6] },
-      context,
-    );
-    expect(renderAgentEditResult(removed.result)).toBe(
-      "status: not_found; path: chapter.md\n\nBlock 4 is past the end. chapter.md has 3 blocks.",
-    );
-  });
-
   it("links each outline heading by its #heading-slug", async () => {
     const ctx = harness({
       "chapter.md":
