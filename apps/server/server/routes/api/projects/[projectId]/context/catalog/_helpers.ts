@@ -1,8 +1,14 @@
 /** Authenticated transport parsing for thin context-catalog routes. */
-import type { CatalogScope } from "@meridian/contracts/protocol";
+import type { CatalogScope, FileAccessLevel } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
+import {
+  type FileTarget,
+  isFileAccessDenied,
+} from "../../../../../../domains/file-policy/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
+import type { AppServices } from "../../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
@@ -24,7 +30,31 @@ export async function resolveCatalogRoute(event: H3Event) {
   } else {
     throw createError({ statusCode: 400, message: `Unsupported catalog scope: ${kind}` });
   }
-  return { app, query, scope };
+  return { app, query, scope, userId: user.userId };
+}
+
+/**
+ * The person's level on the files a catalog scope owns: the project's for the
+ * project scope, the Work's for a Work scope (file-access §6). The client
+ * reads it; it never recomputes access.
+ */
+export async function catalogScopeAccess(
+  app: AppServices,
+  userId: string,
+  scope: CatalogScope,
+): Promise<FileAccessLevel | undefined> {
+  if (scope.kind === "user") return undefined;
+  const target: FileTarget =
+    scope.kind === "project"
+      ? {
+          kind: "container",
+          scheme: "manuscript",
+          owner: { scope: "project", projectId: scope.projectId },
+        }
+      : { kind: "container", scheme: "scratch", owner: { scope: "work", workId: scope.workId } };
+  const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
+  if (!isFileAccessDenied(grant)) return "edit";
+  return grant.level === "none" ? undefined : grant.level;
 }
 
 export function optionalPositiveSafeIntegerQuery(

@@ -599,6 +599,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
+    fileAccess: confirmEveryGrant,
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,

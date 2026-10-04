@@ -3,7 +3,7 @@ import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
 } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { parseContextUri } from "../domains/context/context/uri.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
@@ -14,7 +14,7 @@ import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   projects: AppServices["projectRepo"];
-  documentAccess: AppServices["documentAccess"];
+  fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
   documentSync: AppServices["documentSync"];
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
@@ -25,7 +25,7 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
   return {
     threads: app.threadRepos.threads,
     projects: app.projectRepo,
-    documentAccess: app.documentAccess,
+    fileAccess: app.fileAccess,
     documentSync: app.documentSync,
     blocks: app.threadRepos.blocks,
     turns: app.threadRepos.turns,
@@ -39,7 +39,7 @@ export async function handleTurnLiveLineageRequest(
 ): Promise<ListTurnLiveLineageResponse> {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
-  const thread = await requireThreadOwner(
+  await requireThreadOwner(
     { threads: deps.threads, projects: deps.projects },
     threadId,
     input.userId,
@@ -47,8 +47,6 @@ export async function handleTurnLiveLineageRequest(
   const documents = await deps.documentSync.listEditedDocumentsForTurn(threadId, turnId);
   const visibleDocuments = await filterAccessibleLiveLineageDocuments(deps, {
     documents,
-    projectId: thread.projectId,
-    threadId,
     userId: input.userId,
   });
   const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
@@ -72,38 +70,15 @@ export async function handleTurnLiveLineageRequest(
   };
 }
 
+/** The lineage's documents the writer can still read (file-access §6). */
 async function filterAccessibleLiveLineageDocuments<
   T extends { documentId: string; uri: string; scope: "live" | "draft" },
->(
-  deps: TurnLiveLineageRouteServices,
-  input: {
-    documents: T[];
-    projectId: ProjectId;
-    threadId: ThreadId;
-    userId: UserId;
-  },
-): Promise<Array<{ documentId: string; uri: string; scope: "live" | "draft" }>> {
-  const checks = await Promise.all(
-    input.documents.map(
-      async (
-        document,
-      ): Promise<{ documentId: string; uri: string; scope: "live" | "draft" } | null> => {
-        const [hasDocumentAccess, isProjectDocument] = await Promise.all([
-          deps.documentAccess.canAccessDocument(input.userId, document.documentId),
-          deps.documentAccess.canAccessProjectDocument(
-            input.userId,
-            document.documentId,
-            input.projectId,
-          ),
-        ]);
-        return hasDocumentAccess && isProjectDocument ? document : null;
-      },
-    ),
+>(deps: TurnLiveLineageRouteServices, input: { documents: T[]; userId: UserId }): Promise<T[]> {
+  const access = await deps.fileAccess.listAccess(
+    { accountId: input.userId },
+    input.documents.map((document) => document.documentId as DocumentId),
   );
-  return checks.filter(
-    (document): document is { documentId: string; uri: string; scope: "live" | "draft" } =>
-      document !== null,
-  );
+  return input.documents.filter((document) => access.has(document.documentId as DocumentId));
 }
 
 function serializeLiveLineageDocument(document: {

@@ -58,6 +58,7 @@ import {
   type UploadIntake,
 } from "../domains/context/index.js";
 import {
+  createAllowAllFileAccess,
   createDrizzleFileFacts,
   createFileAccess,
   createOwnerFileGrants,
@@ -216,7 +217,6 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
-import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
@@ -289,7 +289,8 @@ export type AppServices = {
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
   results: ResultRepository;
-  documentAccess: DocumentAccessPort;
+  /** The file policy every route and model call asks (file-access §1). */
+  fileAccess: FileAccess;
   notices: NoticePort;
   changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
   changeTrailDelivery: ReturnType<typeof createChangeTrailWorker>;
@@ -341,7 +342,6 @@ export type ProductionAppPorts = {
   figureAssets: FigureAssetService;
   results: ResultRepository;
   promotionService: PromotionService;
-  documentAccess: DocumentAccessPort;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
@@ -440,7 +440,6 @@ export async function createProductionAppPorts(input: {
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
-  const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db);
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
@@ -467,7 +466,6 @@ export async function createProductionAppPorts(input: {
     db,
     fileAccess,
     assetPathResolver,
-    documentAccess,
     eventSink,
     notices,
     workAuthorityResolver,
@@ -485,6 +483,7 @@ export async function createProductionAppPorts(input: {
         readThreadContextDocument(
           {
             contextPorts,
+            fileAccess,
             threads: threadRepos.threads,
             threadWorks: threadRepos.threadWorks,
             works: workRepo,
@@ -616,7 +615,6 @@ export async function createProductionAppPorts(input: {
     figureAssets,
     results,
     promotionService,
-    documentAccess,
     notices,
     activeDocuments,
   };
@@ -632,7 +630,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
   });
-  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
+  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.fileAccess);
   const changeTrailDelivery = createChangeTrailWorker({
     db: ports.db,
     journalWriter: ports.journalWriter,
@@ -1064,7 +1062,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
     results: ports.results,
-    documentAccess: ports.documentAccess,
+    fileAccess: ports.fileAccess,
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
@@ -1586,24 +1584,7 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    documentAccess: {
-      async documentAccessState() {
-        return "available";
-      },
-      async lockDocumentAccessState() {
-        return "available";
-      },
-      async canAccessDocument() {
-        return true;
-      },
-      async canAccessProjectDocument() {
-        return true;
-      },
-      async requireOwnedDocument() {},
-      async projectIdForDocument() {
-        return null;
-      },
-    },
+    fileAccess: createAllowAllFileAccess(),
     notices,
     modelRequestDebug,
     mockModelScript: null,

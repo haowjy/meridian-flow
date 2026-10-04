@@ -66,7 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { DrizzleContextDocumentStore } = await import(
       "../../../context/adapters/context-fs/drizzle-store.js"
     );
-    const { createDrizzleDocumentAccess } = await import("../../../../lib/document-access.js");
+    const { drizzleFileAccess } = await import("../../../../test-support/file-grants.js");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../../projects/index.js"
@@ -569,7 +569,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ markdownProjection: "manifest-only secret" })
         .where(eq(documents.id, manifest.documentId));
       const contentStore = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const access = createDrizzleDocumentAccess(db);
+      const access = drizzleFileAccess(db);
 
       await expect(contentStore.findDocument(null, ".manifest", "json")).resolves.toBeNull();
       await expect(contentStore.listDocuments(null)).resolves.toEqual([
@@ -588,12 +588,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           filetype: "json",
         }),
       ).resolves.toEqual(expect.objectContaining({ name: ".manifest", extension: "json" }));
-      await expect(access.canAccessDocument(USER_ID as never, manifest.documentId)).resolves.toBe(
-        false,
-      );
       await expect(
-        access.canAccessProjectDocument(USER_ID as never, manifest.documentId, PROJECT_ID as never),
-      ).resolves.toBe(false);
+        access.authorize(
+          { accountId: USER_ID as never },
+          { kind: "document", documentId: manifest.documentId },
+          "read",
+        ),
+      ).resolves.toMatchObject({ denied: true, reason: "not_found" });
     });
 
     it("keeps a Work-scoped document URI bound to its owning Work across a thread rebind", async () => {

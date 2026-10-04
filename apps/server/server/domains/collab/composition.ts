@@ -1,6 +1,5 @@
 /** Production dependency graph for the server collab domain. */
 
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { AssetPathResolver } from "@meridian/markup";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
@@ -110,27 +109,20 @@ import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js"
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-type CollabDocumentAccess = {
-  canAccessDocument(userId: UserId, documentId: string): Promise<boolean>;
-  canAccessProjectDocument(
-    userId: UserId,
-    documentId: string,
-    projectId: ProjectId,
-  ): Promise<boolean>;
-};
-
 type CollabDomainDeps = {
   db: Database;
   /** Project asset index threaded to the markup codec at the composition root. */
   assetPathResolver?: AssetPathResolver;
-  documentAccess: CollabDocumentAccess;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workProjectionMutation: WorkProjectionMutation;
-  /** Confirms model writes' grants under lock where they become durable (file-access §5). */
-  fileAccess: Pick<FileAccess, "confirmEdit">;
+  /**
+   * Confirms writes' grants under lock where they become durable (file-access
+   * §5); the writer's turn undo also asks it for its grants.
+   */
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
 };
@@ -436,7 +428,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
-    documentAccess: deps.documentAccess,
+    fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

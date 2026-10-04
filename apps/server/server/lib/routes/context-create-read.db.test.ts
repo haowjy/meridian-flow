@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
+    const { drizzleFileAccess } = await import("../../test-support/file-grants.js");
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -68,7 +68,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -158,6 +157,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(
           handleContextReadRequest(
             {
+              fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
               workRepo: {} as never,
               contextPorts,
@@ -329,8 +329,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(liveMembership.members).toContain(created.documentId);
       await expect(
-        createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
-      ).resolves.toBe(PROJECT_ID);
+        drizzleFileAccess(db).authorize(
+          { accountId: USER_ID as never },
+          { kind: "document", documentId: created.documentId as never },
+          "read",
+        ),
+      ).resolves.toMatchObject({ facts: { projectId: PROJECT_ID } });
 
       await db
         .update(schema.works)
@@ -473,11 +477,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ deletedAt: new Date() })
         .where(eq(schema.projects.id, PROJECT_ID));
 
-      const access = createDrizzleDocumentAccess(db);
-      await expect(access.canAccessDocument(USER_ID as never, scratchDocumentId)).resolves.toBe(
-        false,
-      );
-      await expect(access.projectIdForDocument(scratchDocumentId)).resolves.toBeNull();
+      await expect(
+        drizzleFileAccess(db).authorize(
+          { accountId: USER_ID as never },
+          { kind: "document", documentId: scratchDocumentId as never },
+          "read",
+        ),
+      ).resolves.toMatchObject({ denied: true, reason: "not_found" });
     });
   });
 }

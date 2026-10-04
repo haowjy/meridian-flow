@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
     {
       projectRepo: app.projectRepo,
       documentLinks: app.documentLinks,
+      fileAccess: app.fileAccess,
     },
     {
       projectId: getRouterParam(event, "projectId") ?? "",

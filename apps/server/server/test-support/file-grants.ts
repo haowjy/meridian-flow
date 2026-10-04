@@ -4,7 +4,16 @@
  * access use the real `createFileAccess`.
  */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
-import type { FileAccess, FileDestination, FileGrant } from "../domains/file-policy/index.js";
+import type { Database } from "@meridian/database";
+import {
+  createAllowAllFileAccess,
+  createDrizzleFileFacts,
+  createFileAccess,
+  createOwnerFileGrants,
+  type FileAccess,
+  type FileDestination,
+  type FileGrant,
+} from "../domains/file-policy/index.js";
 
 export function testFileGrant(
   destination: FileDestination = { kind: "live" },
@@ -31,9 +40,21 @@ export function testFileGrant(
   } as unknown as FileGrant<"edit">;
 }
 
-/** Confirms every grant: for tests where access isn't the subject. */
-export const confirmEveryGrant: Pick<FileAccess, "confirmEdit"> = {
+/** Grants and confirms everything: for tests where access isn't the subject. */
+export const confirmEveryGrant: FileAccess = {
+  ...createAllowAllFileAccess(),
   async confirmEdit(grants) {
     return { confirmed: [...grants], refused: [] };
   },
 };
+
+/** The real policy over Postgres facts, for routes and readers whose access is under test. */
+export function drizzleFileAccess(db: Database): FileAccess {
+  return createFileAccess({
+    facts: createDrizzleFileFacts(db),
+    grants: createOwnerFileGrants(),
+    readAgentChain: async () => {
+      throw new Error("This test's file access has no agent chains");
+    },
+  });
+}

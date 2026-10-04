@@ -61,6 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { app, ports } = runtime;
       const routeDeps = {
         contextPorts: app.contextPorts,
+        fileAccess: app.fileAccess,
         threads: app.threadRepos.threads,
         threadWorks: app.threadRepos.threadWorks,
         works: app.workRepo,
