@@ -25,7 +25,6 @@ import type {
 export type { AgentEditDestination, RefusedResponseDocument };
 
 import type {
-  PendingChangesChoice,
   SetWorkPushPolicyInput,
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
@@ -37,7 +36,7 @@ import type {
   ReviewableDraft,
 } from "./domain/branch-review.js";
 
-export type { PendingChangesChoice, SetWorkPushPolicyInput, SetWorkPushPolicyResult };
+export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";

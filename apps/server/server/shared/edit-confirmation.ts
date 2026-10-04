@@ -37,6 +37,15 @@ export function runWithEditConfirmation<T>(
   return scope.run(confirmation, operation);
 }
 
+/**
+ * Runs a derived write (§5.1) outside the bound grants. Bookkeeping a write
+ * triggers after it commits isn't that write; confirming the grants again
+ * would see the write's own result, and a deleted document confirms nothing.
+ */
+export function runOutsideEditConfirmation<T>(operation: () => T): T {
+  return scope.exit(operation);
+}
+
 /** The Works the bound grants lock; a seam adds them to its own sorted Work locks. */
 export function scopedEditWorkIds(): readonly string[] {
   return scope.getStore()?.workIds ?? [];
