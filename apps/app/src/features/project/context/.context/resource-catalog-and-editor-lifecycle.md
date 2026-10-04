@@ -89,6 +89,15 @@ first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
+A cached session is adopted into the registry at the document's current
+admission generation, which advances on any project mutation. Its persistence
+incarnation keeps the generation it was captured at, exactly as a live `admit`
+reuses it, so adoption must accept an older bindable incarnation (only a newer
+one is a foreign lineage). Refusing it strands the cached session `detached`:
+local edits never reach the server and the pill stays silent. `SyncStatus` now
+reads a server-backed session that is still `detached` after a short grace as
+"Saved locally (offline)".
+
 A resource-backed host opens the ordinary live binding once its local session
 has been probed (`useLiveDocumentBinding`: open, bind, retry). It presents the
 live session in place of the cached one when that binding opens, and shows the
