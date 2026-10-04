@@ -14,6 +14,7 @@ import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
 import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
+import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
@@ -129,6 +130,19 @@ export function DocumentIdentityBar({
           </>
         )}
         <span className="min-w-1 flex-1" />
+        {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
+        {repair?.kind === "set-location" && !fieldOpen ? (
+          <button
+            type="button"
+            className="focus-ring flex min-w-0 items-center rounded-md"
+            onClick={() => {
+              setDismissedRepairId(null);
+              setFieldOpen(true);
+            }}
+          >
+            <NamespaceFailureMark failure="set-location" labelled />
+          </button>
+        ) : null}
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}
