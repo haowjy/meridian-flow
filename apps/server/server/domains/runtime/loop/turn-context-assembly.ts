@@ -138,6 +138,7 @@ export async function composeLivePromptBake(
     basePrompt: agentContext.agentBody,
     appendPrompt: agentContext.appendPrompt,
     workContext,
+    permissionGuidance: agentContext.permissionGuidance,
     availableSkills,
     preloadedSkills,
     namedSubagents,

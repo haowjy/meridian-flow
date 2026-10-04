@@ -25,6 +25,7 @@ export interface AgentThreadTurnContext {
   agentBody: string;
   appendPrompt: string | undefined;
   subagentGuidance: string | undefined;
+  permissionGuidance: string | undefined;
   policy: EffectiveToolPolicy;
 }
 
@@ -38,6 +39,10 @@ export interface ResolveAgentThreadTurnContextInput {
 /** Mandatory closing instruction for subagent threads; owns the prompt's last layer. */
 export const SUBAGENT_GUIDANCE =
   "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
+
+/** States a `read` agent's permission up front so it rarely meets a refusal (file-access §8). */
+export const READ_PERMISSION_GUIDANCE =
+  "Your permission is read: you can read every file, and edit only this Work's scratch://.";
 
 /**
  * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
@@ -110,6 +115,8 @@ export async function resolveAgentThreadTurnContext(
     agentBody,
     appendPrompt: binding.invocationOverlay?.appendSystemPrompt,
     subagentGuidance: input.thread.kind === "subagent" ? SUBAGENT_GUIDANCE : undefined,
+    permissionGuidance:
+      binding.configuration.permission === "read" ? READ_PERMISSION_GUIDANCE : undefined,
   };
 }
 
