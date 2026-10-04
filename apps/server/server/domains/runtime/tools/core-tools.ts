@@ -119,7 +119,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("switch"),
-      target: WorkRefSchema.nullable()
+      work: WorkRefSchema.nullable()
         .optional()
         .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
     })
