@@ -60,7 +60,10 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type {
+  DocumentRevisionEvidence,
+  PermissionDeniedReason,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -276,7 +279,7 @@ type ResponseWriteCommitOutcome =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out; their writes did not land (D29). */
-      refused: Array<{ documentId: string; message: string }>;
+      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -1113,6 +1116,8 @@ async function persistUncommittedWriteResult(input: {
   block: Block;
   text: string;
   status?: "internal_error" | "invalid_write";
+  /** A file-policy refusal at the save: `permission_denied` with this reason. */
+  reason?: PermissionDeniedReason;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1121,8 +1126,12 @@ async function persistUncommittedWriteResult(input: {
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
-      status: input.status ?? "internal_error",
-      payload: { ...(staged?.path ? { path: staged.path } : {}), message },
+      status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
+      payload: {
+        ...(staged?.path ? { path: staged.path } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+        message,
+      },
     }),
   );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1455,6 +1464,7 @@ function createResponseScope(input: {
                     threadId,
                     block: write.block,
                     status: "invalid_write",
+                    ...(refusal.reason ? { reason: refusal.reason } : {}),
                     text: refusal.message,
                   })
                 : settled.status === "committed"

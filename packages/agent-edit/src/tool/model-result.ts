@@ -1,4 +1,5 @@
 // Versioned JSON result contract presented to editing models.
+import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
@@ -16,6 +17,7 @@ export type WriteErrorStatus =
   | "cant_undo_dependent"
   | "read_required"
   | "binary_file"
+  | "permission_denied"
   | "internal_error";
 
 export type UndoRedoOutcome =
@@ -64,6 +66,8 @@ export interface AgentEditModelPayload {
   /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
+  /** Why a `permission_denied` result was refused (file-access §9). */
+  reason?: PermissionDeniedReason;
   write?: {
     id?: string;
     deletedHashes?: string[];

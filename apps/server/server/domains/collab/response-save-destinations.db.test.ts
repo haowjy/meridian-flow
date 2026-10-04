@@ -369,7 +369,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(committed).toMatchObject({
         status: "committed",
-        refused: [{ documentId: SCRATCH_ID, reason: "work_archived", workSlug: "rewrite" }],
+        refused: [
+          {
+            documentId: SCRATCH_ID,
+            denial: { reason: "work_archived", archivedWork: { slug: "rewrite" } },
+          },
+        ],
       });
       expect(committed.documents.map((document) => document.documentId)).toEqual([KB_ID]);
       expect(await liveText(collab, KB_ID)).toContain("Agent lore.");

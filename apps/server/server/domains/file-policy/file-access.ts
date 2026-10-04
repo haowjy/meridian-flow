@@ -8,6 +8,7 @@ import { decide, levelAt } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
+  chainPermission,
   type FileAccessDenied,
   type FileDecision,
   type FileFacts,
@@ -57,9 +58,9 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   return {
     async authorize(principal, target, need) {
       const facts = await deps.facts.load(factsRequest(principal, target));
-      if (!facts) return notFound(target, need);
+      if (!facts) return notFound(principal, target, need);
       const result = await decision(principal, facts);
-      if (!atLeast(result.level, need)) return denied(target, need, result);
+      if (!atLeast(result.level, need)) return denied(principal, target, need, result);
       return mint(principal, facts, result);
     },
 
@@ -84,14 +85,14 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       for (const [index, grant] of grants.entries()) {
         const facts = locked[index];
         if (!facts) {
-          result.refused.push(notFound(grant.target, "edit"));
+          result.refused.push(notFound(grant.principal, grant.target, "edit"));
           continue;
         }
         const principal = await refreshPrincipal(grant.principal, freshChain);
         const personGrants = await deps.grants.personGrants(principal.accountId, facts);
         const at = levelAt(principal, facts, personGrants, grant.destination);
         if (atLeast(at.level, "edit")) result.confirmed.push(mint(principal, facts, at));
-        else result.refused.push(denied(grant.target, "edit", at));
+        else result.refused.push(denied(principal, grant.target, "edit", at));
       }
       return result;
     },
@@ -131,7 +132,12 @@ function mint<N extends FileNeed>(
   } as unknown as FileGrant<N>;
 }
 
-function denied(target: FileTarget, need: FileNeed, result: FileDecision): FileAccessDenied {
+function denied(
+  principal: Principal,
+  target: FileTarget,
+  need: FileNeed,
+  result: FileDecision,
+): FileAccessDenied {
   const limitedBy = result.limitedBy ?? "not_found";
   return {
     denied: true,
@@ -142,10 +148,11 @@ function denied(target: FileTarget, need: FileNeed, result: FileDecision): FileA
     level: result.level,
     archivedWork: result.archivedWork,
     destination: result.destination,
+    agentPermission: principal.agent ? chainPermission(principal.agent.chain) : null,
   };
 }
 
-function notFound(target: FileTarget, need: FileNeed): FileAccessDenied {
+function notFound(principal: Principal, target: FileTarget, need: FileNeed): FileAccessDenied {
   return {
     denied: true,
     target,
@@ -155,5 +162,6 @@ function notFound(target: FileTarget, need: FileNeed): FileAccessDenied {
     level: "none",
     archivedWork: null,
     destination: null,
+    agentPermission: principal.agent ? chainPermission(principal.agent.chain) : null,
   };
 }

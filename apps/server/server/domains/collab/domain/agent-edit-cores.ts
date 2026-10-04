@@ -8,7 +8,7 @@ import type {
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { FileAccessDenial, FileDestination, FileGrant } from "../../file-policy/index.js";
+import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
  * Where a model call reads or writes one document, as its grant says (D20):
@@ -34,9 +34,8 @@ export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?:
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument = {
   documentId: DocumentId;
-  reason: FileAccessDenial;
-  /** The archived Work, for `work_archived`. */
-  workSlug: string | null;
+  /** The policy's refusal under the save's locks; its copy is the tool's to write. */
+  denial: FileAccessDenied;
 };
 
 /** One reply's save across every destination it wrote (D42). */
