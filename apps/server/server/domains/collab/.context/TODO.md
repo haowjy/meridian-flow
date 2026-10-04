@@ -1,15 +1,5 @@
 # collab TODO
 
-## Route model undo per write handle, not per thread and document
-
-`reversalCoreFor` (`domain/thread-peer-core-pool.ts`) sends every model undo
-or redo on a document to the thread's Work-draft history when the thread has
-drafted that document, else to live. A thread that wrote a document live and
-later drafted it (after a mode switch) can't undo the live write by handle;
-it is told so, and the writer's undo chip still works. Fix: look up each
-selected handle's journal and reverse each group where it landed; D42's one
-save already spans both. Input to the planned draft rework.
-
 ## Bound thread-core lock order across a reply's cores
 
 A reply can hold several thread-peer cores (one per destination). Review

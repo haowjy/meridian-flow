@@ -100,7 +100,9 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
+export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type {
   PersistUndoWatermarkRecord,
