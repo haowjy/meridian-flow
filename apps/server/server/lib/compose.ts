@@ -174,6 +174,7 @@ import {
 import {
   loadModelSkillBody,
   loadModelSkillResource,
+  readThreadSkillFacts,
   resolveThreadUserInvocableSkills,
   SkillUnavailableError,
   unavailableActivatedSkillSlugs,
@@ -461,7 +462,9 @@ export async function createProductionAppPorts(input: {
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, {
+      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
+    }),
     grants: createOwnerFileGrants(),
     readAgentChain: (threadId) =>
       readAgentChain(
@@ -1605,7 +1608,9 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    fileAccess: createAllowAllFileAccess(),
+    fileAccess: createAllowAllFileAccess({
+      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
+    }),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,

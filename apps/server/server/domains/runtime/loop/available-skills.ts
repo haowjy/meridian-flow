@@ -6,6 +6,7 @@
 import { posix } from "node:path";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
+import type { SkillFacts } from "../../file-policy/index.js";
 import {
   type AccountSkillInstallStore,
   type AgentRevisionBinding,
@@ -105,6 +106,27 @@ export async function resolveThreadModelAvailableSkills(input: {
     });
   }
   return listings;
+}
+
+/**
+ * The skills a thread's own binding names, for the file policy's skill rule
+ * (D52). Empty when the thread has no binding.
+ */
+export async function readThreadSkillFacts(input: {
+  threadId: string;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+}): Promise<SkillFacts> {
+  const binding = await input.agentRevisions.readThreadBinding(input.threadId);
+  if (!binding) return { load: [], available: [] };
+  const available = [];
+  for (const reference of binding.configuration.skills.available) {
+    const listing = await listingFromBoundReference(input.agentRevisions, reference);
+    available.push({ slug: listing.slug, modelInvocable: listing.modelInvocable });
+  }
+  return {
+    load: binding.configuration.skills.load.map((ref) => skillSlugFromPath(ref.path)),
+    available,
+  };
 }
 
 /**

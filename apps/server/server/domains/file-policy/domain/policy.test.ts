@@ -1,7 +1,7 @@
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
-import { decide, type NodeGrant } from "./policy.js";
-import type { AgentLink, FileFacts, FileWorkFacts, Principal } from "./types.js";
+import { decide, type NodeGrant, skillLevel } from "./policy.js";
+import type { AgentLink, FileFacts, FileWorkFacts, Principal, SkillFacts } from "./types.js";
 
 const OWNER = "owner";
 const PROJECT = "project";
@@ -114,5 +114,29 @@ describe("file policy", () => {
     expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
       kind: "live",
     });
+  });
+});
+
+describe("skill rule", () => {
+  const facts: SkillFacts = {
+    load: ["preloaded-hidden"],
+    available: [
+      { slug: "story-review", modelInvocable: true },
+      { slug: "hidden", modelInvocable: false },
+      { slug: "preloaded-hidden", modelInvocable: false },
+    ],
+  };
+
+  // biome-ignore format: one row per case
+  const table: [string, Principal, string, string][] = [
+    ["a model-invocable available skill is readable", agent(link("edit", "a")), "story-review", "read"],
+    ["an available skill the model can't invoke is not found", agent(link("edit", "a")), "hidden", "none"],
+    ["the same skill preloaded is readable", agent(link("read", "a")), "preloaded-hidden", "read"],
+    ["an unbound skill is not found", agent(link("edit", "a")), "elsewhere", "none"],
+    ["a person never reads skills://", person, "story-review", "none"],
+  ];
+
+  it.each(table)("%s", (_case, principal, skill, level) => {
+    expect(skillLevel(principal, facts, skill)).toBe(level);
   });
 });

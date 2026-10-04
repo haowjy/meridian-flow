@@ -5,11 +5,12 @@
  */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { decide, levelAt } from "./domain/policy.js";
+import { decide, levelAt, skillLevel } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
   type FileAccessDenied,
+  type FileAccessLevel,
   type FileDecision,
   type FileFacts,
   type FileGrant,
@@ -64,6 +65,11 @@ export interface FileAccess {
     principal: Principal,
     documentId: DocumentId,
   ): Promise<"available" | "deleted" | null>;
+  /**
+   * A skill's files under `skills://` (D52), judged on the calling thread's
+   * own binding: `read` or `none`.
+   */
+  skillAccess(principal: Principal, skill: string): Promise<FileAccessLevel>;
 }
 
 export function createFileAccess(deps: FileAccessDeps): FileAccess {
@@ -126,6 +132,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const result = await decision({ accountId: principal.accountId }, standing);
       if (!atLeast(result.level, "read")) return null;
       return deleted ? "deleted" : "available";
+    },
+
+    async skillAccess(principal, skill) {
+      const caller = principal.agent?.chain[0];
+      if (!caller) return "none";
+      return skillLevel(principal, await deps.facts.skillFacts(caller.threadId), skill);
     },
 
     async listAccess(principal, documentIds) {

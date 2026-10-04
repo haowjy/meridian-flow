@@ -22,6 +22,7 @@ export {
   type FileTarget,
   isFileAccessDenied,
   type Principal,
+  type SkillFacts,
   type WorkRef,
 } from "./domain/types.js";
 export {
