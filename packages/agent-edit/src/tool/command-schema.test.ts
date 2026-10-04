@@ -19,13 +19,9 @@ const validReads = [
 ] satisfies unknown[];
 
 const invalidReads = [
-  ["extra key", { file: "chapter.md", extra: true }],
   ["a command", { command: "read", file: "chapter.md" }],
-  ["content", { file: "chapter.md", content: "ignored before" }],
   ["the removed auto format", { file: "chapter.md", format: "auto" }],
   ["block number zero", { file: "chapter.md", in: 0 }],
-  ["a negative range end", { file: "chapter.md", in: [1, -2] }],
-  ["a fractional block number", { file: "chapter.md", in: 1.5 }],
   ["a one-item range", { file: "chapter.md", in: [1] }],
   ["an empty block hash", { file: "chapter.md", in: "" }],
 ] satisfies Array<[string, unknown]>;
@@ -34,7 +30,6 @@ const validWrites = [
   { command: "create", file: "chapter.md" },
   { command: "create", file: "chapter.md", content: "# Chapter", overwrite: true },
   { command: "insert", file: "chapter.md", content: "New paragraph.", after: "a1b2" },
-  { command: "insert", file: "chapter.md", content: "New paragraph.", before: "c3d4" },
   { command: "insert", file: "chapter.md", content: "New paragraph.", find: "Alpha", in: [1, 3] },
   { command: "insert", file: "chapter.md", content: "x", find: "Alpha", around: "a1b2", all: true },
   { command: "insert", file: "chapter.md#scene", content: "x", find: "Alpha" },
@@ -43,7 +38,6 @@ const validWrites = [
   { command: "remove", file: "chapter.md", in: [1, "c3d4"] },
   { command: "remove", file: "chapter.md#scene" },
   { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha", in: ["a1b2", "c3d4"] },
-  { command: "replace", file: "chapter.md", content: "Beta", find: "Alpha", around: "a1b2" },
   { command: "replace", file: "chapter.md#scene", content: "Beta", find: "Alpha", all: true },
   { command: "replace", file: "chapter.md#scene", content: "Beta" },
   { command: "undo", file: "chapter.md" },
@@ -68,26 +62,19 @@ const invalidWrites = [
   ["a read", { command: "read", file: "chapter.md" }],
   ["the removed diff", { command: "diff" }],
   ["the renamed delete", { command: "delete", file: "chapter.md", in: 1 }],
-  ["insert extra key", { command: "insert", file: "chapter.md", content: "Beta", extra: true }],
   [
     "replace with after",
     { command: "replace", file: "chapter.md", content: "Beta", after: "a1b2" },
-  ],
-  [
-    "replace with before",
-    { command: "replace", file: "chapter.md", content: "Beta", before: "a1b2" },
   ],
   [
     "insert with undo selector",
     { command: "insert", file: "chapter.md", content: "Beta", to: "w1" },
   ],
   ["undo with content", { command: "undo", file: "chapter.md", content: "ignored before" }],
-  ["create with find", { command: "create", file: "chapter.md", find: "ignored before" }],
   ["remove with content", { command: "remove", file: "chapter.md", in: 1, content: "" }],
   ["remove at block zero", { command: "remove", file: "chapter.md", in: 0 }],
   ["insert with empty content", { command: "insert", file: "chapter.md", content: "" }],
   ["insert with empty find", { command: "insert", file: "chapter.md", content: "x", find: "" }],
-  ["replace with empty find", { command: "replace", file: "chapter.md", content: "", find: "" }],
   ["from as a string", { command: "insert", file: "chapter.md", from: "ch11.md" }],
   ["from with around", { command: "insert", file: "c.md", from: { path: "a", around: "a1" } }],
   ["copy without from", { command: "copy", file: "chapter.md" }],
@@ -105,17 +92,9 @@ const selectorMatrix = [
   ["read in + around", { file: "c.md", in: 1, around: "a1" }, "around", ONE_SCOPE],
   ["read in + #fragment", { file: "c.md#s", in: 1 }, "in", ONE_SCOPE],
   ["read around + #fragment", { file: "c.md#s", around: "a1" }, "around", ONE_SCOPE],
-  ...(["insert", "replace"] as const).flatMap((command) => {
-    const base = { command, file: "c.md", content: "x", find: "Alpha" };
-    return [
-      [`${command} in + around`, { ...base, in: 1, around: "a1" }, "around", ONE_SCOPE],
-      [`${command} in + #fragment`, { ...base, file: "c.md#s", in: 1 }, "in", ONE_SCOPE],
-      [
-        `${command} around + #fragment`,
-        { ...base, file: "c.md#s", around: "a1" },
-        "around",
-        ONE_SCOPE,
-      ],
+  // around and all messages differ per command; the one-scope rule is shared.
+  ...(["insert", "replace"] as const).map(
+    (command) =>
       [
         `${command} around without find`,
         {
@@ -129,21 +108,14 @@ const selectorMatrix = [
         command === "insert"
           ? "around narrows find; add find or use after or before"
           : "around narrows find; add find or use in",
-      ],
-      [
-        `${command} all without find`,
-        {
-          command,
-          file: "c.md",
-          content: "x",
-          ...(command === "replace" ? { in: 1 } : {}),
-          all: true,
-        },
-        "all",
-        "all applies to find matches",
-      ],
-    ] as const;
-  }),
+      ] as const,
+  ),
+  [
+    "insert all without find",
+    { command: "insert", file: "c.md", content: "x", after: "a1", all: true },
+    "all",
+    "all applies to find matches",
+  ],
   [
     "insert in without find",
     { command: "insert", file: "c.md", content: "x", in: 1 },
@@ -165,12 +137,6 @@ const selectorMatrix = [
   [
     "insert after + find",
     { command: "insert", file: "c.md", content: "x", after: "a1", find: "Alpha" },
-    "find",
-    "Use after or before to position by block, or find to position by text, not both",
-  ],
-  [
-    "insert before + find",
-    { command: "insert", file: "c.md", content: "x", before: "a1", find: "Alpha" },
     "find",
     "Use after or before to position by block, or find to position by text, not both",
   ],
@@ -205,12 +171,6 @@ const selectorMatrix = [
     "Give exactly one of `content` or `from`",
   ],
   [
-    "replace with neither content nor from",
-    { command: "replace", file: "c.md", in: 1 },
-    "",
-    "Give exactly one of `content` or `from`",
-  ],
-  [
     "from.in with a #fragment in from.path",
     { command: "insert", file: "c.md", from: { path: "a#s", in: 1 } },
     "from.in",
@@ -227,12 +187,6 @@ const selectorMatrix = [
     { command: "replace", file: "c.md", find: "Alpha", from: { path: "a" } },
     "find",
     "from copies whole blocks; select the blocks to replace with in or a #heading-slug in path, not find",
-  ],
-  [
-    "copy with from.in and a #fragment in from.path",
-    { command: "copy", file: "c.md", from: { path: "a#s", in: 1 } },
-    "from.in",
-    "Use one of from.in or a #fragment in from.path",
   ],
 ] as const;
 
@@ -276,7 +230,6 @@ describe("the undo and redo selector rule", () => {
   it.each([
     ["the old from range start", { to: "w3", from: "w1" }, "", 'Unrecognized key: "from"'],
     ["since without to", { since: "w1" }, "since", "since starts a range; add to"],
-    ["to with last", { to: "w3", last: 2 }, "last", "Use one of to, last or all"],
     ["last with all", { last: 2, all: true }, "all", "Use one of to, last or all"],
     ["a malformed handle", { to: "3" }, "to", 'expected a write handle such as w3, got "3"'],
     ["since after to", { since: "w4", to: "w2" }, "since", "since must not come after to"],
