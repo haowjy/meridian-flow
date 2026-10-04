@@ -164,7 +164,7 @@ describe("thread_history", () => {
     ]);
     await expectRefused("thread_history", { limit: 0 }, ["limit: must be at least 1"]);
     await expectRefused("thread_history", { include: ["everything"] }, [
-      'include[0]: expected "routine_calls", "tool_args", "tool_results", "thinking", "system_messages", "system_prompt" or "timestamps", got "everything"',
+      'include[0]: expected "routine_calls", "tool_results", "thinking", "system_messages", "system_prompt" or "timestamps", got "everything"',
     ]);
     await expectRefused("thread_history", { expand: "2.x" }, [
       'expand: expected a turn number such as 4, or "4.7"',

@@ -1,10 +1,11 @@
 /**
  * `thread_history`'s structured result (D8) and the pure text rendering the
- * model reads (D10). Code mode would return `HistoryResult` itself.
+ * model reads (D10), each tool call written as the call itself (D48). Code mode would return `HistoryResult` itself.
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { callLine } from "./history-call-line.js";
 import type { ThreadHistoryInput } from "./thread-history.js";
 
 export interface SavedReportView {
@@ -38,11 +39,18 @@ export type HistoryItem =
       kind: "tool";
       index?: number;
       tool: string;
-      brief: string;
+      /**
+       * The arguments as the model sent them, long strings shortened (D48);
+       * null when history withholds them (`return_result`, D6) or the call is missing.
+       */
+      args: JsonObject | null;
       /** `running` only in the live tail; a settled call with no result was cancelled. */
       state: "done" | "error" | "cancelled" | "running";
+      /** After the arrow: a finished call's result in brief, a failed call's status or code. */
+      summary?: string;
       resultTokens?: number;
-      args?: string;
+      /** One item in full: the whole arguments, or a write's edit record. */
+      fullArgs?: string;
       result?: string;
       truncated?: true;
     };
@@ -93,18 +101,6 @@ function truncation(result: HistoryResult, turn: HistoryTurn, item: HistoryItem)
     : `\n(truncated: ${call({ ref: result.ref, expand: `${turn.number}.${item.index}` })})`;
 }
 
-function toolLine(item: Extract<HistoryItem, { kind: "tool" }>, inProgress: boolean) {
-  const state =
-    item.state === "error"
-      ? " (failed)"
-      : item.state === "cancelled"
-        ? " (cancelled)"
-        : item.state === "running" && !inProgress
-          ? " (running)"
-          : "";
-  return `${item.tool} ${item.brief}`.trimEnd() + state;
-}
-
 function sized(line: string, tokens: number | undefined) {
   return tokens === undefined ? line : `${line} (${formatTokens(tokens)})`;
 }
@@ -113,7 +109,7 @@ function itemLabel(item: HistoryItem) {
   return item.kind === "system" ? item.label : item.kind === "thinking" ? "thinking" : "message";
 }
 
-function pageItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem, live: boolean) {
+function pageItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem) {
   const truncated = truncation(result, turn, item);
   switch (item.kind) {
     case "message":
@@ -124,18 +120,14 @@ function pageItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem, l
       return `${item.label}${item.text ? `\n${item.text}` : ""}${truncated}`;
     case "tool":
       return (
-        [
-          toolLine(item, live),
-          ...(item.args !== undefined ? [item.args] : []),
-          ...(item.result !== undefined ? [item.result] : []),
-        ].join("\n") + truncated
+        [callLine(item), ...(item.result !== undefined ? [item.result] : [])].join("\n") + truncated
       );
   }
 }
 
 function turnItem(result: HistoryResult, turn: HistoryTurn, item: HistoryItem) {
   const key = `${turn.number}.${item.index}`;
-  if (item.kind === "tool") return `${key} ${sized(toolLine(item, false), item.resultTokens)}`;
+  if (item.kind === "tool") return `${key} ${sized(callLine(item), item.resultTokens)}`;
   if (item.text === undefined) return `${key} ${sized(itemLabel(item), item.tokens)}`;
   const truncated = truncation(result, turn, item);
   const head = item.kind === "message" ? `${key} ` : `${key} ${itemLabel(item)}\n`;
@@ -148,8 +140,8 @@ function singleItem(turn: HistoryTurn, item: HistoryItem) {
   if (item.kind === "tool")
     return (
       [
-        `${key} ${toolLine(item, false)}`,
-        ...(item.args !== undefined ? [item.args] : []),
+        `${key} ${callLine(item)}`,
+        ...(item.fullArgs !== undefined ? [item.fullArgs] : []),
         ...(item.result !== undefined ? [item.result] : []),
       ].join("\n") + truncated
     );
@@ -207,13 +199,11 @@ function renderTurn(result: HistoryResult, turn: HistoryTurn, live: boolean): st
     turn.items.length > 0 &&
     turn.items.every((item) => item.kind === "tool")
   )
-    return turn.items
-      .map((item) => `[${turn.number}] ${pageItem(result, turn, item, true)}`)
-      .join("\n");
+    return turn.items.map((item) => `[${turn.number}] ${pageItem(result, turn, item)}`).join("\n");
   const heading = `${turn.number === undefined ? "" : `[${turn.number}] `}${turn.label}${turn.from ? ` (from ${turn.from})` : ""}${turn.at ? `  ${turn.at}` : ""}`;
   const items = turn.items.map((item) =>
     result.view === "page"
-      ? pageItem(result, turn, item, live)
+      ? pageItem(result, turn, item)
       : result.view === "turn"
         ? turnItem(result, turn, item)
         : singleItem(turn, item),
