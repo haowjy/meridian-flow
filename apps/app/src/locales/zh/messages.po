@@ -217,8 +217,8 @@ msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
 
 #: src/features/project/context/LinkUpdateNote.tsx
-msgid "{count, plural, one {Updated # link} other {Updated # links}}"
-msgstr ""
+#~ msgid "{count, plural, one {Updated # link} other {Updated # links}}"
+#~ msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
@@ -247,6 +247,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
+
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
