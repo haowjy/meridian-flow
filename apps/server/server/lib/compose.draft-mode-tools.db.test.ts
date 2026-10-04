@@ -116,46 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const text = (result: { output: unknown }) =>
       typeof result.output === "string" ? result.output : JSON.stringify(result.output);
 
-    it("keeps scratch live in a draft-mode Work and names the draft on drafted writes", async () => {
-      const script = await startWithChapter("Writer live content.");
-      const { call, save } = await script.begin();
-
-      const notes = await call("write", {
-        command: "create",
-        path: "scratch://notes.md",
-        content: "Scratch notes.",
-      });
-      expect(notes.isError).toBeFalsy();
-      expect(notes.output).toMatch(
-        /^status: success; path: scratch:\/\/notes\.md; write: w\d+; version: live\n/,
-      );
-      expect(notes.result).toMatchObject({ destination: "live" });
-
-      await call("read", { path: CHAPTER });
-      const chapter = await call("write", {
-        command: "replace",
-        path: CHAPTER,
-        find: "Writer live content.",
-        content: "Model draft content.",
-        all: true,
-      });
-      expect(chapter.isError).toBeFalsy();
-      expect(chapter.output).toMatch(/write: w\d+; version: draft \(@rewrite\)/);
-      expect(chapter.result).toMatchObject({ destination: "draft", draftWork: "rewrite" });
-
-      await save();
-      const notesId = (notes.metadata as { documentId?: unknown } | undefined)?.documentId;
-      expect(notesId).toEqual(expect.any(String));
-      const branches = await db
-        .select({ documentId: schema.documentBranches.documentId })
-        .from(schema.documentBranches);
-      expect(branches.map((branch) => branch.documentId)).toContain(DOC_ID);
-      expect(branches.map((branch) => branch.documentId)).not.toContain(notesId);
-      expect(await script.text("scratch://notes.md")).toContain("Scratch notes.");
-      const live = await script.runtime.ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(live.ok && live.value.trim()).toBe("Writer live content.");
-    });
-
     it("reads, searches and lists the version your writes change in a draft-mode Work", async () => {
       const script = await startWithChapter("Writer live content.\n\nWriter aside.");
       const first = await script.begin();

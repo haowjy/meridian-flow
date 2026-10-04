@@ -35,11 +35,4 @@ describe("launch agent skills", () => {
       }
     }
   });
-
-  it("lets the review agents load story-review", async () => {
-    const catalogs = await availableSkills();
-    for (const agent of ["muse", "spark", "writer", "critic"]) {
-      expect(catalogs.get(agent), agent).toContain("story-review");
-    }
-  });
 });

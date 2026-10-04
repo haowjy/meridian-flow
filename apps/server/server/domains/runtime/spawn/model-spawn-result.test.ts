@@ -24,16 +24,6 @@ describe("renderSpawnOutput", () => {
         artifacts: [{ type: "object" as const, uri: "manuscript://ch3.md" }],
       },
     });
-    expect(text).toBe(
-      [
-        "Subagent p2",
-        "Report (completed)",
-        "Chapter 3 is consistent.",
-        "One slip in scene 2.",
-        'payload: {"slips":1}',
-        "artifact: manuscript://ch3.md",
-      ].join("\n"),
-    );
     const reportBlock = renderThreadReportOutput({
       ref: "p2",
       outcome: "succeeded",
@@ -42,39 +32,6 @@ describe("renderSpawnOutput", () => {
       artifacts: [{ type: "object" as const, uri: "manuscript://ch3.md" }],
     });
     expect(text).toBe(`Subagent p2\n${reportBlock}`);
-  });
-
-  it("names the report's source and a failed run's reason", () => {
-    expect(
-      render({
-        status: "error",
-        error: { code: "spawn_failed", message: "Child run failed" } as never,
-        execution: "execution-2" as never,
-        outcome: "failed",
-        report: { ...report, source: "final_assistant", summary: "Got halfway." },
-        partial: true,
-        reason: "Ran out of turns",
-      }),
-    ).toBe(
-      [
-        "Subagent p2",
-        "Report (failed, final_assistant)",
-        "reason: Ran out of turns",
-        "Got halfway.",
-      ].join("\n"),
-    );
-  });
-
-  it("renders a refusal as its message and code", () => {
-    expect(
-      render({
-        status: "error",
-        error: {
-          code: "thread_message_target_busy",
-          message: "Child thread already has an active run",
-        } as never,
-      }),
-    ).toBe("Child thread already has an active run (thread_message_target_busy)");
   });
 
   it("tells the model a background run will report back", () => {

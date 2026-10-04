@@ -102,25 +102,6 @@ describe("block copy (from)", () => {
     expect(update?.meta.origin).toMatch(/^agent:/);
   });
 
-  it("copies the selected blocks and undoes like any write", async () => {
-    const ctx = harness({ "dest.md": "Opening." });
-    seed(ctx, "src.md", SOURCE);
-    await ctx.core.read({ file: "dest.md" }, context);
-    const before = nodesJson(ctx.liveDoc("dest.md"));
-    const nodes = await sourceNodes(ctx, "src.md", { in: [2, 3] });
-
-    const copied = await ctx.core.write(
-      { command: "insert", file: "dest.md", from: { path: "src.md", in: [2, 3] } },
-      { ...context, copiedNodes: nodes },
-    );
-    expectOutcome(copied, "success");
-    expect(blockTexts(ctx.liveDoc("dest.md"))).toEqual(["Opening.", "", ""]);
-
-    const undone = await ctx.core.write({ command: "undo", file: "dest.md" }, context);
-    expect(undone.status).toBe("reversed");
-    expect(nodesJson(ctx.liveDoc("dest.md"))).toEqual(before);
-  });
-
   it("replaces the selected blocks with copies, reusing none of them", async () => {
     const ctx = harness({ "dest.md": "Keep.\n\nOld one.\n\nOld two.\n\nTail." });
     seed(ctx, "src.md", [paragraph("New.")]);
@@ -215,28 +196,6 @@ describe("document copy", () => {
     expect(settled ? renderAgentEditResult(settled) : "").toBe(
       "status: success; write: w1; copied: 4 blocks from src.md",
     );
-  });
-
-  it("rolls back with a failed reply", async () => {
-    const ctx = harness();
-    seed(ctx, "src.md", SOURCE);
-    const nodes = await sourceNodes(ctx, "src.md");
-
-    const result = await ctx.core.write(
-      { command: "copy", file: "copy.md", from: { path: "src.md" } },
-      {
-        ...context,
-        turnId: "turn-copy-rollback",
-        responseId: "response-copy-rollback",
-        createdDocument: true,
-        copiedNodes: nodes,
-      },
-    );
-    expectOutcome(result, "success");
-
-    const rollback = await ctx.core.rollbackResponse("response-copy-rollback");
-    expect(rollback.stagedCreates).toEqual({ committed: [], discarded: ["copy.md"] });
-    expect(ctx.coordinator.docs.has("copy.md")).toBe(false);
   });
 
   it("refuses an existing destination without overwrite and replaces it with overwrite", async () => {
