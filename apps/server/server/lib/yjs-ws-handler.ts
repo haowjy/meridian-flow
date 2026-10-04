@@ -520,6 +520,27 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
         if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
       });
     },
+    async afterLoadDocument({ documentName, document }) {
+      const room = parseRoomOrDeny(documentName);
+      if (room.kind === "live")
+        await services.documentSync.validateHocuspocusDocument(room.documentId, document);
+    },
+    async connected({ documentName, connection, context }) {
+      const room = parseRoomOrDeny(documentName);
+      if (room.kind !== "live") return;
+      try {
+        // The room can finish loading after restore's disconnection. Validate
+        // after connection creation too, so the late join is closed and retries.
+        await services.documentSync.validateHocuspocusDocument(
+          room.documentId,
+          connection.document,
+        );
+      } catch {
+        connection.close({ code: 1013, reason: "retired-durable-authority-generation" });
+        context.closeTransport?.({ code: 1013, reason: "retired-durable-authority-generation" });
+        throw permissionDenied("retired-durable-authority-generation", 1013);
+      }
+    },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const operation = () => {
         const origin = deriveOrigin(transactionOrigin);

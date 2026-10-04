@@ -43,6 +43,7 @@ import {
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
@@ -420,13 +421,32 @@ async function insertCheckpoint(
   return row.id;
 }
 
+/** Called only while holding the document mutation lock. Unbound producers own their cut. */
+async function validateAppendAuthority(
+  db: JournalDb,
+  documentId: string,
+  authority?: { authorityId: string; generation: bigint },
+): Promise<void> {
+  if (!authority) return;
+  const head = await findDocumentAuthorityHead(db, documentId);
+  if (
+    !head ||
+    head.authorityId !== authority.authorityId ||
+    head.generation !== authority.generation
+  ) {
+    throw new RetiredDocumentHandleError();
+  }
+}
+
 async function appendUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
+  authority?: { authorityId: string; generation: bigint },
 ): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
+  await validateAppendAuthority(db, documentId, authority);
   const authorityHead = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
@@ -788,19 +808,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
 
-    async append(docId, update, meta) {
+    async append(docId, update, meta, authority) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        return (await appendUpdate(txDb, docId, update, meta)).seq;
+        return (await appendUpdate(txDb, docId, update, meta, authority)).seq;
       });
     },
 
-    async appendWriterUpdate(docId, update, meta) {
+    async appendWriterUpdate(docId, update, meta, authority) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        return appendUpdate(txDb, docId, update, meta);
+        return appendUpdate(txDb, docId, update, meta, authority);
       });
     },
 
@@ -811,6 +831,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
+        for (const entry of entries)
+          await validateAppendAuthority(txDb, entry.docId, entry.authority);
         const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
@@ -1193,6 +1215,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     },
 
     async checkpoint(docId, state, upToSeq, authority) {
+      // Unbound seed/conformance producers have no loaded handle. Handle-backed
+      // callers always supply their immutable binding; validation is under lock.
       const captured =
         authority ??
         (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db as Database), docId));

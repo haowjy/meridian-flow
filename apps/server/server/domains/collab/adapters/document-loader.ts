@@ -1,6 +1,6 @@
 /** Rebuilds encoded Y.Doc state from the durable UpdateJournal. */
 
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -14,8 +14,9 @@ export async function loadDocumentState(
   journal: UpdateJournal,
   docId: string,
   handle?: Y.Doc,
+  captured?: JournalSnapshot,
 ): Promise<Uint8Array | null> {
-  const snapshot = await journal.read(docId);
+  const snapshot = captured ?? (await journal.read(docId));
   if (handle && snapshot.authority) {
     if (isDocumentHandleRetired(handle)) throw new RetiredDocumentHandleError();
     bindDocumentAuthority(handle, snapshot.authority as CheckpointAuthority);

@@ -118,6 +118,7 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitBranchWriterUpdate(input: {
     branchId: string;
     update: Uint8Array;
