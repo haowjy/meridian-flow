@@ -23,7 +23,7 @@ export function permissionGateFromToolPolicy(
         return {
           allowed: false,
           kind: "permission_denied",
-          reason: `This agent has no "${toolName}" tool, so it can't make this call. Tell the user you can't do this here.`,
+          reason: `This agent has no "${toolName}" tool. Tell the user you can't do this here.`,
         };
       }
       const commands = commandSetForTool(policy, toolName);

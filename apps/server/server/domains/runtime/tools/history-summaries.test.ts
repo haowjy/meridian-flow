@@ -42,7 +42,7 @@ it("summarizes a write by its handle, the words it sent and where it drafted", (
       { command: "replace", path: "ch3.md", find: "x", content: "Three short words." },
       result,
     ),
-  ).toBe("w4, 3 words, drafted in @rewrite");
+  ).toBe("w4, 3 words, version: draft (@rewrite)");
   expect(documentHistorySummary({ command: "replace" }, "plain text output")).toBeUndefined();
 });
 

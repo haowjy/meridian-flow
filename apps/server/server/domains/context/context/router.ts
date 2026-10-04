@@ -176,6 +176,15 @@ async function callAdapter<T>(
   return Ok(result.value);
 }
 
+/**
+ * The one error for a Work slug that names no Work, from a URI or the `work`
+ * tool (D51). It points to `work list` rather than listing slugs, so it stays
+ * one line however many Works the project has.
+ */
+export function unknownWorkMessage(slug: string): string {
+  return `Unknown Work @${slug}. List Works with work({"command":"list"}).`;
+}
+
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
   const treeMover = new ContextTreeMover(deps.commandTransaction, deps.operationReceipts);
@@ -210,14 +219,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
-        const validWorkSlugs = [...deps.workAuthorities.keys()];
-        const valid = validWorkSlugs.map((slug) => `@${slug}`).join(", ");
         return Err({
           code: "invalid_uri",
           uri: parsed.value.normalized,
-          reason: `Unknown Work @${authority.workSlug}. Valid Work slugs: ${valid || "none"}`,
+          reason: unknownWorkMessage(authority.workSlug),
           workSlug: authority.workSlug,
-          validWorkSlugs,
         });
       }
       try {

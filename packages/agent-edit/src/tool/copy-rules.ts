@@ -1,4 +1,4 @@
-// Cross-field rules for `from`, the source of a block copy or a whole-document copy (D23, D24).
+// Cross-field rules for `from`, the source of a block copy or a document copy (D23, D24, D49).
 //
 // They run inside the `write` contract (`superRefine`) beside the selector
 // rule, and the field descriptions state them, since refinements don't export
@@ -28,17 +28,7 @@ export function copySourceIssues(
   const from = fields.from;
   const sourceFragment = from === undefined ? undefined : splitDocumentFile(from.path).fragment;
 
-  if (command === "copy") {
-    if (sourceFragment !== undefined) {
-      issues.push({
-        path: ["from", "path"],
-        message: "copy takes a whole document; drop the #fragment from from.path",
-      });
-    }
-    return issues;
-  }
-
-  if ((fields.content === undefined) === (from === undefined)) {
+  if (command !== "copy" && (fields.content === undefined) === (from === undefined)) {
     issues.push({ path: from === undefined ? [] : ["from"], message: CONTENT_OR_FROM_MESSAGE });
   }
   if (from === undefined) return issues;

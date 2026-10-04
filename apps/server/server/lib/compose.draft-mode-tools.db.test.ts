@@ -126,7 +126,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch notes.",
       });
       expect(notes.isError).toBeFalsy();
-      expect(notes.output).toMatch(/^status: success; path: scratch:\/\/notes\.md; write: w\d+\n/);
+      expect(notes.output).toMatch(
+        /^status: success; path: scratch:\/\/notes\.md; write: w\d+; version: live\n/,
+      );
       expect(notes.result).toMatchObject({ destination: "live" });
 
       await call("read", { path: CHAPTER });
@@ -138,7 +140,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         all: true,
       });
       expect(chapter.isError).toBeFalsy();
-      expect(chapter.output).toMatch(/write: w\d+ \(drafted in @rewrite\)/);
+      expect(chapter.output).toMatch(/write: w\d+; version: draft \(@rewrite\)/);
       expect(chapter.result).toMatchObject({ destination: "draft", draftWork: "rewrite" });
 
       await save();
@@ -175,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Model draft content.",
         all: true,
       });
-      expect(drafted.output).toMatch(/\(drafted in @rewrite\)/);
+      expect(drafted.output).toMatch(/version: draft \(@rewrite\)/);
       // Scratch is live in every Work (D9); a search in the same reply sees the new notes.
       const notes = await call("write", {
         command: "create",
@@ -233,7 +235,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Drafted lore needle.",
       });
       expect(lore.isError).toBeFalsy();
-      expect(lore.output).toMatch(/\(drafted in @rewrite\)/);
+      expect(lore.output).toMatch(/version: draft \(@rewrite\)/);
       const loreHits = await call("search", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore.md");
       expect(text(loreHits)).toContain('"version":"draft"');
@@ -255,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(draftCopy.isError).toBeFalsy();
       expect(draftCopy.output).toMatch(
-        /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+ \(drafted in @rewrite\); copied: 2 blocks from manuscript:\/\/chapter\.md$/,
+        /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+; version: draft \(@rewrite\); copied: 2 blocks from manuscript:\/\/chapter\.md$/,
       );
       expect(draftCopy.result).toMatchObject({ destination: "draft", command: "copy" });
 
@@ -278,7 +280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(intoChapter.isError).toBeFalsy();
       expect(intoChapter.output).toMatch(
-        /\(drafted in @rewrite\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
+        /version: draft \(@rewrite\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
       );
       const intoScratch = await call("write", {
         command: "insert",
@@ -315,6 +317,56 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           copiedFrom: { uri: CHAPTER, version: "draft", revision: expect.any(String) },
         });
       }
+    });
+
+    it("copies part of a document by #fragment or by from.in (D49)", async () => {
+      const script = await startWithChapter(
+        "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\nLin fell back.\n\n# Aftermath\n\nQuiet.",
+      );
+      const first = await script.begin();
+      const call = first.call;
+
+      const bySection = await call("write", {
+        command: "copy",
+        from: { path: `${CHAPTER}#the-midnight-duel` },
+        path: "scratch://duel.md",
+      });
+      expect(bySection.isError).toBeFalsy();
+      expect(bySection.output).toMatch(
+        /^status: success; path: scratch:\/\/duel\.md; write: w\d+; version: live; copied: 3 blocks from manuscript:\/\/chapter\.md#the-midnight-duel/,
+      );
+      expect(bySection.output).not.toContain("Steel rang.");
+
+      const read = await call("read", { path: CHAPTER, version: "live" });
+      const hashes = text(read)
+        .split("\n")
+        .flatMap((line) => {
+          const parsed = splitHashline(line);
+          return parsed ? [{ hash: parsed.hash, body: parsed.body }] : [];
+        });
+      const steel = hashes.find((line) => line.body.includes("Steel rang."))?.hash;
+      const fell = hashes.find((line) => line.body.includes("Lin fell back."))?.hash;
+      if (!steel || !fell) throw new Error("the chapter read returned no hashes");
+
+      const byIn = await call("write", {
+        command: "copy",
+        from: { path: CHAPTER, in: [steel, fell], version: "live" },
+        path: "scratch://blows.md",
+      });
+      expect(byIn.isError).toBeFalsy();
+      expect(byIn.output).toMatch(/copied: 2 blocks from manuscript:\/\/chapter\.md$/);
+      await first.save();
+
+      const { call: next } = await script.begin();
+      const duel = await next("read", { path: "scratch://duel.md" });
+      expect(text(duel)).toContain("The Midnight Duel");
+      expect(text(duel)).toContain("Lin fell back.");
+      expect(text(duel)).not.toContain("Dawn.");
+      expect(text(duel)).not.toContain("Quiet.");
+      const blows = await next("read", { path: "scratch://blows.md" });
+      expect(text(blows)).toContain("blocks: 2;");
+      expect(text(blows)).toContain("Steel rang.");
+      expect(text(blows)).not.toContain("Midnight Duel");
     });
 
     it("rolls a copy back with its reply", async () => {
@@ -381,7 +433,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(copied.isError).toBeFalsy();
       expect(copied.output).toBe(
-        "status: success; path: scratch://scan-copy.pdf; copied from manuscript://scan.pdf",
+        "status: success; path: scratch://scan-copy.pdf; version: live; copied from manuscript://scan.pdf",
       );
       const [copy] = await db
         .select()
@@ -428,6 +480,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(binaryBlockCopy.isError).toBe(true);
       expect(binaryBlockCopy.output).toBe(
         "status: binary_file\n\nfrom manuscript://scan.pdf: The file is binary, so its blocks can't be copied.",
+      );
+
+      const binarySection = await call("write", {
+        command: "copy",
+        from: { path: "manuscript://scan.pdf#page-2" },
+        path: "scratch://scan-page.pdf",
+      });
+      expect(binarySection.isError).toBe(true);
+      expect(binarySection.output).toBe(
+        "status: binary_file\n\nfrom manuscript://scan.pdf#page-2: A binary file is copied whole; drop the #fragment from from.path.",
+      );
+      const binaryIn = await call("write", {
+        command: "copy",
+        from: { path: "manuscript://scan.pdf", in: 1 },
+        path: "scratch://scan-page.pdf",
+      });
+      expect(binaryIn.isError).toBe(true);
+      expect(binaryIn.output).toBe(
+        "status: binary_file\n\nfrom manuscript://scan.pdf: A binary file is copied whole; drop from.in.",
       );
 
       const missingSource = await call("write", {

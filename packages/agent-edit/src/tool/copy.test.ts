@@ -1,4 +1,4 @@
-// Block copy (`from`) and whole-document copy (`copy`): exact nodes, fresh identity, bounded receipts.
+// Block copy (`from`) and document copy (`copy`): exact nodes, fresh identity, bounded receipts.
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
@@ -183,7 +183,7 @@ describe("block copy (from)", () => {
   });
 });
 
-describe("whole-document copy", () => {
+describe("document copy", () => {
   it("creates the copy as a staged create that commits with the source's nodes", async () => {
     const ctx = harness();
     seed(ctx, "src.md", SOURCE);

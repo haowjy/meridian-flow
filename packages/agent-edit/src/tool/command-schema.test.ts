@@ -60,6 +60,8 @@ const validWrites = [
   { command: "replace", file: "chapter.md#scene", from: { path: "ch11.md" } },
   { command: "copy", file: "scratch://lin.md", from: { path: "kb://characters/lin.md" } },
   { command: "copy", file: "ch11-alt", from: { path: "ch11", version: "live" }, overwrite: true },
+  { command: "copy", file: "duel.md", from: { path: "ch11#the-midnight-duel" } },
+  { command: "copy", file: "duel.md", from: { path: "ch11", in: ["a1b2", "c3d4"] } },
 ] satisfies unknown[];
 
 const invalidWrites = [
@@ -89,7 +91,6 @@ const invalidWrites = [
   ["from as a string", { command: "insert", file: "chapter.md", from: "ch11.md" }],
   ["from with around", { command: "insert", file: "c.md", from: { path: "a", around: "a1" } }],
   ["copy without from", { command: "copy", file: "chapter.md" }],
-  ["copy with from.in", { command: "copy", file: "c.md", from: { path: "a", in: 1 } }],
   ["copy with content", { command: "copy", file: "c.md", from: { path: "a" }, content: "x" }],
   ["create with from", { command: "create", file: "c.md", from: { path: "a" } }],
 ] satisfies Array<[string, unknown]>;
@@ -228,10 +229,10 @@ const selectorMatrix = [
     "from copies whole blocks; select the blocks to replace with in or a #heading-slug in path, not find",
   ],
   [
-    "copy of a section",
-    { command: "copy", file: "c.md", from: { path: "a#s" } },
-    "from.path",
-    "copy takes a whole document; drop the #fragment from from.path",
+    "copy with from.in and a #fragment in from.path",
+    { command: "copy", file: "c.md", from: { path: "a#s", in: 1 } },
+    "from.in",
+    "Use one of from.in or a #fragment in from.path",
   ],
 ] as const;
 

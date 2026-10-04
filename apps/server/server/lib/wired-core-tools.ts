@@ -52,6 +52,7 @@ import type {
   ResponseWriteFinalizer,
 } from "../domains/collab/index.js";
 import { copyBinaryDocument } from "../domains/context/binary-copy.js";
+import { unknownWorkMessage } from "../domains/context/context/router.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -337,15 +338,7 @@ async function workBySlug(
   const works = await deps.works.listByProject(projectId, { lifecycle: "all" });
   const work = works.find((candidate) => candidate.slug === slug);
   if (work) return work;
-  const validWorkSlugs = works.map((candidate) => candidate.slug);
-  // Spelled as the URI router spells it, so both paths give one error.
-  const valid = validWorkSlugs.map((candidate) => `@${candidate}`).join(", ");
-  return toolError({
-    code: "work_not_found",
-    message: `Unknown Work @${slug}. Valid Work slugs: ${valid || "none"}`,
-    workSlug: slug,
-    validWorkSlugs,
-  });
+  return toolError({ code: "work_not_found", message: unknownWorkMessage(slug), workSlug: slug });
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
@@ -665,6 +658,18 @@ async function readTrackedCopySource(
   };
 }
 
+/** A binary file has no blocks, so a copy of one takes no selection (D49). */
+function binaryCopySelectionMessage(
+  source: CopySource,
+  address: ResolvedDocumentAddress,
+): string | undefined {
+  if (address.fragment !== undefined) {
+    return "A binary file is copied whole; drop the #fragment from from.path.";
+  }
+  if (source.in !== undefined) return "A binary file is copied whole; drop from.in.";
+  return undefined;
+}
+
 /** Errors about the source say so, since `path` names the destination. */
 function fromMessage(source: CopySource, message: string): string {
   return `from ${source.path}: ${message}`;
@@ -898,6 +903,10 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const source = await resolveCopySource(deps, parsed.command, parsed.from, ctx);
       if (isToolError(source)) return source;
       if (source.ref.kind === "binary") {
+        const selection = binaryCopySelectionMessage(parsed.from, source.address);
+        if (selection) {
+          return writeToolError(parsed.command, fromMessage(parsed.from, selection), "binary_file");
+        }
         return copyBinary(deps, portOrError, parsed, source.ref, ctx);
       }
       const read = await readTrackedCopySource(

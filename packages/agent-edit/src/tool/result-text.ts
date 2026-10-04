@@ -35,7 +35,9 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
 function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.path) facts.push(`path: ${result.path}`);
-  if (result.write?.id) facts.push(`write: ${result.write.id}${draftedSuffix(result)}`);
+  if (result.write?.id) facts.push(`write: ${result.write.id}`);
+  const version = writeVersion(result);
+  if (version) facts.push(`version: ${version}`);
   if (result.copied) {
     const count = result.copied.blocks;
     facts.push(
@@ -66,7 +68,7 @@ function blockCount(count: number): string {
 /**
  * A finished call's result in brief, for one history line (D48): the status
  * when it isn't plain success, the write handle, `words` (the size of the
- * content the call sent, which only the host has), where it drafted, what it
+ * content the call sent, which only the host has), the draft it changed, what it
  * copied or reversed, and a read's block count.
  */
 export function agentEditResultSummary(result: AgentEditResultV1, words?: number): string {
@@ -76,7 +78,7 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (words !== undefined)
     facts.push(`${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"}`);
   if (result.destination === "draft" && result.draftWork !== undefined)
-    facts.push(`drafted in @${result.draftWork}`);
+    facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
   if (result.reversal && result.reversal.writes.length > 0)
     facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
@@ -90,11 +92,14 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   return facts.join(", ");
 }
 
-/** ` (drafted in @work)` for a write held in a Work's draft; empty for a live one. */
-function draftedSuffix(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
-  return result.destination === "draft" && result.draftWork !== undefined
-    ? ` (drafted in @${result.draftWork})`
-    : "";
+/**
+ * The version a write changed, in `read`'s terms (D50): `live`, or `draft
+ * (@work)` for a write held in a Work's draft. Undo and redo name none.
+ */
+function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
+  if (result.destination === "draft" && result.draftWork !== undefined)
+    return `draft (@${result.draftWork})`;
+  return result.destination === "live" ? "live" : "";
 }
 
 function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {
