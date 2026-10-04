@@ -126,7 +126,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Scratch notes.",
       });
       expect(notes.isError).toBeFalsy();
-      expect(notes.output).toMatch(/^status: success; path: scratch:\/\/notes\.md; write: w\d+\n/);
+      expect(notes.output).toMatch(
+        /^status: success; path: scratch:\/\/notes\.md; write: w\d+; version: live\n/,
+      );
       expect(notes.result).toMatchObject({ destination: "live" });
 
       await call("read", { path: CHAPTER });
@@ -138,7 +140,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         all: true,
       });
       expect(chapter.isError).toBeFalsy();
-      expect(chapter.output).toMatch(/write: w\d+ \(drafted in @rewrite\)/);
+      expect(chapter.output).toMatch(/write: w\d+; version: draft \(@rewrite\)/);
       expect(chapter.result).toMatchObject({ destination: "draft", draftWork: "rewrite" });
 
       await save();
@@ -175,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Model draft content.",
         all: true,
       });
-      expect(drafted.output).toMatch(/\(drafted in @rewrite\)/);
+      expect(drafted.output).toMatch(/version: draft \(@rewrite\)/);
       // Scratch is live in every Work (D9); a search in the same reply sees the new notes.
       const notes = await call("write", {
         command: "create",
@@ -233,7 +235,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Drafted lore needle.",
       });
       expect(lore.isError).toBeFalsy();
-      expect(lore.output).toMatch(/\(drafted in @rewrite\)/);
+      expect(lore.output).toMatch(/version: draft \(@rewrite\)/);
       const loreHits = await call("search", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore.md");
       expect(text(loreHits)).toContain('"version":"draft"');
@@ -255,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(draftCopy.isError).toBeFalsy();
       expect(draftCopy.output).toMatch(
-        /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+ \(drafted in @rewrite\); copied: 2 blocks from manuscript:\/\/chapter\.md$/,
+        /^status: success; path: manuscript:\/\/chapter-copy\.md; write: w\d+; version: draft \(@rewrite\); copied: 2 blocks from manuscript:\/\/chapter\.md$/,
       );
       expect(draftCopy.result).toMatchObject({ destination: "draft", command: "copy" });
 
@@ -278,7 +280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(intoChapter.isError).toBeFalsy();
       expect(intoChapter.output).toMatch(
-        /\(drafted in @rewrite\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
+        /version: draft \(@rewrite\); copied: 1 block from scratch:\/\/chapter-copy\.md\n\n[0-9a-f]+\|Writer aside\.$/,
       );
       const intoScratch = await call("write", {
         command: "insert",
@@ -331,7 +333,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(bySection.isError).toBeFalsy();
       expect(bySection.output).toMatch(
-        /^status: success; path: scratch:\/\/duel\.md; write: w\d+; copied: 3 blocks from manuscript:\/\/chapter\.md#the-midnight-duel/,
+        /^status: success; path: scratch:\/\/duel\.md; write: w\d+; version: live; copied: 3 blocks from manuscript:\/\/chapter\.md#the-midnight-duel/,
       );
       expect(bySection.output).not.toContain("Steel rang.");
 
@@ -431,7 +433,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(copied.isError).toBeFalsy();
       expect(copied.output).toBe(
-        "status: success; path: scratch://scan-copy.pdf; copied from manuscript://scan.pdf",
+        "status: success; path: scratch://scan-copy.pdf; version: live; copied from manuscript://scan.pdf",
       );
       const [copy] = await db
         .select()

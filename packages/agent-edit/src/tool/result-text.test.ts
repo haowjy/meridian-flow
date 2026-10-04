@@ -136,7 +136,7 @@ describe("renderAgentEditResult", () => {
     );
   });
 
-  it("names the Work draft a drafted write landed in", () => {
+  it("states the version a write changed (D50)", () => {
     const write = (destination: "live" | "draft", draftWork?: string) =>
       renderAgentEditResult(
         modelResult({
@@ -152,9 +152,9 @@ describe("renderAgentEditResult", () => {
         }),
       );
     expect(write("draft", "rewrite")).toBe(
-      "status: success; path: kb://notes.md; write: w2 (drafted in @rewrite)",
+      "status: success; path: kb://notes.md; write: w2; version: draft (@rewrite)",
     );
-    expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2");
+    expect(write("live")).toBe("status: success; path: kb://notes.md; write: w2; version: live");
   });
 
   it("says a reconciled undo kept later edits", () => {
@@ -213,14 +213,14 @@ describe("agentEditResultSummary", () => {
     expect(agentEditResultSummary(read(undefined, 1))).toBe("1 block");
   });
 
-  it("names a write's handle, the words it sent and where it drafted", () => {
+  it("names a write's handle, the words it sent and the draft it changed", () => {
     const drafted = modelResult({
       command: "replace",
       status: "success",
       phase: "committed",
       payload: { write: { id: "w4" }, destination: "draft", draftWork: "rewrite" },
     });
-    expect(agentEditResultSummary(drafted, 3)).toBe("w4, 3 words, drafted in @rewrite");
+    expect(agentEditResultSummary(drafted, 3)).toBe("w4, 3 words, version: draft (@rewrite)");
     expect(agentEditResultSummary({ ...drafted, destination: "live" }, 1)).toBe("w4, 1 word");
   });
 

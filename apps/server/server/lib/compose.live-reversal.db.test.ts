@@ -208,8 +208,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     }
 
-    function withoutDraftNote(outputs: string[]): string[] {
-      return outputs.map((output) => output.replaceAll(" (drafted in @drafts)", ""));
+    /** Drops the version each forward write states, the one place the two modes differ (D50). */
+    function withoutVersion(outputs: string[]): string[] {
+      return outputs.map((output) =>
+        output.replaceAll("; version: draft (@drafts)", "").replaceAll("; version: live", ""),
+      );
     }
 
     it("undoes and redoes direct-mode writes like drafted ones", async () => {
@@ -218,7 +221,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const live = await undoRedoScript(CHAPTER);
 
-      expect(live).toEqual(withoutDraftNote(drafted));
+      expect(withoutVersion(live)).toEqual(withoutVersion(drafted));
       expect(await liveThreadBranches()).toEqual([]);
     });
 
@@ -275,7 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The drafted chapter keeps its own history beside the live scratch one.
         expect(await script.text(CHAPTER)).toContain("Writer opening. Drafted.");
         expect(await script.text(CHAPTER, "live")).not.toContain("Drafted.");
-        expect(outputs.slice(1).join("\n")).not.toContain("drafted in");
+        expect(outputs.slice(1).join("\n")).not.toContain("version: draft");
       } finally {
         await unloadHocuspocus(script.runtime.hocuspocus);
       }
@@ -316,9 +319,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const live = await copyScript(LIVE);
 
-      expect(live.map((output) => output.replaceAll("copy-live", "copy-drafted"))).toEqual(
-        withoutDraftNote(drafted),
-      );
+      expect(
+        withoutVersion(live.map((output) => output.replaceAll("copy-live", "copy-drafted"))),
+      ).toEqual(withoutVersion(drafted));
     });
   });
 }
