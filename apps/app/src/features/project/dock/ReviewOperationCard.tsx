@@ -87,7 +87,7 @@ function CardVerbs({
   // This card is the one running a disposition — drives the visible pending
   // treatment (stays revealed); the disable itself is global (`isDisposing`).
   const activeOnThisCard = controller.pendingInlineDiscardIds(draftId).has(operationId);
-  const disabled = controller.isDisposing;
+  const disabled = controller.isDisposing || controller.draftsFrozen;
   return (
     <div
       className={cn(

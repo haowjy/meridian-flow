@@ -17,6 +17,7 @@ import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyR
 import { useAccountResourceReplica } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
+import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -274,6 +275,8 @@ export function ContextTabSessionBoundary({
         : ({ kind: "document", documentId } as const),
     [resourceIdentity],
   );
+  // Bumped to reopen after the registry dropped a room whose edits were refused.
+  const [reopenGeneration, setReopenGeneration] = useState(0);
   const [local, setLocal] = useState<{
     identity: string;
     documentId: string;
@@ -293,6 +296,7 @@ export function ContextTabSessionBoundary({
               : ("probing" as const),
         };
   useEffect(() => {
+    void reopenGeneration;
     const abort = new AbortController();
     let retained: ResourceContentHandle | null = null;
     setLocal((prior) => ({
@@ -353,7 +357,7 @@ export function ContextTabSessionBoundary({
       abort.abort();
       retained?.release();
     };
-  }, [projectId, resourceIdentity, resourceLookup, resources]);
+  }, [projectId, reopenGeneration, resourceIdentity, resourceLookup, resources]);
   const serverDocumentId = currentLocal.phase === "server" ? documentId : null;
   const binding = useLiveDocumentBinding({
     projectId,
@@ -370,9 +374,17 @@ export function ContextTabSessionBoundary({
       .catch(() => undefined);
   }, [documentId, projectId, resources, state]);
   const localSession = currentLocal.handle?.session ?? null;
-  return children(
+  const retry = binding.retry;
+  const session = useRefusedEditsReopen(
     localSession ??
       (state.kind === "opened" && state.documentId === documentId ? state.session : null),
+    useCallback(() => {
+      setReopenGeneration((value) => value + 1);
+      retry();
+    }, [retry]),
+  );
+  return children(
+    session,
     currentLocal.phase === "failed" || (state.kind === "failed" && state.documentId === documentId),
     localSession !== null,
   );

@@ -39,9 +39,13 @@ reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
 resets with reason `access-changed` instead of reconnecting, and
 `DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
 session. A branch (draft review) room rebuilds through
-`rebuildBranchRoom`, which starts a fresh session from the server's state; a
-live room (scratch) is not rebuilt yet: it stays read-only and `access-lost`,
-and its IndexedDB copy still holds the refused edits.
+`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+live room (scratch) goes through the registry's `dropRefusedRoom`, which
+revokes each lease's access: the session is torn down and its IndexedDB copy,
+which still holds the refused edits, is cleared. Editor hosts unbind at once
+(`useRefusedEditsReopen`) and reopen when the drop settles, so the editor
+loads the server's state. A drop that fails leaves the refused session bound
+read-only rather than reopening again.
 
 ## Stateless document messages
 
