@@ -4103,7 +4103,11 @@ msgid "This file type ({0}) doesn't have an inline viewer yet. Download the orig
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "This file's Work is archived, so this change can't be reversed."
+#~ msgid "This file's Work is archived, so this change can't be reversed."
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "This file's Work is archived. Unarchive the Work to reverse this change."
 msgstr ""
 
 #: src/client/api/upload-intake-api.ts
