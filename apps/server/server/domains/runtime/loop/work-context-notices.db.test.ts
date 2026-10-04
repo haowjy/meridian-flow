@@ -46,6 +46,7 @@ else
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
+      readAgentChain: async () => [],
     });
     const eventWriter = createDrizzleEventJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);
@@ -206,7 +207,7 @@ else
       await notices.materializeIdle(ids.threadId);
       const archived = await updates();
       const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
-      expect(archivedBlocks[0]?.textContent).toContain("archived: this Work is read-only");
+      expect(archivedBlocks[0]?.textContent).toContain("writes: archived in auto-apply.");
 
       await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
       await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
