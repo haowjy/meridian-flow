@@ -104,14 +104,24 @@ from document derivation.
 
 `domain/document-derivations.ts` is the sole projection pipeline. The write hook
 runs it immediately; WebSocket admissions and generation replacement schedule it
-with a 500 ms trailing debounce and three-second maximum wait. Push completion
+with a two-second trailing debounce and ten-second maximum wait. The projection
+feeds search, listings and sizes, the download fallback, and the link index;
+the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
 
+One authority generation per checkpoint and per reconstruction. Room and explicit
+checkpoint producers capture authority identity and generation before asynchronous
+snapshot work; persistence validates both under the document mutation lock and
+drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
+`stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots
+are produced under that same lock. Current reads capture the head once and constrain
+checkpoint selection, earliest retained-update selection, and replay to that identity
+and generation. Sequence bounds do not authorize retired-generation history; only
+explicit checkpoint lookup/listing and restore expose historical checkpoints.
+
 The store captures checkpoint plus current-generation journal under the document
-mutation lock. Current checkpoint selection is fenced to the head's authority and
-generation: an old room can finish checkpointing after replacement and insert a
-row with a newer ID, which must not become the current durable cut. Never substitute a warm room: a socket admission can already be
+mutation lock. Never substitute a warm room: a socket admission can already be
 durable while Hocuspocus has not applied it. Certification retakes the mutation
 lock, checks generation and `next_admission_sequence`, and conditionally updates
 the document at the captured `location_version`. A move increments that counter
