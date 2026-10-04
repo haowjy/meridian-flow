@@ -160,7 +160,6 @@ async function fixture(
           model: "critic-model",
           mode: "primary",
           permission: "read",
-          tools: { edit: "deny", ask_user: "allow" },
         },
         "You are Critic.",
       ),
@@ -188,7 +187,7 @@ async function fixture(
           name: "Parent",
           model: "parent-model",
           effort: "high",
-          tools: { edit: "deny" },
+          "disallowed-tools": ["ask_user"],
         },
         "",
       ),
@@ -208,7 +207,7 @@ async function fixture(
     skills: { load: [], available: [] },
     namedTargets,
     permission: "edit" as const,
-    tools: { edit: "deny" } as const,
+    "disallowed-tools": ["ask_user"],
     effort: "high" as const,
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
@@ -569,7 +568,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.tools).toEqual({ edit: "deny" });
+      expect(binding?.configuration["disallowed-tools"]).toEqual(["ask_user"]);
       expect(binding?.configuration.effort).toBe("high");
     }
   });
@@ -585,7 +584,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
       permission: "edit" as const,
-      tools: { edit: "deny" } as const,
+      tools: ["read", "ls"],
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
@@ -774,8 +773,8 @@ describe("ChildRunCoordinator invocation overlay", () => {
     ).toEqual(["continuity body.\n"]);
   });
 
-  it("rejects an out-of-scope tool grant before creating the child", async () => {
-    const { coordinator, revisions, repos, journal } = await fixture();
+  it("refuses a named child with a tool its parent lacks until the spawn denies it", async () => {
+    const { coordinator, revisions, repos, critic, journal } = await fixture();
     const restrictedParent = await repos.threads.create({
       userId: "user-1",
       projectId: "project-1",
@@ -786,29 +785,38 @@ describe("ChildRunCoordinator invocation overlay", () => {
       {
         model: "parent-model",
         skills: { load: [], available: [] },
-        namedTargets: [],
+        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
         permission: "edit" as const,
-        tools: { edit: "deny" },
+        "disallowed-tools": ["write"],
       },
       null,
     );
-    const result = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: restrictedParent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        overrides: { tools: { edit: "allow" } },
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.error.code).toBe("spawn_invocation_authority_denied");
-    }
+    const spawn = (overrides?: { "disallowed-tools": string[] }) =>
+      coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread: restrictedParent,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug: "critic",
+          prompt,
+          ...(overrides ? { overrides } : {}),
+          budget,
+        },
+        { mode: "foreground" },
+      );
+    const refused = await spawn();
+    expect(refused.status === "error" && refused.error).toMatchObject({
+      code: "invalid_arguments",
+      message:
+        'Invalid arguments for spawn:\n- overrides.disallowed_tools: critic has "write" and you don\'t; add it here',
+    });
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+
+    const narrowed = await spawn({ "disallowed-tools": ["write"] });
+    expect(narrowed.status).toBe("completed");
+    if (narrowed.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(narrowed.report.threadId);
+    expect(binding?.configuration["disallowed-tools"]).toEqual(["write"]);
   });
 
   it("lets overrides.permission lower to read and refuses a raise as invalid arguments", async () => {
@@ -881,39 +889,6 @@ describe("ChildRunCoordinator invocation overlay", () => {
       expect(result.error.code).toBe("spawn_invocation_patch_invalid");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
-  });
-
-  it("persists an in-scope named grant when the caller holds the tool", async () => {
-    const { coordinator, revisions, repos, critic } = await fixture();
-    const writerParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    await revisions.bindThread(
-      writerParent.id,
-      null,
-      {
-        permission: "edit" as const,
-        model: "parent-model",
-        skills: { load: [], available: [] },
-        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-        tools: { edit: "allow", ask_user: "allow" },
-      },
-      null,
-    );
-    const result = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: writerParent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "critic",
-        prompt,
-        overrides: { tools: { edit: "allow" } },
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    expect(result.status).toBe("completed");
-    if (result.status !== "completed") return;
-    const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.configuration.tools).toEqual({ edit: "allow", ask_user: "allow" });
   });
 
   it("rejects an agentless child whose overridden model is unavailable", async () => {

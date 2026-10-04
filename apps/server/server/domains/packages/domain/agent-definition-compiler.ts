@@ -2,9 +2,7 @@
 import {
   agentEffortAuthoringSchema,
   agentPermissionSchema,
-  type ToolPolicy,
   toolReferencesSchema,
-  toolRepresentationSchema,
 } from "@meridian/contracts/agents";
 import { z } from "zod";
 import { sha256 } from "./helpers.js";
@@ -29,7 +27,7 @@ const metadata = z.looseObject({
   permission: agentPermissionSchema.optional(),
   "model-invocable": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
-  tools: toolRepresentationSchema.optional(),
+  tools: toolReferencesSchema.optional(),
   "disallowed-tools": toolReferencesSchema.optional(),
   subagents: references.optional(),
   skills: skills.optional(),
@@ -90,27 +88,8 @@ export function compileAgentDefinition(source: {
   if (parsedMeta.data.skills && parsedOverlay.data.skills) {
     merged.skills = { ...parsedMeta.data.skills, ...parsedOverlay.data.skills };
   }
-  if (overlayTools?.allowed !== undefined) {
-    const baseTools = parsedMeta.data.tools;
-    const denials =
-      baseTools && !Array.isArray(baseTools) && overlayTools.disallowed === undefined
-        ? Object.entries(baseTools).filter(([, policy]) => policy === "deny")
-        : [];
-    merged.tools = denials.length
-      ? (Object.fromEntries([
-          ...overlayTools.allowed.map((tool) => [tool, "allow"] as const),
-          ...denials,
-        ]) as Record<string, ToolPolicy>)
-      : overlayTools.allowed;
-  }
-  if (overlayTools?.disallowed !== undefined) {
-    merged["disallowed-tools"] = overlayTools.disallowed;
-    if (merged.tools && !Array.isArray(merged.tools)) {
-      merged.tools = Object.fromEntries(
-        Object.entries(merged.tools).filter(([, policy]) => policy === "allow"),
-      );
-    }
-  }
+  if (overlayTools?.allowed !== undefined) merged.tools = overlayTools.allowed;
+  if (overlayTools?.disallowed !== undefined) merged["disallowed-tools"] = overlayTools.disallowed;
   const definition: CompiledAgentDefinition = {
     schemaVersion: 1,
     systemPrompt: source.body,

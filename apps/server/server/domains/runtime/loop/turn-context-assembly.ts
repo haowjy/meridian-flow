@@ -52,7 +52,7 @@ import {
   type ImageInclusionDecision,
   projectImageBlocksForModel,
 } from "./image-context.js";
-import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
+import type { ToolPolicy } from "./permissions/project-tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -97,7 +97,7 @@ export interface AssembledNextTurnContext {
   agentSlug: string | null;
   systemPrompt: string;
   tools: FunctionTool[];
-  policy: EffectiveToolPolicy;
+  policy: ToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
   baked: boolean;

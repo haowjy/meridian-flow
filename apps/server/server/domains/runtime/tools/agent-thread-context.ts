@@ -12,10 +12,7 @@ import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.j
 import type { GenerateRequest, Tool } from "../gateway/index.js";
 import { readChainPermission } from "../loop/permissions/agent-chain.js";
 import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
-import {
-  type EffectiveToolPolicy,
-  projectToolPolicy,
-} from "../loop/permissions/project-tool-policy.js";
+import { projectToolPolicy, type ToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 
@@ -28,7 +25,7 @@ export interface AgentThreadTurnContext {
   appendPrompt: string | undefined;
   subagentGuidance: string | undefined;
   permissionGuidance: string | undefined;
-  policy: EffectiveToolPolicy;
+  policy: ToolPolicy;
 }
 
 export interface ResolveAgentThreadTurnContextInput {
@@ -89,8 +86,13 @@ export async function resolveAgentThreadTurnContext(
     if (reasons.length) throw new Error(reasons.join(" "));
   }
 
-  const policy = projectToolPolicy(binding.configuration);
-  let tools = advertiseTools(input.baseTools, policy).map((tool) =>
+  const policy = projectToolPolicy(binding.configuration, input.thread.kind);
+  // return_result is unadvertised in the registry; the policy adds it for subagents.
+  const report = input.toolRegistry.getRegistration("return_result")?.definition;
+  const tools = advertiseTools(
+    [...(input.baseTools ?? []), ...(report ? [report] : [])],
+    policy,
+  ).map((tool) =>
     tool.type === "function" && tool.name === "spawn"
       ? {
           ...tool,
@@ -98,11 +100,6 @@ export async function resolveAgentThreadTurnContext(
         }
       : tool,
   );
-  const report =
-    input.thread.kind === "subagent"
-      ? input.toolRegistry.getRegistration("return_result")?.definition
-      : undefined;
-  if (report && !tools.some((tool) => toolName(tool) === report.name)) tools = [...tools, report];
   const agentBody = binding.revision?.definition.systemPrompt ?? GENERIC_AGENT_BODY;
   return {
     compaction: {
@@ -133,8 +130,4 @@ async function chainIsReadOnly(
   if (own === "read") return true;
   const parentId = input.thread.parentThreadId;
   return parentId != null && (await readChainPermission(input, parentId)) === "read";
-}
-
-function toolName(tool: Tool): string {
-  return tool.type === "function" ? tool.name : tool.kind;
 }

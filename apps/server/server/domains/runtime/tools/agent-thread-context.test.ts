@@ -22,15 +22,8 @@ import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
-const WRITER_MAP = {
-  edit: "allow",
-  ask_user: "allow",
-} as const;
-
-const CRITIC_MAP = {
-  edit: "deny",
-  ask_user: "allow",
-} as const;
+const WRITER_MAP = ["read", "write", "work", "spawn", "return_result"];
+const CRITIC_MAP = ["read", "work"];
 
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
@@ -57,8 +50,8 @@ const fixtureRevision: AgentRevision = {
 };
 
 async function boundContext(metadata: {
-  tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
-  definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
+  tools?: string[];
+  definitionTools?: string[];
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
   invocationOverlay?: InvocationOverlay | null;
   revision?: AgentRevision | null;
