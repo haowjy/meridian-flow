@@ -115,10 +115,12 @@ export type EditorViewProps = {
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
   /**
-   * The server changed this room's scope (a Work archived or unarchived). The
-   * editor already follows it; the host refreshes whatever explains it.
+   * The server named a scope for this room that `editable` doesn't show: its
+   * Work was archived or unarchived somewhere this host hasn't seen yet. The
+   * editor already follows the room; the host refreshes whatever decides
+   * `editable`. Asked only while `active`.
    */
-  onRoomAccessChange?: (access: DocumentSessionAccess) => void;
+  onRoomAccessMismatch?: () => void;
 };
 
 let editorSessionOwnerSequence = 0;
@@ -241,19 +243,24 @@ function sessionMountId(session: DocumentSession): number {
   return id;
 }
 
-/** Report each change of the room's scope after the first one this mount sees. */
-function useRoomAccessChange(
-  access: DocumentSessionAccess,
-  onChange: ((access: DocumentSessionAccess) => void) | undefined,
+/**
+ * Checks the host's `editable` against each scope the server names, and on
+ * activation. The host's own changes to `editable` (its archive command, say)
+ * never ask: the room's next named scope confirms or contradicts them.
+ */
+function useRoomAccessMismatch(
+  access: DocumentSessionAccess | null,
+  editable: boolean,
+  active: boolean,
+  onMismatch: (() => void) | undefined,
 ) {
-  const previous = useRef(access);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  const latest = useRef({ editable, onMismatch });
+  latest.current = { editable, onMismatch };
   useEffect(() => {
-    if (previous.current === access) return;
-    previous.current = access;
-    onChangeRef.current?.(access);
-  }, [access]);
+    if (!active || access === null) return;
+    if ((access === "edit") === latest.current.editable) return;
+    latest.current.onMismatch?.();
+  }, [access, active]);
 }
 
 type SessionEditorViewProps = EditorViewProps & {
@@ -322,7 +329,7 @@ function ActiveSessionEditorView({
   workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
-  onRoomAccessChange,
+  onRoomAccessMismatch,
   session,
   liveSession,
   snapshot,
@@ -337,8 +344,8 @@ function ActiveSessionEditorView({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
-  const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access === "edit";
-  useRoomAccessChange(snapshot.access, onRoomAccessChange);
+  const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
+  useRoomAccessMismatch(snapshot.access, editable, active, onRoomAccessMismatch);
   effectiveEditableRef.current = effectiveEditable;
 
   // Which project and which Work this editor is open in. Everything that has to
