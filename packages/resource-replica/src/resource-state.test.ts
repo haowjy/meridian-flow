@@ -4,7 +4,6 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
-import type { ResourceDestination } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
   acknowledgeLocalResourceCleanup,
@@ -490,27 +489,4 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
     transitionId: "reopen-7",
     generation: null,
   });
-});
-
-it("refuses, by type, a placement whose Work id leaves out its slug", () => {
-  const named: ResourceDestination = {
-    scheme: "scratch",
-    folderPath: "side",
-    name: "note.md",
-    workId: "work",
-    workSlug: "arc",
-  };
-  const noWorkRow: ResourceDestination = { ...named, workSlug: null };
-  // @ts-expect-error A Work id must state its slug; only the No Work row's is null.
-  const slugless: ResourceDestination = {
-    scheme: "scratch",
-    folderPath: "side",
-    name: "note.md",
-    workId: "work",
-  };
-  expect([named, noWorkRow, slugless].map((destination) => destination.workId)).toEqual([
-    "work",
-    "work",
-    "work",
-  ]);
 });

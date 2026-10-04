@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts.
+- Consolidate Markdown link round trips and remove type-only and mocked replica tests while preserving pure persistence contracts.
 
 - Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
 - `@` is how you link a document, in the Editor and in chat; typing `[[` is plain text. In the Editor, `@` shows where each document lives and writes a standard link; for a name no document has yet, its last row links one in the same folder before it exists. Ctrl+K takes a web address, a document address, or a relative path.
