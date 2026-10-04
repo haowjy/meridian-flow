@@ -80,8 +80,12 @@ export type DocumentSessionSnapshot = {
   room: YjsRoomName;
   status: DocumentSessionStatus;
   connectionState: DocumentSessionConnectionState | null;
-  /** The server's scope for this room; `edit` until it names a narrower one. */
-  access: DocumentSessionAccess;
+  /**
+   * The scope the server last named for this room, kept across reconnects and
+   * transport restarts; `null` until it names one. An unnamed room is writable
+   * (local-first).
+   */
+  access: DocumentSessionAccess | null;
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
@@ -132,7 +136,10 @@ export type DocumentSessionTransportProvider = {
    * and on every subsequent change. Returns an unsubscribe function.
    */
   subscribeStatus?: (listener: (state: DocumentSessionConnectionState) => void) => () => void;
-  /** Same contract as `subscribeStatus`, for the server's scope for this room. */
+  /**
+   * Every scope the server names for this room, and on subscribe the one it
+   * last named. Nothing until it names one: a transport never invents a scope.
+   */
   subscribeAccess?: (listener: (access: DocumentSessionAccess) => void) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
@@ -193,7 +200,7 @@ export class DocumentSession {
    * distinguish "connected & synced" from "disconnected" after that.
    */
   private transportState: DocumentSessionConnectionState | null = null;
-  private access: DocumentSessionAccess = "edit";
+  private access: DocumentSessionAccess | null = null;
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;

@@ -165,8 +165,8 @@ export function createHocuspocusDocumentTransport({
     WebSocketPolyfill: CollabSchemaWebSocket,
   });
   let currentState = mapStatus(websocket.status);
-  // Local-first: a room is writable until the server names a narrower scope.
-  let currentAccess: DocumentSessionAccess = "edit";
+  // Only the server names a scope; until it does, the session keeps its own.
+  let currentAccess: DocumentSessionAccess | null = null;
   // A local update the server has not yet acknowledged.
   let localEditsPending = false;
   let terminal = false;
@@ -289,7 +289,7 @@ export function createHocuspocusDocumentTransport({
     },
     subscribeAccess(listener) {
       accessListeners.add(listener);
-      listener(currentAccess);
+      if (currentAccess) listener(currentAccess);
       return () => {
         accessListeners.delete(listener);
       };
