@@ -121,7 +121,7 @@ export function TranscriptReference({
     : syntax && linkChip(syntax, answer);
   // The dashed outline says "nothing here yet" to the eye; this says it to a
   // screen reader, in the words the Editor's hint and the follow already use.
-  const missing = chip?.state === "dashed" ? t`No document at that address` : undefined;
+  const missing = chip?.state === "dashed" ? t`Doesn't exist yet` : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>

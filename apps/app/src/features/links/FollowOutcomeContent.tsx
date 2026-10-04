@@ -15,11 +15,18 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
+import {
+  addressDocumentName,
+  type LinkFollowOutcome,
+  linkTargetHref,
+  linkTargetLabel,
+} from "@/core/editor/links";
+import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
 
 import type { LinkDocumentRef } from "./follow-link";
 import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
@@ -30,9 +37,38 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
       return <Trans>Opening the link</Trans>;
     case "failed":
       return <Trans>That link could not be checked</Trans>;
-    case "missing":
-      return <Trans>No document at that address</Trans>;
+    case "missing": {
+      const name = missingName(outcome);
+      return linkCreationTarget(outcome.address) ? (
+        <Trans>“{name}” doesn't exist yet</Trans>
+      ) : (
+        <Trans>“{name}” can't be found</Trans>
+      );
+    }
   }
+}
+
+/** What the writer calls the missing document. */
+function missingName(outcome: Extract<LinkFollowOutcome, { state: "missing" }>): string {
+  return (
+    (outcome.address && addressDocumentName(outcome.address)) || linkTargetLabel(outcome.target)
+  );
+}
+
+/** The area's icon and the folder, worded as the `@` menu words it; the full address on hover. */
+function MissingLocation({ address }: { address: string }) {
+  const parsed = parseContextUri(address);
+  if (!parsed.ok) return null;
+  const { scheme, path } = parsed.value;
+  const location = documentLocation(scheme, path.split("/").slice(0, -1).join("/"));
+  if (!location) return null;
+  const Icon = schemeIcon(scheme);
+  return (
+    <p title={address} className="flex items-center gap-1.5 text-ink-muted text-xs">
+      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <span className="truncate">{location}</span>
+    </p>
+  );
 }
 
 export function FollowOutcomeContent({
@@ -54,6 +90,7 @@ export function FollowOutcomeContent({
   const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId, workId);
   const address = outcome.state === "missing" ? outcome.address : null;
   const creation = outcome.state === "missing" ? linkCreationTarget(address) : null;
+  const name = outcome.state === "missing" ? missingName(outcome) : "";
 
   return (
     <>
@@ -63,15 +100,19 @@ export function FollowOutcomeContent({
         ) : outcome.state === "failed" ? (
           <Trans>The project could not be reached. The link itself is fine.</Trans>
         ) : creation ? (
-          <Trans>Create it now and the link starts working. Nothing about the link changes.</Trans>
+          <Trans>Create it and this link opens it.</Trans>
         ) : (
           <Trans>It may have moved or been removed.</Trans>
         )}
       </DialogDescription>
 
-      <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
-        {address ?? linkTargetHref(outcome.target)}
-      </p>
+      {outcome.state === "missing" ? (
+        address && <MissingLocation address={address} />
+      ) : (
+        <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
+          {linkTargetHref(outcome.target)}
+        </p>
+      )}
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">
@@ -103,7 +144,7 @@ export function FollowOutcomeContent({
               await onOpen({ documentId });
             }}
           >
-            {t`Create the document`}
+            {t`Create “${name}”`}
           </Button>
         ) : null}
       </DialogFooter>

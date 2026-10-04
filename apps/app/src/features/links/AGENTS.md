@@ -64,8 +64,11 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   Try again. An unasked question (a relative link with no base yet) throws in
   the resolver rather than answering null.
 - **Unresolved is a sentence, never a warning.** Linking ahead of writing is
-  the job: "No document at that address", with Create when the address is
-  creatable (manuscript, kb, user, or scratch, with a filename; never uploads).
+  the job: "“Name” doesn't exist yet", with Create “Name” when the address is
+  creatable (manuscript, kb, user, or scratch, with a filename; never uploads),
+  and "“Name” can't be found" when it is not. The dialog names the document and
+  where it would live, worded as the `@` menu words a row's location
+  (`documentLocation`); the full address is only a tooltip.
 - **Create makes the document at exactly the link's address**: scheme,
   folders, filename (`.md` added when omitted), and for Scratch the Work its
   authority names, or the surface's Work for a contextual `scratch://`. It

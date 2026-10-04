@@ -144,7 +144,7 @@ describe("TranscriptReference", () => {
 
     expect(chip(reference)).toEqual({ state: "dashed", icon: "kb" });
     expect(reference.getAttribute("aria-disabled")).toBe("false");
-    expect(reference.getAttribute("aria-description")).toBe("No document at that address");
+    expect(reference.getAttribute("aria-description")).toBe("Doesn't exist yet");
   });
 
   it("shows an address's family while it is still being asked", async () => {
@@ -214,7 +214,7 @@ describe("TranscriptReference", () => {
 
     expect(chip(reference)).toEqual({ state: "dashed", icon: "uploads" });
     expect(reference.getAttribute("aria-disabled")).toBe("true");
-    expect(reference.getAttribute("aria-description")).toBe("No document at that address");
+    expect(reference.getAttribute("aria-description")).toBe("Doesn't exist yet");
   });
 
   it("keeps a moved document filled and unfollowed at the URI the writer referenced", () => {

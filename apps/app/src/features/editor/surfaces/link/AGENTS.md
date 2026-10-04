@@ -64,8 +64,8 @@ Beside them, three things that are not summoned surfaces:
   swept around the link is what they chose, so Cut takes that.
 - **Copy comes from the link core.** A component that spells out what a target
   means, or decides whether it can be followed, is a second classifier.
-- **Unresolved is a sentence, never a warning.** The hint says "No document at
-  that address", in the follow outcome's own words; it is not an error voice,
+- **Unresolved is a sentence, never a warning.** The hint says "Doesn't
+  exist yet", the same words as the chat chip's screen-reader label; it is not an error voice,
   because linking ahead of writing is the job (§5.5). How the link itself
   looks is the shared chip
   ([`components/app/link-chip/`](../../../../components/app/link-chip/AGENTS.md)),

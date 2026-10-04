@@ -278,7 +278,7 @@ function LinkFields({
             </span>
           ) : null}
           {resolution?.state === "unresolved" ? (
-            <span className="text-xs text-muted-foreground">{t`No document at that address`}</span>
+            <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
           ) : null}
         </div>
       )}

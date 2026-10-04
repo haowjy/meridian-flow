@@ -13,6 +13,7 @@ export {
   openLinkForm,
 } from "./LinkSurfaceExtension";
 export {
+  addressDocumentName,
   type CreatableLinkScheme,
   documentFileName,
   isCreatableLinkScheme,
