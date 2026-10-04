@@ -544,6 +544,87 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
+    async function keepDraftAndSwitchToAutoApply(collab: ReturnType<typeof createTestCollab>) {
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await expect(
+        collab.agentEdit().write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Drafted." },
+          {
+            sessionId: "session-keep",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            grant: testFileGrant(DRAFT_DESTINATION),
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" }),
+      ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 1 });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto", pending: "keep" }),
+      ).resolves.toEqual({ status: "updated", policy: "auto" });
+    }
+
+    it("keeps pending changes reviewable after switching to auto-apply", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await keepDraftAndSwitchToAutoApply(collab);
+
+      const [work] = await db
+        .select({ aiWriteMode: works.aiWriteMode })
+        .from(works)
+        .where(eq(works.id, WORK_ID));
+      expect(work?.aiWriteMode).toBe("direct");
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID),
+      });
+      expect(preview.status).toBe("active");
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
+      // The kept draft stays manual, so no draft write can auto-push it live.
+      const drafts = await db
+        .select({ pushPolicy: documentBranches.pushPolicy })
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, DOC_ID as never),
+            eq(documentBranches.kind, "work_draft"),
+          ),
+        );
+      expect(drafts.map((draft) => draft.pushPolicy)).toEqual(["manual"]);
+    });
+
+    it("applies a kept draft later without losing live edits made in between", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await keepDraftAndSwitchToAutoApply(collab);
+
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.\n\nLive.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
+
+      await collab.draftReview.applyWorkDraft({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID),
+        userId: USER_ID as never,
+      });
+      const applied = await readMarkdown(collab, DOC_ID);
+      expect(applied).toContain("Base.");
+      expect(applied).toContain("Live.");
+      expect(applied).toContain("Drafted.");
+    });
+
     it("durably commits two same-response staged writes to one document", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);

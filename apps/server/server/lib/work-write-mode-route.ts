@@ -1,22 +1,27 @@
 /** Route core for authenticated Work AI write mode updates. */
+import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
+import type {
+  PendingChangesChoice,
+  SetWorkPushPolicyInput,
+  SetWorkPushPolicyResult,
+} from "../domains/collab/index.js";
 import type { AppServices } from "./app.js";
+import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 type WorkWriteModeServices = {
   works: {
-    findById(
-      workId: WorkId,
-    ): Promise<{ id: WorkId; createdByUserId: UserId; aiWriteMode: AiWriteMode } | null>;
+    findById(workId: WorkId): Promise<{
+      id: WorkId;
+      createdByUserId: UserId;
+      aiWriteMode: AiWriteMode;
+      archivedAt: string | null;
+    } | null>;
   };
   branchPush: {
-    setWorkPushPolicy(input: {
-      workId: WorkId;
-      policy: "manual" | "auto";
-      confirmedPush?: boolean;
-      pushedByUserId?: UserId;
-    }): Promise<unknown>;
+    setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   };
 };
 
@@ -27,6 +32,11 @@ export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServ
   };
 }
 
+/**
+ * Switching to auto-apply with pending changes needs `pending` (D40): without
+ * it the route answers `confirmation_required` so the client can ask. An
+ * archived Work allows only `keep` (D30).
+ */
 export async function handleWorkWriteModeRequest(
   deps: WorkWriteModeServices,
   input: {
@@ -34,7 +44,7 @@ export async function handleWorkWriteModeRequest(
     workId: WorkId;
     userId: UserId;
     aiWriteMode: unknown;
-    confirmedPush?: boolean;
+    pending?: unknown;
   },
 ): Promise<
   | { aiWriteMode: AiWriteMode; status: "updated" }
@@ -50,20 +60,33 @@ export async function handleWorkWriteModeRequest(
   if (!aiWriteMode) {
     throw createError({ statusCode: 400, message: "aiWriteMode must be 'direct' or 'draft'" });
   }
+  const pending = parsePending(input.pending);
+  if (pending === null) {
+    throw createError({ statusCode: 400, message: "pending must be 'apply' or 'keep'" });
+  }
 
   const work = await deps.works.findById(input.workId);
   if (!work || work.createdByUserId !== input.userId) {
     throw createError({ statusCode: 404, message: "Work not found" });
   }
 
-  const pushPolicy = aiWriteMode === "direct" ? "auto" : "manual";
   const policyResult = await deps.branchPush.setWorkPushPolicy({
     workId: input.workId,
-    policy: pushPolicy,
-    confirmedPush: input.confirmedPush,
+    policy: aiWriteMode === "direct" ? "auto" : "manual",
+    ...(pending ? { pending } : {}),
+    archived: work.archivedAt !== null,
     pushedByUserId: input.userId,
   });
-  if (isConfirmationRequired(policyResult)) {
+  if (policyResult.status === "refused") {
+    throwHttpInterrupt(
+      meridianErrorFromSystem(
+        "work_archived",
+        "This Work is archived, so its pending changes are frozen. Keep them for review, or unarchive the Work to apply them.",
+      ),
+      409,
+    );
+  }
+  if (policyResult.status === "confirmation_required") {
     return {
       aiWriteMode: work.aiWriteMode,
       status: "confirmation_required",
@@ -80,17 +103,8 @@ function parseAiWriteMode(value: unknown): AiWriteMode | null {
   return value === "direct" || value === "draft" ? value : null;
 }
 
-function isConfirmationRequired(
-  value: unknown,
-): value is { status: "confirmation_required"; unpushedCount: number; reason: string } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "status" in value &&
-    value.status === "confirmation_required" &&
-    "unpushedCount" in value &&
-    typeof value.unpushedCount === "number" &&
-    "reason" in value &&
-    typeof value.reason === "string"
-  );
+/** `undefined` when absent, `null` when present but invalid. */
+function parsePending(value: unknown): PendingChangesChoice | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  return value === "apply" || value === "keep" ? value : null;
 }
