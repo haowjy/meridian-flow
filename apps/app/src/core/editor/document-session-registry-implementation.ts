@@ -46,6 +46,7 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
+const noop = () => undefined;
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -123,6 +124,8 @@ export class DocumentSessionRegistry
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
   private localResources: LocalResourceLifetimePort | null = null;
+  private readonly refusalWatchedSessions = new WeakSet<DocumentSession>();
+  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void>>();
 
   constructor(
     private readonly createCoordination: (
@@ -842,6 +845,38 @@ export class DocumentSessionRegistry
   private attachSessionTransport(session: DocumentSession): void {
     if (session.getSnapshot().schemaFence) return;
     session.attachTransport(this.transportFactory);
+    this.dropOnRefusedEdits(session);
+  }
+
+  /**
+   * Drop refused live rooms even when no editor host holds them. Branch rooms
+   * hold no lease; their editor rebuilds them in place (`rebuildBranchRoom`).
+   */
+  private dropOnRefusedEdits(session: DocumentSession): void {
+    if (this.refusalWatchedSessions.has(session)) return;
+    this.refusalWatchedSessions.add(session);
+    session.subscribe(() => {
+      if (session.refusedLocalEdits()) void this.dropRefusedRoom(session);
+    });
+  }
+
+  dropRefusedRoom(session: DocumentSession): Promise<void> {
+    const existing = this.refusedRoomDrops.get(session);
+    if (existing) return existing;
+    const state = this.liveRooms.get(session.documentId as DocumentId);
+    if (!session.refusedLocalEdits() || state?.session !== session) return Promise.resolve();
+    const drop = Promise.all(
+      [...state.leases.values()].map((lease) =>
+        this.revokeAccess(
+          lease.projectId,
+          lease.documentId,
+          lease.generation,
+          `access-refused/v1/${lease.projectId}/${lease.documentId}/${lease.generation}`,
+        ),
+      ),
+    ).then(noop, noop);
+    this.refusedRoomDrops.set(session, drop);
+    return drop;
   }
 
   private removeRetainedProjectLease(projectId: ProjectId, documentId: DocumentId): boolean {

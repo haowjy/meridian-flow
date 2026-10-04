@@ -79,7 +79,8 @@ export function createAccountDocumentSessionRuntime(
         property === "release" ||
         property === "releaseBranchRooms" ||
         property === "revokeDocument" ||
-        property === "revokeAccess"
+        property === "revokeAccess" ||
+        property === "dropRefusedRoom"
       ) {
         return value.bind(target);
       }
