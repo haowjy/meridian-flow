@@ -113,8 +113,8 @@ msgstr ""
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
-msgstr ""
+#~ msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
+#~ msgstr ""
 
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -274,8 +274,28 @@ msgstr "{minutes}分钟"
 msgid "{name} (in the trash)"
 msgstr ""
 
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{name} has pending changes waiting for review. From now on, AI changes go live right away."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{name} was archived during the switch, so you're still in Draft."
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -538,6 +558,10 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Apply them now"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -1107,8 +1131,12 @@ msgid "Could not load files."
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
+msgid "Couldn't apply every change, so you're still in Draft."
 msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#~ msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -1393,6 +1421,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Couldn't switch, so you're still in Draft."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1705,8 +1737,8 @@ msgid "Drafting"
 msgstr "起草中"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Drafts are waiting"
-msgstr ""
+#~ msgid "Drafts are waiting"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
@@ -2193,6 +2225,10 @@ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Keep editing"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Keep them for review"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -3271,8 +3307,8 @@ msgid "Review"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Review changes"
-msgstr ""
+#~ msgid "Review changes"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewChip.tsx
@@ -3664,12 +3700,24 @@ msgstr ""
 msgid "Summarize earlier messages so the model has room to keep going"
 msgstr ""
 
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Switch"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Switch {name} to auto-apply?"
+msgstr ""
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
 msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Switch to auto-apply?"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -3683,6 +3731,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Switching Work…"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "Switching…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -4111,8 +4163,8 @@ msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
-msgstr ""
+#~ msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
+#~ msgstr ""
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
@@ -4501,6 +4553,14 @@ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "You have {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "You have pending changes waiting for review. From now on, AI changes go live right away."
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
