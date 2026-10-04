@@ -10,6 +10,7 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { confirmEveryGrant } from "../../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../../collab/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
@@ -55,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("persists and reloads a live document with zero CRDT structs", async () => {
       const collab = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

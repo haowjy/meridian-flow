@@ -3,7 +3,9 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { AssetPathResolver } from "@meridian/markup";
+import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
+  currentDrizzleDb,
   deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
   isInDrizzleTransaction,
@@ -13,6 +15,7 @@ import {
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
+import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import type { EventSink } from "../observability/index.js";
 import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
@@ -53,7 +56,6 @@ import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
-import { createDrizzleResponseDocumentScreen } from "./adapters/drizzle-response-document-screen.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
@@ -127,6 +129,8 @@ type CollabDomainDeps = {
   notices?: NoticePort;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workProjectionMutation: WorkProjectionMutation;
+  /** Confirms model writes' grants under lock where they become durable (file-access §5). */
+  fileAccess: Pick<FileAccess, "confirmEdit">;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
 };
@@ -280,7 +284,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
-    screenResponseDocuments: createDrizzleResponseDocumentScreen(deps.db),
+    fileAccess: deps.fileAccess,
+    async lockLiveDocuments(documentIds) {
+      const tx = currentDrizzleDb(deps.db);
+      for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
+    },
     journal: persistence.journal,
     liveCoordinator,
     lifecycle: persistence.lifecycle,

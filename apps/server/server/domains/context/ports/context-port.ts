@@ -20,6 +20,7 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
+import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /**
@@ -40,8 +41,8 @@ export interface ThreadContextView {
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
-  /** Whether the thread's Work drafts AI writes (D40). */
-  draftMode: boolean;
+  /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
+  draftWork: WorkRef | null;
   version?: "draft" | "live";
 }
 

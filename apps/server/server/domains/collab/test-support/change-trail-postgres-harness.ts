@@ -1,4 +1,5 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
+
 import {
   createAgentEditCodec,
   toDocHandle,
@@ -11,6 +12,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { confirmEveryGrant, testFileGrant } from "../../../test-support/file-grants.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
@@ -51,7 +53,7 @@ const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
-const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
+const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -541,6 +543,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     diagnostics: projectionDiagnostics,
   });
   const agentEdit = createBranchThreadPeerAgentEditCore({
+    fileAccess: confirmEveryGrant,
+    lockLiveDocuments: async () => {},
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,
     liveCoordinator,
@@ -657,7 +661,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -680,7 +684,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
     }
     const betaContext = options.liveBeta
-      ? { ...context, destination: { kind: "live" } as const }
+      ? { ...context, grant: testFileGrant({ kind: "live" }) }
       : context;
     await collab
       .agentEdit()
@@ -764,7 +768,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -852,7 +856,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
     });
     const context = {
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
       turnId: TURN_ID,
@@ -912,7 +916,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
@@ -976,7 +980,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
@@ -1097,7 +1101,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
-        destination: DRAFT_DESTINATION,
+        grant: testFileGrant(DRAFT_DESTINATION),
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -1145,7 +1149,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
-        destination: DRAFT_DESTINATION,
+        grant: testFileGrant(DRAFT_DESTINATION),
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -1432,7 +1436,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
-        destination: DRAFT_DESTINATION,
+        grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseId: input.responseId,
@@ -1457,7 +1461,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branch.doc.destroy();
     const context = {
       sessionId: THREAD_ID,
-      destination: DRAFT_DESTINATION,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
@@ -1600,7 +1604,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
-        destination: DRAFT_DESTINATION,
+        grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseId,
@@ -1620,7 +1624,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
-        destination: DRAFT_DESTINATION,
+        grant: testFileGrant(DRAFT_DESTINATION),
         sessionId: THREAD_ID,
         threadId: THREAD_ID,
         turnId: TURN_ID,

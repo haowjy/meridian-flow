@@ -21,6 +21,7 @@ import {
   createInMemoryRepositories,
 } from "../../server/domains/threads/index.js";
 import { createWiredCoreToolRegistrations } from "../../server/lib/wired-core-tools.js";
+import { confirmEveryGrant, testFileGrant } from "../../server/test-support/file-grants.js";
 
 const FILE_URI = "kb://notes.md";
 const FILE_CONTENT = "Smoke test seed content";
@@ -114,6 +115,17 @@ describe("smoke: in-process turn", () => {
         threadWorks: repos.threadWorks,
         documentTouches: repos.documentTouches,
         eventSink: createInMemoryEventSink(),
+        // Memory has no file facts; every read and write is granted live.
+        fileAccess: {
+          async authorize(_principal, target) {
+            return testFileGrant(
+              { kind: "live" },
+              target.kind === "container" ? undefined : target.documentId,
+            );
+          },
+          confirmEdit: confirmEveryGrant.confirmEdit,
+        },
+        readAgentChain: async () => [],
       }),
     });
     const toolExecutor = createToolExecutor(toolRegistry);

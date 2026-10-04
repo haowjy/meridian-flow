@@ -43,6 +43,22 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   return { ports, hocuspocus, app };
 }
 
+/** Tool calls read the thread's Agent binding for its permission (file-access §8). */
+export async function bindEditAgent(runtime: ComposedRuntime, threadId: string): Promise<void> {
+  if (await runtime.ports.agentRevisions.readThreadBinding(threadId)) return;
+  await runtime.ports.agentRevisions.bindThread(
+    threadId,
+    null,
+    {
+      model: "mock-model",
+      skills: { load: [], available: [] },
+      namedTargets: [],
+      permission: "edit",
+    },
+    null,
+  );
+}
+
 /** Unloads every open room, so pending stores land before the case ends. */
 export async function unloadHocuspocus(server: Hocuspocus): Promise<void> {
   for (let pass = 0; pass < 3; pass += 1) {
@@ -102,6 +118,7 @@ export function useComposedRuntimes(db: () => Database) {
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
     const begin = async () => {
+      await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
       const call: ToolCall = (name, args) =>
         runtime.app.toolExecutor.executeTool(

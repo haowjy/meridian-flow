@@ -4,6 +4,7 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { confirmEveryGrant, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -56,6 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const collabs: Array<{ dispose(): void }> = [];
     const createTestCollab = () => {
       const collab = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
@@ -179,7 +181,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       expect(write.status).toBe("success");
@@ -277,7 +279,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               sessionId: "session-overlap",
               threadId: THREAD_ID,
               turnId: TURN_ID,
-              destination: DRAFT_DESTINATION,
+              grant: testFileGrant(DRAFT_DESTINATION),
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
@@ -335,7 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               sessionId: "session-atomic-reversal",
               threadId: THREAD_ID,
               turnId: TURN_ID,
-              destination: DRAFT_DESTINATION,
+              grant: testFileGrant(DRAFT_DESTINATION),
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
@@ -385,7 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-writer-redo",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -465,7 +467,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-live-dependent",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -513,7 +515,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-live-independent",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -562,7 +564,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "session-same-response-db",
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId,
@@ -581,7 +583,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-same-response-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId,
@@ -630,7 +632,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId: "response-reused-provider-tool-id-db-a",
@@ -653,7 +655,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseId: "response-reused-provider-tool-id-db-b",

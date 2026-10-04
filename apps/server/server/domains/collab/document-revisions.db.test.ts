@@ -11,6 +11,7 @@ import {
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
@@ -88,10 +89,11 @@ async function fixture(mode: "direct" | "draft") {
     threadId: THREAD_ID,
     sessionId: THREAD_ID,
     turnId: TURN_ID,
-    destination:
+    grant: testFileGrant(
       mode === "direct"
-        ? ({ kind: "live" } as const)
-        : ({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const),
+        ? { kind: "live" }
+        : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+    ),
   };
   const read = (responseId?: string) =>
     core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });

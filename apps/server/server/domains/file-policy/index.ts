@@ -6,7 +6,7 @@ export {
 } from "./adapters/drizzle-file-facts.js";
 export { createOwnerFileGrants } from "./adapters/owner-file-grants.js";
 export { matchAncestors, nodeChain } from "./domain/ancestors.js";
-export { destination, isDrafted, type NodeGrant, type WriteDestination } from "./domain/policy.js";
+export { isDrafted, type NodeGrant, sourceDestination } from "./domain/policy.js";
 export {
   type AgentChain,
   type AgentLink,
@@ -28,6 +28,11 @@ export {
   type Principal,
   type WorkRef,
 } from "./domain/types.js";
+export {
+  FileEditRefusedError,
+  grantWorkIds,
+  runWithEditGrants,
+} from "./edit-confirmation.js";
 export {
   createFileAccess,
   type FileAccess,

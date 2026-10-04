@@ -1,4 +1,4 @@
-/** Branded agent-edit core types and the destination that routes each model call. */
+/** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
   ReadCommand,
@@ -8,30 +8,34 @@ import type {
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { FileDestination } from "../../file-policy/index.js";
+import type { FileAccessDenial, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
- * Where a model call reads or writes one document, computed by the caller
- * from the file policy (D20): the live document, or this thread's copy of a
- * Work draft. The Work is part of the version, so `work switch` changes it
- * (D41). The slug only names the Work in model-facing copy.
+ * Where a model call reads or writes one document, as its grant says (D20):
+ * the live document, or this thread's copy of a Work draft. The Work is part
+ * of the version, so `work switch` changes it (D41). The slug only names the
+ * Work in model-facing copy.
  */
 export type AgentEditDestination = FileDestination;
 
-/** A core call's context with the destination the caller computed. */
-export type RoutedWriteContext = WriteContext & { destination: AgentEditDestination };
+/**
+ * A write's context: the edit grant the caller got from the file policy. Its
+ * destination routes the call, and the write seams confirm it (file-access §5).
+ */
+export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
 
 /**
  * A read's context. `liveVersion` marks a `version: "live"` read (D3): it reads
  * the live document even when this reply already drafted it, where a default
  * read follows the reply's pinned destination.
  */
-export type RoutedReadContext = RoutedWriteContext & { liveVersion?: boolean };
+export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
 
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument = {
   documentId: DocumentId;
-  reason: "work_archived";
+  reason: FileAccessDenial;
+  /** The archived Work, for `work_archived`. */
   workSlug: string | null;
 };
 

@@ -16,7 +16,7 @@ import type { Database } from "@meridian/database";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
-import { destination, isDrafted } from "../file-policy/index.js";
+import { isDrafted, sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -162,7 +162,9 @@ function buildProjectContextFsAdapters(
     // of the manifest. A port with no thread is a person's, and people always
     // write live (D20). Either way the membership is live and never branches.
     const schemeView =
-      !thread || destination(scheme, thread.draftMode) === "live" ? { projectId } : manifestView;
+      !thread || sourceDestination(scheme, thread.draftWork).kind === "live"
+        ? { projectId }
+        : manifestView;
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
