@@ -3,7 +3,7 @@
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
@@ -263,15 +263,18 @@ it("keeps local ownership while canonical metadata replaces a stale same-ID path
   });
 });
 
-it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
+describe("gateLiveView", () => {
   const resolved = {
     kind: "current",
     document: { kind: "available", documentId: "document-id" },
   } as DocumentAddressResult;
-  const manifest = (ids: string[]) =>
+  const manifest = (ids: string[], state: { isFetching?: boolean; isError?: boolean } = {}) =>
     ({
       catalog: { normalized: { entries: new Map(ids.map((id) => [id, {}])) } },
       isComplete: true,
+      isFetching: false,
+      isError: false,
+      ...state,
     }) as unknown as Parameters<typeof gateLiveView>[2];
   const group = (isNewDocument: boolean) =>
     ({
@@ -279,19 +282,42 @@ it("opens a manuscript document missing from the live manifest as its pending ne
       draft: { draftId: "draft-id", status: "active", isNewDocument },
     }) as unknown as ThreadDraftGroup;
   const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+  const noTab = () => false;
 
-  expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready()).draftOnly).toBe(
-    undefined,
-  );
-  expect(gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)))).toMatchObject({
-    result: resolved,
-    draftOnly: { draft: { draftId: "draft-id" } },
+  it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
+    expect(
+      gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready(), noTab).draftOnly,
+    ).toBe(undefined);
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)), noTab),
+    ).toMatchObject({ result: resolved, draftOnly: { draft: { draftId: "draft-id" } } });
+    // Discarded, or a draft of an existing document: no live view and no review.
+    expect(gateLiveView(resolved, "manuscript", manifest([]), ready(), noTab).result).toEqual({
+      kind: "unavailable",
+    });
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), ready(group(false)), noTab).result,
+    ).toEqual({ kind: "unavailable" });
   });
-  // Discarded, or a draft of an existing document: no live view and no review.
-  expect(gateLiveView(resolved, "manuscript", manifest([]), ready()).result).toEqual({
-    kind: "unavailable",
-  });
-  expect(gateLiveView(resolved, "manuscript", manifest([]), ready(group(false))).result).toEqual({
-    kind: "unavailable",
+
+  it("calls absence unavailable only on an authoritative read, and keeps a promoted tab live", () => {
+    // A stored checkpoint stays complete while its refresh is in flight, and a
+    // failed draft read is not evidence of no draft: both are still loading.
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), noTab)
+        .result,
+    ).toBeUndefined();
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isError: true }), ready(), noTab).result,
+    ).toBeUndefined();
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", groups: [] }, noTab)
+        .result,
+    ).toBeUndefined();
+    // Apply promoted the tab; the lagging catalog does not get to veto it.
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), () => true)
+        .result,
+    ).toBe(resolved);
   });
 });

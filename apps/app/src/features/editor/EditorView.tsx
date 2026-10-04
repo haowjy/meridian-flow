@@ -125,8 +125,8 @@ function mountIdentity(props: EditorViewProps, surface: "live" | "review"): Edit
   } as const;
   const reviewDraftId = props.reviewDraftId;
   const reviewRoomName = props.reviewRoomName;
-  if ((reviewDraftId && !reviewRoomName) || (!reviewDraftId && reviewRoomName)) {
-    throw new Error("Review editor requires both reviewDraftId and reviewRoomName");
+  if (!reviewDraftId && reviewRoomName) {
+    throw new Error("Review editor requires a reviewDraftId with its reviewRoomName");
   }
   return surface === "review" && reviewDraftId && reviewRoomName
     ? { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
@@ -137,6 +137,9 @@ export function EditorView(props: EditorViewProps) {
   const identity = mountIdentity(props, "review");
   const roomKey = editorRoomKey(identity);
   const inReview = identity.surface === "review";
+  // Review is intended from the click, before its room resolves or paints. Until
+  // the branch editor owns input, the live manuscript stays painted but read-only.
+  const reviewRequested = Boolean(props.reviewDraftId);
   const registry = useLiveDocumentSessionRegistry();
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   // The review mount whose editor exists. Until then the live editor stays on
@@ -183,6 +186,9 @@ export function EditorView(props: EditorViewProps) {
   const reviewSession = inReview && boundSession?.roomKey === roomKey ? boundSession : null;
   const reviewKey = inReview ? editorMountKey(identity) : null;
   const reviewVisible = reviewSession !== null && paintedReviewKey === reviewKey;
+  // With no live editor underneath, the branch's own shell (or notice) is all
+  // there is to see, so it shows from its first render.
+  const reviewShown = reviewVisible || !liveSession;
 
   if (!liveSession && !reviewSession) return <PendingEditorShell {...props} />;
 
@@ -198,15 +204,16 @@ export function EditorView(props: EditorViewProps) {
           <SessionEditorView
             key={editorMountKey(mountIdentity(props, "live"))}
             {...props}
+            editable={reviewRequested ? false : props.editable}
             identity={mountIdentity(props, "live")}
             session={liveSession}
             liveSession={liveSession}
-            held={inReview}
+            held={reviewRequested}
           />
         </div>
       ) : null}
       {reviewSession && reviewKey ? (
-        <div className={reviewVisible ? "contents" : "hidden"}>
+        <div className={reviewShown ? "contents" : "hidden"}>
           <SessionEditorView
             key={reviewKey}
             {...props}

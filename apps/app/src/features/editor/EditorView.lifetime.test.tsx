@@ -366,6 +366,60 @@ describe("editor lifetime", () => {
     });
   });
 
+  it("keeps the live manuscript painted but read-only from the Review click until the branch editor paints", async () => {
+    const documentId = "pending-review-doc";
+    const roomName = "branch:pending-review-doc:gen:1";
+    sessionHorizons.set(roomName, {
+      localPersistence: Promise.resolve(),
+      firstServerSync: new Promise(() => undefined),
+    });
+    await withReactRoot(
+      <Harness initial={{ documentId, session: sessionFor(documentId) }} />,
+      async () => {
+        const live = mountedEditor();
+        await act(async () => {
+          live.commands.insertContent("live words");
+        });
+
+        // Review is intended but its room is still resolving, then still syncing.
+        await act(async () => {
+          applyProps({ reviewDraftId: "draft-pending" });
+        });
+        expect(live.isEditable).toBe(false);
+        expect(live.view.dom.closest(".hidden")).toBeNull();
+        await act(async () => {
+          applyProps({ reviewRoomName: roomName });
+        });
+        expect(live.isEditable).toBe(false);
+        expect(live.view.dom.closest(".hidden")).toBeNull();
+        expect(live.getText()).toBe("live words");
+
+        // Leaving review restores writing on the same warm editor.
+        await act(async () => {
+          applyProps({ reviewDraftId: null, reviewRoomName: null });
+        });
+        expect(mountedEditor()).toBe(live);
+        expect(live.isEditable).toBe(true);
+      },
+    );
+  });
+
+  it("shows the pending shell for a draft-only review, with no live editor to keep painted", async () => {
+    const roomName = "branch:draft-only:gen:1";
+    sessionHorizons.set(roomName, {
+      localPersistence: Promise.resolve(),
+      firstServerSync: new Promise(() => undefined),
+    });
+    await withReactRoot(
+      <EditorView documentId="draft-only" reviewDraftId="draft-only-1" reviewRoomName={roomName} />,
+      async () => {
+        const shells = [...document.querySelectorAll(".meridian-editor-shell")];
+        expect(shells).toHaveLength(1);
+        expect(shells.filter((shell) => !shell.closest(".hidden"))).toHaveLength(1);
+      },
+    );
+  });
+
   it("opens read-only when the surface asks for it — the phone must not mount editable", async () => {
     const initial = { documentId: "document-3", projectId: "project-1", editable: false };
     await withReactRoot(<Harness initial={initial} />, async () => {

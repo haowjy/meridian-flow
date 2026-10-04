@@ -113,18 +113,31 @@ export function mergeLocalResourceState(
  * lists what can open live. A manuscript document missing from it has no live
  * view: its pending new-document draft opens as review, and with no such draft
  * the address is unavailable. Never a blank live editor.
+ *
+ * Absence concludes "unavailable" only on an authoritative read: the catalog is
+ * settled (a stored checkpoint stays "complete" while its refresh is in flight)
+ * and the drafts were read. Anything less is still loading. A tab already open
+ * live (an Apply promoted it) is never second-guessed by a lagging catalog.
  */
 export function gateLiveView(
   result: DocumentAddressResult | undefined,
   scheme: string,
-  manifest: { catalog: CatalogContextView | null; isComplete: boolean },
+  manifest: {
+    catalog: CatalogContextView | null;
+    isComplete: boolean;
+    isFetching: boolean;
+    isError: boolean;
+  },
   drafts: { status: string; groups: ThreadDraftGroup[] | null },
+  hasLiveTab: (documentId: string) => boolean,
 ): { result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup } {
   if (scheme !== "manuscript" || !result || result.kind === "unavailable") return { result };
   const documentId = result.document.documentId;
-  if (manifest.catalog?.normalized.entries.has(documentId)) return { result };
-  // Absence is only proof once the manifest is complete and the drafts are read.
-  if (!manifest.isComplete || drafts.status === "loading") return { result: undefined };
+  if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
+    return { result };
+  const settled = manifest.isComplete && !manifest.isFetching && !manifest.isError;
+  if (!settled || drafts.status === "loading" || drafts.status === "error")
+    return { result: undefined };
   const group = drafts.groups?.find((candidate) => candidate.documentId === documentId);
   if (group && pendingReviewDraft(group)?.isNewDocument) return { result, draftOnly: group };
   return { result: { kind: "unavailable" } };
