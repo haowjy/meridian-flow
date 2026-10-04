@@ -66,6 +66,11 @@ export type DraftReviewController = {
   isInlineDiscardPending: boolean;
   canApplyReviewedDraft: boolean;
   /**
+   * The Work is archived, so its drafts are frozen (D30): reviewing is allowed,
+   * Apply and Discard are not. Every disposition control disables on it.
+   */
+  draftsFrozen: boolean;
+  /**
    * The global disposition lock: any Apply/Discard in flight in the session.
    * Every mutating control disables on it so dispositions can't overlap.
    */
@@ -91,13 +96,21 @@ export type DraftReviewController = {
   ) => Promise<DraftCommandOutcome[]>;
 };
 
-export function useDraftReviewController(
-  projectId: string,
-  workId: string,
-  threadId: string | null = null,
-  owningWorkLabel: string | null = null,
-  stateOwner?: DraftReviewStateOwner,
-): DraftReviewController {
+export function useDraftReviewController({
+  projectId,
+  workId,
+  threadId = null,
+  owningWorkLabel = null,
+  draftsFrozen = false,
+  stateOwner,
+}: {
+  projectId: string;
+  workId: string;
+  threadId?: string | null;
+  owningWorkLabel?: string | null;
+  draftsFrozen?: boolean;
+  stateOwner?: DraftReviewStateOwner;
+}): DraftReviewController {
   const queryClient = useQueryClient();
   const accountId = usePostApplyAccountId();
   const recovery = useProjectDraftApplyRecovery();
@@ -405,6 +418,7 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       canApplyReviewedDraft,
+      draftsFrozen,
       isDisposing,
       pendingInlineDiscardIds,
       inlineReviewMessage,
@@ -434,6 +448,7 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       canApplyReviewedDraft,
+      draftsFrozen,
       isDisposing,
       pendingInlineDiscardIds,
       inlineReviewMessage,

@@ -39,6 +39,9 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
     ? { identity: recoveryItem.identity, entryVersion: recoveryItem.entryVersion }
     : null;
   const busy = controller.isDisposing;
+  // An archived Work's draft stays reviewable; the archived notice below
+  // explains the disabled verbs and offers Unarchive (D30).
+  const frozen = controller.draftsFrozen;
   const commandError =
     controller.inlineReviewMessage?.tone === "error" &&
     (controller.inlineReviewMessage.code === "apply-failed" ||
@@ -127,7 +130,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             <button
               type="button"
               onClick={() => controller.discard(documentId, draftId)}
-              disabled={busy}
+              disabled={busy || frozen}
               className="text-button"
             >
               <Trans>Discard all</Trans>
@@ -135,7 +138,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             <button
               type="button"
               onClick={() => controller.apply(documentId, draftId)}
-              disabled={busy || !controller.canApplyReviewedDraft}
+              disabled={busy || frozen || !controller.canApplyReviewedDraft}
               className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
             >
               {controller.isApplying ? (
