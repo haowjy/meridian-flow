@@ -835,6 +835,10 @@ msgstr "Close artifact preview"
 msgid "Close chat"
 msgstr "Close chat"
 
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Close review"
+msgstr "Close review"
+
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
 msgstr "Close settings"
@@ -3975,6 +3979,10 @@ msgstr "Top up any time. Extra usage carries over month to month."
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Try again"
 msgstr "Try again"
+
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Try again, or close this tab. The draft stays in your list."
+msgstr "Try again, or close this tab. The draft stays in your list."
 
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."

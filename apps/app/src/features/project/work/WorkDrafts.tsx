@@ -47,7 +47,12 @@ export function WorkDrafts({
           className="-mx-2"
           rows={visible.map((group) => {
             const path = group.contextPath;
-            const draft = { documentId: group.documentId, draftId: group.draft.draftId };
+            const draft = {
+              projectId,
+              workId,
+              documentId: group.documentId,
+              draftId: group.draft.draftId,
+            };
             const refused = draftCommandFailure(commandRecords, draft);
             return {
               key: group.documentId,

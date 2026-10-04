@@ -45,7 +45,15 @@ describe("WorkDrafts refused Discard", () => {
     await render(async () => {
       expect(document.querySelector("[role=alert]")).toBeNull();
       await act(async () =>
-        failDraftCommand({ documentId: "document-a", draftId: "draft-a" }, "discard-offline"),
+        failDraftCommand(
+          {
+            projectId: "project-a",
+            workId: "work-a",
+            documentId: "document-a",
+            draftId: "draft-a",
+          },
+          "discard-offline",
+        ),
       );
       expect(document.querySelector("[role=alert]")?.textContent).toBe(
         "Couldn't discard. Check your connection and try again.",

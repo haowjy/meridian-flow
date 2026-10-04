@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Draft dispositions: draft-only Discard closes its tab at once, and Apply is done at server confirmation. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   confirmDraftCommand,
@@ -104,7 +104,12 @@ let controller: DraftReviewController | null = null;
 let heldRecords: ReturnType<typeof useDraftCommandRecords> = {};
 
 function heldError() {
-  return draftCommandFailure(heldRecords, { documentId: "document-a", draftId: "draft-a" });
+  return draftCommandFailure(heldRecords, {
+    projectId: "project-a",
+    workId: "work-a",
+    documentId: "document-a",
+    draftId: "draft-a",
+  });
 }
 
 let otherSurface: DraftReviewController | null = null;
@@ -112,6 +117,28 @@ let otherSurface: DraftReviewController | null = null;
 /** A second review scope over the same Work, like the Editor beside Chat. */
 function CaptureOtherSurface() {
   otherSurface = useDraftReviewController("project-a", "work-a");
+  return null;
+}
+
+let unrelated: DraftReviewController[] = [];
+
+/** Other Works and projects, which share nothing with the draft under command. */
+function CaptureUnrelated() {
+  unrelated = [
+    useDraftReviewController("project-a", "work-b"),
+    useDraftReviewController("project-b", "work-a"),
+  ];
+  return null;
+}
+
+let switching: DraftReviewController | null = null;
+let switchWork!: (workId: string) => void;
+
+/** One controller that moves between Works, like the Editor's across navigation. */
+function CaptureSwitching() {
+  const [workId, setWorkId] = useState("work-a");
+  switchWork = setWorkId;
+  switching = useDraftReviewController("project-a", workId);
   return null;
 }
 
@@ -258,6 +285,50 @@ describe("draft dispositions", () => {
     );
   });
 
+  it("gives the claim back when Discard's optimistic close throws before dispatch", async () => {
+    vi.spyOn(coordinator, "discardDraft").mockImplementationOnce(() => {
+      throw new Error("route repair failed");
+    });
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()}>
+        <CaptureController />
+      </Providers>,
+      async () => {
+        await act(async () => {
+          await expect(controller?.discard("document-a", "draft-a")).rejects.toThrow(
+            "route repair failed",
+          );
+        });
+        expect(resolveDiscard).toBeNull();
+        expect(controller?.isDisposing).toBe(false);
+        let outcome: unknown;
+        await act(async () => {
+          outcome = await controller?.apply("document-a", "draft-a");
+        });
+        expect(outcome).toEqual({ kind: "applied" });
+      },
+    );
+  });
+
+  it("leaves a pending Apply behind when the controller moves to another Work", async () => {
+    applyMutate.mockImplementation(() => new Promise<void>(() => undefined));
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()}>
+        <CaptureSwitching />
+      </Providers>,
+      async () => {
+        await act(async () => {
+          void switching?.apply("document-a", "draft-a");
+        });
+        expect(switching?.isDisposing).toBe(true);
+        await act(async () => switchWork("work-b"));
+        expect(switching?.isDisposing).toBe(false);
+        await act(async () => switchWork("work-a"));
+        expect(switching?.isDisposing).toBe(true);
+      },
+    );
+  });
+
   it("counts Apply as done at server confirmation: promotes the draft-only tab and leaves review", async () => {
     await withReactRoot(
       <Providers open={vi.fn<OpenContextRoute>()}>
@@ -328,6 +399,7 @@ describe("draft dispositions", () => {
       <Providers open={vi.fn<OpenContextRoute>()}>
         <CaptureController />
         <CaptureOtherSurface />
+        <CaptureUnrelated />
       </Providers>,
       async () => {
         let first: Promise<unknown> | undefined;
@@ -344,6 +416,7 @@ describe("draft dispositions", () => {
         expect(applyMutate).toHaveBeenCalledTimes(1);
         expect(controller?.isDisposing).toBe(true);
         expect(otherSurface?.isDisposing).toBe(true);
+        expect(unrelated.map((surface) => surface.isDisposing)).toEqual([false, false]);
 
         await act(async () => {
           confirm();

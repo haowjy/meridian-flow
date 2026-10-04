@@ -31,9 +31,14 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
   }),
 }));
 vi.mock("@/features/editor/EditorView", () => ({
-  EditorView: (props: { session?: unknown; reviewRoomName?: string | null }) => (
+  EditorView: (props: {
+    session?: unknown;
+    reviewRoomName?: string | null;
+    onReviewSessionUnavailable?: () => void;
+  }) => (
     <div
       data-editor
+      data-leaves-review-when-unavailable={String(props.onReviewSessionUnavailable !== undefined)}
       data-live-session={String(props.session !== undefined)}
       data-review-room={props.reviewRoomName ?? ""}
     />
@@ -116,6 +121,8 @@ describe("ContextEditorMountHost draft-only review", () => {
       const editor = document.querySelector("[data-editor]");
       expect(editor?.getAttribute("data-review-room")).toBe("review-room-a");
       expect(editor?.getAttribute("data-live-session")).toBe("false");
+      // Leaving review would strand a draft-only tab on an empty editor.
+      expect(editor?.getAttribute("data-leaves-review-when-unavailable")).toBe("false");
       expect(opener.open).not.toHaveBeenCalled();
       expect(resourceReplica.openDocument).not.toHaveBeenCalled();
 

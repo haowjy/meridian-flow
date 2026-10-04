@@ -159,8 +159,14 @@ document; it must not reorder the shared projection.
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until Apply, and the server
 refuses a live room for it, so review hosts the draft branch room alone: the
-desktop and phone hosts open no live binding for a `draftOnly` tab. The ordinary
-live room opens once Apply promotes the tab. Its review tab
+desktop host opens no live binding for a `draftOnly` tab. The ordinary live room
+opens once Apply promotes the tab. There is no live version to go back to, so the
+header's exit for such a tab reads "Close review" and closes the tab (the draft
+stays in the Work's list to reopen), and a dead branch session leaves the tab for
+the writer to close rather than falling back to an empty live editor. **The phone
+does not host a new-document draft review yet:** its route tab comes only from the
+live catalog, which does not list the document until Apply (tracked separately).
+Phone review works for drafts of documents that already exist. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
@@ -187,21 +193,29 @@ admission may enrich only the overlay with resolved live-resource metadata.
   then shows "Connecting", its own disconnect state, or its retryable open
   error, exactly as for any document.
 - **The draft command record.** `client/query/draft-command-record.ts` holds one
-  record per draft (documentId + draftId), outside any review scope, so every
-  surface (composer strip, editor header, Work Files) reads the same state:
+  record per draft (project, Work, documentId, draftId), outside any review
+  scope, so every surface (composer strip, editor header, Work Files) reads the
+  same state. It is bounded: `bindDraftCommandAccount` empties it when the
+  account changes, and the entries below retire as described.
   - `pending`: an Apply or Discard is dispatched. `controller.isDisposing` is the
-    scope's synchronous lock or any pending record, so every surface disables,
-    and a second command for the same draft returns `blocked` instead of being
-    sent.
+    scope's synchronous lock or a pending record in the controller's own Work, so
+    every surface of that Work disables while other Works and projects stay
+    enabled, and a second command for the same draft returns `blocked` instead of
+    being sent. The session releases the claim whenever it ends without a
+    confirmation or a held failure, including when an optimistic callback throws
+    before anything is dispatched.
   - `confirmed`: set by `useApplyDraft` at server confirmation. Draft-list reads
-    that started before it (`draftReadFence`, applied in `useWorkDrafts`'s
-    query function) cannot bring the draft back; a read that starts later is
-    authoritative, since the server reuses a draft id for a branch's next
-    generation. The list then refreshes in the background.
+    that started before it (`readDraftsAfterCommands`, applied in
+    `useWorkDrafts`'s query function) cannot bring the draft back; a read that
+    starts later is authoritative, since the server reuses a draft id for a
+    branch's next generation. The record is dropped once no earlier read is still
+    in flight. The list then refreshes in the background.
   - `failed`: a refused Discard (`discard-offline`) or a lost Apply response
     (`apply-unknown`), shown on the draft by the header, the composer strip, and
     the Work Files row. It clears on the next action on that draft (Discard
-    retry, Apply, opening Review); Work Files also offers Dismiss.
+    retry, Apply, opening Review); Work Files also offers Dismiss. A later list read
+    that no longer lists the draft drops it too, so it never reaches a later
+    proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection
   ("Couldn't apply", never the confirmed path). A request that got no answer is
   unknown ("Couldn't confirm whether this applied"), whatever the list shows
