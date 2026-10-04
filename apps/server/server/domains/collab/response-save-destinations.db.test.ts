@@ -550,6 +550,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted).toContain("Live lore.");
       expect(drafted).toContain("Pending lore.");
     });
+
+    it("undoes each write where it landed, and refuses one in an archived Work's draft", async () => {
+      const collab = createTestCollab();
+      const keptDraftText = await saveLiveWriteOverKeptDraft(collab);
+      const agentEdit = collab.agentEdit();
+      const undoLast = async () =>
+        agentEdit.write(
+          { command: "undo", file: "lore.md", documentId: KB_ID, last: 1 },
+          await context(direct(), KB_ID),
+        );
+
+      // The live write came after the keep switch; the latest write is undone live.
+      await expect(undoLast()).resolves.toMatchObject({ status: "reversed" });
+      expect(await liveText(collab, KB_ID)).not.toContain("Live lore.");
+      expect(await keptDraftText()).toContain("Pending lore.");
+
+      // Now the latest is the drafted write, in a draft the archive froze.
+      await archiveWork(WORK_ID);
+      const frozen = undoLast();
+      await expect(frozen).rejects.toBeInstanceOf(FileEditRefusedError);
+      await expect(frozen).rejects.toMatchObject({
+        refused: [{ reason: "work_archived", archivedWork: { slug: "rewrite" } }],
+      });
+      expect(await keptDraftText()).toContain("Pending lore.");
+    });
   });
 }
 

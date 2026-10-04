@@ -22,6 +22,7 @@ function createCore(
     liveUtilityCore: asLiveAgentEditCore(cores.liveCore.asCore()),
     createThreadCore: () => cores.threadCore.asCore(),
     reversalHistory: cores.history.reader,
+    liveHistory: cores.history.liveHistory,
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: cores.history.pullThreadPeer,
     commitThreadResponseAtomically,

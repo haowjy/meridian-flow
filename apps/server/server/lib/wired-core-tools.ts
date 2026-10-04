@@ -52,6 +52,7 @@ import type {
   CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
+  RoutedWriteOutcome,
 } from "../domains/collab/index.js";
 import { copyBinaryDocument } from "../domains/context/binary-copy.js";
 import { unknownWorkMessage } from "../domains/context/context/router.js";
@@ -992,7 +993,7 @@ async function writeUnderGrant(
 ): Promise<(WriteOutcome & { isError: false }) | WriteToolErrorOutput> {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
-  let written: WriteOutcome;
+  let written: RoutedWriteOutcome;
   try {
     written = await deps.documentSync
       .agentEdit()
@@ -1013,8 +1014,31 @@ async function writeUnderGrant(
   if (written.isError) return { isError: true, output: written.result };
   // Undo and redo go where history says, so only forward writes name a destination.
   const reversal = parsed.command === "undo" || parsed.command === "redo";
-  return (reversal ? written : withDestination(written, grant.destination)) as WriteOutcome & {
-    isError: false;
+  return (
+    reversal ? withRefusedWrites(written) : withDestination(written, grant.destination)
+  ) as WriteOutcome & { isError: false };
+}
+
+/** A partial undo or redo says which writes stayed, and why, after what it reversed. */
+function withRefusedWrites(outcome: RoutedWriteOutcome): WriteOutcome {
+  const { refusedWrites, ...written } = outcome;
+  if (!refusedWrites?.length) return written;
+  const verb = written.command === "redo" ? "redone" : "undone";
+  const notes = refusedWrites.map(({ writeIds, denial }) => {
+    const why = isPermissionDenial(denial)
+      ? permissionDeniedMessage(denial)
+      : "This file was deleted, so this change wasn't made.";
+    if (writeIds.length === 0) return why;
+    return `${writeIds.join(", ")} ${writeIds.length === 1 ? "wasn't" : "weren't"} ${verb}. ${why}`;
+  });
+  const [first] = refusedWrites;
+  return {
+    ...written,
+    result: {
+      ...written.result,
+      ...(first && isPermissionDenial(first.denial) ? { reason: first.denial.reason } : {}),
+      message: [written.result.message, ...notes].filter(Boolean).join("\n\n"),
+    },
   };
 }
 

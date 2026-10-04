@@ -38,6 +38,14 @@ export type RefusedResponseDocument = {
   denial: FileAccessDenied;
 };
 
+/**
+ * A model call's outcome. An undo or redo that reversed some of its writes but
+ * was refused for others names the refused ones; the tool writes the copy.
+ */
+export type RoutedWriteOutcome = WriteOutcome & {
+  refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
+};
+
 /** One reply's save across every destination it wrote (D42). */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {
   /** Documents saved to this thread's Work draft copy; the rest went live. */
@@ -58,7 +66,7 @@ export type LiveAgentEditCore = AgentEditCore & {
 
 export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "commitResponse"> & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
-  write(command: WriteCommand, context: RoutedWriteContext): Promise<WriteOutcome>;
+  write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */
   responseDestination(responseId: string, documentId: string): AgentEditDestination | undefined;
   commitResponse(

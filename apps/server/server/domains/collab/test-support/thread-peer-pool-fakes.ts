@@ -101,6 +101,11 @@ export function createFakeReversalHistory() {
 
   return {
     reader,
+    /** The live journal holds no writes here: live undo history is the live core's. */
+    liveHistory: {
+      activeWriteSummary: async () => [],
+      readReversals: async () => [],
+    },
     pullThreadPeer: vi.fn(async (input: { documentId: DocumentId; threadId: ThreadId }) => {
       const peerKey = key(input.documentId, input.threadId);
       if (!peers.has(peerKey)) {
