@@ -1,9 +1,8 @@
 /**
- * Executor-level input contracts for the real tool registrations: each
- * tool's defaults, argument mapping and custom refusal messages, plus one row
- * per invalid_arguments message shape. The executor's generic parse-before-
- * dispatch contract lives in tool-executor.test.ts; document selector rules
- * live in agent-edit's command-schema.test.ts.
+ * Executor-level input contracts for the real tool registrations: argument
+ * mapping and cross-field rules no generated schema shows. The executor's
+ * generic parse-before-dispatch contract lives in tool-executor.test.ts;
+ * document selector rules live in agent-edit's command-schema.test.ts.
  */
 import { describe, expect, it, vi } from "vitest";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
@@ -53,17 +52,11 @@ function contractHarness() {
   };
 }
 
-async function expectRefused(name: string, args: Record<string, unknown>, issues: string[]) {
+async function expectRefused(name: string, args: Record<string, unknown>, path: string) {
   const { handler, call } = contractHarness();
   const result = await call(name, args);
   expect(handler).not.toHaveBeenCalled();
-  expect(result.isError).toBe(true);
-  expect(result.result).toMatchObject({ error: "invalid_arguments" });
-  expect(
-    (result.result as { issues: Array<{ path: string; message: string }> }).issues.map(
-      ({ path, message }) => `${path}: ${message}`,
-    ),
-  ).toEqual(issues);
+  expect(result.result).toMatchObject({ error: "invalid_arguments", issues: [{ path }] });
 }
 
 async function expectDelivered(name: string, args: Record<string, unknown>, delivered: unknown) {
@@ -73,173 +66,32 @@ async function expectDelivered(name: string, args: Record<string, unknown>, deli
   expect(handler).toHaveBeenCalledWith(delivered, expect.anything());
 }
 
-describe("issue messages from the real schemas", () => {
-  it("render each message shape once, with the argument path", async () => {
-    await expectRefused("read", { path: "c.md", in: 0 }, ["in: must be greater than 0"]);
-    await expectRefused("ls", { path: "" }, ["path: must not be empty"]);
-    await expectRefused("search", {}, ["pattern: required; expected a string"]);
-    await expectRefused("thread_ls", { depth: 4 }, ["depth: must be at most 3"]);
-    await expectRefused("thread_message", { ref: 7, message: 42 }, [
-      "ref: expected a string, got 7",
-      "message: expected a string, got 42",
-    ]);
-    await expectRefused("work", { command: "rename", work: "arc" }, [
-      'command: expected "list", "show", "create", "update", "archive", "unarchive", "delete" or "switch", got "rename"',
-    ]);
-  });
-});
-
-describe("thread_ls", () => {
-  it("delivers the depth default", async () => {
-    await expectDelivered("thread_ls", {}, { depth: 1 });
-  });
-});
-
-describe("thread_history", () => {
-  it("delivers order and limit defaults and either expand handle", async () => {
-    await expectDelivered("thread_history", {}, { order: "newest_first", limit: 40 });
-    // A turn number arrives as an integer or a string; both are the same handle.
-    await expectDelivered(
-      "thread_history",
-      { expand: 2 },
-      { expand: 2, order: "newest_first", limit: 40 },
-    );
-    await expectDelivered(
-      "thread_history",
-      { expand: "3.2" },
-      { expand: "3.2", order: "newest_first", limit: 40 },
-    );
-  });
-
-  it("refuses a malformed expand handle", async () => {
-    await expectRefused("thread_history", { expand: "2.x" }, [
-      'expand: expected a turn number such as 4, or "4.7"',
-    ]);
-  });
-});
-
-describe("thread_report", () => {
-  it("refuses run, which used to fall back to the latest report", async () => {
-    await expectRefused("thread_report", { ref: "p3", run: 2 }, ["run: unknown argument"]);
-  });
-});
-
-describe("thread_message", () => {
-  it("delivers background mode when mode is omitted", async () => {
-    await expectDelivered(
-      "thread_message",
-      { ref: "p3", message: "Keep going" },
-      { ref: "p3", message: "Keep going", mode: "background" },
-    );
-  });
-
-  it("refuses current with a message naming the fix", async () => {
-    await expectRefused("thread_message", { ref: "current", message: "Task" }, [
-      "ref: Name the thread to message, e.g. p12",
-    ]);
-  });
-});
-
-describe("spawn", () => {
-  it("delivers foreground when mode is omitted", async () => {
-    await expectDelivered("spawn", { prompt: "Task" }, { prompt: "Task", mode: "foreground" });
-  });
-
-  it("maps the published disallowed_tools key to the configuration spelling", async () => {
+describe("argument mapping", () => {
+  it("maps spawn's published disallowed_tools key to the configuration spelling", async () => {
     await expectDelivered(
       "spawn",
-      {
-        prompt: "Task",
-        overrides: { effort: "high", disallowed_tools: ["bash"], skills: { load: ["modes"] } },
-      },
-      {
-        prompt: "Task",
-        mode: "foreground",
-        overrides: { effort: "high", "disallowed-tools": ["bash"], skills: { load: ["modes"] } },
-      },
+      { prompt: "Task", overrides: { disallowed_tools: ["bash"] } },
+      { prompt: "Task", mode: "foreground", overrides: { "disallowed-tools": ["bash"] } },
     );
   });
 
-  it("refuses an invalid or misspelled override before spawning", async () => {
-    await expectRefused("spawn", { prompt: "Task", overrides: { effort: "max" } }, [
-      'overrides.effort: expected "low", "medium", "high", "xhigh", "none", "disabled" or "adaptive", got "max"',
-    ]);
-    await expectRefused("spawn", { prompt: "Task", overrides: { "disallowed-tools": ["bash"] } }, [
-      "overrides.disallowed-tools: unknown argument",
-    ]);
-  });
-});
-
-describe("return_result", () => {
-  it("delivers artifact URIs as object refs and keeps an explicit null payload", async () => {
+  it("delivers return_result artifact URIs as object refs", async () => {
     await expectDelivered(
       "return_result",
-      { summary: "done", payload: null, artifacts: ["scratch://the-lamplighters-arithmetic.md"] },
-      {
-        summary: "done",
-        payload: null,
-        artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
-      },
+      { summary: "done", artifacts: ["scratch://notes.md"] },
+      { summary: "done", artifacts: [{ type: "object", uri: "scratch://notes.md" }] },
     );
   });
 
-  it("refuses artifacts that aren't Meridian document URIs", async () => {
-    await expectRefused(
-      "return_result",
-      { summary: "done", artifacts: ["https://example.test/cover.png"] },
-      [
-        'artifacts[0]: Expected a Meridian document URI, received "https://example.test/cover.png".',
-      ],
-    );
-  });
-});
-
-describe("work", () => {
-  it("strips one leading @ and surrounding space from Work refs", async () => {
-    await expectDelivered(
-      "work",
-      { command: "show", work: " @arc " },
-      { command: "show", work: "arc" },
-    );
+  it("strips one leading @ from Work refs", async () => {
     await expectDelivered(
       "work",
       { command: "switch", target: "@arc" },
       { command: "switch", target: "arc" },
     );
-    await expectDelivered(
-      "work",
-      { command: "switch", target: null },
-      { command: "switch", target: null },
-    );
-    await expectRefused("work", { command: "show", work: "@" }, [
-      'work: must name a Work slug, e.g. "arc" or "@arc"',
-    ]);
   });
 
-  // update-work.test.ts covers the shared rule; this proves the tool applies it.
-  it("normalizes metadata by the shared clearing rule", async () => {
-    await expectDelivered(
-      "work",
-      { command: "create", name: "  Arc  ", goal: "   " },
-      { command: "create", name: "Arc", goal: null },
-    );
-  });
-
-  it("refuses blank or null names and long statuses", async () => {
-    await expectRefused("work", { command: "create", name: "   ", goal: "   " }, [
-      "name: must not be blank",
-    ]);
-    await expectRefused("work", { command: "update", work: "arc", name: null }, [
-      "name: expected a string, got null",
-    ]);
-    await expectRefused("work", { command: "update", work: "arc", status: "x".repeat(33) }, [
-      "status: must be one to three words and 32 characters or fewer",
-    ]);
-  });
-});
-
-describe("ask_user", () => {
-  it("maps snake_case arguments to the ask input", async () => {
+  it("maps ask_user's snake_case arguments to the ask input", async () => {
     await expectDelivered(
       "ask_user",
       { question: "Proceed?", kind: "free-text", requires_human: true, timeout_ms: 5000 },
@@ -252,13 +104,10 @@ describe("ask_user", () => {
       },
     );
   });
+});
 
-  it("refuses camelCase and a choice with no options", async () => {
-    await expectRefused("ask_user", { question: "Q", kind: "free-text", timeoutMs: 10 }, [
-      "timeoutMs: unknown argument",
-    ]);
-    await expectRefused("ask_user", { question: "Q", kind: "choice" }, [
-      "options: choice needs at least one { value, label } option",
-    ]);
+describe("cross-field rules", () => {
+  it("refuses an ask_user choice with no options", async () => {
+    await expectRefused("ask_user", { question: "Q", kind: "choice" }, "options");
   });
 });

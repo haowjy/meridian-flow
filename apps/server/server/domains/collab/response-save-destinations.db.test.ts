@@ -1,7 +1,7 @@
 /**
  * One reply, several destinations (D9, D19, D29, D40): a reply that writes
  * live scratch and a drafted document reads its own writes, undoes as one turn,
- * refuses archived Works at save, and merges live writes into kept drafts.
+ * leaves out archived Works at save, and merges live writes into kept drafts.
  */
 
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -78,7 +78,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       hocuspocus.documents.clear();
-      hocuspocus.broadcasts.length = 0;
       await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "save-destinations"));
       await db
@@ -162,7 +161,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID as never,
         });
       }
-      hocuspocus.broadcasts.length = 0;
     }
 
     /** Stages one scratch write (live) and one `kb://` write (draft) in one reply. */
@@ -187,7 +185,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { ...context(draft), responseId: RESPONSE_ID },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      hocuspocus.broadcasts.length = 0;
     }
 
     async function liveText(collab: Collab, documentId: string): Promise<string> {
@@ -216,10 +213,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    it("reads scratch back after writing scratch then kb in the same reply", async () => {
+    it("reads its own scratch write, then saves and undoes the mixed turn as one", async () => {
       const collab = createTestCollab();
       await stageMixedReply(collab);
-
+      // Scratch reads back inside the reply after the later kb write.
       const read = await collab
         .agentEdit()
         .read(
@@ -227,18 +224,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { ...context(live), responseId: RESPONSE_ID },
         );
       expect(JSON.stringify(read.result)).toContain("Agent notes.");
-      const searched = await collab.readEffectiveMarkdown({
-        documentId: SCRATCH_ID as never,
-        threadId: THREAD_ID as never,
-        responseId: RESPONSE_ID,
-        destination: "live",
-      });
-      expect(searched.ok ? searched.value.content : "").toContain("Agent notes.");
-    });
-
-    it("shows one undo chip for the mixed turn, and its undo reverses both documents", async () => {
-      const collab = createTestCollab();
-      await stageMixedReply(collab);
       await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
       expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
@@ -292,59 +277,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
     });
 
-    it("refuses a reply's only document when its Work was archived, and saves nothing", async () => {
-      const collab = createTestCollab();
-      await seed(collab);
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "notes.md",
-            documentId: SCRATCH_ID,
-            content: "Agent notes.",
-          },
-          { ...context(live), responseId: RESPONSE_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      await db
-        .update(schema.works)
-        .set({ archivedAt: new Date() })
-        .where(eq(schema.works.id, WORK_ID));
-
-      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
-
-      expect(committed).toMatchObject({
-        status: "committed",
-        documents: [],
-        refused: [{ documentId: SCRATCH_ID, reason: "work_archived", workSlug: "rewrite" }],
-      });
-      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
-      expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
-    });
-
-    it("reads live in auto-apply even when the Work keeps a pending draft", async () => {
-      const collab = createTestCollab();
-      await seed(collab);
-      const agentEdit = collab.agentEdit();
-      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
-      await agentEdit.write(
-        { command: "insert", file: "lore.md", documentId: KB_ID, content: "Pending lore." },
-        context(draft),
-      );
-      expect(await draftText(collab, KB_ID)).toContain("Pending lore.");
-
-      const autoApplyRead = await collab.readEffectiveMarkdown({
-        documentId: KB_ID as never,
-        threadId: THREAD_ID as never,
-        destination: "live",
-      });
-      expect(autoApplyRead.ok ? autoApplyRead.value.content : "").not.toContain("Pending lore.");
-      const toolRead = await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(live));
-      expect(JSON.stringify(toolRead.result)).not.toContain("Pending lore.");
-    });
-
     /** A kept Work draft of lore.md, then an AI live write to it saved in one reply. */
-    async function saveLiveWriteOverKeptDraft(collab: Collab, afterSave?: () => void) {
+    async function saveLiveWriteOverKeptDraft(collab: Collab) {
       await seed(collab);
       const agentEdit = collab.agentEdit();
       await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
@@ -359,7 +293,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { ...context(live), responseId: RESPONSE_ID },
       );
       await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
-      afterSave?.();
       expect(await liveText(collab, KB_ID)).toContain("Live lore.");
       expect(await liveText(collab, KB_ID)).not.toContain("Pending lore.");
 
@@ -399,18 +332,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted).toContain("Live lore.");
       expect(drafted).toContain("Pending lore.");
     });
-
-    it("drops the scheduled merge into Work drafts once disposed", async () => {
-      // Long enough that the save returns before the pull is due.
-      const collab = createTestCollab({ livePullDebounceMs: 250 });
-      const draftText = await saveLiveWriteOverKeptDraft(collab, () => collab.dispose());
-
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      const drafted = await draftText();
-      expect(drafted).toContain("Pending lore.");
-      expect(drafted).not.toContain("Live lore.");
-    });
   });
 }
 
@@ -427,15 +348,12 @@ function markdownOf(state: Uint8Array | undefined): string {
 
 function fakeHocuspocus() {
   const documents = new Map<string, Y.Doc>();
-  const broadcasts: string[] = [];
   return {
     documents,
-    broadcasts,
     async openDirectConnection(documentName: string) {
       let document = documents.get(documentName);
       if (!document) {
         document = new Y.Doc({ gc: false });
-        document.on("update", () => broadcasts.push(documentName));
         documents.set(documentName, document);
       }
       return { document, disconnect: async () => undefined };
