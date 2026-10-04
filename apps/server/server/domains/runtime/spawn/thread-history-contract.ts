@@ -531,7 +531,7 @@ pizza
 
 [2] assistant
 I looked around to see what "pizza" might point at.
-write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, drafted in @rewrite
+write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, version: draft (@rewrite)
 read({"path":"manuscript://missing.md"}) → failed: document_not_found
 status: document_not_found
 
@@ -546,7 +546,7 @@ work({"command":"create","name":"Rewrite"}) → @rewrite
       expect(routine).not.toContain("hidden");
       const expanded = output(await f.read({ expand: 2 }));
       expect(expanded).toContain(
-        '2.12 write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, drafted in @rewrite (',
+        '2.12 write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, version: draft (@rewrite) (',
       );
       expect(expanded).toContain("2.11 ls({}) (");
       // One call in full keeps the whole arguments as an edit record.
