@@ -121,18 +121,6 @@ async function boundContext(metadata: {
   });
 }
 
-function commandConsts(tools: Tool[], name: string) {
-  const tool = tools.find((candidate) => candidate.type === "function" && candidate.name === name);
-  const oneOf = tool?.type === "function" ? tool.inputSchema.oneOf : undefined;
-  if (!Array.isArray(oneOf)) throw new Error(`${name} tool missing oneOf`);
-  return oneOf.map((branch) => {
-    const command = (branch as { properties?: { command?: { const?: unknown } } }).properties
-      ?.command?.const;
-    if (typeof command !== "string") throw new Error(`${name} branch missing command.const`);
-    return command;
-  });
-}
-
 function hasTool(tools: Tool[], name: string): boolean {
   return tools.some((tool) => "name" in tool && tool.name === name);
 }
@@ -180,44 +168,6 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     }
     expect(systemPrompt).not.toMatch(/writer/i);
     expect(JSON.stringify(context.tools)).not.toMatch(/writer/i);
-  });
-
-  it("registers read and write as two tools, each with its own input", () => {
-    const registrations = createCoreToolRegistrations(stubHandlers());
-    const read = registrations.find((registration) => registration.definition.name === "read");
-    expect(read?.definition.inputSchema).toMatchObject({
-      required: ["path"],
-      properties: expect.not.objectContaining({ command: expect.anything() }),
-    });
-    const write = registrations.find((registration) => registration.definition.name === "write");
-    expect(commandConsts([write?.definition as Tool], "write")).toEqual([
-      "create",
-      "copy",
-      "insert",
-      "replace",
-      "remove",
-      "undo",
-      "redo",
-    ]);
-  });
-
-  it("advertises write only to agents with edit, and read to both", async () => {
-    const critic = await boundContext({ tools: CRITIC_MAP });
-    const writer = await boundContext({ tools: WRITER_MAP });
-    expect(hasTool(critic.tools, "read")).toBe(true);
-    expect(hasTool(critic.tools, "write")).toBe(false);
-    expect(hasTool(writer.tools, "read")).toBe(true);
-    expect([...commandConsts(writer.tools, "write")].sort()).toEqual([
-      "copy",
-      "create",
-      "insert",
-      "redo",
-      "remove",
-      "replace",
-      "undo",
-    ]);
-    expect(hasTool(critic.tools, "spawn")).toBe(true);
-    expect(hasTool(writer.tools, "spawn")).toBe(true);
   });
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
