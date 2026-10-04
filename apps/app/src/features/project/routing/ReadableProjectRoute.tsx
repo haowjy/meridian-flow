@@ -22,6 +22,7 @@ import { originalBrowserSearch } from "@/router-search";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -272,12 +273,29 @@ export function ReadableProjectRoute({
     staleTime: 0,
     retry: false,
   });
+  const { selection } = useContextRemovalProject(projectId);
+  const boundDocumentId =
+    documentDestination &&
+    selection.status === "bound" &&
+    selection.identity.kind === "server" &&
+    selection.locator.scheme === documentDestination.scheme &&
+    selection.locator.path.replace(/^\/+/, "") === documentDestination.path.replace(/^\/+/, "") &&
+    selection.locator.workId ===
+      (isWorkScopedScheme(documentDestination.scheme) ? addressWorkId : null)
+      ? selection.identity.documentId
+      : null;
   const localDocumentAddress = useMemo(
     () =>
       documentDestination
-        ? resolveLocalDocumentAddress(projectId, documentDestination, addressWorkId, addressCatalog)
+        ? resolveLocalDocumentAddress(
+            projectId,
+            documentDestination,
+            addressWorkId,
+            addressCatalog,
+            boundDocumentId,
+          )
         : undefined,
-    [addressCatalog, documentDestination, addressWorkId, projectId],
+    [addressCatalog, documentDestination, addressWorkId, projectId, boundDocumentId],
   );
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
