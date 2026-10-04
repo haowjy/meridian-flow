@@ -12,7 +12,7 @@
  * policy's (`WikilinkPasteExtension`).
  *
  * A target resolves as Obsidian's does, with a fixed order where Obsidian's
- * last step is "the first one it finds" (`pickWikilinkTarget`). One that names
+ * last step is "the first one it finds" (`rankWikilinkMatches`). One that names
  * no document becomes the same dashed link the `@` menu's link-ahead row
  * writes, at the address that row's rule gives (`linkAhead`).
  */
@@ -21,14 +21,14 @@ import { parseContextUri, spellDocumentHref } from "@meridian/contracts";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 
-export type WikilinkTarget = {
+type WikilinkTarget = {
   /** Folders before the name, as written (`["Arc 1"]` for `Arc 1/Kael`). */
   folders: readonly string[];
   /** The last segment, as written. */
   name: string;
 };
 
-export type WikilinkOccurrence = {
+type WikilinkOccurrence = {
   from: number;
   to: number;
   target: WikilinkTarget;
@@ -57,15 +57,6 @@ const ESCAPE = /\\\[\\?\[/g;
 
 /** An escaped opening: text, spelled as the literal brackets without the backslash. */
 type EscapedWikilink = { from: number; to: number; literal: "[[" };
-
-/**
- * Every convertible `[[…]]` in a run of text, in order. A backtick code span
- * still spelled out in the text (paste without formatting keeps it literal)
- * is code, and code is never converted.
- */
-export function parseWikilinks(text: string): WikilinkOccurrence[] {
-  return scanWikilinks(text).filter((found): found is WikilinkOccurrence => "target" in found);
-}
 
 /**
  * Links and escaped openings, in order; embeds and code are neither. Every
@@ -117,27 +108,6 @@ type Located = { uri: string; area: string; scheme: string; segments: string[] }
 /** Fixed order for an exact path in another area; the holder's own area is first. */
 const AREA_ORDER = ["manuscript", "kb", "user", "scratch"];
 
-/**
- * Which candidate a target names, of those whose path ends with it. The
- * project has several areas where Obsidian has one vault, and Obsidian's last
- * step is index order, so ours is fixed:
- *
- * - `[[Name]]`: the holder's own folder, then the holder's area root, then
- *   the rest (holder's area first, fewest folders, alphabetical URI).
- * - `[[a/Name]]`: that path from the holder's area root, then from another
- *   area's root (Manuscript, KB, User, Scratch), then the rest as above.
- *
- * Comparisons ignore case. Null only when nothing matches.
- */
-export function pickWikilinkTarget(
-  candidates: readonly string[],
-  target: WikilinkTarget,
-  holderUri: string | null,
-): string | null {
-  const located = candidates.flatMap((uri) => locate(uri) ?? []);
-  return rankWikilinkMatches(located, target, holderUri ? locate(holderUri) : null);
-}
-
 function rankWikilinkMatches(
   candidates: readonly Located[],
   target: WikilinkTarget,
@@ -186,7 +156,7 @@ function rankWikilinkMatches(
  * filename, so a link only ranks the documents that share its name, and a
  * target seen twice is ranked once.
  */
-export function wikilinkResolver(
+function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
 ): (occurrence: WikilinkOccurrence) => string | null {
   const byName = new Map<string, Located[]>();

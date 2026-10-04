@@ -183,7 +183,7 @@ async function createOnServer(
  * move can never validate its canonical address. "unknown" when the list does
  * not name the Work (or has not loaded).
  */
-export function scratchWork(
+function scratchWork(
   target: LinkCreationTarget,
   surfaceWorkId: string | null,
   works: WorkList | null,

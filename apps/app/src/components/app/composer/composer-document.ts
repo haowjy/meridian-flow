@@ -104,7 +104,7 @@ export type ComposerSkillAttrs = {
  * link to the canonical URI, spelled by the href module so a `#` or `%` in a
  * name stays part of the address the model and a paste read back.
  */
-export function referenceSpelling(value: ComposerReferenceAttrs): string {
+function referenceSpelling(value: ComposerReferenceAttrs): string {
   return formatMarkdownLink(value.displayText ?? value.label, spellDocumentHref(null, value.uri));
 }
 

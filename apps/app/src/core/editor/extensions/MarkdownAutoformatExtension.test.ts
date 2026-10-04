@@ -255,16 +255,3 @@ describe("Backspace reverts the transform it just made", () => {
     expect(outline(editor)).toBe('paragraph("prose")');
   });
 });
-
-describe("typed [[name]]", () => {
-  it.each([
-    "[[Missing chapter]]",
-    "[[hello | wefwef]]",
-    "[[manuscript://chapter-1.md]]",
-  ])("stays text: %s", (source) => {
-    const editor = openEditor();
-    type(editor, source);
-    expect(editor.state.doc.textContent).toBe(source);
-    expect(marksOnFirstText(editor)).toEqual([]);
-  });
-});

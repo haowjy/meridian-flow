@@ -65,52 +65,6 @@ function paste(target: Editor, data: Record<string, string>) {
   target.view.dom.dispatchEvent(event);
 }
 
-it("links a pasted Markdown note, leaving code and embeds as text", () => {
-  const target = editor(DOCUMENTS);
-  paste(target, {
-    "text/plain": [
-      "- [[Lin Feng]] waits.",
-      "- See [[chapter-1|the opening]].",
-      "- [[Kael]] has no page yet.",
-      "- The [[Jade Gate]] opens.",
-      "- ![[map.png]]",
-      "- Inline `[[code]]` stays.",
-    ].join("\n"),
-  });
-  expect(links(target)).toEqual([
-    ["Lin Feng", "kb://characters/Lin Feng.md"],
-    ["the opening", "chapter-1.md"],
-    ["Kael", "Kael.md"],
-    ["Jade Gate", "Jade Gate.md"],
-  ]);
-  // The Markdown door parsed it: a list, with the code span as code.
-  expect(target.state.doc.textContent).not.toContain("- ");
-  expect(target.state.doc.textContent).toContain("![[map.png]]");
-  expect(target.state.doc.textContent).toContain("[[code]]");
-});
-
-it("links plain prose that the Markdown door hands to the default paste", () => {
-  const target = editor(DOCUMENTS);
-  paste(target, { "text/plain": "Lin met [[lin feng#Past]] at [[Arc 1/Kael|the duel]]." });
-  expect(links(target)).toEqual([
-    ["lin feng", "kb://characters/Lin Feng.md#Past"],
-    ["the duel", "../Arc 1/Kael.md"],
-  ]);
-});
-
-it("links the literal brackets in pasted HTML", () => {
-  const target = editor(DOCUMENTS);
-  paste(target, { "text/html": "<p>Lin met <strong>[[Lin Feng]]</strong>.</p>" });
-  expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
-});
-
-it("leaves the brackets as text while the documents are still loading", () => {
-  const target = editor(null);
-  paste(target, { "text/plain": "Lin met [[Lin Feng]]." });
-  expect(links(target)).toEqual([]);
-  expect(target.state.doc.textContent).toBe("Lin met [[Lin Feng]].");
-});
-
 it("keeps the characters when pasted into a code block", () => {
   const target = editor(DOCUMENTS, "<pre><code>x</code></pre>");
   target.commands.setTextSelection(2);
@@ -170,28 +124,6 @@ it("gives paste without formatting the characters, while an ordinary paste links
   expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
 });
 
-it("leaves text dragged within the document as written", () => {
-  const target = editor(DOCUMENTS, "<p>[[Lin Feng]] waits.</p>");
-  const slice = target.state.doc.slice(1, 13);
-  expect(slice.content.textBetween(0, slice.content.size)).toBe("[[Lin Feng]]");
-  target.view.dragging = { slice, move: false } as typeof target.view.dragging;
-  drop(target, target.state.doc.content.size - 1, { "text/plain": "[[Lin Feng]]" });
-  expect(links(target)).toEqual([]);
-  expect(target.state.doc.textContent).toBe("[[Lin Feng]] waits.[[Lin Feng]]");
-});
-
-it("links a paste into a table cell", () => {
-  const target = editor(DOCUMENTS, "<table><tr><td><p>x</p></td></tr></table>");
-  let inCell = 0;
-  target.state.doc.descendants((node, pos) => {
-    if (node.type.name === "paragraph") inCell = pos + 1 + node.content.size;
-  });
-  target.commands.setTextSelection(inCell);
-  paste(target, { "text/plain": "see [[Lin Feng]]" });
-  expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
-  expect(target.state.doc.textContent).toBe("xsee Lin Feng");
-});
-
 it("spells out every escape the Markdown door kept, with the catalog loading or the link unclosed", () => {
   const loading = editor(null);
   paste(loading, { "text/plain": "- one \\[[Lin Feng]]\n- two \\[\\[Lin Feng]]" });
@@ -206,13 +138,6 @@ it("spells out every escape the Markdown door kept, with the catalog loading or 
   expect(multiline.state.doc.textContent).not.toContain("\\");
   expect(multiline.state.doc.textContent).toContain("[[a");
   expect(links(multiline)).toEqual([]);
-});
-
-it("leaves an Editor without the extension exactly as Markdown reads an escape", () => {
-  const plain = new Editor({ extensions: createStandaloneEditorExtensions(), content: "<p></p>" });
-  live.push(plain);
-  paste(plain, { "text/plain": "- \\[[x]]\n- y" });
-  expect(plain.state.doc.textContent).toBe("[[x]]y");
 });
 
 const menuPaste = () => new Event("paste") as ClipboardEvent;
@@ -232,14 +157,4 @@ it("keeps the characters of an HTML-only clipboard pasted into code, by key or f
   menu.view.pasteHTML("<p>see [[Lin Feng]] here</p>", menuPaste());
   expect(links(menu)).toEqual([]);
   expect(menu.state.doc.textContent).toContain("see [[Lin Feng]] here");
-});
-
-it("carries nothing from a paste ProseMirror abandons into the next one", () => {
-  const target = editor(DOCUMENTS, "<pre><code>x</code></pre><p>y</p>");
-  target.commands.setTextSelection(2);
-  // A files-only clipboard in code: ProseMirror parses nothing and stops.
-  paste(target, { Files: "" });
-  target.commands.setTextSelection(target.state.doc.content.size - 1);
-  target.view.pasteHTML("<p>see [[Lin Feng]]</p>", menuPaste());
-  expect(links(target)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
 });

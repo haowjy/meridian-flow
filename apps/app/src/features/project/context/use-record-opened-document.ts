@@ -42,7 +42,7 @@ export type ServerPresenceSource = {
  * not track or has acknowledged, later when a local create is acknowledged.
  * False when it ends without reaching the server, or the signal aborts.
  */
-export async function whenOnServer(
+async function whenOnServer(
   source: ServerPresenceSource,
   projectId: string,
   documentId: string,

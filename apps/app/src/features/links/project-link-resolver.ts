@@ -30,7 +30,7 @@ export type LinkResolutionScope = {
 };
 
 /** The document at the address, or null when only the server can say. */
-export function projectLinkAnswer(
+function projectLinkAnswer(
   index: LinkableDocumentIndex,
   request: DocumentLinkTarget,
 ): ResolvedDocumentLink | null {

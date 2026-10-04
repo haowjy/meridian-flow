@@ -18,7 +18,7 @@
   filter there if so.
 - `[[Name#Heading]]` pastes labeled `Name`; Obsidian shows `Name > Heading`.
   Match Obsidian's label for heading and block links if writers expect it
-  (`parseWikilinks` in `links/wikilink-paste.ts`).
+  (`scanWikilinks` in `links/wikilink-paste.ts`).
 - A pasted link keeps Obsidian's heading suffix as written (`Kael.md#The
   Duel`). Unverified: whether following it scrolls to the heading named by
   that text rather than a slug. Check, and make it do so if not

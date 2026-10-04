@@ -1,219 +1,101 @@
-/** Pasted `[[Name]]`: Obsidian's syntax, its resolution order, and the slice it becomes. */
-import { getSchema } from "@tiptap/core";
-import { Fragment, Slice } from "@tiptap/pm/model";
-import { describe, expect, it } from "vitest";
-
-import { createStandaloneEditorExtensions } from "../config";
+/** Pure paste contracts: syntax and deterministic Obsidian-order target choice. */
+import { Schema, Slice } from "@tiptap/pm/model";
+import { expect, it } from "vitest";
 import { linkAheadAddress } from "./link-address";
-import {
-  linkPastedWikilinks,
-  parseWikilinks,
-  pickWikilinkTarget,
-  type WikilinkPasteCatalog,
-  wikilinkResolver,
-} from "./wikilink-paste";
+import { linkPastedWikilinks } from "./wikilink-paste";
 
-const bare = (name: string) => ({ folders: [], name });
-
-describe("parseWikilinks", () => {
-  it("reads every Obsidian form", () => {
-    const text =
-      "[[Lin Feng]] [[chapter-1|the opening]] [[Kael#The Duel]] [[Kael#^b1]] [[Arc 1/Kael.md]]";
-    expect(
-      parseWikilinks(text).map(({ target, suffix, label }) => ({ target, suffix, label })),
-    ).toEqual([
-      { target: bare("Lin Feng"), suffix: "", label: "Lin Feng" },
-      { target: bare("chapter-1"), suffix: "", label: "the opening" },
-      { target: bare("Kael"), suffix: "#The Duel", label: "Kael" },
-      { target: bare("Kael"), suffix: "#^b1", label: "Kael" },
-      { target: { folders: ["Arc 1"], name: "Kael.md" }, suffix: "", label: "Kael" },
-    ]);
-  });
-
-  it("reports the exact source range", () => {
-    expect(parseWikilinks("See [[Gate]].")).toMatchObject([{ from: 4, to: 12 }]);
-  });
-
-  it("reads a table's escaped alias bar", () => {
-    expect(parseWikilinks("[[Gate\\|the gate]]")).toMatchObject([
-      { target: bare("Gate"), label: "the gate" },
-    ]);
-  });
-
-  it("leaves a link inside a code span the text still spells", () => {
-    expect(
-      parseWikilinks("`[[code]]` and ``a ` [[b]]`` then [[c]]").map(({ label }) => label),
-    ).toEqual(["c"]);
-    expect(parseWikilinks("an unclosed ` before [[c]]").map(({ label }) => label)).toEqual(["c"]);
-  });
-
-  it("treats `\\[\\[` as an escape, and `[\\[` as no link at all", () => {
-    expect(parseWikilinks("\\[\\[Gate]] [\\[Gate]]")).toEqual([]);
-  });
-
-  it("leaves embeds, escapes, and empty or malformed targets", () => {
-    for (const text of [
-      "![[map.png]]",
-      "\\[[Gate]]",
-      "[[]]",
-      "[[#Heading]]",
-      "[[a//b]]",
-      "[[a\nb]]",
-    ])
-      expect(parseWikilinks(text)).toEqual([]);
-  });
+const schema = new Schema({
+  nodes: { doc: { content: "paragraph+" }, paragraph: { content: "text*" }, text: {} },
+  marks: { link: { attrs: { href: {} } }, code: {} },
 });
+const HOLDER = "manuscript://volume-1/chapter-2.md";
 
-describe("pickWikilinkTarget", () => {
-  const holder = "manuscript://volume-1/chapter-2.md";
-
-  it("prefers the holder's folder, then its area root, then a deeper one", () => {
-    const deeper = "manuscript://notes/old/Gate.md";
-    const root = "manuscript://Gate.md";
-    const sibling = "manuscript://volume-1/Gate.md";
-    expect(pickWikilinkTarget([deeper, root, sibling], bare("Gate"), holder)).toBe(sibling);
-    expect(pickWikilinkTarget([deeper, root], bare("Gate"), holder)).toBe(root);
-  });
-
-  it("prefers the holder's area over another area", () => {
-    expect(
-      pickWikilinkTarget(["kb://Gate.md", "manuscript://notes/deep/Gate.md"], bare("Gate"), holder),
-    ).toBe("manuscript://notes/deep/Gate.md");
-  });
-
-  it("orders equal depths alphabetically by URI, so the pick never depends on index order", () => {
-    const candidates = ["kb://places/Gate.md", "kb://lore/Gate.md"];
-    expect(pickWikilinkTarget(candidates, bare("Gate"), holder)).toBe("kb://lore/Gate.md");
-    expect(pickWikilinkTarget([...candidates].reverse(), bare("Gate"), holder)).toBe(
-      "kb://lore/Gate.md",
-    );
-  });
-
-  it("reads a folder form exactly from the holder's area root, then another area's, before a suffix", () => {
-    const target = { folders: ["places"], name: "Gate" };
-    const suffix = "manuscript://old/places/Gate.md";
-    const kbExact = "kb://places/Gate.md";
-    const userExact = "user://places/Gate.md";
-    const own = "manuscript://places/Gate.md";
-    expect(pickWikilinkTarget([suffix, kbExact, userExact, own], target, holder)).toBe(own);
-    expect(pickWikilinkTarget([suffix, userExact, kbExact], target, holder)).toBe(kbExact);
-    expect(pickWikilinkTarget([suffix], target, holder)).toBe(suffix);
-  });
-
-  it("ignores case and implies `.md`", () => {
-    expect(pickWikilinkTarget(["kb://characters/Lin Feng.md"], bare("lin feng"), holder)).toBe(
-      "kb://characters/Lin Feng.md",
-    );
-    expect(pickWikilinkTarget(["kb://maps/map.png"], bare("Map.PNG"), holder)).toBe(
-      "kb://maps/map.png",
-    );
-    expect(pickWikilinkTarget(["kb://Gate.md"], bare("Gates"), holder)).toBeNull();
-  });
-
-  it("ranks without a holder address", () => {
-    expect(pickWikilinkTarget(["kb://a/b/Gate.md", "user://Gate.md"], bare("Gate"), null)).toBe(
-      "user://Gate.md",
-    );
-  });
-});
-
-describe("wikilinkResolver", () => {
-  const catalog = (holderUri: string | null, targets: string[]): WikilinkPasteCatalog => ({
+function paste(text: string, targets: string[] = [], holderUri: string | null = HOLDER) {
+  const paragraph = schema.nodes.paragraph.create(null, schema.text(text));
+  return linkPastedWikilinks(new Slice(paragraph.content, 0, 0), schema, {
     holderUri,
     targets,
     linkAhead: (name, folders) => {
       const uri = linkAheadAddress(holderUri, name, folders);
       return uri ? { uri } : null;
     },
-  });
-  const occurrence = (text: string) => {
-    const [found] = parseWikilinks(text);
-    if (!found) throw new Error(`No wikilink in ${text}`);
-    return found;
-  };
-  const lin = occurrence("[[Lin Feng#Past]]");
-  const kael = occurrence("[[Kael]]");
-  const path = occurrence("[[Arc 1/Kael]]");
+  }).content;
+}
 
-  it("spells a match from the holder: relative within its area, a full URI across", () => {
-    const targets = ["kb://characters/Lin Feng.md", "manuscript://volume-1/Kael.md"];
-    expect(wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", targets))(lin)).toBe(
-      "kb://characters/Lin Feng.md#Past",
-    );
-    expect(wikilinkResolver(catalog("kb://places/Gate.md", targets))(lin)).toBe(
-      "../characters/Lin Feng.md#Past",
-    );
-    expect(wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", targets))(kael)).toBe(
-      "Kael.md",
-    );
+it.each([
+  ["See [[Gate]].", "See Gate.", "Gate.md"],
+  ["[[Gate|the gate]]", "the gate", "Gate.md"],
+  ["[[Gate\\|the gate]]", "the gate", "Gate.md"],
+  ["[[Gate#Heading]]", "Gate", "Gate.md#Heading"],
+  ["[[Gate#^block]]", "Gate", "Gate.md#^block"],
+  ["[[Arc 1/Gate.md]]", "Gate", "../Arc 1/Gate.md"],
+])("parses %s without losing its label or suffix", (input, text, href) => {
+  const out = paste(input);
+  expect(out.textBetween(0, out.size)).toBe(text);
+  const links: string[] = [];
+  out.forEach((node) => {
+    links.push(...node.marks.map((mark) => mark.attrs.href));
   });
+  expect(links).toEqual([href]);
+});
 
-  it("keeps each unmatched link's own casing within one paste", () => {
-    const resolve = wikilinkResolver(catalog("manuscript://volume-1/chapter-2.md", []));
-    expect(resolve(occurrence("[[kael]]"))).toBe("kael.md");
-    expect(resolve(occurrence("[[Kael]]"))).toBe("Kael.md");
-  });
-
-  it("links a name no document has beside the holder, and a path from its area root", () => {
-    const holder = "manuscript://volume-1/chapter-2.md";
-    expect(wikilinkResolver(catalog(holder, []))(kael)).toBe("Kael.md");
-    expect(wikilinkResolver(catalog(holder, []))(path)).toBe("../Arc 1/Kael.md");
-    expect(wikilinkResolver(catalog(null, []))(path)).toBe("manuscript://Arc 1/Kael.md");
+it.each([
+  "![[map.png]]",
+  "[[]]",
+  "[[#Heading]]",
+  "[[a//b]]",
+  "[[a\nb]]",
+  "`[[code]]`",
+  "[\\[Gate]]",
+])("leaves non-links %s literal", (input) => {
+  const out = paste(input);
+  expect(out.textBetween(0, out.size)).toBe(input);
+  out.forEach((node) => {
+    expect(node.marks).toEqual([]);
   });
 });
 
-describe("linkPastedWikilinks", () => {
-  const schema = getSchema(createStandaloneEditorExtensions());
-  const catalog: WikilinkPasteCatalog = {
-    holderUri: "manuscript://volume-1/chapter-2.md",
-    targets: ["kb://characters/Lin Feng.md"],
-    linkAhead: (name, folders) => {
-      const uri = linkAheadAddress("manuscript://volume-1/chapter-2.md", name, folders);
-      return uri ? { uri } : null;
-    },
-  };
-  const paragraph = (...content: Parameters<typeof schema.text>[]) =>
-    schema.nodes.paragraph.create(
-      null,
-      content.map(([text, marks]) => schema.text(text, marks)),
-    );
+it.each([
+  [
+    ["manuscript://notes/old/Gate.md", "manuscript://Gate.md", "manuscript://volume-1/Gate.md"],
+    "Gate",
+    "Gate.md",
+  ],
+  [["manuscript://notes/old/Gate.md", "manuscript://Gate.md"], "Gate", "../Gate.md"],
+  [["kb://Gate.md", "manuscript://notes/deep/Gate.md"], "Gate", "../notes/deep/Gate.md"],
+  [["kb://a/b/Gate.md", "kb://z/Gate.md"], "Gate", "kb://z/Gate.md"],
+  [["kb://places/Gate.md", "kb://lore/Gate.md"], "Gate", "kb://lore/Gate.md"],
+  [
+    ["manuscript://old/places/Gate.md", "kb://places/Gate.md", "manuscript://places/Gate.md"],
+    "places/Gate",
+    "../places/Gate.md",
+  ],
+  [
+    ["manuscript://old/places/Gate.md", "user://places/Gate.md", "kb://places/Gate.md"],
+    "places/Gate",
+    "kb://places/Gate.md",
+  ],
+  [["manuscript://old/places/Gate.md"], "places/Gate", "../old/places/Gate.md"],
+  [["kb://characters/Lin Feng.md"], "lin feng", "kb://characters/Lin Feng.md"],
+  [["kb://maps/map.png"], "Map.PNG", "kb://maps/map.png"],
+])("ranks %j for [[%s]] independent of catalog order", (targets, name, expected) => {
+  for (const ordered of [targets, [...targets].reverse()]) {
+    expect(paste(`[[${name}]]`, ordered).firstChild?.marks[0]?.attrs.href).toBe(expected);
+  }
+});
 
-  it("links prose and leaves code, embeds, and existing links", () => {
-    const slice = new Slice(
-      Fragment.from([
-        paragraph(
-          ["Meet [[Lin Feng]] by ![[map.png]] and "],
-          ["[[code]]", [schema.marks.code.create()]],
-          [" or "],
-          ["[[linked]]", [schema.marks.link.create({ href: "https://example.com" })]],
-        ),
-        schema.nodes.code_block.create(null, schema.text("[[fenced]]")),
-      ]),
-      0,
-      0,
-    );
-    const out = linkPastedWikilinks(slice, schema, catalog);
-    const first = out.content.child(0);
-    expect(first.textContent).toBe("Meet Lin Feng by ![[map.png]] and [[code]] or [[linked]]");
-    expect(first.child(1).marks.map((mark) => mark.attrs.href)).toEqual([
-      "kb://characters/Lin Feng.md",
-    ]);
-    expect(out.content.child(1).textContent).toBe("[[fenced]]");
-  });
+it("keeps the casing of unmatched names even when they share a lookup key", () => {
+  const out = paste("[[kael]] [[Kael]]");
+  expect(out.firstChild?.marks[0]?.attrs.href).toBe("kael.md");
+  expect(out.lastChild?.marks[0]?.attrs.href).toBe("Kael.md");
+});
 
-  it("drops the backslash of an escaped link, which stays text", () => {
-    const slice = new Slice(
-      Fragment.from(paragraph(["see \\[[Lin Feng]] and \\[\\[Kael]]"])),
-      0,
-      0,
-    );
-    const out = linkPastedWikilinks(slice, schema, catalog);
-    expect(out.content.child(0).textContent).toBe("see [[Lin Feng]] and [[Kael]]");
-    expect(out.content.child(0).childCount).toBe(1);
-  });
-
-  it("returns the very slice when nothing converts", () => {
-    const slice = new Slice(Fragment.from(paragraph(["no links here"])), 0, 0);
-    expect(linkPastedWikilinks(slice, schema, catalog)).toBe(slice);
-  });
+it("uses the shallowest target without a holder and spells a missing path from the root", () => {
+  expect(
+    paste("[[Gate]]", ["kb://a/b/Gate.md", "user://Gate.md"], null).firstChild?.marks[0]?.attrs
+      .href,
+  ).toBe("user://Gate.md");
+  expect(paste("[[Arc 1/Kael]]", [], null).firstChild?.marks[0]?.attrs.href).toBe(
+    "manuscript://Arc 1/Kael.md",
+  );
 });

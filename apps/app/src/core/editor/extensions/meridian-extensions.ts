@@ -178,7 +178,7 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
 });
 
 /** Keeps block alignment live when the resize plugin takes over table rendering. */
-export class MeridianTableView extends TableView {
+class MeridianTableView extends TableView {
   constructor(...args: ConstructorParameters<typeof TableView>) {
     super(...args);
     this.applyAlignment(args[0]);
