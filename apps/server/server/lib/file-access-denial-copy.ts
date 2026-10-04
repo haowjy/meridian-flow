@@ -5,6 +5,7 @@
  */
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
+import { actionPolicy } from "../domains/runtime/index.js";
 
 /** A file-policy refusal the model sees as `permission_denied`. */
 export type PermissionDenial = FileAccessDenied & {
@@ -36,15 +37,18 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
 
 /**
  * An archived Work's own files are read-only (D29); a write that would land in
- * its draft meets a frozen draft (D30, D31). Only an agent that may change
- * Works is offered the unarchive call.
+ * its draft meets a frozen draft (D30, D31). Only an agent the action policy
+ * lets unarchive is offered the call.
  */
 function workArchivedMessage(denial: FileAccessDenied): string {
   const slug = denial.archivedWork?.slug ?? null;
   const work = slug === null ? "This chat's Work" : `Work @${slug}`;
   const named = slug === null ? "it" : `@${slug}`;
   const unarchive = slug === null ? null : `\`work({"command":"unarchive","work":"${slug}"})\``;
-  const mayUnarchive = denial.agentPermission === "edit" && unarchive !== null;
+  const mayUnarchive =
+    unarchive !== null &&
+    denial.agentChain !== null &&
+    actionPolicy(denial.agentChain, "work.unarchive") === "allow";
   if (denial.destination?.kind === "draft") {
     const frozen = `${work} is archived, so its draft is frozen and this change wasn't made.`;
     return mayUnarchive

@@ -99,6 +99,7 @@ import {
   WorkStatusInvalidError,
 } from "../domains/projects/index.js";
 import {
+  actionPolicy,
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
   type LsToolInput,
@@ -107,6 +108,7 @@ import {
   type ToolHandlerContext,
   type ToolRegistration,
   type WorkCommand,
+  workActionRefusal,
 } from "../domains/runtime/index.js";
 import type { ObjectStorePort } from "../domains/storage/index.js";
 import type {
@@ -450,7 +452,8 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 
 function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
-    return workLifecycleMessage(error.reason, error.workSlug);
+    // A storage-side lifecycle refusal carries no agent chain, so it offers no call.
+    return workLifecycleMessage(error.reason, error.workSlug, false);
   }
   if (error.code === "invalid_uri") return error.reason;
   if ("message" in error && typeof error.message === "string") return error.message;
@@ -547,16 +550,19 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
+/** Offers the unarchive call only when the action policy would allow it. */
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
+  mayUnarchive: boolean,
 ): string {
   if (reason !== "work_archived") {
     return workSlug ? `Work @${workSlug} is unavailable.` : "The requested Work is unavailable.";
   }
-  return workSlug
+  if (!workSlug) return "The requested Work is archived and read-only.";
+  return mayUnarchive
     ? `Work @${workSlug} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${workSlug}"})\` before changing it.`
-    : "The requested Work is archived and read-only.";
+    : `Work @${workSlug} is archived and read-only. Ask the user to unarchive @${workSlug}.`;
 }
 
 async function deleteCreatedTrackedDocument(input: {
@@ -1217,6 +1223,15 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const command = input as WorkCommand;
       const thread = await deps.threads.findById(ctx.threadId);
       if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
+      const chain = await deps.readAgentChain(thread.id as ThreadId);
+      const decision = actionPolicy(chain, `work.${command.command}`);
+      if (decision !== "allow") {
+        return toolError({
+          code: "permission_denied",
+          reason: "action_denied" satisfies PermissionDeniedReason,
+          message: workActionRefusal(command, decision),
+        });
+      }
 
       try {
         if (command.command === "list") {
@@ -1414,6 +1429,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             message: workLifecycleMessage(
               reason,
               "work" in command ? command.work : (error.workSlug ?? null),
+              actionPolicy(chain, "work.unarchive") === "allow",
             ),
           });
         }
