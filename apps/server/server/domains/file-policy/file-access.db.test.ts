@@ -10,6 +10,8 @@ import {
   documents,
   documentYjsUpdates,
   projects,
+  threads,
+  turns,
   users,
   works,
 } from "@meridian/database/schema";
@@ -23,8 +25,11 @@ import {
   createDrizzleFileFacts,
   createFileAccess,
   createOwnerFileGrants,
+  type FileGrant,
+  type FileTarget,
   isFileAccessDenied,
   type Principal,
+  runWithEditGrants,
   UngrantedAgentWriteError,
 } from "./index.js";
 
@@ -102,6 +107,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, probe));
       expect(rows).toEqual([]);
+    });
+
+    it("refuses an agent's journal write its bound grants don't cover", async () => {
+      const kbSource = "00000000-0000-4000-8000-000000000b06";
+      await database.current
+        .insert(contextSources)
+        .values({ id: kbSource, projectId: p, scope: "project", name: "Knowledge", slug: "kb" });
+      const thread = "00000000-0000-4000-8000-000000000b07";
+      await database.current.insert(threads).values({
+        rootThreadId: thread,
+        id: thread,
+        projectId: p,
+        createdByUserId: u,
+        title: "Thread",
+        kind: "primary",
+        status: "idle",
+      });
+      await database.current.insert(turns).values({
+        id: turn,
+        threadId: thread,
+        position: 1,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const containerGrant = async (target: FileTarget) => {
+        const grant = await access().authorize(agent, target, "edit");
+        if (isFileAccessDenied(grant)) throw new Error(`Denied: ${grant.reason}`);
+        return grant;
+      };
+      const journal = createDrizzleJournal(database.current);
+      const update = Y.encodeStateAsUpdate(new Y.Doc());
+      const meta = { origin: `agent:${turn}`, actorTurnId: turn, seq: 0 };
+      const appendUnder = (grant: FileGrant<"edit">) =>
+        runWithEditGrants(access(), [grant], () => journal.append(probe, update, meta));
+
+      // A create's grant in the knowledge base doesn't reach a scratch file.
+      const kb = await containerGrant({
+        kind: "container",
+        scheme: "kb",
+        owner: { scope: "project", projectId: p },
+      });
+      await expect(appendUnder(kb)).rejects.toBeInstanceOf(UngrantedAgentWriteError);
+      const scratch = await containerGrant({
+        kind: "container",
+        scheme: "scratch",
+        owner: { scope: "work", workId: w },
+      });
+      await expect(appendUnder(scratch)).resolves.toMatchObject({ ok: true });
     });
 
     it("refuses at save an edit granted before the archive", async () => {

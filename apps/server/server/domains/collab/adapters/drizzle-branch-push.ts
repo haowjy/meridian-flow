@@ -12,7 +12,10 @@ import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
+import {
+  lockDraftBranchWorks,
+  runWithActiveWorkDrafts,
+} from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -228,7 +231,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitDiscard(input) {
-      return runInDrizzleTransaction(db, () =>
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], () =>
           commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
         ),
@@ -245,6 +248,10 @@ export function createDrizzlePushCommitStore(
             await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
           }),
       );
+    },
+
+    async lockDraftWorks(branchIds) {
+      return lockDraftBranchWorks(db, branchIds);
     },
 
     async commitPushBatch(input) {

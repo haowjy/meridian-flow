@@ -630,4 +630,34 @@ describe("Yjs room access", () => {
     expect(handleClose).toHaveBeenCalledWith({ code: 4409, reason: "access-changed" });
     expect(manuscriptPeer.close).not.toHaveBeenCalled();
   });
+
+  it("closes a room with 4409 when its access changed before the room was registered", async () => {
+    const services = roomServices();
+    const allowAll = services.fileAccess.authorize;
+    let archived = false;
+    // The Work is archived after admission's checks, before the room hears changes.
+    services.fileAccess.authorize = (async (principal, target, need) => {
+      if (archived && need === "edit") {
+        return { denied: true, level: "read", reason: "work_archived", target, need };
+      }
+      const decision = await allowAll(principal, target, need);
+      if (need === "edit") archived = true;
+      return decision;
+    }) as typeof allowAll;
+    const context = {
+      userId: "user-1",
+      clientSchemaVersion: COLLAB_SCHEMA_VERSION,
+      closeTransport: vi.fn(),
+      registration: { revoke: vi.fn() },
+    };
+
+    await expect(
+      createHocuspocus(services).configuration.onConnect?.({
+        documentName: liveRoom,
+        context,
+        connectionConfig: connectionConfig(),
+      } as never),
+    ).rejects.toMatchObject({ code: 4409 });
+    expect(context.closeTransport).toHaveBeenCalledWith({ code: 4409, reason: "access-changed" });
+  });
 });

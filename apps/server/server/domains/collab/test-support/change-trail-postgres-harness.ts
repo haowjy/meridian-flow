@@ -58,6 +58,8 @@ const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGenerati
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
+const { runOutsideEditConfirmation } = await import("../../../shared/edit-confirmation.js");
+const { WorkLifecycleUnavailableError } = await import("../../projects/domain/work-lifecycle.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -323,7 +325,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const branchPulls = createBranchPullService({
-    outsideTransaction: runOutsideDrizzleTransaction,
+    outsideTransaction: (operation) =>
+      runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation)),
     rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
     branchCoordinator,
@@ -612,6 +615,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     fileAccess: confirmEveryGrant,
+    atomic: (operation) => runInDrizzleTransaction(db, operation),
+    isDraftWorkUnavailable: (cause) => cause instanceof WorkLifecycleUnavailableError,
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,

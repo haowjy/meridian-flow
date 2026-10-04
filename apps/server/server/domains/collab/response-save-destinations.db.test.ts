@@ -113,6 +113,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        threadContext: {
+          requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
+          resolveContextDocument: async () => {
+            throw new Error("Turn reversals here name no document");
+          },
+        },
         ...options,
       });
       collab.bindHocuspocus(hocuspocus as never);
@@ -427,10 +433,61 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await liveText(collab, SCRATCH_B_ID)).toContain(`From ${WORK_ID}.`);
     });
 
+    it("leaves an archived Work's draft as it is on the writer's turn undo and redo", async () => {
+      const collab = createTestCollab();
+      await seed(collab);
+      const agentEdit = collab.agentEdit();
+      const lore = await context(drafting(), KB_ID);
+      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, lore);
+      await agentEdit.write(
+        { command: "insert", file: "lore.md", documentId: KB_ID, content: "Agent lore." },
+        { ...lore, responseId: RESPONSE_ID },
+      );
+      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+      // The writer owns lore.md, so their grant holds after the archive; the
+      // draft it would change is what the archive froze (D30).
+      const reverse = (direction: "undo" | "redo") =>
+        collab.reverseThreadContext({
+          threadId: THREAD_ID as never,
+          userId: USER_ID,
+          turnId: TURN_ID as never,
+          direction,
+          scope: "turn",
+          selection: TURN_ID,
+        });
+      const refused = {
+        status: "permission_denied",
+        documents: [expect.objectContaining({ status: "permission_denied" })],
+      };
+
+      await archiveWork(WORK_ID);
+      await expect(reverse("undo")).resolves.toMatchObject(refused);
+      expect(await journalStatuses()).toEqual(["active"]);
+      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
+
+      await setArchived(WORK_ID, false);
+      await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
+      await archiveWork(WORK_ID);
+      await expect(reverse("redo")).resolves.toMatchObject(refused);
+      expect(await journalStatuses()).toEqual(["discarded"]);
+    });
+
+    async function journalStatuses() {
+      const rows = await db
+        .select({ status: schema.branchWriteJournal.status })
+        .from(schema.branchWriteJournal)
+        .where(eq(schema.branchWriteJournal.turnId, TURN_ID as never));
+      return rows.map((row) => row.status);
+    }
+
     async function archiveWork(workId: string) {
+      await setArchived(workId, true);
+    }
+
+    async function setArchived(workId: string, archived: boolean) {
       await db
         .update(schema.works)
-        .set({ archivedAt: new Date() })
+        .set({ archivedAt: archived ? new Date() : null })
         .where(eq(schema.works.id, workId));
     }
 
