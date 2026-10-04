@@ -57,7 +57,7 @@ export function planFolderCatalogInstallation(input: {
 }): FolderNamespaceWrite[] {
   const writes: FolderNamespaceWrite[] = [];
   for (const record of input.folders) {
-    if (record.projectId !== input.projectId) continue;
+    if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
     if (entry?.kind !== "folder" || input.view.invalidatedEntryIds.has(entry.entryId) || !observed)

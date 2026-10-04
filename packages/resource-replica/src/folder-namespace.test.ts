@@ -42,7 +42,9 @@ class MemoryFolders implements FolderNamespaceStore {
     return this.record && structuredClone(this.record);
   }
   async readFolders(projectId: string) {
-    return this.record?.projectId === projectId ? [structuredClone(this.record)] : [];
+    return this.record && (this.record.projectId === null || this.record.projectId === projectId)
+      ? [structuredClone(this.record)]
+      : [];
   }
   async commitFolder(write: FolderNamespaceWrite) {
     if (write.expectedRevision !== (this.record?.revision ?? null)) return "stale" as const;
@@ -81,13 +83,15 @@ function command(record?: FolderNamespaceRecord | null, operationId = "move") {
 function receipt(
   ok: boolean,
   operationId = "move",
+  sourceUri = "manuscript://chapters",
+  destinationUri = "manuscript://volume/renamed",
 ): Extract<ContextOperationReceipt, { command: { kind: "move" } }> {
   return {
     operationId,
     command: {
       kind: "move",
-      sourceUri: "manuscript://chapters",
-      destinationUri: "manuscript://volume/renamed",
+      sourceUri,
+      destinationUri,
       expected: { kind: "folder", nodeId: "chapters" },
     },
     result: ok
@@ -307,6 +311,162 @@ describe("folder namespace public API", () => {
     expect(projectFolderCatalog("project", entries, [store.current()])).toEqual(entries);
   });
 
+  it("recovers a refused queue after reopening durable metadata and accepts a different repair", async () => {
+    const store = new MemoryFolders();
+    await store.commitFolder(command());
+    let started!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let refuse!: (value: { kind: "operation"; receipt: ContextOperationReceipt }) => void;
+    const first = reconcile(store, {
+      accountId: "account",
+      readOutcome: async () => null,
+      submit: async () => {
+        started();
+        return new Promise((resolve) => {
+          refuse = resolve;
+        });
+      },
+    });
+    await dispatched;
+    const queued = planFolderLocation({
+      record: store.current(),
+      projectId: "project",
+      handle: "folder:chapters",
+      folderId: "chapters",
+      source,
+      destination: { ...destination, name: "queued" },
+      intentId: "queued",
+      operationId: "queued",
+    });
+    if (!queued) throw new Error("Missing queued command");
+    await store.commitFolder(queued);
+    refuse({ kind: "operation", receipt: receipt(false) });
+    expect(await first).toBe("needs-repair");
+
+    const reopened = new MemoryFolders();
+    reopened.record = structuredClone(store.current());
+    expect(reopened.current().intents.map((intent) => intent.state)).toEqual([
+      "needs-repair",
+      "cancelled",
+    ]);
+    expect(projectFolderLocation(reopened.current())).toEqual(source);
+    expect(projectFolderNeedsRepair(reopened.current())?.intentId).toBe("move");
+    for (const name of ["renamed", "queued", "chapters"]) {
+      const retry = planFolderLocation({
+        record: reopened.current(),
+        projectId: "project",
+        handle: "folder:chapters",
+        folderId: "chapters",
+        source,
+        destination: { ...destination, folderPath: name === "chapters" ? "" : "/volume", name },
+        intentId: `retry-${name}`,
+        operationId: `retry-${name}`,
+      });
+      if (!retry) throw new Error("Repair must not be a no-op");
+      expect(() => validateFolderNamespaceUpdate(reopened.current(), retry.next)).not.toThrow();
+    }
+    const repair = planFolderLocation({
+      record: reopened.current(),
+      projectId: "project",
+      handle: "folder:chapters",
+      folderId: "chapters",
+      source,
+      destination: { ...destination, name: "repair" },
+      intentId: "repair",
+      operationId: "repair",
+    });
+    if (!repair) throw new Error("Missing repair command");
+    await reopened.commitFolder(repair);
+    expect(reopened.current().intents.map((intent) => intent.state)).toEqual([
+      "settled",
+      "cancelled",
+      "pending",
+    ]);
+    expect(
+      await reconcile(reopened, {
+        accountId: "account",
+        readOutcome: async () => null,
+        submit: async (_projectId, request) => {
+          expect(request).toMatchObject({ body: { path: "chapters", newName: "repair" } });
+          return {
+            kind: "operation",
+            receipt: receipt(true, "repair", "manuscript://chapters", "manuscript://volume/repair"),
+          };
+        },
+      }),
+    ).toBe("progressed");
+    expect(projectFolderLocation(reopened.current()).name).toBe("repair");
+  });
+
+  it("dispatches an identity-bound attempt when a foreign move arrives during receipt lookup", async () => {
+    const store = new MemoryFolders();
+    await store.commitFolder(command());
+    let submissions = 0;
+    const scope = { kind: "project", projectId: "project" } as const;
+    const result = await reconcile(store, {
+      accountId: "account",
+      readOutcome: async () => {
+        const view = indexCatalogView({
+          scope,
+          generation: "g",
+          appliedRevision: "2",
+          observedHeadRevision: "2",
+          cursor: "c",
+          invalidatedEntryIds: new Set(),
+          entries: new Map<string, CatalogEntry>([
+            [
+              "source",
+              {
+                kind: "source",
+                entryId: "source",
+                scope,
+                scheme: "manuscript",
+                name: "Files",
+                uri: "manuscript://",
+              },
+            ],
+            [
+              "chapters",
+              {
+                kind: "folder",
+                entryId: "chapters",
+                scope,
+                sourceId: "source",
+                parentId: "source",
+                name: "external",
+                path: ["external"],
+                uri: "manuscript://external",
+                hasChildren: false,
+              },
+            ],
+          ]),
+        });
+        const [write] = planFolderCatalogInstallation({
+          projectId: "project",
+          folders: [store.current()],
+          view,
+          fence: { folders: folderObservationFence([store.current()]) },
+        });
+        if (!write) throw new Error("Missing foreign catalog installation");
+        await store.commitFolder(write);
+        return null;
+      },
+      submit: async (_projectId, request) => {
+        submissions++;
+        expect(request).toMatchObject({
+          body: { path: "chapters", expected: { kind: "folder", nodeId: "chapters" } },
+        });
+        return { kind: "operation", receipt: receipt(false) };
+      },
+    });
+    expect(result).toBe("needs-repair");
+    expect(submissions).toBe(1);
+    expect(projectFolderLocation(store.current()).path).toBe("/external");
+    expect(projectFolderNeedsRepair(store.current())).not.toBeNull();
+  });
+
   it("selects the whole settled receipt by caller operation id and expires without deleting evidence", async () => {
     const store = new MemoryFolders();
     await store.commitFolder(command());
@@ -333,18 +493,37 @@ describe("folder namespace public API", () => {
     });
   });
 
-  it("takes the folder's location from the catalog once refreshed, so a later parent move shows through", async () => {
+  it.each([
+    "manuscript",
+    "user",
+  ] as const)("takes %s folder canonical refresh and preserves namespace ownership across projects", async (scheme) => {
     const store = new MemoryFolders();
-    await store.commitFolder(command());
+    const initial = planFolderLocation({
+      projectId: "project",
+      handle: "folder:chapters",
+      folderId: "chapters",
+      source: { ...source, scheme },
+      destination: { ...destination, scheme },
+      intentId: "move",
+      operationId: "move",
+    });
+    if (!initial) throw new Error("Missing initial command");
+    await store.commitFolder(initial);
     const settled = await reconcile(store, {
       accountId: "account",
-      readOutcome: async () => ({ kind: "operation", receipt: receipt(true) }),
+      readOutcome: async () => ({
+        kind: "operation",
+        receipt: receipt(true, "move", `${scheme}://chapters`, `${scheme}://volume/renamed`),
+      }),
       submit: async () => {
         throw new Error("Receipt lookup must recover without redispatch");
       },
     });
     expect(settled).toBe("progressed");
-    const scope = { kind: "project", projectId: "project" } as const;
+    const scope =
+      scheme === "user"
+        ? ({ kind: "user", userId: "account" } as const)
+        : ({ kind: "project", projectId: "project" } as const);
     const catalogWith = (path: string[]): CatalogCacheView =>
       indexCatalogView({
         scope,
@@ -355,7 +534,14 @@ describe("folder namespace public API", () => {
         invalidatedEntryIds: new Set(),
         entries: new Map(
           [
-            entries[0],
+            {
+              kind: "source" as const,
+              entryId: "source",
+              name: "Files",
+              scheme,
+              scope,
+              uri: `${scheme}://`,
+            },
             {
               kind: "folder" as const,
               entryId: "chapters",
@@ -364,7 +550,7 @@ describe("folder namespace public API", () => {
               parentId: "source",
               name: path.at(-1) ?? "",
               path,
-              uri: `manuscript://${path.join("/")}`,
+              uri: `${scheme}://${path.join("/")}`,
               hasChildren: false,
             },
           ].flatMap((entry) => (entry ? [[entry.entryId, entry] as const] : [])),
@@ -397,6 +583,52 @@ describe("folder namespace public API", () => {
     if (!follow) throw new Error("Missing canonical follow");
     await store.commitFolder(follow);
     expect(store.current().canonical.path).toBe("/elsewhere/renamed");
+    if (scheme === "user") {
+      const second = planFolderLocation({
+        record: store.current(),
+        projectId: "project-b",
+        handle: "folder:chapters",
+        folderId: "chapters",
+        source: store.current().canonical,
+        destination: { ...destination, scheme, name: "from-b" },
+        intentId: "from-b",
+        operationId: "from-b",
+      });
+      if (!second) throw new Error("Missing personal folder command");
+      await store.commitFolder(second);
+      expect(store.current().projectId).toBeNull();
+      expect(await store.readFolders("project")).toHaveLength(1);
+      expect(await store.readFolders("project-b")).toHaveLength(1);
+      expect(
+        rebaseFolderResourceLocation("project", store.current().canonical, [store.current()]).name,
+      ).toBe("from-b");
+      expect(
+        rebaseFolderResourceLocation("project-b", store.current().canonical, [store.current()])
+          .name,
+      ).toBe("from-b");
+      expect(
+        await reconcile(store, {
+          accountId: "account",
+          readOutcome: async () => null,
+          submit: async (projectId) => {
+            expect(projectId).toBe("project-b");
+            return {
+              kind: "operation",
+              receipt: receipt(true, "from-b", "user://elsewhere/renamed", "user://volume/from-b"),
+            };
+          },
+        }),
+      ).toBe("progressed");
+      const refresh = installFolderCanonicalRefresh(
+        store.current(),
+        "from-b",
+        projectFolderLocation(store.current()),
+      );
+      if (!refresh) throw new Error("Missing personal refresh");
+      await store.commitFolder(refresh);
+      expect(projectFolderLocation(store.current()).name).toBe("from-b");
+      return;
+    }
     expect(projectFolderCatalog("project", [...moved.entries.values()], [store.current()])).toEqual(
       [...moved.entries.values()],
     );

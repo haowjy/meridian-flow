@@ -69,8 +69,17 @@ export function projectResourceLocation(
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
+  const named = record.intents.some((intent) => {
+    const outcome = intent.attempts.at(-1)?.outcome;
+    return (
+      intent.desired.kind === "set-location" &&
+      intent.state === "settled" &&
+      outcome?.kind === "operation" &&
+      outcome.receipt.result.ok
+    );
+  });
   if (record.resource.canonical)
-    return { ...record.resource.canonical, provisional: create?.kind === "create" };
+    return { ...record.resource.canonical, provisional: create?.kind === "create" && !named };
   if (create?.kind !== "create") return null;
   const folder = create.folderPath.split("/").filter(Boolean).join("/");
   const name = create.provisionalName ?? "Untitled";

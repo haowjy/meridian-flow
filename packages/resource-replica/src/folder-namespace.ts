@@ -89,13 +89,13 @@ export function planFolderLocation(input: {
   const previous = input.record ?? null;
   if (
     previous &&
-    (previous.projectId !== input.projectId ||
+    ((previous.projectId !== null && previous.projectId !== input.projectId) ||
       previous.handle !== input.handle ||
       previous.folderId !== input.folderId)
   )
     throw new Error("Folder namespace identity mismatch");
   const record: FolderNamespaceRecord = previous ?? {
-    projectId: input.projectId,
+    projectId: input.source.scheme === "user" ? null : input.projectId,
     handle: input.handle,
     folderId: input.folderId,
     revision: 0,
@@ -110,17 +110,20 @@ export function planFolderLocation(input: {
     [".", ".."].includes(input.destination.name)
   )
     throw new Error("Invalid folder name");
-  const source = projectFolderLocation(record);
+  const superseded = supersedeRepairableNamespaceWork(
+    { intents: record.intents },
+    record.projectId,
+  );
+  const source = projectFolderLocation({ ...record, intents: superseded.intents });
   const destination = namespaceDestinationLocation(input.destination);
   if (
     source.scheme === destination.scheme &&
     source.workId === destination.workId &&
     (destination.path === source.path || destination.path.startsWith(`${source.path}/`))
   ) {
-    if (destination.path === source.path) return null;
-    throw new Error("Cannot move a folder inside itself");
+    if (destination.path === source.path && !superseded.repaired) return null;
+    if (destination.path !== source.path) throw new Error("Cannot move a folder inside itself");
   }
-  const superseded = supersedeRepairableNamespaceWork({ intents: record.intents }, input.projectId);
   const intent: NamespaceIntent = {
     handle: input.handle,
     projectId: input.projectId,
@@ -158,7 +161,7 @@ export function validateFolderNamespaceUpdate(
   if (
     next.intents.some(
       (intent) =>
-        intent.projectId !== next.projectId ||
+        (next.projectId !== null && intent.projectId !== next.projectId) ||
         intent.identityRevision !== 1 ||
         intent.desired.kind !== "set-folder-location",
     )
@@ -292,8 +295,19 @@ export function settleFolderNamespaceOutcome(
     state: outcome.receipt.result.ok ? "settled" : "needs-repair",
     settledAt,
   }));
-  if (outcome.receipt.result.ok)
+  if (outcome.receipt.result.ok) {
     write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
+  } else {
+    // These commands were queued against an optimistic placement the server refused.
+    // Keep the failure on the accepted folder; a new command starts from that location.
+    write.next.intents = write.next.intents.map((queued) =>
+      queued.sequence > intent.sequence &&
+      queued.state === "pending" &&
+      queued.attempts.length === 0
+        ? { ...queued, state: "cancelled" }
+        : queued,
+    );
+  }
   return write;
 }
 
@@ -327,17 +341,15 @@ export function reconcileFolderNamespace(input: {
     prepare: prepareFolderNamespaceAttempt,
     recordOutcome: recordFolderNamespaceOutcome,
     settle: (record: FolderNamespaceRecord) => settleFolderNamespaceOutcome(record, input.now?.()),
+    // A changed source path must reach the server for an authoritative, identity-bound
+    // outcome. The immutable request may be refused, but can never wait for a receipt forever.
     replayEligible: (record, _intent, attempt) => {
       if (attempt.request.kind !== "move") return false;
       const request = attempt.request;
       return (
         !record.canonicalRefresh &&
         request.body.expected.kind === "folder" &&
-        request.body.expected.nodeId === record.folderId &&
-        request.scheme === record.canonical.scheme &&
-        request.body.path === pathParts(record.canonical.path).join("/") &&
-        (request.body.sourceWorkId ?? null) === record.canonical.workId &&
-        request.sourceWorkSlug === (record.canonical.workSlug ?? null)
+        request.body.expected.nodeId === record.folderId
       );
     },
   });

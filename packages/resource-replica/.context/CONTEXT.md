@@ -73,7 +73,9 @@ server settlement: background reconciliation records immutable attempts and
 outcomes, and unresolved or rejected work remains projected for retry.
 
 Folder placement has a namespace-only record: a stable folder id, canonical
-location and ordered `set-folder-location` intentions. It never reserves a
+location and ordered `set-folder-location` intentions. Its project ownership is
+null for account-owned personal folders; each intent retains the initiating project
+for transport. Personal overlays and catalog observations are shared across projects. It never reserves a
 document id, classification or content database. The browser account owner
 implements `FolderNamespaceStore` alongside its file metadata; it must observe
 folder commits through that same projection owner, not a second cache writer.
@@ -91,6 +93,11 @@ folder and every descendant. Supply the installed destination source and parent
 catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
 use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
 old location and expose the attempted name through `projectFolderNeedsRepair`.
+Refusal cancels unsubmitted queued folder commands based on that rejected placement.
+An explicit repair supersedes rejected history and starts from the last canonical
+location, even when the chosen destination matches the currently displayed location.
+Replay remains bound to stable folder identity, not a stale source-path comparison:
+the immutable request obtains a server outcome even after another client moves it.
 
 Catalog installation owns folder canonical state exactly as it owns files': the
 acquisition fence captures each folder's canonical location and refresh barrier
@@ -105,3 +112,7 @@ Caller-issued operation ids survive dispatch. Local settlement records
 `settledAt`; `settledNamespaceReceipt` returns the entire matching receipt for
 four seconds, including fields added by the server later, without deleting
 journal evidence. Surfaces own the timer/rerender that removes their note.
+
+Completed successful file naming remains evidence after canonical refresh retires
+placement ownership. Retained create history alone cannot make a named file
+provisional again.

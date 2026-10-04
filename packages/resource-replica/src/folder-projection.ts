@@ -12,8 +12,8 @@ function folderOverlays(projectId: string, records: readonly FolderNamespaceReco
   return records
     .filter(
       (record) =>
-        record.projectId === projectId &&
-        owningLocationIntent(projectId, record.intents, Boolean(record.canonicalRefresh)),
+        (record.projectId === null || record.projectId === projectId) &&
+        owningLocationIntent(record.projectId, record.intents, Boolean(record.canonicalRefresh)),
     )
     .sort(
       (left, right) =>

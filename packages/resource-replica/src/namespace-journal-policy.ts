@@ -87,11 +87,24 @@ export function validateNamespaceJournal(input: {
         (!next.intents.some(
           (later) => later.desired.kind === "delete" && later.sequence > intent.sequence,
         ) &&
+          !next.intents.some((earlier) => {
+            const outcome = earlier.attempts.at(-1)?.outcome;
+            return (
+              intent.desired.kind === "set-folder-location" &&
+              earlier.desired.kind === "set-folder-location" &&
+              earlier.sequence < intent.sequence &&
+              outcome?.kind === "operation" &&
+              !outcome.receipt.result.ok
+            );
+          }) &&
           !next.intents.some(
             (later) =>
               later.sequence > intent.sequence &&
               later.identityRevision === identityRevision &&
-              JSON.stringify(later.desired) === JSON.stringify(intent.desired),
+              (JSON.stringify(later.desired) === JSON.stringify(intent.desired) ||
+                ((intent.desired.kind === "set-location" ||
+                  intent.desired.kind === "set-folder-location") &&
+                  later.desired.kind === intent.desired.kind)),
           )))
     )
       throw new Error("Only superseded unsubmitted work can be cancelled");

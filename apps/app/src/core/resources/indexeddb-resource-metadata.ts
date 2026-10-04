@@ -244,7 +244,11 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   }
 
   readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]> {
-    return this.run(() => this.folders.where("projectId").equals(projectId).toArray());
+    return this.run(() =>
+      this.folders
+        .filter((folder) => folder.projectId === null || folder.projectId === projectId)
+        .toArray(),
+    );
   }
 
   private async foldersAreCurrent(writes: readonly FolderNamespaceWrite[]): Promise<boolean> {

@@ -349,6 +349,24 @@ it("publishes folder placement through the shared stream and installs a refresh 
   expect(await store.commitCatalog(catalog([]))).toBe("committed");
   expect((await store.readFolder({ handle: "folder:chapters" }))?.canonical.path).toBe("/volume");
   expect(await store.readFolders("project")).toHaveLength(1);
+  const personal = planFolderLocation({
+    projectId: "project",
+    handle: "folder:personal",
+    folderId: "personal",
+    source: { scheme: "user", path: "/cast", name: "cast", workId: null },
+    destination: { scheme: "user", folderPath: "", name: "characters", workId: null },
+    intentId: "personal-move",
+    operationId: "personal-move",
+  });
+  if (!personal) throw new Error("Missing personal move");
+  expect(await store.commitFolder(personal)).toBe("committed");
+  expect((await store.readFolders("project")).map((folder) => folder.folderId).sort()).toEqual([
+    "chapters",
+    "personal",
+  ]);
+  expect((await store.readFolders("other-project")).map((folder) => folder.folderId)).toEqual([
+    "personal",
+  ]);
 });
 
 it("observes committed records across instances and stops admission before draining", async () => {
