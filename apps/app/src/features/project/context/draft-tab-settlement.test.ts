@@ -125,6 +125,18 @@ describe("draft tab settlement", () => {
     );
   });
 
+  it("promotes only the exact tab it was given and leaves a replacement overlay alone", async () => {
+    const { coordinator } = rig();
+    const applied = getContextTabs("project-a").tabs[0];
+    if (applied?.kind !== "tracked") throw new Error("Expected tracked draft tab");
+    await expect(coordinator.promoteAppliedDraft("project-a", applied)).resolves.toBe(true);
+
+    useContextTabsStore.getState().openTab("project-a", draftTab("replacement"));
+    const before = structuredClone(getContextTabs("project-a"));
+    await expect(coordinator.promoteAppliedDraft("project-a", applied)).resolves.toBe(false);
+    expect(getContextTabs("project-a")).toEqual(before);
+  });
+
   it("keeps one draft-only membership whichever admission arrives first", () => {
     const store = useContextTabsStore.getState();
     const durable = () => useContextTabsStore.getState().byProject["project-a"]?.tabs ?? [];

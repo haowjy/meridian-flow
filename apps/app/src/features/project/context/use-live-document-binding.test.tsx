@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The ordinary live-document host binding: open, retry after failure, release on teardown. */
-import { act, useEffect, useState } from "react";
+import { act, useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -8,7 +8,7 @@ import type { AdmittedLiveDocument } from "./open-project-document";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 import { type LiveDocumentHostBinding, useLiveDocumentBinding } from "./use-live-document-binding";
 
-const docSession = { subscribe: () => () => undefined } as unknown as DocumentSession;
+const docSession = {} as DocumentSession;
 
 function admission(owners: string[], releases: Array<ReturnType<typeof vi.fn>>) {
   return {
@@ -30,17 +30,10 @@ function admission(owners: string[], releases: Array<ReturnType<typeof vi.fn>>) 
   } as AdmittedLiveDocument;
 }
 
-function Host({
-  expose,
-  revision = "r1",
-}: {
-  expose(binding: LiveDocumentHostBinding): void;
-  revision?: string;
-}) {
+function Host({ expose }: { expose(binding: LiveDocumentHostBinding): void }) {
   const binding = useLiveDocumentBinding({
     projectId: "project-a",
     documentId: "document-a",
-    availabilityRevision: revision,
     owner: "desktop-server-tab",
   });
   useEffect(() => expose(binding), [binding, expose]);
@@ -102,57 +95,6 @@ describe("useLiveDocumentBinding", () => {
         expect(opener.open).toHaveBeenCalledTimes(2);
       },
     );
-  });
-
-  it("rebinds a room the server refused once the document's availability advances", async () => {
-    const owners: string[] = [];
-    const releases: Array<ReturnType<typeof vi.fn>> = [];
-    // The room is refused while the document is only a draft, ahead of Apply.
-    const refused = {
-      subscribe: (listener: (snapshot: unknown) => void) => {
-        listener({ status: "access-lost", connectionState: { kind: "unauthorized" } });
-        return () => undefined;
-      },
-    } as unknown as DocumentSession;
-    const opener = {
-      open: vi
-        .fn()
-        .mockResolvedValueOnce({
-          kind: "opened",
-          admission: {
-            ...admission(owners, releases),
-            bind: async () => ({ session: refused, generation: "2", release: vi.fn() }),
-          },
-        })
-        .mockResolvedValue({ kind: "opened", admission: admission(owners, releases) }),
-    };
-    let host!: LiveDocumentHostBinding;
-    let advance!: () => void;
-    function Harness() {
-      const [revision, setRevision] = useState("r1");
-      advance = () => setRevision("r2");
-      return (
-        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <Host
-            revision={revision}
-            expose={(value) => {
-              host = value;
-            }}
-          />
-        </ProjectDocumentLiveOpenerContext.Provider>
-      );
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      await act(async () => undefined);
-      expect(host.state).toMatchObject({ kind: "opened", session: refused });
-      expect(opener.open).toHaveBeenCalledOnce();
-
-      await act(async () => advance());
-      await act(async () => undefined);
-      expect(opener.open).toHaveBeenCalledTimes(2);
-      expect(host.state).toMatchObject({ kind: "opened", session: docSession });
-    });
   });
 
   it("releases a binding that finishes after the host is gone", async () => {

@@ -1,15 +1,7 @@
-/**
- * One concrete desktop/mobile host's ordinary live-document binding, with retry.
- *
- * A failed open, or a session the server closed the room on, is retried once when
- * the document's availability advances: a room can be refused before the document
- * is readable (a draft-only document reviewed ahead of Apply) and only the
- * availability change says "not yet" is now "available".
- */
-import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
+/** One concrete desktop/mobile host's ordinary live-document binding, with retry. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { type LiveDocumentBinding, liveSessionDenied } from "./open-project-document";
+import type { LiveDocumentBinding } from "./open-project-document";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export type LiveDocumentBindingState =
@@ -25,44 +17,19 @@ export type LiveDocumentHostBinding = {
 
 let hostSequence = 0;
 
-/** Changes when the resource replica learns something new about the document's availability. */
-export function resourceAvailabilityRevision(
-  snapshot: ResourceProjectionSnapshot | null,
-  documentId: string,
-): string {
-  if (!snapshot) return "pending";
-  const resource = snapshot.records.find(
-    (record) => record.resource.identity.documentId === documentId,
-  )?.resource;
-  return JSON.stringify([
-    resource?.revision ?? null,
-    resource?.lifecycle.kind === "acknowledged"
-      ? resource.lifecycle.availabilityGeneration
-      : resource?.lifecycle.kind === "terminal"
-        ? resource.lifecycle.generation
-        : null,
-  ]);
-}
-
 export function useLiveDocumentBinding({
   projectId,
   documentId,
-  availabilityRevision,
   owner,
 }: {
   projectId: string;
   documentId: string | null;
-  availabilityRevision: string;
   owner: "desktop-server-tab" | "mobile-project-document-host";
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
   const attemptRef = useRef(0);
   const [retryGeneration, setRetryGeneration] = useState(0);
-  const attemptedRevision = useRef(availabilityRevision);
-  const latestRevision = useRef(availabilityRevision);
-  latestRevision.current = availabilityRevision;
-  const [denied, setDenied] = useState(false);
   const [state, setState] = useState<LiveDocumentBindingState>(
     documentId ? { kind: "opening", documentId } : { kind: "absent" },
   );
@@ -76,7 +43,6 @@ export function useLiveDocumentBinding({
     const abort = new AbortController();
     let binding: LiveDocumentBinding | null = null;
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
-    attemptedRevision.current = latestRevision.current;
     setState({ kind: "opening", documentId });
     void (async () => {
       try {
@@ -110,19 +76,5 @@ export function useLiveDocumentBinding({
   }, [documentId, opener, projectId, retryGeneration]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
-
-  const session = state.kind === "opened" ? state.session : null;
-  useEffect(() => {
-    if (!session) return setDenied(false);
-    return session.subscribe((snapshot) => setDenied(liveSessionDenied(snapshot)));
-  }, [session]);
-
-  const unavailable = state.kind === "failed" || denied;
-  useEffect(() => {
-    if (!unavailable || attemptedRevision.current === availabilityRevision) return;
-    attemptedRevision.current = availabilityRevision;
-    retry();
-  }, [availabilityRevision, retry, unavailable]);
-
   return useMemo(() => ({ state, retry }), [retry, state]);
 }

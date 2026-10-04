@@ -19,18 +19,12 @@ import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import {
-  useAccountResourceProjection,
-  useContextRemovalCoordinator,
-} from "../context/account-feature-context";
+import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
-import {
-  resourceAvailabilityRevision,
-  useLiveDocumentBinding,
-} from "../context/use-live-document-binding";
+import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -182,31 +176,30 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       : null;
   const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
 
-  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
+  // A draft-only document has no live room until Apply promotes it, and the
+  // server refuses one: review hosts the draft branch room alone.
+  const branchOnly = activeTab?.kind === "tracked" && activeTab.draftOnly === true;
   const live = useLiveDocumentBinding({
     projectId,
-    documentId: activeTab?.editable ? activeTab.documentId : null,
-    availabilityRevision: resourceAvailabilityRevision(
-      resourceProjection,
-      activeTab?.documentId ?? "",
-    ),
+    documentId: activeTab?.editable && !branchOnly ? activeTab.documentId : null,
     owner: "mobile-project-document-host",
   });
   const liveState = live.state;
 
   useEffect(() => {
-    if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
+    const opened = liveState.kind === "opened" && liveState.documentId === activeEditorDocumentId;
+    if (!activeEditorDocumentId || (!opened && !branchOnly)) {
       setActiveEditorDocumentId(null, null, false, projectionOwner.current);
       return;
     }
     setActiveEditorDocumentId(
       activeEditorDocumentId,
-      liveState.session,
+      liveState.kind === "opened" ? liveState.session : null,
       Boolean(reviewDraftId),
       projectionOwner.current,
     );
     return () => setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-  }, [activeEditorDocumentId, liveState, reviewDraftId, setActiveEditorDocumentId]);
+  }, [activeEditorDocumentId, branchOnly, liveState, reviewDraftId, setActiveEditorDocumentId]);
 
   useEffect(() => {
     if (
@@ -257,7 +250,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     liveState.kind === "opened" && liveState.documentId === activeTab.documentId
       ? liveState.session
       : null;
-  if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
+  if (!branchOnly && liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
     return (
       <DocumentStatus tone="error">
         <AlertCircle className="size-4" aria-hidden />
@@ -265,7 +258,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       </DocumentStatus>
     );
   }
-  if (!liveSession) {
+  if (!liveSession && !(branchOnly && reviewDraftId)) {
     return (
       <DocumentStatus tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -281,7 +274,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
         projectId={projectId}
         workId={workId}
         documentId={activeTab.documentId}
-        session={liveSession}
+        session={liveSession ?? undefined}
         schemaType={activeTab.schemaType}
         editable={false}
         showToolbar={false}

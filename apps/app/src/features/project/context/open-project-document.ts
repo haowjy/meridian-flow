@@ -6,7 +6,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { projectResourceLocation, type ResourceRecord } from "@meridian/resource-replica";
-import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
@@ -161,7 +161,12 @@ export class ProjectDocumentLiveOpener {
         registry.retain(ownerId, [lease]);
         try {
           let session = registry.get(lease);
-          if (liveSessionDenied(session.getSnapshot())) {
+          const snapshot = session.getSnapshot();
+          if (
+            snapshot.status === "access-lost" ||
+            snapshot.connectionState?.kind === "unauthorized" ||
+            snapshot.connectionState?.kind === "terminal"
+          ) {
             await registry.restartUnavailableRoom(lease);
             session = registry.get(lease);
           }
@@ -184,17 +189,6 @@ export class ProjectDocumentLiveOpener {
       },
     });
   }
-}
-
-/** The server closed this room to us (denied or terminal); only a fresh connection can recover it. */
-export function liveSessionDenied(
-  snapshot: Pick<DocumentSessionSnapshot, "status" | "connectionState">,
-): boolean {
-  return (
-    snapshot.status === "access-lost" ||
-    snapshot.connectionState?.kind === "unauthorized" ||
-    snapshot.connectionState?.kind === "terminal"
-  );
 }
 
 export type OpenProjectDocumentRequest = {
