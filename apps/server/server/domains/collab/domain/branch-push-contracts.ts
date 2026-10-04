@@ -232,7 +232,15 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
+  /**
+   * Sets the Work's AI write mode and its active drafts' push policy.
+   * `keepDraftBranches` changes only the Work's mode, for kept drafts (D40).
+   */
+  updateWorkDraftPushPolicy(
+    workId: WorkId,
+    policy: "manual" | "auto",
+    options?: { keepDraftBranches?: boolean },
+  ): Promise<void>;
 };
 
 export type PushUpdateComputer = (input: {
@@ -269,16 +277,26 @@ export type BranchPushService = {
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
   ): Promise<AutoPushAfterThreadPeerWriteResult>;
-  setWorkPushPolicy(input: {
-    workId: WorkId;
-    policy: "manual" | "auto";
-    confirmedPush?: boolean;
-    pushedByUserId?: UserId;
-  }): Promise<
-    | { status: "updated"; policy: "manual" | "auto" }
-    | { status: "confirmation_required"; unpushedCount: number; reason: string }
-  >;
+  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
+
+/** What happens to pending draft changes when a Work switches to auto-apply (D40). */
+export type PendingChangesChoice = "apply" | "keep";
+
+export type SetWorkPushPolicyInput = {
+  workId: WorkId;
+  policy: "manual" | "auto";
+  /** Required to switch to auto-apply while drafts have pending changes. */
+  pending?: PendingChangesChoice;
+  /** The Work is archived: its drafts are frozen, so `apply` is refused (D30). */
+  archived?: boolean;
+  pushedByUserId?: UserId;
+};
+
+export type SetWorkPushPolicyResult =
+  | { status: "updated"; policy: "manual" | "auto" }
+  | { status: "confirmation_required"; unpushedCount: number; reason: string }
+  | { status: "refused"; reason: "work_archived" };
 
 export type BranchReviewService = {
   discardSelected(input: {
