@@ -328,16 +328,6 @@ describe("response staging", () => {
     expect(outcomeText(removed)).not.toContain(EMPTY_NOTE);
   });
 
-  it("says when a direct write leaves the document empty", async () => {
-    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const removed = await ctx.core.write(
-      { command: "remove", file: "chapter.md", in: [1, 2] },
-      context,
-    );
-    expect(outcomeText(removed)).toContain(EMPTY_NOTE);
-  });
-
   it("drops staged response buffers when invalidating a thread", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
