@@ -18,6 +18,7 @@
 - An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
 - Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
+- Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
