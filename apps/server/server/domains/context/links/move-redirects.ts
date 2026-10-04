@@ -252,7 +252,10 @@ export async function recordMoveRedirects(
       targetId && relocated.has(targetId)
         ? (destination.projectId ?? destination.workProjectId)
         : row.targetProjectId;
-    const representable = targetUri.startsWith("user://") || targetProjectId === holderProjectId;
+    const representable =
+      holderNew.startsWith("user://") ||
+      targetUri.startsWith("user://") ||
+      targetProjectId === holderProjectId;
     if (
       inserted.length &&
       representable &&

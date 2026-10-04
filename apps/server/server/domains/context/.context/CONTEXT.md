@@ -145,10 +145,12 @@ or target moved `FOR UPDATE`, both in identity order. The weaker document lock
 keeps journal FK insertion compatible. Address candidates use the shared
 `documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
 Moved holders' relative links retain their pre-move target (or intended URI).
+Moving a holder into `user://` respells project targets as contextual full URIs;
+keeping its old relative path would incorrectly resolve inside personal space.
 Existing `(source_document_id, href)` redirects win and keep their original
 mover. `linkUpdate` counts newly inserted occurrences and distinct eligible
 holders; archived/deleted Works and manifests do not count. A target moved into
-another non-personal project cannot be named from the holder's project; those
+another non-personal project cannot be named from a project holder; those
 occurrences (and holders without any representable rewrites) do not count in
 the receipt. The worker drops that target's redirect
 without rewriting, leaving the old href visibly unresolved rather than silently

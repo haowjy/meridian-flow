@@ -170,47 +170,23 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
       "[cast](user://cast.md).",
     );
     if (!localHolder.ok) throw new Error("Missing local holder");
-    expect(
-      await other.createTrackedDocument("manuscript://cast.md", "Unrelated cast."),
-    ).toMatchObject({ ok: true });
+    expect(await other.createTrackedDocument("kb://cast.md", "Unrelated cast.")).toMatchObject({
+      ok: true,
+    });
     const holder = await other.createTrackedDocument(
       "manuscript://holder.md",
       "[cast](user://cast.md).",
     );
     if (!holder.ok) throw new Error("Missing holder");
     const before = await projection(holder.value.documentId);
-    if (!target.ok) throw new Error("Missing personal target");
-    const [personalRow] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, target.value.documentId));
-    const [localRow] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, localHolder.value.documentId));
-    if (!personalRow || !localRow) throw new Error("Missing source rows");
-    const tree = new DrizzleContextTreeMutationStore(db);
-    const source = await tree.inspect(personalRow.contextSourceId, "cast.md");
-    if (source?.kind !== "file") throw new Error("Missing personal source");
-    // Exercise the canonical move commit directly: the existing aggregate's
-    // destination membership check rejects personal-to-project port moves.
-    const moved = await tree.commitMove({
-      source,
-      destinationSourceId: localRow.contextSourceId,
-      destinationPath: "cast.md",
-      expectedTarget: { state: "absent" },
-      overwrite: false,
-      destinationFiletype: "markdown",
-      graduateProvisionalName: false,
-      mover: { userId },
-    });
+    const moved = await port.move("user://cast.md", "kb://cast.md");
     if (!moved.ok) throw new Error(JSON.stringify(moved.error));
     expect(moved).toMatchObject({
       ok: true,
       value: { linkUpdate: { links: 1, documents: 1 } },
     });
     await app.linkUpdates.sweep();
-    expect(await projection(localHolder.value.documentId)).toBe("[cast](manuscript://cast.md).\n");
+    expect(await projection(localHolder.value.documentId)).toBe("[cast](kb://cast.md).\n");
     expect(await projection(holder.value.documentId)).toBe(before);
     expect(await db.select().from(linkRedirects)).toEqual([]);
     expect(
@@ -221,6 +197,31 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
         target: { kind: "scheme", uri: "user://cast.md" },
       }),
     ).toBeNull();
+  });
+  it("respells a holder moved to personal space without retargeting its relative link", async () => {
+    const target = await port.createTrackedDocument("manuscript://original.md", "Original.");
+    const unrelated = await port.createTrackedDocument("user://original.md", "Unrelated personal.");
+    const holder = await port.createTrackedDocument(
+      "manuscript://moving-holder.md",
+      "[original](original.md).",
+    );
+    if (!target.ok || !unrelated.ok || !holder.ok) throw new Error("Missing move fixtures");
+    const moved = await port.move("manuscript://moving-holder.md", "user://moving-holder.md");
+    expect(moved.ok).toBe(true);
+    await app.linkUpdates.sweep();
+    expect(await projection(holder.value.documentId)).toBe(
+      "[original](manuscript://original.md).\n",
+    );
+    expect(moved).toMatchObject({ value: { linkUpdate: { links: 1, documents: 1 } } });
+    expect(await db.select().from(linkRedirects)).toEqual([]);
+    const resolved = await app.documentLinks.resolve({
+      projectId,
+      userId,
+      holder: { documentId: holder.value.documentId, href: "manuscript://original.md" },
+      target: { kind: "scheme", uri: "manuscript://original.md" },
+    });
+    expect(resolved?.documentId).toBe(target.value.documentId);
+    expect(resolved?.documentId).not.toBe(unrelated.value.documentId);
   });
   it("serializes an overwrite with a worker holding the victim of a committed redirect", async () => {
     await app.linkUpdates.stop();
