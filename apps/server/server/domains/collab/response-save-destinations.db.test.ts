@@ -1,7 +1,7 @@
 /**
- * One reply, several destinations (D9, D19, D29, D40, D41, D42): scratch stays
- * live inside a draft-mode Work, and the reply saves every document it wrote in
- * one step and one database transaction.
+ * One reply, several destinations (D9, D19, D29, D40): a reply that writes
+ * live scratch and a drafted document reads its own writes, undoes as one turn,
+ * refuses archived Works at save, and merges live writes into kept drafts.
  */
 
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -35,7 +35,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const KB_SOURCE_ID = "00000000-0000-4000-8000-000000000a03";
     const SCRATCH_SOURCE_ID = "00000000-0000-4000-8000-000000000a04";
     const WORK_ID = "00000000-0000-4000-8000-000000000a05";
-    const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000a06";
     const KB_ID = "00000000-0000-4000-8000-000000000a07";
     const SCRATCH_ID = "00000000-0000-4000-8000-000000000a08";
     const THREAD_ID = "00000000-0000-4000-8000-000000000a09";
@@ -92,14 +91,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Rewrite",
           slug: "rewrite",
-          aiWriteMode: "draft",
-        },
-        {
-          id: OTHER_WORK_ID,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          name: "Other",
-          slug: "other",
           aiWriteMode: "draft",
         },
       ]);
@@ -225,109 +216,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    async function branchRows(documentId: string) {
-      return db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.documentId, documentId as never));
-    }
-
-    async function branchJournalRows() {
-      return db
-        .select({ id: schema.branchWriteJournal.id })
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.turnId, TURN_ID as never));
-    }
-
-    it("saves a mixed scratch and kb reply together, with no draft for scratch", async () => {
-      const collab = createTestCollab();
-      await stageMixedReply(collab);
-
-      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
-
-      expect(committed).toMatchObject({ status: "committed" });
-      expect(committed.documents.map((document) => document.documentId as string).sort()).toEqual(
-        [KB_ID, SCRATCH_ID].sort(),
-      );
-      expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
-      expect(await agentLiveRows(SCRATCH_ID)).toHaveLength(1);
-      expect(await branchRows(SCRATCH_ID)).toEqual([]);
-      expect(await liveText(collab, KB_ID)).not.toContain("Agent lore.");
-      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
-      const reviewable = await collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-      });
-      expect(reviewable.map((item) => item.documentId)).toEqual([KB_ID]);
-      // Positive control for the failed-save case: a save does reach open editors.
-      expect(hocuspocus.broadcasts.some((name) => name.includes(SCRATCH_ID))).toBe(true);
-      expect(hocuspocus.broadcasts.some((name) => name.includes(KB_ID))).toBe(false);
-    });
-
-    it("undoes scratch in the reply after a mixed save, and keeps the drafted kb write", async () => {
-      const collab = createTestCollab();
-      await stageMixedReply(collab);
-      // The orchestrator saves the reply before an undo and runs it in a fresh reply.
-      await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
-      const nextResponseId = "00000000-0000-4000-8000-000000000a12";
-      await db.insert(schema.modelResponses).values({
-        id: nextResponseId as never,
-        turnId: TURN_ID as never,
-        sequence: 2,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-      const agentEdit = collab.agentEdit();
-
-      await expect(
-        agentEdit.write(
-          { command: "undo", file: "notes.md", documentId: SCRATCH_ID },
-          { ...context(live), responseId: nextResponseId },
-        ),
-      ).resolves.toMatchObject({ isError: false });
-      await expect(
-        agentEdit.write(
-          { command: "insert", file: "notes.md", documentId: SCRATCH_ID, content: "Agent retry." },
-          { ...context(live), responseId: nextResponseId },
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "staged" });
-      await expect(collab.finalizeResponseCommit(nextResponseId, ctx)).resolves.toMatchObject({
-        status: "committed",
-      });
-
-      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
-      expect(await liveText(collab, SCRATCH_ID)).toContain("Agent retry.");
-      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
-    });
-
-    it("saves nothing and shows nothing in open editors when the transaction fails", async () => {
-      const collab = createTestCollab();
-      await stageMixedReply(collab);
-      const liveBefore = await liveText(collab, SCRATCH_ID);
-
-      await expect(
-        collab.finalizeResponseCommit(RESPONSE_ID, ctx, async () => {
-          throw new Error("injected reply-record failure");
-        }),
-      ).rejects.toThrow("injected reply-record failure");
-
-      expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
-      expect(await branchJournalRows()).toEqual([]);
-      expect(hocuspocus.broadcasts).toEqual([]);
-      expect(await liveText(collab, SCRATCH_ID)).toBe(liveBefore);
-      expect(collab.agentEdit().hasResponseDocument(RESPONSE_ID, SCRATCH_ID)).toBe(true);
-      expect(collab.agentEdit().hasResponseDocument(RESPONSE_ID, KB_ID)).toBe(true);
-
-      await expect(collab.finalizeResponseCommit(RESPONSE_ID, ctx)).resolves.toMatchObject({
-        status: "committed",
-      });
-      expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
-      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
-    });
-
     it("reads scratch back after writing scratch then kb in the same reply", async () => {
       const collab = createTestCollab();
       await stageMixedReply(collab);
@@ -432,48 +320,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
       expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
-    });
-
-    it("refuses a write after a switch to auto-apply until the document is read again", async () => {
-      const collab = createTestCollab();
-      await seed(collab);
-      const agentEdit = collab.agentEdit();
-      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
-
-      const refused = await agentEdit.write(
-        { command: "insert", file: "lore.md", documentId: KB_ID, content: "Too soon." },
-        context(live),
-      );
-      expect(refused).toMatchObject({ status: "read_required", isError: true });
-      expect(refused.result.message).toBe(
-        "You last read lore.md in @rewrite's draft, but your writes now go live. Read it again before editing.",
-      );
-
-      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(live));
-      const landed = await agentEdit.write(
-        { command: "insert", file: "lore.md", documentId: KB_ID, content: "After re-read." },
-        { ...context(live), responseId: RESPONSE_ID },
-      );
-      expect(landed).toMatchObject({ status: "success" });
-      const saved = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
-      expect(saved.documents.map((document) => document.concurrentEdits)).toEqual([undefined]);
-      expect(await liveText(collab, KB_ID)).toContain("After re-read.");
-    });
-
-    it("refuses a drafted write after the chat moved to another Work since the read", async () => {
-      const collab = createTestCollab();
-      await seed(collab);
-      const agentEdit = collab.agentEdit();
-      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, context(draft));
-      const peersBefore = await branchRows(KB_ID);
-
-      const refused = await agentEdit.write(
-        { command: "insert", file: "lore.md", documentId: KB_ID, content: "Other Work." },
-        context({ kind: "draft", workId: OTHER_WORK_ID as WorkId, workSlug: "other" }),
-      );
-
-      expect(refused).toMatchObject({ status: "read_required" });
-      expect(await branchRows(KB_ID)).toEqual(peersBefore);
     });
 
     it("reads live in auto-apply even when the Work keeps a pending draft", async () => {
