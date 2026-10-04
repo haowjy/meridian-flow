@@ -8,7 +8,6 @@ import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
-  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -26,7 +25,10 @@ import {
   hasOppositeContextEntry,
   lockContextSources,
 } from "./document-locations.js";
-import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
+import {
+  type ContextDocumentMembershipObserver,
+  runMembershipCallback,
+} from "./membership-event-dispatcher.js";
 
 export type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
@@ -75,7 +77,7 @@ export async function notifyMembershipObserver(
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        await runMembershipCallback(() => observer[method](documentId));
         resolve();
       } catch (cause) {
         reject(cause);
