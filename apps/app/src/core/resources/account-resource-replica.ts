@@ -4,8 +4,12 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
+  type FolderNamespaceRecord,
+  folderNeedsBackgroundReconciliation,
+  installedFolderLocation,
   markResourceCreateEligible,
   planCachedSessionAdoption,
+  planFolderLocation,
   planResourceDeletion,
   planResourceLocation,
   projectResourceLocation,
@@ -15,6 +19,7 @@ import {
   type ResourceKey,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
+  reconcileFolderNamespace,
   reconcileResourceNamespace,
   recordAcquiredResourceContent,
   remintCreateConflict,
@@ -38,6 +43,11 @@ import { ResourceContentAccess } from "./resource-content-access";
 import { createResourceNamespaceLock } from "./resource-namespace-lock";
 import { createResourceNamespaceTransport } from "./resource-namespace-transport";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
+
+/** Folders share the account journal under a handle that can never collide with a document's. */
+function folderKey(folderId: string): ResourceKey {
+  return { handle: `folder:${folderId}` };
+}
 
 function exactPersistenceName(accountId: string, persistenceId: string): string {
   return `meridian:resource:${collabSchemaKeyTag()}:${encodeURIComponent(accountId)}:${encodeURIComponent(persistenceId)}`;
@@ -120,7 +130,7 @@ export class AccountResourceReplica {
   private readonly namespace;
   private readonly adoption;
   private readonly runners = new Map<string, Promise<void>>();
-  private readonly reruns = new Map<string, ResourceKey>();
+  private readonly reruns = new Map<string, () => void>();
   private readonly projectionStreams = new Map<
     string,
     {
@@ -130,6 +140,7 @@ export class AccountResourceReplica {
     }
   >();
   private readonly observedResourceRevisions = new Map<string, number>();
+  private readonly observedFolderRevisions = new Map<string, number>();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
@@ -140,9 +151,12 @@ export class AccountResourceReplica {
   private readonly retryAll = () => {
     void this.metadata
       .readProjection("")
-      .then(({ records }) => {
+      .then(({ records, folders }) => {
         for (const record of records) {
           if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
+        }
+        for (const folder of folders) {
+          if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
         }
       })
       .catch(() => undefined);
@@ -286,8 +300,10 @@ export class AccountResourceReplica {
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
       "",
-      ({ records }) => {
-        if (!this.closing) this.reconcileProjectionRecords(records);
+      ({ records, folders }) => {
+        if (this.closing) return;
+        this.reconcileProjectionRecords(records);
+        this.reconcileProjectionFolders(folders);
       },
       () => undefined,
     );
@@ -534,23 +550,70 @@ export class AccountResourceReplica {
     return this.catalogs.hint(projectId, scope, headRevision);
   }
 
+  /** `operationId` names the move's receipt, for surfaces that show its outcome; absent when nothing changed. */
   async setLocation(
     projectId: string,
     key: ResourceKey,
     destination: ResourceDestination,
-  ): Promise<{ isLatest: boolean }> {
-    return this.locationOperations.run(key, async () => {
-      await this.commitPlan(key, (record) =>
-        planResourceLocation({
-          record,
-          projectId,
-          intentId: crypto.randomUUID(),
-          eligibleAt: Date.now(),
-          destination,
-        }),
-      );
+  ): Promise<{ isLatest: boolean; operationId?: string }> {
+    const operationId = crypto.randomUUID();
+    let admitted = false;
+    const { isLatest } = await this.locationOperations.run(key, async () => {
+      admitted =
+        (await this.commitPlan(key, (record) =>
+          planResourceLocation({
+            record,
+            projectId,
+            intentId: crypto.randomUUID(),
+            operationId,
+            eligibleAt: Date.now(),
+            destination,
+          }),
+        )) === "committed";
       this.schedule(key);
     });
+    return { isLatest, ...(admitted ? { operationId } : {}) };
+  }
+
+  /**
+   * Admit a folder rename or move locally. The source is the installed catalog's location,
+   * never the optimistic projection, so a pending parent move cannot leak into the request.
+   */
+  async setFolderLocation(
+    projectId: string,
+    folderId: string,
+    destination: ResourceDestination,
+  ): Promise<{ operationId?: string }> {
+    this.requireOpen();
+    const key = folderKey(folderId);
+    const operationId = crypto.randomUUID();
+    let admitted = false;
+    for (;;) {
+      const [current, projection] = await Promise.all([
+        this.metadata.readFolder(key),
+        this.metadata.readProjection(projectId),
+      ]);
+      const source =
+        current?.canonical ?? installedFolderLocation(projection.catalogs, projectId, folderId);
+      if (!source) throw new Error("Folder is unavailable");
+      const write = planFolderLocation({
+        record: current,
+        projectId,
+        handle: key.handle,
+        folderId,
+        source,
+        destination,
+        intentId: crypto.randomUUID(),
+        operationId,
+      });
+      if (!write) break;
+      if ((await this.metadata.commitFolder(write)) === "committed") {
+        admitted = true;
+        break;
+      }
+    }
+    this.scheduleFolder(key);
+    return admitted ? { operationId } : {};
   }
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {
@@ -601,23 +664,80 @@ export class AccountResourceReplica {
     }
   }
 
+  private reconcileProjectionFolders(folders: readonly FolderNamespaceRecord[]): void {
+    for (const folder of folders) {
+      if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
+      this.observedFolderRevisions.set(folder.handle, folder.revision);
+      if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
+    }
+  }
+
   private schedule(key: ResourceKey): void {
+    this.scheduleOnce(
+      key,
+      () => this.run(key),
+      () => this.schedule(key),
+    );
+  }
+
+  private scheduleFolder(key: ResourceKey): void {
+    this.scheduleOnce(
+      key,
+      () => this.runFolder(key),
+      () => this.scheduleFolder(key),
+    );
+  }
+
+  /** One runner per handle; a request that arrives mid-run reruns once when it finishes. */
+  private scheduleOnce(key: ResourceKey, start: () => Promise<void>, rerun: () => void): void {
     if (this.closing) return;
     const id = encodeURIComponent(key.handle);
     if (this.runners.has(id)) {
-      this.reruns.set(id, key);
+      this.reruns.set(id, rerun);
       return;
     }
-    const runner = this.run(key)
+    const runner = start()
       .catch(() => undefined)
       .finally(() => {
         if (this.runners.get(id) !== runner) return;
         this.runners.delete(id);
-        const rerun = this.reruns.get(id);
+        const again = this.reruns.get(id);
         this.reruns.delete(id);
-        if (rerun) this.schedule(rerun);
+        again?.();
       });
     this.runners.set(id, runner);
+  }
+
+  private async runFolder(key: ResourceKey): Promise<void> {
+    for (let step = 0; step < 100 && !this.closing; step += 1) {
+      const result = await reconcileFolderNamespace({
+        key,
+        metadata: this.metadata,
+        transport: this.namespace,
+        lock: this.lock,
+        newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
+      });
+      if (result !== "progressed") return;
+      await this.observeSettledFolder(key);
+    }
+  }
+
+  /**
+   * A successful move blocks the folder's next dispatch until a catalog read begun after
+   * the receipt installs its location. A wake hint can land before the receipt does and
+   * leave the barrier waiting for the next poll, so ask again once it is up.
+   */
+  private async observeSettledFolder(key: ResourceKey): Promise<void> {
+    for (let pass = 0; pass < 3 && !this.closing; pass += 1) {
+      const folder = await this.metadata.readFolder(key);
+      if (!folder?.canonicalRefresh) return;
+      const { catalogs } = await this.metadata.readProjection(folder.projectId);
+      await Promise.allSettled(
+        catalogs
+          .filter((catalog) => catalog.projectId === folder.projectId)
+          .map((catalog) => this.catalogs.acquire(folder.projectId, catalog.scope)),
+      );
+    }
   }
 
   private async run(key: ResourceKey): Promise<void> {

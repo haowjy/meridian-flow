@@ -1,3 +1,4 @@
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -399,9 +400,14 @@ export class ProjectDocumentNavigationAdapter {
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tab = isWorkScopedProjectContextScheme(input.scheme)
-      ? undefined
-      : contextTabFromFile(input.scheme, input.file, input.routeWorkId);
+    const uri = parseContextUri(input.file.uri);
+    const tabWorkId =
+      isWorkScopedProjectContextScheme(input.scheme) &&
+      uri.ok &&
+      uri.value.authority.kind === "none"
+        ? null
+        : input.routeWorkId;
+    const tab = contextTabFromFile(input.scheme, input.file, tabWorkId);
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)

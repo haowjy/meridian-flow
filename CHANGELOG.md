@@ -9,6 +9,11 @@
 
 - Respell relative links when their holder moves into personal space, preserving project targets rather than linking to unrelated personal documents.
 
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item.
+
+- Add local folder-move journals and descendant catalog rebasing for instant rename integration; retain complete settled receipts for short-lived item feedback.
 - Preserve whole-holder link batches while targets are deleted, serialize overwrite moves with maintenance, and leave personal links unresolved when their targets move into another project.
 
 - Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance. Keep each holder's pending batch together when another move arrives during backoff.
@@ -26,6 +31,7 @@
 - Refresh document search, listings, sizes, download fallback, and link-index projections two seconds after writer typing pauses (at most ten seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
 - Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
 
+- No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
 - Chat: web links open in a new tab without a confirmation, like the Editor.
 - Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
