@@ -17,6 +17,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -374,5 +375,25 @@ export const documentPreviousLocations = pgTable(
     index("document_previous_locations_path").using("hash", table.path),
     index("document_previous_locations_source").on(table.contextSourceId),
     index("document_previous_locations_document").on(table.documentId),
+  ],
+);
+
+/** Internal hrefs derived from the same durable cut as the document projection. */
+export const documentLinks = pgTable(
+  "document_links",
+  {
+    sourceDocumentId: uuid("source_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    href: text("href").notNull(),
+    targetProjectId: uuid("target_project_id").$type<ProjectId>(),
+    targetKey: text("target_key"),
+    occurrences: integer("occurrences").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
+    index("document_links_target_project").on(table.targetProjectId),
+    index("document_links_target_key").using("hash", table.targetKey),
   ],
 );

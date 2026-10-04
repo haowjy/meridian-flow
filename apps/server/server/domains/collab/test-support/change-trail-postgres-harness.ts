@@ -1,4 +1,5 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
+
 import {
   createAgentEditCodec,
   toDocHandle,
@@ -11,6 +12,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
+import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
@@ -374,6 +378,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     durableProjectionSerializer,
     createDrizzleDocumentProjectionEffects(db),
     changeTrails,
+    createDrizzleDocumentDerivationStore(db, (tx, id) =>
+      resolvePersistedDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+    ),
     notices,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {

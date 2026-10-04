@@ -1,5 +1,5 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
-import { type ParsedContextUri, parseContextUri } from "./context-uri.js";
+import { isProjectScopedScheme, type ParsedContextUri, parseContextUri } from "./context-uri.js";
 
 export type ResolvedDocumentHref = { uri: string; suffix: string };
 
@@ -103,6 +103,18 @@ export function respellDocumentHref(
 /** Canonical catalog comparison seam; document types may later normalize it. */
 export function documentPathKey(path: string): string {
   return path;
+}
+
+/** Address comparison key; Work-scoped addresses must have stable authority. */
+export function documentAddressKey(uri: string): string {
+  const parsed = parseContextUri(uri);
+  if (
+    !parsed.ok ||
+    !parsed.value.path ||
+    (!isProjectScopedScheme(parsed.value.scheme) && parsed.value.authority.kind === "contextual")
+  )
+    throw new RangeError(`Expected an explicit document address: ${uri}`);
+  return format(parsed.value, documentPathKey(parsed.value.path));
 }
 
 /**

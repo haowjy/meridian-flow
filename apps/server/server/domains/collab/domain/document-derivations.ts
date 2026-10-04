@@ -1,7 +1,9 @@
 /** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { extractDocumentLinkOccurrences } from "./document-link-occurrences.js";
+import { deriveDocumentLinkRows } from "./document-link-rows.js";
 import type {
   DerivationScope,
   DocumentDerivationService,
@@ -115,7 +117,20 @@ export async function deriveDocument(
     const doc = createCollabYDoc({ gc: false });
     try {
       Y.applyUpdate(doc, cut.state);
-      const outputs = { markdown: await input.serializer.serializeDocument(documentId, doc) };
+      const outputs = {
+        markdown: await input.serializer.serializeDocument(documentId, doc),
+        links:
+          cut.kind === "manifest" || !cut.holderUri
+            ? []
+            : deriveDocumentLinkRows({
+                occurrences: extractDocumentLinkOccurrences(
+                  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                ),
+                holderUri: cut.holderUri,
+                holderProjectId: cut.holderProjectId,
+                personalProjectId: cut.personalProjectId,
+              }),
+      };
       if (await input.store.certify(cut, outputs, at)) return Y.encodeStateVector(doc);
     } finally {
       doc.destroy();

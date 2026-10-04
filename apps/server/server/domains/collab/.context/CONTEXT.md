@@ -121,12 +121,17 @@ The root batch still commits before live apply; derivation can then join the
 context command transaction.
 A changed cut retries three times, then remains stale for recovery.
 
-`document_derivations` certifies projection output by generation, next admission
-sequence, location version, and extractor version. Equal cuts are idempotent;
-older cuts cannot replace newer output. Projection byte size comes from the same
-certified serialization. Changing the extractor invalidates older output: bump
-its version when adding link extraction and add the output and link watermarks
-to the existing certification transaction, not a second post-write hook.
+`document_derivations` certifies projection and link output by generation, next
+admission sequence, location version, and extractor version. Equal cuts are
+idempotent; older cuts cannot replace newer output. Projection byte size comes
+from the same certified serialization. `document_links` is replaced in that
+same transaction, using occurrences from the same private Y.Doc and the holder's
+canonical URI captured under the journal lock. Its targets are address keys,
+not resolved document identities; contextual links have no target key or project.
+User links name the holder owner's personal project. Manifests (and already
+soft-deleted staged-push holders without a live URI) certify with no link rows.
+Changing the extractor must bump its version to invalidate older output; never
+add a second post-write publisher.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
