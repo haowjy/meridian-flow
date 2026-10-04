@@ -110,9 +110,14 @@ the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
 
-One authority generation per checkpoint and per reconstruction. Room and explicit
-checkpoint producers capture authority identity and generation before asynchronous
-snapshot work; persistence validates both under the document mutation lock and
+One authority generation per checkpoint and per reconstruction. Live document
+handles carry immutable authority identity and generation from
+the same journal snapshot that loaded their bytes. Hocuspocus binds rooms during
+load; coordinator acquisition/recovery may replay only a matching generation,
+never relabel a warm handle. Room and explicit checkpoint producers use that
+binding, not a fresh authority read. Restore marks the acquired handle retired
+and disconnects the room; retained references remain fenced by their binding.
+Persistence validates both under the document mutation lock and
 drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
 `stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots
 are produced under that same lock. Current reads capture the head once and constrain
@@ -131,7 +136,9 @@ For an initialized live document, lifecycle ensure is read-only: retaining an
 ambient head-row update lock would deadlock the subsequent root journal batch.
 The root batch still commits before live apply; derivation can then join the
 context command transaction.
-A changed cut retries three times, then remains stale for recovery.
+A changed cut retries three times, then returns `deferred` at debug level and
+remains stale for recovery. Serializer/database failures still log as errors.
+Push completion requires a derived result inside its mutation transaction.
 
 `document_derivations` certifies projection output by generation, next admission
 sequence, location version, and extractor version. Equal cuts are idempotent;

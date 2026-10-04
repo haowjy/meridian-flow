@@ -21,10 +21,6 @@ describe("Yjs reconnect writer admission", () => {
     let websocketProvider: HocuspocusProviderWebsocket | undefined;
     let provider: HocuspocusProvider | undefined;
     const persistence = createHocuspocusPersistenceService({
-      readCheckpointAuthority: async () => ({
-        authorityId: "test-authority" as never,
-        generation: 1n,
-      }),
       journal,
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),

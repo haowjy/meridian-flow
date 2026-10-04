@@ -18,6 +18,7 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
+import { bindDocumentAuthority } from "../domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import {
   ensureAndReadDocumentAuthorityHead,
@@ -26,6 +27,7 @@ import {
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
+import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -41,6 +43,7 @@ describe("durable document derivations", () => {
   const failures: unknown[] = [];
   let fail = false;
   const service = createDocumentDerivationService({
+    deferred: () => {},
     store,
     serializer: {
       async serializeDocument(_id, doc) {
@@ -186,10 +189,9 @@ describe("durable document derivations", () => {
       .where(eq(documentYjsCheckpoints.upToSeq, beforeSeq));
     if (!saved) throw new Error("Missing saved checkpoint");
     await append(room, " After");
-    const readCheckpointAuthority = (id: string) => ensureAndReadDocumentAuthorityHead(db, id);
+    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
     const hp = createHocuspocusPersistenceService({
       journal: persistence.journal,
-      readCheckpointAuthority,
       hocuspocus: () => null,
       latestUpdateSeq: persistence.store.latestUpdateSeq,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
@@ -200,7 +202,6 @@ describe("durable document derivations", () => {
         withDocument: async (_id, operation) => operation(room),
         recover: async () => {},
       },
-      readCheckpointAuthority,
       store: persistence.store,
       latestUpdateSeq: persistence.store.latestUpdateSeq,
       markdownDocuments: {
@@ -260,6 +261,68 @@ describe("durable document derivations", () => {
       .from(documentYjsCheckpoints)
       .where(eq(documentYjsCheckpoints.documentId, documentId));
     expect.soft(checkpoints).toHaveLength(2);
+    expect.soft(checkpoints.filter((row) => row.authorityGeneration === 2n)).toHaveLength(1);
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before");
+    room.destroy();
+  });
+
+  it("never stamps an acquired old handle with the generation restored before capture", async () => {
+    const room = new Y.Doc({ gc: false });
+    const beforeSeq = await append(room, "Before");
+    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    const [saved] = await persistence.store.listCheckpoints(documentId);
+    if (!saved) throw new Error("Missing checkpoint");
+    await append(room, " After");
+    let acquired = () => {};
+    let resume = () => {};
+    const ready = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const coordinator = createHocuspocusCoordinatorForTest({
+      journal: persistence.journal,
+      hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
+      openLiveDoc: async () => ({ doc: room, release: async () => {} }),
+    });
+    const explicit = createCheckpointService({
+      coordinator: {
+        ...coordinator,
+        withDocument: (id, operation) =>
+          coordinator.withDocument(id, async (doc) => {
+            acquired();
+            await paused;
+            return operation(doc);
+          }),
+      },
+      store: persistence.store,
+      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      markdownDocuments: {
+        restoreFromYDoc: async () => {
+          throw new Error("Not used");
+        },
+      },
+    });
+    const admission = explicit.checkpoint(documentId, "pre-capture restore");
+    await ready;
+    try {
+      await replaceDocumentAuthorityHeadGeneration(db, {
+        documentId,
+        checkpointId: Number(saved.id),
+        expectedGeneration: 1n,
+      });
+    } finally {
+      resume();
+    }
+    expect
+      .soft(await admission)
+      .toEqual({ ok: false, error: { code: "stale_generation", documentId } });
+    const checkpoints = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
     expect.soft(checkpoints.filter((row) => row.authorityGeneration === 2n)).toHaveLength(1);
     await service.derive(documentId);
     expect(await projection()).toBe("Before");

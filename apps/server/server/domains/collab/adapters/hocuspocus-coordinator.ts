@@ -45,8 +45,8 @@ function createCoordinator(
 ): DocumentCoordinator {
   const mutex = deps.mutex ?? new KeyedMutex();
 
-  async function persistedState(docId: string): Promise<Uint8Array | null> {
-    return loadDocumentState(deps.journal, docId);
+  async function persistedState(docId: string, handle?: Y.Doc): Promise<Uint8Array | null> {
+    return loadDocumentState(deps.journal, docId, handle);
   }
 
   function liveDoc(docId: string): Y.Doc | undefined {
@@ -73,7 +73,7 @@ function createCoordinator(
 
           const handle = await openLiveDoc(docId);
           try {
-            const persisted = await persistedState(docId);
+            const persisted = await persistedState(docId, handle.doc);
             if (persisted) await applyMissing(handle.doc, persisted);
             return await fn(handle.doc);
           } finally {
@@ -86,10 +86,10 @@ function createCoordinator(
 
     recover(docId: string): Promise<void> {
       return mutex.run(docId, async () => {
-        const persisted = await persistedState(docId);
+        const live = liveDoc(docId);
+        const persisted = await persistedState(docId, live);
         if (!persisted) return;
 
-        const live = liveDoc(docId);
         if (live) {
           await applyMissing(live, persisted);
           return;
@@ -99,7 +99,8 @@ function createCoordinator(
         // call loadDocumentState. Reapplying the diff is harmless if it already did.
         const handle = await openLiveDoc(docId);
         try {
-          await applyMissing(handle.doc, persisted);
+          const bound = await persistedState(docId, handle.doc);
+          if (bound) await applyMissing(handle.doc, bound);
         } finally {
           await handle.release();
         }
