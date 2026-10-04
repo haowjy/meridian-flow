@@ -80,7 +80,13 @@ export function deriveIdentityCommitPlan(
 function identityWorkAuthority(
   destination: IdentityDestination,
   works: readonly { id: string; slug: string | null }[] | null | undefined,
+  noWork: { id: string } | null | undefined,
 ): ResourceWorkAuthority | null {
+  if (
+    destination.scheme === "scratch" &&
+    (!destination.workId || destination.workId === noWork?.id)
+  )
+    return noWork ? { workId: noWork.id, workSlug: null } : null;
   if (!destination.workId) return { workId: null };
   const slug = works?.find((work) => work.id === destination.workId)?.slug;
   return slug ? { workId: destination.workId, workSlug: slug } : null;
@@ -102,7 +108,7 @@ export function useIdentityCommit({
   ) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const resources = useAccountResourceReplica();
-  const { works } = useWorks(projectId);
+  const { works, noWork } = useWorks(projectId);
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
     if (plan.kind === "no-op") return { status: "committed" };
@@ -113,7 +119,7 @@ export function useIdentityCommit({
         : await resources.keyForDocument(projectId, tab.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
-      const authority = identityWorkAuthority(destination, works);
+      const authority = identityWorkAuthority(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
         scheme: destination.scheme,

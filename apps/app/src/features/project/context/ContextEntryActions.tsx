@@ -278,7 +278,7 @@ export function useDeleteConfirmation({
     if (!target) return;
     setError(null);
     try {
-      if (target.kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
+      if (target.kind === "file") {
         setLocalPending(true);
         const key = await resources.keyForDocument(projectId, target.documentId);
         if (!key) throw new Error("Document resource is unavailable");
@@ -290,10 +290,7 @@ export function useDeleteConfirmation({
         operationId: target.operationId,
         path: target.path,
         workId: target.workId,
-        expected:
-          target.kind === "dir"
-            ? { kind: "folder" }
-            : { kind: "file", documentId: target.documentId },
+        expected: { kind: "folder" },
       });
       await availability.acceptCommittedDelete({
         projectId,

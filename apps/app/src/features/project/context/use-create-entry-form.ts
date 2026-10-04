@@ -19,6 +19,7 @@ import { useCallback } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
+import { useWorks } from "@/client/query/useWorks";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -65,15 +66,19 @@ export function useCreateEntryForm({
   const mutation = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
+  const { works, noWork } = useWorks(projectId);
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
-      if (
-        kind === "file" &&
-        !isWorkScopedProjectContextScheme(scheme) &&
-        usesResourceDocumentCreate(path)
-      ) {
+      if (kind === "file" && usesResourceDocumentCreate(path)) {
+        const work = isWorkScopedProjectContextScheme(scheme)
+          ? workId && workId !== noWork?.id
+            ? works?.find((work) => work.id === workId)
+            : noWork
+          : null;
+        if (isWorkScopedProjectContextScheme(scheme) && !work)
+          throw new Error(t`Couldn't create this file.`);
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
         try {
@@ -81,7 +86,7 @@ export function useCreateEntryForm({
             scheme,
             folderPath: parent,
             name: trimmed,
-            workId: null,
+            ...(work ? { workId: work.id, workSlug: work.slug } : { workId: null }),
           });
         } finally {
           reservation.content.handle.release();
@@ -101,7 +106,19 @@ export function useCreateEntryForm({
       }
       onCreated?.(path);
     },
-    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId],
+    [
+      mutation,
+      queryClient,
+      projectId,
+      scheme,
+      kind,
+      parent,
+      onCreated,
+      resources,
+      workId,
+      works,
+      noWork,
+    ],
   );
 
   const form = useInlineEdit({

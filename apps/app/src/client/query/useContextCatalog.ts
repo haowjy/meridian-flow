@@ -1,5 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type CatalogFileEntry,
   type CatalogScope,
@@ -90,10 +90,15 @@ function locationBelongsToScope(
   return scope.kind === "work" && location.workId === scope.workId;
 }
 
-function catalogUri(scheme: ProjectContextTreeScheme, path: string): string {
-  return isWorkScopedProjectContextScheme(scheme)
-    ? canonicalContextUri(scheme, path, { kind: "contextual" })
-    : canonicalContextUri(scheme, path);
+function catalogUri(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  workSlug?: string | null,
+): string {
+  if (!isWorkScopedProjectContextScheme(scheme)) return canonicalContextUri(scheme, path);
+  const parsed = parseContextUri(`${scheme}://@${workSlug ?? ""}/${path}`);
+  if (!parsed.ok) throw new Error("Local catalog location has invalid Work authority");
+  return parsed.value.normalized;
 }
 
 /** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
@@ -139,7 +144,7 @@ function overlayResourceCatalogView(
         scope,
         scheme: location.scheme,
         name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location.scheme, ""),
+        uri: catalogUri(location.scheme, "", location.workSlug),
       });
     }
     invalidatedEntryIds.delete(sourceId);
@@ -167,13 +172,13 @@ function overlayResourceCatalogView(
         parentId,
         name: folderPath.at(-1) ?? "",
         path: folderPath,
-        uri: catalogUri(location.scheme, folderPath.join("/")),
+        uri: catalogUri(location.scheme, folderPath.join("/"), location.workSlug),
         hasChildren: true,
       });
       invalidatedEntryIds.delete(folderId);
       parentId = folderId;
     }
-    const uri = catalogUri(location.scheme, path.join("/"));
+    const uri = catalogUri(location.scheme, path.join("/"), location.workSlug);
     entries.set(documentId, {
       kind: "file",
       entryId: documentId,
