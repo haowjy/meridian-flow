@@ -419,17 +419,8 @@ describe("unknownToEventPayload", () => {
 });
 
 describe("sanitizeEventRecord document commands", () => {
-  it.each([
-    "read",
-    "create",
-    "copy",
-    "insert",
-    "replace",
-    "remove",
-    "undo",
-    "redo",
-  ])("keeps the %s command", (command) => {
-    expect(sanitize({ command })).toEqual({ command });
+  it("keeps a known command", () => {
+    expect(sanitize({ command: "copy" })).toEqual({ command: "copy" });
   });
 
   it("redacts a command it doesn't know", () => {

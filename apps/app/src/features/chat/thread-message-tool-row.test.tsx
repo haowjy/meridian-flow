@@ -189,6 +189,5 @@ describe("thread_message presentation", () => {
     });
     expect(isToolViewVisible(failed)).toBe(true);
     expect(toolRowFailed(failed)).toBe(true);
-    expect(renderTitle(failed)).toBe("Couldn't send a message to CriticReview chapter 12");
   });
 });

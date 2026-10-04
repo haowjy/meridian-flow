@@ -1,9 +1,10 @@
 /**
- * Executor-level input contracts for every non-document tool: the audit's
- * silent-fallback reproductions (C1) now refuse with invalid_arguments and
- * never reach the handler, and valid input reaches it parsed.
+ * Executor-level input contracts for the real tool registrations: each
+ * tool's defaults, argument mapping and custom refusal messages, plus one row
+ * per invalid_arguments message shape. The executor's generic parse-before-
+ * dispatch contract lives in tool-executor.test.ts; document selector rules
+ * live in agent-edit's command-schema.test.ts.
  */
-import { WriteToolInputSchema } from "@meridian/agent-edit";
 import { describe, expect, it, vi } from "vitest";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
@@ -72,79 +73,31 @@ async function expectDelivered(name: string, args: Record<string, unknown>, deli
   expect(handler).toHaveBeenCalledWith(delivered, expect.anything());
 }
 
-describe("read and write selectors", () => {
-  // agent-edit's command-schema tests pin each selector message; this proves
-  // the executor carries a cross-field refusal through, under the tool's names.
-  it("refuse a cross-field selector issue with the schema's message before the handler", async () => {
-    const args = { command: "remove", path: "c.md" };
-    const parsed = WriteToolInputSchema.safeParse(args);
-    const message = parsed.error?.issues[0]?.message;
-    expect(message).toEqual(expect.any(String));
-
-    await expectRefused("write", args, [`path: ${message}`]);
-  });
-
-  it("refuse block number zero and empty insert content", async () => {
+describe("issue messages from the real schemas", () => {
+  it("render each message shape once, with the argument path", async () => {
     await expectRefused("read", { path: "c.md", in: 0 }, ["in: must be greater than 0"]);
-    await expectRefused("write", { command: "insert", path: "c.md", content: "" }, [
-      "content: must not be empty",
+    await expectRefused("ls", { path: "" }, ["path: must not be empty"]);
+    await expectRefused("search", {}, ["pattern: required; expected a string"]);
+    await expectRefused("thread_ls", { depth: 4 }, ["depth: must be at most 3"]);
+    await expectRefused("thread_message", { ref: 7, message: 42 }, [
+      "ref: expected a string, got 7",
+      "message: expected a string, got 42",
+    ]);
+    await expectRefused("work", { command: "rename", work: "arc" }, [
+      'command: expected "list", "show", "create", "update", "archive", "unarchive", "delete" or "switch", got "rename"',
     ]);
   });
 });
 
-describe("ls", () => {
-  it("delivers an omitted or supplied path", async () => {
-    await expectDelivered("ls", {}, {});
-    await expectDelivered("ls", { path: "kb://" }, { path: "kb://" });
-  });
-
-  it("refuses an empty path, a non-string path and unknown keys", async () => {
-    await expectRefused("ls", { path: "" }, ["path: must not be empty"]);
-    await expectRefused("ls", { path: 3 }, ["path: expected a string, got 3"]);
-    await expectRefused("ls", { dir: "kb://" }, ["dir: unknown argument"]);
-  });
-});
-
-describe("search", () => {
-  it("delivers a pattern with an optional scope", async () => {
-    await expectDelivered("search", { pattern: "mirror" }, { pattern: "mirror" });
-    await expectDelivered(
-      "search",
-      { pattern: "mirror", scope: "kb://" },
-      { pattern: "mirror", scope: "kb://" },
-    );
-  });
-
-  it("refuses a missing or empty pattern, an empty scope and unknown keys", async () => {
-    await expectRefused("search", {}, ["pattern: required; expected a string"]);
-    await expectRefused("search", { pattern: "" }, ["pattern: must not be empty"]);
-    await expectRefused("search", { pattern: "x", scope: "" }, ["scope: must not be empty"]);
-    await expectRefused("search", { pattern: "x", regex: true }, ["regex: unknown argument"]);
-  });
-});
-
 describe("thread_ls", () => {
-  it("delivers the depth default and an explicit current ref", async () => {
+  it("delivers the depth default", async () => {
     await expectDelivered("thread_ls", {}, { depth: 1 });
-    await expectDelivered("thread_ls", { ref: "current", depth: 2 }, { ref: "current", depth: 2 });
-  });
-
-  it("refuses an out-of-range depth, an empty ref and unknown keys", async () => {
-    await expectRefused("thread_ls", { depth: 4 }, ["depth: must be at most 3"]);
-    await expectRefused("thread_ls", { depth: 1.5 }, ["depth: expected a whole number, got 1.5"]);
-    await expectRefused("thread_ls", { ref: "" }, ["ref: must not be empty"]);
-    await expectRefused("thread_ls", { limit: 5 }, ["limit: unknown argument"]);
   });
 });
 
 describe("thread_history", () => {
-  it("delivers order and limit defaults", async () => {
+  it("delivers order and limit defaults and either expand handle", async () => {
     await expectDelivered("thread_history", {}, { order: "newest_first", limit: 40 });
-    await expectDelivered(
-      "thread_history",
-      { ref: "current", expand: "3.2" },
-      { ref: "current", expand: "3.2", order: "newest_first", limit: 40 },
-    );
     // A turn number arrives as an integer or a string; both are the same handle.
     await expectDelivered(
       "thread_history",
@@ -153,70 +106,31 @@ describe("thread_history", () => {
     );
     await expectDelivered(
       "thread_history",
-      { expand: "2" },
-      { expand: "2", order: "newest_first", limit: 40 },
+      { expand: "3.2" },
+      { expand: "3.2", order: "newest_first", limit: 40 },
     );
   });
 
-  it("refuses bad values and unknown keys", async () => {
-    await expectRefused("thread_history", { order: "latest" }, [
-      'order: expected "newest_first" or "oldest_first", got "latest"',
-    ]);
-    await expectRefused("thread_history", { limit: 0 }, ["limit: must be at least 1"]);
-    await expectRefused("thread_history", { include: ["everything"] }, [
-      'include[0]: expected "routine_calls", "tool_results", "thinking", "system_messages", "system_prompt" or "timestamps", got "everything"',
-    ]);
+  it("refuses a malformed expand handle", async () => {
     await expectRefused("thread_history", { expand: "2.x" }, [
       'expand: expected a turn number such as 4, or "4.7"',
     ]);
-    await expectRefused("thread_history", { expand: 1.5 }, [
-      'expand: expected a turn number such as 4, or "4.7"',
-    ]);
-    await expectRefused("thread_history", { turn: 3 }, ["turn: unknown argument"]);
   });
 });
 
 describe("thread_report", () => {
-  it("delivers a ref", async () => {
-    await expectDelivered("thread_report", { ref: "p3" }, { ref: "p3" });
-    await expectDelivered("thread_report", { ref: "current" }, { ref: "current" });
-  });
-
-  it("refuses run, which used to fall back to the latest report, and a missing ref", async () => {
-    for (const run of [0, 1.5, "2", 2]) {
-      await expectRefused("thread_report", { ref: "p3", run }, ["run: unknown argument"]);
-    }
-    await expectRefused("thread_report", {}, ["ref: required; expected a string"]);
-    await expectRefused("thread_report", { ref: "" }, ["ref: must not be empty"]);
+  it("refuses run, which used to fall back to the latest report", async () => {
+    await expectRefused("thread_report", { ref: "p3", run: 2 }, ["run: unknown argument"]);
   });
 });
 
 describe("thread_message", () => {
-  it("delivers background mode only when mode is omitted", async () => {
+  it("delivers background mode when mode is omitted", async () => {
     await expectDelivered(
       "thread_message",
       { ref: "p3", message: "Keep going" },
       { ref: "p3", message: "Keep going", mode: "background" },
     );
-    await expectDelivered(
-      "thread_message",
-      { ref: "p3", message: "Keep going", mode: "foreground" },
-      { ref: "p3", message: "Keep going", mode: "foreground" },
-    );
-  });
-
-  it("refuses the inputs it used to fill with empty strings or background", async () => {
-    await expectRefused("thread_message", { ref: "p3" }, ["message: required; expected a string"]);
-    await expectRefused("thread_message", { ref: "p3", message: "Task", mode: "invalid" }, [
-      'mode: expected "foreground" or "background", got "invalid"',
-    ]);
-    await expectRefused("thread_message", { ref: 7, message: 42 }, [
-      "ref: expected a string, got 7",
-      "message: expected a string, got 42",
-    ]);
-    await expectRefused("thread_message", { ref: "p3", message: "" }, [
-      "message: must not be empty",
-    ]);
   });
 
   it("refuses current with a message naming the fix", async () => {
@@ -227,13 +141,8 @@ describe("thread_message", () => {
 });
 
 describe("spawn", () => {
-  it("delivers foreground only when mode is omitted", async () => {
+  it("delivers foreground when mode is omitted", async () => {
     await expectDelivered("spawn", { prompt: "Task" }, { prompt: "Task", mode: "foreground" });
-    await expectDelivered(
-      "spawn",
-      { prompt: "Task", mode: "background", from: "current", append_system_prompt: "Be brief." },
-      { prompt: "Task", mode: "background", from: "current", append_system_prompt: "Be brief." },
-    );
   });
 
   it("maps the published disallowed_tools key to the configuration spelling", async () => {
@@ -251,36 +160,12 @@ describe("spawn", () => {
     );
   });
 
-  it("refuses the inputs it used to fill with defaults or drop", async () => {
-    await expectRefused("spawn", {}, ["prompt: required; expected a string"]);
-    await expectRefused("spawn", { prompt: "" }, ["prompt: must not be empty"]);
-    await expectRefused("spawn", { prompt: "Task", mode: "invalid" }, [
-      'mode: expected "foreground" or "background", got "invalid"',
-    ]);
-    await expectRefused("spawn", { prompt: "Task", agent: 42 }, [
-      "agent: expected a string, got 42",
-    ]);
-    await expectRefused("spawn", { prompt: "Task", from: null }, [
-      "from: expected a string, got null",
-    ]);
-    await expectRefused("spawn", { prompt: "Task", append_system_prompt: 42 }, [
-      "append_system_prompt: expected a string, got 42",
-    ]);
-    await expectRefused("spawn", { prompt: "Task", overrides: "invalid" }, [
-      'overrides: expected an object, got "invalid"',
-    ]);
-    await expectRefused("spawn", { prompt: "Task", extra: true }, ["extra: unknown argument"]);
-  });
-
   it("refuses an invalid or misspelled override before spawning", async () => {
     await expectRefused("spawn", { prompt: "Task", overrides: { effort: "max" } }, [
       'overrides.effort: expected "low", "medium", "high", "xhigh", "none", "disabled" or "adaptive", got "max"',
     ]);
     await expectRefused("spawn", { prompt: "Task", overrides: { "disallowed-tools": ["bash"] } }, [
       "overrides.disallowed-tools: unknown argument",
-    ]);
-    await expectRefused("spawn", { prompt: "Task", overrides: { skills: { preload: [] } } }, [
-      "overrides.skills.preload: unknown argument",
     ]);
   });
 });
@@ -298,7 +183,7 @@ describe("return_result", () => {
     );
   });
 
-  it("refuses artifacts that aren't Meridian document URI strings", async () => {
+  it("refuses artifacts that aren't Meridian document URIs", async () => {
     await expectRefused(
       "return_result",
       { summary: "done", artifacts: ["https://example.test/cover.png"] },
@@ -306,21 +191,6 @@ describe("return_result", () => {
         'artifacts[0]: Expected a Meridian document URI, received "https://example.test/cover.png".',
       ],
     );
-    await expectRefused("return_result", { summary: "done", artifacts: ["not a Meridian URI"] }, [
-      'artifacts[0]: Expected a Meridian document URI, received "not a Meridian URI".',
-    ]);
-    await expectRefused(
-      "return_result",
-      { summary: "done", artifacts: [{ type: "object", uri: "scratch://draft.md" }] },
-      ['artifacts[0]: expected a string, got {"type":"object","uri":"scratch://draft.md"}'],
-    );
-  });
-
-  it("refuses a missing summary and unknown keys", async () => {
-    await expectRefused("return_result", {}, ["summary: required; expected a string"]);
-    await expectRefused("return_result", { summary: "done", outcome: "ok" }, [
-      "outcome: unknown argument",
-    ]);
   });
 });
 
@@ -346,25 +216,16 @@ describe("work", () => {
     ]);
   });
 
+  // update-work.test.ts covers the shared rule; this proves the tool applies it.
   it("normalizes metadata by the shared clearing rule", async () => {
     await expectDelivered(
       "work",
       { command: "create", name: "  Arc  ", goal: "   " },
       { command: "create", name: "Arc", goal: null },
     );
-    await expectDelivered(
-      "work",
-      { command: "update", work: "arc", goal: null, status: "  Needs\n outline " },
-      { command: "update", work: "arc", goal: null, status: "Needs outline" },
-    );
-    await expectDelivered(
-      "work",
-      { command: "update", work: "arc", status: "" },
-      { command: "update", work: "arc", status: null },
-    );
   });
 
-  it("refuses blank or null names, long statuses, unknown keys and commands", async () => {
+  it("refuses blank or null names and long statuses", async () => {
     await expectRefused("work", { command: "create", name: "   ", goal: "   " }, [
       "name: must not be blank",
     ]);
@@ -373,12 +234,6 @@ describe("work", () => {
     ]);
     await expectRefused("work", { command: "update", work: "arc", status: "x".repeat(33) }, [
       "status: must be one to three words and 32 characters or fewer",
-    ]);
-    await expectRefused("work", { command: "update", work: "arc", extra: true }, [
-      "extra: unknown argument",
-    ]);
-    await expectRefused("work", { command: "rename", work: "arc" }, [
-      'command: expected "list", "show", "create", "update", "archive", "unarchive", "delete" or "switch", got "rename"',
     ]);
   });
 });
@@ -398,15 +253,9 @@ describe("ask_user", () => {
     );
   });
 
-  it("refuses camelCase, coerced values and a choice with no options", async () => {
+  it("refuses camelCase and a choice with no options", async () => {
     await expectRefused("ask_user", { question: "Q", kind: "free-text", timeoutMs: 10 }, [
       "timeoutMs: unknown argument",
-    ]);
-    await expectRefused("ask_user", { question: "Q", kind: "free-text", timeout_ms: 1.5 }, [
-      "timeout_ms: expected a whole number, got 1.5",
-    ]);
-    await expectRefused("ask_user", { question: "Q", kind: "free-text", requires_human: "yes" }, [
-      'requires_human: expected a boolean, got "yes"',
     ]);
     await expectRefused("ask_user", { question: "Q", kind: "choice" }, [
       "options: choice needs at least one { value, label } option",

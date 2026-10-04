@@ -23,10 +23,9 @@ function okMarkdown(value: string): Result<string, SyncError> {
 }
 
 describe("ContextFS drafted-source effective view", () => {
-  it.each([
-    "manuscript",
-    "kb",
-  ] as const)("lists and searches %s through the resolved manifest branch, not the SQL document set", async (scheme) => {
+  // Every drafted source takes this path (D9); kb stands for manuscript too.
+  it("lists and searches kb through the resolved manifest branch, not the SQL document set", async () => {
+    const scheme = "kb";
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     await store.upsertDocument({

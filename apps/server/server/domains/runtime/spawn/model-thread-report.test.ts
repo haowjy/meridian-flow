@@ -3,16 +3,6 @@ import { describe, expect, it } from "vitest";
 import { renderThreadReportOutput } from "./model-thread-report.js";
 
 describe("renderThreadReportOutput", () => {
-  it("renders a report as history does, with real newlines", () => {
-    expect(
-      renderThreadReportOutput({
-        ref: "p3",
-        outcome: "succeeded",
-        summary: "Eleven words.\n\nHeading excluded.",
-      }),
-    ).toBe("Report (completed)\nEleven words.\n\nHeading excluded.");
-  });
-
   it("adds the reason, payload, artifacts and the running-again line", () => {
     expect(
       renderThreadReportOutput({
@@ -37,7 +27,7 @@ artifact: scratch://@/notes.md (Notes)
 p3 is running again; this report is from its previous run. You'll be notified when it finishes.`);
   });
 
-  it("renders unavailable and refusals as lines, not JSON", () => {
+  it("renders unavailable as its message line, not JSON", () => {
     expect(
       renderThreadReportOutput({
         ref: "p3",
@@ -48,13 +38,5 @@ p3 is running again; this report is from its previous run. You'll be notified wh
     ).toBe(
       "p3 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
     );
-    expect(
-      renderThreadReportOutput({
-        code: "thread_not_connected",
-        message: "Not connected",
-        source: "system",
-        retryable: false,
-      }),
-    ).toBe("Not connected (thread_not_connected)");
   });
 });

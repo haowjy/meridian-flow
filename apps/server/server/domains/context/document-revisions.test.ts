@@ -1,4 +1,7 @@
-/** Document revisions resolve each document in the version the thread's writes change (D14, D20). */
+/**
+ * Document revisions keep scratch live in a draft-mode Work (D9, D14). The
+ * Postgres suite in collab/document-revisions.db.test.ts covers the rest.
+ */
 import { describe, expect, it, vi } from "vitest";
 import { createDocumentRevisions } from "./document-revisions.js";
 
@@ -9,12 +12,15 @@ const URIS: Record<string, string> = {
   notes: "scratch://@arc/notes.md",
 };
 
-function revisionsFor(aiWriteMode: "direct" | "draft", members: string[] = Object.keys(URIS)) {
+function revisionsFor(aiWriteMode: "direct" | "draft") {
   const readEffectiveRevision = vi.fn(
     async (input: { documentId: string; threadId?: string | null; destination: string }) =>
       `rev:${input.documentId}`,
   );
-  const resolveManifestMembership = vi.fn(async () => ({ documentId: "manifest", members }));
+  const resolveManifestMembership = async () => ({
+    documentId: "manifest",
+    members: Object.keys(URIS),
+  });
   const revisions = createDocumentRevisions({
     documents: { readEffectiveRevision, resolveManifestMembership } as never,
     threads: {
@@ -39,7 +45,7 @@ function revisionsFor(aiWriteMode: "direct" | "draft", members: string[] = Objec
       }),
     } as never,
   });
-  return { revisions, readEffectiveRevision, resolveManifestMembership };
+  return { revisions, readEffectiveRevision };
 }
 
 describe("document revisions", () => {
@@ -51,31 +57,6 @@ describe("document revisions", () => {
       { documentId: "chapter", threadId: THREAD_ID, destination: "draft" },
       { documentId: "lore", threadId: THREAD_ID, destination: "draft" },
       { documentId: "notes", threadId: null, destination: "live" },
-    ]);
-  });
-
-  it("hides a drafted document the Work's draft manifest removed", async () => {
-    const { revisions } = revisionsFor("draft", ["chapter", "notes"]);
-    const current = await revisions.current({
-      threadId: THREAD_ID,
-      documentIds: ["lore", "notes"],
-    });
-    expect(current).toEqual(
-      new Map([
-        ["lore", null],
-        ["notes", "rev:notes"],
-      ]),
-    );
-  });
-
-  it("reads everything live outside draft mode, without the draft manifest", async () => {
-    const { revisions, readEffectiveRevision, resolveManifestMembership } = revisionsFor("direct");
-    await revisions.current({ threadId: THREAD_ID, documentIds: ["chapter", "lore"] });
-
-    expect(resolveManifestMembership).not.toHaveBeenCalled();
-    expect(readEffectiveRevision.mock.calls.map(([input]) => input.destination)).toEqual([
-      "live",
-      "live",
     ]);
   });
 });

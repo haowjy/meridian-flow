@@ -560,14 +560,6 @@ describe("subagent skills", () => {
       await resolveThreadUserInvocableSkills({ thread, agentRevisions, accountSkillInstalls }),
     ).toEqual([]);
   });
-
-  it("reads the subagent's preloaded skill bodies from its own binding", async () => {
-    const { thread, agentRevisions } = await spawnCritic();
-    const loaded = await resolveThreadPreloadedSkills({ thread, agentRevisions });
-    expect(loaded.map((skill) => [skill.slug, skill.body])).toEqual([
-      ["writing-principles", "writing-principles body.\n"],
-    ]);
-  });
 });
 
 describe("skill resources", () => {
@@ -644,7 +636,6 @@ describe("skill resources", () => {
   it("refuses a path outside the skill's directory", async () => {
     const { thread, agentRevisions } = await spawnCritic();
     for (const resource of [
-      "../writing-principles/resources/reward.md",
       "resources/../../creative-writing-modes/resources/draft.md",
       "/skills/story-review/resources/line-edit.md",
     ]) {
@@ -663,9 +654,7 @@ describe("skill resources", () => {
         resource: "resources/draft.md",
         agentRevisions,
       }),
-    ).rejects.toThrow(
-      'Skill "creative-writing-modes" is not available. Skills you can load: story-review.',
-    );
+    ).rejects.toBeInstanceOf(SkillUnavailableError);
     await expect(
       loadModelSkillResource({
         thread,

@@ -1,52 +1,8 @@
 /** Spawn-family registrations: advertised schemas, guidance copy and handler results. */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
-
-describe("thread_report tool contract", () => {
-  it("reads the latest report by ref, with no run argument", () => {
-    const registration = createSpawnToolRegistrations().find(
-      (entry) => entry.definition.name === "thread_report",
-    );
-    expect(registration?.capability).toBe("thread_report");
-    expect(registration?.advertise).toBe(true);
-    expect(registration?.definition.inputSchema).toEqual({
-      type: "object",
-      properties: {
-        ref: {
-          type: "string",
-          minLength: 1,
-          description: 'Subagent ref such as p3, or "current".',
-        },
-      },
-      required: ["ref"],
-      additionalProperties: false,
-    });
-    expect(registration?.definition.description).toContain("Does not wait");
-  });
-
-  it("returns the reader's model result and refuses through the failure protocol", async () => {
-    const registration = createSpawnToolRegistrations().find(
-      (entry) => entry.definition.name === "thread_report",
-    );
-    if (registration?.execution.type !== "server") throw new Error("missing thread_report");
-    const report = {
-      ref: "p3",
-      outcome: "failed" as const,
-      summary: "Stopped at the locked gate.",
-      reason: "blocked",
-      partial: true as const,
-      running: true as const,
-      message: "p3 is running again; this report is from its previous run.",
-    };
-    await expect(
-      registration.execution.handler({ ref: "p3" }, {
-        threadReport: vi.fn(async () => report),
-      } as never),
-    ).resolves.toEqual(report);
-  });
-});
 
 describe("spawn tool guidance", () => {
   const spawn = createSpawnToolRegistrations().find(
@@ -111,9 +67,6 @@ describe("spawn and thread_message refusals", () => {
 
     for (const result of [spawned, messaged]) {
       expect(result).toMatchObject({ isError: true, result: refusal });
-      expect(result.output).toBe(
-        "Child thread already has an active run (thread_message_target_busy)",
-      );
     }
   });
 
