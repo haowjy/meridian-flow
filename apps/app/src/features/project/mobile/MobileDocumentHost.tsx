@@ -19,12 +19,18 @@ import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { useContextRemovalCoordinator } from "../context/account-feature-context";
+import {
+  useAccountResourceProjection,
+  useContextRemovalCoordinator,
+} from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
-import { useLiveDocumentBinding } from "../context/use-live-document-binding";
+import {
+  resourceAvailabilityRevision,
+  useLiveDocumentBinding,
+} from "../context/use-live-document-binding";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -176,9 +182,14 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       : null;
   const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
 
+  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const live = useLiveDocumentBinding({
     projectId,
     documentId: activeTab?.editable ? activeTab.documentId : null,
+    availabilityRevision: resourceAvailabilityRevision(
+      resourceProjection,
+      activeTab?.documentId ?? "",
+    ),
     owner: "mobile-project-document-host",
   });
   const liveState = live.state;

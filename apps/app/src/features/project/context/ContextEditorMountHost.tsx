@@ -1,6 +1,5 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
-import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
@@ -13,7 +12,7 @@ import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
-import { useLiveDocumentBinding } from "./use-live-document-binding";
+import { resourceAvailabilityRevision, useLiveDocumentBinding } from "./use-live-document-binding";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -376,15 +375,9 @@ export function ContextTabSessionBoundary({
   const binding = useLiveDocumentBinding({
     projectId,
     documentId: currentLocal.phase === "server" ? documentId : null,
+    availabilityRevision,
     owner: "desktop-server-tab",
   });
-  const automaticRetryRevision = useRef(availabilityRevision);
-  useEffect(() => {
-    if (binding.state.kind !== "failed" || automaticRetryRevision.current === availabilityRevision)
-      return;
-    automaticRetryRevision.current = availabilityRevision;
-    binding.retry();
-  }, [availabilityRevision, binding.retry, binding.state.kind]);
   const state = binding.state;
   useEffect(() => {
     if (state.kind !== "opened" || state.documentId !== documentId) return;
@@ -402,24 +395,6 @@ export function ContextTabSessionBoundary({
     selectedSession !== null && selectedSession === localSession,
     binding.retry,
   );
-}
-
-export function resourceAvailabilityRevision(
-  snapshot: ResourceProjectionSnapshot | null,
-  documentId: string,
-): string {
-  if (!snapshot) return "pending";
-  const resource = snapshot.records.find(
-    (record) => record.resource.identity.documentId === documentId,
-  )?.resource;
-  return JSON.stringify([
-    resource?.revision ?? null,
-    resource?.lifecycle.kind === "acknowledged"
-      ? resource.lifecycle.availabilityGeneration
-      : resource?.lifecycle.kind === "terminal"
-        ? resource.lifecycle.generation
-        : null,
-  ]);
 }
 
 function ActiveEditorProjection({
