@@ -277,6 +277,7 @@ function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
           limitedBy: "not_found",
           level: "none",
           archivedWork: null,
+          scheme: null,
           destination: null,
           agentChain: null,
         };

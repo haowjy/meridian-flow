@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
-import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
+import { projectToolPolicy, TOOL_CATALOG } from "../loop/permissions/project-tool-policy.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { modelToolSchema } from "./model-tool-schema.js";
@@ -149,6 +149,15 @@ describe("model tool schemas", () => {
     }
   });
 
+  // Registrations are built from composition-time deps, so the catalog can't derive from them.
+  it("lists every registered tool in TOOL_CATALOG", () => {
+    expect(
+      allRegistrations()
+        .map(({ definition }) => definition.name)
+        .sort(),
+    ).toEqual([...TOOL_CATALOG].sort());
+  });
+
   // Later phases change this number on purpose, so catalog growth shows in review.
   it("pins the published primary catalog size", () => {
     // The primary catalog as the audit exporter defines it: the default policy's advertisement.
@@ -176,6 +185,6 @@ describe("model tool schemas", () => {
         "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`18046`);
+    expect(characters).toMatchInlineSnapshot(`18059`);
   });
 });
