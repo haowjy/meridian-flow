@@ -39,13 +39,10 @@ A Work-scoped location (Scratch, Uploads) names its Work by id. A named Work
 also carries its slug; No Work carries its row id and no slug, which is how the
 catalog spells `@/`. `ResourceWorkAuthority` makes this a type rule: a Work
 id comes with its slug, `null` only for the No Work row, so a named Work's
-location cannot drop it. Catalog installation, canonical refresh and
-`authorityMatches` accept both shapes. Namespace requests do not: `requestFor`
-returns no request for a source or destination with a Work id and no slug, and
-the records policy rejects such an attempt. So a No Work Scratch document
-cannot be placed, moved or deleted through the replica, and creating one
-(a link's Create, the Scratch tree's New file) asks the server directly.
-Accepting the shape on the request side is issue #648.
+location cannot drop it. Catalog installation, canonical refresh, namespace requests and
+receipt matching accept both shapes. A slug without a Work id is invalid.
+Local No Work Scratch placement, renaming and deletion use the same durable
+namespace journal as named Works; URI authority remains `@/`, never the row id.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted
