@@ -28,3 +28,9 @@
   reviewing A ends in the right state but does two extra history replaces
   (`EditorReviewAddressOwner.tsx` strips `?draft=` without checking
   `pendingDraftId`). Add the test and skip the strip while a launch is pending.
+- The phone document host has no recovery for a failed live open:
+  `mobile/MobileDocumentHost.tsx` calls `useLiveDocumentBinding` but never uses
+  its `retry`, and it does not retry when the resource availability revision
+  advances the way the desktop `ContextTabSessionBoundary` does. Give the phone
+  host the same Retry and revision retry. Found in knowledge capture for
+  draft-review-repair.

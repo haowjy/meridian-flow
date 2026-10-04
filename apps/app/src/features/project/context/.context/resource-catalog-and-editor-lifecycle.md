@@ -98,22 +98,29 @@ local edits never reach the server and the pill stays silent. `SyncStatus` now
 reads a server-backed session that is still `detached` after a short grace as
 "Saved locally (offline)".
 
-A resource-backed host opens the ordinary live binding once its local session
-has been probed (`useLiveDocumentBinding`: open, bind, retry). It presents the
-live session in place of the cached one when that binding opens, and shows the
-session's own connection state. An availability recheck that returns terminal,
-deleted, or schema-mismatch releases the cached handle and its resource
-ownership lease rather than leaving the stale session mounted. A local
-cache-open failure falls through to exact server availability instead of
-terminalizing the tab from stale metadata. Genuine server failure remains
-retryable explicitly and retries when the resource/catalog authority revision
-advances. A draft-only tab (a new document proposed by a draft)
-opens no live binding at all: it has no live manifest membership and the server
-refuses a room for it, so review hosts the draft branch room alone, on desktop.
-The phone cannot host a new-document draft review yet: its route tab comes only
-from the live catalog (tracked separately). Once the server confirms Apply the tab is promoted to a durable tab
-and this host opens its live room like any other document. Whether that open is slow, fails, or
-disconnects is the host's business and never changes whether Apply completed.
+The desktop `ContextTabSessionBoundary` opens the ordinary live binding once its
+local session has been probed (`useLiveDocumentBinding`: open, bind, explicit
+retry). It presents the live session in place of the cached one when that
+binding opens, and shows the session's own connection state. An availability
+recheck that returns terminal, deleted, or schema-mismatch releases the cached
+handle and its resource ownership lease rather than leaving the stale session
+mounted. A local cache-open failure falls through to exact server availability
+instead of terminalizing the tab from stale metadata. A failed binding offers
+Retry and also retries once each time the resource availability revision
+advances. The phone document host (`MobileDocumentHost`) uses the same binding
+but neither offers Retry nor retries on a revision change, so a failed phone
+open has no in-place recovery yet.
+
+A draft-only tab (a new document proposed by a draft) opens no live binding at
+all: it has no live manifest membership and the server refuses a room for it,
+so desktop review hosts the draft branch room alone (`liveRoom={!branchOnly}`)
+and a failed branch room offers Retry or closing the tab, never a fallback to
+an empty live editor. The phone cannot host a new-document draft review yet: its
+route tab comes only from the live catalog (tracked in the draft-review-repair
+work item). Once the server confirms Apply the tab is promoted to a durable tab
+and this host opens its live room like any other document. Whether that open is
+slow, fails, or disconnects is the host's business and never changes whether
+Apply completed.
 
 ## Unfiled materialization and recovery
 
