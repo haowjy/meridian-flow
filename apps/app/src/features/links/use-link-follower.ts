@@ -7,9 +7,11 @@
  * resolution, so the resolver is registered once per scope and registered
  * again whenever any of them changes. Registering is the cache's only
  * invalidation: it forgets every answer and every failure the previous scope
- * produced. Nothing else in the app pokes this cache. A click in flight across
- * a registration is asked again in the new one, so a rename or a catalog
- * refetch never turns into "could not be checked".
+ * produced. An Editor's scope also carries its document's change revision, so
+ * a text change (a rename's rewrite arriving, say) drops the answers the old
+ * text asked. Nothing else in the app pokes this cache. A click in flight
+ * across a registration is asked again in the new one, so a rename or a
+ * catalog refetch never turns into "could not be checked".
  *
  * **One owner per shown outcome.** Follows share the surface's reporter, so
  * the follower records which follow owns what is shown. A follow may only
@@ -95,6 +97,8 @@ export function useLinkFollower({
   const projectId = ready?.projectId ?? null;
   const workId = ready?.workId ?? null;
   const baseUri = ready?.baseUri ?? null;
+  const holderDocumentId = ready?.holderDocumentId ?? null;
+  const documentRevision = ready?.documentRevision ?? 0;
 
   // The latest host callbacks, read when a follow needs them. A host passing a
   // fresh `open` or reporter object each render must not restart or abort
@@ -110,7 +114,7 @@ export function useLinkFollower({
   useEffect(() => {
     if (!resolution || !projectId) return;
     const unregister = resolution.registerResolver(
-      createProjectLinkResolver({ projectId, workId, baseUri }, index),
+      createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
       { baseUri },
     );
     for (const release of scopeWaiters.current) release();
@@ -123,8 +127,10 @@ export function useLinkFollower({
     return () => queueMicrotask(unregister);
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
-    // old one becomes unreachable.
-  }, [baseUri, index, projectId, resolution, workId]);
+    // old one becomes unreachable. The revision is the holder's own text
+    // changing: the same invalidation, so what a link was answered cannot
+    // outlive the words it was answered for.
+  }, [baseUri, documentRevision, holderDocumentId, index, projectId, resolution, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
