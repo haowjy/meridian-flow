@@ -19,7 +19,7 @@ export class FileEditRefusedError extends Error {
 }
 
 /** The named Works a grant's write locks: its owner and its draft's Work (§5). */
-export function grantWorkIds(grants: readonly FileGrant[]): string[] {
+function grantWorkIds(grants: readonly FileGrant[]): string[] {
   const ids = new Set<string>();
   for (const { facts } of grants) {
     if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.add(facts.ownerWork.id);

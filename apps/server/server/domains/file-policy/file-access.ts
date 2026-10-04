@@ -45,8 +45,6 @@ export interface FileAccess {
    * grants are reported, not thrown, so the rest of the reply can commit.
    */
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileEditConfirmation>;
-  /** The decision for facts a list adapter already loaded; the same pure policy. */
-  levelOf(principal: Principal, facts: FileFacts): Promise<FileDecision>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's draft rows decided at the draft. A document the principal
@@ -113,8 +111,6 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       }
       return result;
     },
-
-    levelOf: decision,
 
     async historyAccess(principal, documentId) {
       const facts = await deps.facts.load({ target: { kind: "document", documentId } });
