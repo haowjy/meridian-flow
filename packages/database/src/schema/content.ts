@@ -397,3 +397,33 @@ export const documentLinks = pgTable(
     index("document_links_target_key").using("hash", table.targetKey),
   ],
 );
+
+/** Pending identity redirects consumed only after collaborative link rewrites commit. */
+export const linkRedirects = pgTable(
+  "link_redirects",
+  {
+    sourceDocumentId: uuid("source_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    href: text("href").notNull(),
+    targetDocumentId: uuid("target_document_id")
+      .$type<DocumentId>()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    intendedUri: text("intended_uri"),
+    oldFilename: text("old_filename").notNull(),
+    moverUserId: uuid("mover_user_id").$type<UserId>(),
+    moverTurnId: uuid("mover_turn_id"),
+    createdAt: createdAt(),
+    attempts: integer("attempts").notNull().default(0),
+    retryAfter: timestamp("retry_after", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
+    check(
+      "link_redirects_target",
+      sql`(${table.targetDocumentId} IS NULL) <> (${table.intendedUri} IS NULL)`,
+    ),
+    index("link_redirects_target_document").on(table.targetDocumentId),
+  ],
+);
