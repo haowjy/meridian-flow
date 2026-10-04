@@ -497,7 +497,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   });
   const autoPushSchedules: string[] = [];
-  const autoPushPromises: Promise<unknown>[] = [];
   let suppressScheduledAutoPush = false;
   const branchPush = {
     ...realBranchPush,
@@ -506,9 +505,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       if (suppressScheduledAutoPush) {
         return { status: "skipped" as const, reason: "manual_policy" as const };
       }
-      const push = realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
-      autoPushPromises.push(push);
-      return push;
+      return realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
     },
   };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
@@ -718,7 +715,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchBroadcasts.length = 0;
     watermarkCommits.length = 0;
     autoPushSchedules.length = 0;
-    autoPushPromises.length = 0;
     hocuspocus.broadcasts.length = 0;
     const workDrafts = await db
       .select({ id: schema.documentBranches.id })
@@ -1980,12 +1976,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       branchBroadcasts: [...branchBroadcasts].sort(),
       watermarkCommits: [...watermarkCommits].sort(),
     }),
-    waitForAutoPushes: async () => {
-      for (let attempt = 0; autoPushPromises.length === 0 && attempt < 100; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      await Promise.all(autoPushPromises);
-    },
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
     stagedUpdates: (responseId: string) => [

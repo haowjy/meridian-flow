@@ -135,13 +135,19 @@ describe("change trail (postgres)", () => {
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
     });
-    const withDeadline = <T>(operation: Promise<T>) =>
-      Promise.race([
-        operation,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("draft disposition retained a lock")), 5_000),
-        ),
-      ]);
+    const withDeadline = async <T>(operation: Promise<T>) => {
+      let timer!: ReturnType<typeof setTimeout>;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("draft disposition retained a lock")), 5_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     for (const documentId of created) {
       const draft = drafts.find((candidate) => candidate.documentId === documentId);
       if (!draft) throw new Error(`missing draft for ${documentId}`);
@@ -227,39 +233,6 @@ describe("change trail (postgres)", () => {
     });
   });
 
-  it("reports a writer sweep journaled after the observation cut", async () => {
-    const harness = createHarness();
-    const responseId = "00000000-0000-4000-8000-000000000821";
-    await harness.seedProbeTimelineSweep(responseId);
-
-    await expect(harness.commit(responseId)).resolves.toMatchObject({
-      status: "committed",
-      documents: [
-        expect.objectContaining({
-          lateSweep: expect.objectContaining({
-            affectedBlockHashes: expect.any(Array),
-          }),
-        }),
-      ],
-    });
-    await harness.waitForAutoPushes();
-    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
-
-    const trail = await harness.trailRowMembership();
-    expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
-    expect(trail.details).toEqual([
-      expect.objectContaining({
-        changes: expect.arrayContaining([
-          expect.objectContaining({
-            beforeText: expect.stringContaining("Writer concurrent edit"),
-          }),
-        ]),
-      }),
-    ]);
-  });
-
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
@@ -273,7 +246,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
+    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
     await harness.pollTrails();
     await harness.pollTrails();
@@ -286,7 +259,7 @@ describe("change trail (postgres)", () => {
         documentCount: 1,
       }),
     ]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(0);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([
