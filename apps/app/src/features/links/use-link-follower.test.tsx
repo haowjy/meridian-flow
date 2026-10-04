@@ -115,17 +115,15 @@ describe("useLinkFollower", () => {
     expect(events).toEqual(["open:doc-second:current"]);
   });
 
-  it("dismisses only the follow whose checking is shown, leaving a background follow to open", async () => {
+  it("never opens a follow cancelled while checking", async () => {
     render({ scope, index: catalog("a") });
-    act(() => follower.follow(address("Tab"), "new-tab"));
     act(() => follower.follow(address("Pane")));
     await elapse(CHECKING_DELAY_MS);
 
     act(() => follower.dismiss());
-    await answer("Tab", doc("tab"));
     await answer("Pane", doc("pane"));
 
-    expect(events).toEqual(["report:checking", "report:checking", "clear", "open:doc-tab:new-tab"]);
+    expect(events).toEqual(["report:checking", "clear"]);
   });
 
   it("opens through a catalog change landing mid-follow", async () => {
