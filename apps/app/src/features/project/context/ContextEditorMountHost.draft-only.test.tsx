@@ -37,6 +37,7 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
 vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: {
     session?: unknown;
+    reviewDraftId?: string | null;
     reviewRoomName?: string | null;
     onReviewSessionUnavailable?: () => void;
   }) => (
@@ -44,6 +45,7 @@ vi.mock("@/features/editor/EditorView", () => ({
       data-editor
       data-leaves-review-when-unavailable={String(props.onReviewSessionUnavailable !== undefined)}
       data-live-session={String(props.session !== undefined)}
+      data-review-draft={props.reviewDraftId ?? ""}
       data-review-room={props.reviewRoomName ?? ""}
     />
   ),
@@ -136,7 +138,7 @@ describe("ContextEditorMountHost draft-only review", () => {
     });
   });
 
-  it("keeps the live editor on screen while the review room is still resolving", async () => {
+  it("keeps the live editor on screen, with the review intent, while the review room is still resolving", async () => {
     review.reviewing = true;
     review.room = null;
     const opener = {
@@ -171,6 +173,8 @@ describe("ContextEditorMountHost draft-only review", () => {
         const editor = document.querySelector("[data-editor]");
         expect(editor?.getAttribute("data-live-session")).toBe("true");
         expect(editor?.getAttribute("data-review-room")).toBe("");
+        // The click's intent reaches the editor, which holds the live one read-only.
+        expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
       },
     );
     review.reviewing = false;

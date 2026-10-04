@@ -251,14 +251,15 @@ export function ReadableProjectRoute({
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   const addressWorkId = address.work.kind === "id" ? address.work.id : null;
-  const { catalog: addressCatalog, isComplete: addressCatalogComplete } = useContextCatalogView(
-    projectId,
-    documentDestination?.scheme ?? "manuscript",
-    {
-      workId: documentDestination?.scheme === "scratch" ? addressWorkId : null,
-      enabled: !!documentDestination && !routeWorkIssue(routeWork),
-    },
-  );
+  const {
+    catalog: addressCatalog,
+    isComplete: addressCatalogComplete,
+    isFetching: addressCatalogFetching,
+    isError: addressCatalogError,
+  } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
+    workId: documentDestination?.scheme === "scratch" ? addressWorkId : null,
+    enabled: !!documentDestination && !routeWorkIssue(routeWork),
+  });
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -300,8 +301,14 @@ export function ReadableProjectRoute({
   const { result: documentResult, draftOnly } = gateLiveView(
     reconciledDocumentAddress.result,
     documentDestination?.scheme ?? "",
-    { catalog: addressCatalog, isComplete: addressCatalogComplete },
+    {
+      catalog: addressCatalog,
+      isComplete: addressCatalogComplete,
+      isFetching: addressCatalogFetching,
+      isError: addressCatalogError,
+    },
     editorDrafts,
+    (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
   );
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined

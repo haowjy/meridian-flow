@@ -235,7 +235,9 @@ export function ContextEditorMountHost({
                     detached={tab.kind === "new"}
                     localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                    reviewDraftId={reviewDraftId}
+                    // The intent, not the resolved room: the live editor goes
+                    // read-only from the click, while the room is still resolving.
+                    reviewDraftId={selectedReviewDraftId}
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
                     // Leaving review would strand a draft-only tab on an empty
