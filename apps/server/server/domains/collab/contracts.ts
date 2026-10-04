@@ -72,7 +72,6 @@ export type DocumentWriteResult = {
 export type DocumentWriteHook = (event: {
   documentId: DocumentId;
   threadId?: ThreadId;
-  markdown: string;
   at: Date;
 }) => Promise<void>;
 
@@ -211,6 +210,7 @@ export type MarkdownDocumentStore = {
 };
 
 export type DocumentProjectionRefresher = {
+  documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 

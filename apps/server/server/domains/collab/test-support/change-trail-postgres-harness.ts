@@ -67,7 +67,7 @@ const { createBranchPushService } = await import("../domain/branch-push.js");
 const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
 const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
-const { createDocumentProjectionRefresher, createDocumentWriteHookRunner } = await import(
+const { createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
 );
 const { enlistResponseParticipant, runResponseTransaction } = await import(
@@ -539,11 +539,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentFiletype: async () => null,
     observability,
   });
-  const projections = createDocumentProjectionRefresher({
-    documents: runtime.markdownDocuments,
-    runDocumentWriteHook,
-    diagnostics: projectionDiagnostics,
-  });
+  const projections = { refresh: runDocumentWriteHook };
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,
