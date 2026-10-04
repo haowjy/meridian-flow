@@ -14,11 +14,11 @@ import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
+import { orderLikeSchema } from "./history-call-line.js";
 import type { HistoryTurn } from "./history-result.js";
 
 export type HistoryInclude =
   | "routine_calls"
-  | "tool_args"
   | "tool_results"
   | "thinking"
   | "system_messages"
@@ -115,7 +115,10 @@ export type DescribedBlock =
   | {
       kind: "tool";
       tool: string;
-      brief: string;
+      /** History withholds the arguments: `return_result` (D6), or the call is missing. */
+      withheld: boolean;
+      /** After the arrow: a finished call's result in brief, a failed call's status or code. */
+      summary?: string;
       routine: boolean;
       /** True when the call has no result yet. */
       open: boolean;
@@ -152,20 +155,29 @@ export function describeBlock(input: {
       | JsonObject
       | undefined;
     const name = String(content.toolName ?? result?.toolName ?? "unknown");
-    const args = (call?.input ?? {}) as JsonObject;
     const registration = registry.getRegistration(name);
+    // Storage may reorder keys; history quotes them in the tool's schema order (D48).
+    const args = orderLikeSchema(
+      (call?.input ?? {}) as JsonObject,
+      registration?.definition.inputSchema,
+    ) as JsonObject;
     const policy = registration?.documentText;
     const documents = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
       []) as DocumentRevisionEvidence[];
     const isError = result?.isError === true;
-    const typed = result?.result as JsonValue | undefined;
+    // Rows from before typed results carry only `output`.
+    const typed = (result?.result ?? result?.output) as JsonValue | undefined;
     const kind = registration?.historyKind;
+    const summary = !result
+      ? undefined
+      : isError
+        ? failureCode(typed)
+        : registration?.historySummary?.(args, typed ?? null);
     return {
       kind: "tool",
       tool: name,
-      brief: call
-        ? (registration?.historyPreview?.(args, typed) ?? JSON.stringify(args).slice(0, 80))
-        : "",
+      withheld: !call || registration?.capability === "return_result",
+      ...(summary ? { summary } : {}),
       routine: typeof kind === "function" ? kind(args) === "routine" : kind === "routine",
       open: !result,
       isError,
@@ -221,6 +233,19 @@ export function describeBlock(input: {
   return cardKind
     ? { kind: "system", label: `system: ${cardKind}`, text }
     : { kind: "message", text };
+}
+
+const jsonObject = (value: JsonValue | undefined) =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+
+/** A failed call's status (agent-edit, spawn) or error code (a refusal), from its typed result. */
+function failureCode(value: JsonValue | undefined): string | undefined {
+  const typed = jsonObject(value);
+  if (!typed) return undefined;
+  if (typeof typed.status === "string" && typed.status !== "error" && typed.status !== "success")
+    return typed.status;
+  const code = typed.code ?? jsonObject(typed.error)?.code;
+  return typeof code === "string" ? code : undefined;
 }
 
 /** Quoting a write's arguments is a record of an edit, never the document's current text. */

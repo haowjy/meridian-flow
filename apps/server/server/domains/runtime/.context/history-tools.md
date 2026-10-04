@@ -78,6 +78,14 @@ model text when they define it; raw component props are never serialized.
   boundary, or after scanning 2,000 raw rows.
 - **Reports.** On a subagent's history, finished reports attach to the turn
   their `terminalTurnId` names, on the page that holds the turn's last row.
+- **Call lines** (D48). `spawn/history-call-line.ts` writes each call as
+  `name({json args}) → summary`, long strings shortened inside the JSON and
+  keys in the tool's input-schema order (`orderLikeSchema`; `jsonb` loses
+  the order the model sent);
+  `historySummary` reads the summary from the typed result, and a failure's
+  status or code comes from `failureCode` in `history-item.ts`. One form on a
+  page, under `routine_calls` and in `expand: N`; `expand: "N.k"` adds the
+  full arguments and result. A shown write line carries edit evidence.
 - **Handles.** Display indexes (`N.k`) count a turn's blocks in order, a tool
   result sharing its call's index. The page computes them only for truncated
   items, from the turn's blocks.
@@ -94,7 +102,7 @@ admitted execution with no terminal truth means the child is running again,
 reported as `running: true` with a line. `unavailable` says to wait for the
 completion notice. `renderThreadReportOutput` turns the typed result into the
 model's text with the same `renderReportBlock` history uses; nothing parses
-it back. History previews read the resolved `ref` from typed results
+it back. History summaries read the resolved `ref` from typed results
 (`thread_ls` returns `{ ref, listing }`). The writer-facing
 `GET .../reports/[childThreadId]/[execution]` route resolves `execution` to a
 `run` index and calls `readThreadReport` with it; that execution-addressed

@@ -25,6 +25,7 @@ import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
 import { estimateModelPartTokens } from "../loop/compaction/estimate.js";
 import type { ToolRegistry } from "../tools/types.js";
+import { shortenCallArgs } from "./history-call-line.js";
 import {
   type DescribedBlock,
   describeBlock,
@@ -48,7 +49,6 @@ import { resolveReadableThread, threadReadError } from "./resolve-readable-threa
 
 const INCLUDES = [
   "routine_calls",
-  "tool_args",
   "tool_results",
   "thinking",
   "system_messages",
@@ -77,7 +77,7 @@ export const ThreadHistoryInputSchema = z
     include: z
       .array(z.enum(INCLUDES))
       .describe(
-        "Detail hidden by default. routine_calls: show hidden inspection calls (`read`, `ls`, `search` and the like) as one-line entries. tool_args: add arguments to visible tool calls. tool_results: add results to visible tool calls. thinking: show thinking. system_messages, system_prompt: show system messages, or the system prompt. timestamps: show when each turn happened.",
+        "Detail hidden by default. routine_calls: show hidden inspection calls (`read`, `ls`, `search` and the like) as one-line entries. tool_results: add results to visible tool calls. thinking: show thinking. system_messages, system_prompt: show system messages, or the system prompt. timestamps: show when each turn happened.",
       )
       .optional(),
     expand: z
@@ -200,6 +200,19 @@ const toolState = (
   live: boolean,
 ): Extract<HistoryItem, { kind: "tool" }>["state"] =>
   described.isError ? "error" : described.open ? (live ? "running" : "cancelled") : "done";
+
+/** A call's one-line form (D48): its shortened arguments, state and summary. */
+const callItem = (described: Tool, live: boolean) => ({
+  kind: "tool" as const,
+  tool: described.tool,
+  args: described.withheld ? null : shortenCallArgs(described.tool, described.args),
+  state: toolState(described, live),
+  ...(described.summary ? { summary: described.summary } : {}),
+});
+
+/** A shown write line quotes its edit inputs, so it carries edit evidence for compaction. */
+const lineEvidence = (described: Tool) =>
+  described.write && !described.withheld ? editEvidence(described) : [];
 
 interface Projection {
   repos: ThreadRepositories;
@@ -356,29 +369,18 @@ async function readHistoryPage(p: Projection, input: ThreadHistoryInput) {
         const state = toolState(described, entry.live);
         if (described.routine && state === "done" && !include.has("routine_calls"))
           return withReport({ hidden: true as const });
-        const args = include.has("tool_args")
-          ? cap(
-              described.write
-                ? editRecord(entry.turn, described.args)
-                : JSON.stringify(described.args),
-              ITEM_TOKENS,
-            )
-          : undefined;
         const result =
           described.result !== undefined && (include.has("tool_results") || state === "error")
             ? cap(described.result, ITEM_TOKENS)
             : undefined;
+        const docs = lineEvidence(described);
         return withReport({
           item: {
-            kind: "tool",
-            tool: described.tool,
-            brief: described.brief,
-            state,
-            ...(args ? { args: args.text } : {}),
+            ...callItem(described, entry.live),
             ...(result ? { result: result.text } : {}),
-            ...(args?.truncated || result?.truncated ? { truncated: true as const } : {}),
+            ...(result?.truncated ? { truncated: true as const } : {}),
           },
-          ...(args && described.write ? { docs: editEvidence(described) } : {}),
+          ...(docs.length ? { docs } : {}),
         });
       }
     }
@@ -615,13 +617,10 @@ async function expandHistory(p: Projection, expand: number | string) {
       budget -= tokens(args.text);
       const result = item.result !== undefined ? cap(item.result, Math.max(budget, 0)) : undefined;
       full = {
-        kind: "tool",
+        ...callItem(item, live),
         index: k,
-        tool: item.tool,
-        brief: item.brief,
-        state: toolState(item, live),
         ...(item.rawResult !== undefined ? { resultTokens: tokens(item.rawResult) } : {}),
-        args: args.text,
+        fullArgs: args.text,
         ...(result ? { result: result.text } : {}),
         ...(args.truncated || result?.truncated ? { truncated: true as const } : {}),
       };
@@ -644,17 +643,17 @@ async function expandHistory(p: Projection, expand: number | string) {
     return { output: result, metadata: { documentRevisions: uniqueDocuments(docs) } };
   }
 
+  const docs: DocumentRevisionEvidence[] = [];
   const items: HistoryItem[] = described.map(({ index, item }) => {
     if (item.kind === "tool") {
-      budget -= 20;
-      return {
-        kind: "tool",
+      const line = {
+        ...callItem(item, live),
         index,
-        tool: item.tool,
-        brief: item.brief,
-        state: toolState(item, live),
         ...(item.rawResult !== undefined ? { resultTokens: tokens(item.rawResult) } : {}),
       };
+      budget -= tokens(JSON.stringify(line)) + 5;
+      docs.push(...lineEvidence(item));
+      return line;
     }
     const size = tokens(item.text);
     // Messages show in full up to the item cap while the expansion budget lasts; then one line each.
@@ -691,5 +690,5 @@ async function expandHistory(p: Projection, expand: number | string) {
     turns: [historyTurn(items, report)],
     inProgress: [],
   };
-  return { output: result, metadata: { documentRevisions: [] } };
+  return { output: result, metadata: { documentRevisions: uniqueDocuments(docs) } };
 }
