@@ -22,6 +22,8 @@
 - Pasting into an Editor document turns `[[Name]]` into a standard link, so notes brought over from Obsidian keep their links. `[[Name|label]]` keeps its label and `[[Name#Heading]]` its heading. When several documents share the name, the one in the same folder wins, then the one at the area's root. A name no document has yet becomes a dashed link beside the document, which Create makes. `![[embeds]]`, an escaped `\[[`, and anything pasted into or inside code stay text. Paste without formatting (Ctrl+Shift+V, or Cmd+Shift+V on a Mac) keeps the brackets as typed, and a typed `[[` is still plain text.
 - A chat with no Work no longer says "This Work is unavailable", and a No Work Scratch document opens in the Editor. No Work has one Editor however you reach it, and its tabs stay in its strip.
 - Renaming a Work's Scratch document from the title bar keeps it in that Work and saves the new name.
+- Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
+
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
