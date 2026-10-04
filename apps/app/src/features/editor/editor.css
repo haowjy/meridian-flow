@@ -4,9 +4,14 @@
  * the editor follows the app theme without embedding component logic.
  *
  * Long-form manuscript reading: a calm ~68ch measure and the shared
- * `prose-tokens` reading scale. The prose stays
- * undecorated — the cinnabar signature lives only in chrome, never in the
- * manuscript itself.
+ * `prose-tokens` reading scale. The prose stays undecorated: the cinnabar
+ * signature lives only in chrome, never in the manuscript itself. Internal
+ * links are the deliberate exception. They draw as the same tag chip they are
+ * in chat (`components/app/link-chip/`), because a link's destination is a
+ * document in this project, and a writer reading a chapter should see which
+ * words lead to one, which family it is in, and which are not written yet
+ * without hovering each. The chip is presentation only; the label stays
+ * ordinary editable text.
  *
  * The document only: the page, its marks, and the decorations drawn over the
  * words. Every control surface styles itself from a stylesheet beside its own

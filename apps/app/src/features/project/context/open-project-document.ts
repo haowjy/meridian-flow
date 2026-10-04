@@ -12,7 +12,7 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
  * Opening a project document by id — the app's one answer to "take me there".
  *
  * A document id is all a door carries: a change trail's receipt, a search
- * result, a wikilink the writer just followed. Turning that id into an open
+ * result, a link the writer just followed. Turning that id into an open
  * tab means finding which scheme's tree holds it, and that lookup plus the
  * openTab-and-route pair is the same work every door was about to write for
  * itself.

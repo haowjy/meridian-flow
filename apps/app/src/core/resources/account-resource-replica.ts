@@ -11,8 +11,8 @@ import {
   projectResourceLocation,
   publishResourceTerminal,
   ResourceCatalogAcquisition,
+  type ResourceDestination,
   type ResourceKey,
-  type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   reconcileResourceNamespace,
@@ -537,7 +537,7 @@ export class AccountResourceReplica {
   async setLocation(
     projectId: string,
     key: ResourceKey,
-    destination: Omit<ResourceLocation, "path"> & { folderPath: string },
+    destination: ResourceDestination,
   ): Promise<{ isLatest: boolean }> {
     return this.locationOperations.run(key, async () => {
       await this.commitPlan(key, (record) =>

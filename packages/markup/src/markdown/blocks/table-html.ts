@@ -14,7 +14,6 @@ import {
   type HtmlNode,
   parseHtml,
 } from "../html-tag.js";
-import { formatWikilink } from "../wikilink-target.js";
 import { imageNodeFromAttributes } from "./image.js";
 import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
@@ -472,32 +471,11 @@ function inlineNodeToHtml(node: MdastInline): string {
       const title = link.title === null ? "" : ` title="${escapeHtmlAttribute(link.title)}"`;
       return `<a href="${escapeHtmlAttribute(link.url)}"${title}>${inlineToHtml(link.children)}</a>`;
     }
-    case "wikiLink": {
-      const link = node as { target: string; children: MdastInline[] };
-      return `<a href="${escapeHtmlAttribute(formatWikilink(link.target))}">${inlineToHtml(
-        link.children,
-      )}</a>`;
-    }
-    case "wikiLinkResource": {
-      const link = node as {
-        target: string;
-        title: string | null;
-        children: MdastInline[];
-      };
-      const title = link.title === null ? "" : ` title="${escapeHtmlAttribute(link.title)}"`;
-      return `<a href="${escapeHtmlAttribute(formatWikilink(link.target))}"${title}>${inlineToHtml(
-        link.children,
-      )}</a>`;
-    }
     case "break":
       return "<br />";
     case "image": {
       const image = node as { url: string; alt: string | null; title: string | null };
       return imageHtmlTag({ ...image, width: null });
-    }
-    case "wikiLinkImage": {
-      const image = node as { target: string; alt: string | null; title: string | null };
-      return imageHtmlTag({ ...image, url: formatWikilink(image.target), width: null });
     }
     // Sized pictures have already escalated to their own HTML tag.
     case "html":
