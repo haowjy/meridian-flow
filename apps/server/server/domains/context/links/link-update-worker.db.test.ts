@@ -62,13 +62,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
   });
   afterAll(() => db.close());
 
-  async function seed(holderUri = "manuscript://chapter-2.md") {
+  async function seed(holderUri = "manuscript://chapter-2.md", extra = "") {
     const target = await port.createTrackedDocument("manuscript://chapter-1.md", "The beginning.");
     expect(target.ok).toBe(true);
     const href = holderUri.startsWith("scratch") ? "manuscript://chapter-1.md" : "chapter-1.md";
     const holder = await port.createTrackedDocument(
       holderUri,
-      `[chapter-1.md](${href}) and [enter the story](${href}).`,
+      `[chapter-1.md](${href}) and [enter the story](${href})${extra}.`,
     );
     if (!holder.ok) throw new Error(JSON.stringify(holder.error));
     return holder.value.documentId;
@@ -117,7 +117,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
     expect(await db.select().from(linkRedirects)).toEqual([]);
   });
   it("backs off a failing rewrite without losing content or redirects, then succeeds", async () => {
-    const holder = await seed();
+    expect(await port.createTrackedDocument("manuscript://prologue.md", "Prologue.")).toMatchObject(
+      { ok: true },
+    );
+    const holder = await seed("manuscript://chapter-2.md", ", [prologue.md](prologue.md)");
     const before = await projection(holder);
     await db.execute(
       sql.raw(`CREATE FUNCTION p5w_rewrite_failure() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -134,10 +137,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("link update worker (post
     expect(await app.linkUpdates.sweep()).toBe(0);
     expect((await db.select().from(linkRedirects))[0]?.attempts).toBe(1);
     await db.execute(sql`DROP TRIGGER p5w_rewrite_failure ON documents`);
-    await db.update(linkRedirects).set({ retryAfter: new Date(0) });
-    expect(await app.linkUpdates.sweep()).toBe(1);
+    // A new due redirect makes this holder eligible while its earlier batch backs off.
+    // Rewrite both simultaneously: otherwise prologue's new chapter-1 href would
+    // later be mistaken for the old chapter-1 identity.
+    await db.update(linkRedirects).set({ retryAfter: new Date(Date.now() + 60_000) });
+    expect(await port.move("manuscript://prologue.md", "manuscript://chapter-1.md")).toMatchObject({
+      ok: true,
+    });
+    await app.linkUpdates.sweep();
     expect(await projection(holder)).toBe(
-      "[the-gate.md](the-gate.md) and [enter the story](the-gate.md).\n",
+      "[the-gate.md](the-gate.md) and [enter the story](the-gate.md), [chapter-1.md](chapter-1.md).\n",
     );
     expect(await db.select().from(linkRedirects)).toEqual([]);
   });
