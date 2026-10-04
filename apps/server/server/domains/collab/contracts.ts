@@ -105,7 +105,7 @@ export type CollabTransport = {
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
-  loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
+  loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusBranchState(
     branchId: string,
     generation: number,

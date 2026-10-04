@@ -42,7 +42,6 @@ const journal = {
   },
 } as unknown as UpdateJournal;
 const currentAdmission = createHocuspocusPersistenceService({
-  readCheckpointAuthority: async () => ({ authorityId: "test-authority" as never, generation: 1n }),
   journal,
   hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, document]]) }) as never,
   metaForOrigin: () => ({ origin: "human:benchmark", seq: 0 }),

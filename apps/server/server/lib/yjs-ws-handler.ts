@@ -495,7 +495,7 @@ export function createHocuspocus(services: YjsGatewayServices): Hocuspocus<YjsCo
         try {
           state =
             room.kind === "live"
-              ? await services.documentSync.loadHocuspocusDocument(room.documentId)
+              ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
               : (
                   await services.documentSync.loadHocuspocusBranchState(
                     room.branchId,

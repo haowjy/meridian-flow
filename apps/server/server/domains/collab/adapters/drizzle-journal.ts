@@ -1177,6 +1177,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         .orderBy(asc(documentYjsUpdates.id));
 
       return {
+        authority: { authorityId: authorityHead.authorityId, generation: authorityHead.generation },
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),
       };

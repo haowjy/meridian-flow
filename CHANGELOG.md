@@ -1,5 +1,7 @@
 # Changelog
 
+- Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
+
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.

@@ -492,14 +492,18 @@ async function completeStagedPush(
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
   }
-  const stateVector = await deriveDocument(
+  const derivation = await deriveDocument(
     {
       store: createDrizzleDocumentDerivationStore(db as Database),
       serializer: durableProjectionSerializer,
     },
     documentId,
   );
-  if (!stateVector) throw new Error(`Missing durable document for push ${pushId}`);
+  // Completion already owns the mutation transaction: a stale cut is not an
+  // expected scheduling deferral here and must not certify push completion.
+  if (derivation.status !== "derived")
+    throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
+  const { stateVector } = derivation;
   await upsertHead(db, documentId, canonicalRow.id, stateVector);
   await projectionEffects.applyPushCompletion({
     documentId,
