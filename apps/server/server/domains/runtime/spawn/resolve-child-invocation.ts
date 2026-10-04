@@ -10,7 +10,11 @@ import {
   type InvocationPatch,
   type ResolvedAgentConfiguration,
 } from "@meridian/contracts/agents";
-import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import {
+  type MeridianError,
+  meridianError,
+  meridianErrorFromSystem,
+} from "@meridian/contracts/interrupt";
 import {
   type AgentRevision,
   type AgentRevisionBinding,
@@ -19,6 +23,7 @@ import {
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
+import { type InvalidArgumentIssue, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
 export interface ResolveChildInvocationDeps {
@@ -103,6 +108,13 @@ export async function resolveChildInvocation(
   }
 
   if (input.overrides !== undefined) {
+    const raise = permissionRaiseIssue({
+      requested: input.overrides.permission,
+      parent: parentAgent.configuration,
+      child: configuration,
+      childName: resolvedSlug,
+    });
+    if (raise) return { ok: false, error: spawnInvalidArguments([raise]) };
     let patched: ResolvedAgentConfiguration;
     try {
       patched = await applyInvocationPatch({
@@ -171,4 +183,43 @@ export async function resolveChildInvocation(
     defaultTitle,
     invocationOverlay,
   };
+}
+
+/**
+ * `overrides.permission` only lowers (file-access §8 D8): asking for `edit`
+ * under a `read` parent or a `read` profile is an argument error, never a
+ * silent drop.
+ */
+function permissionRaiseIssue(input: {
+  requested: ResolvedAgentConfiguration["permission"] | undefined;
+  parent: ResolvedAgentConfiguration;
+  child: ResolvedAgentConfiguration;
+  childName: string;
+}): InvalidArgumentIssue | null {
+  if (input.requested !== "edit") return null;
+  if (input.parent.permission === "read") {
+    return {
+      path: "overrides.permission",
+      message: 'can only lower permission, and yours is "read"',
+    };
+  }
+  // A generic child copies the parent's configuration, so only a named profile reaches here.
+  if (input.child.permission === "read") {
+    return {
+      path: "overrides.permission",
+      message: `can only lower permission, and ${input.childName}'s is "read"`,
+    };
+  }
+  return null;
+}
+
+/** An `invalid_arguments` refusal carried on the spawn result; the spawn tool unwraps it. */
+function spawnInvalidArguments(issues: InvalidArgumentIssue[]): MeridianError {
+  return meridianError({
+    code: "invalid_arguments",
+    message: renderInvalidArguments("spawn", issues),
+    source: "tool",
+    retryable: false,
+    details: { issues },
+  });
 }
