@@ -1,5 +1,5 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
-import { intentOwnsDeletion } from "./resource-intent-policy";
+import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
 import {
   type ResourceCatalogCheckpoint,
   type ResourceLocation,
@@ -29,7 +29,8 @@ export function projectResourceNeedsRepair(
   const failed = record.intents.find(
     (intent) => intent.projectId === projectId && intent.state === "needs-repair",
   );
-  if (!failed || failed.desired.kind === "create") return null;
+  if (!failed || failed.desired.kind === "create" || failed.desired.kind === "set-folder-location")
+    return null;
   return {
     intentId: failed.intentId,
     kind: failed.desired.kind,
@@ -50,16 +51,7 @@ export function projectResourceLocation(
     record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
   )
     return null;
-  const placement = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find(
-      (intent) =>
-        intent.projectId === projectId &&
-        intent.desired.kind === "set-location" &&
-        intent.state !== "cancelled" &&
-        intent.state !== "settled-locally" &&
-        intent.state !== "needs-repair",
-    )?.desired;
+  const placement = owningLocationIntent(projectId, record.intents)?.desired;
   if (placement?.kind === "set-location") {
     const folder = placement.destination.folderPath.split("/").filter(Boolean).join("/");
     return {

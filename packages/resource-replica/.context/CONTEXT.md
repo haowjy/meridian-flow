@@ -71,3 +71,28 @@ and cache projections, but it does not install independent resource truth. Two
 live metadata writers are forbidden. Durable local command acceptance is not
 server settlement: background reconciliation records immutable attempts and
 outcomes, and unresolved or rejected work remains projected for retry.
+
+Folder placement has a namespace-only record: a stable folder id, canonical
+location and ordered `set-folder-location` intentions. It never reserves a
+document id, classification or content database. The browser account owner
+implements `FolderNamespaceStore` alongside its file metadata; it must observe
+folder commits through that same projection owner, not a second cache writer.
+
+File and folder records share immutable journal validation, receipt matching,
+account-bound transport and the CAS replay loop. `owningLocationIntent` is the
+placement ownership rule for both projection and admission; superseded rejected
+receipts remain evidence but cannot reclaim a location. A successful folder
+receipt requires a post-receipt catalog observation before later dispatch.
+Install that observation and its catalog checkpoint together, with the captured
+folder revision fence.
+
+Folder overlays rebase paths, URI authority, source/scope and parent ids for the
+folder and every descendant. Supply the installed destination source and parent
+catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
+use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
+old location and expose the attempted name through `projectFolderNeedsRepair`.
+
+Caller-issued operation ids survive dispatch. Local settlement records
+`settledAt`; `settledNamespaceReceipt` returns the entire matching receipt for
+four seconds, including fields added by the server later, without deleting
+journal evidence. Surfaces own the timer/rerender that removes their note.

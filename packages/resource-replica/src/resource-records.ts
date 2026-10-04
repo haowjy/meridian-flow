@@ -109,13 +109,18 @@ export type NamespaceAttempt = {
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
   intentId: string;
+  /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
+  operationId?: string;
   sequence: number;
   identityRevision: number;
   desired:
     | { kind: "create"; folderPath: string; provisionalName?: string }
     | { kind: "set-location"; destination: ResourceDestination }
+    | { kind: "set-folder-location"; destination: ResourceDestination }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
+  /** Local receipt application time; immutable evidence is retained after the UI note expires. */
+  settledAt?: number;
   state:
     | "pending"
     | "submitted"
