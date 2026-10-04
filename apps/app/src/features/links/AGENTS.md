@@ -73,9 +73,7 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   folders, filename (`.md` added when omitted), and for Scratch the Work its
   authority names, or the surface's Work for a contextual `scratch://`. It
   commits locally and opens the document through the surface's `open` at once;
-  sync failure lands on the document. The one exception is No Work's Scratch,
-  which the local replica cannot place: there Create asks the server first
-  (issue #648). Do not route other Creates through the server to match it.
+  sync failure lands on the document.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md): scope contracts, what a follow
   does per answer, create-on-miss, and the document index

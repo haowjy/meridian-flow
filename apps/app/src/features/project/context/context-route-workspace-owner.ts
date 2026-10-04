@@ -51,7 +51,8 @@ export function resolveWorkspaceRoute({
   if (
     selected?.kind === "tracked" &&
     selected.origin === "local-resource" &&
-    (!isWorkScopedProjectContextScheme(selected.scheme) || selected.workId === locator.workId)
+    (!isWorkScopedProjectContextScheme(selected.scheme) ||
+      (selected.workId ?? null) === locator.workId)
   ) {
     return {
       kind: "materialized-local",
