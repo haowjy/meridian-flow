@@ -327,7 +327,7 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "binary_file":
       return t`This file is binary, so this change can't be reversed.`;
     case "permission_denied":
-      return t`This file's Work is archived, so this change can't be reversed.`;
+      return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
     case "internal_error":
     case "read_required":
     case "request_failed":

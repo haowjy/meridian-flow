@@ -4,6 +4,7 @@ import type { Work } from "@meridian/contracts/works";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { MeridianApiError } from "@/client/api/http-client";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { setTestToolbarInlineIds } from "@/components/app/composer-toolbar/composer-toolbar-test-harness";
 import { useSelectedWorkWriteModeToolbarControl } from "./SelectedWorkWriteModeControl";
@@ -27,6 +28,8 @@ const work = {
   projectId: "project",
   name: "Book",
   status: null,
+  isNoWork: false,
+  archivedAt: null,
   aiWriteMode: "draft",
 } as Work;
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -41,7 +44,6 @@ function Harness({ value = work }: { value?: Work }) {
   const control = useSelectedWorkWriteModeToolbarControl({
     projectId: "project",
     work: value,
-    openDraftReview: vi.fn(),
   });
   return <ComposerToolbar model={createComposerToolbarModel([control])} ariaLabel="Options" />;
 }
@@ -103,7 +105,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     await act(async () => root.render(<Harness />));
     await act(async () => findButton("AI write mode: Draft")?.click());
     await act(async () => findButton("Auto-apply")?.click());
-    expect(document.body.textContent).toContain("Drafts are waiting");
+    expect(document.body.textContent).toContain("Switch Book to auto-apply?");
     const confirmation = document.querySelector("h2")?.parentElement;
     expect(confirmation?.className).toContain("px-[var(--chat-space-inline)]");
     expect(confirmation?.querySelector("p")?.parentElement).toBe(confirmation);
@@ -111,8 +113,8 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
     expect(document.activeElement).not.toBe(document.body);
     await act(async () => reject(new Error("offline")));
-    expect(document.body.textContent).toContain("Nothing changed");
-    expect(document.activeElement?.textContent).toBe("Cancel");
+    expect(document.body.textContent).toContain("Couldn't switch, so you're still in Draft.");
+    expect(document.activeElement?.textContent).toBe("Keep them for review");
   });
 
   it("returns to choices after a successful confirmation and on the next open", async () => {
@@ -129,12 +131,73 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     await act(async () => root.render(<Harness />));
     await act(async () => findButton("AI write mode: Draft")?.click());
     await act(async () => findButton("Auto-apply")?.click());
-    expect(document.body.textContent).toContain("Drafts are waiting");
-    await act(async () => findButton("Apply 1 change and switch")?.click());
+    expect(document.body.textContent).toContain(
+      "Book has 1 pending change waiting for review. From now on, AI changes go live right away.",
+    );
+    expect(document.activeElement?.textContent).toBe("Keep it for review");
+    await act(async () => findButton("Apply it now")?.click());
+    expect(mutateAsync).toHaveBeenLastCalledWith({ aiWriteMode: "direct", pending: "apply" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => findButton("AI write mode: Draft")?.click());
     expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
-    expect(document.body.textContent).not.toContain("Drafts are waiting");
+    expect(document.body.textContent).not.toContain("Switch Book to auto-apply?");
+  });
+
+  it("keeps pending changes for review, and an archived Work offers only the switch", async () => {
+    groups = [
+      {
+        documentId: "doc",
+        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+      },
+    ];
+    mutateAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "confirmation_required", pendingChangeCount: 3 })
+      .mockResolvedValueOnce({ status: "updated" });
+    const archived = { ...work, archivedAt: "2026-10-01T00:00:00.000Z" } as Work;
+    await act(async () => root.render(<Harness value={archived} />));
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    await act(async () => findButton("Auto-apply")?.click());
+    expect(document.body.textContent).toContain(
+      "Book is archived, so its 3 pending changes stay frozen. Unarchive it to review them.",
+    );
+    expect(findButton("Apply them now")).toBeUndefined();
+    expect(document.activeElement?.textContent).toBe("Switch");
+    await act(async () => findButton("Switch")?.click());
+    expect(mutateAsync).toHaveBeenLastCalledWith({ aiWriteMode: "direct", pending: "keep" });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("turns into the archived dialog when Apply is refused because the Work was archived", async () => {
+    groups = [
+      {
+        documentId: "doc",
+        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+      },
+    ];
+    mutateAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "confirmation_required", pendingChangeCount: 2 })
+      .mockRejectedValueOnce(
+        new MeridianApiError(
+          {
+            code: "work_archived",
+            message: "archived",
+            retryable: false,
+            source: "server",
+          } as never,
+          409,
+        ),
+      );
+    await act(async () => root.render(<Harness />));
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    await act(async () => findButton("Auto-apply")?.click());
+    await act(async () => findButton("Apply them now")?.click());
+    expect(document.body.textContent).toContain(
+      "Book was archived during the switch, so you're still in Draft.",
+    );
+    expect(findButton("Apply them now")).toBeUndefined();
+    expect(document.activeElement?.textContent).toBe("Switch");
   });
 
   it("does not carry confirmation state across Work identity", async () => {
@@ -151,11 +214,11 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     await act(async () => root.render(<Harness />));
     await act(async () => findButton("AI write mode: Draft")?.click());
     await act(async () => findButton("Auto-apply")?.click());
-    expect(document.body.textContent).toContain("Drafts are waiting");
+    expect(document.body.textContent).toContain("Switch Book to auto-apply?");
     const nextWork = { ...work, id: "other", name: "Other Book" } as Work;
     await act(async () => root.render(<Harness value={nextWork} />));
     expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
-    expect(document.body.textContent).not.toContain("Drafts are waiting");
+    expect(document.body.textContent).not.toContain("Switch Book to auto-apply?");
   });
 
   it("opens choices from the overflow root and returns to the write row", async () => {
