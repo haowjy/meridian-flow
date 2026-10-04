@@ -4,7 +4,18 @@
 - Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
-- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns.
+- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
+- Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
+- Every tool returns a typed `result`; the model's text is rendered from it and the app reads only `result`.
+- `write` gains `copy` (a document, or part of it via `#fragment` or `in`, with its own history) and `from` on `insert`/`replace` (copy blocks as exact nodes). Undo and rollback cover both.
+- In a draft-mode Work, `scratch://` and `uploads://` writes go live; every other drafted source goes to the Work draft. Write results say `version: live` or `version: draft (@slug)`.
+- A reply's live and draft writes save in one database transaction; a failure saves none. `undo`, `redo` and `work switch` save pending writes first.
+- `read`, `search` and `ls` take `version: draft | live` (omitted: the version your writes change). A write against a different version than the last read returns `read_required`.
+- Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
+- Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
+- `skill` loads a skill's resource files with `resource`; built-in agents declare their skills.
+- A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
+- An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
