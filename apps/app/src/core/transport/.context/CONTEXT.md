@@ -22,6 +22,27 @@ socket. `CollabSchemaWebSocket` formats the current version through
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
 
+## Access scope and 4409
+
+The server names a room's scope in Hocuspocus's authenticated message on every
+(re)connect. The transport publishes it through `subscribeAccess` (same
+synchronous-first contract as status), and `DocumentSession` carries it as
+`snapshot.access`: `edit` until the server says `readonly`. Access is not a
+connection state: a read-only room that drops offline stays read-only.
+
+A 4409 `access-changed` close (a Work archived, unarchived, deleted or
+restored) is not terminal. The transport freezes the room (`read`) and lets
+Hocuspocus reconnect with the same Y.Doc; the new authenticated scope then
+switches the mounted editor in place. The one exception is a close that lands
+while local updates are still unacknowledged: the server refused them, and a
+reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
+resets with reason `access-changed` instead of reconnecting, and
+`DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
+session. A branch (draft review) room rebuilds through
+`rebuildBranchRoom`, which starts a fresh session from the server's state; a
+live room (scratch) is not rebuilt yet: it stays read-only and `access-lost`,
+and its IndexedDB copy still holds the refused edits.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with

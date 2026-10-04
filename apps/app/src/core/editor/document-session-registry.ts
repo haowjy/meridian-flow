@@ -34,6 +34,8 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
     observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void;
   getBranchRoom(roomKey: string): DocumentSession;
+  /** A fresh session for a branch room whose last one reset, synced from the server alone. */
+  rebuildBranchRoom(roomKey: string): Promise<DocumentSession>;
   retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void;
   releaseBranchRooms(ownerId: string): void;
 }
