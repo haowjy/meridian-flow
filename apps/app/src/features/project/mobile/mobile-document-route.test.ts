@@ -30,7 +30,7 @@ describe("mobile document route composition", () => {
     ["scratch", "work-a"],
     ["kb", undefined],
     ["user", undefined],
-  ] as const)("passes the normalized routed %s identity to host demand", (scheme, workId) => {
+  ] as const)("passes the normalized routed %s identity to the host", (scheme, workId) => {
     const route = resolveMobileDocumentRoute({
       enabled: true,
       scheme: scheme as ProjectContextTreeScheme,
