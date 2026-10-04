@@ -108,6 +108,19 @@ type Located = { uri: string; area: string; scheme: string; segments: string[] }
 /** Fixed order for an exact path in another area; the holder's own area is first. */
 const AREA_ORDER = ["manuscript", "kb", "user", "scratch"];
 
+/**
+ * Which candidate a target names, of those whose path ends with it. The
+ * project has several areas where Obsidian has one vault, and Obsidian's last
+ * step is index order, so ours is fixed. `holder` is the document the paste
+ * lands in, or null when it has no address yet.
+ *
+ * - `[[Name]]`: the holder's own folder, then the holder's area root, then
+ *   the rest (holder's area first, fewest folders, alphabetical URI).
+ * - `[[a/Name]]`: that path from the holder's area root, then from another
+ *   area's root (Manuscript, KB, User, Scratch), then the rest as above.
+ *
+ * Comparisons ignore case. Null only when nothing matches.
+ */
 function rankWikilinkMatches(
   candidates: readonly Located[],
   target: WikilinkTarget,
