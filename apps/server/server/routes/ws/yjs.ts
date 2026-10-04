@@ -25,7 +25,7 @@ type YjsRouteContext =
       gateway: YjsGateway;
       traceId: string;
     }
-  | { kind: "deferred-close"; close: WsDeferredClose };
+  | { kind: "deferred-close"; close: WsDeferredClose | { code: 1012; reason: "server-shutdown" } };
 
 type YjsRoutePeer = {
   request: Request;
@@ -37,6 +37,49 @@ type YjsRoutePeer = {
 };
 
 let gateway: YjsGateway | null = null;
+const peers = new Set<YjsRoutePeer>();
+const closingPeers = new WeakSet<YjsRoutePeer>();
+let draining = false;
+
+export function stopAcceptingYjsWebSockets(): void {
+  draining = true;
+  gateway?.stopAccepting();
+  const errors: unknown[] = [];
+  for (const peer of [...peers]) {
+    if (closingPeers.has(peer)) continue;
+    closingPeers.add(peer);
+    try {
+      peer.close(1012, "server-shutdown");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Yjs websocket peers could not all be closed.");
+  }
+}
+
+export async function shutdownYjsWebSockets(): Promise<void> {
+  stopAcceptingYjsWebSockets();
+  const errors: unknown[] = [];
+  for (const peer of [...peers]) {
+    try {
+      peer.close(1012, "server-shutdown");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await gateway?.drain();
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    peers.clear();
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Yjs websocket shutdown did not complete cleanly.");
+  }
+}
 
 export function getYjsGateway(app: AppServices): YjsGateway {
   gateway ??= createYjsGateway(selectYjsGatewayServices(app));
@@ -45,6 +88,14 @@ export function getYjsGateway(app: AppServices): YjsGateway {
 
 export const yjsWebSocketHandler = defineWebSocketHandler({
   async upgrade(request) {
+    if (draining) {
+      return {
+        context: {
+          kind: "deferred-close",
+          close: { code: 1012, reason: "server-shutdown" },
+        } satisfies YjsRouteContext,
+      };
+    }
     const auth = await resolveWsUpgradeAuth(request, {
       logPrefix: "ws-yjs-route",
       eventSink: getProcessEventSink(),
@@ -70,6 +121,11 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
   },
   open(peer) {
     const wsPeer = peer as unknown as YjsRoutePeer;
+    if (draining) {
+      wsPeer.close(1012, "server-shutdown");
+      return;
+    }
+    peers.add(wsPeer);
     if (wsPeer.context?.kind === "deferred-close") {
       wsPeer.close(wsPeer.context.close.code, wsPeer.context.close.reason);
       return;
@@ -98,6 +154,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
   },
   message(peer, message) {
     const wsPeer = peer as unknown as YjsRoutePeer;
+    if (draining) return;
     if (wsPeer.context?.kind !== "authenticated") return;
     runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
       wsPeer.context?.kind === "authenticated"
@@ -107,6 +164,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
   },
   close(peer, event) {
     const wsPeer = peer as unknown as YjsRoutePeer;
+    peers.delete(wsPeer);
     if (wsPeer.context?.kind !== "authenticated") return;
     runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
       wsPeer.context?.kind === "authenticated"
@@ -117,6 +175,7 @@ export const yjsWebSocketHandler = defineWebSocketHandler({
   },
   error(peer) {
     const wsPeer = peer as unknown as YjsRoutePeer;
+    peers.delete(wsPeer);
     if (wsPeer.context?.kind !== "authenticated") return;
     runWithEventCorrelation({ traceId: wsPeer.context.traceId }, () =>
       wsPeer.context?.kind === "authenticated"

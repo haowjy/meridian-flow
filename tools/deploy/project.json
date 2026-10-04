@@ -1,0 +1,15 @@
+{
+  "name": "meridian-deploy-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/deploy",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "tools/deploy",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    }
+  }
+}

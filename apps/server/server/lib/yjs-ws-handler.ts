@@ -27,6 +27,7 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
+import { drainYjsPersistence } from "./yjs-shutdown.js";
 export type BranchHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
@@ -593,6 +594,10 @@ export function createYjsGateway(services: YjsGatewayServices) {
       connection?.hocuspocus.handleMessage(message);
     },
 
+    stopAccepting(): void {
+      acceptingConnections = false;
+    },
+
     close(
       connection: YjsGatewayConnection | undefined,
       event?: { code?: number; reason?: string },
@@ -615,14 +620,33 @@ export function createYjsGateway(services: YjsGatewayServices) {
 
     async drain(): Promise<void> {
       acceptingConnections = false;
-      hocuspocus.closeConnections();
+      // Hocuspocus keeps documents in memory after its debounce. The queue only
+      // covers admitted callbacks, so checkpoint each loaded live room as well.
       emitEvent(services.eventSink, {
         level: "info",
         source: "collab.hocuspocus",
         name: "persistence_queue.drain",
         payload: services.documentSync.getPersistenceQueueMetrics(),
       });
-      await services.documentSync.drainHocuspocusPersistence();
+      await drainYjsPersistence({
+        documents: hocuspocus.documents,
+        parseLiveDocument(roomName) {
+          const room = parseYjsRoomName(roomName);
+          return room?.kind === "live" ? room.documentId : undefined;
+        },
+        checkpoint: (documentId, document) =>
+          services.documentSync.storeHocuspocusDocument(documentId as DocumentId, document),
+        drainPendingWrites: () => services.documentSync.drainHocuspocusPersistence(),
+        onCheckpointError(documentId, error) {
+          emitEvent(services.eventSink, {
+            level: "error",
+            source: "collab.hocuspocus",
+            name: "shutdown.checkpoint_failed",
+            correlation: { documentId },
+            payload: unknownToEventPayload(error),
+          });
+        },
+      });
     },
   };
 }

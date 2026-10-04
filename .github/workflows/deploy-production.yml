@@ -1,0 +1,48 @@
+name: Deploy Production
+
+# Roll back by dispatching any older version that has passed staging; image digests are reused.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version tag to promote (or roll back to), e.g. v1.2.3
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # Environment deployment-branch restrictions are the actual security gate.
+      - name: Require dispatch from main
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Deploy Production must be dispatched from main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - name: Forward requested version
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: guard
+    permissions:
+      contents: read
+      statuses: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: production
+      version: ${{ needs.guard.outputs.version }}
+    secrets: inherit

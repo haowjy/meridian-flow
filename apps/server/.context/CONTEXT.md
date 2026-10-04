@@ -41,6 +41,30 @@ delivery and a one-second startup/poll sweep for crash and cross-process
 recovery; delivery failure is logged and never changes the committed Work
 mutation result.
 
+## Process shutdown
+
+`server/lib/process-shutdown.ts` owns SIGTERM/SIGINT sequencing and the only
+application `process.exit`. The stage order is **websocket-admission** (close
+thread and Yjs peers with 1012, 0.5 s), **polling-loops** (stop loops and drain,
+3 s), **application-drain** (stop new runner and handoff work, then settle
+in-flight replies, 10 s), **http-drain** (stop admission and wait, 2 s),
+**websocket-drain** (Yjs checkpoint and persistence queue while Postgres is
+open, 4 s reserved), and **database-close** (0.5 s), followed by a 4 s
+observability flush. `SHUTDOWN_PLAN` in `server/lib/process-shutdown.ts` is the
+source of truth for the stage budgets. Stage timeout/failure emits an incomplete
+or failed event and proceeds to later stages; the shared 25 s deadline bounds
+process exit. srvx closes its listener independently and keeps its force-close
+fallback at 29 s, after the application deadline. The application drain calls
+`beginShutdown` on runners and handoff briefs, then waits for active work and
+settles aborted replies with reason `shutdown` while Postgres remains open.
+
+Crash loss (OOM, SIGKILL, or an expired drain) is repaired by the orphan-repair
+lane at startup and every 30 s. It scans assistant `pending`, `streaming`, and
+`waiting_interrupt` turns, acquires the same per-thread Postgres run claim and
+thread lock as active runners, and skips a turn whose owner still holds its
+claim. Unowned turns are settled through `finalizeExecution` with reason
+`orphaned`.
+
 ## Project route surface
 
 upstream-parity routes under `server/routes/api/projects/` keep the upstream

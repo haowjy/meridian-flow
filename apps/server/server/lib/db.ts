@@ -13,3 +13,11 @@ export function getDb(): Database {
   }
   return dbClient;
 }
+
+let dbClosed = false;
+
+export async function closeDb(): Promise<void> {
+  if (!dbClient || dbClosed) return;
+  dbClosed = true;
+  await dbClient.close();
+}

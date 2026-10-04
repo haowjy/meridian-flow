@@ -75,9 +75,11 @@ upstream worker runner: Ctrl+C or SIGTERM exits promptly by terminating the
 worker, so the runtime treats an in-flight reply as a crash and repairs it on
 restart. The app waits for one
 bounded 10-second runtime drain and warns if it times out. Recovery lanes get a
-five-second stop bound. Both nested bounds are derived from the whole callback
-and observability flush sequence's 12-second process deadline in
-`lib/shutdown-deadlines.ts`; a second signal exits immediately. A
+bounded stop within the polling-loops stage. `SHUTDOWN_PLAN` in
+`lib/process-shutdown.ts` owns the stage budgets: 0.5 s websocket admission,
+3 s polling loops, 10 s application drain, 2 s HTTP drain, 4 s reserved
+websocket drain, and 0.5 s database close, followed by a 4 s observability
+flush under the 25 s global deadline. A second signal exits immediately. A
 brief launched after
 shutdown begins leaves S pending for ordinary repair, and a released claim does
 not wake its destination. DB test fixture resets drain the explicitly wired

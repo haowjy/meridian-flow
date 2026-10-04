@@ -10,7 +10,8 @@ From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Po
 
 ```bash
 pnpm db:migrate          # apply pending migrations and sync SQL functions
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ after editing functions
+pnpm db:apply-functions  # transactionally sync PL/pgSQL from src/functions/
+pnpm --filter @meridian/database build:release # self-contained deploy release bundle
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio
 ```
@@ -27,6 +28,8 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
 **Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then migrate + apply functions).
+
+Deploy builds a self-contained release bundle with `pnpm --filter @meridian/database build:release`; the server image runs `node /app/release/release.mjs` only after a confirmed pre-migration Neon snapshot. Pending migrations require matching `MERIDIAN_BACKUP_REF` and `MERIDIAN_RELEASE_SHA` values; use the [deployment runbook](../../docs/deploy/runbook.md) for setup and recovery.
 
 ## Auth boundary
 
@@ -56,4 +59,4 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 - **User-facing UX (app layer):** show **included usage %** (grant + subscription pool), not raw millicredits. `canStartTurn` = `total_balance_millicredits >= 0`. Overage shown as **>100%** when balance is negative.
 - **Tests:** only run against `127.0.0.1:54422` unless `TEST_DB_ALLOW_DESTRUCTIVE=1`.
 
-Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` reapplies functions after migrations, and `db:apply-functions` keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.
+Canonical function SQL: `src/functions/*.sql`. The initial migration creates the functions and triggers; `db:migrate` applies migrations and functions in one transaction, and `db:apply-functions` transactionally keeps dev DB functions in sync after edits. Both use `CREATE OR REPLACE` statements, so function sync is idempotent.

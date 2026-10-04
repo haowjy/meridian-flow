@@ -6,10 +6,10 @@
 
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
-import { getDb } from "./db.js";
+import { closeDb, getDb } from "./db.js";
 import { resolveWakeSweepIntervalMs } from "./env.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
-import { getOrBindProcessObservability, registerProcessShutdownCallback } from "./observability.js";
+import { getOrBindProcessObservability } from "./observability.js";
 import { startRecoveryScheduler } from "./recovery-scheduler.js";
 
 const APP_SINGLETON_KEY = Symbol.for("meridian.app.v1");
@@ -24,6 +24,34 @@ const WORK_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 
 let initPromise: Promise<AppServices> | undefined;
+let appServices: AppServices | undefined;
+let recoveryScheduler: ReturnType<typeof startRecoveryScheduler> | undefined;
+let unlistenThreadEvents: (() => Promise<void>) | undefined;
+let backgroundStopPromise: Promise<void> | undefined;
+let appResourcesStopped = false;
+
+export function stopAppBackgroundWork(): void {
+  backgroundStopPromise ??= recoveryScheduler?.stop() ?? Promise.resolve();
+}
+
+export async function drainAppBackgroundWork(): Promise<void> {
+  stopAppBackgroundWork();
+  await backgroundStopPromise;
+}
+
+export async function drainAppServices(): Promise<void> {
+  await appServices?.shutdown();
+}
+
+export async function closeAppResources(): Promise<void> {
+  if (appResourcesStopped) return;
+  appResourcesStopped = true;
+  try {
+    await unlistenThreadEvents?.();
+  } finally {
+    await closeDb();
+  }
+}
 
 async function createAppServices(): Promise<AppServices> {
   const db = getDb();
@@ -36,12 +64,14 @@ async function createAppServices(): Promise<AppServices> {
     environment: process.env,
   });
   const app = composeAppServices(ports);
-  await listenForThreadEvents({
+  appServices = app;
+  const listener = await listenForThreadEvents({
     db,
     eventHub: app.threadEventHub,
     eventSink,
   });
-  const scheduler = startRecoveryScheduler(
+  unlistenThreadEvents = listener.unlisten;
+  recoveryScheduler = startRecoveryScheduler(
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
@@ -60,9 +90,6 @@ async function createAppServices(): Promise<AppServices> {
     ],
     eventSink,
   );
-  registerProcessShutdownCallback(async () => {
-    await Promise.all([scheduler.stop(), app.shutdown()]);
-  });
   return app;
 }
 

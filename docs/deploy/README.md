@@ -1,66 +1,62 @@
-# First deploy contract
+# Deployment contract
 
-This folder documents the first deployment shape for Meridian Flow's v3 stack:
-`@meridian/app`, `@meridian/server`, and `@meridian/www`.
+1. Merge to `main`; release-on-merge writes one release commit and `vX.Y.Z` tag for the uncovered merge batch.
+2. CI verifies that release commit; staging runs only after its successful CI.
+3. Build server, app, www, and ingress once; record their immutable GHCR digests in the release manifest.
+4. Take and confirm a Neon snapshot, then deploy the manifest digests to staging.
+5. Runtime smoke verifies health, readiness, app identity/callback, and WebSocket behavior; record `deploy/staging`.
+6. `deploy/staging` success makes that tagged commit eligible for production.
+7. Manually dispatch production with that version; promote the exact manifest digests and smoke them.
 
-## Route ownership
+## Ingress routes
 
-| Public route | Owner |
+| Public route | Owner | Private upstream |
+|---|---|---|
+| `/healthz`, `/readyz`, `/api/*` except app-owned auth routes, `/ws/*` | Server | `server.railway.internal:3000` |
+| `/api/auth/callback`, `/api/auth/dev-login`, `/`, `/login`, other app routes | App | `app.railway.internal:3000` |
+| `/_ingress/health` | Caddy | Ingress itself |
+| Marketing site | WWW | Its own Railway public domain |
+
+Caddy refreshes upstream DNS, retries for 10 seconds, forwards
+`X-Forwarded-Proto: https`, and limits request bodies to 10 MB. Server requires
+one replica. Use Neon direct TLS URLs (`sslmode=require`, no `-pooler` or
+`channel_binding=require`); the server holds a Postgres `LISTEN` connection.
+
+## Release labels
+
+| PR labels | Result |
 |---|---|
-| `/` | app or www, depending on product host |
-| `/api/*` | server |
-| `/ws/*` | server |
+| `release:skip` | Skip that merge (takes precedence) |
+| `release:patch` | Stable patch |
+| `release:minor` | Stable minor |
+| `release:major` | Stable major |
+| `release:rc`, unknown `release:*`, or no release label | Patch RC on latest stable |
 
-Browser clients should use same-origin relative HTTP/WS paths when an ingress
-combines the app and server. Portless dev keeps services on separate
-`*.localhost` origins to exercise the real proxy/TLS path.
-
-Reference ingress config: [`nginx.same-origin.example.conf`](./nginx.same-origin.example.conf).
-
-## Build and start commands
-
-```bash
-pnpm --filter @meridian/app build
-pnpm --filter @meridian/server build
-pnpm --filter @meridian/www build
-```
-
-Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestration.
-
-## Database
-
-Production uses Postgres. Dev uses a plain `postgres:16` Docker container for
-Postgres only; the app schema remains Drizzle-owned in `@meridian/database`.
-Auth is WorkOS AuthKit with `public.users` as the identity table.
-
-```bash
-pnpm --filter @meridian/database db:migrate
-pnpm --filter @meridian/database db:apply-functions
-```
+Strongest stable bump wins unless RC/unknown selects an RC. Root
+`package.json` is the version source; initial version is `0.0.0`. Stable tags
+are `vX.Y.Z`; prereleases are `vX.Y.Z-rc.N`. Stable releases roll
+`CHANGELOG.md`'s `[Unreleased]` section into the release; RCs leave it intact.
 
 ## Environment variables
 
-Production env vars are platform-provided through secrets/env management. There
-is no committed production `.env`.
+| Name | Service/scope | Who sets it | Required? |
+|---|---|---|---|
+| `NODE_ENV`, `APP_ENV`, `HOST`, `PORT`, `API_REPLICA_COUNT` | Runtime services | `configure.sh` | Yes; one server replica |
+| `DATABASE_URL` | Server/release; Neon direct TLS URL | Human, Railway secret | Yes |
+| `MERIDIAN_BACKENDS`, `OBJECT_STORE_PROVIDER`, `S3_BUCKET`, `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Server | Configure/Railway bucket reference; human for secrets | Yes |
+| `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`, `WORKOS_REDIRECT_URI` | Server and app | Human, Railway | Yes |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY` | Server | Human, Railway secret | At least one |
+| `MERIDIAN_API_ORIGIN` | App | `configure.sh` | Yes |
+| `WEB_DATABASE_URL` | WWW | Railway reference to server DB | Required for DB-backed WWW routes |
+| `APP_UPSTREAM_HOST`, `APP_UPSTREAM_PORT`, `SERVER_UPSTREAM_HOST`, `SERVER_UPSTREAM_PORT` | Ingress | `configure.sh` | Yes |
+| `RAILWAY_TOKEN` | GitHub `staging`/`production`; local setup | Human | Yes, each scope |
+| `NEON_API_KEY` | GitHub `staging`/`production` secret | Human | Yes, each scope |
+| `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `PUBLIC_URL` | GitHub `staging`/`production` variables | Human | Yes, each scope |
+| `RELEASE_TOKEN` | GitHub repository secret | Human; admin PAT or bypass App | Yes |
+| `NEON_SNAPSHOT_TTL_DAYS` | GitHub deploy environment | Human; defaults 3 staging/14 production | No |
+| `MERIDIAN_VERSION`, `MERIDIAN_RELEASE_SHA` | Image build | Workflow | Yes, baked into images |
+| `MERIDIAN_BACKUP_REF` | Server release command | Deploy seam, never hand-set | Yes when migrations are pending |
+| `WORKOS_DEV_*`, local object-store settings, `WWW_URL`, provider overrides, timeout/poll controls | Development or optional deploy checks | Developer/operator | No; never use dev auth in production |
 
-Required baseline:
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres connection |
-| `WORKOS_API_KEY` | WorkOS API key |
-| `WORKOS_CLIENT_ID` | AuthKit client id |
-| `WORKOS_COOKIE_PASSWORD` | Sealed session cookie encryption (≥32 chars) |
-| `WORKOS_REDIRECT_URI` | AuthKit callback URL registered in WorkOS |
-| `MERIDIAN_API_ORIGIN` | Public server/API origin used by app SSR when the app and server are not same-process |
-| `APP_ENV` | Set to `production` for production deploys |
-
-Provider-conditioned model variables:
-
-| Variable | When needed |
-|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic model provider |
-| `OPENAI_API_KEY` | OpenAI model provider |
-| `DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
-
-No external package-execution provider is part of the Meridian Flow v3 deployment contract.
+Exact provisioning, recovery, migration, and local rehearsal instructions are in
+the [runbook](./runbook.md).

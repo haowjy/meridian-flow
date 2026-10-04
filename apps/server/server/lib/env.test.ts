@@ -1,6 +1,25 @@
 /** Fail-safe environment gate tests for debug-only server surfaces. */
 import { describe, expect, it } from "vitest";
-import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
+import {
+  assertProductionAppEnvPresent,
+  resolveDebugPathsEnabled,
+  resolveObsVerbose,
+} from "./env.js";
+
+describe("assertProductionAppEnvPresent", () => {
+  it.each([undefined, "", "   "])("rejects empty production APP_ENV (%s)", (rawAppEnv) => {
+    expect(() => assertProductionAppEnvPresent({ rawNodeEnv: "production", rawAppEnv })).toThrow(
+      "APP_ENV must be set",
+    );
+  });
+
+  it("allows explicit live APP_ENV values and non-production defaults", () => {
+    expect(() =>
+      assertProductionAppEnvPresent({ rawNodeEnv: "production", rawAppEnv: "staging" }),
+    ).not.toThrow();
+    expect(() => assertProductionAppEnvPresent({ rawNodeEnv: "development" })).not.toThrow();
+  });
+});
 
 describe("resolveDebugPathsEnabled", () => {
   it.each([

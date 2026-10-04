@@ -154,17 +154,26 @@ describe("planDatabaseMigrations", () => {
     expect(planDatabaseMigrations(expected, [])).toEqual({
       pending: [first, second, third],
       issues: [],
+      verdict: "pending",
     });
     expect(planDatabaseMigrations(expected, [applied(first)])).toEqual({
       pending: [second, third],
       issues: [],
+      verdict: "pending",
     });
     expect(
       planDatabaseMigrations(expected, [applied(first), applied(second), applied(third)]),
     ).toEqual({
       pending: [],
       issues: [],
+      verdict: "current",
     });
+  });
+
+  it("matches identities when ledger id order disagrees with created_at order", () => {
+    expect(
+      planDatabaseMigrations(expected, [applied(second), applied(first), applied(third)]),
+    ).toMatchObject({ pending: [], issues: [], verdict: "current" });
   });
 
   it("classifies unknown applied migrations", () => {

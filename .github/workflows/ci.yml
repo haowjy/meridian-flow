@@ -6,16 +6,17 @@ on:
   # `ready_for_review` is included so marking a draft ready triggers a run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on main verifies the post-merge result. Staging invokes this workflow
-  # from Deploy Staging, so listing it here would run the full workflow twice.
+  # Push CI on main verifies the post-merge result. Deploy Staging waits for that
+  # completed run through workflow_run.
   push:
     branches: [main]
-  workflow_call:
 
-# Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR updates supersede one another. Every non-PR run gets its own group so a
+  # later push to main can neither cancel nor replace a pending one: the staging
+  # deploy waits on CI for each release commit.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
@@ -137,7 +138,7 @@ jobs:
 
   app-dev-transform:
     name: app-dev-transform
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; pushes always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -156,7 +157,7 @@ jobs:
 
   prod-boot:
     name: prod-boot
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; pushes always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:

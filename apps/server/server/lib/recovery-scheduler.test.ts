@@ -1,7 +1,7 @@
 /** Fake-clock coverage of lane independence, completion-relative scheduling, and shutdown. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { startRecoveryScheduler } from "./recovery-scheduler.js";
+import { RECOVERY_LANE_STOP_DEADLINE_MS, startRecoveryScheduler } from "./recovery-scheduler.js";
 
 const deferred = () => {
   let resolve!: (count: number) => void;
@@ -109,7 +109,7 @@ describe("recovery scheduler", () => {
     const stopping = scheduler.stop().then(() => {
       stopped = true;
     });
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(RECOVERY_LANE_STOP_DEADLINE_MS - 1);
     expect(stopped).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(stopped).toBe(true);

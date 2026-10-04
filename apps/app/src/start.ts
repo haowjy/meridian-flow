@@ -1,6 +1,7 @@
 import { createStart } from "@tanstack/react-start";
 
 import { meridianAuthkitMiddleware } from "./server/meridian-authkit-middleware";
+import { releaseIdentityMiddleware } from "./server/release-identity-middleware";
 
 /**
  * Configure TanStack Start with AuthKit middleware.
@@ -8,6 +9,6 @@ import { meridianAuthkitMiddleware } from "./server/meridian-authkit-middleware"
  */
 export const startInstance = createStart(() => {
   return {
-    requestMiddleware: [meridianAuthkitMiddleware()],
+    requestMiddleware: [releaseIdentityMiddleware(), meridianAuthkitMiddleware()],
   };
 });

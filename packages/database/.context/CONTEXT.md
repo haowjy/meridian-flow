@@ -174,6 +174,17 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    `pnpm db:apply-functions` only when the guarded standalone function sync is
    needed.
 
+Deploy uses the database-owned release runner. `tools/deploy/deploy.ts` first
+creates and confirms the provider snapshot, then supplies
+`MERIDIAN_BACKUP_REF=<provider>:<backup id>:release=<sha>` with the new image.
+When migrations are pending, the release runner requires that ref to match
+`MERIDIAN_RELEASE_SHA`, rejects inconsistent or divergent migration history,
+and applies pending migrations plus canonical functions in one transaction.
+A database whose applied history extends the release journal's exact prefix is
+a valid rollback target with zero pending migrations; functions are not
+re-applied from an older image. Server `/readyz` rejects a behind or divergent
+schema while allowing a matching database that is ahead.
+
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes
@@ -186,7 +197,7 @@ Existing databases that ran the pre-relaunch chain must be reset with
 `pnpm db:reset` (local data is destroyed), not incrementally migrated.
 
 The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
-change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+change-trail lifecycle functions/triggers on `branch_write_journal`. The three
 functions in `src/functions/` remain a separate post-migration install that the
 `db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
 Works: the historical No Work and thread binding backfills had no rows to
