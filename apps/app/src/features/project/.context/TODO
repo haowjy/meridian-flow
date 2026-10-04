@@ -28,7 +28,3 @@
   reviewing A ends in the right state but does two extra history replaces
   (`EditorReviewAddressOwner.tsx` strips `?draft=` without checking
   `pendingDraftId`). Add the test and skip the strip while a launch is pending.
-- Header Apply still flashes "Stop" for about a second on an existing
-  document (`features/editor/DraftReviewHeader.tsx`, the recovery item from
-  `usePostApplySnapshot`). The draft-review redesign (work
-  draft-review-repair, PR 2) replaces this header; settle the flash there.

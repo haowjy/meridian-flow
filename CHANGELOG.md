@@ -8,7 +8,7 @@
 ## [Unreleased]
 
 - Draft review: Work Files "Drafts to review" rows open review; repeated "Review draft" launches settle once; reload restores review from `?draft=` and repairs a stale one; leaving the document exits review; launches across documents push history.
-- Draft review: Apply returns the editor to live without unmounting warm editors or showing "Couldn't open this document"; a failed live attach can be retried.
+- Draft review: Apply is done when the server confirms it. The editor returns to live at once, and any later connecting or open problem shows on the document itself, with a retry, instead of a separate Finish or Abandon step. Applying several documents counts each at confirmation. If an Apply response is lost, the draft says it couldn't confirm whether it applied, apart from "Couldn't apply".
 - Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
 - Draft review: Discard of a never-applied document closes its tab at once and selects the neighbouring tab; a refused Discard leaves the tab closed and shows the error on the draft in the composer strip and Work Files.
 - Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
