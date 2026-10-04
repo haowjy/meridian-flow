@@ -423,6 +423,56 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(membershipAfterDelete.members).not.toContain(created.documentId);
     });
 
+    it("refuses a writer's create in an archived Work's scratch before anything is written", async () => {
+      await db.insert(schema.works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Archived",
+        slug: "archived",
+        archivedAt: new Date(),
+      });
+      const { contextPorts } = createFixture({ load: false });
+      const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(
+        PROJECT_ID,
+        WORK_ID,
+      );
+      if (!authority?.workSlug) throw new Error("missing Work authority");
+      const port = contextPorts.forWork(
+        authority,
+        PROJECT_ID,
+        USER_ID,
+        new Map([[authority.workSlug, authority]]),
+      );
+      const fileAccess = drizzleFileAccess(db);
+      const container = await containerTarget(
+        { findNoWork: async () => null },
+        { projectId: PROJECT_ID, scheme: "scratch", workId: WORK_ID },
+      );
+      // As the create route does: the container grant first, then the write.
+      const create = async () =>
+        withEditGrants(
+          fileAccess,
+          [await requireFileGrant(fileAccess, USER_ID, container, "edit")],
+          () =>
+            createContextEntry({
+              port,
+              userId: USER_ID,
+              scheme: "scratch",
+              workId: WORK_ID,
+              body: parseCreateContextEntryBody({ type: "file", path: "/notes.md", content: "x" }),
+            }),
+        );
+
+      await expect(create()).rejects.toMatchObject({
+        status: 403,
+        data: { __meridianInterruptEnvelope: { error: { code: "work_archived" } } },
+      });
+      await expect(db.select({ id: schema.documents.id }).from(schema.documents)).resolves.toEqual(
+        [],
+      );
+    });
+
     it("lists an archived Work with no scratch source as empty without provisioning", async () => {
       await db.insert(schema.works).values({
         id: WORK_ID,
