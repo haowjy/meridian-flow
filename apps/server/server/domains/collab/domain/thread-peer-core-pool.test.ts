@@ -18,6 +18,7 @@ function createPool() {
     liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
     createThreadCore: () => threadCore.asCore(),
     reversalHistory: history.reader,
+    liveHistory: history.liveHistory,
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: history.pullThreadPeer,
     afterLiveCommit: () => {},

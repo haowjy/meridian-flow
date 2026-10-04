@@ -8,6 +8,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
+import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
@@ -87,6 +88,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
+    liveHistory: journal,
     reversalHistory: {
       branches: {
         resolveThreadBranch: async (documentId, threadId) => {
@@ -105,7 +107,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     // Memory holds no Work lifecycle and no locks: a grant minted stays good.
-    fileAccess: { confirmEdit: async (grants) => ({ confirmed: [...grants], refused: [] }) },
+    fileAccess: {
+      authorize: createAllowAllFileAccess().authorize,
+      confirmEdit: async (grants) => ({ confirmed: [...grants], refused: [] }),
+    },
     lockLiveDocuments: async () => {},
   });
   const projections = createDocumentProjectionRefresher({

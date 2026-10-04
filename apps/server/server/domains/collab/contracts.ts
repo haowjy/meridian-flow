@@ -19,10 +19,11 @@ import type { Result } from "../../shared/result.js";
 import type {
   AgentEditDestination,
   RefusedResponseDocument,
+  RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { AgentEditDestination, RefusedResponseDocument };
+export type { AgentEditDestination, RefusedResponseDocument, RoutedWriteOutcome };
 
 import type {
   SetWorkPushPolicyInput,
