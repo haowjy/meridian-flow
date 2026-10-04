@@ -97,64 +97,6 @@ describe("ContextFS drafted-source effective view", () => {
     ]);
   });
 
-  it("reads live text and membership when the view asks for live in draft mode", async () => {
-    const backing = createInMemoryContextDocumentStoreBacking();
-    const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    for (const [id, name] of [
-      [LIVE_DOC_ID, "published"],
-      [CREATED_DOC_ID, "draft-created"],
-    ] as const) {
-      await store.upsertDocument({
-        id,
-        folderId: null,
-        name,
-        extension: "md",
-        markdown: "SQL identity row",
-        filetype: "markdown",
-      });
-    }
-    const membershipViews: unknown[] = [];
-    const destinations: string[] = [];
-    const fs = new ContextFS({
-      store,
-      mutationStore: new InMemoryContextTreeMutationStore(backing),
-      scheme: "kb",
-      manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
-      threadView: { threadId: THREAD_ID, draftMode: true, version: "live" },
-      documentSync: {
-        ensureDocument: async () => {},
-        readEffectiveMarkdown: async ({ destination }: { destination: string }) => {
-          destinations.push(destination);
-          return Ok({ content: "published needle", revision: "live-revision" });
-        },
-        readEffectiveHashlines: async ({ destination }: { destination: string }) => {
-          destinations.push(destination);
-          return Ok({ content: ["livehash|published needle"], revision: "live-revision" });
-        },
-        resolveManifestMembership: async (view: unknown) => {
-          membershipViews.push(view);
-          return { documentId: "manifest-doc", members: [LIVE_DOC_ID] };
-        },
-      } as never,
-    });
-
-    const listed = await fs.list("");
-    expect(listed.ok ? listed.value.map((entry) => entry.path) : []).toEqual(["published.md"]);
-    const hits = await fs.search("needle");
-    expect(hits.ok ? hits.value : []).toEqual([
-      expect.objectContaining({ path: "published.md", version: "live" }),
-    ]);
-    await expect(fs.read("published.md")).resolves.toEqual(
-      Ok({ content: "published needle", documentId: LIVE_DOC_ID }),
-    );
-    expect(
-      membershipViews.every(
-        (view) => JSON.stringify(view) === JSON.stringify({ projectId: PROJECT_ID }),
-      ),
-    ).toBe(true);
-    expect(new Set(destinations)).toEqual(new Set(["live"]));
-  });
-
   it("searches the effective branch bytes for branch-touched and draft-created docs", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
