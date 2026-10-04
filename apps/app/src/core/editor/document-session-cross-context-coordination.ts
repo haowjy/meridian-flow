@@ -283,7 +283,9 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           compareAvailabilityGeneration(authority.targetGeneration, input.generation) === 0
           ? "adopting"
           : "mismatch";
-      return compareAvailabilityGeneration(authority.generation, input.generation) === 0
+      // A bindable incarnation is reusable at any later admission generation (as in
+      // `admit`); only a persistence newer than the lookup is a different incarnation.
+      return compareAvailabilityGeneration(authority.generation, input.generation) <= 0
         ? "bindable"
         : "mismatch";
     });
@@ -333,21 +335,14 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       });
       let finalized = false;
       try {
-        const lease = {
-          accountId: this.accountId,
-          projectId,
-          documentId: pending.documentId,
-          generation,
-          persistenceGeneration: generation,
-          exactDatabaseName: pending.exactDatabaseName,
-        };
         let authority = (await this.store.readRoom(pending.documentId)).persistence;
-        if (
-          authority?.phase === "bindable" &&
-          authority.generation === generation &&
-          authority.exactDatabaseName === pending.exactDatabaseName &&
-          authority.originLineageHandle === undefined
-        ) {
+        const bindableAtOrBefore = (
+          candidate: typeof authority,
+        ): candidate is Extract<NonNullable<typeof authority>, { phase: "bindable" }> =>
+          candidate?.phase === "bindable" &&
+          compareAvailabilityGeneration(candidate.generation, generation) <= 0 &&
+          candidate.exactDatabaseName === pending.exactDatabaseName;
+        if (bindableAtOrBefore(authority) && authority.originLineageHandle === undefined) {
           authority = await this.store.claimBindableOrigin({
             documentId: pending.documentId,
             lineageHandle: pending.lineageHandle,
@@ -355,12 +350,39 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           });
         }
         const alreadyBindable =
-          authority?.phase === "bindable" &&
-          authority.generation === generation &&
-          authority.exactDatabaseName === pending.exactDatabaseName &&
-          authority.originLineageHandle === pending.lineageHandle;
+          bindableAtOrBefore(authority) && authority.originLineageHandle === pending.lineageHandle;
         if (authority?.phase === "bindable" && !alreadyBindable)
           throw new Error("Bindable local adoption authority changed before session transfer");
+        let persistenceGeneration = generation;
+        if (alreadyBindable && bindableAtOrBefore(authority)) {
+          persistenceGeneration = authority.generation;
+          // The incarnation predates this admission: record the newer admission (fence
+          // checked, heads advanced) exactly as a live `admit` would, and keep the incarnation.
+          if (persistenceGeneration !== generation) {
+            const decision = await this.store.admit({
+              documentId: pending.documentId,
+              projectId,
+              generation,
+              originLineageHandle: pending.lineageHandle,
+            });
+            if (
+              decision.kind !== "admitted" ||
+              decision.exactDatabaseName !== pending.exactDatabaseName
+            )
+              throw new DocumentSessionCoordinationError(
+                decision.kind === "generation-revoked" ? "generation-revoked" : "adoption-pending",
+                `Cached incarnation could not be admitted at generation ${generation}`,
+              );
+          }
+        }
+        const lease = {
+          accountId: this.accountId,
+          projectId,
+          documentId: pending.documentId,
+          generation,
+          persistenceGeneration,
+          exactDatabaseName: pending.exactDatabaseName,
+        };
         if (alreadyBindable) {
           transfer.prepareCommit(lease);
         } else {
@@ -384,13 +406,14 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       }
     });
     if (!admitted) throw new Error("Local adoption did not finalize");
+    const { persistenceGeneration } = admitted;
 
     let terminal = false;
     await this.documentLocks.withOperation(pending.documentId, async () => {
       const authority = (await this.store.readRoom(pending.documentId)).persistence;
       if (
         authority?.phase === "bindable" &&
-        authority.generation === generation &&
+        authority.generation === persistenceGeneration &&
         authority.exactDatabaseName === pending.exactDatabaseName &&
         authority.originLineageHandle === pending.lineageHandle
       ) {
@@ -398,7 +421,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           documentId: pending.documentId,
           projectId,
           generation,
-          persistenceGeneration: generation,
+          persistenceGeneration: persistenceGeneration,
           exactDatabaseName: pending.exactDatabaseName,
         });
         let projects = this.admissions.get(pending.documentId);
@@ -417,7 +440,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           projectId,
           documentId: pending.documentId,
           generation,
-          persistenceGeneration: generation,
+          persistenceGeneration: persistenceGeneration,
           exactDatabaseName: pending.exactDatabaseName,
         });
         return;
