@@ -109,3 +109,21 @@ without collapsing their distinct caller contracts.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
+
+## Stored link occurrence primitives
+
+`domain/document-link-occurrences.ts`, exported by the collab public entry,
+shares extraction and substitution traversal. One text occurrence is contiguous
+runs with the same href within one XmlText, regardless of other marks; paragraph
+boundaries split occurrences. Literal image and figure `src` attributes are
+occurrences; only addresses with an explicit substitution are rewritten. Extraction retains Yjs references for
+immediate use, not durable occurrence identity.
+
+Application takes a private, integrated snapshot fragment and a map from the
+original href to its replacement and optional old/new filenames. Substitutions
+are simultaneous, count changed occurrences, and relabel only exact filename
+or stem matches. Replacement words inherit the first character's marks.
+Insert inside the original run, delete around the insertion, then retarget;
+this ordering preserves concurrent manual retargeting. Snapshot creation,
+reserved client identity, journal origin, admission fencing, persistence and
+publication belong to the caller, not these pure traversal primitives.

@@ -5,6 +5,13 @@ export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export {
+  applyDocumentLinkSubstitutions,
+  type DocumentLinkOccurrence,
+  type DocumentLinkRun,
+  type DocumentLinkSubstitution,
+  extractDocumentLinkOccurrences,
+} from "./domain/document-link-occurrences.js";
+export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,
   isStaleSchema,
