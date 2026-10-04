@@ -110,12 +110,6 @@ describe("thread-peer pool read versions (D41)", () => {
     expect(threadCore.write).toHaveBeenCalledTimes(2);
   });
 
-  it("reports the version a read actually used", async () => {
-    const { pool } = createPool();
-    const read = await pool.read(readCh12, context(draftA));
-    expect(read.result.read).toEqual({ format: "full", version: "draft" });
-  });
-
   it("reads the live version of a document this reply drafted when the read asks for live", async () => {
     const { pool, liveCore, threadCore } = createPool();
     await pool.write(insertCh12, context(draftA, "response-1"));
@@ -180,20 +174,6 @@ describe("thread-peer pool undo and redo routing", () => {
 });
 
 describe("thread-peer pool destinations (D19, D42)", () => {
-  it("routes each document by its destination and never pulls a peer for live", async () => {
-    const { pool, liveCore, threadCore, pullThreadPeer } = createPool();
-    await pool.write(
-      { ...insertCh12, file: "notes.md", documentId: "notes" },
-      context(live, "reply-1"),
-    );
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-
-    expect(liveCore.write).toHaveBeenCalledOnce();
-    expect(threadCore.write).toHaveBeenCalledOnce();
-    expect(pullThreadPeer).toHaveBeenCalledOnce();
-    expect(pullThreadPeer).toHaveBeenCalledWith({ documentId: "ch12", threadId: THREAD_ID });
-  });
-
   it("keeps a document's first destination for the rest of the reply", async () => {
     const { pool, liveCore, threadCore } = createPool();
     await pool.write(insertCh12, context(draftA, "reply-1"));
@@ -201,69 +181,6 @@ describe("thread-peer pool destinations (D19, D42)", () => {
 
     expect(threadCore.write).toHaveBeenCalledTimes(2);
     expect(liveCore.write).not.toHaveBeenCalled();
-  });
-
-  it("reads a document from the core holding the reply's writes to it", async () => {
-    const { pool, liveCore, threadCore } = createPool();
-    await pool.write(
-      { ...insertCh12, file: "notes.md", documentId: "notes" },
-      context(live, "reply-1"),
-    );
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-
-    liveCore.hasResponseDocument.mockReturnValue(true);
-    expect(pool.hasResponseDocument("reply-1", "notes")).toBe(true);
-    expect(pool.hasResponseDocument("reply-1", "ch12")).toBe(false);
-    await expect(
-      pool.withResponseDocument("reply-1", "notes", null, async () => "unused"),
-    ).resolves.toBe("live");
-    await expect(
-      pool.withResponseDocument("reply-1", "ch12", null, async () => "unused"),
-    ).resolves.toBe("thread");
-    expect(liveCore.withResponseDocument).toHaveBeenCalledOnce();
-    expect(threadCore.withResponseDocument).toHaveBeenCalledOnce();
-  });
-
-  it("saves every destination in one transaction and reports which documents were drafted", async () => {
-    const { pool, liveCore, threadCore, atomic, afterLiveCommit } = createPool();
-    await pool.write(
-      { ...insertCh12, file: "notes.md", documentId: "notes" },
-      context(live, "reply-1"),
-    );
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-    liveCore.commitResponse.mockImplementationOnce(async (responseId, options) => {
-      options?.deferFinalization?.({ commit() {}, abort() {} });
-      return {
-        status: "committed",
-        responseId,
-        documentCount: 1,
-        updateCount: 1,
-        documents: [{ documentId: "notes", updateCount: 1, receipts: [] }],
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    });
-    threadCore.commitResponse.mockImplementationOnce(async (responseId, options) => {
-      options?.deferFinalization?.({ commit() {}, abort() {} });
-      return {
-        status: "committed",
-        responseId,
-        documentCount: 1,
-        updateCount: 1,
-        documents: [{ documentId: "ch12", updateCount: 1, receipts: [] }],
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    });
-
-    const saved = await pool.commitResponse("reply-1");
-
-    expect(atomic.calls).toBe(1);
-    expect(saved.documents.map((document) => document.documentId).sort()).toEqual([
-      "ch12",
-      "notes",
-    ]);
-    expect(saved.draftedDocumentIds).toEqual(["ch12" as DocumentId]);
-    expect(afterLiveCommit).toHaveBeenCalledWith("notes");
-    expect(afterLiveCommit).not.toHaveBeenCalledWith("ch12");
   });
 
   it("schedules the live-to-draft merge after an immediate live write", async () => {

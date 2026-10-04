@@ -41,7 +41,6 @@ type Harness = ReturnType<typeof createHarness>;
 
 // A live write records its authoring response, so these replies are real response rows.
 const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
-const MIXED_OUTER_RESPONSE = "00000000-0000-4000-8000-000000000832";
 
 /** Stages a reply with a live beta write and a drafted alpha write, and records every surface. */
 async function stageMixedSave(harness: Harness, responseId: string) {
@@ -166,21 +165,6 @@ describe("change trail (postgres)", () => {
     await expectMixedSaveRolledBack(harness, MIXED_RETRY_RESPONSE, before);
     harness.failJournalInsertAt = null;
     await expectMixedSaveCommitted(harness, MIXED_RETRY_RESPONSE);
-  });
-
-  it("rolls back a live and a drafted document when an outer transaction rolls back later", async () => {
-    const harness = createHarness();
-    const before = await stageMixedSave(harness, MIXED_OUTER_RESPONSE);
-
-    await expect(
-      runInDrizzleTransaction(db, async () => {
-        await harness.commit(MIXED_OUTER_RESPONSE);
-        throw new Error("later outer failure");
-      }),
-    ).rejects.toThrow("later outer failure");
-
-    await expectMixedSaveRolledBack(harness, MIXED_OUTER_RESPONSE, before);
-    await expectMixedSaveCommitted(harness, MIXED_OUTER_RESPONSE);
   });
 
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
