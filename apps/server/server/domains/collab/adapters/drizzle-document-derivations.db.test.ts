@@ -13,7 +13,7 @@ import {
   projects,
   users,
 } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -21,17 +21,23 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
 import { resolveDocumentUri } from "../../context/document-uri-resolver.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
-import { replaceDocumentAuthorityHeadGeneration } from "./drizzle-document-authority-head.js";
+import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
+import {
+  ensureAndReadDocumentAuthorityHead,
+  replaceDocumentAuthorityHeadGeneration,
+} from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleDocumentLinkRewrite } from "./drizzle-document-link-rewrite.js";
+import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
 
 describe("durable document derivations", () => {
-  const db = createDb(DATABASE_URL, { max: 4 });
+  const db = createDb(DATABASE_URL, { max: 6 });
   const userId = randomUUID();
   const projectId = randomUUID();
   const sourceId = randomUUID();
@@ -262,6 +268,145 @@ describe("durable document derivations", () => {
     expect(watermark?.projectionExtractorVersion).toBe(2);
     expect(watermark?.linksExtractorVersion).toBe(2);
     doc.destroy();
+  });
+
+  it("reconstructs only the restored generation, even with retained retired updates and a later retired checkpoint", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const original = await append(doc, "Original ");
+    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), original);
+    await persistence.journal.compact(documentId, new Date(Date.now() + 1000));
+    doc.getText("prose").delete(0, doc.getText("prose").length);
+    const admission = await append(doc, "Before typing.");
+    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), admission);
+    const [checkpoint] = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.upToSeq, admission));
+    if (!checkpoint) throw new Error("Missing retained checkpoint");
+    const retiredSeq = await append(doc, " After writer typing.");
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before typing. After writer typing.");
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      documentId,
+      checkpointId: checkpoint.id,
+      expectedGeneration: 1n,
+    });
+    expect(replaced.ok).toBe(true);
+    // Force the late old-room insert after replacement, without timers or races.
+    await db.insert(documentYjsCheckpoints).values({
+      documentId,
+      authorityId: checkpoint.authorityId,
+      authorityGeneration: checkpoint.authorityGeneration,
+      attributionManifest: checkpoint.attributionManifest,
+      state: Buffer.from(Y.encodeStateAsUpdate(doc)),
+      stateVector: Buffer.from(Y.encodeStateVector(doc)),
+      upToSeq: admission,
+      reason: "retired room",
+    });
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before typing.");
+    for (const snapshot of [
+      await persistence.journal.readForReconstruction(documentId),
+      await persistence.journal.read(documentId, { until: retiredSeq }),
+    ]) {
+      const reconstructed = new Y.Doc({ gc: false });
+      if (snapshot.checkpoint) Y.applyUpdate(reconstructed, snapshot.checkpoint);
+      for (const row of snapshot.updates) Y.applyUpdate(reconstructed, row.update);
+      expect(reconstructed.getText("prose").toString()).toBe("Before typing.");
+      expect(snapshot.updates).toEqual([]);
+      reconstructed.destroy();
+    }
+    doc.destroy();
+  });
+
+  it("drops room and explicit checkpoints queued behind a generation replacement", async () => {
+    const room = new Y.Doc({ gc: false });
+    const beforeSeq = await append(room, "Before");
+    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(room), beforeSeq);
+    const [saved] = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.upToSeq, beforeSeq));
+    if (!saved) throw new Error("Missing saved checkpoint");
+    await append(room, " After");
+    const readCheckpointAuthority = (id: string) => ensureAndReadDocumentAuthorityHead(db, id);
+    const hp = createHocuspocusPersistenceService({
+      journal: persistence.journal,
+      readCheckpointAuthority,
+      hocuspocus: () => null,
+      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    const explicit = createCheckpointService({
+      coordinator: {
+        withDocument: async (_id, operation) => operation(room),
+        recover: async () => {},
+      },
+      readCheckpointAuthority,
+      store: persistence.store,
+      latestUpdateSeq: persistence.store.latestUpdateSeq,
+      markdownDocuments: {
+        restoreFromYDoc: async () => {
+          throw new Error("Not used");
+        },
+      },
+    });
+    let unlock = () => {};
+    let signalLocked = () => {};
+    const gate = new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+    const locked = new Promise<void>((resolve) => {
+      signalLocked = resolve;
+    });
+    const blocker = db.transaction(async (tx) => {
+      await lockDocumentMutation(tx, documentId);
+      signalLocked();
+      await gate;
+    });
+    await locked;
+    async function waitForQueued(count: number) {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const rows = await db.execute(sql`select count(*)::int as n from pg_locks
+          where locktype = 'advisory' and not granted
+          and database = (select oid from pg_database where datname = current_database())`);
+        if (Number(rows[0]?.n) >= count) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`Expected ${count} queued mutation locks`);
+    }
+    const replacement = replaceDocumentAuthorityHeadGeneration(db, {
+      documentId,
+      checkpointId: saved.id,
+      expectedGeneration: 1n,
+    });
+    let admission: ReturnType<typeof explicit.checkpoint> | undefined;
+    try {
+      await waitForQueued(1);
+      await hp.storeHocuspocusDocument(documentId, room);
+      await waitForQueued(2);
+      admission = explicit.checkpoint(documentId, "queued explicit checkpoint");
+      await waitForQueued(3);
+    } finally {
+      unlock();
+      await blocker;
+      await replacement;
+      await hp.drainHocuspocusPersistence();
+    }
+    expect
+      .soft(await admission)
+      .toEqual({ ok: false, error: { code: "stale_generation", documentId } });
+    const checkpoints = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
+    expect.soft(checkpoints).toHaveLength(2);
+    expect.soft(checkpoints.filter((row) => row.authorityGeneration === 2n)).toHaveLength(1);
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before");
+    room.destroy();
   });
 
   it("heals failed derives and generation replacement from database state, including another instance's writes", async () => {

@@ -1465,19 +1465,23 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       initialMarkdown: restored,
       carriedMarkdown: restored,
     });
-    const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-      Y.encodeStateAsUpdate(doc),
+    const { state, upToSeq, authorityHead } = await liveCoordinator.withDocument(
+      ALPHA_ID,
+      async (doc) => {
+        const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+        const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
+        return { state: Y.encodeStateAsUpdate(doc), upToSeq, authorityHead };
+      },
     );
-    const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
     const checkpointId = Number(
       await persistence.store.createCheckpoint(
         ALPHA_ID,
         state,
         "oracle-explicit-restoration",
         upToSeq,
+        authorityHead,
       ),
     );
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,

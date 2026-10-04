@@ -44,6 +44,7 @@ import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import {
   createDrizzleAuthorityGenerationReader,
+  createDrizzleCheckpointAuthorityReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
@@ -324,8 +325,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveTurnThreadId: lookups.resolveTurnThreadId,
     resolveDocumentUri: documentUriResolver,
   });
+  const readCheckpointAuthority = createDrizzleCheckpointAuthorityReader(deps.db);
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
+    readCheckpointAuthority,
     journal: persistence.journal,
     branchStore: branches,
     branchCoordinator,
@@ -411,6 +414,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onReplaced: derivations.schedule,
   });
   const checkpoints = createCheckpointService({
+    readCheckpointAuthority,
     coordinator: liveCoordinator,
     store: persistence.store,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
