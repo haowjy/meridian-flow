@@ -11,6 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
+import { TOOL_CATALOG } from "../loop/permissions/project-tool-policy.js";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";
@@ -29,8 +30,30 @@ const SPAWN_DESCRIPTION =
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
   "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 
-const { "disallowed-tools": disallowedTools, ...invocationPatchShape } =
+const { "disallowed-tools": _authoringToolList, ...invocationPatchShape } =
   invocationPatchSchema.shape;
+
+const catalog = new Set<string>(TOOL_CATALOG);
+const UNKNOWN_TOOL = `isn't a tool; the tools are ${TOOL_CATALOG.join(", ")}`;
+
+/**
+ * The model names real tools, so no alias fold: an unknown name is refused
+ * rather than silently denying nothing.
+ */
+const DisallowedToolsSchema = z
+  .array(z.string())
+  .superRefine((names, context) => {
+    for (const [index, name] of names.entries()) {
+      if (!catalog.has(name)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: `${JSON.stringify(name)} ${UNKNOWN_TOOL}`,
+        });
+      }
+    }
+  })
+  .transform((names) => [...new Set(names)]);
 
 /**
  * The invocation patch, published with its full typed shape (audit F2). Its one
@@ -43,9 +66,9 @@ const SpawnOverridesSchema = z
     permission: invocationPatchShape.permission.describe(
       'Lower to "read" so this run edits only scratch://; it can\'t raise a read agent to "edit".',
     ),
-    disallowed_tools: disallowedTools.describe(
+    disallowed_tools: DisallowedToolsSchema.describe(
       "Tools this run can't use, on top of the child's own.",
-    ),
+    ).optional(),
   })
   .strict()
   .transform(
