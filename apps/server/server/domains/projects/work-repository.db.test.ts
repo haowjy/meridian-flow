@@ -4,10 +4,8 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createLocalFileAccessChanges, type FileAccessChanges } from "../file-policy/index.js";
+import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
-
-type FileAccessChange = Parameters<FileAccessChanges["publish"]>[0];
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
