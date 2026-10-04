@@ -1,6 +1,7 @@
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
 import { modelResult } from "@meridian/agent-edit";
+import { ReadToolInputSchema, WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
@@ -10,6 +11,7 @@ import type { InternalThreadRepositories } from "../../threads/ports/repositorie
 import { handoffSeedBlock } from "../handoff/seed.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import { estimateModelPartTokens } from "../loop/compaction/estimate.js";
+import { WorkCommandSchema } from "../tools/core-tools.js";
 import {
   historyDocumentText,
   readDocumentText,
@@ -22,6 +24,8 @@ import {
   threadHistorySummary,
   workHistorySummary,
 } from "../tools/history-summaries.js";
+import { modelToolSchema } from "../tools/model-tool-schema.js";
+import { SpawnInputSchema } from "../tools/spawn-tools.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
 import { type HistoryResult, renderHistoryResult } from "./history-result.js";
 import {
@@ -53,19 +57,25 @@ export function defineThreadHistoryContract(
     const registry = createToolRegistry();
     const workKind = (input: JsonObject) =>
       input.command === "list" || input.command === "show" ? "routine" : "receipt";
-    for (const [name, documentText, historySummary, historyKind] of [
-      ["read", readDocumentText, documentHistorySummary, "routine"],
-      ["write", writeDocumentText, documentHistorySummary, undefined],
-      ["search", searchDocumentText, undefined, "routine"],
-      ["ls", undefined, undefined, "routine"],
-      ["work", undefined, workHistorySummary, workKind],
-      ["thread_history", historyDocumentText, threadHistorySummary, "routine"],
-      ["spawn", undefined, spawnHistorySummary, undefined],
-      ["return_result", undefined, undefined, "routine"],
+    // Real input schemas: history orders stored arguments by them.
+    for (const [name, documentText, historySummary, historyKind, schema] of [
+      ["read", readDocumentText, documentHistorySummary, "routine", ReadToolInputSchema],
+      ["write", writeDocumentText, documentHistorySummary, undefined, WriteToolInputSchema],
+      ["search", searchDocumentText, undefined, "routine", undefined],
+      ["ls", undefined, undefined, "routine", undefined],
+      ["work", undefined, workHistorySummary, workKind, WorkCommandSchema],
+      ["thread_history", historyDocumentText, threadHistorySummary, "routine", undefined],
+      ["spawn", undefined, spawnHistorySummary, undefined, SpawnInputSchema],
+      ["return_result", undefined, undefined, "routine", undefined],
     ] as const)
       registry.register({
         source: "core",
-        definition: { type: "function", name, description: name, inputSchema: {} },
+        definition: {
+          type: "function",
+          name,
+          description: name,
+          inputSchema: schema ? modelToolSchema(schema) : {},
+        },
         input: z.unknown(),
         ...(documentText ? { documentText } : {}),
         ...(historySummary ? { historySummary } : {}),
@@ -526,7 +536,7 @@ read({"path":"manuscript://missing.md"}) → failed: document_not_found
 status: document_not_found
 
 No document at manuscript://missing.md
-spawn({"agent":"critic","name":"Pacing review","prompt":"Read chapter 3 for pacing."}) → p8
+spawn({"agent":"critic","prompt":"Read chapter 3 for pacing.","name":"Pacing review"}) → p8
 work({"command":"create","name":"Rewrite"}) → @rewrite
 (11 routine tool calls hidden; list them with thread_history({"ref":"${ref}","expand":2}))`);
       const routine = output(await f.read({ include: ["routine_calls"] }));
@@ -816,7 +826,7 @@ In progress
       expect(text).not.toContain('"revision"');
       // The call line quotes the edit's inputs, so the page carries their evidence (D48).
       expect(text).toContain(
-        'write({"command":"replace","path":"manuscript://chapter.md","find":"old","content":"EDIT SENTINEL"})',
+        'write({"command":"replace","path":"manuscript://chapter.md","content":"EDIT SENTINEL","find":"old"})',
       );
       expect(text).not.toContain("edit record from");
       expect(result).toMatchObject({
@@ -852,7 +862,7 @@ In progress
         true,
       );
       expect(output(await f.read())).toContain(
-        '"path":"manuscript://chapter.md"}) → failed\nWrite did not land: ERROR SENTINEL',
+        'write({"command":"replace","path":"manuscript://chapter.md","content":"rejected edit"}) → failed\nWrite did not land: ERROR SENTINEL',
       );
       for (const result of [await f.read(), await f.read({ expand: 1 }), plain]) {
         const r = await f.turn();

@@ -79,7 +79,9 @@ model text when they define it; raw component props are never serialized.
 - **Reports.** On a subagent's history, finished reports attach to the turn
   their `terminalTurnId` names, on the page that holds the turn's last row.
 - **Call lines** (D48). `spawn/history-call-line.ts` writes each call as
-  `name({json args}) → summary`, long strings shortened inside the JSON;
+  `name({json args}) → summary`, long strings shortened inside the JSON and
+  keys in the tool's input-schema order (`orderLikeSchema`; `jsonb` loses
+  the order the model sent);
   `historySummary` reads the summary from the typed result, and a failure's
   status or code comes from `failureCode` in `history-item.ts`. One form on a
   page, under `routine_calls` and in `expand: N`; `expand: "N.k"` adds the

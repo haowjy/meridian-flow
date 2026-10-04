@@ -1,6 +1,6 @@
 /** One tool call as history writes it (D48): exact lines from fixed typed inputs. */
 import { describe, expect, it } from "vitest";
-import { CALL_LINE_CAP, callLine, shortenCallArgs } from "./history-call-line.js";
+import { CALL_LINE_CAP, callLine, orderLikeSchema, shortenCallArgs } from "./history-call-line.js";
 
 const words = (count: number, word = "word") => Array.from({ length: count }, () => word).join(" ");
 
@@ -97,5 +97,54 @@ describe("callLine", () => {
 
   it("writes withheld arguments as an ellipsis", () => {
     expect(callLine({ tool: "return_result", args: null, state: "done" })).toBe("return_result(…)");
+  });
+});
+
+describe("orderLikeSchema", () => {
+  const write = {
+    type: "object",
+    oneOf: [
+      {
+        type: "object",
+        properties: {
+          command: { type: "string", const: "create" },
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+      },
+      {
+        type: "object",
+        properties: {
+          command: { type: "string", const: "replace" },
+          path: { type: "string" },
+          content: { type: "string" },
+          from: {
+            anyOf: [
+              { type: "object", properties: { path: { type: "string" }, in: {} } },
+              { type: "null" },
+            ],
+          },
+          find: { type: "string" },
+        },
+      },
+    ],
+  };
+
+  it("restores the schema's key order that storage dropped, from the matching variant", () => {
+    const stored = { path: "ch3.md", find: "x", command: "replace", content: "y" };
+    expect(JSON.stringify(orderLikeSchema(stored, write))).toBe(
+      '{"command":"replace","path":"ch3.md","content":"y","find":"x"}',
+    );
+  });
+
+  it("orders nested objects and keeps keys the schema doesn't name, last", () => {
+    const stored = { from: { in: 3, path: "a.md" }, path: "b.md", extra: 1, command: "replace" };
+    expect(JSON.stringify(orderLikeSchema(stored, write))).toBe(
+      '{"command":"replace","path":"b.md","from":{"path":"a.md","in":3},"extra":1}',
+    );
+  });
+
+  it("leaves arguments as they are with no schema", () => {
+    expect(JSON.stringify(orderLikeSchema({ b: 1, a: 2 }, {}))).toBe('{"b":1,"a":2}');
   });
 });
