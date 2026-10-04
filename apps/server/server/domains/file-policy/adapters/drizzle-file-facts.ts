@@ -90,29 +90,20 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
       return out;
     },
     async loadLocked(requests) {
-      const locked = new Set<string>();
-      const lockFor = async (facts: readonly (FileFacts | null)[]) => {
-        const owners = facts.flatMap((fact, index) => lockedWorkIds(fact, requests[index]));
-        const fresh = owners.filter((id) => !locked.has(id));
-        await lockWorksInIdOrder(db, fresh);
-        for (const id of fresh) locked.add(id);
-        return fresh.length > 0;
-      };
       const loadAll = async () => {
         const out: (FileFacts | null)[] = [];
         for (const request of requests) out.push(await load(request));
         return out;
       };
-      await lockFor(await loadAll());
-      let facts = await loadAll();
-      // An owner moved between the unlocked read and the lock: lock it, read again.
-      if (await lockFor(facts)) {
-        facts = await loadAll();
-        facts = facts.map((fact, index) =>
-          lockedWorkIds(fact, requests[index]).every((id) => locked.has(id)) ? fact : null,
-        );
-      }
-      return facts;
+      const owners = (facts: readonly (FileFacts | null)[]) =>
+        facts.flatMap((fact, index) => lockedWorkIds(fact, requests[index]));
+      const locked = new Set(owners(await loadAll()));
+      await lockWorksInIdOrder(db, [...locked]);
+      // An owner that moved between the unlocked read and the lock can't be
+      // locked now without breaking the id order (§5): that file is refused.
+      return (await loadAll()).map((fact, index) =>
+        lockedWorkIds(fact, requests[index]).every((id) => locked.has(id)) ? fact : null,
+      );
     },
   };
 }
