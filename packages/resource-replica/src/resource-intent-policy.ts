@@ -16,11 +16,11 @@ export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): b
 
 export function supersedeRepairableNamespaceWork(
   record: Pick<ResourceRecord, "intents">,
-  projectId: string,
+  projectId: string | null,
 ): { intents: NamespaceIntent[]; repaired: boolean } {
   const repaired = record.intents.some(
     (intent) =>
-      intent.projectId === projectId &&
+      (projectId === null || intent.projectId === projectId) &&
       intent.desired.kind !== "create" &&
       intent.state === "needs-repair",
   );
@@ -28,7 +28,11 @@ export function supersedeRepairableNamespaceWork(
   return {
     repaired: true,
     intents: record.intents.map((intent) => {
-      if (intent.projectId !== projectId || intent.desired.kind === "create") return intent;
+      if (
+        (projectId !== null && intent.projectId !== projectId) ||
+        intent.desired.kind === "create"
+      )
+        return intent;
       if (intent.state === "needs-repair") return { ...intent, state: "settled" };
       if (intent.state === "pending" && intent.attempts.length === 0)
         return { ...intent, state: "cancelled" };
@@ -69,13 +73,22 @@ export function intentOwnsLocation(intent: NamespaceIntent): boolean {
  * overridden by the stale destination this intention recorded.
  */
 export function owningLocationIntent(
-  projectId: string,
+  projectId: string | null,
   intents: readonly NamespaceIntent[],
   canonicalRefreshPending: boolean,
 ): NamespaceIntent | null {
+  const blocker = intents.find(
+    (intent) =>
+      (projectId === null || intent.projectId === projectId) && intent.state === "needs-repair",
+  );
   const owner =
     [...intents]
       .sort((left, right) => right.sequence - left.sequence)
-      .find((intent) => intent.projectId === projectId && intentOwnsLocation(intent)) ?? null;
+      .find(
+        (intent) =>
+          (projectId === null || intent.projectId === projectId) &&
+          (!blocker || intent.sequence < blocker.sequence) &&
+          intentOwnsLocation(intent),
+      ) ?? null;
   return owner?.state === "settled" && !canonicalRefreshPending ? null : owner;
 }

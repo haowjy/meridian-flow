@@ -731,11 +731,15 @@ export class AccountResourceReplica {
     for (let pass = 0; pass < 3 && !this.closing; pass += 1) {
       const folder = await this.metadata.readFolder(key);
       if (!folder?.canonicalRefresh) return;
-      const { catalogs } = await this.metadata.readProjection(folder.projectId);
+      const projectId = folder.intents.find(
+        (intent) => intent.operationId === folder.canonicalRefresh?.operationId,
+      )?.projectId;
+      if (!projectId) return;
+      const { catalogs } = await this.metadata.readProjection(projectId);
       await Promise.allSettled(
         catalogs
-          .filter((catalog) => catalog.projectId === folder.projectId)
-          .map((catalog) => this.catalogs.acquire(folder.projectId, catalog.scope)),
+          .filter((catalog) => catalog.projectId === projectId)
+          .map((catalog) => this.catalogs.acquire(projectId, catalog.scope)),
       );
     }
   }

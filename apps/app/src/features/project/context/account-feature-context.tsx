@@ -225,7 +225,10 @@ export function useObservedResourceProjection(
     [projectId, snapshot],
   );
   const folders = useMemo(
-    () => snapshot?.folders.filter((folder) => folder.projectId === projectId) ?? [],
+    () =>
+      snapshot?.folders.filter(
+        (folder) => folder.projectId === null || folder.projectId === projectId,
+      ) ?? [],
     [projectId, snapshot],
   );
   return { records, folders, snapshot, error };

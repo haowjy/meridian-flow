@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Recover refused queued folder renames at the accepted location, dispatch identity-bound moves after foreign catalog changes, preserve completed document naming, and share personal-folder rename journals across projects.
+
 - Respell relative links when their holder moves into personal space, preserving project targets rather than linking to unrelated personal documents.
 
 - Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.

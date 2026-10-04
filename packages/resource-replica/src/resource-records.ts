@@ -138,7 +138,8 @@ export type ResourceRecord = {
 
 /** A folder is namespace identity only: it never owns a document id, content or classification. */
 export type FolderNamespaceRecord = ResourceKey & {
-  projectId: string;
+  /** Null for account-owned personal folders; command projects live on the intents. */
+  projectId: string | null;
   folderId: string;
   revision: number;
   canonical: ResourceLocation;
