@@ -1,6 +1,6 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit/integration";
+import type { UpdateMeta } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -19,6 +19,10 @@ import {
   ReservedWriterClientIdError,
 } from "./domain/document-mutation-policy.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
+import type {
+  CheckpointAuthority,
+  CheckpointJournal,
+} from "./domain/ports/checkpoint-authority.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 
@@ -31,6 +35,7 @@ type PendingAppend = {
 type PendingCheckpoint = {
   document: Y.Doc;
   generation: bigint | undefined;
+  authority: CheckpointAuthority;
   state: Uint8Array;
   upToSeq: number;
 };
@@ -41,7 +46,8 @@ type CheckpointSlot = {
 };
 
 type HocuspocusPersistenceDeps = {
-  journal: UpdateJournal;
+  journal: CheckpointJournal;
+  readCheckpointAuthority(documentId: string): Promise<CheckpointAuthority>;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
@@ -210,7 +216,7 @@ export function createHocuspocusPersistenceService(
     checkpointSlots.set(documentId, created);
     created.running = (async () => {
       while (created.next) {
-        const { document, generation, state, upToSeq } = created.next;
+        const { document, generation, authority, state, upToSeq } = created.next;
         created.next = undefined;
         // A retired room's state belongs to an authority generation that has
         // since been replaced.
@@ -218,7 +224,7 @@ export function createHocuspocusPersistenceService(
           continue;
         }
         try {
-          await deps.journal.checkpoint(documentId, state, upToSeq);
+          await deps.journal.checkpoint(documentId, state, upToSeq, authority);
         } catch (cause) {
           emitCheckpointFailure(documentId, cause);
         }
@@ -476,6 +482,9 @@ export function createHocuspocusPersistenceService(
 
     async storeHocuspocusDocument(documentId, document) {
       if (retiredLiveDocuments.has(document)) return;
+      const generation = liveGenerations.get(documentId);
+      const authority = await deps.readCheckpointAuthority(documentId);
+      if (generation !== undefined && generation !== authority.generation) return;
       await drainPending(documentId);
       const reservedClientId = unsafeCheckpointDocuments.get(documentId);
       if (reservedClientId !== undefined) {
@@ -492,7 +501,8 @@ export function createHocuspocusPersistenceService(
       // point are intentionally replayed when the document reloads.
       const pending: PendingCheckpoint = {
         document,
-        generation: liveGenerations.get(documentId),
+        generation,
+        authority,
         state: Y.encodeStateAsUpdate(document),
         upToSeq,
       };

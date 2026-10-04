@@ -2,6 +2,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { ensureAndReadDocumentAuthorityHead } from "../drizzle-document-authority-head.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -118,6 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function branchRoomPersistence(branchStore = store) {
       return createHocuspocusPersistenceService({
+        readCheckpointAuthority: (id) => ensureAndReadDocumentAuthorityHead(db, id),
         journal: livePersistence.journal,
         branchStore,
         branchCoordinator: createBranchCoordinator({ store: branchStore }),

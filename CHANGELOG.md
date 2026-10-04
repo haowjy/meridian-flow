@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
+
 - Refresh document search, listings, sizes, download fallback, and link-index projections two seconds after writer typing pauses (at most ten seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
 - Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
 
