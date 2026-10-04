@@ -243,6 +243,7 @@ export const documents = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
+    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
     markdownProjection: text("markdown_projection").notNull().default(""),
     provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
