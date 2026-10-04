@@ -153,15 +153,12 @@ function workTerms(work: FileWorkFacts): Term[] {
 /**
  * The agent term (§8): the source's cap for every agent, and each link's
  * permission against its own thread. A `read` link may edit only the scratch
- * of its thread's current named Work, never No Work's. The minimum wins.
+ * of its thread's current Work, No Work's included (D55). The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
   const terms: Term[] = [{ cap: SOURCE_RULES[facts.scheme].agentCap, limit: "uploads_read_only" }];
   for (const link of chain) {
-    const ownScratch =
-      facts.scheme === "scratch" &&
-      !link.threadWorkIsNoWork &&
-      facts.ownerWork?.id === link.threadWorkId;
+    const ownScratch = facts.scheme === "scratch" && facts.ownerWork?.id === link.threadWorkId;
     const cap = link.permission === "edit" || ownScratch ? "edit" : "read";
     terms.push({ cap, limit: "agent_read_only" });
   }

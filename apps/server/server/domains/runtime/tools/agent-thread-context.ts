@@ -46,7 +46,7 @@ export const SUBAGENT_GUIDANCE =
 
 /** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
 export const READ_PERMISSION_GUIDANCE =
-  "Your permission is read: you can read every file, and edit only this Work's scratch://.";
+  "Your permission is read: you can read every file, and edit only scratch://.";
 
 /**
  * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The

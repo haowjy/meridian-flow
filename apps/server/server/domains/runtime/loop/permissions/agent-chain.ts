@@ -8,7 +8,6 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { AgentChain, AgentLink } from "../../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../../packages/index.js";
-import type { WorkRepository } from "../../../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../../threads/index.js";
 
 export type { AgentChain, AgentLink };
@@ -17,7 +16,6 @@ export interface AgentChainDeps {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "findById">;
 }
 
 /**
@@ -33,14 +31,7 @@ export async function readAgentChain(
   for await (const { id, permission } of lineage(deps, threadId)) {
     const primary = await deps.threadWorks.findPrimary(id);
     if (!primary) throw new Error(`Agent chain thread has no primary Work: ${id}`);
-    const work = await deps.works.findById(primary.workId);
-    if (!work) throw new Error(`Agent chain Work is missing: ${primary.workId}`);
-    chain.push({
-      threadId: id,
-      permission,
-      threadWorkId: primary.workId,
-      threadWorkIsNoWork: work.isNoWork,
-    });
+    chain.push({ threadId: id, permission, threadWorkId: primary.workId });
   }
   return chain;
 }
