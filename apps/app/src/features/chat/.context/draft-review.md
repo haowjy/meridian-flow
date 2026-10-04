@@ -10,8 +10,8 @@ command that publishes the whole current draft; Discard may still
 target one operation or the whole branch.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
-messages. The synchronous disposition lock is the
-only pending-command source. Use controller transitions instead of pairing
+messages. The synchronous disposition lock and the shared draft
+command record (below) are the pending-command sources. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
 `DraftReviewProvider` is the convenience boundary for one Project + Work owner.
 The project shell uses its lower-level split directly: it creates one persistent
@@ -157,7 +157,10 @@ composer's single **Review changes** action sorts a copy by
 document; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
-row + Yjs state) but absent from the live tree until Apply. Its review tab
+row + Yjs state) but absent from the live tree until Apply, and the server
+refuses a live room for it, so review hosts the draft branch room alone: the
+desktop and phone hosts open no live binding for a `draftOnly` tab. The ordinary
+live room opens once Apply promotes the tab. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
@@ -173,47 +176,57 @@ first. Review admission absorbs an earlier durable member; later address
 admission may enrich only the overlay with resolved live-resource metadata.
 
 - **Apply.** Apply is done when the server confirms it. Nothing later can undo
-  it: there is no recovery protocol and no Finish/Abandon workflow. On
-  confirmation the controller promotes a draft-only overlay to a durable tab
-  (`promoteAppliedDraft`: keep the tab, drop the marker), exits inline review
-  and returns the editor to the live room, all while the disposition lock is
-  held. Bulk Apply counts a draft as applied at that same moment; it never waits
-  for an editor to report paintable content. The ordinary live-document host
+  it: there is no recovery protocol and no Finish/Abandon workflow. At
+  confirmation the mutation records the draft as confirmed (see the command
+  record below) and removes it from cached pending membership, the session exits
+  inline review, and the command returns `applied`, so a bulk Apply advances at
+  once. Promoting a draft-only overlay to a durable tab
+  (`promoteAppliedDraft`: keep the tab, drop the marker) and repairing the route
+  run on after that and never decide the result; the provider's remote
+  classification promotes a tab that was missed. The ordinary live-document host
   then shows "Connecting", its own disconnect state, or its retryable open
-  error, exactly as for any document. A draft-only document is reviewed behind
-  a live room the server refuses until Apply; `useLiveDocumentBinding` retries a
-  failed open or a refused room once when the document's availability revision
-  advances, so Apply needs nothing special to bind the now-live room.
+  error, exactly as for any document.
+- **The draft command record.** `client/query/draft-command-record.ts` holds one
+  record per draft (documentId + draftId), outside any review scope, so every
+  surface (composer strip, editor header, Work Files) reads the same state:
+  - `pending`: an Apply or Discard is dispatched. `controller.isDisposing` is the
+    scope's synchronous lock or any pending record, so every surface disables,
+    and a second command for the same draft returns `blocked` instead of being
+    sent.
+  - `confirmed`: set by `useApplyDraft` at server confirmation. Draft-list reads
+    that started before it (`draftReadFence`, applied in `useWorkDrafts`'s
+    query function) cannot bring the draft back; a read that starts later is
+    authoritative, since the server reuses a draft id for a branch's next
+    generation. The list then refreshes in the background.
+  - `failed`: a refused Discard (`discard-offline`) or a lost Apply response
+    (`apply-unknown`), shown on the draft by the header, the composer strip, and
+    the Work Files row. It clears on the next action on that draft (Discard
+    retry, Apply, opening Review); Work Files also offers Dismiss.
 - **Rejected and unknown Apply.** A response with a status is a rejection
   ("Couldn't apply", never the confirmed path). A request that got no answer is
-  settled by one read of the draft list in `useApplyDraft`: the draft is gone
-  (applied) or still listed (not applied, shown as a rejection). If that read is
-  lost too, the outcome is unknown. It is held on the draft as `apply-unknown`
-  in `draft-command-errors.ts` ("Couldn't confirm whether this applied"), shown
-  by the header, the composer strip, and the Work Files row, and a stopped
-  batch. The next draft-list refresh removes the row if it applied; the next
-  Apply clears the message.
+  unknown ("Couldn't confirm whether this applied"), whatever the list shows
+  next: the draft leaving the list is not evidence of Apply, because another
+  browser's Discard looks the same, and a draft still listed is not proof of
+  rejection, because the server may still be committing. Nothing infers a result
+  from the list, so unknown never claims "Applied" and never promotes a
+  draft-only tab. When the draft is gone the row simply stops rendering, review
+  exits, and the document view shows whatever is live.
 - **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
   command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
   fallback and repairs the address in place. A refused Discard never reopens
   the tab and never navigates: the draft is still pending, so the error shows
   on the draft itself (below). Header, composer-strip, and bulk Discard share
   this lifecycle.
-- **Refused Discard error.** `draft-command-errors.ts` holds it by draft
-  identity (documentId + draftId), outside any review scope, so the composer
-  strip (under the strip for one document, on the document's row for several,
-  expanding the strip) and the Work Files "Drafts to review" row both show it
-  whichever surface ran the command. It clears on the next action on that draft
-  (Discard retry, Apply, opening Review) or when the draft is discarded or
-  applied; Work Files also offers Dismiss.
 - **Confirmed and remote Discard** call the same `discardDraft`, even when no
   local tab remains (a no-op then). It never creates or restores a tab.
 - When a draft-only tab's draft leaves the active list without a local
-  disposition (another browser applied or discarded it), the provider forces a
-  fresh live-manuscript catalog read. Membership means a remote Apply and the
-  tab is promoted; absence means a remote Discard and the tab closes. A failed
-  read leaves the tab intact. The tab and the catalog are the whole evidence: no
-  account-level witness is kept.
+  disposition (another browser applied or discarded it, or an Apply response was
+  lost), the provider takes a live-manuscript catalog observation that starts
+  after it saw the draft leave (`acquireCatalogAfter`; joining an older in-flight
+  acquisition could report the pre-Apply tree). Membership means the document is
+  live and the tab is promoted; absence means a Discard and the tab closes. A
+  failed read leaves the tab intact. The tab and the catalog are the whole
+  evidence: no account-level witness is kept.
 - A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
   skips draftOnly tabs so a discarded path can't replay on the next visit;
   the coordinator repairs the route when disposition removes the route-active tab.

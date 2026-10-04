@@ -13,6 +13,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
+import {
+  anyDraftCommandPending,
+  clearDraftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   DraftApplyOutcomeUnknownError,
@@ -26,7 +31,6 @@ import {
   useIsCurrentContextRoute,
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
-import { clearDraftCommandError, setDraftCommandError } from "./draft-command-errors";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -157,7 +161,9 @@ export function useDraftReviewController(
   const isDiscarding = activeDisposition?.kind === "discard-draft";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isApplying || isDiscarding;
-  const isDisposing = disposition.busy;
+  // Any command in flight on this draft, from any surface, disables this one.
+  const commandRecords = useDraftCommandRecords();
+  const isDisposing = disposition.busy || anyDraftCommandPending(commandRecords);
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
   const pendingInlineDiscardIds = useCallback(
@@ -215,9 +221,29 @@ export function useDraftReviewController(
     [projectId, queryClient, workId],
   );
 
+  async function settleConfirmedApply(
+    tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
+  ): Promise<void> {
+    if (tab?.kind !== "tracked") return;
+    try {
+      if (tab.draftOnly) await contextRemoval.promoteAppliedDraft(projectId, tab);
+      if (isCurrentContextRoute && openContextRoute) {
+        const target = routeTargetForTab(tab, workId);
+        if (isCurrentContextRoute(target)) {
+          await openContextRoute(target, {
+            replace: true,
+            isCurrent: () => isCurrentContextRoute(target),
+          });
+        }
+      }
+    } catch {
+      // Applied stays applied. A failed route repair is navigation's to show,
+      // and the document host reconciles a tab that was not promoted.
+    }
+  }
+
   commandPortsRef.current = {
     apply: async ({ documentId, draftId }) => {
-      clearDraftCommandError({ documentId, draftId });
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
@@ -227,27 +253,9 @@ export function useDraftReviewController(
         if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
         throw error;
       }
-      // Confirmed: the draft is applied. What follows is the ordinary live
-      // document's business, so none of it can undo this result.
-      if (tab?.kind === "tracked" && tab.draftOnly) {
-        await contextRemoval.promoteAppliedDraft(projectId, tab);
-      }
-      if (
-        stateRef.current.surface.kind === "inline" &&
-        stateRef.current.surface.documentId === documentId &&
-        stateRef.current.surface.draftId === draftId
-      ) {
-        dispatch({ type: "exitInline" });
-      }
-      if (tab?.kind === "tracked" && isCurrentContextRoute && openContextRoute) {
-        const target = routeTargetForTab(tab, workId);
-        if (isCurrentContextRoute(target)) {
-          await openContextRoute(target, {
-            replace: true,
-            isCurrent: () => isCurrentContextRoute(target),
-          });
-        }
-      }
+      // Confirmed is terminal for the command: the batch advances now. Tab
+      // promotion and the route repair are navigation's business and run on.
+      void settleConfirmedApply(tab);
       return "applied";
     },
     discard: async ({ documentId, draftId }, input) => {
@@ -270,20 +278,17 @@ export function useDraftReviewController(
       dispatch({ type: "batchSettled", error });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
-    // on the draft (see draft-command-errors).
+    // on the draft (see draft-command-record).
     draftDiscardStarted: (selection) => {
-      clearDraftCommandError(selection);
       contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftFailed: (selection, code) => {
-      if (code !== "apply-failed") setDraftCommandError(selection, code);
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      clearDraftCommandError({ documentId, draftId });
       dispatch({ type: "discardSucceeded", draftId });
       contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
@@ -291,7 +296,7 @@ export function useDraftReviewController(
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      clearDraftCommandError({ documentId, draftId });
+      clearDraftCommandFailure({ documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },

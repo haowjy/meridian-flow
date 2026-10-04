@@ -5,10 +5,7 @@ import { I18nProvider } from "@lingui/react";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  resetDraftCommandErrors,
-  setDraftCommandError,
-} from "@/features/chat/draft-command-errors";
+import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { WorkDrafts } from "./WorkDrafts";
 
@@ -42,13 +39,13 @@ function render(run: () => Promise<void> | void) {
 }
 
 describe("WorkDrafts refused Discard", () => {
-  beforeEach(() => resetDraftCommandErrors());
+  beforeEach(() => resetDraftCommandRecords());
 
   it("shows the error on the draft's row and clears it on dismiss", async () => {
     await render(async () => {
       expect(document.querySelector("[role=alert]")).toBeNull();
       await act(async () =>
-        setDraftCommandError({ documentId: "document-a", draftId: "draft-a" }, "discard-offline"),
+        failDraftCommand({ documentId: "document-a", draftId: "draft-a" }, "discard-offline"),
       );
       expect(document.querySelector("[role=alert]")?.textContent).toBe(
         "Couldn't discard. Check your connection and try again.",

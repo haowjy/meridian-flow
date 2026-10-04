@@ -3,6 +3,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  confirmDraftCommand,
+  draftCommandFailure,
+  resetDraftCommandRecords,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { DraftApplyOutcomeUnknownError } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
@@ -12,11 +18,6 @@ import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigat
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import type { ProjectSearch } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import {
-  draftCommandErrorKey,
-  resetDraftCommandErrors,
-  useDraftCommandErrors,
-} from "./draft-command-errors";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 let resolveDiscard: (() => void) | null = null;
@@ -100,23 +101,43 @@ const neighborTab = contextTabFromFile(
 );
 
 let controller: DraftReviewController | null = null;
-let heldErrors: ReturnType<typeof useDraftCommandErrors> = {};
+let heldRecords: ReturnType<typeof useDraftCommandRecords> = {};
 
 function heldError() {
-  return heldErrors[draftCommandErrorKey({ documentId: "document-a", draftId: "draft-a" })];
+  return draftCommandFailure(heldRecords, { documentId: "document-a", draftId: "draft-a" });
+}
+
+let otherSurface: DraftReviewController | null = null;
+
+/** A second review scope over the same Work, like the Editor beside Chat. */
+function CaptureOtherSurface() {
+  otherSurface = useDraftReviewController("project-a", "work-a");
+  return null;
 }
 
 function CaptureController() {
   controller = useDraftReviewController("project-a", "work-a");
-  heldErrors = useDraftCommandErrors();
+  heldRecords = useDraftCommandRecords();
   return null;
 }
 
-function Providers({ children, open }: { children: ReactNode; open: OpenContextRoute }) {
+function Providers({
+  children,
+  open,
+  isCurrent,
+}: {
+  children: ReactNode;
+  open: OpenContextRoute;
+  isCurrent?: () => boolean;
+}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={queryClient}>
-      <ProjectNavigationProvider openContextRoute={open} screen="context">
+      <ProjectNavigationProvider
+        openContextRoute={open}
+        isCurrentContextRoute={isCurrent}
+        screen="context"
+      >
         {children}
       </ProjectNavigationProvider>
     </QueryClientProvider>
@@ -125,13 +146,14 @@ function Providers({ children, open }: { children: ReactNode; open: OpenContextR
 
 describe("draft dispositions", () => {
   beforeEach(() => {
-    applyMutate.mockReset();
+    // The real mutation turns its claim into the confirmed record.
+    applyMutate.mockReset().mockImplementation(async (draft) => confirmDraftCommand(draft));
     controller = null;
     rejectDiscard = null;
     resolveDiscard = null;
     currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
     addressWrites = 0;
-    resetDraftCommandErrors();
+    resetDraftCommandRecords();
     search = {
       screen: "context",
       work: "work-a",
@@ -223,12 +245,12 @@ describe("draft dispositions", () => {
         await act(async () => {
           retry = controller?.discard("document-a", "draft-a");
         });
-        expect(heldError()).toBeUndefined();
+        expect(heldError()).toBeNull();
         await act(async () => {
           resolveDiscard?.();
           await retry;
         });
-        expect(heldError()).toBeUndefined();
+        expect(heldError()).toBeNull();
         expect(open).not.toHaveBeenCalled();
         expect(addressWrites).toBe(1);
         expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
@@ -237,7 +259,6 @@ describe("draft dispositions", () => {
   });
 
   it("counts Apply as done at server confirmation: promotes the draft-only tab and leaves review", async () => {
-    applyMutate.mockResolvedValue(undefined);
     await withReactRoot(
       <Providers open={vi.fn<OpenContextRoute>()}>
         <CaptureController />
@@ -259,7 +280,7 @@ describe("draft dispositions", () => {
           .byProject["project-a"]?.tabs.find((tab) => tab.documentId === "document-a");
         expect(live).toBeDefined();
         expect(live).not.toHaveProperty("draftOnly");
-        expect(heldError()).toBeUndefined();
+        expect(heldError()).toBeNull();
       },
     );
   });
@@ -289,8 +310,67 @@ describe("draft dispositions", () => {
           outcome = await controller?.apply("document-a", "draft-a");
         });
         expect(outcome).toEqual({ kind: "failed", code: "apply-failed" });
-        expect(heldError()).toBeUndefined();
+        expect(heldError()).toBeNull();
         expect(controller?.inlineReviewMessage).toMatchObject({ code: "apply-failed" });
+      },
+    );
+  });
+
+  it("dispatches one Apply when the Editor and Chat both press it, and disables both", async () => {
+    let confirm!: () => void;
+    applyMutate.mockImplementation(
+      (draft) =>
+        new Promise<void>((resolve) => {
+          confirm = () => resolve(confirmDraftCommand(draft));
+        }),
+    );
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()}>
+        <CaptureController />
+        <CaptureOtherSurface />
+      </Providers>,
+      async () => {
+        let first: Promise<unknown> | undefined;
+        await act(async () => {
+          first = controller?.apply("document-a", "draft-a");
+        });
+        let second: unknown;
+        await act(async () => {
+          second = await otherSurface?.disposeDrafts("apply", [
+            { documentId: "document-a", draftId: "draft-a" },
+          ]);
+        });
+        expect(second).toEqual([{ kind: "blocked" }]);
+        expect(applyMutate).toHaveBeenCalledTimes(1);
+        expect(controller?.isDisposing).toBe(true);
+        expect(otherSurface?.isDisposing).toBe(true);
+
+        await act(async () => {
+          confirm();
+          await first;
+        });
+        expect(otherSurface?.isDisposing).toBe(false);
+      },
+    );
+  });
+
+  it("advances a bulk Apply at server confirmation while navigation is still pending", async () => {
+    const navigation = new Promise<never>(() => undefined);
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>(() => navigation)} isCurrent={() => true}>
+        <CaptureController />
+      </Providers>,
+      async () => {
+        let outcomes: unknown;
+        await act(async () => {
+          outcomes = await controller?.disposeDrafts("apply", [
+            { documentId: "document-a", draftId: "draft-a" },
+            { documentId: "document-b", draftId: "draft-b" },
+          ]);
+        });
+        expect(outcomes).toEqual([{ kind: "applied" }, { kind: "applied" }]);
+        expect(applyMutate).toHaveBeenCalledTimes(2);
+        expect(controller?.isDisposing).toBe(false);
       },
     );
   });

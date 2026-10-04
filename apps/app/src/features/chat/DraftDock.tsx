@@ -22,13 +22,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
-import { draftCommandErrorKey, useDraftCommandErrors } from "./draft-command-errors";
 import type { InlineReviewMessageCode } from "./draft-review-session";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
 import { ReviewMessageText } from "./ReviewMessageText";
@@ -38,7 +38,7 @@ export type DraftDockModel = ReturnType<typeof useDraftDock>;
 export function useDraftDock({ generating }: { generating: boolean }) {
   const { groups, controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
-  const commandErrors = useDraftCommandErrors();
+  const commandRecords = useDraftCommandRecords();
 
   const applyDraft = useCallback(
     (row: DockRow) => {
@@ -86,9 +86,10 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     dispositionError: controller.dockDispositionError,
     /** A refused command on this row's draft, shown on the row it belongs to. */
     rowError: (row: DockRow) =>
-      commandErrors[
-        draftCommandErrorKey({ documentId: row.documentId, draftId: row.draft.draftId })
-      ] ?? null,
+      draftCommandFailure(commandRecords, {
+        documentId: row.documentId,
+        draftId: row.draft.draftId,
+      }),
     reviewRow,
     openRow,
     reviewFirst: () => {

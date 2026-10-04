@@ -12,6 +12,7 @@ import { useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
+import { draftReadFence, withoutConfirmedSince } from "./draft-command-record";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -97,8 +98,9 @@ export function useWorkDrafts(
     useQuery({
       queryKey: projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""),
       queryFn: async () => {
+        const fence = draftReadFence();
         const response = await listWorkDrafts(projectId as string, workId as string);
-        return response.drafts;
+        return withoutConfirmedSince(fence, response.drafts);
       },
       staleTime: 15_000,
       enabled,
