@@ -74,17 +74,6 @@ type ContextRemovalWorkingSetPort = {
   replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[];
 };
 
-export interface DraftTabMutationFencePort {
-  currentFence(input: {
-    accountId: string;
-    projectId: string;
-    workId: string;
-    documentId: string;
-    draftId: string;
-    tabInstanceToken: string;
-  }): "unfenced" | "apply-reservation-pending";
-}
-
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
   updateSearch(projectId: string, update: (latest: ProjectSearch) => ProjectSearch): void;
@@ -107,7 +96,6 @@ type EditorWorkspacePort = {
   settleDraft(
     projectId: string,
     identity: ReviewOverlayTabIdentity,
-    disposition?: "applied" | "discarded",
   ): Promise<DraftWorkspaceSettlementReceipt>;
   previewReviewTab(
     projectId: string,
@@ -192,42 +180,6 @@ export type ContextRemovalLifetimeLease = {
   disposeIfSuspended(): boolean;
 };
 
-export type DraftRecoveryContextCommand = Readonly<{
-  identity: {
-    accountId: string;
-    projectId: string;
-    workId: string;
-    documentId: string;
-    draftId: string;
-  };
-  entryVersion: number;
-  dispositionToken: number;
-  disposition: "live-ready" | "writer-abandoned";
-  draftTab:
-    | { kind: "none" }
-    | {
-        kind: "draft-only";
-        reviewWorkId: string;
-        reviewDraftId: string;
-        tabInstanceToken: string;
-      };
-}>;
-
-export type DraftRecoveryContextReceipt = Readonly<{
-  kind:
-    | "metadata-resolved"
-    | "tab-removed"
-    | "already-absent"
-    | "obsolete-obligation"
-    | "not-applicable"
-    | "stale-obligation";
-  recovery: {
-    identity: DraftRecoveryContextCommand["identity"];
-    entryVersion: number;
-  };
-  dispositionToken: number;
-}>;
-
 const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   activeWorkId: null,
   selection: { status: "none", revision: 0 },
@@ -259,7 +211,6 @@ export class ContextRemovalCoordinator {
   private readonly workspace: EditorWorkspacePort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
-  private readonly draftTabFence: DraftTabMutationFencePort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
@@ -279,7 +230,6 @@ export class ContextRemovalCoordinator {
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
-          draftTabFence?: DraftTabMutationFencePort;
         }
       | null = null,
     explicitDependencies: {
@@ -287,7 +237,6 @@ export class ContextRemovalCoordinator {
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
-      draftTabFence?: DraftTabMutationFencePort;
     } = {},
   ) {
     const dependencies =
@@ -299,7 +248,6 @@ export class ContextRemovalCoordinator {
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
-    this.draftTabFence = dependencies.draftTabFence ?? null;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -527,68 +475,6 @@ export class ContextRemovalCoordinator {
     return this.projects.get(projectId)?.snapshot ?? EMPTY_PROJECT_SNAPSHOT;
   }
 
-  async settleDraftRecovery(
-    command: DraftRecoveryContextCommand,
-  ): Promise<DraftRecoveryContextReceipt> {
-    const receipt = (kind: DraftRecoveryContextReceipt["kind"]): DraftRecoveryContextReceipt => ({
-      kind,
-      recovery: { identity: command.identity, entryVersion: command.entryVersion },
-      dispositionToken: command.dispositionToken,
-    });
-    if (this.unavailable() || command.identity.accountId !== this.accountId)
-      return receipt("stale-obligation");
-    if (command.draftTab.kind === "none") return receipt("not-applicable");
-    const draftTab = command.draftTab;
-    const tabs = this.workspace.read(command.identity.projectId).tabs;
-    const exact = tabs.find(
-      (tab) =>
-        tab.documentId === command.identity.documentId &&
-        tab.kind !== "new" &&
-        tab.draftOnly &&
-        tab.reviewWorkId === draftTab.reviewWorkId &&
-        tab.reviewDraftId === draftTab.reviewDraftId &&
-        tab.tabInstanceToken === draftTab.tabInstanceToken,
-    );
-    if (!exact) {
-      const oldToken = tabs.find(
-        (tab) => tab.kind !== "new" && tab.tabInstanceToken === draftTab.tabInstanceToken,
-      );
-      if (oldToken) return receipt("stale-obligation");
-      const replacement = tabs.find((tab) => tab.documentId === command.identity.documentId);
-      return receipt(replacement ? "obsolete-obligation" : "already-absent");
-    }
-    if (command.disposition === "live-ready") {
-      if (!exact.tabInstanceId) return receipt("stale-obligation");
-      const identity = {
-        documentId: exact.documentId,
-        tabInstanceId: exact.tabInstanceId,
-        reviewWorkId: draftTab.reviewWorkId,
-        reviewDraftId: draftTab.reviewDraftId,
-        tabInstanceToken: draftTab.tabInstanceToken,
-      };
-      const settled = await this.workspace.settleDraft(command.identity.projectId, identity);
-      if (settled.kind !== "settled") return receipt("stale-obligation");
-      const consumed = this.workspace.closeReviewTab(command.identity.projectId, identity);
-      return receipt(consumed.kind === "consumed" ? "metadata-resolved" : "stale-obligation");
-    }
-    if (!exact.tabInstanceId) return receipt("stale-obligation");
-    const identity = {
-      documentId: exact.documentId,
-      tabInstanceId: exact.tabInstanceId,
-      reviewWorkId: draftTab.reviewWorkId,
-      reviewDraftId: draftTab.reviewDraftId,
-      tabInstanceToken: draftTab.tabInstanceToken,
-    };
-    const settled = await this.workspace.settleDraft(
-      command.identity.projectId,
-      identity,
-      "discarded",
-    );
-    if (settled.kind !== "settled") return receipt("stale-obligation");
-    const consumed = this.workspace.closeReviewTab(command.identity.projectId, identity);
-    return receipt(consumed.kind === "consumed" ? "tab-removed" : "stale-obligation");
-  }
-
   /** One logical project-final batch across workspace, route, recent-route, selection, and sessions. */
   reconcileDocumentAvailability(
     commands: readonly ProjectDocumentAvailabilityCommand[],
@@ -799,7 +685,7 @@ export class ContextRemovalCoordinator {
   writerClose(
     projectId: string,
     documentId: string,
-  ): ContextRemovalOutcome | { kind: "apply-disposition-pending" } | Promise<NavigationSettlement> {
+  ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
     const slice = this.workspace.read(projectId);
@@ -856,22 +742,7 @@ export class ContextRemovalCoordinator {
           current !== slice
         )
           return false;
-        return !(
-          tab.kind !== "new" &&
-          tab.draftOnly &&
-          this.accountId &&
-          tab.reviewWorkId &&
-          tab.reviewDraftId &&
-          tab.tabInstanceToken &&
-          this.draftTabFence?.currentFence({
-            accountId: this.accountId,
-            projectId,
-            workId: tab.reviewWorkId,
-            documentId,
-            draftId: tab.reviewDraftId,
-            tabInstanceToken: tab.tabInstanceToken,
-          }) === "apply-reservation-pending"
-        );
+        return true;
       },
       commit: () => {
         this.commitWriterClose(projectId, documentId, "never");
@@ -883,25 +754,13 @@ export class ContextRemovalCoordinator {
     projectId: string,
     documentId: string,
     repair: "allow" | "never" = "allow",
-  ): ContextRemovalOutcome | { kind: "apply-disposition-pending" } {
+  ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
     if (tab?.kind !== "new" && tab?.draftOnly) {
       if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewDraftId || !tab.tabInstanceToken)
         return { kind: "noop" };
-      if (
-        this.accountId &&
-        this.draftTabFence?.currentFence({
-          accountId: this.accountId,
-          projectId,
-          workId: tab.reviewWorkId,
-          documentId,
-          draftId: tab.reviewDraftId,
-          tabInstanceToken: tab.tabInstanceToken,
-        }) === "apply-reservation-pending"
-      )
-        return { kind: "apply-disposition-pending" };
       const identity = {
         documentId,
         tabInstanceId: tab.tabInstanceId,

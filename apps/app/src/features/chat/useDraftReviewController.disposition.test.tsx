@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-/** Draft-only Discard closes its tab at once; a refusal leaves it closed and holds the error on the draft. */
+/** Draft dispositions: draft-only Discard closes its tab at once, and Apply is done at server confirmation. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DraftApplyOutcomeUnknownError } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
@@ -32,8 +33,11 @@ vi.mock("@/client/api/drafts-api", () => ({
   })),
 }));
 
-vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useApplyDraft: () => ({ mutateAsync: vi.fn() }),
+const applyMutate = vi.hoisted(() => vi.fn());
+
+vi.mock("@/client/query/useDraftReviewMutations", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/query/useDraftReviewMutations")>()),
+  useApplyDraft: () => ({ mutateAsync: applyMutate }),
   useDiscardDraft: () => ({
     mutateAsync: () =>
       new Promise((_resolve, reject) => {
@@ -44,16 +48,6 @@ vi.mock("@/client/query/useDraftReviewMutations", () => ({
 
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => coordinator,
-}));
-
-vi.mock("@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
-  usePostApplyAccountId: () => "account-a",
-}));
-
-vi.mock("@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor", () => ({
-  useProjectDraftApplyRecovery: () => ({
-    awaitInitialOutcome: vi.fn(),
-  }),
 }));
 
 const draftTab = contextTabFromDraftGroup({
@@ -127,8 +121,9 @@ function Providers({ children, open }: { children: ReactNode; open: OpenContextR
   );
 }
 
-describe("draft-only Discard", () => {
+describe("draft dispositions", () => {
   beforeEach(() => {
+    applyMutate.mockReset();
     controller = null;
     rejectDiscard = null;
     currentAddress = "/projects/project-a/@work-a/manuscript/chapter.md";
@@ -225,6 +220,65 @@ describe("draft-only Discard", () => {
         });
         expect(heldError()).toBe("discard-offline");
         expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
+      },
+    );
+  });
+
+  it("counts Apply as done at server confirmation: promotes the draft-only tab and leaves review", async () => {
+    applyMutate.mockResolvedValue(undefined);
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()}>
+        <CaptureController />
+      </Providers>,
+      async () => {
+        await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
+        let outcome: unknown;
+        await act(async () => {
+          outcome = await controller?.apply("document-a", "draft-a");
+        });
+
+        expect(outcome).toEqual({ kind: "applied" });
+        expect(controller?.inlineReview).toBeNull();
+        expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs).toEqual(
+          [],
+        );
+        const live = useContextTabsStore
+          .getState()
+          .byProject["project-a"]?.tabs.find((tab) => tab.documentId === "document-a");
+        expect(live).toBeDefined();
+        expect(live).not.toHaveProperty("draftOnly");
+        expect(heldError()).toBeUndefined();
+      },
+    );
+  });
+
+  it("holds a lost Apply response as unknown on the draft, apart from a rejection", async () => {
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()}>
+        <CaptureController />
+      </Providers>,
+      async () => {
+        await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
+        applyMutate.mockRejectedValueOnce(new DraftApplyOutcomeUnknownError());
+        let outcome: unknown;
+        await act(async () => {
+          outcome = await controller?.apply("document-a", "draft-a");
+        });
+        expect(outcome).toEqual({ kind: "apply-outcome-unknown" });
+        expect(heldError()).toBe("apply-unknown");
+        expect(controller?.inlineReviewMessage).toMatchObject({ code: "apply-unknown" });
+        expect(controller?.inlineReview).toMatchObject({ draftId: "draft-a" });
+        expect(
+          getContextTabs("project-a").tabs.some((tab) => "draftOnly" in tab && tab.draftOnly),
+        ).toBe(true);
+
+        applyMutate.mockRejectedValueOnce(new Error("rejected"));
+        await act(async () => {
+          outcome = await controller?.apply("document-a", "draft-a");
+        });
+        expect(outcome).toEqual({ kind: "failed", code: "apply-failed" });
+        expect(heldError()).toBeUndefined();
+        expect(controller?.inlineReviewMessage).toMatchObject({ code: "apply-failed" });
       },
     );
   });

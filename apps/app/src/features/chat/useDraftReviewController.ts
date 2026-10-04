@@ -14,12 +14,14 @@ import {
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
+import {
+  DraftApplyOutcomeUnknownError,
+  useApplyDraft,
+  useDiscardDraft,
+} from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
-import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
   useIsCurrentContextRoute,
   useOpenContextRoute,
@@ -101,12 +103,9 @@ export function useDraftReviewController(
   projectId: string,
   workId: string,
   threadId: string | null = null,
-  owningWorkLabel: string | null = null,
   stateOwner?: DraftReviewStateOwner,
 ): DraftReviewController {
   const queryClient = useQueryClient();
-  const accountId = usePostApplyAccountId();
-  const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
@@ -219,50 +218,17 @@ export function useDraftReviewController(
   commandPortsRef.current = {
     apply: async ({ documentId, draftId }) => {
       clearDraftCommandError({ documentId, draftId });
-      let applyRoomName = reviewRoomName;
-      if (!applyRoomName) {
-        const preview = await getDraftPreview(projectId, workId, documentId, draftId);
-        if (preview.status !== "active" || preview.draftId !== draftId)
-          throw new Error("Draft Apply branch is no longer active");
-        applyRoomName = preview.reviewRoomName;
-        queryClient.setQueryData(
-          projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-          preview,
-        );
-      }
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
-      const result = await applyMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        identity: { accountId, projectId, workId, documentId, draftId },
-        presentation: {
-          documentName: tab?.name ?? null,
-          contextPath: tab && tab.kind !== "new" ? tab.path : null,
-          owningWorkLabel,
-        },
-        obligations: {
-          draftTab:
-            tab?.kind === "tracked" &&
-            tab.draftOnly &&
-            tab.reviewWorkId === workId &&
-            tab.reviewDraftId === draftId &&
-            tab.tabInstanceToken
-              ? {
-                  kind: "draft-only",
-                  reviewWorkId: workId,
-                  reviewDraftId: draftId,
-                  tabInstanceToken: tab.tabInstanceToken,
-                }
-              : { kind: "none" },
-          branch: { kind: "generation-qualified", reviewRoomName: applyRoomName },
-        },
-      });
-      if (result.kind !== "server-applied-awaiting-live") return result;
+      try {
+        await applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
+      } catch (error) {
+        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
+        throw error;
+      }
+      // Confirmed: the draft is applied. What follows is the ordinary live
+      // document's business, so none of it can undo this result.
       if (tab?.kind === "tracked" && tab.draftOnly) {
         await contextRemoval.promoteAppliedDraft(projectId, tab);
       }
@@ -282,12 +248,7 @@ export function useDraftReviewController(
           });
         }
       }
-      const initial = await recovery.awaitInitialOutcome(result.recovery);
-      return initial.kind === "live-ready"
-        ? { kind: "live-ready" }
-        : initial.kind === "writer-abandoned"
-          ? { kind: "server-applied-settled-elsewhere", outcome: "writer-abandoned" }
-          : result;
+      return "applied";
     },
     discard: async ({ documentId, draftId }, input) => {
       await discardMutation.mutateAsync({
@@ -318,7 +279,7 @@ export function useDraftReviewController(
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftFailed: (selection, code) => {
-      if (code === "discard-offline") setDraftCommandError(selection, code);
+      if (code !== "apply-failed") setDraftCommandError(selection, code);
       dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {

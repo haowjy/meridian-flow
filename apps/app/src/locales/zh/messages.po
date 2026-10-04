@@ -98,11 +98,6 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
-#. placeholder {0}: group.drafts.length
-#: src/features/project/work/WorkDrafts.tsx
-#~ msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
-#~ msgstr ""
-
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -133,7 +128,7 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: dock.serverActiveCount
+#. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr ""
@@ -205,11 +200,6 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
-#. placeholder {0}: work.name
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "{0}, Archived"
-#~ msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -221,10 +211,6 @@ msgstr ""
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
-#~ msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -357,10 +343,6 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
-
-#: src/features/project/work/WorkCollection.tsx
-#~ msgid "A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI what you’re after."
-#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -516,10 +498,6 @@ msgid "Appearance and behavior settings."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Applied. Reopening live document."
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
 msgid "Apply"
 msgstr ""
 
@@ -540,18 +518,10 @@ msgstr ""
 msgid "Archived"
 msgstr ""
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "Archived Work"
-#~ msgstr ""
-
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Asleep"
-#~ msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -771,16 +741,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Chats you start here stay with this Work."
-#~ msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Check again"
-msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
@@ -800,10 +760,6 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking recent changes…"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Checking whether Apply finished."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -860,8 +816,6 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -1074,7 +1028,6 @@ msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
 #: src/features/chat/ReviewMessageText.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
 
@@ -1092,6 +1045,10 @@ msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't confirm whether this applied. It will update when you're back online."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1135,7 +1092,6 @@ msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
 #: src/features/chat/ReviewMessageText.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
@@ -1507,14 +1463,6 @@ msgstr ""
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
 
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
-#~ msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deletes for good within a day"
-#~ msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
 msgstr ""
@@ -1749,10 +1697,6 @@ msgstr ""
 msgid "epigraph"
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Errored."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
 msgstr ""
@@ -1837,16 +1781,6 @@ msgstr ""
 msgid "Filter subagents"
 msgstr "筛选子代理"
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish close"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish reopening"
-msgstr ""
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
@@ -1855,14 +1789,6 @@ msgstr "已完成"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
 msgstr "已完成"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing close"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing reopening"
-msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Finishing write mode change"
@@ -1891,10 +1817,6 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Generating"
-#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -3140,10 +3062,8 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -3235,10 +3155,6 @@ msgstr ""
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save changes"
 msgstr ""
-
-#: src/features/project/work/WorkMetadata.tsx
-#~ msgid "Save failed"
-#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save goal changes?"
@@ -3459,11 +3375,6 @@ msgstr ""
 msgid "Split cell"
 msgstr ""
 
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Start a chat in this Work"
-#~ msgstr ""
-
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
 msgstr ""
@@ -3496,8 +3407,6 @@ msgstr "状态未知"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "停止"
 
@@ -4252,10 +4161,6 @@ msgstr ""
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Waiting"
-#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."

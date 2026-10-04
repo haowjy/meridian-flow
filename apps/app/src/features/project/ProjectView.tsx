@@ -21,7 +21,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -33,7 +33,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { isEditorTab, useContextTabs, useContextTabsStore } from "@/client/stores";
+import { useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -46,7 +46,6 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/chat/DraftReviewProvider";
-import { inlineReviewFromState } from "@/features/chat/draft-review-session";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import {
   type DraftReviewStateOwner,
@@ -62,7 +61,6 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
-import { activeEditorDocumentId } from "./context/active-editor-document";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
@@ -74,7 +72,6 @@ import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
 } from "./dock/editor-review-handoff";
-import { ProjectDraftApplyRecoveryExecutor } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
@@ -86,11 +83,7 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
-import {
-  type MobileDocumentRoute,
-  mobileEditableDocumentId,
-  useMobileDocumentRoute,
-} from "./mobile/mobile-document-route";
+import { type MobileDocumentRoute, useMobileDocumentRoute } from "./mobile/mobile-document-route";
 import {
   type ChatDisplay,
   chatSurfaceThreadId,
@@ -409,7 +402,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const chatReviewState = useDraftReviewStateOwner();
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
-  const { tabs, selectedTabIdByWork } = useContextTabs(props.projectId);
   const requestedMobileDocumentRoute = useMobileDocumentRoute({
     enabled:
       usePhone === true &&
@@ -462,59 +454,16 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       priorMobile.current = null;
     }
   });
-  const workLabels = useMemo(
-    () => Object.fromEntries(props.availableWorks.map((work) => [work.id, work.name])),
-    [props.availableWorks],
-  );
   if (usePhone === null) return null;
-  const activeDesktopDocumentId =
-    activeEditorDocumentId(
-      props.activeLocalDocumentId,
-      selectedTabIdByWork[props.editorWorkId ?? ""],
-    ) ?? null;
-  const desktopHostDocumentIds =
-    usePhone ||
-    props.activeScreen !== "context" ||
-    props.editorScope.status !== "ready" ||
-    !props.contextLive ||
-    props.routeIssues?.editor
-      ? []
-      : tabs.flatMap((tab) =>
-          tab.documentId === activeDesktopDocumentId &&
-          (tab.kind === "tracked" || tab.kind === "new") &&
-          !("draftOnly" in tab && tab.draftOnly) &&
-          isEditorTab(tab, props.editorWorkId)
-            ? [tab.documentId]
-            : [],
-        );
-  const inlineDocumentIds = [
-    inlineReviewFromState(chatReviewState.state)?.documentId,
-    inlineReviewFromState(editorReviewState.state)?.documentId,
-  ].filter(
-    (documentId): documentId is string =>
-      Boolean(documentId) &&
-      !tabs.some(
-        (tab) => tab.documentId === documentId && "draftOnly" in tab && Boolean(tab.draftOnly),
-      ),
-  );
   return (
-    <ProjectDraftApplyRecoveryExecutor
-      projectId={props.projectId}
-      scopeKey={`${props.chatWorkId ?? ""}:${props.editorWorkId ?? ""}`}
-      mobileHostDocumentId={mobileEditableDocumentId(mobileDocumentRoute)}
-      inlineDocumentIds={inlineDocumentIds}
-      desktopHostDocumentIds={desktopHostDocumentIds}
-      workLabels={workLabels}
-    >
-      <HydratedReviewControllers
-        {...displayedProps}
-        retainEditorWhileLoading={retainEditorWhileLoading}
-        chatReviewState={chatReviewState}
-        editorReviewState={editorReviewState}
-        mobileDocumentRoute={mobileDocumentRoute}
-        usePhone={usePhone}
-      />
-    </ProjectDraftApplyRecoveryExecutor>
+    <HydratedReviewControllers
+      {...displayedProps}
+      retainEditorWhileLoading={retainEditorWhileLoading}
+      chatReviewState={chatReviewState}
+      editorReviewState={editorReviewState}
+      mobileDocumentRoute={mobileDocumentRoute}
+      usePhone={usePhone}
+    />
   );
 }
 
@@ -536,15 +485,12 @@ function HydratedReviewControllers({
   const chatReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     workId: props.chatWorkId,
-    owningWorkLabel: props.chatWork?.name ?? null,
     stateOwner: chatReviewState,
     threadId: props.chatThreadId,
   });
   const editorReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     workId: props.editorWorkId,
-    owningWorkLabel:
-      props.availableWorks.find((work) => work.id === props.editorWorkId)?.name ?? null,
     stateOwner: editorReviewState,
     threadId: null,
   });

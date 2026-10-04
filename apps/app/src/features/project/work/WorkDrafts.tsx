@@ -11,7 +11,6 @@ import {
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
-import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import { RowIcon, RuledList } from "../RuledList";
 import { WorkFileGroup } from "./WorkFileGroup";
 import { workFileRowClass } from "./WorkFileRows";
@@ -29,9 +28,7 @@ export function WorkDrafts({
   const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
   const commandErrors = useDraftCommandErrors();
-  const groups = activeWorkDraftGroups(
-    usePostApplyDraftGroupProjections(query.groups, projectId, workId).commandEligibleGroups,
-  );
+  const groups = activeWorkDraftGroups(query.groups);
   const visible = groups.filter((group) =>
     matchesSearch(group.documentName || group.contextPath || ""),
   );

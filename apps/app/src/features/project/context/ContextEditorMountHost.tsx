@@ -11,8 +11,6 @@ import type { ResourceContentHandle } from "@/core/resources/resource-content-ac
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
-import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
-import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
@@ -242,8 +240,6 @@ export function ContextEditorMountHost({
             documentId={tab.documentId}
             resourceHandle={resourceHandle}
             availabilityRevision={availabilityRevision}
-            claimLiveAdmission={!tab.draftOnly}
-            active={active && isActive}
           >
             {renderEditor}
           </ContextTabSessionBoundary>
@@ -259,18 +255,12 @@ export function ContextTabSessionBoundary({
   documentId,
   resourceHandle,
   availabilityRevision,
-  claimLiveAdmission = true,
   children,
-  active = true,
 }: {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
   availabilityRevision: string;
-  /** Draft-only tabs still host the draft branch. They graduate only after
-   * the recovery verifier proves the published live document is ready. */
-  claimLiveAdmission?: boolean;
-  active?: boolean;
   children: (
     session: DocumentSession | null,
     failed: boolean,
@@ -279,7 +269,6 @@ export function ContextTabSessionBoundary({
   ) => ReactNode;
 }) {
   const resources = useAccountResourceReplica();
-  const [generation] = useState(() => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
@@ -386,9 +375,8 @@ export function ContextTabSessionBoundary({
   );
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId,
+    documentId: currentLocal.phase === "server" ? documentId : null,
     owner: "desktop-server-tab",
-    connect: currentLocal.phase === "server",
   });
   const automaticRetryRevision = useRef(availabilityRevision);
   useEffect(() => {
@@ -397,12 +385,6 @@ export function ContextTabSessionBoundary({
     automaticRetryRevision.current = availabilityRevision;
     binding.retry();
   }, [availabilityRevision, binding.retry, binding.state.kind]);
-  useLiveBindingAcknowledgementHost(
-    projectId,
-    active && claimLiveAdmission ? documentId : null,
-    binding,
-  );
-  usePostApplyHostWake(projectId, active ? documentId : null, generation);
   const state = binding.state;
   useEffect(() => {
     if (state.kind !== "opened" || state.documentId !== documentId) return;

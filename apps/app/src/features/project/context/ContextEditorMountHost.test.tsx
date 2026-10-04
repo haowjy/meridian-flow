@@ -14,17 +14,10 @@ const resourceReplica = vi.hoisted(() => ({
   openDocument: vi.fn(),
   captureServerSession: vi.fn(async () => undefined),
 }));
-const liveHost = vi.hoisted(() => ({ register: vi.fn() }));
 
 vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
-}));
-vi.mock("../dock/editor-review-handoff", () => ({
-  useLiveBindingAcknowledgementHost: (...args: unknown[]) => liveHost.register(...args),
-}));
-vi.mock("../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor", () => ({
-  usePostApplyHostWake: () => undefined,
 }));
 
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
@@ -69,33 +62,6 @@ describe("ContextTabSessionBoundary", () => {
 
     expect(resourceAvailabilityRevision(snapshot(1), "document-a")).toBe(
       resourceAvailabilityRevision(snapshot(2), "document-a"),
-    );
-  });
-
-  it("does not claim a live admission while a draft-only branch is mounted", async () => {
-    const draftSession = session();
-    resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
-    resourceReplica.openDocument.mockResolvedValue({
-      kind: "opened",
-      handle: { session: draftSession, release: vi.fn() },
-    });
-    const opener = { open: vi.fn() };
-
-    await withReactRoot(
-      <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-        <ContextTabSessionBoundary
-          projectId="project-a"
-          documentId="document-a"
-          availabilityRevision="catalog-1"
-          claimLiveAdmission={false}
-        >
-          {() => null}
-        </ContextTabSessionBoundary>
-      </ProjectDocumentLiveOpenerContext.Provider>,
-      async () => {
-        await act(async () => undefined);
-        expect(liveHost.register.mock.calls.at(-1)?.[1]).toBeNull();
-      },
     );
   });
 

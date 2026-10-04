@@ -1,10 +1,4 @@
 /** One command/state policy for Work-draft selection and disposition. */
-import type {
-  ApplyExecutionResult,
-  ApplyReservationRef,
-  DraftRecoveryRef,
-} from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
-
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
   | { kind: "discard-draft"; documentId: string; draftId: string }
@@ -69,19 +63,15 @@ export class DraftDispositionLock {
 export type DraftCommandOutcome =
   | { kind: "blocked" }
   | { kind: "applied" }
-  | { kind: "server-applied-awaiting-live"; recovery: DraftRecoveryRef }
-  | { kind: "apply-outcome-unknown"; reservation: ApplyReservationRef }
-  | {
-      kind: "server-applied-settled-elsewhere";
-      outcome: "live-ready" | "writer-abandoned";
-    }
+  | { kind: "apply-outcome-unknown" }
   | { kind: "discarded" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
-export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
+export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
 export type DraftReviewCommandPorts = {
-  apply: (selection: DraftReviewSelection) => Promise<ApplyExecutionResult>;
+  /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
+  apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
@@ -90,7 +80,7 @@ export type DraftReviewCommandPorts = {
   draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
-    code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
+    code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">,
   ) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
@@ -169,12 +159,12 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
     try {
-      const result = await ports.apply(selection);
-      if (result.kind === "live-ready") {
-        ports.draftApplied(selection);
-        return { kind: "applied" };
+      if ((await ports.apply(selection)) === "unknown") {
+        ports.draftFailed(selection, "apply-unknown");
+        return { kind: "apply-outcome-unknown" };
       }
-      return result;
+      ports.draftApplied(selection);
+      return { kind: "applied" };
     } catch {
       ports.draftFailed(selection, "apply-failed");
       return { kind: "failed", code: "apply-failed" };
@@ -224,11 +214,9 @@ function batchErrorCode(
   mode: "apply" | "discard",
   outcomes: readonly DraftCommandOutcome[],
 ): DraftBatchErrorCode | null {
-  return outcomes.at(-1)?.kind === "failed"
-    ? mode === "apply"
-      ? "apply-failed"
-      : "discard-offline"
-    : null;
+  const last = outcomes.at(-1)?.kind;
+  if (last === "apply-outcome-unknown") return "apply-unknown";
+  return last === "failed" ? (mode === "apply" ? "apply-failed" : "discard-offline") : null;
 }
 
 export type DraftReviewSelection = {
@@ -244,7 +232,11 @@ export type InlineDraftReview = DraftReviewSelection;
  * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
  * single source of message identity for both Apply messages and discard errors.
  */
-export type InlineReviewMessageCode = "apply-failed" | "discard-offline" | "discard-failed";
+export type InlineReviewMessageCode =
+  | "apply-failed"
+  | "apply-unknown"
+  | "discard-offline"
+  | "discard-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
@@ -273,7 +265,7 @@ export type DraftReviewAction =
   | {
       type: "draftCommandFailed";
       selection: DraftReviewSelection;
-      code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">;
+      code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">;
     }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
