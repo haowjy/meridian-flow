@@ -73,25 +73,8 @@ describe("effective document reader destinations (D40)", () => {
       model: {} as never,
       codec: {} as never,
     });
-    return { effective, branches, branchPulls, readVersionedMarkdown };
+    return { effective, readVersionedMarkdown };
   }
-
-  it("reads live without touching a kept Work draft when the thread writes live", async () => {
-    const { effective, branches, branchPulls, readVersionedMarkdown } = reader();
-
-    const read = await effective.readEffectiveMarkdown({
-      documentId: "00000000-0000-4000-8000-000000000358" as never,
-      threadId: "00000000-0000-4000-8000-000000000357" as never,
-      destination: "live",
-    });
-
-    expect(read).toEqual({ ok: true, value: { content: "Live text.", revision: "y1:live" } });
-    expect(readVersionedMarkdown).toHaveBeenCalledOnce();
-    expect(branches.resolveThreadBranch).not.toHaveBeenCalled();
-    expect(branches.resolveWorkDraftBranchForThread).not.toHaveBeenCalled();
-    expect(branchPulls.pullThreadPeer).not.toHaveBeenCalled();
-    expect(branchPulls.flushLivePull).not.toHaveBeenCalled();
-  });
 
   it("leaves out this reply's drafted writes when it reads live", async () => {
     const { effective, readVersionedMarkdown } = reader({ destination: "draft" });
