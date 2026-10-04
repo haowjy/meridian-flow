@@ -7,8 +7,10 @@ import {
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
+import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
+import { readChainPermission } from "../loop/permissions/agent-chain.js";
 import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
 import {
   type EffectiveToolPolicy,
@@ -32,6 +34,8 @@ export interface AgentThreadTurnContext {
 export interface ResolveAgentThreadTurnContextInput {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  /** Walks the spawn lineage for the chain's permission. */
+  threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   toolRegistry: ToolRegistry;
   baseTools: Tool[] | undefined;
 }
@@ -40,7 +44,7 @@ export interface ResolveAgentThreadTurnContextInput {
 export const SUBAGENT_GUIDANCE =
   "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
 
-/** States a `read` agent's permission up front so it rarely meets a refusal (file-access §8). */
+/** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
 export const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only this Work's scratch://.";
 
@@ -115,9 +119,20 @@ export async function resolveAgentThreadTurnContext(
     agentBody,
     appendPrompt: binding.invocationOverlay?.appendSystemPrompt,
     subagentGuidance: input.thread.kind === "subagent" ? SUBAGENT_GUIDANCE : undefined,
-    permissionGuidance:
-      binding.configuration.permission === "read" ? READ_PERMISSION_GUIDANCE : undefined,
+    permissionGuidance: (await chainIsReadOnly(input, binding.configuration.permission))
+      ? READ_PERMISSION_GUIDANCE
+      : undefined,
   };
+}
+
+/** A root thread needs no lineage walk; a child is `read` when any spawner is. */
+async function chainIsReadOnly(
+  input: ResolveAgentThreadTurnContextInput,
+  own: ResolvedAgentConfiguration["permission"],
+): Promise<boolean> {
+  if (own === "read") return true;
+  const parentId = input.thread.parentThreadId;
+  return parentId != null && (await readChainPermission(input, parentId)) === "read";
 }
 
 function toolName(tool: Tool): string {

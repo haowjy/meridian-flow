@@ -66,6 +66,7 @@ export interface AssembleNextTurnContextInput {
   turns: Turn[];
   blocks: Block[];
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
+  threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
@@ -165,6 +166,7 @@ export async function assembleNextTurnContext(
   const agentContext = await resolveAgentThreadTurnContext({
     thread,
     agentRevisions: input.agentRevisions,
+    threads: input.threads,
     toolRegistry: input.toolRegistry,
     baseTools: input.baseTools,
   });

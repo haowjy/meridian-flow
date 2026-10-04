@@ -101,6 +101,7 @@ async function boundContext(metadata: {
       : metadata.revision;
   return resolveAgentThreadTurnContext({
     thread: { ...thread, kind: metadata.kind ?? "primary" },
+    threads: repos.threads,
     agentRevisions: {
       async readThreadBinding(threadId) {
         if (threadId !== thread.id) return undefined;

@@ -723,6 +723,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
     const context = await resolveAgentThreadTurnContext({
       thread: childThread,
       agentRevisions: revisions,
+      threads: repos.threads,
       toolRegistry: createToolRegistry(),
       baseTools: undefined,
     });
