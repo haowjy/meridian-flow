@@ -17,6 +17,7 @@
 - A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
 - An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
+- Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
