@@ -198,7 +198,7 @@ export function ContextEditorMountHost({
                     </div>
                   </div>
                 </div>
-              ) : waitingForReviewRoom || (branchOnly && !reviewDraftId) ? null : (
+              ) : waitingForReviewRoom ? null : (
                 <>
                   {active && isActive ? (
                     <ActiveEditorProjection

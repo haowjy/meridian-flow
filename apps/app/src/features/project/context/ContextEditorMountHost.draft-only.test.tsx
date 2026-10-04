@@ -18,15 +18,16 @@ vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
 }));
+const review = vi.hoisted(() => ({ reviewing: false, publish: vi.fn() }));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
       workId: "work-a",
-      inlineReview: { documentId: "document-a", draftId: "draft-a" },
+      inlineReview: review.reviewing ? { documentId: "document-a", draftId: "draft-a" } : null,
       reviewRoomError: false,
     },
     reviewRoomNameForDraft: () => "review-room-a",
-    setActiveEditorDocumentId: vi.fn(),
+    setActiveEditorDocumentId: review.publish,
   }),
 }));
 vi.mock("@/features/editor/EditorView", () => ({
@@ -58,6 +59,7 @@ const tab = {
 } as const;
 
 describe("ContextEditorMountHost draft-only review", () => {
+  review.reviewing = false;
   it("opens no live room while reviewing, then opens the ordinary one once promoted", async () => {
     const opener = {
       open: vi.fn(async () => ({
@@ -77,10 +79,16 @@ describe("ContextEditorMountHost draft-only review", () => {
       })),
     };
     let promote!: () => void;
+    let startReview!: () => void;
 
     function Harness() {
       const [promoted, setPromoted] = useState(false);
+      const [, setReviewing] = useState(false);
       promote = () => setPromoted(true);
+      startReview = () => {
+        review.reviewing = true;
+        setReviewing(true);
+      };
       const hostedTab = (
         promoted
           ? tab
@@ -101,6 +109,10 @@ describe("ContextEditorMountHost draft-only review", () => {
 
     await withReactRoot(<Harness />, async () => {
       await act(async () => undefined);
+      // The review handoff claims review once the document is published as the
+      // active editor, which needs no live session.
+      expect(review.publish).toHaveBeenCalledWith("document-a", null, false, expect.anything());
+      await act(async () => startReview());
       const editor = document.querySelector("[data-editor]");
       expect(editor?.getAttribute("data-review-room")).toBe("review-room-a");
       expect(editor?.getAttribute("data-live-session")).toBe("false");
