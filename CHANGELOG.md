@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Respell relative links when their holder moves into personal space, preserving project targets rather than linking to unrelated personal documents.
+
 - Preserve whole-holder link batches while targets are deleted, serialize overwrite moves with maintenance, and leave personal links unresolved when their targets move into another project.
 
 - Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance. Keep each holder's pending batch together when another move arrives during backoff.

@@ -99,7 +99,7 @@ export function createLinkUpdateWorker(input: {
               // A partial batch can emit an href owned by a still-pending redirect.
               // Defer without backoff until every target is available again.
               if (!targetUri) return null;
-              if (redirect.targetDocumentId) {
+              if (redirect.targetDocumentId && !cut.holderUri.startsWith("user://")) {
                 const [target] = await tx
                   .select({ projectId: projects.id, isPersonal: projects.isPersonal })
                   .from(documents)
@@ -110,8 +110,9 @@ export function createLinkUpdateWorker(input: {
                     eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
                   )
                   .where(eq(documents.id, redirect.targetDocumentId));
-                // Project URIs cannot name another project's document. Keep the old
-                // href dashed instead of quietly pointing at the local occupant.
+                // A project holder cannot name a target moved into another project.
+                // Personal holders instead use contextual project URIs: in particular,
+                // moving a holder into user:// must respell its old relative links.
                 if (target && !target.isPersonal && target.projectId !== cut.holderProjectId) {
                   claimed.push(redirect);
                   continue;

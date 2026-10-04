@@ -91,6 +91,8 @@ for those document locks: journal FK inserts must remain compatible.
 Move redirects are consumed by `links/link-update-worker.ts` through collab atomic
 maintenance. Post-commit kicks and the recovery sweep share one worker. It skips
 archived/deleted Work holders and defers the whole holder batch when any target
-is unavailable (without backoff). Cross-project targets cannot be named: their
-redirects are dropped without changing the old href or counting the holder in
-the move receipt. It retries failures with backoff, and credits the newest consumed mover without holder permission checks.
+is unavailable (without backoff). A target moved out of a project holder's reach
+has its redirect dropped without changing the old href or counting the holder in
+the move receipt. Moved holders always respell relative links; a holder moved into
+`user://` uses contextual full project URIs, not relative personal paths. It retries
+failures with backoff, and credits the newest consumed mover without holder permission checks.
