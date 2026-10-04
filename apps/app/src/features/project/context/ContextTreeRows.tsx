@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, Folder, FolderOpen, TriangleAlert } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react";
 import {
   createContext,
   type KeyboardEvent,
@@ -29,6 +29,7 @@ import { fileKindIcon } from "./context-file-icon";
 import { contextTreeRowClassName } from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
 import { EntryNameField } from "./EntryNameField";
+import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
 
@@ -273,24 +274,7 @@ function FileRow({
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
-        {file.namespaceFailure ? (
-          <span
-            role="img"
-            className="flex size-7 shrink-0 items-center justify-center text-destructive"
-            aria-label={
-              file.namespaceFailure === "delete"
-                ? t`Couldn't delete this document. Try again.`
-                : t`Couldn't rename this document. Try again.`
-            }
-            title={
-              file.namespaceFailure === "delete"
-                ? t`Couldn't delete this document. Try again.`
-                : t`Couldn't rename this document. Try again.`
-            }
-          >
-            <TriangleAlert aria-hidden className="size-3.5" />
-          </span>
-        ) : null}
+        {file.namespaceFailure ? <NamespaceFailureMark failure={file.namespaceFailure} /> : null}
         <EntryKebabButton
           allowCreate={allowCreate}
           allowDelete={allowDelete}
