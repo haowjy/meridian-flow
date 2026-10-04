@@ -1,6 +1,7 @@
 /** Stored link spelling and resolution must name the same document. */
 import { expect, it } from "vitest";
 import {
+  documentAddressKey,
   documentPathKey,
   matchDocumentPath,
   resolveDocumentHref,
@@ -201,4 +202,21 @@ it.each([
 ])("matches the catalog path %s", (path, candidates, expected) => {
   expect(documentPathKey(path)).toBe(path);
   expect(matchDocumentPath(candidates, path, (candidate) => candidate)).toBe(expected);
+});
+
+it.each([
+  ["manuscript:////v/./chapter.md", "manuscript://v/chapter.md"],
+  ["scratch://@arc/notes/chapter.md", "scratch://@arc/notes/chapter.md"],
+  ["uploads://@/image.png", "uploads://@/image.png"],
+  ["user://preferences.md", "user://preferences.md"],
+])("keys explicit address %s as %s", (uri, key) => {
+  expect(documentAddressKey(uri)).toBe(key);
+});
+it.each([
+  "scratch://chapter.md",
+  "uploads://image.png",
+  "https://example.com",
+  "manuscript://",
+])("rejects non-address key %s", (uri) => {
+  expect(() => documentAddressKey(uri)).toThrow(RangeError);
 });

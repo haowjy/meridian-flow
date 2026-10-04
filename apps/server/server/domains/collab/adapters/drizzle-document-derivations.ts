@@ -1,16 +1,23 @@
 /** Journal-locked cuts and compare-and-set publication of document derived outputs. */
+import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentDerivations,
+  documentLinks,
   documents,
   documentYjsHeads,
   projects,
   works,
 } from "@meridian/database";
 import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { alias } from "drizzle-orm/pg-core";
+import {
+  currentDrizzleDb,
+  type DrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationStore,
@@ -19,7 +26,12 @@ import { loadDocumentState } from "./document-loader.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
-export function createDrizzleDocumentDerivationStore(db: Database): DocumentDerivationStore {
+export function createDrizzleDocumentDerivationStore(
+  db: Database,
+  resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
+): DocumentDerivationStore {
+  const personal = alias(projects, "owner_personal_project");
+  const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
   return {
     capture(documentId) {
       return runInDrizzleTransaction(db, async () => {
@@ -30,9 +42,24 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
             generation: documentYjsHeads.authorityGeneration,
             admissionSequence: documentYjsHeads.nextAdmissionSequence,
             locationVersion: documents.locationVersion,
+            holderProjectId: projects.id,
+            personalProjectId: personal.id,
+            kind: documents.kind,
+            deletedAt: documents.deletedAt,
           })
           .from(documents)
           .innerJoin(documentYjsHeads, eq(documents.id, documentYjsHeads.documentId))
+          .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+          .leftJoin(works, eq(works.id, contextSources.workId))
+          .innerJoin(projects, sql`${projects.id} = ${projectId}`)
+          .leftJoin(
+            personal,
+            and(
+              eq(personal.userId, projects.userId),
+              eq(personal.isPersonal, true),
+              isNull(personal.deletedAt),
+            ),
+          )
           .where(eq(documents.id, documentId))
           .limit(1);
         // An already-staged push must still settle after a soft deletion.
@@ -40,10 +67,31 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
         // Never certify a warm room: writer admission precedes its in-memory apply.
         const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
         if (!state) return null;
+        const holderUri = row.kind === "manifest" ? null : await resolveUri(tx, documentId);
+        if (row.kind === "content" && !row.deletedAt && !holderUri)
+          throw new Error(`Missing canonical URI for live document ${documentId}`);
+        if (holderUri) {
+          const parsed = parseContextUri(holderUri);
+          if (
+            !parsed.ok ||
+            (!isProjectScopedScheme(parsed.value.scheme) &&
+              parsed.value.authority.kind === "contextual")
+          )
+            throw new Error(`Holder URI requires explicit authority: ${holderUri}`);
+        }
         return {
           documentId,
+          holderUri,
+          holderProjectId: row.holderProjectId,
+          personalProjectId: row.personalProjectId,
+          kind: row.kind,
           state,
-          watermark: { ...row, extractorVersion: DOCUMENT_EXTRACTOR_VERSION },
+          watermark: {
+            generation: row.generation,
+            admissionSequence: row.admissionSequence,
+            locationVersion: row.locationVersion,
+            extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
+          },
         };
       });
     },
@@ -74,13 +122,22 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
           .from(documentDerivations)
           .where(eq(documentDerivations.documentId, cut.documentId))
           .limit(1);
-        if (existing && existing.projectionExtractorVersion > w.extractorVersion) return false;
+        if (
+          existing &&
+          (existing.projectionExtractorVersion > w.extractorVersion ||
+            (existing.linksExtractorVersion ?? 0) > w.extractorVersion)
+        )
+          return false;
         if (
           existing &&
           existing.projectionGeneration === w.generation &&
           existing.projectionAdmissionSequence === w.admissionSequence &&
           existing.projectionLocationVersion === w.locationVersion &&
-          existing.projectionExtractorVersion === w.extractorVersion
+          existing.projectionExtractorVersion === w.extractorVersion &&
+          existing.linksGeneration === w.generation &&
+          existing.linksAdmissionSequence === w.admissionSequence &&
+          existing.linksLocationVersion === w.locationVersion &&
+          existing.linksExtractorVersion === w.extractorVersion
         )
           return true;
         const [updated] = await tx
@@ -95,11 +152,20 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
           )
           .returning({ id: documents.id });
         if (!updated) return false;
+        await tx.delete(documentLinks).where(eq(documentLinks.sourceDocumentId, cut.documentId));
+        if (outputs.links.length)
+          await tx
+            .insert(documentLinks)
+            .values(outputs.links.map((row) => ({ ...row, sourceDocumentId: cut.documentId })));
         const values = {
           projectionGeneration: w.generation,
           projectionAdmissionSequence: w.admissionSequence,
           projectionLocationVersion: w.locationVersion,
           projectionExtractorVersion: w.extractorVersion,
+          linksGeneration: w.generation,
+          linksAdmissionSequence: w.admissionSequence,
+          linksLocationVersion: w.locationVersion,
+          linksExtractorVersion: w.extractorVersion,
         };
         await tx
           .insert(documentDerivations)
@@ -131,6 +197,17 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
               ),
               ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
               ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
+              isNull(documentDerivations.linksGeneration),
+              isNull(documentDerivations.linksAdmissionSequence),
+              isNull(documentDerivations.linksLocationVersion),
+              isNull(documentDerivations.linksExtractorVersion),
+              ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
+              ne(
+                documentDerivations.linksAdmissionSequence,
+                documentYjsHeads.nextAdmissionSequence,
+              ),
+              ne(documentDerivations.linksLocationVersion, documents.locationVersion),
+              ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
             ),
             scope
               ? scope.personalOwnerId

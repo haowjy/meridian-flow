@@ -11,7 +11,7 @@ import {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
+import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
 import type { NoticePort } from "../notices/index.js";
 import type { EventSink } from "../observability/index.js";
 import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
@@ -180,8 +180,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
+  const derivationStore = createDrizzleDocumentDerivationStore(deps.db, (tx, documentId) =>
+    resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+  );
   const derivations = createDocumentDerivationService({
-    store: createDrizzleDocumentDerivationStore(deps.db),
+    store: derivationStore,
     serializer: {
       serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
     },
@@ -233,6 +236,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     runtime.markdownDocuments,
     projectionEffects,
     changeTrails,
+    derivationStore,
     deps.notices,
     deps.eventSink,
   );
