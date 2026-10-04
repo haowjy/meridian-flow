@@ -34,6 +34,8 @@ export type UseRenameEntryFormOptions = {
   /** Sibling names for collision detection (should include all siblings). */
   siblingNames: readonly string[];
   kind: ContextCreateKind;
+  /** Called with the move's operation id once the rename is admitted, before `onDone`. */
+  onRenamed?: (operationId: string) => void;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
 };
@@ -50,6 +52,7 @@ export function useRenameEntryForm({
   repairName,
   siblingNames,
   kind,
+  onRenamed,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
   const resources = useAccountResourceReplica();
@@ -71,14 +74,16 @@ export function useRenameEntryForm({
       if (!authority) throw unavailable();
       const destination = { scheme, folderPath: parentContextEntryPath(path), name, ...authority };
       if (kind === "folder") {
-        await resources.setFolderLocation(projectId, entryId, destination).catch(() => {
-          throw unavailable();
-        });
-        return;
+        return resources
+          .setFolderLocation(projectId, entryId, destination)
+          .catch(() => {
+            throw unavailable();
+          })
+          .then(({ operationId }) => operationId);
       }
       const key = await resources.keyForDocument(projectId, entryId);
       if (!key) throw unavailable();
-      await resources.setLocation(projectId, key, destination);
+      return (await resources.setLocation(projectId, key, destination)).operationId;
     },
   });
 
@@ -107,7 +112,8 @@ export function useRenameEntryForm({
       : undefined,
     validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind),
     onCommit: async (name) => {
-      await mutation.mutateAsync(name);
+      const operationId = await mutation.mutateAsync(name);
+      if (operationId) onRenamed?.(operationId);
       onDone();
     },
     onCancel: onDone,

@@ -26,6 +26,7 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
@@ -383,6 +384,7 @@ function MobileFolderRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   useEffect(() => {
     if (dir.namespaceFailure === "set-location") setRenaming(true);
   }, [dir.namespaceFailure]);
@@ -401,6 +403,7 @@ function MobileFolderRow({
           siblingNames={siblingNames}
           kind="folder"
           icon={Folder}
+          onRenamed={setNoteOperationId}
           onDone={() => setRenaming(false)}
         />
       </li>
@@ -414,6 +417,11 @@ function MobileFolderRow({
         label={dir.name}
         trailing={
           <span className="flex items-center">
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "folder", id: dir.entryId }}
+              operationId={noteOperationId}
+            />
             {dir.namespaceFailure ? (
               <NamespaceFailureMark failure={dir.namespaceFailure} folder />
             ) : null}
@@ -451,6 +459,7 @@ function MobileFileRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const FileIcon = fileKindIcon(file);
   useEffect(() => {
     if (file.namespaceFailure === "set-location") setRenaming(true);
@@ -470,6 +479,7 @@ function MobileFileRow({
           siblingNames={siblingNames}
           kind="file"
           icon={FileIcon}
+          onRenamed={setNoteOperationId}
           onDone={() => setRenaming(false)}
         />
       </li>
@@ -483,6 +493,11 @@ function MobileFileRow({
         label={file.name}
         trailing={
           <span className="flex items-center">
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "file", id: file.documentId }}
+              operationId={noteOperationId}
+            />
             {file.namespaceFailure ? (
               <NamespaceFailureMark failure={file.namespaceFailure} />
             ) : null}
@@ -519,6 +534,7 @@ function MobileRenameRow({
   siblingNames,
   kind,
   icon: Icon,
+  onRenamed,
   onDone,
 }: {
   projectId: string;
@@ -531,6 +547,7 @@ function MobileRenameRow({
   siblingNames: readonly string[];
   kind: ContextCreateKind;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({
@@ -543,6 +560,7 @@ function MobileRenameRow({
     repairName,
     siblingNames,
     kind,
+    onRenamed,
     onDone,
   });
 

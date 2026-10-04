@@ -550,23 +550,29 @@ export class AccountResourceReplica {
     return this.catalogs.hint(projectId, scope, headRevision);
   }
 
+  /** `operationId` names the move's receipt, for surfaces that show its outcome; absent when nothing changed. */
   async setLocation(
     projectId: string,
     key: ResourceKey,
     destination: ResourceDestination,
-  ): Promise<{ isLatest: boolean }> {
-    return this.locationOperations.run(key, async () => {
-      await this.commitPlan(key, (record) =>
-        planResourceLocation({
-          record,
-          projectId,
-          intentId: crypto.randomUUID(),
-          eligibleAt: Date.now(),
-          destination,
-        }),
-      );
+  ): Promise<{ isLatest: boolean; operationId?: string }> {
+    const operationId = crypto.randomUUID();
+    let admitted = false;
+    const { isLatest } = await this.locationOperations.run(key, async () => {
+      admitted =
+        (await this.commitPlan(key, (record) =>
+          planResourceLocation({
+            record,
+            projectId,
+            intentId: crypto.randomUUID(),
+            operationId,
+            eligibleAt: Date.now(),
+            destination,
+          }),
+        )) === "committed";
       this.schedule(key);
     });
+    return { isLatest, ...(admitted ? { operationId } : {}) };
   }
 
   /**
@@ -577,9 +583,11 @@ export class AccountResourceReplica {
     projectId: string,
     folderId: string,
     destination: ResourceDestination,
-  ): Promise<void> {
+  ): Promise<{ operationId?: string }> {
     this.requireOpen();
     const key = folderKey(folderId);
+    const operationId = crypto.randomUUID();
+    let admitted = false;
     for (;;) {
       const [current, projection] = await Promise.all([
         this.metadata.readFolder(key),
@@ -596,11 +604,16 @@ export class AccountResourceReplica {
         source,
         destination,
         intentId: crypto.randomUUID(),
-        operationId: crypto.randomUUID(),
+        operationId,
       });
-      if (!write || (await this.metadata.commitFolder(write)) === "committed") break;
+      if (!write) break;
+      if ((await this.metadata.commitFolder(write)) === "committed") {
+        admitted = true;
+        break;
+      }
     }
     this.scheduleFolder(key);
+    return admitted ? { operationId } : {};
   }
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {

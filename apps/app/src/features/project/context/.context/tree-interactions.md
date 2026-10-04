@@ -93,6 +93,13 @@ A document under a pending move (its own or a folder above it) carries
 writer just gave it cannot pull the route back to the old name. The phone shell,
 which derives its document from the route, finds a bound document by identity
 while the URL still names the old path; the server's redirect repairs the URL
-once the move settles. Inline operations keep stable entry identity. Work
+once the move settles. The move's receipt carries `linkUpdate.links`. `setLocation` and
+`setFolderLocation` return the operation id issued at admission; `LinkUpdateNote`
+reads that receipt through `settledNamespaceReceipt` and shows "Updated N links"
+after the name (tree rows, phone rows, Work Files rows) or after the identity path
+(identity bar, for renames made there) for its four-second window. Zero links, a
+refused move and a move without `linkUpdate` show nothing. It announces once
+through the app's polite region and never fades under reduced motion. Inline
+operations keep stable entry identity. Work
 selection is attached only to Scratch/Uploads, never project-owned
 Manuscript/KB/User paths.

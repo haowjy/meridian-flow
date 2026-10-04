@@ -5,7 +5,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
 import { EntryNameField } from "../context/EntryNameField";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useDockViewStore } from "../dock/dock-view-store";
@@ -72,6 +73,7 @@ export function ScratchFileRow({
   // Like the tree, a refused rename reopens the name field to try again.
   const repairRename = edit && file.namespaceFailure === "set-location";
   const startRename = edit?.onRename;
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   useEffect(() => {
     if (repairRename) startRename?.(file.path);
   }, [repairRename, startRename, file.path]);
@@ -84,6 +86,7 @@ export function ScratchFileRow({
           workId={workId}
           file={file}
           siblingNames={siblingNames}
+          onRenamed={setNoteOperationId}
           onDone={() => edit.onRename(null)}
         />
       </div>
@@ -101,7 +104,14 @@ export function ScratchFileRow({
       >
         <RowIcon icon={fileKindIcon(file)} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{file.name}</span>
+          <span className="flex min-w-0 items-baseline">
+            <span className="truncate font-medium">{file.name}</span>
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "file", id: file.documentId }}
+              operationId={noteOperationId}
+            />
+          </span>
           {folder ? (
             <span className="block truncate text-xs text-muted-foreground">{folder}</span>
           ) : null}
@@ -187,12 +197,14 @@ function InlineRename({
   workId,
   file,
   siblingNames,
+  onRenamed,
   onDone,
 }: {
   projectId: string;
   workId: string;
   file: CatalogFile;
   siblingNames: readonly string[];
+  onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({
@@ -205,6 +217,7 @@ function InlineRename({
     repairName: file.namespaceRepairName,
     siblingNames,
     kind: "file",
+    onRenamed,
     onDone,
   });
   return <EntryNameField form={form} label={t`File name`} />;
