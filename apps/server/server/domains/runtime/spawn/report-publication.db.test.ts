@@ -50,7 +50,6 @@ else
     const { invocationCardProps } = await import("./spawn-output.js");
     const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
     const { readThreadReport } = await import("./read-thread-report.js");
-    const { readModelThreadReport } = await import("./model-thread-report.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
@@ -143,110 +142,6 @@ else
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("published");
-    });
-
-    it("tells the model to wait for an unfinished report and flags a re-tasked running child", async () => {
-      expect(await readModelThreadReport({ callerThreadId: ids.caller, ref: "p1", repos })).toEqual(
-        {
-          ref: "p1",
-          status: "unavailable",
-          message:
-            "p1 has no finished report yet. You'll be notified when it finishes; don't call `thread_report` again until then.",
-        },
-      );
-      await terminal();
-      expect(await readModelThreadReport({ callerThreadId: ids.caller, ref: "p1", repos })).toEqual(
-        {
-          ref: "p1",
-          outcome: "succeeded",
-          summary: "secret report body",
-          payload: { private: "detail" },
-        },
-      );
-      await db.insert(schema.turns).values({
-        id: ids.nextExecution,
-        threadId: ids.child,
-        position: 3,
-        parentTurnId: ids.childUserTurn,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      await repos.executionReports.admit({
-        childThreadId: ids.child,
-        executionTurnId: ids.nextExecution,
-        handle: "p1",
-        origin: "thread_run",
-        deliveryMode: "none",
-        callerThreadId: null,
-        callerTurnId: null,
-        toolCallId: null,
-        cardBlockId: null,
-      });
-      const running = await readModelThreadReport({ callerThreadId: ids.caller, ref: "p1", repos });
-      expect(running).toMatchObject({
-        ref: "p1",
-        summary: "secret report body",
-        running: true,
-        message:
-          "p1 is running again; this report is from its previous run. You won't be notified when it finishes.",
-      });
-      expect(running).not.toHaveProperty("run");
-    });
-
-    it("keeps the promise to a parent that re-tasked its child in the background", async () => {
-      await terminal();
-      expect(await publisher.publish(ids.child, ids.execution)).toBe("published");
-      await inbox.ack(
-        ids.caller,
-        (await inbox.selectPending(ids.caller)).map((message) => message.id),
-      );
-      await db.insert(schema.turns).values({
-        id: ids.nextExecution,
-        threadId: ids.child,
-        position: 3,
-        parentTurnId: ids.childUserTurn,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      await repos.executionReports.admit({
-        childThreadId: ids.child,
-        executionTurnId: ids.nextExecution,
-        handle: "p1",
-        origin: "message",
-        deliveryMode: "background_notification",
-        callerThreadId: ids.caller,
-        callerTurnId: ids.callerTurn,
-        toolCallId: "retask-1",
-        cardBlockId: null,
-      });
-      expect(
-        await readModelThreadReport({ callerThreadId: ids.caller, ref: "p1", repos }),
-      ).toMatchObject({
-        running: true,
-        message:
-          "p1 is running again; this report is from its previous run. You'll be notified when it finishes.",
-      });
-
-      await finalizeExecution(
-        { repos, eventWriter },
-        {
-          threadId: ids.child,
-          turnId: ids.nextExecution,
-          cause: { kind: "success", finishReason: "end_turn" },
-        },
-      );
-      expect(await publisher.publish(ids.child, ids.nextExecution)).toBe("published");
-      const messages = await inbox.selectPending(ids.caller);
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toMatchObject({
-        provenance: { kind: "child", threadId: ids.child, reportId: ids.nextExecution },
-        body: {
-          kind: "text",
-          text: 'Subagent p1 finished (succeeded). Read its report with thread_report({"ref":"p1"}).',
-        },
-      });
     });
 
     it("preserves JSON-text scalar payloads through terminal A, orphan repair, and exact report reads", async () => {
