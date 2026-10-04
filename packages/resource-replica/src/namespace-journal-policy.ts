@@ -1,7 +1,49 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
-import type { NamespaceIntent } from "./resource-records";
+import type { NamespaceIntent, ResourceDestination } from "./resource-records";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
+
+function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent): boolean {
+  return (
+    (earlier.desired.kind === "set-location" || earlier.desired.kind === "set-folder-location") &&
+    intent.desired.kind === earlier.desired.kind &&
+    intent.identityRevision === earlier.identityRevision &&
+    intent.sequence > earlier.sequence
+  );
+}
+
+/** Refusal retires the queued placement chain without rewriting its immutable destinations. */
+export function cancelRefusedLocationChain(
+  intents: readonly NamespaceIntent[],
+  failed: NamespaceIntent,
+): NamespaceIntent[] {
+  return intents.map((intent) =>
+    followsLocationIntent(intent, failed) &&
+    intent.state === "pending" &&
+    intent.attempts.length === 0
+      ? { ...intent, state: "cancelled" }
+      : intent,
+  );
+}
+
+/** The failed receipt stays the repair anchor; its cancelled chain supplies the newest destination. */
+export function namespaceRepairDestination(
+  intents: readonly NamespaceIntent[],
+  failed: NamespaceIntent,
+): ResourceDestination | null {
+  const latest = intents.reduce(
+    (candidate, intent) =>
+      intent.state === "cancelled" &&
+      followsLocationIntent(intent, failed) &&
+      intent.sequence > candidate.sequence
+        ? intent
+        : candidate,
+    failed,
+  );
+  return latest.desired.kind === "set-location" || latest.desired.kind === "set-folder-location"
+    ? latest.desired.destination
+    : null;
+}
 
 export function validateNamespaceJournal(input: {
   previous: Journal | null;
@@ -90,9 +132,7 @@ export function validateNamespaceJournal(input: {
           !next.intents.some((earlier) => {
             const outcome = earlier.attempts.at(-1)?.outcome;
             return (
-              intent.desired.kind === "set-folder-location" &&
-              earlier.desired.kind === "set-folder-location" &&
-              earlier.sequence < intent.sequence &&
+              followsLocationIntent(intent, earlier) &&
               outcome?.kind === "operation" &&
               !outcome.receipt.result.ok
             );

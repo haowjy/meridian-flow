@@ -1,6 +1,10 @@
 /** Folder placement uses the same durable namespace journal without inventing document content. */
 
-import { validateNamespaceJournal } from "./namespace-journal-policy";
+import {
+  cancelRefusedLocationChain,
+  namespaceRepairDestination,
+  validateNamespaceJournal,
+} from "./namespace-journal-policy";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import {
   activeNamespaceIntent,
@@ -52,20 +56,8 @@ export function projectFolderNeedsRepair(
 ): { intentId: string; name: string } | null {
   const failed = record.intents.find((intent) => intent.state === "needs-repair");
   if (failed?.desired.kind !== "set-folder-location") return null;
-  // Keep the refused receipt as the repair anchor, but offer the writer's newest
-  // destination from the cancelled chain without rewriting immutable intentions.
-  const latest = record.intents.reduce(
-    (candidate, intent) =>
-      intent.state === "cancelled" &&
-      intent.desired.kind === "set-folder-location" &&
-      intent.sequence > candidate.sequence
-        ? intent
-        : candidate,
-    failed,
-  );
-  return latest.desired.kind === "set-folder-location"
-    ? { intentId: failed.intentId, name: latest.desired.destination.name }
-    : null;
+  const destination = namespaceRepairDestination(record.intents, failed);
+  return destination ? { intentId: failed.intentId, name: destination.name } : null;
 }
 
 /** Work that can progress without a new writer command, as `resourceNeedsBackgroundReconciliation` for files. */
@@ -310,15 +302,7 @@ export function settleFolderNamespaceOutcome(
   if (outcome.receipt.result.ok) {
     write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
   } else {
-    // These commands were queued against an optimistic placement the server refused.
-    // Keep the failure on the accepted folder; a new command starts from that location.
-    write.next.intents = write.next.intents.map((queued) =>
-      queued.sequence > intent.sequence &&
-      queued.state === "pending" &&
-      queued.attempts.length === 0
-        ? { ...queued, state: "cancelled" }
-        : queued,
-    );
+    write.next.intents = cancelRefusedLocationChain(write.next.intents, intent);
   }
   return write;
 }

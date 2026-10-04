@@ -1,4 +1,5 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
+import { namespaceRepairDestination } from "./namespace-journal-policy";
 import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
 import {
   type ResourceCatalogCheckpoint,
@@ -36,7 +37,8 @@ export function projectResourceNeedsRepair(
     kind: failed.desired.kind,
     name:
       failed.desired.kind === "set-location"
-        ? failed.desired.destination.name
+        ? (namespaceRepairDestination(record.intents, failed)?.name ??
+          failed.desired.destination.name)
         : (record.resource.canonical?.name ?? "document"),
   };
 }
