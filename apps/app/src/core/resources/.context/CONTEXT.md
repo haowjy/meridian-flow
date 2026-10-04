@@ -15,6 +15,16 @@ without duplicating the resource or suppressing another project's checkpoint.
 Reads return committed snapshots, inputs are captured before async work, and CAS
 checks every resource before an outer transaction writes anything.
 
+Folder placement lives in the same database (`folders` table, keyed by handle) and
+the same projection stream: `IndexedDbResourceMetadata` implements
+`FolderNamespaceStore`, and `ResourceProjectionSnapshot.folders` carries every
+folder record beside the file records. A folder's handle is `folder:<catalog folder
+id>`, so it can never collide with a document's. `setFolderLocation` admits a
+rename or move from the installed catalog's location (never the optimistic
+projection) and the runner dispatches it like a file's. A catalog commit may carry
+folder writes; they apply or fail with the checkpoint, so a canonical refresh never
+lands without the catalog read that proves it.
+
 `ResourceCatalogAcquisition` is the sole cursor/request owner. The HTTP
 adapter only transports snapshots and deltas. Before each request, acquisition
 captures exact resource revisions. The received page and derived resource updates

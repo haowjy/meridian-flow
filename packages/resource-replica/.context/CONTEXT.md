@@ -35,17 +35,21 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
-A Work-scoped location (Scratch, Uploads) names its Work by id. A named Work
-also carries its slug; No Work carries its row id and no slug, which is how the
-catalog spells `@/`. `ResourceWorkAuthority` makes this a type rule: a Work
-id comes with its slug, `null` only for the No Work row, so a named Work's
-location cannot drop it. Catalog installation, canonical refresh and
-`authorityMatches` accept both shapes. Namespace requests do not: `requestFor`
-returns no request for a source or destination with a Work id and no slug, and
-the records policy rejects such an attempt. So a No Work Scratch document
-cannot be placed, moved or deleted through the replica, and creating one
-(a link's Create, the Scratch tree's New file) asks the server directly.
-Accepting the shape on the request side is issue #648.
+A Work-scoped location (Scratch, Uploads) retains its Work row id and slug;
+the locked No Work row uses a null slug and URI authority `@/`.
+`resourceWorkAuthorityFor` checks command construction against the known project
+Works snapshot and its separate locked No Work id. Link Create, tree Create and
+Editor identity commits use this boundary. `resourceContextAuthority` is the
+single durable authority rule used by catalog projection, receipt matching and
+tab ownership.
+
+The journal type and structural validator cannot prove that a row id is the
+project's locked row: they have no Works registry. Server catalog acquisition
+asserts that relationship through its Work-qualified scope and canonical URI;
+commands must use the checked snapshot constructor, not manufacture a nullable
+slug. This is a trusted-input boundary, not a type-only identity guarantee.
+No Work link Create and Editor identity rename use the same namespace journal
+as named Works. No Work has no exposed Scratch tree.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted
@@ -67,3 +71,37 @@ and cache projections, but it does not install independent resource truth. Two
 live metadata writers are forbidden. Durable local command acceptance is not
 server settlement: background reconciliation records immutable attempts and
 outcomes, and unresolved or rejected work remains projected for retry.
+
+Folder placement has a namespace-only record: a stable folder id, canonical
+location and ordered `set-folder-location` intentions. It never reserves a
+document id, classification or content database. The browser account owner
+implements `FolderNamespaceStore` alongside its file metadata; it must observe
+folder commits through that same projection owner, not a second cache writer.
+
+File and folder records share immutable journal validation, receipt matching,
+account-bound transport and the CAS replay loop. `owningLocationIntent` is the
+placement ownership rule for both projection and admission; superseded rejected
+receipts remain evidence but cannot reclaim a location. A successful folder
+receipt requires a post-receipt catalog observation before later dispatch.
+Install that observation and its catalog checkpoint together, with the captured
+folder revision fence.
+
+Folder overlays rebase paths, URI authority, source/scope and parent ids for the
+folder and every descendant. Supply the installed destination source and parent
+catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
+use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
+old location and expose the attempted name through `projectFolderNeedsRepair`.
+
+Catalog installation owns folder canonical state exactly as it owns files': the
+acquisition fence captures each folder's canonical location and refresh barrier
+before HTTP, and `planFolderCatalogInstallation` clears a barrier only for the
+operation id the fence saw, or follows a canonical location that changed elsewhere
+(a parent moved by anyone). A settled move owns placement only while its refresh is
+outstanding (`owningLocationIntent`); after that the installed location is truth,
+so a stale destination recorded by an old intention cannot override a later move of
+a parent.
+
+Caller-issued operation ids survive dispatch. Local settlement records
+`settledAt`; `settledNamespaceReceipt` returns the entire matching receipt for
+four seconds, including fields added by the server later, without deleting
+journal evidence. Surfaces own the timer/rerender that removes their note.

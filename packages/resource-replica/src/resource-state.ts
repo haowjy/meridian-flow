@@ -1,6 +1,6 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration } from "@meridian/contracts/protocol";
-import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
   ResourceDescriptor,
@@ -86,13 +86,16 @@ export function planResourceLocation(input: {
   projectId: string;
   intentId: string;
   eligibleAt: number;
+  operationId?: string;
   destination: ResourceDestination;
 }): ResourceWrite | null {
   const { record } = input;
   if (record.resource.lifecycle.kind === "terminal") return null;
-  const latest = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find((intent) => intent.state !== "cancelled" && intent.state !== "settled-locally");
+  const latest = owningLocationIntent(
+    input.projectId,
+    record.intents,
+    Boolean(record.resource.obligations.canonicalRefresh),
+  );
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   if (
     !superseded.repaired &&
@@ -108,6 +111,7 @@ export function planResourceLocation(input: {
     sequence: nextSequence(record),
     identityRevision: record.resource.identity.revision,
     desired: { kind: "set-location", destination: input.destination },
+    ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",
   };

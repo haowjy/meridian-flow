@@ -8,7 +8,8 @@
  * unchanged draft cancels instead of committing. A blocking validation issue
  * keeps the field open; a throw from `onCommit` keeps it open with the thrown
  * message. The caller closes the field from `onCommit` (on success) or
- * `onCancel`.
+ * `onCancel`. A field that must not retry on its own (a refused rename's repair)
+ * sets `commitOnBlur: false`, so blur only dismisses.
  */
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +31,8 @@ export type UseInlineEditOptions = {
   select?: (input: HTMLInputElement) => void;
   /** Take focus on mount; defaults to true. */
   focusOnMount?: boolean;
+  /** Blur commits by default. When false, blur dismisses; only Enter commits. */
+  commitOnBlur?: boolean;
 };
 
 export type InlineEdit = ReturnType<typeof useInlineEdit>;
@@ -43,6 +46,7 @@ export function useInlineEdit({
   onCancel,
   select = (input) => input.select(),
   focusOnMount = true,
+  commitOnBlur = true,
 }: UseInlineEditOptions) {
   const [draft, setDraft] = useState(initial);
   const [failure, setFailure] = useState<string | null>(initialError ?? null);
@@ -119,7 +123,7 @@ export function useInlineEdit({
           cancel();
         }
       },
-      onBlur: () => void commit(),
+      onBlur: () => (commitOnBlur ? void commit() : cancel()),
     },
   };
 }
