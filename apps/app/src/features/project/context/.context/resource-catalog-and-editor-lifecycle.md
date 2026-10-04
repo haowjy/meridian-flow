@@ -89,23 +89,19 @@ first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
-An active resource-backed host also claims a post-Apply live admission. It
-waits for current server sync on the admitted session, even when that session is
-the one it already shows from the local cache, then atomically installs the live
-binding before acknowledging recovery and presents that session in place of the
-cached one. An availability recheck that returns terminal, deleted, or
-schema-mismatch releases the cached handle and its resource ownership lease
-rather than leaving the stale session mounted. A local cache-open
-failure falls through to exact server availability instead of terminalizing the
-tab from stale metadata. Genuine server failure remains retryable explicitly
-and retries when the resource/catalog authority revision advances. Only the
-active desktop editor is advertised as required recovery-host demand; warm and
-persisted tabs are not hosts until they have a claim path. A draft-only tab does
-not claim the live admission while it still hosts the draft branch. Local Apply
-promotes it to a durable tab as soon as the server confirms, before live
-readiness, so the host claims the admission like any other tab. Recovery
-settlement graduates a draft-only tab only when it is still an overlay, and
-treats an already-promoted overlay's obligation as obsolete.
+A resource-backed host opens the ordinary live binding once its local session
+has been probed (`useLiveDocumentBinding`: open, bind, retry). It presents the
+live session in place of the cached one when that binding opens, and shows the
+session's own connection state. An availability recheck that returns terminal,
+deleted, or schema-mismatch releases the cached handle and its resource
+ownership lease rather than leaving the stale session mounted. A local
+cache-open failure falls through to exact server availability instead of
+terminalizing the tab from stale metadata. Genuine server failure remains
+retryable explicitly and retries when the resource/catalog authority revision
+advances. Draft Apply adds nothing here: a draft-only tab hosts the draft
+branch until the server confirms Apply, then it is promoted to a durable tab and
+this host opens it like any other document. Whether that open is slow, fails, or
+disconnects is the host's business and never changes whether Apply completed.
 
 ## Unfiled materialization and recovery
 

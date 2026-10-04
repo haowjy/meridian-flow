@@ -37,8 +37,8 @@ token. The server settles the complete branch state at command time, including
 writer rows created after the last preview. The client therefore treats preview
 operations and revisions as evidence, not command scope. Apply/Discard failures
 are session outcomes rendered by the review header rather than ignored
-promises. A batch stops at its first failure; transport failures surface through
-the dock's typed error state.
+promises. A batch stops at its first failure or unknown outcome; transport
+failures surface through the dock's typed error state.
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)
@@ -172,14 +172,24 @@ the review overlay, regardless of whether address or review admission arrives
 first. Review admission absorbs an earlier durable member; later address
 admission may enrich only the overlay with resolved live-resource metadata.
 
-- **Apply.** Once the server confirms a local Apply, the controller calls
-  `promoteAppliedDraft`: the overlay becomes a durable tab (keep the tab, drop
-  the marker) before live-readiness recovery, while the disposition lock is
-  still held. Recovery then verifies the live binding and treats the promoted
-  overlay's obligation as obsolete. A remote Apply records a server-applied
-  witness and recovery settles the overlay. Controls must not re-enable before
-  that local resolution; draft-group absence alone cannot distinguish Apply
-  from Discard.
+- **Apply.** Apply is done when the server confirms it. Nothing later can undo
+  it: there is no recovery protocol and no Finish/Abandon workflow. On
+  confirmation the controller promotes a draft-only overlay to a durable tab
+  (`promoteAppliedDraft`: keep the tab, drop the marker), exits inline review
+  and returns the editor to the live room, all while the disposition lock is
+  held. Bulk Apply counts a draft as applied at that same moment; it never waits
+  for an editor to report paintable content. The ordinary live-document host
+  then shows "Connecting", its own disconnect state, or its retryable open
+  error, exactly as for any document.
+- **Rejected and unknown Apply.** A response with a status is a rejection
+  ("Couldn't apply", never the confirmed path). A request that got no answer is
+  settled by one read of the draft list in `useApplyDraft`: the draft is gone
+  (applied) or still listed (not applied, shown as a rejection). If that read is
+  lost too, the outcome is unknown. It is held on the draft as `apply-unknown`
+  in `draft-command-errors.ts` ("Couldn't confirm whether this applied"), shown
+  by the header, the composer strip, and the Work Files row, and a stopped
+  batch. The next draft-list refresh removes the row if it applied; the next
+  Apply clears the message.
 - **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
   command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
   fallback and repairs the address in place. A refused Discard never reopens
@@ -195,10 +205,12 @@ admission may enrich only the overlay with resolved live-resource metadata.
   applied; Work Files also offers Dismiss.
 - **Confirmed and remote Discard** call the same `discardDraft`, even when no
   local tab remains (a no-op then). It never creates or restores a tab.
-- When a selected row disappears remotely from the active-only list, the
-  provider forces a fresh live-manuscript manifest read. Membership means
-  a remote Apply; absence means remote Discard. A failed read leaves the tab
-  intact, and a replacement active draft for that document cancels resolution.
+- When a draft-only tab's draft leaves the active list without a local
+  disposition (another browser applied or discarded it), the provider forces a
+  fresh live-manuscript catalog read. Membership means a remote Apply and the
+  tab is promoted; absence means a remote Discard and the tab closes. A failed
+  read leaves the tab intact. The tab and the catalog are the whole evidence: no
+  account-level witness is kept.
 - A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
   skips draftOnly tabs so a discarded path can't replay on the next visit;
   the coordinator repairs the route when disposition removes the route-active tab.
