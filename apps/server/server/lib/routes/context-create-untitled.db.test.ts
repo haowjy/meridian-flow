@@ -19,7 +19,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../../domains/collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
@@ -78,7 +77,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({

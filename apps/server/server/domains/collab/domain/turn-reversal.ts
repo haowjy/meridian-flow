@@ -132,6 +132,7 @@ export function aggregateStatus(
   const successes = new Set(["reversed", "reconciled"]);
 
   if (statuses.every((status) => status === noOp)) return noOp;
+  if (statuses.every((status) => status === "permission_denied")) return "permission_denied";
   if (statuses.every((status) => successes.has(status))) {
     return statuses.includes("reconciled") ? "reconciled" : "reversed";
   }

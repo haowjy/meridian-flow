@@ -33,7 +33,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
@@ -61,7 +60,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collabs.push(collab);
       return collab;

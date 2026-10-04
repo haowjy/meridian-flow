@@ -27,7 +27,6 @@ import {
   type AskUserToolInput,
   interruptResolvedPropsFromAnswer,
 } from "@meridian/contracts/components";
-import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
   askRequestFromAskUser,
   type MeridianError,
@@ -121,6 +120,7 @@ import {
   threadExecutionContext,
 } from "../domains/threads/index.js";
 import { isPermissionDenial, permissionDeniedMessage } from "./file-access-denial-copy.js";
+import { threadContainerTarget } from "./file-targets.js";
 
 export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
@@ -497,31 +497,13 @@ async function documentGrant<N extends FileNeed>(
     : grant;
 }
 
-/**
- * Where a create or copy makes its file: the source and the Work or project
- * that owns it. Null when the path names no Work; the create reports that.
- */
-async function containerTarget(
+/** Where a create or copy makes its file; null when the path names no Work. */
+function containerTarget(
   deps: Pick<ToolWiringDeps, "works">,
   context: ResolvedModelContextPort,
   path: string,
 ): Promise<FileTarget | null> {
-  const parsed = parseUnifiedContextUri(splitDocumentFile(path).filePath);
-  if (!parsed.ok) return null;
-  const { scheme, authority } = parsed.value;
-  const { thread, primaryWorkId, workAuthorities } = context.resolution;
-  if (isProjectScopedScheme(scheme)) {
-    return { kind: "container", scheme, owner: { scope: "project", projectId: thread.projectId } };
-  }
-  const workId =
-    authority.kind === "work"
-      ? workAuthorities.get(authority.workSlug as never)?.workId
-      : authority.kind === "none"
-        ? (await deps.works.findNoWork(thread.projectId))?.id
-        : primaryWorkId;
-  return workId
-    ? { kind: "container", scheme, owner: { scope: "work", workId: workId as never } }
-    : null;
+  return threadContainerTarget(deps.works, context.resolution, path);
 }
 
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */

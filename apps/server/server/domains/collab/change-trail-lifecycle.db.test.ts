@@ -1,7 +1,7 @@
 import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
+import { drizzleFileAccess } from "../../test-support/file-grants.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
 import {
   ALPHA_ID,
@@ -97,7 +97,7 @@ describe("change trail (postgres)", () => {
       expect.stringContaining("Writer captured body"),
       expect.stringContaining("Writer captured body"),
     ]);
-    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
+    const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
     await expect(reader.listShells(THREAD_ID)).resolves.toEqual([
       expect.objectContaining({
         documents: [
@@ -180,7 +180,7 @@ describe("change trail (postgres)", () => {
       .set({ deletedAt: new Date() })
       .where(eq(schema.documents.id, ALPHA_ID));
 
-    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
+    const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
     await expect(
       reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
     ).resolves.toEqual([
@@ -230,7 +230,7 @@ describe("change trail (postgres)", () => {
       ],
     });
 
-    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
+    const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
     await expect(
       reader.readDetails({
         threadId: THREAD_ID,
@@ -239,10 +239,7 @@ describe("change trail (postgres)", () => {
       }),
     ).resolves.toEqual([]);
 
-    const revokedAccess = {
-      documentAccessState: async () => "available" as const,
-      lockDocumentAccessState: async () => null,
-    };
+    const revokedAccess = { historyAccess: async () => null };
     await expect(
       createDrizzleChangeTrailReader(db, revokedAccess).readDetails({
         threadId: THREAD_ID,

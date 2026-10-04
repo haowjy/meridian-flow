@@ -1,5 +1,6 @@
 import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
+import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
 import { ReverseThreadContextError } from "../contracts.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
 
@@ -45,11 +46,7 @@ function createService(input: {
     branches: { getBranch: async () => null },
     resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
     listEditedDocumentsForTurn: async () => input.lineage ?? [],
-    documentAccess: {
-      canAccessDocument: async (_userId, documentId) => input.allowed?.has(documentId) ?? true,
-      canAccessProjectDocument: async (_userId, documentId) =>
-        input.allowed?.has(documentId) ?? true,
-    },
+    fileAccess: visibleOnly(input.allowed),
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
@@ -171,10 +168,7 @@ describe("cross-scope reversal", () => {
       } as never,
       resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -247,10 +241,7 @@ describe("cross-scope reversal", () => {
       } as never,
       resolveDocumentUri: async () => "manuscript://branch.md",
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -269,3 +260,27 @@ describe("cross-scope reversal", () => {
     expect(liveReversed).toBe(false);
   });
 });
+
+/** Every document is the writer's to edit, except those outside `visible`. */
+function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
+  const open = createAllowAllFileAccess();
+  return {
+    ...open,
+    async authorize(principal, target, need) {
+      if (visible && target.kind !== "container" && !visible.has(target.documentId)) {
+        return {
+          denied: true,
+          target,
+          need,
+          reason: "not_found",
+          limitedBy: "not_found",
+          level: "none",
+          archivedWork: null,
+          destination: null,
+          agentPermission: null,
+        };
+      }
+      return open.authorize(principal, target, need);
+    },
+  };
+}

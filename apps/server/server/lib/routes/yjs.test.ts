@@ -4,6 +4,7 @@ import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
 import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
@@ -17,7 +18,7 @@ const payload = new Uint8Array([1, 2, 3]);
 
 function services(stale: boolean) {
   return {
-    documentAccess: {} as never,
+    fileAccess: {} as never,
     eventSink: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
@@ -28,7 +29,7 @@ function services(stale: boolean) {
 
 function gatewayServices() {
   return {
-    documentAccess: {} as never,
+    fileAccess: {} as never,
     eventSink: {} as never,
     documentSync: { bindHocuspocus: () => undefined } as never,
   };
@@ -123,9 +124,7 @@ describe("Yjs branch handshake route guard", () => {
     });
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
     const hocuspocus = createHocuspocus({
-      documentAccess: {
-        canAccessDocument: vi.fn(async () => true),
-      } as never,
+      fileAccess: createAllowAllFileAccess(),
       documentSync: {
         bindHocuspocus: vi.fn(),
         resolveBranchHocuspocusRoom: vi.fn(async () => ({

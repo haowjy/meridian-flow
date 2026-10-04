@@ -21,6 +21,7 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
+import { type FileGrant, isFileAccessDenied } from "../domains/file-policy/index.js";
 import {
   emitEvent,
   runWithEventCorrelation,
@@ -46,7 +47,7 @@ export type YjsGatewayConnection = {
 };
 
 export type YjsGatewayServices = {
-  documentAccess: AppServices["documentAccess"];
+  fileAccess: Pick<AppServices["fileAccess"], "authorize">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
 };
@@ -194,6 +195,24 @@ function parseRoomOrDeny(documentName: string) {
   return room;
 }
 
+/**
+ * Room admission asks the file policy (file-access §7). Read-only rooms come
+ * with live-room access in phase 5; until then `none` is the only refusal.
+ */
+async function readGrant(
+  services: YjsGatewayServices,
+  userId: UserId,
+  documentId: DocumentId,
+): Promise<FileGrant<"read">> {
+  const grant = await services.fileAccess.authorize(
+    { accountId: userId },
+    { kind: "document", documentId },
+    "read",
+  );
+  if (isFileAccessDenied(grant)) throw permissionDenied("permission-denied");
+  return grant;
+}
+
 async function classifyYjsConnectionAdmission(input: {
   services: YjsGatewayServices;
   room: ParsedYjsRoom;
@@ -206,11 +225,8 @@ async function classifyYjsConnectionAdmission(input: {
 
   if (room.kind === "live") {
     documentId = room.documentId;
-    if (!(await services.documentAccess.canAccessDocument(userId, documentId))) {
-      throw permissionDenied("permission-denied");
-    }
-    const projectId = await services.documentAccess.projectIdForDocument(documentId);
-    if (!projectId) throw permissionDenied("permission-denied");
+    const grant = await readGrant(services, userId, documentId);
+    const projectId = grant.facts.projectId;
     try {
       if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
         throw permissionDenied("permission-denied");
@@ -235,9 +251,7 @@ async function classifyYjsConnectionAdmission(input: {
     if (!branch) throw permissionDenied("branch-generation-stale");
     documentId = branch.documentId;
     headSchemaVersion = branch.schemaVersion;
-    if (!(await services.documentAccess.canAccessDocument(userId, documentId))) {
-      throw permissionDenied("permission-denied");
-    }
+    await readGrant(services, userId, documentId);
   }
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
     return {
@@ -631,7 +645,7 @@ export type YjsGateway = ReturnType<typeof createYjsGateway>;
 
 export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
   return {
-    documentAccess: app.documentAccess,
+    fileAccess: app.fileAccess,
     documentSync: app.documentSync,
     eventSink: app.eventSink,
   };

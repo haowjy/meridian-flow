@@ -51,10 +51,12 @@ function versionGateServices(
     flushBranchLivePull: vi.fn(async () => undefined),
   };
   return {
-    documentAccess: {
-      canAccessDocument: vi.fn(async () => true),
-      projectIdForDocument: vi.fn(async () => "00000000-0000-4000-8000-000000000103"),
-    },
+    fileAccess: {
+      authorize: vi.fn(async (_principal: unknown, target: unknown) => ({
+        target,
+        facts: { projectId: "00000000-0000-4000-8000-000000000103" },
+      })),
+    } as never,
     documentSync,
     eventSink: createInMemoryEventSink(),
   };

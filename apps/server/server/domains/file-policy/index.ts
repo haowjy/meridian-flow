@@ -2,6 +2,7 @@
 
 export { createDrizzleFileFacts } from "./adapters/drizzle-file-facts.js";
 export { createOwnerFileGrants } from "./adapters/owner-file-grants.js";
+export { createAllowAllFileAccess } from "./allow-all-file-access.js";
 export { matchAncestors, nodeChain } from "./domain/ancestors.js";
 export { isDrafted, type NodeGrant, sourceDestination } from "./domain/policy.js";
 export {

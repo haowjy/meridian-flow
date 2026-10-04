@@ -5,7 +5,6 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documentYjsCheckpoints, projects, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createDrizzleDocumentAccess } from "../../../../lib/document-access.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
@@ -60,7 +59,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({

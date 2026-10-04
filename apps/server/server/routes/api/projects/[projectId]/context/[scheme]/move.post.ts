@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const result = await handleContextMoveRequest(
     {
+      fileAccess: app.fileAccess,
       projectRepo: app.projectRepo,
       workRepo: app.workRepo,
       contextPorts: app.contextPorts,

@@ -5,6 +5,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
@@ -16,6 +17,7 @@ import {
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
+import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
 import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
@@ -27,9 +29,11 @@ import {
   parseContextMutationName,
   parseContextMutationPath,
 } from "./context-mutation-validation.js";
+import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { requireRequestId } from "./request-id.js";
 
 export interface ContextMoveRouteDeps {
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   projectRepo: ProjectRepository;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
@@ -288,5 +292,33 @@ export async function handleContextMoveRequest(
     projectWorks: works,
   });
   if (!port) throw createError({ statusCode: 404, message: "Work not found" });
-  return commitContextMove({ port, userId: input.userId, move: resolvedMove });
+  // Move and rename need edit on what moves and on the folder it lands in (file-access §2).
+  const containerOf = (locator: ResolvedContextMoveLocator): FileTarget =>
+    locator.scope === "project"
+      ? {
+          kind: "container",
+          scheme: locator.scheme,
+          owner: { scope: "project", projectId: input.projectId as ProjectId },
+        }
+      : {
+          kind: "container",
+          scheme: locator.scheme,
+          owner: { scope: "work", workId: locator.authority.workId as WorkId },
+        };
+  const moved =
+    resolvedMove.expected.kind === "file"
+      ? documentTarget(resolvedMove.expected.nodeId)
+      : containerOf(resolvedMove.source);
+  const grants = [
+    await requireFileGrant(deps.fileAccess, input.userId, moved, "edit"),
+    await requireFileGrant(
+      deps.fileAccess,
+      input.userId,
+      containerOf(resolvedMove.destination),
+      "edit",
+    ),
+  ];
+  return withEditGrants(deps.fileAccess, grants, () =>
+    commitContextMove({ port, userId: input.userId, move: resolvedMove }),
+  );
 }

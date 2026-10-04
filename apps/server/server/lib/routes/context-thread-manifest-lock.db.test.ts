@@ -44,7 +44,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
       await import("../../domains/projects/index.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { currentDrizzleDb, runInDrizzleTransaction, runOutsideDrizzleTransaction } =
       await import("../../shared/drizzle-transaction.js");
@@ -68,7 +67,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },

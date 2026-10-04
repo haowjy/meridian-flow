@@ -35,7 +35,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
@@ -114,7 +113,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
         ...options,
       });
       collab.bindHocuspocus(hocuspocus as never);

@@ -57,6 +57,15 @@ export interface FileAccess {
     principal: Principal,
     documentIds: readonly DocumentId[],
   ): Promise<Map<DocumentId, FileDecision>>;
+  /**
+   * History reads (change-trail detail) keep a deleted document's captured
+   * evidence: the person term alone decides whether they may see it, and the
+   * answer says whether the document is still there. Null when they may not.
+   */
+  historyAccess(
+    principal: Principal,
+    documentId: DocumentId,
+  ): Promise<"available" | "deleted" | null>;
 }
 
 export function createFileAccess(deps: FileAccessDeps): FileAccess {
@@ -107,6 +116,20 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
 
     levelOf: decision,
+
+    async historyAccess(principal, documentId) {
+      const facts = await deps.facts.load({ target: { kind: "document", documentId } });
+      if (!facts || facts.projectDeleted) return null;
+      const deleted = facts.deleted || facts.ownerWork?.deleted === true;
+      const standing: FileFacts = {
+        ...facts,
+        deleted: false,
+        ownerWork: facts.ownerWork && { ...facts.ownerWork, deleted: false, archived: false },
+      };
+      const result = await decision({ accountId: principal.accountId }, standing);
+      if (!atLeast(result.level, "read")) return null;
+      return deleted ? "deleted" : "available";
+    },
 
     async listAccess(principal, documentIds) {
       const facts = await deps.facts.loadList(documentIds, principal.agent?.draftWork?.id);
