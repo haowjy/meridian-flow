@@ -134,8 +134,8 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     expect(document.body.textContent).toContain(
       "Book has 1 pending change waiting for review. From now on, AI changes go live right away.",
     );
-    expect(document.activeElement?.textContent).toBe("Keep them for review");
-    await act(async () => findButton("Apply them now")?.click());
+    expect(document.activeElement?.textContent).toBe("Keep it for review");
+    await act(async () => findButton("Apply it now")?.click());
     expect(mutateAsync).toHaveBeenLastCalledWith({ aiWriteMode: "direct", pending: "apply" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => findButton("AI write mode: Draft")?.click());

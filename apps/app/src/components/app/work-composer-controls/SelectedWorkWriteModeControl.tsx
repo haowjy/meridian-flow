@@ -333,13 +333,19 @@ function Confirmation({
   // A failed first check has no count, but either choice is still a valid retry.
   const choosable = !busy && (count !== null || phase === "failed" || phase === "archivedMidway");
   const name = work.name;
+  // An unknown count reads as several: "them" fits a retry after a failed check.
+  const changes = count ?? 2;
   return (
     <div className="px-[var(--chat-space-inline)]">
       <h2 className="font-semibold">
         {work.isNoWork ? (
-          <Trans>Switch to auto-apply?</Trans>
+          <Trans>
+            Switch to <span className="whitespace-nowrap">auto-apply?</span>
+          </Trans>
         ) : (
-          <Trans>Switch {name} to auto-apply?</Trans>
+          <Trans>
+            Switch {name} to <span className="whitespace-nowrap">auto-apply?</span>
+          </Trans>
         )}
       </h2>
       {phase === "failed" ? (
@@ -373,7 +379,7 @@ function Confirmation({
               {phase === "submitting" && choice === "apply" ? (
                 <Trans>Applying…</Trans>
               ) : (
-                <Trans>Apply them now</Trans>
+                <Plural value={changes} one="Apply it now" other="Apply them now" />
               )}
             </Button>
             <Button
@@ -386,7 +392,7 @@ function Confirmation({
               {phase === "submitting" && choice === "keep" ? (
                 <Trans>Switching…</Trans>
               ) : (
-                <Trans>Keep them for review</Trans>
+                <Plural value={changes} one="Keep it for review" other="Keep them for review" />
               )}
             </Button>
           </>
@@ -417,11 +423,11 @@ function SwitchSummary({
         changes to project files will go live right away.
       </Trans>
     ) : (
-      <Trans>
-        {name} is archived, so its{" "}
-        <Plural value={count} one="# pending change stays" other="# pending changes stay" /> frozen.
-        Unarchive it to review them. AI changes to project files will go live right away.
-      </Trans>
+      <Plural
+        value={count}
+        one={`${name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.`}
+        other={`${name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.`}
+      />
     );
   }
   if (count === null) {
