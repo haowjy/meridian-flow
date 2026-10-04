@@ -24,7 +24,13 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import {
+  copySourcePath,
+  stringInput,
+  toolCommand,
+  toolInputObject,
+  type WriteMode,
+} from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -310,6 +316,8 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
     const verb = t`Paused to reread`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
+  // A skill load names the skill, never its SKILL.md, which is no document.
+  if (toolCommand(tool) === "invoke") return phraseTitle(tool);
   if (tool.isError) {
     const verb = descriptor.failureVerb(writeMode);
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
@@ -334,6 +342,9 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 function documentExpand(tool: ToolView): ToolExpand | null {
   // The next rows (the read, then the retried write) say what happened.
   if (isRereadPause(tool)) return null;
+  // "Couldn't run that skill" is the whole claim; the file-shaped failure copy
+  // would name SKILL.md as though it were the writer's document.
+  if (toolCommand(tool) === "invoke") return null;
   if (tool.isError) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>

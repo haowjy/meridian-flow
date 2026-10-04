@@ -22,6 +22,7 @@ import type { ToolView } from "./group-delivery-segments";
 import {
   copySourcePath,
   humanizeSkillSlug,
+  invokedSkillSlug,
   stringInput,
   type ToolCommand,
   toolCommand,
@@ -186,17 +187,19 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
+  // A `read` of `skills://<slug>/SKILL.md` loads that skill. The row names the
+  // skill, not the file: the writer never opens a skill body as a document.
   invoke: {
     Icon: Sparkles,
     phrases: (tool) => {
-      const slug = stringInput(toolInputObject(tool), "skillname");
+      const slug = invokedSkillSlug(tool);
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
       const skill = humanizeSkillSlug(slug);
       return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
     },
     failureVerb: () => t`Couldn't run that skill`,
     pathlessTitle: null,
-    expand: "renderer",
+    expand: "none",
   },
   // Work commands manage the writer's Works, never their manuscript, and the
   // whole family wears the Work glyph (Layers — the same mark that rides
