@@ -126,10 +126,16 @@ if (!RUN) {
           byteDigest: createHash("sha256").update(content).digest("hex"),
         };
 
-        const [first, waiter] = await Promise.all([
+        // Settle both calls before `finally` deletes the user: a rejected
+        // Promise.all would leave the other transaction running into the delete.
+        const settled = await Promise.allSettled([
           service(firstDb).intake(request),
           service(waiterDb).intake(request),
         ]);
+        const [first, waiter] = settled.map((outcome) => {
+          if (outcome.status === "rejected") throw outcome.reason;
+          return outcome.value;
+        });
 
         expect(first).toEqual(waiter);
         expect(first).toMatchObject({
