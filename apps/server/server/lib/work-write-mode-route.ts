@@ -1,13 +1,9 @@
 /** Route core for authenticated Work AI write mode updates. */
-import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
+import { meridianErrorFromSystem, type PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
-import type {
-  PendingChangesChoice,
-  SetWorkPushPolicyInput,
-  SetWorkPushPolicyResult,
-} from "../domains/collab/index.js";
+import type { SetWorkPushPolicyInput, SetWorkPushPolicyResult } from "../domains/collab/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import type { AppServices } from "./app.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
