@@ -97,9 +97,39 @@ The real-Postgres change-trail harness types its local collab handle around the
 capabilities it exercises. It must not cast to a complete `CollabDomain`.
 
 Method bodies beyond delegation, conditional business behavior, and mutable
-runtime state do not belong in the composition root. Durable projection for
-ordinary writes and push completion shares one `DocumentProjectionEffects` port
-without collapsing their distinct caller contracts.
+runtime state do not belong in the composition root. Activity effects stay separate
+from document derivation.
+
+## Durable document derivation
+
+`domain/document-derivations.ts` is the sole projection pipeline. The write hook
+runs it immediately; WebSocket admissions and generation replacement schedule it
+with a two-second trailing debounce and ten-second maximum wait. Push completion
+runs the same derive in its ambient completion transaction, so journal, projection,
+watermark, and settlement roll back together.
+
+The store captures checkpoint plus current-generation journal under the document
+mutation lock. Never substitute a warm room: a socket admission can already be
+durable while Hocuspocus has not applied it. Certification retakes the mutation
+lock, checks generation and `next_admission_sequence`, and conditionally updates
+the document at the captured `location_version`. A move increments that counter
+at the common `recordDocumentMove` seam, including same-source folder renames.
+Serialization runs outside the lock unless the caller already owns a transaction.
+A changed cut retries three times, then remains stale for recovery.
+
+`document_derivations` certifies projection output by generation, next admission
+sequence, location version, and extractor version. Equal cuts are idempotent;
+older cuts cannot replace newer output. Derive advances both projection and links
+watermarks; future link-only publication can advance links independently. P1's
+extractor version produces projection only. Adding link extraction must bump
+that version and add its output to the existing certification transaction, not
+a second post-write hook.
+
+The recovery scheduler sweeps database staleness at startup and every ten seconds,
+100 documents per pass with a wraparound cursor. Scoped `flush` pages all stale
+documents in a project, or every project owned by `personalOwnerId`. Both ignore
+caller transactions and timer queues. Failed derives log and retain last-good
+output without advancing certification; a later sweep retries them.
 
 ## Reference map
 
