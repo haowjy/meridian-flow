@@ -49,20 +49,20 @@ runtime URI instruction, and, for subagent threads only, the mandatory closing
 report instruction (`SUBAGENT_GUIDANCE`) as the last layer. An empty or absent
 append adds nothing.
 
-Prompt bake and the `skill` tool use the thread's own bound `skills.available`
-only (name and description from the retained `SKILL.md`), dropping
-`model-invocable: false`. Subagent threads read their own binding the same way
-as primaries; nothing falls back to the parent's or the writer's skills.
-Account installs never join the prompt or `skill()`. `skills.load` bodies are
-baked into the first prompt (rendered like a slash activation) regardless of
-`model-invocable`, which only governs `skill()`. The
-first-bake CAS persists the Agent-available slugs (`[]` when the list is
-empty). Skills that join slash after freeze do not rewrite the prompt or its
-skill list, and display slugs do not guard freezing. `spawn` and
-`thread_message` are advertised to every Agent; Mars `tools` cannot hide them.
-Named targets come from the binding's roster, baked into the prompt like
-available skills (not listed on the spawn tool); an omitted or empty `agent`
-selects the agent-less generic subagent.
+Prompt bake lists the thread's own bound `skills.available` only, by
+`skills://<slug>/SKILL.md` URI with the description from the retained
+`SKILL.md`, dropping `model-invocable: false`; the model loads one with
+`read`. Subagent threads read their own binding the same way as primaries;
+nothing falls back to the parent's or the writer's skills. Account installs
+never join the prompt or `skills://`. `skills.load` bodies are baked into the
+first prompt (rendered like a slash activation) regardless of
+`model-invocable`, which only governs what `skills://` shows. The first-bake
+CAS persists the Agent-available slugs (`[]` when the list is empty). Skills
+that join slash after freeze do not rewrite the prompt or its skill list, and
+display slugs do not guard freezing. Named spawn targets come from the
+binding's roster, baked into the prompt like available skills (not listed on
+the spawn tool); an omitted or empty `agent` selects the agent-less generic
+subagent.
 
 The slash catalog is separate. Slash (`/` and Send `activatedSkillSlugs`) lists
 every user-invocable `skills/<slug>/SKILL.md` from system and owner package
