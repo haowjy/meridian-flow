@@ -41,7 +41,7 @@ const SpawnOverridesSchema = z
   .object({
     ...invocationPatchShape,
     permission: invocationPatchShape.permission.describe(
-      'Lower to "read" so this run edits only its own Work\'s scratch://; it can\'t raise a read agent to "edit".',
+      'Lower to "read" so this run edits only scratch://; it can\'t raise a read agent to "edit".',
     ),
     disallowed_tools: disallowedTools.describe(
       "Tools this run can't use, on top of the child's own.",
