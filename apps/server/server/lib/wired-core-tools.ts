@@ -156,19 +156,20 @@ type WriteToolErrorOutput = {
 };
 type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?: boolean };
 
+/**
+ * A Work as the model sees it. Write mode and pending changes use the
+ * writer's words (draft mode, auto-apply), as the work context does.
+ */
 type ModelWork = Pick<
   Work,
-  | "slug"
-  | "name"
-  | "goal"
-  | "status"
-  | "archivedAt"
-  | "aiWriteMode"
-  | "createdAt"
-  | "updatedAt"
-  | "lastActivityAt"
-  | "unpushedChangeCount"
->;
+  "slug" | "name" | "goal" | "status" | "archivedAt" | "createdAt" | "updatedAt" | "lastActivityAt"
+> & { writes: ModelWriteMode; pendingChangeCount?: Work["unpushedChangeCount"] };
+
+type ModelWriteMode = "draft mode" | "auto-apply";
+
+function modelWriteMode(mode: Work["aiWriteMode"]): ModelWriteMode {
+  return mode === "draft" ? "draft mode" : "auto-apply";
+}
 
 type ResolvedModelContextPort = {
   resolution: ThreadContextResolution;
@@ -271,29 +272,20 @@ async function resolveExecutionContext(
 }
 
 function modelWork(work: Work): ModelWork {
-  const {
-    slug,
-    name,
-    goal,
-    status,
-    archivedAt,
-    aiWriteMode,
-    createdAt,
-    updatedAt,
-    lastActivityAt,
-    unpushedChangeCount,
-  } = work;
+  const { slug, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
   return {
     slug,
     name,
     goal,
     status,
     archivedAt,
-    aiWriteMode,
+    writes: modelWriteMode(work.aiWriteMode),
     createdAt,
     updatedAt,
     lastActivityAt,
-    ...(unpushedChangeCount !== undefined ? { unpushedChangeCount } : {}),
+    ...(work.unpushedChangeCount !== undefined
+      ? { pendingChangeCount: work.unpushedChangeCount }
+      : {}),
   };
 }
 
@@ -365,6 +357,47 @@ async function workBySlug(
   const work = works.find((candidate) => candidate.slug === slug);
   if (work) return work;
   return toolError({ code: "work_not_found", message: unknownWorkMessage(slug), workSlug: slug });
+}
+
+/**
+ * The Work a `switch` names. An unknown Work points to `work list` (D51), an
+ * archived one can't be switched to by anyone, and the chat's current Work
+ * needs no switch.
+ */
+async function resolveSwitchTarget(
+  deps: ToolWiringDeps,
+  projectId: string,
+  threadId: ThreadId,
+  slug: string | null | undefined,
+): Promise<{ work: Work } | { unchanged: { message: string } } | ToolErrorOutput> {
+  let work: Work;
+  if (slug) {
+    const found = await workBySlug(deps, projectId, slug);
+    if (isToolError(found)) return found;
+    if (workLifecycleState(found) === "deleted") {
+      return toolError({
+        code: "work_not_found",
+        message: unknownWorkMessage(slug),
+        workSlug: slug,
+      });
+    }
+    work = found;
+  } else {
+    const noWork = await deps.works.findNoWork(projectId);
+    if (!noWork) return toolError({ message: "No Work is missing for this project" });
+    work = noWork;
+  }
+  const named = work.slug ? `@${work.slug}` : "No Work";
+  if (workLifecycleState(work) === "archived") {
+    return toolError({
+      code: "work_archived",
+      message: `Work ${named} is archived, so this chat can't switch to it until the user unarchives it.`,
+    });
+  }
+  const current = await deps.threadWorks.findPrimary(threadId);
+  const currentId = current?.workId ?? (work.isNoWork ? work.id : null);
+  if (currentId === work.id) return { unchanged: { message: `This chat is already in ${named}.` } };
+  return { work };
 }
 
 function isToolError(value: unknown): value is ToolErrorOutput | WriteToolErrorOutput {
@@ -453,8 +486,12 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 
 function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
-    // A storage-side lifecycle refusal carries no agent chain, so it offers no call.
-    return workLifecycleMessage(error.reason, error.workSlug, false);
+    // The file policy refuses an archived Work's files first, with copy fit for
+    // the agent; this storage-side refusal only follows an archive mid-call.
+    const work = error.workSlug ? `Work @${error.workSlug}` : "The requested Work";
+    return error.reason === "work_archived"
+      ? `${work} is archived, so this change wasn't made.`
+      : `${work} is unavailable.`;
   }
   if (error.code === "invalid_uri") return error.reason;
   if ("message" in error && typeof error.message === "string") return error.message;
@@ -481,6 +518,24 @@ async function agentPrincipal(
         : null,
     },
   };
+}
+
+/**
+ * An explicit `version: "draft"` outside draft mode reads the draft the Work
+ * kept when it switched to auto-apply (D40), so the result says `draft`. With
+ * no kept draft of this document it reads live, as `draft` always did there.
+ */
+async function keptDraftReader(
+  deps: Pick<ToolWiringDeps, "drafts">,
+  principal: Principal,
+  execution: ThreadExecutionContext,
+  documentId: string,
+): Promise<Principal> {
+  if (!principal.agent || principal.agent.draftWork || execution.draftOwner) return principal;
+  const { workId, workSlug } = execution.scope;
+  const drafts = await deps.drafts.draftReview.list({ workId });
+  if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
+  return { ...principal, agent: { ...principal.agent, draftWork: { id: workId, slug: workSlug } } };
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */
@@ -551,7 +606,10 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
-/** Offers the unarchive call only when the action policy would allow it. */
+/**
+ * A `work` command on an archived or gone Work. Offers the unarchive call only
+ * when the action policy would allow it.
+ */
 function workLifecycleMessage(
   reason: "work_archived" | "work_deleted" | "work_missing",
   workSlug: string | null,
@@ -1087,7 +1145,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     const address = await resolveDocumentAddress(context, "read", path);
     if (isToolError(address)) return address;
     const principal = await agentPrincipal(deps, context, execution);
-    const grant = await documentGrant(deps, principal, "read", address, "read");
+    const reader =
+      version === "draft"
+        ? await keptDraftReader(deps, principal, execution, address.documentId)
+        : principal;
+    const grant = await documentGrant(deps, reader, "read", address, "read");
     if (isToolError(grant)) return grant;
 
     const outcome = await readDocument(
@@ -1114,20 +1176,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
     const principal = await agentPrincipal(deps, portOrError, execution);
     const creates = parsed.command === "create" || parsed.command === "copy";
-    // A create or copy needs edit on the folder it makes the file in; the
-    // namespace transaction confirms that grant under its locks (seam C).
-    let containerGrant: FileGrant<"edit"> | undefined;
-    if (creates) {
-      const target = await containerTarget(deps, portOrError, parsed.path);
-      if (target) {
-        const grant = await deps.fileAccess.authorize(principal, target, "edit");
-        if (isFileAccessDenied(grant)) return fileAccessDeniedError(parsed.command, grant);
-        containerGrant = grant;
-      }
-    }
-    const inContainer = async <T>(operation: () => Promise<T>) => {
-      if (!containerGrant) return operation();
-      const result = await runWithEditGrants(deps.fileAccess, [containerGrant], operation);
+    // A create or copy needs edit on the folder it makes the file in, at the
+    // destination the file lands in; the namespace transaction confirms that
+    // grant under its locks (seam C).
+    const target = creates ? await containerTarget(deps, portOrError, parsed.path) : null;
+    const inContainer = async <T>(
+      asPrincipal: Principal,
+      operation: () => Promise<T>,
+    ): Promise<T | WriteToolErrorOutput> => {
+      if (!target) return operation();
+      const grant = await deps.fileAccess.authorize(asPrincipal, target, "edit");
+      if (isFileAccessDenied(grant)) return fileAccessDeniedError(parsed.command, grant);
+      const result = await runWithEditGrants(deps.fileAccess, [grant], operation);
       if (result.ok) return result.value;
       return fileAccessDeniedError(parsed.command, firstRefusal(result.refusal));
     };
@@ -1156,7 +1216,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             fromMessage(parsed.from, sourceGrant.output.message ?? ""),
           );
         }
-        return inContainer(() => copyBinary(deps, portOrError, parsed, binary, sourceGrant, ctx));
+        // A binary copy always lands live (D24), so its folder is judged live.
+        const livePrincipal = principal.agent
+          ? { ...principal, agent: { ...principal.agent, draftWork: null } }
+          : principal;
+        return inContainer(livePrincipal, () =>
+          copyBinary(deps, portOrError, parsed, binary, sourceGrant, ctx),
+        );
       }
       const read = await readTrackedCopySource(
         deps,
@@ -1174,7 +1240,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       copied = read;
     }
 
-    const address = await inContainer(() =>
+    const address = await inContainer(principal, () =>
       resolveDocumentAddress(portOrError, parsed.command, parsed.path, {
         deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
@@ -1247,6 +1313,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const command = input as WorkCommand;
       const thread = await deps.threads.findById(ctx.threadId);
       if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
+      // A switch that couldn't happen says why before the policy asks for approval (D37).
+      const switchTarget =
+        command.command === "switch"
+          ? await resolveSwitchTarget(deps, thread.projectId, thread.id as ThreadId, command.work)
+          : null;
+      if (switchTarget && "isError" in switchTarget) return switchTarget;
+      if (switchTarget && "unchanged" in switchTarget) return switchTarget.unchanged;
       const chain = await deps.readAgentChain(thread.id as ThreadId);
       const decision = actionPolicy(chain, `work.${command.command}`);
       if (decision !== "allow") {
@@ -1293,16 +1366,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "switch") {
-          let workId: Work["id"];
-          if (command.target) {
-            const selected = await workBySlug(deps, thread.projectId, command.target);
-            if (isToolError(selected)) return selected;
-            workId = selected.id;
-          } else {
-            const noWork = await deps.works.findNoWork(thread.projectId);
-            if (!noWork) return toolError({ message: "No Work is missing for this project" });
-            workId = noWork.id;
-          }
+          if (!switchTarget) throw new Error("A switch resolves its target first");
+          const workId = switchTarget.work.id;
           const rebound = await deps.transaction(() =>
             rebindThreadWork(
               {
@@ -1325,7 +1390,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               goal: rebound.after.goal,
               status: rebound.after.status,
               archived: rebound.after.archived,
-              aiWriteMode: rebound.after.aiWriteMode,
+              writes: modelWriteMode(rebound.after.aiWriteMode),
             },
             metadata: {
               workReceipt: rebound.receipt,
@@ -1452,7 +1517,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             code: error.state === "archived" ? "work_archived" : "work_not_found",
             message: workLifecycleMessage(
               reason,
-              "work" in command ? command.work : (error.workSlug ?? null),
+              "work" in command && command.work ? command.work : (error.workSlug ?? null),
               actionPolicy(chain, "work.unarchive") === "allow",
             ),
           });
@@ -1468,18 +1533,25 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const result = await context.port.list(path);
       if (!result.ok) return modelContextError(result.error, context);
       const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(result.value));
+      // Folders below a path share its container; the root lists one per source.
       const folderReadonly = path
         ? await containerReadonly(deps, principal, context, path)
         : undefined;
-      const entries = result.value.flatMap((entry) => {
-        const { editable: _kind, ...rest } = entry as FileEntry & { editable?: boolean };
-        if (entry.kind === "directory") {
-          return [{ ...rest, readonly: folderReadonly ?? entry.readonly ?? false }];
-        }
-        const decision = entry.documentId ? access.get(entry.documentId as DocumentId) : undefined;
-        return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
-      });
-      return modelContextResults(entries, context);
+      const entries = await Promise.all(
+        result.value.map(async (entry) => {
+          const { editable: _kind, ...rest } = entry as FileEntry & { editable?: boolean };
+          if (entry.kind === "directory") {
+            const readonly =
+              folderReadonly ?? (await containerReadonly(deps, principal, context, entry.uri));
+            return [{ ...rest, readonly: readonly ?? entry.readonly ?? false }];
+          }
+          const decision = entry.documentId
+            ? access.get(entry.documentId as DocumentId)
+            : undefined;
+          return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
+        }),
+      );
+      return modelContextResults(entries.flat(), context);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope, version } = input as SearchToolInput;

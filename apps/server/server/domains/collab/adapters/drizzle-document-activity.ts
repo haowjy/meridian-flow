@@ -15,7 +15,7 @@ export function createDrizzleDocumentProjectionEffects(
       const activeDb = currentDrizzleDb(db);
       await activeDb
         .update(documents)
-        .set({ markdownProjection: input.markdown, updatedAt: input.at })
+        .set(projectionValues(input.markdown, input.at))
         .where(eq(documents.id, input.documentId));
     },
 
@@ -60,7 +60,7 @@ export function createDrizzleDocumentProjectionEffects(
       const activeDb = currentDrizzleDb(db);
       await activeDb
         .update(documents)
-        .set({ markdownProjection: input.markdown, updatedAt: input.at })
+        .set(projectionValues(input.markdown, input.at))
         .where(eq(documents.id, input.documentId));
       await activeDb
         .update(threadDocuments)
@@ -82,5 +82,14 @@ export function createDrizzleDocumentProjectionEffects(
           .where(eq(projects.id, scope.projectId));
       }
     },
+  };
+}
+
+/** A tracked document's size is its Markdown projection's, kept with it. */
+function projectionValues(markdown: string, at: Date) {
+  return {
+    markdownProjection: markdown,
+    sizeBytes: Buffer.byteLength(markdown, "utf8"),
+    updatedAt: at,
   };
 }
