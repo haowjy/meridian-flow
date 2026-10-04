@@ -4,6 +4,7 @@ import type {
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
@@ -279,9 +280,6 @@ export type BranchPushService = {
   ): Promise<AutoPushAfterThreadPeerWriteResult>;
   setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
-
-/** What happens to pending draft changes when a Work switches to auto-apply (D40). */
-export type PendingChangesChoice = "apply" | "keep";
 
 export type SetWorkPushPolicyInput = {
   workId: WorkId;
