@@ -157,7 +157,7 @@ describe("Work collection archive", () => {
           expect(rowNames()).toEqual(["Arc"]);
           await archiveFromMenu("Arc");
 
-          // Query cache notifications flush on a timer, outside the act() scope.
+          // Flush the controlled query notification turn before inspecting the row.
           await act(async () => {});
           expect(document.body.textContent).toContain("Start a Work");
           expect(document.activeElement).toBe(tab("archived"));

@@ -221,7 +221,7 @@ describe("Work command projection", () => {
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
 
       await act(async () => archiveRead.resolve(snapshot([WORK, archived(SECOND)], "2")));
-      // Query and mutation notifications flush on a timer; wait for the render.
+      // Deliver the controlled query notifications before inspecting the render.
       await settle(() => {
         expect(field(SECOND.id, "archivedAt")).not.toBeNull();
         expect(field(WORK.id, "name")).toBe("Revised arc");
