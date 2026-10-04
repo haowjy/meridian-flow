@@ -20,12 +20,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import {
-  addressDocumentName,
-  type LinkFollowOutcome,
-  linkTargetHref,
-  linkTargetLabel,
-} from "@/core/editor/links";
+import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
 import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
 
 import type { LinkDocumentRef } from "./follow-link";
@@ -38,7 +33,7 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
     case "failed":
       return <Trans>That link could not be checked</Trans>;
     case "missing": {
-      const name = missingName(outcome);
+      const name = targetName(outcome);
       return linkCreationTarget(outcome.address) ? (
         <Trans>“{name}” doesn't exist yet</Trans>
       ) : (
@@ -48,17 +43,23 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
   }
 }
 
-/** What the writer calls the missing document. */
-function missingName(outcome: Extract<LinkFollowOutcome, { state: "missing" }>): string {
+/** What the writer calls the document the link names. */
+function targetName(outcome: LinkFollowOutcome): string {
   return (
     (outcome.address && addressDocumentName(outcome.address)) || linkTargetLabel(outcome.target)
   );
 }
 
-/** The area's icon and the folder, worded as the `@` menu words it; the full address on hover. */
-function MissingLocation({ address }: { address: string }) {
-  const parsed = parseContextUri(address);
-  if (!parsed.ok) return null;
+/**
+ * Where the link points: the area's icon and the folder, worded as the `@`
+ * menu words it, with the full address on hover. A target that names no area
+ * is its plain label.
+ */
+function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
+  const { address, target } = outcome;
+  const parsed = address ? parseContextUri(address) : null;
+  if (!address || !parsed?.ok)
+    return <p className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</p>;
   const { scheme, path } = parsed.value;
   const location = documentLocation(scheme, path.split("/").slice(0, -1).join("/"));
   if (!location) return null;
@@ -88,9 +89,8 @@ export function FollowOutcomeContent({
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
   const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId, workId);
-  const address = outcome.state === "missing" ? outcome.address : null;
-  const creation = outcome.state === "missing" ? linkCreationTarget(address) : null;
-  const name = outcome.state === "missing" ? missingName(outcome) : "";
+  const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
+  const name = outcome.state === "missing" ? targetName(outcome) : "";
 
   return (
     <>
@@ -106,13 +106,7 @@ export function FollowOutcomeContent({
         )}
       </DialogDescription>
 
-      {outcome.state === "missing" ? (
-        address && <MissingLocation address={address} />
-      ) : (
-        <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-ink-muted text-xs">
-          {linkTargetHref(outcome.target)}
-        </p>
-      )}
+      <TargetLocation outcome={outcome} />
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">

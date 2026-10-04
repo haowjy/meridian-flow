@@ -71,14 +71,20 @@ the batch endpoint in [`FUTURE`](FUTURE).
 |---|---|
 | resolved, already cached | the document opens, no surface at all |
 | resolved after a wait | the same, and the checking dialog closes if it appeared |
-| nothing at the address | "No document at that address", the address shown, and Create when it is creatable |
+| nothing at the address, creatable | "“{name}” doesn't exist yet", with `Create “{name}”` |
+| nothing at the address, not creatable (Uploads, a non-document extension) | "“{name}” can't be found", no Create |
 | the request failed | "That link could not be checked", with Try again |
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
-The missing outcome carries `address`: the canonical Context URI the link
-names (`linkTargetAddress`, a relative path resolved against the holder's
-`baseUri`, fragment and query dropped). The dialog shows it, and Create uses
-it.
+Every outcome carries `address`: the canonical Context URI the link names
+(`linkTargetAddress`, a relative path resolved against the holder's `baseUri`,
+fragment and query dropped), or null when it names none. The dialog never shows
+it as text. Every state draws one location line: the area's icon and the
+folder, worded by `documentLocation` as the `@` menu words a row's location
+(nothing for a manuscript document at the root), with the address as a tooltip.
+A link that names no area shows its plain label instead. `{name}` is
+`addressDocumentName(address)` (the filename without `.md`), falling back to
+the link's label; Create uses the address.
 
 An aborted follow never reports and never opens. An abort only stops a follow
 before it opens: `LinkDestination` takes no signal, so once the procedure decides

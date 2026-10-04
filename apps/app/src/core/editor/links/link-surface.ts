@@ -84,14 +84,16 @@ export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
  * half has to render its own dialog, and a dialog the kernel never hears about
  * is a second owner of Escape.
  */
-export type LinkFollowOutcome =
-  | { state: "checking" | "failed"; target: LinkTarget }
+export type LinkFollowOutcome = {
+  state: "checking" | "failed" | "missing";
+  target: LinkTarget;
   /**
-   * Nothing is at the link's address. `address` is the canonical Context URI
-   * it names (a relative path resolved against its holder), or null when it
-   * names none.
+   * The canonical Context URI the link names (a relative path resolved
+   * against its holder), or null when it names none. `missing` means
+   * nothing is there.
    */
-  | { state: "missing"; target: LinkTarget; address: string | null };
+  address: string | null;
+};
 
 /** What the app's follower does when the writer acts on a follow's outcome. */
 export type FollowHandlers = { dismiss: () => void; retry: () => void };

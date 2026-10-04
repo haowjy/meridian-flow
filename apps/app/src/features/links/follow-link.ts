@@ -73,10 +73,15 @@ export async function followProjectLink({
 }): Promise<void> {
   if (signal.aborted) return;
   const href = linkTargetHref(target);
+  const outcome = (state: LinkFollowOutcome["state"]): LinkFollowOutcome => ({
+    state,
+    target,
+    address: linkTargetAddress(target, resolution.baseUri),
+  });
 
   let settled = false;
   const checking = setTimeout(() => {
-    if (!settled && !signal.aborted) reporter.report({ state: "checking", target });
+    if (!settled && !signal.aborted) reporter.report(outcome("checking"));
   }, CHECKING_DELAY_MS);
   const settle = () => {
     settled = true;
@@ -106,14 +111,10 @@ export async function followProjectLink({
     return;
   }
   if (entry?.state !== "unresolved") {
-    reporter.report({ state: "failed", target });
+    reporter.report(outcome("failed"));
     return;
   }
-  reporter.report({
-    state: "missing",
-    target,
-    address: linkTargetAddress(target, resolution.baseUri),
-  });
+  reporter.report(outcome("missing"));
 }
 
 function documentRef(document: { documentId: string }): LinkDocumentRef {
