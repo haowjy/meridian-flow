@@ -3,6 +3,7 @@ import { works } from "@meridian/database/schema";
 import { asc, eq, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
+import { confirmScopedEdits, scopedEditWorkIds } from "./edit-confirmation.js";
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
@@ -50,4 +51,23 @@ export async function lockWorksInIdOrder(db: DrizzleDb, workIds: readonly string
     .where(inArray(works.id, ids))
     .orderBy(asc(works.id))
     .for("no key update");
+}
+
+/**
+ * A write seam's first locks (file-access §5): its own Works and the bound
+ * edit grants' Works in one id order, then the grants' confirmation. The seam
+ * takes its advisory locks after this.
+ */
+export async function lockSeamWorks(db: DrizzleDb, workIds: readonly string[]): Promise<void> {
+  await lockWorksInIdOrder(db, [...workIds, ...scopedEditWorkIds()]);
+  await confirmScopedEdits();
+}
+
+/** Seam Work locks, then each of the seam's own Works must still be active. */
+export async function requireLockedActiveWorks(
+  db: DrizzleDb,
+  workIds: readonly string[],
+): Promise<void> {
+  await lockSeamWorks(db, workIds);
+  for (const workId of [...new Set(workIds)].sort()) await requireLockedActiveWork(db, workId);
 }

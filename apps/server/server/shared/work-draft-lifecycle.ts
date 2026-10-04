@@ -1,10 +1,10 @@
-/** Serializes transitions that make Work-owned draft rows reviewable. */
+/** Seam B (file-access §5): serializes transitions that make Work-owned draft rows reviewable. */
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentBranches } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "./drizzle-transaction.js";
-import { requireLockedActiveWork } from "./work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "./work-lifecycle-lock.js";
 
 export async function runWithActiveWorkDrafts<T>(
   db: Database,
@@ -28,7 +28,7 @@ export async function runWithActiveWorkDrafts<T>(
         ...branchRows.flatMap((row) => (row.workId ? [row.workId as WorkId] : [])),
       ]),
     ].sort();
-    for (const workId of workIds) await requireLockedActiveWork(db, workId);
+    await requireLockedActiveWorks(db, workIds);
     return operation();
   });
 }

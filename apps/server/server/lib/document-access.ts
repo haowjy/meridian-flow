@@ -11,6 +11,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import type { DrizzleDb } from "../shared/drizzle-transaction.js";
 import { isUuid } from "../shared/uuid.js";
+import { lockWorksInIdOrder } from "../shared/work-lifecycle-lock.js";
 
 const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
 
@@ -98,6 +99,14 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
     documentId: string,
   ): Promise<DocumentAccessState | null> {
     if (!isUuid(documentId)) return null;
+    // The owning Work's row first, as every write seam takes it (file-access §5).
+    const [owner] = await tx
+      .select({ workId: contextSources.workId })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(and(eq(documents.id, documentId), contentDocumentPredicate()))
+      .limit(1);
+    if (owner?.workId) await lockWorksInIdOrder(tx as DrizzleDb, [owner.workId]);
     const [anchor] = await tx
       .select({
         documentDeletedAt: documents.deletedAt,
@@ -110,7 +119,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
       .where(and(eq(documents.id, documentId), contentDocumentPredicate()))
       .for("update", { of: [documents, contextSources] })
       .limit(1);
-    if (!anchor) return null;
+    if (!anchor || anchor.workId !== (owner?.workId ?? null)) return null;
 
     const projectQuery = anchor.projectId
       ? tx
@@ -123,7 +132,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
           .from(works)
           .innerJoin(projects, eq(projects.id, works.projectId))
           .where(and(eq(works.id, anchor.workId as never), activeEffectiveProject({ userId })))
-          .for("update", { of: [works, projects] });
+          .for("update", { of: [projects] });
     const [project] = await projectQuery.limit(1);
     if (!project) return null;
     return anchor.documentDeletedAt || anchor.sourceDeletedAt ? "deleted" : "available";

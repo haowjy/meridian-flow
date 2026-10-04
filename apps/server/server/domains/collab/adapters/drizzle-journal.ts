@@ -42,11 +42,13 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -58,7 +60,6 @@ import {
   ensureAndReadDocumentAuthorityHead,
   findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
@@ -809,6 +810,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async append(docId, update, meta) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return (await appendUpdate(txDb, docId, update, meta)).seq;
       });
@@ -829,6 +831,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       const journalCommitKind = isInDrizzleTransaction() ? "staged" : "durable";
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockSeamWorks(db as Database, []);
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
@@ -1344,6 +1347,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       let undoUpdateSeq: number | undefined;
       const result = await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         // The dependency check (any later live journal row that depends on the
         // writes being undone) is performed inside the document-mutation
@@ -1449,6 +1453,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async persistRedo(docId, redoUpdate, ref, meta) {
       const result = await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
       });
@@ -1458,6 +1463,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async persistRedoBatch(docId, entries) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, entries);
       });

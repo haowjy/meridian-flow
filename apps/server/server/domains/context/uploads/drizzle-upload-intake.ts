@@ -10,6 +10,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type {
   ReserveUploadResult,
@@ -69,6 +70,7 @@ async function readReservation(db: Database, projectId: string, intakeId: string
   return row ? mapRow(row.intake, row.workSlug) : null;
 }
 
+/** Runs in `reserve`, which already holds the owning Work's row lock. */
 async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: string) {
   const activeDb = currentDrizzleDb(db);
   const [project] = await activeDb
@@ -96,7 +98,6 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
         isNull(works.archivedAt),
       ),
     )
-    .for("update")
     .limit(1);
   if (!lockedRow) return null;
   const workSlug = lockedRow.isNoWork ? null : lockedRow.slug;
@@ -146,6 +147,8 @@ export function createDrizzleUploadIntakeRepository(
     async reserve(input): Promise<ReserveUploadResult> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
+        // The owning Work's row comes before any advisory lock (file-access §5).
+        if (input.owner.workId) await lockWorksInIdOrder(db, [input.owner.workId]);
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
