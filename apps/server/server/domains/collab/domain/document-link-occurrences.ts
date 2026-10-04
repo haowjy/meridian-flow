@@ -2,12 +2,12 @@
 import * as Y from "yjs";
 
 type LinkAttributes = Record<string, unknown> & { href: string };
-export type DocumentLinkRun = {
+type DocumentLinkRun = {
   start: number;
   length: number;
   attributes: Record<string, unknown> & { link: LinkAttributes };
 };
-export type DocumentLinkOccurrence =
+type DocumentLinkOccurrence =
   | {
       kind: "text";
       text: Y.XmlText;

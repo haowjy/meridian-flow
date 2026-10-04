@@ -181,8 +181,8 @@ output without advancing certification; a later sweep retries them.
 
 ## Stored link occurrence primitives
 
-`domain/document-link-occurrences.ts`, exported by the collab public entry,
-shares extraction and substitution traversal. One text occurrence is contiguous
+`domain/document-link-occurrences.ts` is internal to collab and shares extraction
+and substitution traversal. Only its substitution type is part of the public rewrite contract. One text occurrence is contiguous
 runs with the same href within one XmlText, regardless of other marks; paragraph
 boundaries split occurrences. Literal image and figure `src` attributes are
 occurrences; only addresses with an explicit substitution are rewritten. Extraction retains Yjs references for
