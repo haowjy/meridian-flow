@@ -28,7 +28,7 @@ export async function readAgentChain(
   threadId: ThreadId,
 ): Promise<AgentChain> {
   const chain: AgentLink[] = [];
-  for await (const { id, permission } of lineage(deps, threadId)) {
+  for (const { threadId: id, permission } of await readLineage(deps, threadId)) {
     const primary = await deps.threadWorks.findPrimary(id);
     if (!primary) throw new Error(`Agent chain thread has no primary Work: ${id}`);
     chain.push({ threadId: id, permission, threadWorkId: primary.workId });
@@ -40,21 +40,21 @@ export async function readAgentChain(
  * The lowest permission over the chain: an `edit` child under a `read` parent
  * is effectively `read` outside its own scratch.
  */
-export async function readChainPermission(
-  deps: Pick<AgentChainDeps, "threads" | "agentRevisions">,
-  threadId: ThreadId,
-): Promise<AgentPermission> {
-  for await (const link of lineage(deps, threadId)) {
-    if (link.permission === "read") return "read";
-  }
-  return "edit";
+export function chainPermission(chain: readonly Pick<AgentLink, "permission">[]): AgentPermission {
+  return chain.some((link) => link.permission === "read") ? "read" : "edit";
 }
 
-/** The thread, then each spawner up to the root, with its bound permission. */
-async function* lineage(
+type LineageLink = Pick<AgentLink, "threadId" | "permission">;
+
+/**
+ * The thread, then each spawner up to the root, with its bound permission.
+ * The prompt's permission line needs only this, not each link's Work.
+ */
+export async function readLineage(
   deps: Pick<AgentChainDeps, "threads" | "agentRevisions">,
   threadId: ThreadId,
-): AsyncGenerator<{ id: ThreadId; permission: AgentPermission }> {
+): Promise<LineageLink[]> {
+  const links: LineageLink[] = [];
   const seen = new Set<string>();
   let current: ThreadId | null = threadId;
   while (current !== null) {
@@ -67,7 +67,8 @@ async function* lineage(
     ]);
     if (!thread) throw new Error(`Agent chain thread is missing: ${id}`);
     if (!binding) throw new Error(`Agent chain thread has no Agent binding: ${id}`);
-    yield { id, permission: binding.configuration.permission };
+    links.push({ threadId: id, permission: binding.configuration.permission });
     current = thread.parentThreadId as ThreadId | null;
   }
+  return links;
 }
