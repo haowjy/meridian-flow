@@ -121,6 +121,40 @@ describe("durable document derivations", () => {
     doc.destroy();
   });
 
+  it("keeps restored content when a retired room inserts a later checkpoint", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const admission = await append(doc, "Before typing.");
+    await persistence.journal.checkpoint(documentId, Y.encodeStateAsUpdate(doc), admission);
+    const [checkpoint] = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
+    if (!checkpoint) throw new Error("Missing retained checkpoint");
+    await append(doc, " After writer typing.");
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before typing. After writer typing.");
+    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      documentId,
+      checkpointId: checkpoint.id,
+      expectedGeneration: 1n,
+    });
+    expect(replaced.ok).toBe(true);
+    // Force the late old-room insert after replacement, without timers or races.
+    await db.insert(documentYjsCheckpoints).values({
+      documentId,
+      authorityId: checkpoint.authorityId,
+      authorityGeneration: checkpoint.authorityGeneration,
+      attributionManifest: checkpoint.attributionManifest,
+      state: Buffer.from(Y.encodeStateAsUpdate(doc)),
+      stateVector: Buffer.from(Y.encodeStateVector(doc)),
+      upToSeq: admission,
+      reason: "retired room",
+    });
+    await service.derive(documentId);
+    expect(await projection()).toBe("Before typing.");
+    doc.destroy();
+  });
+
   it("heals failed derives and generation replacement from database state, including another instance's writes", async () => {
     const doc = new Y.Doc({ gc: false });
     const admission = await append(doc, "checkpoint");

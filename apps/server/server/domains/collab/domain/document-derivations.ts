@@ -68,8 +68,8 @@ export function createDocumentDerivationService(input: {
           running.set(documentId, operation);
         };
         if (entry.trailing) clearTimeout(entry.trailing);
-        entry.trailing = setTimeout(start, 500);
-        entry.maximum ??= setTimeout(start, 3000);
+        entry.trailing = setTimeout(start, 2000);
+        entry.maximum ??= setTimeout(start, 10000);
         entry.trailing.unref();
         entry.maximum.unref();
         timers.set(documentId, entry);
