@@ -316,7 +316,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       realWatermarks.clearPending(threadId, documentId);
     },
   };
-  const realBranchPulls = createBranchPullService({
+  const branchPulls = createBranchPullService({
     outsideTransaction: runOutsideDrizzleTransaction,
     rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
@@ -324,14 +324,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
   });
-  const scheduledLivePulls: string[] = [];
-  const branchPulls = {
-    ...realBranchPulls,
-    scheduleLivePull(documentId: DocumentId) {
-      scheduledLivePulls.push(documentId);
-      realBranchPulls.scheduleLivePull(documentId);
-    },
-  };
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
@@ -746,7 +738,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     autoPushSchedules.length = 0;
     autoPushPromises.length = 0;
     hocuspocus.broadcasts.length = 0;
-    scheduledLivePulls.length = 0;
     const workDrafts = await db
       .select({ id: schema.documentBranches.id })
       .from(schema.documentBranches)
@@ -2033,50 +2024,18 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
-    scheduledLivePulls: () => [...scheduledLivePulls],
-    /** Every durable row an agent's live write leaves for a document. */
-    async liveAgentWriteRows(documentId: DocumentId) {
-      const [updates, mutations, widCounters, reversals] = await Promise.all([
-        db
-          .select({ id: schema.documentYjsUpdates.id })
-          .from(schema.documentYjsUpdates)
-          .where(
-            and(
-              eq(schema.documentYjsUpdates.documentId, documentId),
-              eq(schema.documentYjsUpdates.originType, "agent"),
-            ),
+    /** Agent-origin live journal rows for a document. */
+    async liveAgentUpdateCount(documentId: DocumentId) {
+      const rows = await db
+        .select({ id: schema.documentYjsUpdates.id })
+        .from(schema.documentYjsUpdates)
+        .where(
+          and(
+            eq(schema.documentYjsUpdates.documentId, documentId),
+            eq(schema.documentYjsUpdates.originType, "agent"),
           ),
-        db
-          .select({ id: schema.agentEditMutations.id })
-          .from(schema.agentEditMutations)
-          .where(eq(schema.agentEditMutations.documentId, documentId)),
-        db
-          .select({ threadId: schema.agentEditWidCounters.threadId })
-          .from(schema.agentEditWidCounters)
-          .where(eq(schema.agentEditWidCounters.documentId, documentId)),
-        db
-          .select({ id: schema.documentYjsReversals.id })
-          .from(schema.documentYjsReversals)
-          .where(eq(schema.documentYjsReversals.documentId, documentId)),
-      ]);
-      return {
-        updates: updates.length,
-        mutations: mutations.length,
-        widCounters: widCounters.length,
-        reversals: reversals.length,
-      };
-    },
-    async changeTrailRowCounts() {
-      const [shells, details, occurrences] = await Promise.all([
-        db.select({ id: schema.changeTrailShells.id }).from(schema.changeTrailShells),
-        db
-          .select({ trailId: schema.changeTrailDocumentDetails.trailId })
-          .from(schema.changeTrailDocumentDetails),
-        db
-          .select({ trailId: schema.changeTrailDocumentOccurrences.trailId })
-          .from(schema.changeTrailDocumentOccurrences),
-      ]);
-      return { shells: shells.length, details: details.length, occurrences: occurrences.length };
+        );
+      return rows.length;
     },
     stagedUpdates: (responseId: string) => [
       collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
