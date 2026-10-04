@@ -98,9 +98,11 @@ ownership lease rather than leaving the stale session mounted. A local
 cache-open failure falls through to exact server availability instead of
 terminalizing the tab from stale metadata. Genuine server failure remains
 retryable explicitly and retries when the resource/catalog authority revision
-advances. Draft Apply adds nothing here: a draft-only tab hosts the draft
-branch until the server confirms Apply, then it is promoted to a durable tab and
-this host opens it like any other document. Whether that open is slow, fails, or
+advances. A draft-only tab (a new document proposed by a draft)
+opens no live binding at all: it has no live manifest membership and the server
+refuses a room for it, so review hosts the draft branch room alone, on desktop
+and phone. Once the server confirms Apply the tab is promoted to a durable tab
+and this host opens its live room like any other document. Whether that open is slow, fails, or
 disconnects is the host's business and never changes whether Apply completed.
 
 ## Unfiled materialization and recovery

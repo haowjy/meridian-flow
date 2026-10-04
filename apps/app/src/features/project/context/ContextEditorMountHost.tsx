@@ -1,5 +1,6 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
@@ -12,7 +13,7 @@ import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
-import { resourceAvailabilityRevision, useLiveDocumentBinding } from "./use-live-document-binding";
+import { useLiveDocumentBinding } from "./use-live-document-binding";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -106,6 +107,9 @@ export function ContextEditorMountHost({
           : null;
         const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
         const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
+        // A draft-only document has no live room until Apply promotes it, and
+        // the server refuses one. Review hosts the draft branch alone.
+        const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
         const renderEditor = (
           session: DocumentSession | null,
           failed = false,
@@ -113,6 +117,7 @@ export function ContextEditorMountHost({
           retry?: () => void,
         ): ReactNode => {
           if (!isMounted) return null;
+          const hosted = session !== null || branchOnly;
           let bindingKey: string | undefined;
           if (session) {
             bindingKey = bindingKeysRef.current.get(session);
@@ -132,7 +137,7 @@ export function ContextEditorMountHost({
               )}
               // Defensive: aria-hidden hides background editors from AT.
               aria-hidden={!isActive}
-              aria-busy={!failed && !session}
+              aria-busy={!failed && !hosted}
             >
               {failed ? (
                 <div className="grid h-full place-items-center">
@@ -148,7 +153,7 @@ export function ContextEditorMountHost({
                   </div>
                 </div>
               ) : null}
-              {!failed && !session ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
+              {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
               {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
                 <UntitledInputObserver
                   documentId={tab.documentId}
@@ -158,7 +163,7 @@ export function ContextEditorMountHost({
               ) : null}
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              {failed || !session ? null : waitingForReviewRoom && controller.reviewRoomError ? (
+              {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
                 <div className="flex min-h-0 flex-1 items-center justify-center p-6">
                   <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
                     <p className="font-medium text-foreground text-sm">
@@ -193,7 +198,7 @@ export function ContextEditorMountHost({
                     </div>
                   </div>
                 </div>
-              ) : waitingForReviewRoom ? null : (
+              ) : waitingForReviewRoom || (branchOnly && !reviewDraftId) ? null : (
                 <>
                   {active && isActive ? (
                     <ActiveEditorProjection
@@ -211,7 +216,7 @@ export function ContextEditorMountHost({
                     projectId={projectId}
                     workId={workId}
                     documentId={tab.documentId}
-                    session={session}
+                    session={session ?? undefined}
                     bindingKey={bindingKey}
                     // A warm editor is hidden, not gone. Its chrome portals to
                     // the body, where `hidden` on an ancestor means nothing.
@@ -239,6 +244,7 @@ export function ContextEditorMountHost({
             documentId={tab.documentId}
             resourceHandle={resourceHandle}
             availabilityRevision={availabilityRevision}
+            liveRoom={!branchOnly}
           >
             {renderEditor}
           </ContextTabSessionBoundary>
@@ -254,12 +260,15 @@ export function ContextTabSessionBoundary({
   documentId,
   resourceHandle,
   availabilityRevision,
+  liveRoom = true,
   children,
 }: {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
   availabilityRevision: string;
+  /** False for a document with no live room yet (draft-only until Apply promotes it). */
+  liveRoom?: boolean;
   children: (
     session: DocumentSession | null,
     failed: boolean,
@@ -297,6 +306,7 @@ export function ContextTabSessionBoundary({
               : ("probing" as const),
         };
   useEffect(() => {
+    if (!liveRoom) return;
     const abort = new AbortController();
     setLocal((prior) => ({
       identity: resourceIdentity,
@@ -364,7 +374,7 @@ export function ContextTabSessionBoundary({
     return () => {
       abort.abort();
     };
-  }, [availabilityRevision, projectId, resourceIdentity, resourceLookup, resources]);
+  }, [availabilityRevision, liveRoom, projectId, resourceIdentity, resourceLookup, resources]);
   useEffect(
     () => () => {
       installedHandle.current?.release();
@@ -374,10 +384,16 @@ export function ContextTabSessionBoundary({
   );
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId: currentLocal.phase === "server" ? documentId : null,
-    availabilityRevision,
+    documentId: liveRoom && currentLocal.phase === "server" ? documentId : null,
     owner: "desktop-server-tab",
   });
+  const automaticRetryRevision = useRef(availabilityRevision);
+  useEffect(() => {
+    if (binding.state.kind !== "failed" || automaticRetryRevision.current === availabilityRevision)
+      return;
+    automaticRetryRevision.current = availabilityRevision;
+    binding.retry();
+  }, [availabilityRevision, binding.retry, binding.state.kind]);
   const state = binding.state;
   useEffect(() => {
     if (state.kind !== "opened" || state.documentId !== documentId) return;
@@ -397,6 +413,24 @@ export function ContextTabSessionBoundary({
   );
 }
 
+export function resourceAvailabilityRevision(
+  snapshot: ResourceProjectionSnapshot | null,
+  documentId: string,
+): string {
+  if (!snapshot) return "pending";
+  const resource = snapshot.records.find(
+    (record) => record.resource.identity.documentId === documentId,
+  )?.resource;
+  return JSON.stringify([
+    resource?.revision ?? null,
+    resource?.lifecycle.kind === "acknowledged"
+      ? resource.lifecycle.availabilityGeneration
+      : resource?.lifecycle.kind === "terminal"
+        ? resource.lifecycle.generation
+        : null,
+  ]);
+}
+
 function ActiveEditorProjection({
   documentId,
   session,
@@ -404,7 +438,8 @@ function ActiveEditorProjection({
   setProjection,
 }: {
   documentId: string;
-  session: DocumentSession;
+  /** Null while a draft-only document is hosted by its branch room alone. */
+  session: DocumentSession | null;
   inReview: boolean;
   setProjection: (
     documentId: string | null,
@@ -421,9 +456,15 @@ function ActiveEditorProjection({
   return null;
 }
 
-function PresenceSuspension({ session, enabled }: { session: DocumentSession; enabled: boolean }) {
+function PresenceSuspension({
+  session,
+  enabled,
+}: {
+  session: DocumentSession | null;
+  enabled: boolean;
+}) {
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !session) return;
     session.suspendPresence();
     return () => session.resumePresence();
   }, [enabled, session]);

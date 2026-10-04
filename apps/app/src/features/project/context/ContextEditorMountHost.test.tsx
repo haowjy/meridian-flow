@@ -20,13 +20,11 @@ vi.mock("./account-feature-context", () => ({
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
 }));
 
-import { ContextTabSessionBoundary } from "./ContextEditorMountHost";
-import { resourceAvailabilityRevision } from "./use-live-document-binding";
+import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
 
 function session(): DocumentSession {
   return {
     getSnapshot: () => ({ status: "synced", schemaFence: null }),
-    subscribe: () => () => undefined,
   } as unknown as DocumentSession;
 }
 
