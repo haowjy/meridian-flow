@@ -40,7 +40,11 @@ export type JournalMutation = JournalMutationBase &
       }
   );
 
+export type JournalAuthority = { authorityId: string; generation: bigint };
+
 export interface JournalBatchAppendEntry {
+  /** Authority of the canonical handle used to prepare this update. */
+  authority?: JournalAuthority;
   docId: string;
   update: Uint8Array;
   meta: UpdateMeta;
@@ -104,12 +108,18 @@ export interface JournalReadOptions {
 
 /** Ordered Yjs update log: append/read/checkpoint/compact only. */
 export interface UpdateJournal {
-  append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+  append(
+    docId: string,
+    update: Uint8Array,
+    meta: UpdateMeta,
+    authority?: JournalAuthority,
+  ): Promise<number>;
   /** Journal-first transport admission; hosts may atomically join settlement state. */
   appendWriterUpdate?(
     docId: string,
     update: Uint8Array,
     meta: UpdateMeta,
+    authority?: JournalAuthority,
   ): Promise<{ seq: number; joinedSettlement: boolean }>;
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;

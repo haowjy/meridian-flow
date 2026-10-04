@@ -127,6 +127,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,

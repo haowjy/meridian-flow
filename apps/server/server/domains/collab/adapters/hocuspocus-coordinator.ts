@@ -5,10 +5,17 @@ import {
   type DocumentCoordinator,
   type DocumentLockOptions,
   DocumentNotFoundError,
+  type JournalSnapshot,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import {
+  documentAuthority,
+  isDocumentHandleRetired,
+  RetiredDocumentHandleError,
+  retireDocumentHandle,
+} from "../domain/document-handle.js";
 import { loadDocumentState } from "./document-loader.js";
 
 type CoordinatorDeps = {
@@ -45,8 +52,34 @@ function createCoordinator(
 ): DocumentCoordinator {
   const mutex = deps.mutex ?? new KeyedMutex();
 
-  async function persistedState(docId: string, handle?: Y.Doc): Promise<Uint8Array | null> {
-    return loadDocumentState(deps.journal, docId, handle);
+  async function persistedState(
+    docId: string,
+    handle?: Y.Doc,
+    snapshot?: JournalSnapshot,
+  ): Promise<Uint8Array | null> {
+    try {
+      return await loadDocumentState(deps.journal, docId, handle, snapshot);
+    } catch (cause) {
+      if (cause instanceof RetiredDocumentHandleError && handle) {
+        // A cold open may have loaded a newer generation after our snapshot.
+        // Refuse this acquisition, but never evict that newer room.
+        if (!isDocumentHandleRetired(handle) && snapshot?.authority) {
+          const bound = documentAuthority(handle);
+          if (
+            bound.authorityId === snapshot.authority.authorityId &&
+            bound.generation > snapshot.authority.generation
+          )
+            throw cause;
+        }
+        retireDocumentHandle(handle);
+        const hp = deps.hocuspocus();
+        if (hp.documents.get(docId) === handle) {
+          hp.closeConnections(docId);
+          hp.documents.delete(docId);
+        }
+      }
+      throw cause;
+    }
   }
 
   function liveDoc(docId: string): Y.Doc | undefined {
@@ -59,6 +92,7 @@ function createCoordinator(
   }
 
   return {
+    documentAuthority,
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
@@ -67,13 +101,13 @@ function createCoordinator(
       return mutex.run(
         docId,
         async () => {
-          if (!liveDoc(docId) && !(await persistedState(docId))) {
+          const snapshot = await deps.journal.read(docId);
+          if (!liveDoc(docId) && !snapshot.checkpoint && snapshot.updates.length === 0) {
             throw new DocumentNotFoundError(docId);
           }
-
           const handle = await openLiveDoc(docId);
           try {
-            const persisted = await persistedState(docId, handle.doc);
+            const persisted = await persistedState(docId, handle.doc, snapshot);
             if (persisted) await applyMissing(handle.doc, persisted);
             return await fn(handle.doc);
           } finally {
@@ -86,20 +120,22 @@ function createCoordinator(
 
     recover(docId: string): Promise<void> {
       return mutex.run(docId, async () => {
+        const snapshot = await deps.journal.read(docId);
         const live = liveDoc(docId);
-        const persisted = await persistedState(docId, live);
-        if (!persisted) return;
-
         if (live) {
+          const persisted = await persistedState(docId, live, snapshot);
+          if (!persisted) return;
           await applyMissing(live, persisted);
           return;
         }
+
+        if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
 
         // Cold open runs Hocuspocus onLoadDocument; after WS rewiring that hook must
         // call loadDocumentState. Reapplying the diff is harmless if it already did.
         const handle = await openLiveDoc(docId);
         try {
-          const bound = await persistedState(docId, handle.doc);
+          const bound = await persistedState(docId, handle.doc, snapshot);
           if (bound) await applyMissing(handle.doc, bound);
         } finally {
           await handle.release();

@@ -114,9 +114,19 @@ One authority generation per checkpoint and per reconstruction. Live document
 handles carry immutable authority identity and generation from
 the same journal snapshot that loaded their bytes. Hocuspocus binds rooms during
 load; coordinator acquisition/recovery may replay only a matching generation,
-never relabel a warm handle. Room and explicit checkpoint producers use that
-binding, not a fresh authority read. Restore marks the acquired handle retired
-and disconnects the room; retained references remain fenced by their binding.
+never relabel a warm handle. Room and explicit checkpoint producers, writer
+frames, Markdown replacements, and agent journal batches carry that binding
+into persistence. Agent response batches capture it during canonical-document
+preflight; the host coordinator supplies it through the package port. Append
+validation happens after acquiring the mutation lock, before admission allocation.
+Restore marks acquired handles retired and disconnects the room; still-loading
+rooms are retired when their load promise finishes;
+load completion and connection creation revalidate the binding and evict stale
+rooms, so late joins reconnect. Retained references remain fenced by their binding.
+There is no transport generation cache: connection admission reads the head and
+writer frames use the room binding. The retired-state-vector filter remains only
+to identify cached pre-restore structs and deletes replayed by a reconnected client
+on a current handle; it does not select or authorize a generation.
 Persistence validates both under the document mutation lock and
 drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
 `stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots

@@ -1,5 +1,6 @@
 /** Tests for Hocuspocus room persistence: branch guards and deferred live checkpoints. */
 
+import { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -8,7 +9,11 @@ import { RecentEventsBuffer } from "../observability/adapters/recent/recent-even
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
-import { bindDocumentAuthority } from "./domain/document-handle.js";
+import {
+  bindDocumentAuthority,
+  documentAuthority,
+  RetiredDocumentHandleError,
+} from "./domain/document-handle.js";
 import { PROVENANCE_TARGETS_TYPE, ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { unimplementedBranchMutations } from "./test-support/unimplemented-branch-mutations.js";
@@ -17,6 +22,58 @@ const BRANCH_ID = "branch-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
 describe("createHocuspocusPersistenceService branch room storage", () => {
+  it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
+    let generation = 1n;
+    let finishLoad!: () => void;
+    let reachedAfterLoad!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finishLoad = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      reachedAfterLoad = resolve;
+    });
+    const journal = fakeJournal();
+    journal.read = async () => ({
+      authority: { authorityId: "test-authority", generation },
+      checkpoint: Y.encodeStateAsUpdate(new Y.Doc()),
+      updates: [],
+    });
+    const hp = new Hocuspocus({
+      async onLoadDocument({ document }) {
+        const state = await persistence.loadHocuspocusDocument(DOCUMENT_ID, document);
+        if (state) Y.applyUpdate(document, state);
+      },
+      async afterLoadDocument({ document }) {
+        if (documentAuthority(document).generation === 1n) {
+          reachedAfterLoad();
+          await gate;
+        }
+        await persistence.validateHocuspocusDocument(DOCUMENT_ID, document);
+      },
+    });
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => hp,
+      readAuthorityHeadGeneration: async () => generation,
+      metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => {},
+    });
+    const loading = hp.openDirectConnection(DOCUMENT_ID, {}).catch((cause: unknown) => cause);
+    await ready;
+    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
+    expect(hp.loadingDocuments.has(DOCUMENT_ID)).toBe(true);
+    generation = 2n;
+    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
+    finishLoad();
+    expect(await loading).toBeInstanceOf(RetiredDocumentHandleError);
+    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
+    const current = await hp.openDirectConnection(DOCUMENT_ID, {});
+    if (!current.document) throw new Error("Current room did not load");
+    expect(documentAuthority(current.document).generation).toBe(2n);
+    await current.disconnect();
+  });
+
   it("does not re-enter the coordinator lock after a durable room publication", async () => {
     const criticalSections = createBranchCriticalSections();
     const checkpointBranch = vi.fn(() =>
@@ -506,18 +563,20 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       DOCUMENT_ID,
       insertion,
       expect.anything(),
+      { authorityId: "test-authority", generation: 1n },
     );
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       2,
       DOCUMENT_ID,
       deletion,
       expect.anything(),
+      { authorityId: "test-authority", generation: 1n },
     );
     expect(onLiveUpdatePersisted).toHaveBeenCalledTimes(2);
   });
 
   it("disconnects the retired live generation and rejects its replayed bytes", async () => {
-    const checkpoint = docWithText("checkpoint");
+    const checkpoint = docWithText("checkpoint", 2n);
     const retired = cloneDoc(checkpoint);
     const retiredVector = Y.encodeStateVector(retired);
     retired.getText("content").insert(retired.getText("content").length, " retired");
@@ -564,7 +623,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       emitAgentEditInvariantViolation: () => undefined,
     });
     await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    const current = docWithText("checkpoint");
+    const current = docWithText("checkpoint", 2n);
     documents.set(DOCUMENT_ID, current);
     const client = cloneDoc(current);
     const before = Y.encodeStateVector(client);
@@ -595,7 +654,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       emitAgentEditInvariantViolation: () => undefined,
     });
     await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    const current = cloneDoc(retired);
+    const current = cloneDoc(retired, 2n);
     documents.set(DOCUMENT_ID, current);
     const beforeDelete = Y.encodeStateVector(staleClient);
     staleClient.getText("content").delete(0, staleClient.getText("content").length);
@@ -637,7 +696,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
       }),
-    ).rejects.toThrow("stale-durable-authority-generation");
+    ).rejects.toThrow("Document handle belongs to a retired authority generation");
     expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
   });
 
@@ -887,14 +946,14 @@ function tombstoneBearingDoc(): Y.Doc {
   return doc;
 }
 
-function docWithText(text: string): Y.Doc {
-  const doc = boundDoc({ gc: false });
+function docWithText(text: string, generation = 1n): Y.Doc {
+  const doc = boundDoc({ gc: false }, generation);
   doc.getText("content").insert(0, text);
   return doc;
 }
 
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = boundDoc({ gc: false });
+function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
+  const clone = boundDoc({ gc: false }, generation);
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
   return clone;
 }
@@ -926,8 +985,8 @@ function fakeJournal(): UpdateJournal {
   };
 }
 
-function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0]): Y.Doc {
+function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0], generation = 1n): Y.Doc {
   const doc = new Y.Doc(options);
-  bindDocumentAuthority(doc, { authorityId: "test-authority" as never, generation: 1n });
+  bindDocumentAuthority(doc, { authorityId: "test-authority" as never, generation });
   return doc;
 }

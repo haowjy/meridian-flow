@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text.
+
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
 
 - Refresh document search, listings, sizes, download fallback, and link-index projections two seconds after writer typing pauses (at most ten seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
