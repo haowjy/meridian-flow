@@ -176,30 +176,26 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       : null;
   const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
 
-  // A draft-only document has no live room until Apply promotes it, and the
-  // server refuses one: review hosts the draft branch room alone.
-  const branchOnly = activeTab?.kind === "tracked" && activeTab.draftOnly === true;
   const live = useLiveDocumentBinding({
     projectId,
-    documentId: activeTab?.editable && !branchOnly ? activeTab.documentId : null,
+    documentId: activeTab?.editable ? activeTab.documentId : null,
     owner: "mobile-project-document-host",
   });
   const liveState = live.state;
 
   useEffect(() => {
-    const opened = liveState.kind === "opened" && liveState.documentId === activeEditorDocumentId;
-    if (!activeEditorDocumentId || (!opened && !branchOnly)) {
+    if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
       setActiveEditorDocumentId(null, null, false, projectionOwner.current);
       return;
     }
     setActiveEditorDocumentId(
       activeEditorDocumentId,
-      liveState.kind === "opened" ? liveState.session : null,
+      liveState.session,
       Boolean(reviewDraftId),
       projectionOwner.current,
     );
     return () => setActiveEditorDocumentId(null, null, false, projectionOwner.current);
-  }, [activeEditorDocumentId, branchOnly, liveState, reviewDraftId, setActiveEditorDocumentId]);
+  }, [activeEditorDocumentId, liveState, reviewDraftId, setActiveEditorDocumentId]);
 
   useEffect(() => {
     if (
@@ -250,7 +246,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     liveState.kind === "opened" && liveState.documentId === activeTab.documentId
       ? liveState.session
       : null;
-  if (!branchOnly && liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
+  if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
     return (
       <DocumentStatus tone="error">
         <AlertCircle className="size-4" aria-hidden />
@@ -258,7 +254,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       </DocumentStatus>
     );
   }
-  if (!liveSession && !(branchOnly && reviewDraftId)) {
+  if (!liveSession) {
     return (
       <DocumentStatus tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -274,7 +270,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
         projectId={projectId}
         workId={workId}
         documentId={activeTab.documentId}
-        session={liveSession ?? undefined}
+        session={liveSession}
         schemaType={activeTab.schemaType}
         editable={false}
         showToolbar={false}
