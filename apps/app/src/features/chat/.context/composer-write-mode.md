@@ -39,28 +39,31 @@ rebinding share the canonical server transition.
 
 The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
 mutation and uses the active-draft count only to open confirmation quickly.
-Every Auto-apply selection sends an
-unconfirmed request; the server-vended count of reviewable content branches is
-the number shown in the confirmation. It is not a raw journal-row or active
-branch count: manifest-membership bookkeeping does not represent prose waiting
-for review. Moving Draft → Auto-apply with pending changes keeps Draft selected
-and opens the **Drafts are waiting** popover. Cancel preserves the mode; Review
-changes receives the project dock's `useAiDraftLauncher` entry from each
-composer adapter, the same entry used by every other review control;
-Apply all and switch is the only action that sends `confirmedPush`. It asks the
-server to apply the same canonical pending set, including any manifest companion
-needed to publish new-document membership, and only then switch policy. A failed
-push leaves Draft selected. Loading draft data never disables the Auto-apply
-choice; a nondismissible write-mode request temporarily disables page actions
-while the toolbar retains a focusable dialog fallback. The sidebar has no
-write-mode control.
+Mode and pending changes are separate (D40): the mode decides where new AI
+writes go, and pending changes stay until the writer applies or discards them.
+Every Auto-apply selection first sends a request with no `pending` choice; the
+server-vended count of reviewable content branches is the number shown in the
+confirmation. It is not a raw journal-row or active branch count:
+manifest-membership bookkeeping does not represent prose waiting for review.
+
+Moving Draft → Auto-apply with pending changes keeps Draft selected and opens
+the switch dialog. Its choices send `pending: "apply"` (apply the canonical
+pending set, including any manifest companion, then switch) or
+`pending: "keep"` (switch and leave the drafts for review in the dock); Cancel
+preserves the mode. Keep takes focus first. An archived Work's drafts are
+frozen, so its dialog offers only Switch (keep). A `work_archived` refusal during
+the switch turns the dialog into that archived variant. A failed Apply leaves
+Draft selected, and drafts it already pushed stay applied. Loading draft data
+never disables the Auto-apply choice; a nondismissible write-mode request
+temporarily disables page actions while the toolbar retains a focusable dialog
+fallback. The sidebar has no write-mode control.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false. If a client fast path
 opens the confirmation before the authoritative response returns, the popover
 keeps the existing **Checking pending changes…** copy and disables actions that
 need the unresolved projection. Auto-apply remains selectable so its
-unconfirmed request can ask the server; loading client state must never imply
+choice-less request can ask the server; loading client state must never imply
 that nothing is pending.
 
 The shared Work picker and selected-Work write-mode presentation live in the
