@@ -66,7 +66,8 @@ export interface MarkupPlugin {
   marks?: readonly MarkCodec[];
   remarkPlugins?: PluggableList;
   preprocess?: (text: string) => string;
-  postParse?: (root: MdastRoot) => MdastRoot;
+  /** Receives the preprocessed source matching AST positions, including internal reparses. */
+  postParse?: (root: MdastRoot, source: string) => MdastRoot;
   /** Format-specific wrapping applied after a block's ordinary codec. */
   postSerializeBlock?: (node: PMNode, serialized: string, ctx: SerializeContext) => string;
 }
