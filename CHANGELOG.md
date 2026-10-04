@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-- Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts.
+- Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
 - Consolidate Markdown link round trips and remove type-only and mocked replica tests while preserving pure persistence contracts.
 
 - Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
