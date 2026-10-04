@@ -34,6 +34,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
     const { drizzleFileAccess } = await import("../../test-support/file-grants.js");
+    const { containerTarget, documentTarget, requireFileGrant, withEditGrants } = await import(
+      "../file-access-http.js"
+    );
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -278,6 +281,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: personalProject.id as never,
       });
       expect(deletedMembership.members).not.toContain(userDocumentId);
+    });
+
+    it("deletes and recreates a document under the writer's edit grants", async () => {
+      const { collab, contextPorts } = createFixture();
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      const fileAccess = drizzleFileAccess(db);
+      const edit = async <T>(
+        target: import("../../domains/file-policy/index.js").FileTarget,
+        operation: () => Promise<T>,
+      ) =>
+        withEditGrants(
+          fileAccess,
+          [await requireFileGrant(fileAccess, USER_ID, target, "edit")],
+          operation,
+        );
+      const container = await containerTarget(
+        { findNoWork: async () => null },
+        { projectId: PROJECT_ID, scheme: "manuscript", workId: null },
+      );
+      const create = (content: string) =>
+        edit(container, () =>
+          createContextEntry({
+            port,
+            userId: USER_ID,
+            scheme: "manuscript",
+            body: parseCreateContextEntryBody({ type: "file", path: "/chapter.md", content }),
+          }),
+        );
+
+      const created = await create("first");
+      if (created.status !== "created" || !created.documentId)
+        throw new Error("file creation did not return a document id");
+      const documentId = created.documentId;
+      await expect(
+        edit(documentTarget(documentId), () =>
+          port.delete("manuscript://chapter.md", {
+            origin: { type: "human", userId: USER_ID },
+            expected: { kind: "file", documentId },
+          }),
+        ),
+      ).resolves.toMatchObject({ ok: true, value: { deletedDocumentIds: [documentId] } });
+      await collab.drainHocuspocusPersistence();
+      const membership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(membership.members).not.toContain(documentId);
+
+      await expect(create("second")).resolves.toMatchObject({ status: "created" });
+      await expect(port.read("manuscript://chapter.md")).resolves.toMatchObject({
+        ok: true,
+        value: { content: "second\n" },
+      });
     });
 
     it("registers scratch documents in the live project manifest and resolves their project", async () => {
