@@ -34,8 +34,7 @@ describe("permissionGateFromToolPolicy", () => {
       expect(criticGate().check("write", input)).toEqual({
         allowed: false,
         kind: "permission_denied",
-        reason:
-          "This agent has no \"write\" tool, so it can't make this call. Tell the user you can't do this here.",
+        reason: 'This agent has no "write" tool. Tell the user you can\'t do this here.',
       });
     }
     expect(criticGate().check("read", { path: "chapter.md" })).toEqual({ allowed: true });
