@@ -29,6 +29,7 @@ import { fileKindIcon } from "./context-file-icon";
 import { contextTreeRowClassName } from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
 import { EntryNameField } from "./EntryNameField";
+import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
@@ -139,6 +140,7 @@ function DirRow({
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const isOpen = env.isExpanded(dir.entryId, depth);
   // Like a file, a refused rename reopens the name field to try again.
   useEffect(() => {
@@ -168,6 +170,7 @@ function DirRow({
         kind="folder"
         depth={depth}
         icon={isOpen ? FolderOpen : Folder}
+        onRenamed={setNoteOperationId}
         onDone={() => setRenaming(false)}
       />
     );
@@ -194,7 +197,13 @@ function DirRow({
         >
           <Twistie expanded={isOpen} />
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
+          <span className="ml-0.5 min-w-0 truncate">{dir.name}</span>
+          <LinkUpdateNote
+            projectId={env.projectId}
+            subject={{ kind: "folder", id: dir.entryId }}
+            operationId={noteOperationId}
+          />
+          <span className="flex-1" />
           {dir.namespaceFailure ? (
             <NamespaceFailureMark failure={dir.namespaceFailure} folder />
           ) : null}
@@ -223,6 +232,7 @@ function FileRow({
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const select = () => env.onSelectFile(env.scheme, file);
   useEffect(() => {
     if (file.namespaceFailure === "set-location") setRenaming(true);
@@ -253,6 +263,7 @@ function FileRow({
         kind="file"
         depth={depth}
         icon={fileKindIcon(file)}
+        onRenamed={setNoteOperationId}
         onDone={() => setRenaming(false)}
       />
     );
@@ -281,7 +292,13 @@ function FileRow({
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
-        <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
+        <span className="ml-0.5 min-w-0 truncate">{file.name}</span>
+        <LinkUpdateNote
+          projectId={env.projectId}
+          subject={{ kind: "file", id: file.documentId }}
+          operationId={noteOperationId}
+        />
+        <span className="flex-1" />
         {file.namespaceFailure ? <NamespaceFailureMark failure={file.namespaceFailure} /> : null}
         <EntryKebabButton
           allowCreate={allowCreate}
@@ -302,6 +319,7 @@ function RenameRow({
   kind,
   depth,
   icon,
+  onRenamed,
   onDone,
 }: {
   entryId: string;
@@ -312,6 +330,7 @@ function RenameRow({
   kind: ContextCreateKind;
   depth: number;
   icon: typeof Folder;
+  onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
   const env = useTreeEnv();
@@ -325,6 +344,7 @@ function RenameRow({
     repairName,
     siblingNames,
     kind,
+    onRenamed,
     onDone,
   });
   return (

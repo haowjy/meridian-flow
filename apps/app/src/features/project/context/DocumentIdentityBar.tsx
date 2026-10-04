@@ -13,6 +13,7 @@ import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
+import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
@@ -44,12 +45,21 @@ export function DocumentIdentityBar({
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const commit = useIdentityCommit({
+  const noteOperationId = useRenameOperation(tab.documentId);
+  const commitIdentity = useIdentityCommit({
     projectId,
     tab,
     editorWorkId: editorWorkId,
     onCommitted,
   });
+  // Only a rename made here shows the note here; the tree shows its own. The rename
+  // re-resolves the tab and remounts this bar, so the operation outlives it.
+  const commit: typeof commitIdentity = async (target) => {
+    const outcome = await commitIdentity(target);
+    if (outcome.status === "committed" && outcome.operationId)
+      rememberRenameOperation(tab.documentId, outcome.operationId);
+    return outcome;
+  };
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
@@ -105,7 +115,15 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <IdentityPath location={location} />
+          <>
+            <IdentityPath location={location} />
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "file", id: tab.documentId }}
+              operationId={noteOperationId}
+              className="ml-3 font-sans text-ink-muted"
+            />
+          </>
         )}
         <span className="min-w-1 flex-1" />
         <DraftReviewChip documentId={tab.documentId} />

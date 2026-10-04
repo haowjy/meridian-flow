@@ -216,6 +216,10 @@ msgstr "{count, plural, one {# match} other {# matches}}"
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "{count, plural, one {Updated # link} other {Updated # links}}"
+msgstr "{count, plural, one {Updated # link} other {Updated # links}}"
+
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"

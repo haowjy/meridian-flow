@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+
 - Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item.
 
 - Add local folder-move journals and descendant catalog rebasing for instant rename integration; retain complete settled receipts for short-lived item feedback.

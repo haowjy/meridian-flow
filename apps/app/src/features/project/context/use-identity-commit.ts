@@ -15,7 +15,9 @@ import {
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
-export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
+export type IdentityCommitOutcome =
+  /** `operationId` names the move's receipt; absent when the document queued or nothing changed. */
+  { status: "committed"; operationId?: string } | { status: "error"; message: string };
 
 /** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
@@ -117,7 +119,10 @@ export function useIdentityCommit({
         },
         ownership,
       );
-      return { status: "committed" };
+      return {
+        status: "committed",
+        ...(ownership.operationId ? { operationId: ownership.operationId } : {}),
+      };
     } catch {
       return { status: "error", message: t`Couldn't save this document's home. Try again.` };
     }
