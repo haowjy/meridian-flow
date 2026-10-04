@@ -1509,18 +1509,25 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const result = await context.port.list(path);
       if (!result.ok) return modelContextError(result.error, context);
       const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(result.value));
+      // Folders below a path share its container; the root lists one per source.
       const folderReadonly = path
         ? await containerReadonly(deps, principal, context, path)
         : undefined;
-      const entries = result.value.flatMap((entry) => {
-        const { editable: _kind, ...rest } = entry as FileEntry & { editable?: boolean };
-        if (entry.kind === "directory") {
-          return [{ ...rest, readonly: folderReadonly ?? entry.readonly ?? false }];
-        }
-        const decision = entry.documentId ? access.get(entry.documentId as DocumentId) : undefined;
-        return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
-      });
-      return modelContextResults(entries, context);
+      const entries = await Promise.all(
+        result.value.map(async (entry) => {
+          const { editable: _kind, ...rest } = entry as FileEntry & { editable?: boolean };
+          if (entry.kind === "directory") {
+            const readonly =
+              folderReadonly ?? (await containerReadonly(deps, principal, context, entry.uri));
+            return [{ ...rest, readonly: readonly ?? entry.readonly ?? false }];
+          }
+          const decision = entry.documentId
+            ? access.get(entry.documentId as DocumentId)
+            : undefined;
+          return decision ? [{ ...rest, readonly: decision.level !== "edit" }] : [];
+        }),
+      );
+      return modelContextResults(entries.flat(), context);
     },
     search: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope, version } = input as SearchToolInput;
