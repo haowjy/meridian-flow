@@ -30,6 +30,7 @@ export type ContextError =
 
 export interface ContextMoveResult {
   movedNodeId?: string;
+  linkUpdate?: { links: number; documents: number };
   /** Scheme-relative path durably committed by the tree mutation. */
   destinationPath: string;
 }
