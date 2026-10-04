@@ -61,8 +61,12 @@ import {
   createAllowAllFileAccess,
   createDrizzleFileFacts,
   createFileAccess,
+  createLocalFileAccessChanges,
   createOwnerFileGrants,
+  createPgFileAccessChanges,
   type FileAccess,
+  type FileAccessChanges,
+  type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
@@ -291,6 +295,8 @@ export type AppServices = {
   results: ResultRepository;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
+  /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
+  fileAccessChanges: FileAccessChanges;
   notices: NoticePort;
   changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
   changeTrailDelivery: ReturnType<typeof createChangeTrailWorker>;
@@ -304,6 +310,7 @@ export type ProductionAppPorts = {
   db: Database;
   /** The file policy every model read and write asks (file-access §1). */
   fileAccess: FileAccess;
+  fileAccessChanges: PgFileAccessChanges;
   gateway: Gateway;
   summarizerConfig: { model: string };
   threadRepos: InternalThreadRepositories;
@@ -542,9 +549,11 @@ export async function createProductionAppPorts(input: {
     documents: documentSync,
     catalogLifecycle: contextCatalog,
   });
+  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
     projectionMutation: workProjectionMutation,
+    fileAccessChanges,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -576,6 +585,7 @@ export async function createProductionAppPorts(input: {
     gateway,
     summarizerConfig: { model: summarizerModel },
     fileAccess,
+    fileAccessChanges,
     threadRepos,
     journalReader,
     journalWriter,
@@ -1064,6 +1074,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     figureAssets: ports.figureAssets,
     results: ports.results,
     fileAccess: ports.fileAccess,
+    fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
@@ -1586,6 +1597,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     fileAccess: createAllowAllFileAccess(),
+    fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,
     mockModelScript: null,

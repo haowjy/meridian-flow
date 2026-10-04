@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import {
   createDrizzleProjectWorkRepository,
   deleteWorkTransition,
@@ -38,6 +39,7 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const workContext = createWorkContextReader({
