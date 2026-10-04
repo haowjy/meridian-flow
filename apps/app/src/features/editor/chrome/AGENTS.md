@@ -30,7 +30,7 @@ Five primitives and one host.
   and decides where it hangs; the object corner, the scroll pane, and a dialog
   all wear the same pill.
 - **`SuggestionMenu`** — the list a writer types underneath, for `/` and for
-  `[[`. It owns the eight-row cap, the internal scroll that follows the arrow
+  `@`. It owns the eight-row cap, the internal scroll that follows the arrow
   keys, the fades on the list's own edges, and the announcement the caret's own
   element has to carry; a lane brings rows.
 - **`EditorChromeHost`** — the one place chrome mounts, with nothing rendering

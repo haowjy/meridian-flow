@@ -23,7 +23,7 @@ export const MAX_MOUNTED_EDITORS = 6;
 
 export type ContextEditorMountHostProps = {
   projectId: string;
-  /** The Work every mounted editor is open in; scopes links and `[[` candidates. */
+  /** The Work every mounted editor is open in; scopes links and `@` candidates. */
   workId: string | null;
   /** TRACKED tabs only — viewer tabs are routed elsewhere. */
   trackedTabs: EditableContextTab[];

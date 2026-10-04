@@ -8,12 +8,14 @@ export {
 } from "./dom-input-suggestion-transport";
 export {
   createReferenceBrowserController,
+  type LinkAheadRow,
   type ReferenceBrowserController,
   type ReferenceBrowserMeta,
   type ReferenceBrowserOpenContext,
   type ReferenceBrowserOptions,
   type ReferenceBrowserState,
   type ReferenceCatalogPort,
+  type ReferenceMenuRow,
 } from "./reference-browser";
 export {
   type AuthoritativeReference,
@@ -53,9 +55,3 @@ export {
   type SuggestionMenuSnapshot,
   type SuggestionRetreat,
 } from "./suggestion-menu-store";
-export {
-  filterWikilinkItems,
-  type WikilinkCatalog,
-  type WikilinkDocument,
-  type WikilinkMenuItem,
-} from "./wikilink-catalog";

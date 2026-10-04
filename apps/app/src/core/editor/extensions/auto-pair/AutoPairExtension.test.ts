@@ -248,14 +248,13 @@ describe("typing the closer steps over the one that was written", () => {
     expect(shape(editor)).toBe("[[]]|");
   });
 
-  it("carries a name between the brackets", () => {
+  it("carries a name between the brackets and leaves it text", () => {
     const editor = openEditor();
     type(editor, "[[The Third Gate]]");
 
-    expect(shape(editor)).toBe("The Third Gate|");
-    expect(editor.view.dom.querySelector("a")?.getAttribute("data-meridian-link")).toBe(
-      "[[The Third Gate]]",
-    );
+    // `[[name]]` is never a link and opens nothing; `@` is how a writer links.
+    expect(shape(editor)).toBe("[[The Third Gate]]|");
+    expect(editor.view.dom.querySelector("a")).toBeNull();
   });
 
   it("writes a real bracket in front of one the writer typed themselves", () => {

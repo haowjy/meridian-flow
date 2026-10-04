@@ -10,11 +10,22 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   projectResourceLocation,
   type ResourceRecord,
+  type ResourceWorkAuthority,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 import type { ContextTab } from "@/client/stores";
+
+/**
+ * The Work an Editor tab carries: a named Work's id. No Work's documents carry
+ * none, because the No Work Editor names no Work. A Work id always states its
+ * slug (`ResourceWorkAuthority`, and the server's document authority), and
+ * only the No Work row's is null.
+ */
+export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
+  return location.workId && location.workSlug ? location.workId : undefined;
+}
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
@@ -85,7 +96,7 @@ export function contextTabFromResource(
     scheme: location.scheme,
     path: location.path,
     name: location.name,
-    ...(location.workId ? { workId: location.workId } : {}),
+    ...(editorTabWorkId(location) ? { workId: editorTabWorkId(location) } : {}),
     editable: true,
     filetype: resource.classification.filetype,
     schemaType: resource.classification.schemaType,
@@ -140,7 +151,7 @@ export function projectResourceTab(
       scheme: location.scheme,
       path: location.path,
       name: location.name,
-      ...(location.workId ? { workId: location.workId } : {}),
+      ...(editorTabWorkId(location) ? { workId: editorTabWorkId(location) } : {}),
       ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };

@@ -1,13 +1,15 @@
 /**
  * What a link's href means — the one classifier every link consumer reads.
  *
- * §5.5 gives internal links three spellings and one behavior: a wikilink
- * `[[The Second Gate]]`, a scheme URI `manuscript://…`, and a path relative to
- * the document holding the link. All three resolve to a project document and
- * navigate in-app; only `external` leaves the app, and only `external` is
- * decided entirely on the client. The other three are exactly the server's
- * `DocumentLinkTarget`, so `documentLinkTarget()` is a projection rather than
- * a translation and a new spelling is added in one place.
+ * A link is a standard Markdown link to an address. Internal links come in two
+ * spellings with one behavior: a Context URI `manuscript://…`, and a path
+ * relative to the document holding the link. Both resolve to the one project
+ * document at that address and navigate in-app; only `external` leaves the
+ * app, and only `external` is decided entirely on the client. The two internal
+ * kinds are exactly the server's `DocumentLinkTarget`, so `documentLinkTarget()`
+ * is a projection rather than a translation. `[[name]]` is not a spelling:
+ * it is text wherever it appears, and a paste turns it into a link
+ * (`wikilink-paste.ts`) before it is ever stored.
  *
  * Two directions live here on purpose. `classifyLinkTarget` reads an href that
  * is already in the document — written by the markdown parser, by an LLM, or
@@ -19,19 +21,16 @@
 
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
 import type { DocumentLinkTarget } from "@meridian/contracts/protocol";
-import { formatWikilink, wikilinkTarget } from "@meridian/markup";
 
 export type LinkTarget =
-  /** `[[The Second Gate]]` — resolved by title or alias. Unresolved is normal. */
-  | { kind: "wikilink"; name: string }
-  /** `manuscript://appendix/vault-charter`, `scratch://@revision-pass/notes.md`. */
+  /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
   | { kind: "scheme"; uri: string }
   /** `chapter-213.md`, `../notes/kael.md` — resolved against the holder's URI. */
   | { kind: "relative"; path: string }
   /** Everything that leaves the app. Never crosses the resolution port. */
   | { kind: "external"; url: string };
 
-/** True for the three spellings of the one internal family (§5.5). */
+/** True for both spellings of the one internal family. */
 export function isInternalLinkTarget(target: LinkTarget): boolean {
   return target.kind !== "external";
 }
@@ -61,6 +60,15 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
+/**
+ * An internal link is a Context URI: a known scheme followed by `://`, in any
+ * case, exactly as `resolveDocumentHref` reads it. `kb:x` is neither internal
+ * nor a web link.
+ */
+function internalScheme(value: string, scheme: string): boolean {
+  return INTERNAL_SCHEMES.has(scheme) && value.slice(scheme.length + 1).startsWith("//");
+}
+
 /** Whether reference completion must leave this writer-entered href entirely to the form. */
 export function linkInputStepsAsideFromReferences(input: string): boolean {
   const value = input.trim();
@@ -79,30 +87,21 @@ const DOCUMENT_PATH = /\.mdx?($|[?#])/i;
 
 /**
  * What this href is, or null when it is nothing the editor will act on — an
- * empty mark, a malformed `[[`, or a scheme outside both families. Null means
- * no hover hint, no follow, and no Open verb; it is not the same as an
- * internal target that resolves to nothing.
+ * empty mark or a scheme outside both families. Null means no hover hint, no
+ * follow, and no Open verb; it is not the same as an internal target that
+ * resolves to nothing.
  */
 export function classifyLinkTarget(href: string): LinkTarget | null {
   const value = href.trim();
   if (!value || hasAsciiControl(value)) return null;
-
-  const name = wikilinkTarget(value);
-  if (name) {
-    const scheme = EXPLICIT_SCHEME.exec(name)?.[1]?.toLowerCase();
-    return scheme && INTERNAL_SCHEMES.has(scheme)
-      ? { kind: "scheme", uri: name }
-      : { kind: "wikilink", name };
-  }
-  // A bracketed href that is not a well-formed wikilink is not a path either.
-  if (value.startsWith("[[")) return null;
 
   // Protocol-relative, the one scheme-less spelling that still means the web.
   if (value.startsWith("//")) return externalTarget(`https:${value}`);
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
   if (!scheme) return { kind: "relative", path: value };
-  if (INTERNAL_SCHEMES.has(scheme)) return { kind: "scheme", uri: value };
+  if (internalScheme(value, scheme)) return { kind: "scheme", uri: value };
+  if (INTERNAL_SCHEMES.has(scheme)) return null;
   return externalTarget(value);
 }
 
@@ -113,8 +112,6 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
  */
 export function documentLinkTarget(target: LinkTarget, baseUri: string): DocumentLinkTarget | null {
   switch (target.kind) {
-    case "wikilink":
-      return { kind: "wikilink", name: target.name };
     case "scheme":
       return { kind: "scheme", uri: target.uri };
     case "relative":
@@ -125,36 +122,42 @@ export function documentLinkTarget(target: LinkTarget, baseUri: string): Documen
 }
 
 /**
- * The canonical href to store for something a writer typed, or null when it is
- * not a link at all (law 5: the form says so rather than committing nonsense).
+ * The href to store for something a writer typed, or null when it is not a
+ * link at all (law 5: the form says so rather than committing nonsense). A
+ * web URL, a Context URI, and a relative document path each keep their own
+ * spelling.
  *
  * The one convenience is the missing `https://`, because writers paste bare
- * hostnames constantly. It is deliberately last, so `[[Warden Ilsever]]`,
- * `manuscript://…`, and `../notes/kael.md` keep their own meaning.
+ * hostnames constantly. It is deliberately last, so `manuscript://…` and
+ * `../notes/kael.md` keep their own meaning. A path whose first segment has no
+ * dot (`notes/kael`, `kael`) is relative, since a hostname always has one; a
+ * dotted first segment (`example.com/x`) is a web address unless the path ends
+ * in a document extension.
  */
 export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
   if (!value || hasAsciiControl(value)) return null;
 
-  const name = wikilinkTarget(value);
-  if (name) return formatWikilink(name);
-  if (value.startsWith("[[")) return null;
-
   if (value.startsWith("//")) return validExternalHref(`https:${value}`);
+  // A path is relative to the document holding it; there is no project root.
+  if (value.startsWith("/")) return null;
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
-  if (scheme) return INTERNAL_SCHEMES.has(scheme) ? value : validExternalHref(value);
+  if (scheme) {
+    if (INTERNAL_SCHEMES.has(scheme)) return internalScheme(value, scheme) ? value : null;
+    return validExternalHref(value);
+  }
 
-  if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../")) return value;
+  if (value.startsWith("./") || value.startsWith("../")) return value;
   if (DOCUMENT_PATH.test(value)) return value;
+  const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
+  if (!firstSegment.includes(".")) return value;
   return validExternalHref(`https://${value}`);
 }
 
 /** Canonical semantic spelling for resolution and hints, not an internal browser URL. */
 export function linkTargetHref(target: LinkTarget): string {
   switch (target.kind) {
-    case "wikilink":
-      return formatWikilink(target.name);
     case "scheme":
       return target.uri;
     case "relative":
@@ -166,7 +169,6 @@ export function linkTargetHref(target: LinkTarget): string {
 
 /** A readable fallback while an internal destination's catalog title is unavailable. */
 export function linkTargetLabel(target: LinkTarget): string {
-  if (target.kind === "wikilink") return target.name;
   if (target.kind === "external") return target.url;
   const path = target.kind === "scheme" ? target.uri : target.path;
   return path.slice(path.lastIndexOf("/") + 1) || path;
