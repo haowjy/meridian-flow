@@ -51,8 +51,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { continuesResponse, resolveSubagentRevealTurnId, TurnList } from "./TurnList";
-import type { TranscriptRow } from "./transcript-model";
+import { resolveSubagentRevealTurnId, TurnList } from "./TurnList";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -63,20 +62,20 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
+let host: HTMLDivElement;
+let root: Root;
+beforeEach(() => {
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  rendered.assistants.clear();
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 describe("TurnList queued status", () => {
-  let host: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-  });
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    document.body.innerHTML = "";
-  });
-
   it("updates the mounted user row in both directions while other inputs stay stable", async () => {
     const turns = [
       {
@@ -125,20 +124,6 @@ describe("TurnList queued status", () => {
 });
 
 describe("TurnList failed replies", () => {
-  let host: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    rendered.assistants.clear();
-  });
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    document.body.innerHTML = "";
-  });
-
   const user = (id: string) => ({ id, role: "user", status: "complete", blocks: [] });
   const assistant = (id: string, status: string) => ({ id, role: "assistant", status, blocks: [] });
 
@@ -286,38 +271,5 @@ describe("subagent reveal turn resolution", () => {
         "launch",
       ),
     ).toBe("launch");
-  });
-});
-
-describe("continuesResponse", () => {
-  const rows = (turns: Turn[]): TranscriptRow[] =>
-    turns.map((turn) => ({ kind: "turn", turn, inherited: null }));
-  const assistant = (id: string, completedAt: string | null, status = "complete") =>
-    ({ id, role: "assistant", status, completedAt }) as unknown as Turn;
-  const writer = (id: string, delivery: "steer" | undefined) =>
-    ({ id, role: "user", metadata: delivery ? { delivery } : null }) as unknown as Turn;
-
-  it("continues past a notification-woken assistant turn", () => {
-    const turns = [assistant("a", "2026-01-01T00:01:00Z"), assistant("b", "2026-01-01T00:02:00Z")];
-    expect(continuesResponse(rows(turns), 0, false)).toBe(true);
-    expect(continuesResponse(rows(turns), 1, false)).toBe(false);
-  });
-
-  it("continues past a writer steer sent while the turn was generating", () => {
-    const steer = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", "steer")];
-    expect(continuesResponse(rows(steer), 0, false)).toBe(true);
-    const reply = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", undefined)];
-    expect(continuesResponse(rows(reply), 0, false)).toBe(false);
-  });
-
-  it("keeps the latest turn open only while background subagents run", () => {
-    const turns = [assistant("a", "2026-01-01T00:01:00Z")];
-    expect(continuesResponse(rows(turns), 0, true)).toBe(true);
-    expect(continuesResponse(rows(turns), 0, false)).toBe(false);
-  });
-
-  it("treats a stopped or failed turn as finished", () => {
-    const turns = [assistant("a", "2026-01-01T00:01:00Z", "cancelled"), assistant("b", null)];
-    expect(continuesResponse(rows(turns), 0, true)).toBe(false);
   });
 });

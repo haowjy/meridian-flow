@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { EventType } from "@meridian/contracts/protocol";
+import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -78,5 +78,33 @@ describe("useThreadActivity", () => {
     });
 
     expect(activity).toBe(frame);
+  });
+  it("retains the latest activity when a header consumer remounts", async () => {
+    const threadId = `remount-${crypto.randomUUID()}`;
+    let onLiveState!: (state: ThreadLiveState) => void;
+    mocks.subscribe.mockImplementation((_threadId, handlers) => {
+      onLiveState = handlers.onLiveState;
+      return () => {};
+    });
+    function Consumer() {
+      const { activity } = useThreadActivity({ threadId, seed: null });
+      return <span>{activity.children.length}</span>;
+    }
+    await act(async () => root.render(<Consumer />));
+    await act(async () =>
+      onLiveState({
+        activity: { children: [{ threadId: "child" }] } as never,
+        status: { kind: "asleep" },
+        threadId,
+        runningTurnId: null,
+        pending: { items: [] },
+        resumeAfterSeq: "0",
+      } as ThreadLiveState),
+    );
+    expect(host.textContent).toBe("1");
+    await act(async () => root.render(null));
+    await act(async () => root.render(<Consumer />));
+    expect(host.textContent).toBe("1");
+    expect(mocks.subscribe).toHaveBeenCalled();
   });
 });

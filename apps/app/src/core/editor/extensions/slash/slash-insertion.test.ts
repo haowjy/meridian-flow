@@ -8,21 +8,21 @@
  * the thing they just asked for, is the F4/law 2 failure the rebuild exists to
  * fix — and neither is visible from the trigger's own tests.
  */
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createStandaloneEditorExtensions } from "../../config";
+import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
 import { defaultDiagramProvider } from "../../diagrams";
 import { type ObjectAt, registerObjectEngagement } from "../../objects";
 import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./slash-catalog";
 import { applySlashCommand } from "./slash-insertion";
 
-let editor: Editor | null = null;
+let fixture: StandaloneEditor | null = null;
 
 afterEach(() => {
-  editor?.destroy();
-  editor = null;
+  fixture?.destroy();
+  fixture = null;
 });
 
 const catalog = (requestImageUpload = vi.fn()): SlashCommandCatalog => ({
@@ -56,8 +56,7 @@ const BLOCK_ENTRIES = [
  */
 function mountWithTrigger(text: string, trigger: string, trailing: JSONContent[] = []) {
   const line = `${text}${trigger}`;
-  editor = new Editor({
-    extensions: createStandaloneEditorExtensions(),
+  fixture = createStandaloneEditor({
     content: {
       type: "doc",
       content: [
@@ -68,6 +67,7 @@ function mountWithTrigger(text: string, trigger: string, trailing: JSONContent[]
       ],
     },
   });
+  const { editor } = fixture;
   const from = 1 + text.length;
   return { editor, range: { from, to: from + trigger.length } };
 }
@@ -79,10 +79,10 @@ function mountWithTrigger(text: string, trigger: string, trailing: JSONContent[]
 const TRIGGER = "/x";
 
 function mountAround(content: JSONContent[]) {
-  editor = new Editor({
-    extensions: createStandaloneEditorExtensions(),
+  fixture = createStandaloneEditor({
     content: { type: "doc", content },
   });
+  const { editor } = fixture;
   let from: number | null = null;
   editor.state.doc.descendants((node, pos) => {
     if (from !== null) return false;
