@@ -6,13 +6,14 @@ import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
+import { formatMarkdownLink } from "./markdown/marks/link.js";
 
 const RAW_HTML_CANDIDATE = /<(?:!--|!\[CDATA\[|[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?=[\t\n\f\r />]))/;
 const MARKDOWN_SYNTAX_PARSER = unified().use(remarkParse);
 const MDX_SYNTAX_PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMdx);
 
 export function escapeProseForMdxIngress(text: string): string {
-  const protectedText = protectRawHtmlLiterals(text);
+  const protectedText = protectRawHtmlLiterals(expandAngleAutolinks(text));
   const enclosedDestinations = findEnclosedDestinations(protectedText);
   const candidate = escapePreparedMdxIngress(protectedText, enclosedDestinations.starts);
   if (enclosedDestinations.starts.size === 0) return candidate;
@@ -427,4 +428,30 @@ function isEscaped(value: string, index: number): boolean {
     backslashes++;
   }
   return backslashes % 2 === 1;
+}
+
+/** MDX disables CommonMark angle autolinks; spell them as resources before escaping JSX prose. */
+function expandAngleAutolinks(text: string): string {
+  if (!text.includes("<")) return text;
+  const replacements: Array<{ start: number; end: number; value: string }> = [];
+  visitMarkdownNodes(fromMarkdown(text), (node) => {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (
+      node.type !== "link" ||
+      typeof node.url !== "string" ||
+      typeof start !== "number" ||
+      typeof end !== "number" ||
+      text[start] !== "<"
+    )
+      return;
+    const label = (node.children?.[0] as MarkdownNode | undefined)?.value;
+    if (typeof label === "string") {
+      replacements.push({ start, end, value: formatMarkdownLink(label, node.url) });
+    }
+  });
+  for (const { start, end, value } of replacements.sort((a, b) => b.start - a.start)) {
+    text = text.slice(0, start) + value + text.slice(end);
+  }
+  return text;
 }
