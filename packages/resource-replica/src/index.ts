@@ -10,3 +10,4 @@ export * from "./resource-projection";
 export * from "./resource-records";
 export * from "./resource-records-policy";
 export * from "./resource-state";
+export * from "./resource-work-authority";

@@ -15,6 +15,8 @@ import {
   accessibleResourceCatalogView,
   projectCatalogFile,
 } from "@/client/query/useContextCatalog";
+import { ProjectDocumentNavigationAdapter } from "@/features/project/context/open-project-document";
+import { useIdentityCommit } from "@/features/project/context/use-identity-commit";
 import { resolveLocalDocumentAddress } from "@/features/project/routing/local-document-address";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
@@ -107,7 +109,33 @@ it("opens a No Work Scratch Create before the server answers", async () => {
       document: { documentId: "document", authority: { workSlug: null } },
     });
   };
-  const open = vi.fn();
+  const openRoute = vi.fn<
+    import("@/features/project/routing/ProjectNavigationContext").OpenContextRoute
+  >(async () => ({ kind: "applied" as const }));
+  const opener = {
+    open: vi.fn(async () => {
+      throw new Error("Server must not be needed");
+    }),
+  };
+  const adapter = new ProjectDocumentNavigationAdapter({
+    opener,
+    openTab: () => {
+      throw new Error("Current navigation must use the route owner");
+    },
+    openRoute,
+    resources: {
+      accountId: "account",
+      openKnownDocument: async () => ({
+        kind: "opened" as const,
+        key: { handle: "resource" },
+        record,
+        handle: { release() {} } as never,
+      }),
+      openDocument: async () => {
+        throw new Error("Binding is outside navigation");
+      },
+    },
+  });
   await withReactRoot(
     <QueryClientProvider client={new QueryClient()}>
       <Probe />
@@ -117,11 +145,22 @@ it("opens a No Work Scratch Create before the server answers", async () => {
       if (!target) throw new Error("Missing target");
       await act(async () => {
         void creation.create(target).then((documentId) => {
-          if (documentId) open(documentId);
+          if (documentId) return adapter.open("project", { documentId });
         });
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(open).toHaveBeenCalledWith("document");
+      expect(opener.open).not.toHaveBeenCalled();
+      expect(openRoute).toHaveBeenCalledWith(
+        { scheme: "scratch", path: "/notes/scene.md", workId: workId, documentId: "document" },
+        expect.objectContaining({
+          tab: expect.objectContaining({
+            documentId: "document",
+            name: "scene.md",
+            kind: "tracked",
+          }),
+        }),
+      );
+      expect(openRoute.mock.calls[0]?.[1]?.tab).not.toHaveProperty("workId");
       assertLocalDestination("document");
       expect(resources.setLocation).toHaveBeenCalledWith(
         "project",
@@ -137,4 +176,42 @@ it("opens a No Work Scratch Create before the server answers", async () => {
       expect(creation.failed).toBe(false);
     },
   );
+});
+
+it("keeps the locked No Work row in the destination after an Editor identity rename", async () => {
+  let rename!: ReturnType<typeof useIdentityCommit>;
+  const committed = vi.fn();
+  resources.setLocation.mockResolvedValue({ isLatest: true });
+  function Probe() {
+    rename = useIdentityCommit({
+      projectId: "project",
+      editorWorkId: null,
+      tab: {
+        kind: "tracked",
+        documentId: "document",
+        resourceHandle: "resource",
+        scheme: "scratch",
+        path: "/before.md",
+        name: "before.md",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
+      onCommitted: committed,
+    });
+    return null;
+  }
+  await withReactRoot(<Probe />, async () => {
+    await act(async () => {
+      await rename({ destination: { scheme: "scratch", folderPath: "" }, name: "after.md" });
+    });
+    expect(committed).toHaveBeenCalledWith(
+      "document",
+      expect.objectContaining({
+        routeWorkId: "123e4567-e89b-42d3-a456-426614174000",
+        path: "/after.md",
+      }),
+      { isLatest: true },
+    );
+  });
 });

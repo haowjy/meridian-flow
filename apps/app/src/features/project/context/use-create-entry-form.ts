@@ -12,6 +12,7 @@ import {
   filetypeForPath,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import { resourceWorkAuthorityFor } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
@@ -66,16 +67,14 @@ export function useCreateEntryForm({
   const mutation = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId);
+  const { works } = useWorks(projectId);
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
       if (kind === "file" && usesResourceDocumentCreate(path)) {
         const work = isWorkScopedProjectContextScheme(scheme)
-          ? workId && workId !== noWork?.id
-            ? works?.find((work) => work.id === workId)
-            : noWork
+          ? works?.find((work) => work.id === workId)
           : null;
         if (isWorkScopedProjectContextScheme(scheme) && !work)
           throw new Error(t`Couldn't create this file.`);
@@ -86,7 +85,7 @@ export function useCreateEntryForm({
             scheme,
             folderPath: parent,
             name: trimmed,
-            ...(work ? { workId: work.id, workSlug: work.slug } : { workId: null }),
+            ...(work ? resourceWorkAuthorityFor(work.id, works, null) : { workId: null }),
           });
         } finally {
           reservation.content.handle.release();
@@ -106,19 +105,7 @@ export function useCreateEntryForm({
       }
       onCreated?.(path);
     },
-    [
-      mutation,
-      queryClient,
-      projectId,
-      scheme,
-      kind,
-      parent,
-      onCreated,
-      resources,
-      workId,
-      works,
-      noWork,
-    ],
+    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId, works],
   );
 
   const form = useInlineEdit({
