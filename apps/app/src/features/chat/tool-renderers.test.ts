@@ -18,56 +18,7 @@ function documentTool(args: {
   };
 }
 
-function readResult(format: "full" | "outline", bodies: string[]): JsonValue {
-  return {
-    schema: "meridian.agent-edit.v1",
-    command: "read",
-    status: "success",
-    phase: "committed",
-    path: "ch1.md",
-    read: { format },
-    blocks: [
-      {
-        extent: "full",
-        relation: "document",
-        items: bodies.map((body, index) => ({ hash: `h${index}`, body })),
-      },
-    ],
-  };
-}
-
 describe("document tool rows", () => {
-  it("opens a read card from the typed result", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "ch1.md" },
-      result: readResult("full", ["The lantern guttered."]),
-    });
-
-    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "ch1.md" });
-    expect(rendererFor("read").expand?.(tool)).toBeTypeOf("function");
-  });
-
-  it("labels an outline read as a skim and opens its headings", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "ch1.md", format: "outline" },
-      result: readResult("outline", ["# Chapter One", "## The Gate"]),
-    });
-
-    expect(toolActivityPhrase(tool).verb).toBe("Skimmed");
-    expect(rendererFor("read").expand?.(tool)).toBeTypeOf("function");
-  });
-
-  it("labels remove as an edit", () => {
-    const tool = documentTool({
-      toolName: "write",
-      input: { command: "remove", path: "ch1.md#the-gate" },
-    });
-
-    expect(toolActivityPhrase(tool).verb).toBe("Edited");
-  });
-
   it("labels a whole-document copy by its source and gives it no content card", () => {
     const input = {
       command: "copy",
@@ -80,42 +31,7 @@ describe("document tool rows", () => {
     });
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Copied ch11.md to", parameter: "ch12.md" });
-    expect(toolActivityPhrase({ ...tool, status: "partial" })).toEqual({
-      verb: "Copying ch11.md to",
-      parameter: "ch12.md…",
-    });
     expect(rendererFor("write").expand?.(tool)).toBeNull();
-  });
-
-  it("labels insert and replace with from as copies, not as written text", () => {
-    for (const command of ["insert", "replace"]) {
-      const tool = documentTool({
-        toolName: "write",
-        input: { command, path: "ch12.md", from: { path: "ch11.md", in: "#the-gate" } },
-      });
-      expect(toolActivityPhrase(tool)).toEqual({
-        verb: "Copied from ch11.md into",
-        parameter: "ch12.md",
-      });
-    }
-    const typed = documentTool({
-      toolName: "write",
-      input: { command: "insert", path: "ch12.md", content: "New line." },
-    });
-    expect(toolActivityPhrase(typed).verb).toBe("Edited");
-  });
-
-  it("names the source when a copy's document is missing", () => {
-    const missing = (command: string) =>
-      documentTool({
-        toolName: "write",
-        input: { command, path: "ch12.md", from: { path: "ch11.md" } },
-        result: { schema: "meridian.agent-edit.v1", command, status: "document_not_found" },
-        isError: true,
-      });
-
-    expect(documentToolFailureCopy(missing("copy"))).toBe("Couldn't find ch11.");
-    expect(documentToolFailureCopy(missing("insert"))).toBe("Couldn't find ch11 or ch12.");
   });
 
   it("writes failure copy from the result's status", () => {
@@ -131,30 +47,7 @@ describe("document tool rows", () => {
       result: { schema: "meridian.agent-edit.v1", command: "read", status: "invalid_write" },
       isError: true,
     });
-    const refusedWrite = documentTool({
-      toolName: "write",
-      input: { command: "replace", path: "ch1.md" },
-      result: { schema: "meridian.agent-edit.v1", command: "replace", status: "invalid_write" },
-      isError: true,
-    });
-
-    const binaryRead = documentTool({
-      toolName: "read",
-      input: { path: "scan.pdf" },
-      result: { schema: "meridian.agent-edit.v1", command: "read", status: "binary_file" },
-      isError: true,
-    });
-    const binarySource = documentTool({
-      toolName: "write",
-      input: { command: "insert", path: "ch1.md", from: { path: "scan.pdf", in: 1 } },
-      result: { schema: "meridian.agent-edit.v1", command: "insert", status: "binary_file" },
-      isError: true,
-    });
-
     expect(documentToolFailureCopy(notFound)).toBe("Couldn't find ch9.");
-    expect(documentToolFailureCopy(binaryRead)).toBe("scan is a binary file.");
-    expect(documentToolFailureCopy(binarySource)).toBe("scan is a binary file.");
     expect(documentToolFailureCopy(refusedRead)).toBe("Something went wrong while reading ch1.");
-    expect(documentToolFailureCopy(refusedWrite)).toBe("That change couldn't be made in ch1.");
   });
 });

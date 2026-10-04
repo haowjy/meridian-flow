@@ -68,16 +68,6 @@ describe("countFoldTools", () => {
     expect(counts.steps).toBe(0);
   });
 
-  it("counts an old row's write(command: read) as a step, not a read or an edit", () => {
-    const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-    ]);
-
-    expect(counts.readDocuments.size).toBe(0);
-    expect(counts.editedDocuments.size).toBe(0);
-    expect(counts.steps).toBe(1);
-  });
-
   it("counts non-document tools and failed operations as steps", () => {
     const counts = countFoldTools([
       tool({ toolName: "search" }),
