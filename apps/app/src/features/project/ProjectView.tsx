@@ -20,6 +20,7 @@ import {
   type Work,
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
@@ -512,6 +513,7 @@ function HydratedReviewControllers({
     projectId: props.projectId,
     workId: props.chatWorkId,
     owningWorkLabel: props.chatWork?.name ?? null,
+    draftsFrozen: Boolean(props.chatWork && isWorkArchived(props.chatWork)),
     stateOwner: chatReviewState,
     threadId: props.chatThreadId,
   });
@@ -520,6 +522,7 @@ function HydratedReviewControllers({
     workId: props.editorWorkId,
     owningWorkLabel:
       props.availableWorks.find((work) => work.id === props.editorWorkId)?.name ?? null,
+    draftsFrozen: Boolean(props.editorWork && isWorkArchived(props.editorWork)),
     stateOwner: editorReviewState,
     threadId: null,
   });

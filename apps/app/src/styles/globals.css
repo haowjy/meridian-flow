@@ -968,7 +968,7 @@
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline;
+  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */

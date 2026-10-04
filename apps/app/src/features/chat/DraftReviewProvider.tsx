@@ -66,6 +66,8 @@ export type DraftReviewProviderProps = {
   projectId: string | null;
   workId: string | null;
   owningWorkLabel?: string | null;
+  /** The Work is archived: its drafts stay reviewable but frozen (D30). */
+  draftsFrozen?: boolean;
   stateOwner?: DraftReviewStateOwner;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
@@ -76,6 +78,7 @@ export function DraftReviewProvider({
   projectId,
   workId,
   owningWorkLabel = null,
+  draftsFrozen = false,
   stateOwner,
   threadId = null,
   children,
@@ -84,6 +87,7 @@ export function DraftReviewProvider({
     projectId,
     workId,
     owningWorkLabel,
+    draftsFrozen,
     stateOwner,
     threadId,
   });
@@ -104,19 +108,10 @@ export function useDraftReviewScopeValue({
   projectId,
   workId,
   owningWorkLabel = null,
+  draftsFrozen = false,
   stateOwner,
   threadId = null,
 }: Omit<DraftReviewProviderProps, "children">): DraftReviewContextValue {
-  return useDraftReviewScopeOwner(projectId, workId, owningWorkLabel ?? null, threadId, stateOwner);
-}
-
-function useDraftReviewScopeOwner(
-  projectId: string | null,
-  workId: string | null,
-  owningWorkLabel: string | null,
-  threadId: string | null,
-  stateOwner?: DraftReviewStateOwner,
-): DraftReviewContextValue {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const contextRemoval = useContextRemovalCoordinator();
@@ -144,13 +139,14 @@ function useDraftReviewScopeOwner(
   );
   const serverActiveGroups = projections.serverActiveGroups ?? [];
   const groups = projections.commandEligibleGroups ?? [];
-  const controller = useDraftReviewController(
-    effectiveProjectId,
-    effectiveWorkId,
+  const controller = useDraftReviewController({
+    projectId: effectiveProjectId,
+    workId: effectiveWorkId,
     threadId,
     owningWorkLabel,
+    draftsFrozen,
     stateOwner,
-  );
+  });
 
   useEffect(() => {
     if (!projectId || !workId || (drafts.status !== "ready" && drafts.status !== "empty")) return;
