@@ -96,31 +96,21 @@ export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 const SOURCE_PATH = z.string().min(1);
 
 /**
- * The source of a block copy (D23). It keeps the model's own path: the host
- * resolves and reads it, and the engine only names it in the receipt.
+ * `from`, the source of a block copy (D23) or a document copy (D24, D49): one
+ * shape for every command. It keeps the model's own path: the host resolves
+ * and reads it, and the engine only names it in the receipt.
  */
-const BlockCopySourceSchema = z
+const CopySourceSchema = z
   .object({
     path: SOURCE_PATH,
     in: BlockSelectorSchema.optional(),
     version: DocumentVersionSchema.optional(),
   })
-  .strict()
-  .describe("Copy these blocks instead of `content`. Give exactly one of `content` or `from`.");
+  .strict();
 
-/**
- * The source of a whole-document copy (D24). Its description carries the
- * version sentence, so `version` itself isn't described twice.
- */
-const DocumentCopySourceSchema = z
-  .object({
-    path: SOURCE_PATH,
-    version: z.enum(DocumentVersionSchema.options).optional(),
-  })
-  .strict()
-  .describe(
-    "Document to copy. Omit `version` for the version your writes change (your Work's draft in draft mode; scratch and other Works are live). `live` reads the text as the user sees it, without draft changes.",
-  );
+const BLOCK_COPY_SOURCE = CopySourceSchema.describe(
+  "Copy these blocks instead of `content`. Give exactly one of `content` or `from`.",
+).optional();
 
 const OVERWRITE = z.boolean().optional().describe("Replace an existing document's entire content.");
 
@@ -133,10 +123,11 @@ const MUTATION_BRANCHES = {
     },
   },
   copy: {
-    description:
-      "Copy a whole document, of any type, to `path`. The copy starts with its own history.",
+    description: "Copy a document, or part of it, to `path`. The copy starts with its own history.",
     fields: {
-      from: DocumentCopySourceSchema,
+      from: CopySourceSchema.describe(
+        "Document to copy. Select part of it with `in` or a `#heading-slug` in `path`.",
+      ),
       overwrite: OVERWRITE,
     },
   },
@@ -144,7 +135,7 @@ const MUTATION_BRANCHES = {
     description: "Insert content.",
     fields: {
       content: z.string().min(1).optional(),
-      from: BlockCopySourceSchema.optional(),
+      from: BLOCK_COPY_SOURCE,
       after: z.string().min(1).optional().describe("Block hash to insert after. Not with `find`."),
       before: z
         .string()
@@ -161,7 +152,7 @@ const MUTATION_BRANCHES = {
     description: "Replace blocks selected by in, or the exact text find.",
     fields: {
       content: z.string().optional(),
-      from: BlockCopySourceSchema.optional(),
+      from: BLOCK_COPY_SOURCE,
       in: BlockSelectorSchema.optional(),
       find: z
         .string()

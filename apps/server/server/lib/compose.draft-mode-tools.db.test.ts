@@ -317,6 +317,56 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("copies part of a document by #fragment or by from.in (D49)", async () => {
+      const script = await startWithChapter(
+        "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\nLin fell back.\n\n# Aftermath\n\nQuiet.",
+      );
+      const first = await script.begin();
+      const call = first.call;
+
+      const bySection = await call("write", {
+        command: "copy",
+        from: { path: `${CHAPTER}#the-midnight-duel` },
+        path: "scratch://duel.md",
+      });
+      expect(bySection.isError).toBeFalsy();
+      expect(bySection.output).toMatch(
+        /^status: success; path: scratch:\/\/duel\.md; write: w\d+; copied: 3 blocks from manuscript:\/\/chapter\.md#the-midnight-duel/,
+      );
+      expect(bySection.output).not.toContain("Steel rang.");
+
+      const read = await call("read", { path: CHAPTER, version: "live" });
+      const hashes = text(read)
+        .split("\n")
+        .flatMap((line) => {
+          const parsed = splitHashline(line);
+          return parsed ? [{ hash: parsed.hash, body: parsed.body }] : [];
+        });
+      const steel = hashes.find((line) => line.body.includes("Steel rang."))?.hash;
+      const fell = hashes.find((line) => line.body.includes("Lin fell back."))?.hash;
+      if (!steel || !fell) throw new Error("the chapter read returned no hashes");
+
+      const byIn = await call("write", {
+        command: "copy",
+        from: { path: CHAPTER, in: [steel, fell], version: "live" },
+        path: "scratch://blows.md",
+      });
+      expect(byIn.isError).toBeFalsy();
+      expect(byIn.output).toMatch(/copied: 2 blocks from manuscript:\/\/chapter\.md$/);
+      await first.save();
+
+      const { call: next } = await script.begin();
+      const duel = await next("read", { path: "scratch://duel.md" });
+      expect(text(duel)).toContain("The Midnight Duel");
+      expect(text(duel)).toContain("Lin fell back.");
+      expect(text(duel)).not.toContain("Dawn.");
+      expect(text(duel)).not.toContain("Quiet.");
+      const blows = await next("read", { path: "scratch://blows.md" });
+      expect(text(blows)).toContain("blocks: 2;");
+      expect(text(blows)).toContain("Steel rang.");
+      expect(text(blows)).not.toContain("Midnight Duel");
+    });
+
     it("rolls a copy back with its reply", async () => {
       await db
         .update(schema.works)
@@ -428,6 +478,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(binaryBlockCopy.isError).toBe(true);
       expect(binaryBlockCopy.output).toBe(
         "status: binary_file\n\nfrom manuscript://scan.pdf: The file is binary, so its blocks can't be copied.",
+      );
+
+      const binarySection = await call("write", {
+        command: "copy",
+        from: { path: "manuscript://scan.pdf#page-2" },
+        path: "scratch://scan-page.pdf",
+      });
+      expect(binarySection.isError).toBe(true);
+      expect(binarySection.output).toBe(
+        "status: binary_file\n\nfrom manuscript://scan.pdf#page-2: A binary file is copied whole; drop the #fragment from from.path.",
+      );
+      const binaryIn = await call("write", {
+        command: "copy",
+        from: { path: "manuscript://scan.pdf", in: 1 },
+        path: "scratch://scan-page.pdf",
+      });
+      expect(binaryIn.isError).toBe(true);
+      expect(binaryIn.output).toBe(
+        "status: binary_file\n\nfrom manuscript://scan.pdf: A binary file is copied whole; drop from.in.",
       );
 
       const missingSource = await call("write", {

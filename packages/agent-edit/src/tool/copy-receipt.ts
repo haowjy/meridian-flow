@@ -10,14 +10,14 @@ export interface CopySummary {
   from: string;
   /** How many blocks the copy wrote. */
   blocks: number;
-  /** The first and last new block (one when they're the same); empty for a whole-document copy. */
+  /** The first and last new block (one when they're the same); empty for a document copy. */
   edgeHashes: readonly string[];
 }
 
 const PREFIX_MAX_CHARACTERS = 60;
 
 /**
- * A block copy names its first and last new block; a whole-document copy names
+ * A block copy names its first and last new block; a document copy names
  * none, since its blocks are the document.
  */
 export function copySummary(
