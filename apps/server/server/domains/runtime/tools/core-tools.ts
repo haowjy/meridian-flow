@@ -126,7 +126,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
         .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
     })
     .strict()
-    .describe("Move this conversation to another Work."),
+    .describe("Move this conversation to another Work. Needs the user's approval."),
 ]);
 
 export type WorkCommand = z.output<typeof WorkCommandSchema>;
