@@ -3,6 +3,7 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { AssetPathResolver } from "@meridian/markup";
+import * as Y from "yjs";
 import {
   deferUntilDrizzleCommit,
   deferUntilDrizzleRollback,
@@ -46,6 +47,7 @@ import {
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDocumentLinkRewrite } from "./adapters/drizzle-document-link-rewrite.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -476,6 +478,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     projections: {
       documentDerivations: derivations,
+      rewriteDocumentLinks: createDrizzleDocumentLinkRewrite({
+        db: deps.db,
+        resolveUri: (tx, documentId) =>
+          resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+        serializer: runtime.markdownDocuments,
+        publish(documentId, update) {
+          const room = hocuspocusBinding.current()?.documents.get(documentId);
+          if (room)
+            Y.applyUpdate(room, update, {
+              source: "local",
+              context: { origin: { type: "system", reason: "link-update" } },
+            });
+          branchPulls.scheduleLivePull(documentId);
+        },
+      }),
       refreshDocumentProjection: projectionRefresher.refresh,
     },
     lineage,
