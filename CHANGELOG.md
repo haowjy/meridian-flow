@@ -21,6 +21,7 @@
 - Tool lists say only which tools an agent has: `tools` is an optional allow-list and `disallowed-tools` removes tools, both arrays of real tool names. `edit` and the allow/deny map fail to compile with the replacement named, and an unknown name makes the Agent unsupported. No tool narrows its commands; a `read` agent gets `write` and is refused per file. Critic and Writer drop their tool lists.
 - One action policy decides Work changes: a `read` agent (or any agent under a `read` parent) can't create, update, archive, unarchive or delete Works, and the model's `work switch` is refused until the writer can approve it.
 - `spawn.overrides` publishes its typed shape. `tools` is gone, `disallowed_tools` only adds denials, and a child with a tool its parent lacks is `invalid_arguments` naming it.
+- Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
