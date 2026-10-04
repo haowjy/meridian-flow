@@ -155,19 +155,20 @@ type WriteToolErrorOutput = {
 };
 type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?: boolean };
 
+/**
+ * A Work as the model sees it. Write mode and pending changes use the
+ * writer's words (draft mode, auto-apply), as the work context does.
+ */
 type ModelWork = Pick<
   Work,
-  | "slug"
-  | "name"
-  | "goal"
-  | "status"
-  | "archivedAt"
-  | "aiWriteMode"
-  | "createdAt"
-  | "updatedAt"
-  | "lastActivityAt"
-  | "unpushedChangeCount"
->;
+  "slug" | "name" | "goal" | "status" | "archivedAt" | "createdAt" | "updatedAt" | "lastActivityAt"
+> & { writes: ModelWriteMode; pendingChangeCount?: Work["unpushedChangeCount"] };
+
+type ModelWriteMode = "draft mode" | "auto-apply";
+
+function modelWriteMode(mode: Work["aiWriteMode"]): ModelWriteMode {
+  return mode === "draft" ? "draft mode" : "auto-apply";
+}
 
 type ResolvedModelContextPort = {
   resolution: ThreadContextResolution;
@@ -270,29 +271,20 @@ async function resolveExecutionContext(
 }
 
 function modelWork(work: Work): ModelWork {
-  const {
-    slug,
-    name,
-    goal,
-    status,
-    archivedAt,
-    aiWriteMode,
-    createdAt,
-    updatedAt,
-    lastActivityAt,
-    unpushedChangeCount,
-  } = work;
+  const { slug, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
   return {
     slug,
     name,
     goal,
     status,
     archivedAt,
-    aiWriteMode,
+    writes: modelWriteMode(work.aiWriteMode),
     createdAt,
     updatedAt,
     lastActivityAt,
-    ...(unpushedChangeCount !== undefined ? { unpushedChangeCount } : {}),
+    ...(work.unpushedChangeCount !== undefined
+      ? { pendingChangeCount: work.unpushedChangeCount }
+      : {}),
   };
 }
 
@@ -1352,7 +1344,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               goal: rebound.after.goal,
               status: rebound.after.status,
               archived: rebound.after.archived,
-              aiWriteMode: rebound.after.aiWriteMode,
+              writes: modelWriteMode(rebound.after.aiWriteMode),
             },
             metadata: {
               workReceipt: rebound.receipt,
