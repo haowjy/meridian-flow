@@ -1,10 +1,13 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
+  gateLiveView,
   mergeLocalResourceState,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
@@ -257,5 +260,38 @@ it("keeps local ownership while canonical metadata replaces a stale same-ID path
     resourceHandle: "resource-id",
     resourceState: "acknowledged",
     localContent: true,
+  });
+});
+
+it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
+  const resolved = {
+    kind: "current",
+    document: { kind: "available", documentId: "document-id" },
+  } as DocumentAddressResult;
+  const manifest = (ids: string[]) =>
+    ({
+      catalog: { normalized: { entries: new Map(ids.map((id) => [id, {}])) } },
+      isComplete: true,
+    }) as unknown as Parameters<typeof gateLiveView>[2];
+  const group = (isNewDocument: boolean) =>
+    ({
+      documentId: "document-id",
+      draft: { draftId: "draft-id", status: "active", isNewDocument },
+    }) as unknown as ThreadDraftGroup;
+  const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+
+  expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready()).draftOnly).toBe(
+    undefined,
+  );
+  expect(gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)))).toMatchObject({
+    result: resolved,
+    draftOnly: { draft: { draftId: "draft-id" } },
+  });
+  // Discarded, or a draft of an existing document: no live view and no review.
+  expect(gateLiveView(resolved, "manuscript", manifest([]), ready()).result).toEqual({
+    kind: "unavailable",
+  });
+  expect(gateLiveView(resolved, "manuscript", manifest([]), ready(group(false))).result).toEqual({
+    kind: "unavailable",
   });
 });

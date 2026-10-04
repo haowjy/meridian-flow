@@ -10,6 +10,7 @@ import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
@@ -32,6 +33,7 @@ import {
 import { editorDefaultWorkPending } from "./editor-default-work";
 import {
   canonicalDocumentPath,
+  gateLiveView,
   projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
@@ -249,7 +251,7 @@ export function ReadableProjectRoute({
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   const addressWorkId = address.work.kind === "id" ? address.work.id : null;
-  const { catalog: addressCatalog } = useContextCatalogView(
+  const { catalog: addressCatalog, isComplete: addressCatalogComplete } = useContextCatalogView(
     projectId,
     documentDestination?.scheme ?? "manuscript",
     {
@@ -287,11 +289,20 @@ export function ReadableProjectRoute({
         : undefined,
     [addressCatalog, documentDestination, addressWorkId, projectId],
   );
+  const editorDrafts = useWorkDrafts(
+    projectId,
+    documentDestination?.scheme === "manuscript" ? workId : null,
+  );
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     documentLookup.data,
   );
-  const documentResult = reconciledDocumentAddress.result;
+  const { result: documentResult, draftOnly } = gateLiveView(
+    reconciledDocumentAddress.result,
+    documentDestination?.scheme ?? "",
+    { catalog: addressCatalog, isComplete: addressCatalogComplete },
+    editorDrafts,
+  );
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -315,14 +326,20 @@ export function ReadableProjectRoute({
         : undefined) ??
       routeWorkIssue(editorWork) ??
       documentIssue ??
-      (documentDestination
-        ? admission?.href === location.href &&
-          admission.key === (location.state.__TSR_key ?? "") &&
-          documentResult?.kind !== "unavailable" &&
-          admission.documentId === documentResult?.document.documentId
-          ? admission.issue
+      (draftOnly
+        ? // Review installs the tab; until it has, the address is still being repaired.
+          address.draftId === draftOnly.draft.draftId &&
+          workspaceTabs.some((tab) => tab.documentId === draftOnly.documentId)
+          ? undefined
           : "loading"
-        : undefined));
+        : documentDestination
+          ? admission?.href === location.href &&
+            admission.key === (location.state.__TSR_key ?? "") &&
+            documentResult?.kind !== "unavailable" &&
+            admission.documentId === documentResult?.document.documentId
+            ? admission.issue
+            : "loading"
+          : undefined));
 
   async function go(next: ProjectAddress, options: NavigationOptions) {
     if (!navigation) return;
@@ -603,6 +620,7 @@ export function ReadableProjectRoute({
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
+              draftOnlyId={draftOnly?.draft.draftId}
               workId={workId}
               navigation={navigation}
               onAdmission={setAdmission}
