@@ -1,4 +1,4 @@
-/** Tests for Hocuspocus branch-room persistence guards. */
+/** Tests for Hocuspocus room persistence: branch guards and deferred live checkpoints. */
 
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
@@ -73,6 +73,110 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
     expect(commitWriterUpdate).toHaveBeenCalledOnce();
     expect(drained).toBe(true);
+  });
+});
+
+describe("createHocuspocusPersistenceService live checkpoints", () => {
+  function liveCheckpointFixture(input: { checkpoint?: UpdateJournal["checkpoint"] } = {}) {
+    const journal = fakeJournal();
+    if (input.checkpoint) journal.checkpoint = vi.fn(input.checkpoint);
+    // Stands in for the caller's DB transaction: commit runs the queued
+    // callbacks, rollback drops them.
+    let queued: Array<() => void> = [];
+    const documents = new Map<string, Y.Doc>();
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 7,
+      afterCallerCommit: (callback) => {
+        queued.push(callback);
+      },
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    return {
+      journal,
+      documents,
+      persistence,
+      commit() {
+        const callbacks = queued;
+        queued = [];
+        for (const callback of callbacks) callback();
+      },
+      rollback() {
+        queued = [];
+      },
+    };
+  }
+
+  it("returns without writing, then checkpoints after the caller commits", async () => {
+    const fixture = liveCheckpointFixture();
+    const doc = docWithText("stored");
+
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, doc);
+    expect(fixture.journal.checkpoint).not.toHaveBeenCalled();
+
+    fixture.commit();
+    await fixture.persistence.drainHocuspocusPersistence();
+    expect(fixture.journal.checkpoint).toHaveBeenCalledExactlyOnceWith(
+      DOCUMENT_ID,
+      Y.encodeStateAsUpdate(doc),
+      7,
+    );
+  });
+
+  it("drops the checkpoint when the caller rolls back", async () => {
+    const fixture = liveCheckpointFixture();
+
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, docWithText("uncommitted"));
+    fixture.rollback();
+    await fixture.persistence.drainHocuspocusPersistence();
+    expect(fixture.journal.checkpoint).not.toHaveBeenCalled();
+  });
+
+  it("skips a checkpoint whose live generation was retired before it ran", async () => {
+    const fixture = liveCheckpointFixture();
+    const doc = docWithText("retired");
+    fixture.documents.set(DOCUMENT_ID, doc);
+
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, doc);
+    await fixture.persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
+    fixture.commit();
+    await fixture.persistence.drainHocuspocusPersistence();
+    expect(fixture.journal.checkpoint).not.toHaveBeenCalled();
+  });
+
+  it("writes one checkpoint at a time and keeps only the newest queued snapshot", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fixture = liveCheckpointFixture({
+      checkpoint: async () => {
+        calls += 1;
+        if (calls === 1) await firstBlocked;
+      },
+    });
+    const first = docWithText("first");
+    const second = docWithText("second");
+    const third = docWithText("third");
+
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, first);
+    fixture.commit();
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, second);
+    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, third);
+    fixture.commit();
+    expect(fixture.journal.checkpoint).toHaveBeenCalledOnce();
+
+    releaseFirst?.();
+    await fixture.persistence.drainHocuspocusPersistence();
+    expect(fixture.journal.checkpoint).toHaveBeenCalledTimes(2);
+    expect(fixture.journal.checkpoint).toHaveBeenLastCalledWith(
+      DOCUMENT_ID,
+      Y.encodeStateAsUpdate(third),
+      7,
+    );
   });
 });
 

@@ -9,7 +9,7 @@ import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
-import { contextTabFromFile } from "../context/context-tab-from-file";
+import { contextTabFromFile, editorTabWorkId } from "../context/context-tab-from-file";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref, workIdSelection } from "./project-address";
@@ -66,14 +66,23 @@ export function ProjectAddressDocument({
       return;
     }
     const scope = document.scope;
-    const routeWorkId = scope.kind === "work" ? scope.workId : workId;
+    // A No Work Scratch tab carries no Work, so it stays in the No Work
+    // Editor's strip; the address below still carries the row's id, which is
+    // that document's identity.
+    const { authority } = result.document;
+    const tabWorkId =
+      scope.kind !== "work"
+        ? workId
+        : authority.kind === "work"
+          ? editorTabWorkId(authority)
+          : null;
     void (async () => {
       const installed = openTab(
         projectId,
         contextTabFromFile(
           uri.value.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
-          routeWorkId,
+          tabWorkId,
         ),
         isCurrent,
       );

@@ -23,7 +23,10 @@ const isAddressable = <W extends Work>(work: W): work is W & AddressableWork => 
 
 /** The server snapshot alone, with no command laid over it. */
 export function useWorksSnapshot(projectId: string, requested = true) {
-  const enabled = requested && !useIsProjectPendingCreation(projectId);
+  // Called unconditionally: short-circuiting a hook behind `requested` changes
+  // the hook order the moment a caller flips it.
+  const projectPending = useIsProjectPendingCreation(projectId);
+  const enabled = requested && !projectPending;
   const client = useQueryClient();
   const list = useQuery({
     queryKey: projectQueryKeys.works(projectId),

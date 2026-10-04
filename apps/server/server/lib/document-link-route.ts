@@ -47,9 +47,6 @@ export function parseDocumentLinkResolveBody(body: unknown): {
   if (typeof workId === "string" && !parsedWorkId) invalidBody();
 
   switch (kind) {
-    case "wikilink":
-      if (!validTargetPart(target?.name)) invalidBody();
-      return { workId: parsedWorkId, target: { kind, name: target.name } };
     case "scheme":
       if (!validTargetPart(target?.uri)) invalidBody();
       return { workId: parsedWorkId, target: { kind, uri: target.uri } };

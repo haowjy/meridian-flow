@@ -25,6 +25,23 @@
 
 ## [Unreleased]
 
+- Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
+- Chat: web links open in a new tab without a confirmation, like the Editor.
+- Prune link-follow UI, mapping, mock-heavy, and duplicate tests; keep address, clipboard, paste-regression, and follow-race contracts with minimal fixtures.
+- Consolidate Markdown link round trips and remove type-only replica checks while preserving existing persistence and admission-ledger coverage.
+
+- Links are standard Markdown links to an address: a path relative to the document holding the link within its area (`[Chapter 2](chapter-2.md)`), or a full address across areas and in chat (`[Lin Feng](kb://characters/lin-feng.md)`). `[[name]]` is plain text wherever it appears, and nothing converts it; links written as `[[name]]` in existing documents are now text. The AI writes standard links too.
+- `@` is how you link a document, in the Editor and in chat; typing `[[` is plain text. In the Editor, `@` shows where each document lives and writes a standard link; for a name no document has yet, its last row links one in the same folder before it exists. Ctrl+K takes a web address, a document address, or a relative path.
+- Links in the Editor and chat: a link with nothing at its address offers Create, which makes the document at exactly that address and opens it (in chat, in the Editor). Uploads are never created from a link. Cancel on "Opening the link" stops the link from opening. A link that could not be checked offers Try again. Relative links in chat are plain text.
+- Links to your documents show as tags in the Editor, chat and the composer: an icon for where the document lives, then its name. Formatting inside a link stays one tag, and the name stays editable text. A link with nothing behind it yet, or a reference to a document that was deleted, has a dashed outline. Links to websites are underlined with an arrow, in chat as in the Editor.
+- Links: clicking a link while documents are being renamed or created opens the right document instead of saying the link could not be checked.
+- A reference sent from the composer reads to the AI, and copies, as a standard link to the document's address.
+- Links copied from the Editor keep pointing at the same document wherever they are pasted: into a document in another folder or area, into chat, or into another app as text.
+- Pasting into an Editor document turns `[[Name]]` into a standard link, so notes brought over from Obsidian keep their links. `[[Name|label]]` keeps its label and `[[Name#Heading]]` its heading. When several documents share the name, the one in the same folder wins, then the one at the area's root. A name no document has yet becomes a dashed link beside the document, which Create makes. `![[embeds]]`, an escaped `\[[`, and anything pasted into or inside code stay text. Paste without formatting (Ctrl+Shift+V, or Cmd+Shift+V on a Mac) keeps the brackets as typed, and a typed `[[` is still plain text.
+- A chat with no Work no longer says "This Work is unavailable", and a No Work Scratch document opens in the Editor. No Work has one Editor however you reach it, and its tabs stay in its strip.
+- Renaming a Work's Scratch document from the title bar keeps it in that Work and saves the new name.
+- Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
+
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
