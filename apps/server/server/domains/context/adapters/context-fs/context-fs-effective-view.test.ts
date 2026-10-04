@@ -26,7 +26,7 @@ describe("ContextFS manuscript effective view", () => {
   it("lists and searches the resolved manifest branch, not the SQL document set", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: LIVE_DOC_ID,
       folderId: null,
       name: "live-only",
@@ -34,7 +34,7 @@ describe("ContextFS manuscript effective view", () => {
       markdown: "SQL row that the draft manifest deleted",
       filetype: "markdown",
     });
-    await store.upsertDocument({
+    await store.createDocument({
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
@@ -96,7 +96,7 @@ describe("ContextFS manuscript effective view", () => {
   it("searches the effective branch bytes for branch-touched and draft-created docs", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: BRANCH_DOC_ID,
       folderId: null,
       name: "branch-touched",
@@ -104,7 +104,7 @@ describe("ContextFS manuscript effective view", () => {
       markdown: "live old bytes",
       filetype: "markdown",
     });
-    await store.upsertDocument({
+    await store.createDocument({
       id: CREATED_DOC_ID,
       folderId: null,
       name: "draft-created",
@@ -170,7 +170,7 @@ describe("ContextFS manuscript effective view", () => {
   it("fails closed when manifest membership resolution is unavailable", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
-    await store.upsertDocument({
+    await store.createDocument({
       id: LIVE_DOC_ID,
       folderId: null,
       name: "chapter-1",

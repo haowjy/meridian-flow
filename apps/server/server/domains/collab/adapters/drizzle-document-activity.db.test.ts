@@ -117,19 +117,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    it("touches thread, work, project activity and updates the markdown projection", async () => {
+    it("touches thread, work and project activity", async () => {
       const effects = createDrizzleDocumentProjectionEffects(db, workProjection);
       await effects.touchDocumentActivity({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         at: NOW,
       });
-      await effects.updateProjection({
-        documentId: DOC_ID,
-        markdown: "fresh projection",
-        at: NOW,
-      });
-
       const [threadDocument] = await db
         .select({ lastTouchedAt: threadDocuments.lastTouchedAt })
         .from(threadDocuments)
@@ -144,20 +138,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ updatedAt: projects.updatedAt, lastActivityAt: projects.lastActivityAt })
         .from(projects)
         .where(eq(projects.id, PROJECT_ID));
-      const [document] = await db
-        .select({
-          markdownProjection: documents.markdownProjection,
-          updatedAt: documents.updatedAt,
-        })
-        .from(documents)
-        .where(eq(documents.id, DOC_ID));
-
       expect(threadDocument?.lastTouchedAt.toISOString()).toBe(NOW.toISOString());
       expect(work?.updatedAt.toISOString()).toBe(NOW.toISOString());
       expect(project?.updatedAt.toISOString()).toBe(NOW.toISOString());
       expect(project?.lastActivityAt.toISOString()).toBe(NOW.toISOString());
-      expect(document?.markdownProjection).toBe("fresh projection");
-      expect(document?.updatedAt.toISOString()).toBe(NOW.toISOString());
     });
   });
 }

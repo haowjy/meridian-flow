@@ -1522,8 +1522,10 @@ export function createServerDocumentLifecycle(
       // Never stamp a head before verifying the stored head is not stale.
       await assertReadableHead(lifecycleDb, docId);
       const snapshot = await journal.read(docId);
-      await upsertHead(lifecycleDb, docId);
+      // Existing authority is already initialized. Do not retain a head-row
+      // update lock in an ambient context command before its root journal batch.
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
+      await upsertHead(lifecycleDb, docId);
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
       const emptyDoc = createCollabYDoc({ gc: false });
