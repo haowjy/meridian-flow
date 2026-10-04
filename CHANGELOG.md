@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Pruned rename/link-rewrite tests to stored-link contracts, transaction regressions and a real worker/move lock overlap.
+
 - Offer the latest queued file or folder name for repair when an earlier rename is refused, preserving the writer's newest request through shared journal policy.
 
 - Recover refused queued folder renames at the accepted location, dispatch identity-bound moves after foreign catalog changes, preserve completed document naming, and share personal-folder rename journals across projects.

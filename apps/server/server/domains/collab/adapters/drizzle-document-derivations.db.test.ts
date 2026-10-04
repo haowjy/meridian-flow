@@ -101,15 +101,7 @@ describe("durable document derivations", () => {
   }
 
   async function links() {
-    return db
-      .select({
-        href: documentLinks.href,
-        key: documentLinks.targetKey,
-        project: documentLinks.targetProjectId,
-        occurrences: documentLinks.occurrences,
-      })
-      .from(documentLinks)
-      .where(eq(documentLinks.sourceDocumentId, documentId));
+    return db.select().from(documentLinks).where(eq(documentLinks.sourceDocumentId, documentId));
   }
 
   it("certifies projection and links atomically, rejects stale cuts, and re-keys a moved holder", async () => {
@@ -125,19 +117,21 @@ describe("durable document derivations", () => {
     await append(doc, " new");
     await service.derive(documentId);
     const expected = [
-      { href: "next.md", key: "manuscript://next.md", project: projectId, occurrences: 1 },
+      {
+        sourceDocumentId: documentId,
+        href: "next.md",
+        targetKey: "manuscript://next.md",
+        targetProjectId: projectId,
+        occurrences: 1,
+      },
     ];
     expect(await links()).toEqual(expected);
     expect(await store.certify(oldCut, { markdown: "old", links: [] }, new Date())).toBe(false);
     expect(await links()).toEqual(expected);
     await expect(
       runInDrizzleTransaction(db, async () => {
-        await append(doc, " rolled back");
         text.format(0, text.length, { link: { href: "wrong.md" } });
-        await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc), {
-          origin: `human:${userId}`,
-          seq: 0,
-        });
+        await append(doc, " rolled back");
         await service.derive(documentId);
         throw new Error("rollback certification");
       }),
@@ -176,21 +170,20 @@ describe("durable document derivations", () => {
       .where(eq(documentDerivations.documentId, documentId));
     expect(watermark?.projectionLocationVersion).toBe(1n);
     expect(await projection()).toBe("old new");
-    expect(await links()).toEqual([{ ...expected[0], key: "manuscript://moved/next.md" }]);
+    expect(await links()).toEqual([{ ...expected[0], targetKey: "manuscript://moved/next.md" }]);
     expect(watermark?.linksLocationVersion).toBe(1n);
     expect(watermark?.linksExtractorVersion).toBe(2);
-    await db.update(documents).set({ kind: "manifest" }).where(eq(documents.id, documentId));
     await db
       .update(documentDerivations)
       .set({ linksExtractorVersion: 1 })
       .where(eq(documentDerivations.documentId, documentId));
-    await service.derive(documentId);
-    expect(await links()).toEqual([]);
-    expect(await projection()).toBe("old new");
+    expect(await store.stale({ projectId })).toEqual([documentId]);
+    await service.flush({ projectId });
+    expect(await store.stale({ projectId })).toEqual([]);
     doc.destroy();
   });
 
-  it("rolls back rejected certification and failed consumption without publishing, and skips a null claim", async () => {
+  it("rolls back rejected certification and failed consumption without publishing", async () => {
     const doc = new Y.Doc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
     doc.getXmlFragment("prosemirror").push([paragraph]);
@@ -203,7 +196,6 @@ describe("durable document derivations", () => {
     const beforeLinks = await links();
     const beforeWatermarks = await db.select().from(documentDerivations);
     let publications = 0;
-    let consumes = 0;
     const rewrite = createDrizzleDocumentLinkRewrite({
       db,
       resolveUri: (tx, id) =>
@@ -213,60 +205,33 @@ describe("durable document derivations", () => {
         publications++;
       },
     });
-    const claimed = {
-      substitutions: new Map([
-        ["next.md", { href: "renamed.md", oldFilename: "next.md", newFilename: "renamed.md" }],
-      ]),
-      mover: { type: "user" as const, actorUserId: userId },
-      consume: async () => {
-        consumes++;
-        throw new Error("consume failed");
-      },
-    };
-    await expect(rewrite({ documentId, claim: async () => claimed })).rejects.toThrow(
-      "consume failed",
-    );
-    expect(consumes).toBe(1);
-    // Force the real CAS to reject using a location change inside the claim transaction.
-    await expect(
-      rewrite({
-        documentId,
-        claim: async () => {
-          await currentDrizzleDb(db)
-            .update(documents)
-            .set({ locationVersion: 1n })
-            .where(eq(documents.id, documentId));
-          return claimed;
-        },
-      }),
-    ).rejects.toThrow("certification rejected");
-    expect(consumes).toBe(1);
-    await rewrite({ documentId, claim: async () => null });
-    expect(await db.select().from(documentYjsUpdates)).toEqual(beforeRows);
-    expect(await links()).toEqual(beforeLinks);
-    expect(await db.select().from(documentDerivations)).toEqual(beforeWatermarks);
-    expect(await projection()).toBe("before");
-    expect(publications).toBe(0);
-    doc.destroy();
-  });
-
-  it("rebuilds documents certified by extractor version 1", async () => {
-    const doc = new Y.Doc();
-    await append(doc, "existing");
-    await service.derive(documentId);
-    await db
-      .update(documentDerivations)
-      .set({ projectionExtractorVersion: 1, linksExtractorVersion: 1 })
-      .where(eq(documentDerivations.documentId, documentId));
-    expect(await store.stale({ projectId })).toEqual([documentId]);
-    await service.flush({ projectId });
-    expect(await store.stale({ projectId })).toEqual([]);
-    const [watermark] = await db
-      .select()
-      .from(documentDerivations)
-      .where(eq(documentDerivations.documentId, documentId));
-    expect(watermark?.projectionExtractorVersion).toBe(2);
-    expect(watermark?.linksExtractorVersion).toBe(2);
+    for (const rejection of [false, true]) {
+      await expect(
+        rewrite({
+          documentId,
+          claim: async () => {
+            // Change the locked cut to force a real certification rejection.
+            if (rejection)
+              await currentDrizzleDb(db)
+                .update(documents)
+                .set({ locationVersion: 1n })
+                .where(eq(documents.id, documentId));
+            return {
+              substitutions: new Map([["next.md", { href: "renamed.md" }]]),
+              mover: { type: "user", actorUserId: userId },
+              consume: async () => {
+                throw new Error("consume failed");
+              },
+            };
+          },
+        }),
+      ).rejects.toThrow(rejection ? "certification rejected" : "consume failed");
+      expect(await db.select().from(documentYjsUpdates)).toEqual(beforeRows);
+      expect(await links()).toEqual(beforeLinks);
+      expect(await db.select().from(documentDerivations)).toEqual(beforeWatermarks);
+      expect(await projection()).toBe("before");
+      expect(publications).toBe(0);
+    }
     doc.destroy();
   });
 

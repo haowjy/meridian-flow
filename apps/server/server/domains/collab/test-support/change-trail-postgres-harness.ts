@@ -1,5 +1,4 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
-
 import {
   createAgentEditCodec,
   toDocHandle,

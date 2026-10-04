@@ -1,5 +1,4 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
-
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
