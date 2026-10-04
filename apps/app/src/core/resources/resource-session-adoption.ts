@@ -131,7 +131,7 @@ export class ResourceSessionAdoptionCoordinator {
     );
     if (transfer.kind === "adopted") {
       this.activeTransfers.delete(encodeURIComponent(key.handle));
-      return this.finishRecordedAdoption(key, witness, transfer.ownership.persistenceGeneration);
+      return this.finishRecordedAdoption(key, witness, transfer.ownership.lease.generation);
     }
     if (transfer.kind === "waiting") return "waiting";
     this.activeTransfers.set(encodeURIComponent(key.handle), { key, handoff: transfer.handoff });

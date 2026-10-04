@@ -434,7 +434,10 @@ function ActiveSessionEditorView({
           there is something to act on (offline / closed) — see SyncStatus. */}
         {session ? (
           <div className="pointer-events-none absolute right-3 bottom-3 z-10">
-            <SyncStatus session={session} />
+            <SyncStatus
+              session={session}
+              serverBacked={identity.surface === "live" && !identity.detached}
+            />
           </div>
         ) : null}
         {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
