@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Preserve whole-holder link batches while targets are deleted, serialize overwrite moves with maintenance, and leave personal links unresolved when their targets move into another project.
+
 - Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance. Keep each holder's pending batch together when another move arrives during backoff.
 
 - Add atomic link maintenance for committed document moves, preserving AI Undo and publishing to live rooms only after durable commit.

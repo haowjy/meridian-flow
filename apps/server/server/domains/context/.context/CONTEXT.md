@@ -139,14 +139,23 @@ Moves flush the project's certified derivations before entering the namespace
 transaction. Personal moves flush every project of the owner. Failed document
 derives log and retain last-good rows rather than blocking the move.
 
-The move locks its document set `FOR NO KEY UPDATE`, then redirects whose holder
+The move locks all mutated documents (moved identities plus any overwrite victim),
+sorted by identity, `FOR NO KEY UPDATE`, then redirects whose holder
 or target moved `FOR UPDATE`, both in identity order. The weaker document lock
 keeps journal FK insertion compatible. Address candidates use the shared
 `documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
 Moved holders' relative links retain their pre-move target (or intended URI).
 Existing `(source_document_id, href)` redirects win and keep their original
 mover. `linkUpdate` counts newly inserted occurrences and distinct eligible
-holders; archived/deleted Works and manifests do not count. A post-commit kick
+holders; archived/deleted Works and manifests do not count. A target moved into
+another non-personal project cannot be named from the holder's project; those
+occurrences (and holders without any representable rewrites) do not count in
+the receipt. The worker drops that target's redirect
+without rewriting, leaving the old href visibly unresolved rather than silently
+naming a different document in the holder's project. If any target is unavailable,
+the worker defers the entire holder batch without rewriting, consuming, or
+setting failure backoff. Restore makes it eligible on the next sweep.
+A post-commit kick
 is a no-op until the rewrite worker is composed; no holder content is edited
 inside a move transaction.
 

@@ -96,8 +96,27 @@ export function createLinkUpdateWorker(input: {
               const targetUri = redirect.targetDocumentId
                 ? await resolveDocumentUri(tx, authorities, redirect.targetDocumentId)
                 : redirect.intendedUri;
-              // Unavailable targets remain pending until restore; never resolve the old address.
-              if (!targetUri) continue;
+              // A partial batch can emit an href owned by a still-pending redirect.
+              // Defer without backoff until every target is available again.
+              if (!targetUri) return null;
+              if (redirect.targetDocumentId) {
+                const [target] = await tx
+                  .select({ projectId: projects.id, isPersonal: projects.isPersonal })
+                  .from(documents)
+                  .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+                  .leftJoin(works, eq(works.id, contextSources.workId))
+                  .innerJoin(
+                    projects,
+                    eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
+                  )
+                  .where(eq(documents.id, redirect.targetDocumentId));
+                // Project URIs cannot name another project's document. Keep the old
+                // href dashed instead of quietly pointing at the local occupant.
+                if (target && !target.isPersonal && target.projectId !== cut.holderProjectId) {
+                  claimed.push(redirect);
+                  continue;
+                }
+              }
               let href = respellDocumentHref(redirect.href, {
                 holderUri: cut.holderUri,
                 targetUri,
@@ -122,6 +141,22 @@ export function createLinkUpdateWorker(input: {
               });
               claimed.push(redirect);
             }
+            async function consume() {
+              await tx.delete(linkRedirects).where(
+                and(
+                  eq(linkRedirects.sourceDocumentId, holder.id),
+                  inArray(
+                    linkRedirects.href,
+                    claimed.map((row) => row.href),
+                  ),
+                ),
+              );
+              consumed = true;
+            }
+            if (!substitutions.size) {
+              if (claimed.length) await consume();
+              return null;
+            }
             const newest = claimed.reduce<(typeof redirects)[number] | undefined>(
               (latest, row) => (!latest || row.createdAt > latest.createdAt ? row : latest),
               undefined,
@@ -136,18 +171,7 @@ export function createLinkUpdateWorker(input: {
             return {
               substitutions,
               mover,
-              async consume() {
-                await tx.delete(linkRedirects).where(
-                  and(
-                    eq(linkRedirects.sourceDocumentId, holder.id),
-                    inArray(
-                      linkRedirects.href,
-                      claimed.map((row) => row.href),
-                    ),
-                  ),
-                );
-                consumed = true;
-              },
+              consume,
             };
           },
         });
