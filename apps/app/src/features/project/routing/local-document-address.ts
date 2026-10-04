@@ -92,5 +92,8 @@ export function mergeLocalResourceState(
     ...(local.localContent ? { localContent: local.localContent } : {}),
     ...(local.namespaceFailure ? { namespaceFailure: local.namespaceFailure } : {}),
     ...(local.namespaceRepairName ? { namespaceRepairName: local.namespaceRepairName } : {}),
+    ...(local.namespaceFailureAt === undefined
+      ? {}
+      : { namespaceFailureAt: local.namespaceFailureAt }),
   };
 }

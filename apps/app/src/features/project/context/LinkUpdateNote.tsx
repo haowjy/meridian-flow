@@ -48,12 +48,15 @@ export function LinkUpdateNote({
   projectId,
   subject,
   operationId,
+  layout = "inline",
   className,
 }: {
   projectId: string;
   subject: LinkNoteSubject;
   /** The operation id `setLocation` or `setFolderLocation` returned, or null before any rename. */
   operationId: string | null;
+  /** `stacked` takes its own line under a name that must keep its full width. */
+  layout?: "inline" | "stacked";
   className?: string;
 }) {
   const { records, folders } = useAccountResourceProjection(projectId);
@@ -66,12 +69,16 @@ export function LinkUpdateNote({
       ? movedLinkCount(settledNamespaceReceipt(intents, operationId, Date.now()))
       : 0;
   const [phase, setPhase] = useState<"shown" | "fading" | "gone">("shown");
+  // A stacked note opens its line from zero height, so the row grows rather than jumps.
+  const [entered, setEntered] = useState(false);
   const visible = count > 0;
   const message = plural(count, { one: "Updated # link", other: "Updated # links" });
 
   useEffect(() => {
     if (!visible) return;
     setPhase("shown");
+    setEntered(false);
+    const enter = window.requestAnimationFrame(() => setEntered(true));
     announce(message);
     const fade = window.setTimeout(
       () => setPhase("fading"),
@@ -79,12 +86,31 @@ export function LinkUpdateNote({
     );
     const gone = window.setTimeout(() => setPhase("gone"), NAMESPACE_RECEIPT_NOTE_TTL_MS);
     return () => {
+      window.cancelAnimationFrame(enter);
       window.clearTimeout(fade);
       window.clearTimeout(gone);
     };
   }, [operationId, visible]);
 
   if (!visible || phase === "gone") return null;
+  if (layout === "stacked") {
+    const open = entered && phase === "shown";
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          "motion-reduce:grid-rows-[1fr] motion-reduce:opacity-100 motion-reduce:transition-none",
+          className,
+        )}
+      >
+        <span className="min-h-0 overflow-hidden">
+          <span className="block truncate text-xs leading-4 text-muted-foreground">{message}</span>
+        </span>
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden
