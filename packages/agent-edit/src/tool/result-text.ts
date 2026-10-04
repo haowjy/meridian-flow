@@ -63,10 +63,35 @@ function blockCount(count: number): string {
   return count === 1 ? "1 block" : `${count} blocks`;
 }
 
+/**
+ * A finished call's result in brief, for one history line (D48): the status
+ * when it isn't plain success, the write handle, `words` (the size of the
+ * content the call sent, which only the host has), where it drafted, what it
+ * copied or reversed, and a read's block count.
+ */
+export function agentEditResultSummary(result: AgentEditResultV1, words?: number): string {
+  const facts: string[] = [];
+  if (result.status !== "success" && result.status !== "reversed") facts.push(result.status);
+  if (result.write?.id) facts.push(result.write.id);
+  if (words !== undefined)
+    facts.push(`${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"}`);
+  if (result.destination === "draft" && result.draftWork !== undefined)
+    facts.push(`drafted in @${result.draftWork}`);
+  if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
+  if (result.reversal && result.reversal.writes.length > 0)
+    facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
+  if (result.read) {
+    const count = documentItems(result.blocks ?? []).length;
+    const total = result.read.documentBlocks;
+    facts.push(
+      total !== undefined && total > count ? `${count} of ${total} blocks` : blockCount(count),
+    );
+  }
+  return facts.join(", ");
+}
+
 /** ` (drafted in @work)` for a write held in a Work's draft; empty for a live one. */
-export function draftedSuffix(
-  result: Pick<AgentEditResultV1, "destination" | "draftWork">,
-): string {
+function draftedSuffix(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   return result.destination === "draft" && result.draftWork !== undefined
     ? ` (drafted in @${result.draftWork})`
     : "";
