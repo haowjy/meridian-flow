@@ -179,6 +179,8 @@ export interface FileAccessDenied {
   readonly limitedBy: FileAccessLimit;
   readonly level: FileAccessLevel;
   readonly archivedWork: WorkRef | null;
+  /** The refused file's source; null when it wasn't found. */
+  readonly scheme: ContextUriScheme | null;
   readonly destination: FileDestination | null;
   /**
    * The asking agent's delegation chain, so refusal copy offers only calls

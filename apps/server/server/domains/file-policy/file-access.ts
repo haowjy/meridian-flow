@@ -3,6 +3,7 @@
  * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
  * re-check a write seam runs inside its transaction.
  */
+import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { decide, levelAt } from "./domain/policy.js";
 import {
@@ -45,8 +46,6 @@ export interface FileAccess {
    * grants are reported, not thrown, so the rest of the reply can commit.
    */
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileEditConfirmation>;
-  /** The decision for facts a list adapter already loaded; the same pure policy. */
-  levelOf(principal: Principal, facts: FileFacts): Promise<FileDecision>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's draft rows decided at the draft. A document the principal
@@ -77,7 +76,8 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const facts = await deps.facts.load(factsRequest(principal, target));
       if (!facts) return notFound(principal, target, need);
       const result = await decision(principal, facts);
-      if (!atLeast(result.level, need)) return denied(principal, target, need, result);
+      if (!atLeast(result.level, need))
+        return denied(principal, target, need, result, facts.scheme);
       return mint(principal, facts, result);
     },
 
@@ -109,12 +109,10 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         const personGrants = await deps.grants.personGrants(principal.accountId, facts);
         const at = levelAt(principal, facts, personGrants, grant.destination);
         if (atLeast(at.level, "edit")) result.confirmed.push(mint(principal, facts, at));
-        else result.refused.push(denied(principal, grant.target, "edit", at));
+        else result.refused.push(denied(principal, grant.target, "edit", at, facts.scheme));
       }
       return result;
     },
-
-    levelOf: decision,
 
     async historyAccess(principal, documentId) {
       const facts = await deps.facts.load({ target: { kind: "document", documentId } });
@@ -176,6 +174,7 @@ function denied(
   target: FileTarget,
   need: FileNeed,
   result: FileDecision,
+  scheme: ContextUriScheme,
 ): FileAccessDenied {
   const limitedBy = result.limitedBy ?? "not_found";
   return {
@@ -186,6 +185,7 @@ function denied(
     limitedBy,
     level: result.level,
     archivedWork: result.archivedWork,
+    scheme,
     destination: result.destination,
     agentChain: principal.agent?.chain ?? null,
   };
@@ -200,6 +200,7 @@ function notFound(principal: Principal, target: FileTarget, need: FileNeed): Fil
     limitedBy: "not_found",
     level: "none",
     archivedWork: null,
+    scheme: null,
     destination: null,
     agentChain: principal.agent?.chain ?? null,
   };

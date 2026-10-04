@@ -96,7 +96,7 @@ describe("Agent definition compiler", () => {
     );
     expect(result.definition.metadata).toEqual({
       model: "b",
-      tools: ["grep"],
+      tools: ["search"],
       "disallowed-tools": [],
     });
   });

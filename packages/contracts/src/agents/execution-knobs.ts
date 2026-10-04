@@ -53,7 +53,11 @@ export const agentPermissionSchema = z.enum(AGENT_PERMISSION_VALUES, {
     `Expected "read" or "edit", got ${JSON.stringify((issue as { input?: unknown }).input)}`,
 });
 
-/** Mars tool-name aliases, canonical here so authoring and overrides fold the same way. */
+/**
+ * Mars tool-name aliases, canonical here so authoring and overrides fold the
+ * same way. No alias may be a Flow tool name (`search`, `find`): folding one
+ * would rename a real tool.
+ */
 export const toolAliases: Record<string, string> = {
   bash: "bash",
   shell: "bash",
@@ -72,10 +76,8 @@ export const toolAliases: Record<string, string> = {
   skill: "skill",
   workflow: "workflow",
   glob: "glob",
-  find: "glob",
   grep: "grep",
   rg: "grep",
-  search: "grep",
   ripgrep: "grep",
   notebook: "notebook",
   jupyter: "notebook",

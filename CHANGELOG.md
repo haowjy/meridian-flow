@@ -2,7 +2,7 @@
 
 - Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0025 renames the report column.
 - Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
-- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. 
+- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
 - `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
 - Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
@@ -25,6 +25,15 @@
 - The editor follows a room's access in place: an archived Work's draft review and scratch files turn read-only under the archived notice without a refresh, in the tab that archives at once and in other tabs when the server's 4409 arrives, and turn editable again after Unarchive once the server reconnects them read-write. Keystrokes the server refused at that moment are dropped, never replayed: a scratch file holding them drops its local copy and reopens from the server.
 - A tab that loaded while a Work was archived turns its draft review and scratch editors editable again when the Work is unarchived elsewhere, even if their room first connected after the unarchive.
 - An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
+- A `write` the file policy refuses returns `permission_denied` with a `reason`: `work_archived`, `agent_read_only`, `uploads_read_only`, or `action_denied` for a refused `work` command. Agents can't write `uploads://`. A read agent refused on another Work's `scratch://` is told it can change only this chat's.
+- An archived Work's scratch and draft are refused when the call runs, with the archived-Work copy, and so are `undo` and `redo` there.
+- `undo` and `redo` reverse each write in the journal it landed in (live or the Work draft).
+- Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
+- `work switch` takes `work` (was `target`), and its description says it needs the user's approval.
+- `ls` drops `editable` and reports `readonly` per source.
+- `work` results name the write mode `writes` and the pending count `pendingChangeCount`.
+- HTTP `work_archived` is now 403 (was 409).
+- Tool names never fold onto another Flow tool: `search` stays `search` in `tools` and `disallowed-tools`. `spawn` `overrides.disallowed_tools` refuses a name outside the tool catalog and lists the tools.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 

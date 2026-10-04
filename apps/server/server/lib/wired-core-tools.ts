@@ -600,7 +600,7 @@ function refusedAtSave(denial: FileAccessDenied): {
 } {
   if (!isPermissionDenial(denial)) {
     return {
-      message: "This file was deleted before this reply was saved, so this change wasn't saved.",
+      message: "This file was deleted before this reply was saved, so this change wasn't made.",
     };
   }
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
