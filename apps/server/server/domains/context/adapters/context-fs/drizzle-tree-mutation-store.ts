@@ -8,6 +8,7 @@ import {
   folders,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
@@ -347,6 +348,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const previousLocations = await readTreeLocations(this.db, input.source);
+      // A move between sources can change a document's owner, so it waits for
+      // any write that confirmed the old owner (file-access §5, step 3).
+      if (input.source.sourceId !== input.destinationSourceId) {
+        const moved = previousLocations.filter((location) => location.kind === "file");
+        for (const id of moved.map((location) => location.id).sort()) {
+          await lockDocumentMutation(currentDrizzleDb(this.db), id);
+        }
+      }
       const destParentId = await this.ensureFolderPath(
         input.destinationSourceId,
         treePathSegments(targetParentPath),

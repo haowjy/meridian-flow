@@ -8,6 +8,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { confirmEveryGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -47,9 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { currentDrizzleDb, runInDrizzleTransaction, runOutsideDrizzleTransaction } =
       await import("../../shared/drizzle-transaction.js");
-    const { lockDocumentMutation } = await import(
-      "../../domains/collab/adapters/drizzle-document-mutation-lock.js"
-    );
+    const { lockDocumentMutation } = await import("../../shared/document-mutation-lock.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000b01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000b02";
@@ -65,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture() {
       const collab = createCollabDomain({
+        fileAccess: confirmEveryGrant,
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

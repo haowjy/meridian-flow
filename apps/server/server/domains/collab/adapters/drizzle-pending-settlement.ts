@@ -20,8 +20,10 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
@@ -47,7 +49,6 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -183,6 +184,9 @@ export function createDrizzlePendingSettlementStore(
       try {
         return await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
+          // Completion touches the draft's Work row; take it before the
+          // document lock, in the order every write seam uses (file-access §5).
+          await lockWorksInIdOrder(txDb, await pushWorkIds(txDb, input.pushId));
           await lockDocumentMutation(txDb, input.documentId);
           const [owned] = await txDb
             .select({ pushId: branchPushSettlementOutbox.pushId })
@@ -372,6 +376,17 @@ export function createDrizzlePendingSettlementStore(
       return Boolean(blocked);
     },
   };
+}
+
+/** The Work whose draft a push came from; none for a live-only push. */
+async function pushWorkIds(db: DrizzleDb, pushId: number): Promise<string[]> {
+  const rows = await db
+    .select({ workId: documentBranches.workId })
+    .from(pushLineage)
+    .innerJoin(documentBranches, eq(documentBranches.id, pushLineage.branchId))
+    .where(eq(pushLineage.id, pushId))
+    .limit(1);
+  return rows.flatMap((row) => (row.workId ? [row.workId] : []));
 }
 
 /** Makes one staged candidate effective inside the completion-fence transaction. */

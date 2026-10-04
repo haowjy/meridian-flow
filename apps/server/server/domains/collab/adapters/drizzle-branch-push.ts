@@ -9,6 +9,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
@@ -31,7 +32,6 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */

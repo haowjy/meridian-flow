@@ -1,9 +1,13 @@
-/** Postgres transaction lock for live document mutation journal commits. */
+/** Postgres transaction lock serializing mutations of one live document or branch. */
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
-import { documentMutationLockKey } from "../domain/document-mutation-lock.js";
 
 type DocumentMutationLockDb = Pick<Database, "execute">;
+
+/** Shared key for serializing mutations against one live document. */
+export function documentMutationLockKey(documentIdOrBranchId: string): string {
+  return `document-mutation:${documentIdOrBranchId}`;
+}
 
 export async function lockDocumentMutation(
   db: DocumentMutationLockDb,

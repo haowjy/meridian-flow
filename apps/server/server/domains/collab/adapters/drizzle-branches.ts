@@ -31,6 +31,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
@@ -71,7 +72,6 @@ import type {
   ApplicationBranchStore,
   ManifestMutationResult,
 } from "../domain/ports/application-branch-store.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 

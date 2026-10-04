@@ -10,7 +10,7 @@ import {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
-import { lockWorkLifecycle } from "../../../shared/work-lifecycle-lock.js";
+import { lockSeamWorks, lockWorkLifecycle } from "../../../shared/work-lifecycle-lock.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
@@ -54,6 +54,7 @@ export function createDrizzleWorkDraftDiscard(
           for (let attempt = 0; ; attempt += 1) {
             try {
               await runInDrizzleSavepoint(db, async () => {
+                await lockSeamWorks(db, [command.workId]);
                 const lifecycle = await lockWorkLifecycle(db, command.workId);
                 if (lifecycle !== "active")
                   throw new WorkLifecycleUnavailableError(command.workId, lifecycle);
