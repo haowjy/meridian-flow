@@ -1,5 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { canonicalContextUri, parseContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type CatalogFileEntry,
   type CatalogScope,
@@ -15,7 +15,9 @@ import {
   indexCatalogView,
   projectResourceLocation,
   projectResourceNeedsRepair,
+  type ResourceLocation,
   type ResourceRecord,
+  resourceContextAuthority,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -90,14 +92,16 @@ function locationBelongsToScope(
   return scope.kind === "work" && location.workId === scope.workId;
 }
 
-function catalogUri(
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  workSlug?: string | null,
-): string {
-  if (!isWorkScopedProjectContextScheme(scheme)) return canonicalContextUri(scheme, path);
-  const parsed = parseContextUri(`${scheme}://@${workSlug ?? ""}/${path}`);
-  if (!parsed.ok) throw new Error("Local catalog location has invalid Work authority");
+function catalogUri(location: ResourceLocation, path: string): string {
+  const authority = resourceContextAuthority(location.scheme, location);
+  const prefix =
+    authority.kind === "contextual"
+      ? ""
+      : authority.kind === "none"
+        ? "@/"
+        : `@${authority.workSlug}/`;
+  const parsed = parseContextUri(`${location.scheme}://${prefix}${path}`);
+  if (!parsed.ok) throw new Error("Invalid local catalog URI");
   return parsed.value.normalized;
 }
 
@@ -144,7 +148,7 @@ function overlayResourceCatalogView(
         scope,
         scheme: location.scheme,
         name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location.scheme, "", location.workSlug),
+        uri: catalogUri(location, ""),
       });
     }
     invalidatedEntryIds.delete(sourceId);
@@ -172,13 +176,13 @@ function overlayResourceCatalogView(
         parentId,
         name: folderPath.at(-1) ?? "",
         path: folderPath,
-        uri: catalogUri(location.scheme, folderPath.join("/"), location.workSlug),
+        uri: catalogUri(location, folderPath.join("/")),
         hasChildren: true,
       });
       invalidatedEntryIds.delete(folderId);
       parentId = folderId;
     }
-    const uri = catalogUri(location.scheme, path.join("/"), location.workSlug);
+    const uri = catalogUri(location, path.join("/"));
     entries.set(documentId, {
       kind: "file",
       entryId: documentId,

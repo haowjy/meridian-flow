@@ -18,6 +18,8 @@ import type {
   ResourceWrite,
 } from "./resource-records";
 
+import { resourceContextAuthority } from "./resource-work-authority";
+
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
   { request: { kind: Kind } }
@@ -249,9 +251,12 @@ function authorityMatches(
   workId: string | null,
   workSlug: string | null,
 ): boolean {
-  if (!isWorkScopedProjectContextScheme(scheme)) return authority.kind === "contextual";
-  if (!workId || workSlug === null) return authority.kind === "none";
-  return authority.kind === "work" && authority.workSlug === workSlug;
+  const expected = resourceContextAuthority(scheme, { workId, workSlug });
+  return (
+    authority.kind === expected.kind &&
+    (authority.kind !== "work" ||
+      (expected.kind === "work" && authority.workSlug === expected.workSlug))
+  );
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(

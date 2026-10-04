@@ -13,7 +13,6 @@ import {
 } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { useWorks } from "@/client/query/useWorks";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -54,28 +53,17 @@ export function useRenameEntryForm({
 }: UseRenameEntryFormOptions): RenameEntryForm {
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const { noWork } = useWorks(projectId);
   const ownedWorkId = isWorkScopedProjectContextScheme(scheme) ? workId : null;
   const mutation = useMutation({
     mutationFn: async (name: string) => {
-      if (
-        kind === "file" &&
-        (!isWorkScopedProjectContextScheme(scheme) ||
-          ownedWorkId === noWork?.id ||
-          ownedWorkId === null)
-      ) {
+      if (kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
         const key = await resources.keyForDocument(projectId, entryId);
         if (!key) throw new Error(t`This file is unavailable. Refresh and try again.`);
-        const noWorkId = noWork?.id ?? ownedWorkId;
-        if (isWorkScopedProjectContextScheme(scheme) && !noWorkId)
-          throw new Error(t`This file is unavailable. Refresh and try again.`);
         await resources.setLocation(projectId, key, {
           scheme,
           folderPath: parentContextEntryPath(path),
           name,
-          ...(isWorkScopedProjectContextScheme(scheme) && noWorkId
-            ? { workId: noWorkId, workSlug: null }
-            : { workId: null }),
+          workId: null,
         });
         return;
       }

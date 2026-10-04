@@ -17,7 +17,7 @@
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
-import type { ResourceWorkAuthority } from "@meridian/resource-replica";
+import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 
@@ -147,14 +147,14 @@ function scratchWork(
 ): ResourceWorkAuthority | "unknown" {
   if (target.scheme !== "scratch") return { workId: null };
   if (target.authority.kind === "none")
-    return noWorkId ? { workId: noWorkId, workSlug: null } : { workId: null };
+    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
   const { authority } = target;
   if (authority.kind === "contextual" && (!surfaceWorkId || surfaceWorkId === noWorkId))
-    return noWorkId ? { workId: noWorkId, workSlug: null } : { workId: null };
+    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
   const work = works?.find((candidate) =>
     authority.kind === "work"
       ? candidate.slug === authority.workSlug
       : candidate.id === surfaceWorkId,
   );
-  return work?.slug ? { workId: work.id, workSlug: work.slug } : "unknown";
+  return work ? resourceWorkAuthorityFor(work.id, works, noWorkId) : "unknown";
 }

@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ResourceWorkAuthority } from "@meridian/resource-replica";
+import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -71,25 +71,16 @@ export function deriveIdentityCommitPlan(
   return { kind: "commit", desired };
 }
 
-/**
- * The Work authority a destination's placement carries: none, or a named Work
- * with its slug, which the namespace request needs to sync. Null when the
- * named Work is not in the Works list, so the commit fails on the document
- * instead of queuing a placement that can never sync.
- */
+/** Resolve a placement from the project snapshot; unavailable identity fails on the document. */
 function identityWorkAuthority(
   destination: IdentityDestination,
   works: readonly { id: string; slug: string | null }[] | null | undefined,
   noWork: { id: string } | null | undefined,
 ): ResourceWorkAuthority | null {
-  if (
-    destination.scheme === "scratch" &&
-    (!destination.workId || destination.workId === noWork?.id)
-  )
-    return noWork ? { workId: noWork.id, workSlug: null } : null;
-  if (!destination.workId) return { workId: null };
-  const slug = works?.find((work) => work.id === destination.workId)?.slug;
-  return slug ? { workId: destination.workId, workSlug: slug } : null;
+  if (destination.scheme !== "scratch" && !destination.workId) return { workId: null };
+  const workId = destination.workId ?? noWork?.id;
+  if (!workId) return null;
+  return resourceWorkAuthorityFor(workId, works, noWork?.id);
 }
 
 export function useIdentityCommit({
@@ -135,7 +126,7 @@ export function useIdentityCommit({
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
-          routeWorkId: destination.workId ?? editorWorkId,
+          routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,
       );
