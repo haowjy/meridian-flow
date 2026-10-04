@@ -828,6 +828,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
+    fileAccess: ports.fileAccess,
     identities: ports.uploadIdentity,
     availability: ports.projectContextAvailability,
     objects: ports.objectStore,
