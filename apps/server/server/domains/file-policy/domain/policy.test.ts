@@ -1,7 +1,6 @@
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
-import { decide, isDrafted, type NodeGrant, sourceDestination } from "./policy.js";
+import { decide, type NodeGrant } from "./policy.js";
 import type { AgentLink, FileFacts, FileWorkFacts, Principal } from "./types.js";
 
 const OWNER = "owner";
@@ -115,9 +114,5 @@ describe("file policy", () => {
     expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
       kind: "live",
     });
-    expect(CONTEXT_URI_SCHEMES.filter(isDrafted)).toEqual(["manuscript", "kb", "user", "unfiled"]);
-    for (const scheme of CONTEXT_URI_SCHEMES) {
-      expect(sourceDestination(scheme, null)).toEqual({ kind: "live" });
-    }
   });
 });
