@@ -149,6 +149,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    // D37, D51: a switch that couldn't happen says why instead of asking for approval.
+    it("resolves a switch's target before asking for the user's approval", async () => {
+      await db.insert(schema.works).values([
+        { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", slug: "other" },
+        {
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Frozen",
+          slug: "frozen",
+          archivedAt: new Date(),
+        },
+      ]);
+      const script = await start();
+      const { call } = await script.begin();
+      const switchTo = async (work: string) =>
+        (await call("work", { command: "switch", work })).output;
+
+      expect(await switchTo("ghost")).toMatchObject({
+        code: "work_not_found",
+        message: 'Unknown Work @ghost. List Works with work({"command":"list"}).',
+      });
+      expect(await switchTo("frozen")).toMatchObject({
+        code: "work_archived",
+        message:
+          "Work @frozen is archived, so this chat can't switch to it until the user unarchives it.",
+      });
+      expect(await switchTo("@rewrite")).toEqual({
+        message: "This chat is already in @rewrite.",
+      });
+      expect(await switchTo("other")).toMatchObject({
+        code: "permission_denied",
+        message:
+          "Switching this chat's Work needs the user's approval. Ask them to switch it to @other from the chat.",
+      });
+    });
+
     it("gives a read agent write, refuses the manuscript and Work changes, and lets it write its own scratch", async () => {
       const script = await start();
       await script.runtime.ports.agentRevisions.bindThread(
@@ -184,6 +220,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         details: { reason: "action_denied" },
       });
 
+      const root = listed(await call("ls", {}));
+      expect(root).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ uri: "manuscript://", readonly: true }),
+          expect.objectContaining({ uri: "scratch://", readonly: false }),
+        ]),
+      );
+
       await call("read", { path: "manuscript://chapter.md" });
       const refused = await call("write", {
         command: "replace",
@@ -211,6 +255,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const chapter = await script.runtime.ports.documentSync.readAsMarkdown(CHAPTER_ID);
       expect(chapter.ok && chapter.value).toContain("Writer chapter.");
       expect(await script.text("scratch://ideas.md")).toContain("Agent ideas.");
+      const { call: next } = await script.begin();
+      expect(listed(await next("ls", { path: "scratch://" }))).toContainEqual(
+        expect.objectContaining({ uri: "scratch://@rewrite/ideas.md", sizeBytes: 13 }),
+      );
     });
   });
 }

@@ -81,6 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threads: threads.threads,
           threadWorks: threads.threadWorks,
           works,
+          readAgentChain: async () => [],
         }),
       });
       const control = postgres(DATABASE_URL, { max: 1 });

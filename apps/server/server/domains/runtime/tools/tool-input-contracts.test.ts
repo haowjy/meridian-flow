@@ -86,8 +86,8 @@ describe("argument mapping", () => {
   it("strips one leading @ from Work refs", async () => {
     await expectDelivered(
       "work",
-      { command: "switch", target: "@arc" },
-      { command: "switch", target: "arc" },
+      { command: "switch", work: "@arc" },
+      { command: "switch", work: "arc" },
     );
   });
 
