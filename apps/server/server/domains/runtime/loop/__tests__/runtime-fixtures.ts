@@ -25,7 +25,12 @@ export function createTestAgentBinding(
             metadata: { model },
           },
         },
-        configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
+        configuration: {
+          model,
+          skills: { load: [], available: [] },
+          namedTargets: [],
+          permission: "edit",
+        },
         invocationOverlay: null,
       };
     },

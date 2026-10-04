@@ -110,6 +110,7 @@ async function boundContext(metadata: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
+            permission: "edit",
             ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
           invocationOverlay: metadata.invocationOverlay ?? null,

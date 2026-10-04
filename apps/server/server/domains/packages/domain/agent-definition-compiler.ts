@@ -1,6 +1,7 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
 import {
   agentEffortAuthoringSchema,
+  agentPermissionSchema,
   type ToolPolicy,
   toolReferencesSchema,
   toolRepresentationSchema,
@@ -24,6 +25,8 @@ const metadata = z.looseObject({
   model: reference.optional(),
   effort: agentEffortAuthoringSchema.optional(),
   mode: z.enum(["primary", "subagent"]).optional(),
+  // Presence-sensitive like every field: an unset permission resolves to the default.
+  permission: agentPermissionSchema.optional(),
   "model-invocable": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
   tools: toolRepresentationSchema.optional(),

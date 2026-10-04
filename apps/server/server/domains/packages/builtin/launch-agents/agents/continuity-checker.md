@@ -1,6 +1,7 @@
 ---
 name: Continuity-checker
 description: Background helper that checks world, character, timeline, and power-system consistency.
+permission: read
 mode: subagent
 skills:
   available:

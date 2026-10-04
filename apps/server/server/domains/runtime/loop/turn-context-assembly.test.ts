@@ -480,7 +480,12 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
     await agentRevisions.bindThread(
       child.id,
       null,
-      { model: "fixture-model", skills: { load: [], available: [] }, namedTargets: [] },
+      {
+        model: "fixture-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
       { appendSystemPrompt: "Overridden child prompt." },
     );
 
