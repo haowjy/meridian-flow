@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 /** A refused rename's repair field opens for a fresh failure only, and never over another input. */
-import { useLayoutEffect, useRef } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
@@ -9,12 +8,6 @@ import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 function Probe({ failedAt, open }: { failedAt: number | undefined; open: () => void }) {
   useRepairOnFreshFailure(failedAt, open);
   return null;
-}
-
-function FocusedInput() {
-  const ref = useRef<HTMLInputElement>(null);
-  useLayoutEffect(() => ref.current?.focus(), []);
-  return <input ref={ref} aria-label="Document name" />;
 }
 
 it("opens once for a fresh failure, not for an old one, a remount, or while another input is active", async () => {
@@ -32,7 +25,7 @@ it("opens once for a fresh failure, not for an old one, a remount, or while anot
   });
   await withReactRoot(
     <>
-      <FocusedInput />
+      <input ref={(node) => node?.focus()} aria-label="Document name" />
       <Probe failedAt={now - 50} open={open} />
     </>,
     async () => {

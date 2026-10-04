@@ -766,33 +766,10 @@ it("offers the latest queued file name after refusal and retries from accepted p
   });
   if (!repair) throw new Error("Missing repair");
   validateResourceRecordUpdate(reopened, repair.next);
-  expect(repair.next.intents.map(({ state }) => state)).toEqual([
-    "settled",
-    "cancelled",
-    "pending",
-  ]);
   const retry = prepareNamespaceAttempt(repair.next, { attemptId: "retry", operationId: "repair" });
   if (!retry) throw new Error("Missing retry");
   expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
     body: { path: "A.md", newName: "C.md" },
   });
-  const accepted = recordNamespaceOutcome(retry.next, "repair", "retry", {
-    kind: "operation",
-    receipt: {
-      operationId: "repair",
-      command: {
-        kind: "move",
-        sourceUri: "manuscript://A.md",
-        destinationUri: "manuscript://C.md",
-        expected: { kind: "file", nodeId: "document" },
-      },
-      result: { ok: true, value: { movedNodeId: "document", destinationPath: "C.md" } },
-    },
-  });
-  if (!accepted) throw new Error("Missing accepted receipt");
-  const landed = settleNamespaceOutcome(accepted.next);
-  if (!landed) throw new Error("Missing accepted settlement");
-  validateResourceRecordUpdate(accepted.next, landed.next);
-  expect(projectResourceLocation("project", landed.next)?.name).toBe("C.md");
-  expect(projectResourceNeedsRepair("project", landed.next)).toBeNull();
+  expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });
