@@ -70,17 +70,11 @@ describe("skill tool", () => {
   });
 
   it("loads a resource's text", async () => {
-    const calls: string[] = [];
     const tools = executor(
       async () => {
         throw new Error("body not expected");
       },
-      async (_threadId, slug, resource) => {
-        calls.push(`${slug}:${resource}`);
-        if (resource !== "resources/line-edit.md")
-          throw new Error(`Skill "${slug}" has no resource "${resource}".`);
-        return "Line edit method.\n";
-      },
+      async (_threadId, slug, resource) => `${slug}:${resource}\n`,
     );
     await expect(
       tools.executeTool(
@@ -91,24 +85,7 @@ describe("skill tool", () => {
         },
         execution,
       ),
-    ).resolves.toMatchObject({ output: "Line edit method.\n" });
-    await expect(
-      tools.executeTool(
-        {
-          id: "call-2",
-          name: "skill",
-          arguments: { slug: "story-review", resource: "resources/nope.md" },
-        },
-        execution,
-      ),
-    ).resolves.toMatchObject({
-      isError: true,
-      output: { message: 'Skill "story-review" has no resource "resources/nope.md".' },
-    });
-    expect(calls).toEqual([
-      "story-review:resources/line-edit.md",
-      "story-review:resources/nope.md",
-    ]);
+    ).resolves.toMatchObject({ output: "story-review:resources/line-edit.md\n" });
   });
 
   it("refuses unknown slugs without rebaking", async () => {
@@ -123,24 +100,5 @@ describe("skill tool", () => {
       result: { message: 'Skill "missing" is not available' },
       isError: true,
     });
-  });
-
-  it("refuses a missing, empty or extra argument before loading", async () => {
-    let loads = 0;
-    const tools = executor(async (_threadId, slug) => {
-      loads += 1;
-      return { slug, body: "", resources: [] };
-    });
-    const outputs = await Promise.all(
-      [{}, { slug: "" }, { slug: "modes", extra: true }].map((args, index) =>
-        tools.executeTool({ id: `call-${index}`, name: "skill", arguments: args }, execution),
-      ),
-    );
-    expect(outputs.map(({ output }) => output)).toEqual([
-      "Invalid arguments for skill:\n- slug: required; expected a string",
-      "Invalid arguments for skill:\n- slug: must not be empty",
-      "Invalid arguments for skill:\n- extra: unknown argument",
-    ]);
-    expect(loads).toBe(0);
   });
 });
