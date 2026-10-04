@@ -236,6 +236,7 @@ describe("prefix stability across a growing thread", () => {
         turns: withThreadId,
         blocks: withThreadIdBlocks,
         agentRevisions,
+        threads: repos.threads,
         toolRegistry,
         gateway,
         baseTools: liveBaseTools,
@@ -488,6 +489,7 @@ describe("prefix stability across a growing thread", () => {
       turns: [{ ...t1.turn, threadId: thread.id }],
       blocks: [t1.block],
       agentRevisions,
+      threads: repos.threads,
       toolRegistry: createToolRegistry(),
       gateway: {
         getDefaultModel: () => "no-caching-model",

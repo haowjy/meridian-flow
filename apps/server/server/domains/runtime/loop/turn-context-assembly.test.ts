@@ -151,6 +151,7 @@ async function writerChat() {
       turns,
       blocks,
       agentRevisions,
+      threads: repos.threads,
       toolRegistry: createToolRegistry(),
       promptBakes: repos.promptBakes,
       persistBake: true,
@@ -360,6 +361,7 @@ describe("assembleNextTurnContext named subagent freeze", () => {
         turns: [],
         blocks: [],
         agentRevisions,
+        threads: repos.threads,
         toolRegistry: createToolRegistry(),
         promptBakes: repos.promptBakes,
         persistBake: true,
@@ -404,6 +406,17 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
       title: "Child",
     });
     await agentRevisions.bindThread(
+      parent.id,
+      null,
+      {
+        model: "fixture-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
+      null,
+    );
+    await agentRevisions.bindThread(
       child.id,
       null,
       {
@@ -423,6 +436,7 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
         turns: [],
         blocks: [],
         agentRevisions,
+        threads: repos.threads,
         toolRegistry: createToolRegistry(),
         promptBakes: repos.promptBakes,
         persistBake: true,
@@ -452,6 +466,7 @@ it("keeps the first-bake prompt and model from the same resolved Agent context",
     thread,
     turns: [],
     blocks: [],
+    threads: repos.threads,
     toolRegistry: createToolRegistry(),
     promptBakes: repos.promptBakes,
     workContext: emptyWorkContext(project.id),

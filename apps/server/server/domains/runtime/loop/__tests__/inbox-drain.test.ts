@@ -183,7 +183,10 @@ async function setup(
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
-    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
+    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [
+      thread.id,
+      ...(thread.parentThreadId ? [thread.parentThreadId] : []),
+    ]),
   });
   const thread = options.child
     ? await (async () => {
