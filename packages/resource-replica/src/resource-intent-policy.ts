@@ -36,3 +36,15 @@ export function supersedeRepairableNamespaceWork(
     }),
   };
 }
+
+/** Historical rejected deletes remain evidence, not deletion ownership after supersession. */
+export function intentOwnsDeletion(intent: NamespaceIntent): boolean {
+  if (intent.desired.kind !== "delete") return false;
+  if (intent.state === "cancelled" || intent.state === "needs-repair") return false;
+  const outcome = intent.attempts.at(-1)?.outcome;
+  return !(
+    intent.state === "settled" &&
+    outcome?.kind === "operation" &&
+    !outcome.receipt.result.ok
+  );
+}
