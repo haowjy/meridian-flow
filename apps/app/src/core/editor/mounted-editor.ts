@@ -16,12 +16,12 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { WikilinkCatalog } from "@/core/completion";
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
+import type { WikilinkPasteCatalog } from "./links";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
@@ -93,13 +93,14 @@ export type MountedEditorInput = {
    */
   slashCommandCatalog?: () => SlashCommandCatalog | null;
   /**
-   * Reads the project's documents when the `[[` menu opens. Same reason as the
+   * Reads the reference catalog when the `@` menu opens. Same reason as the
    * slash catalog: mounting the trigger is a construction fact, and the list it
    * offers — which changes every time the writer creates or renames a file —
    * is not.
    */
-  wikilinkCatalog?: () => WikilinkCatalog | null;
   atReferenceCatalog?: () => AtReferenceCatalog | null;
+  /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
+  wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -111,8 +112,8 @@ export function useMountedEditor({
   agentNames,
   placeholder,
   slashCommandCatalog,
-  wikilinkCatalog,
   atReferenceCatalog,
+  wikilinkPasteCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
@@ -121,10 +122,10 @@ export function useMountedEditor({
   // reads through.
   const catalogRef = useRef(slashCommandCatalog);
   catalogRef.current = slashCommandCatalog;
-  const wikilinkCatalogRef = useRef(wikilinkCatalog);
-  wikilinkCatalogRef.current = wikilinkCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
   atReferenceCatalogRef.current = atReferenceCatalog;
+  const wikilinkPasteCatalogRef = useRef(wikilinkPasteCatalog);
+  wikilinkPasteCatalogRef.current = wikilinkPasteCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -144,8 +145,8 @@ export function useMountedEditor({
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
-      wikilinks: { catalog: () => wikilinkCatalogRef.current?.() ?? null },
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
+      wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },
     });
     return {
       editorConfig,

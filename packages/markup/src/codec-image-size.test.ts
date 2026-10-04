@@ -211,12 +211,6 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 describe("sized pictures in the other spellings", () => {
   const codec = mdxCodec({ schema, assetPathResolver, components });
 
-  it("sizes a wikilink picture without losing the wikilink", () => {
-    const wire = '<img src="[[Realm map]]" alt="World map" width="240" />';
-    expect(codec.parse(wire).blocks[0]?.firstChild?.attrs.src).toBe("[[Realm map]]");
-    expect(codec.serialize(codec.parse(wire).blocks)).toBe(`${wire}\n`);
-  });
-
   it("sizes a picture inside an HTML table cell", () => {
     const wire = [
       "<table>",

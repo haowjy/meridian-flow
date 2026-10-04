@@ -1,12 +1,12 @@
 # surfaces/link — everything a writer meets a link through
 
-The destination hint, the right-click menu, the form, the `[[` menu, what a
+The destination hint, the right-click menu, the form, the `@` menu, what a
 follow says when it finds nothing, and the runtime that gives an internal link
 somewhere to go. Three entries in `EDITOR_CHROME_SURFACES` plus one headless
 runtime `EditorView` mounts; policy and state live in
 [`core/editor/links/`](../../../../core/editor/links/AGENTS.md),
-[`core/editor/extensions/wikilink/`](../../../../core/editor/extensions/wikilink/AGENTS.md),
-and — for the rows and their ranking, which the chat composer will share —
+[`core/editor/extensions/at-reference/`](../../../../core/editor/extensions/at-reference/AGENTS.md),
+and — for the `@` reference browser and its ranking —
 [`core/completion/`](../../../../core/completion/AGENTS.md).
 
 ## Mental model
@@ -26,25 +26,23 @@ Three summoned components, three physics, one store.
 
 Beside them, three things that are not summoned surfaces:
 
-- **`WikilinkMenu`** — rows for the `[[` trigger, over the shared
-  `SuggestionMenu` the slash menu also renders through. Its documents come from
-  the context trees the app already caches (`useLinkableDocuments`), so opening
-  it costs no request: the manuscript and the active Work's scratch. This legacy
-  suggestion projection is narrower than the server resolver, which searches
-  Project content, authenticated personal content, and the selected Work or
-  no-Work scope through the canonical Context catalog. The local index still
-  carries each offered document's id and URI, which is where a relative link's
-  base comes from, and its own revision, which tells a cached answer that the
-  project moved underneath it.
-- **`FollowOutcomeDialog`** — what a follow says when the document is not there.
-  A chrome surface rather than the runtime's own dialog, and that is the whole
-  point: it can open a quarter second after the click, so the kernel has to know
-  it is the open transient.
-- **`ProjectLinkRuntime`** — the app's half of the link system, mounted by
-  `EditorView` and rendering nothing. It registers the resolution port every
-  internal link is drawn from and the navigator a follow is handed to, and it
-  reports what a follow found into the store the dialog reads. It also owns the
-  resolution scope, which is the one thing here that is not a surface concern.
+- **`AtReferenceMenu`** — rows for the Editor's `@`, over the shared
+  `SuggestionMenu` the slash menu also renders through: each document's name
+  and where it lives (its folder, after its area unless that is the
+  manuscript), plus the link-ahead row for a name no document carries.
+  `ReferenceSuggestionMenu` is the same rows for LinkForm's search.
+- **`FollowOutcomeDialog`** — what a follow says when it has something to say
+  (still checking, missing, or failed): the `EditorDialog` host over
+  the shared `FollowOutcomeContent`. A chrome
+  surface rather than the runtime's own dialog, and that is the whole point: it
+  can open a quarter second after the click, so the kernel has to know it is the
+  open transient.
+- **`ProjectLinkRuntime`** — the Editor's adapter over the link follower in
+  [`features/links`](../../../links/AGENTS.md), mounted by `EditorView` and
+  rendering nothing. It supplies the Editor's scope, its destination, and the
+  link store as the outcome reporter, and registers the follower as the
+  navigator a click is handed to. Resolving, the scope rules, and the follow
+  procedure are not this directory's.
 
 ## Key rules
 
@@ -66,27 +64,18 @@ Beside them, three things that are not summoned surfaces:
   swept around the link is what they chose, so Cut takes that.
 - **Copy comes from the link core.** A component that spells out what a target
   means, or decides whether it can be followed, is a second classifier.
-- **Unresolved is a sentence, never a warning.** The hint says no document
-  carries that name yet and the follow offers to write the page; neither is
-  an error voice, because linking ahead of writing is the job (§5.5).
+- **Unresolved is a sentence, never a warning.** The hint says "Doesn't
+  exist yet", the same words as the chat chip's screen-reader label; it is not an error voice,
+  because linking ahead of writing is the job (§5.5). How the link itself
+  looks is the shared chip
+  ([`components/app/link-chip/`](../../../../components/app/link-chip/AGENTS.md)),
+  never a rule in this lane's stylesheet.
 - **A pending answer claims nothing.** The hint shows the destination and
-  waits, and a follow only interrupts after 250ms — long enough that a link
-  already resolved for rendering just opens.
-- **An answer belongs to a scope, not to a href.** `{ projectId, workId,
-  baseUri, revision }` is the whole semantic input to a resolution — the last
-  being which documents the project holds — so the resolver is registered per
-  scope and re-registered when any of them changes; registering forgets every
-  answer and every failure the last scope produced. A Work switch never remounts
-  the editor, a base URI arriving is a scope change (which re-asks the relative
-  links that had nothing to be relative to yet), and a rename is one too: the
-  link is spelled the same and its answer is now the wrong document.
-- **No component invalidates the link cache.** A create or a rename anywhere in
-  the app is a new document catalog, and the catalog is what the resolution
-  scope is keyed on. A mutation button that also pokes the resolution store is
-  a second owner of the same rule.
-- **A failed request is not an unresolved link.** It renders as an ordinary
-  link and says so on follow, with Try again. Drawing it dashed would tell the
-  writer their document is missing when the truth is that nobody asked.
+  waits.
+- **Following is `features/links`'.** The scope an answer belongs to, cache
+  invalidation, the 250ms checking rule, and failed-versus-unresolved are its
+  rules ([`AGENTS.md`](../../../links/AGENTS.md)). A surface here that resolves
+  a link or reads the cache to decide a click is a second follow.
 
 ## Anti-patterns
 
@@ -103,7 +92,7 @@ Beside them, three things that are not summoned surfaces:
 
 → [`../../chrome/AGENTS.md`](../../chrome/AGENTS.md) — the primitives, including
   the `SuggestionMenu` both typed-under menus render through
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — the app-side seam: the port,
-  the navigator, and what a follow does
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — the app-side seam: what the
+  Editor's adapter supplies, and who says what a follow found
 → design of record: `editor-toolbar-split/interaction-model.md` §5.5,
   mockup 06

@@ -1,8 +1,9 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
-import type {
-  ResourceCatalogCheckpoint,
-  ResourceLocation,
-  ResourceRecord,
+import {
+  type ResourceCatalogCheckpoint,
+  type ResourceLocation,
+  type ResourceRecord,
+  workAuthorityOf,
 } from "./resource-records";
 
 export type ProjectResourceLocation = ResourceLocation & { provisional: boolean };
@@ -70,8 +71,7 @@ export function projectResourceLocation(
       scheme: placement.destination.scheme,
       path: `/${[folder, placement.destination.name].filter(Boolean).join("/")}`,
       name: placement.destination.name,
-      workId: placement.destination.workId,
-      ...(placement.destination.workSlug ? { workSlug: placement.destination.workSlug } : {}),
+      ...workAuthorityOf(placement.destination),
       provisional: false,
     };
   }

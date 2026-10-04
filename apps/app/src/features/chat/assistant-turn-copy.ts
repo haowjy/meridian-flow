@@ -1,5 +1,4 @@
 /** Serialize the visible final answer into Markdown and app-free rich clipboard HTML. */
-import { remarkWikiLink } from "@meridian/markup";
 import rehypeStringify from "rehype-stringify";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
@@ -13,7 +12,6 @@ import { payloadText } from "./report-payload";
 const copyProcessor = unified()
   .use(remarkParse)
   .use(Object.values(defaultRemarkPlugins))
-  .use(remarkWikiLink)
   .use(remarkReferenceOccurrences, { occurrences: [], skills: [] })
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(Object.values(defaultRehypePlugins))
