@@ -74,28 +74,22 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
           .from(documentDerivations)
           .where(eq(documentDerivations.documentId, cut.documentId))
           .limit(1);
-        if (
-          existing &&
-          (existing.projectionExtractorVersion > w.extractorVersion ||
-            (existing.linksExtractorVersion !== null &&
-              existing.linksExtractorVersion > w.extractorVersion))
-        )
-          return false;
+        if (existing && existing.projectionExtractorVersion > w.extractorVersion) return false;
         if (
           existing &&
           existing.projectionGeneration === w.generation &&
           existing.projectionAdmissionSequence === w.admissionSequence &&
           existing.projectionLocationVersion === w.locationVersion &&
-          existing.projectionExtractorVersion === w.extractorVersion &&
-          existing.linksGeneration === w.generation &&
-          existing.linksAdmissionSequence === w.admissionSequence &&
-          existing.linksLocationVersion === w.locationVersion &&
-          existing.linksExtractorVersion === w.extractorVersion
+          existing.projectionExtractorVersion === w.extractorVersion
         )
           return true;
         const [updated] = await tx
           .update(documents)
-          .set({ markdownProjection: outputs.markdown, updatedAt: at })
+          .set({
+            markdownProjection: outputs.markdown,
+            sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
+            updatedAt: at,
+          })
           .where(
             and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)),
           )
@@ -106,10 +100,6 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
           projectionAdmissionSequence: w.admissionSequence,
           projectionLocationVersion: w.locationVersion,
           projectionExtractorVersion: w.extractorVersion,
-          linksGeneration: w.generation,
-          linksAdmissionSequence: w.admissionSequence,
-          linksLocationVersion: w.locationVersion,
-          linksExtractorVersion: w.extractorVersion,
         };
         await tx
           .insert(documentDerivations)
@@ -119,6 +109,7 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
       });
     },
     async stale(scope, page) {
+      // LIMIT bounds returned stale rows, not the cross-table freshness scan.
       const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
@@ -140,17 +131,6 @@ export function createDrizzleDocumentDerivationStore(db: Database): DocumentDeri
               ),
               ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
               ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-              isNull(documentDerivations.linksGeneration),
-              isNull(documentDerivations.linksAdmissionSequence),
-              isNull(documentDerivations.linksLocationVersion),
-              isNull(documentDerivations.linksExtractorVersion),
-              ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
-              ne(
-                documentDerivations.linksAdmissionSequence,
-                documentYjsHeads.nextAdmissionSequence,
-              ),
-              ne(documentDerivations.linksLocationVersion, documents.locationVersion),
-              ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
             ),
             scope
               ? scope.personalOwnerId

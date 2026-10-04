@@ -3,11 +3,7 @@ CREATE TABLE "document_derivations" (
 	"projection_generation" bigint NOT NULL,
 	"projection_admission_sequence" bigint NOT NULL,
 	"projection_location_version" bigint NOT NULL,
-	"projection_extractor_version" integer NOT NULL,
-	"links_generation" bigint,
-	"links_admission_sequence" bigint,
-	"links_location_version" bigint,
-	"links_extractor_version" integer
+	"projection_extractor_version" integer NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "documents" ADD COLUMN "location_version" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint

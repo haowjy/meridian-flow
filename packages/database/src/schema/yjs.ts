@@ -700,8 +700,4 @@ export const documentDerivations = pgTable("document_derivations", {
   }).notNull(),
   projectionLocationVersion: bigint("projection_location_version", { mode: "bigint" }).notNull(),
   projectionExtractorVersion: integer("projection_extractor_version").notNull(),
-  linksGeneration: bigint("links_generation", { mode: "bigint" }),
-  linksAdmissionSequence: bigint("links_admission_sequence", { mode: "bigint" }),
-  linksLocationVersion: bigint("links_location_version", { mode: "bigint" }),
-  linksExtractorVersion: integer("links_extractor_version"),
 });

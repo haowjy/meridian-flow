@@ -25,6 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       changeTrailShells,
       contextSources,
       documentBranches,
+      documentDerivations,
       documentYjsCheckpoints,
       documentYjsHeads,
       documentYjsReversalOps,
@@ -32,6 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsUpdates,
       documents,
       folders,
+      modelResponses,
       projects,
       pushLineage,
       pendingNotices,
@@ -187,6 +189,94 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => {
       await db.$client.end();
+    });
+
+    it("ContextFS AI writes return with certified projection and cannot republish a stale return value", async () => {
+      const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
+      const { DrizzleContextDocumentStore } = await import(
+        "../context/adapters/context-fs/drizzle-store.js"
+      );
+      const { DrizzleContextTreeMutationStore } = await import(
+        "../context/adapters/context-fs/drizzle-tree-mutation-store.js"
+      );
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await db.insert(modelResponses).values(
+        [TURN_ID, TURN_2_ID].map((turnId) => ({
+          id: turnId,
+          turnId,
+          sequence: 0,
+          provider: "mock",
+          model: "mock",
+          requestMessageCount: 0,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
+        })),
+      );
+      const context = new ContextFS({
+        scheme: "manuscript",
+        store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        documentCreation: collab,
+        documentSync: {
+          ...collab,
+          async writeDocument(input) {
+            const result = await collab.writeDocument(input);
+            // Reproduce the old publisher boundary without claiming a socket race:
+            // the returned serialization must never overwrite a certified cut.
+            return { ...result, markdown: "stale return value" };
+          },
+        },
+      });
+      const assertCertified = async (documentId: string, markdown: string) => {
+        const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
+        const [head] = await db
+          .select()
+          .from(documentYjsHeads)
+          .where(eq(documentYjsHeads.documentId, documentId));
+        const [watermark] = await db
+          .select()
+          .from(documentDerivations)
+          .where(eq(documentDerivations.documentId, documentId));
+        expect(row?.markdownProjection).toBe(markdown);
+        expect(row?.sizeBytes).toBe(Buffer.byteLength(markdown, "utf8"));
+        expect(watermark?.projectionGeneration).toBe(head?.authorityGeneration);
+        expect(watermark?.projectionAdmissionSequence).toBe(head?.nextAdmissionSequence);
+        expect(watermark?.projectionLocationVersion).toBe(row?.locationVersion);
+      };
+      try {
+        const created = await context.write("fresh.md", "Seed.");
+        expect(created.ok).toBe(true);
+        if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
+        await assertCertified(created.value.documentId, "Seed.\n");
+        const written = await context.write("fresh.md", "AI café.", {
+          origin: {
+            type: "agent",
+            agentSlug: "writer",
+            turnId: TURN_ID as never,
+            threadId: THREAD_ID as never,
+          },
+        });
+        expect(written.ok, JSON.stringify(written)).toBe(true);
+        await assertCertified(created.value.documentId, "AI café.\n");
+        await expect(
+          context.edit(
+            "fresh.md",
+            { kind: "append", content: "\nNext." },
+            {
+              origin: {
+                type: "agent",
+                agentSlug: "writer",
+                turnId: TURN_2_ID as never,
+                threadId: THREAD_ID as never,
+              },
+            },
+          ),
+        ).resolves.toMatchObject({ ok: true });
+        await assertCertified(created.value.documentId, "AI café.\n\nNext.\n");
+      } finally {
+        await collab.documentDerivations.stop();
+      }
     });
 
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
