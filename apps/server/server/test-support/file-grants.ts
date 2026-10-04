@@ -14,6 +14,7 @@ import {
   type FileDestination,
   type FileGrant,
 } from "../domains/file-policy/index.js";
+import { runWithEditConfirmation } from "../shared/edit-confirmation.js";
 
 export function testFileGrant(
   destination: FileDestination = { kind: "live" },
@@ -55,6 +56,30 @@ export function drizzleFileAccess(db: Database): FileAccess {
     grants: createOwnerFileGrants(),
     readAgentChain: async () => {
       throw new Error("This test's file access has no agent chains");
+    },
+  });
+}
+
+/** Runs writes as an entry point holding already confirmed grants would: for adapter tests. */
+export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
+  return runWithEditConfirmation({ workIds: [], async confirm() {} }, operation);
+}
+
+const JOURNAL_WRITES = new Set([
+  "append",
+  "appendBatch",
+  "persistUndo",
+  "persistRedo",
+  "persistRedoBatch",
+]);
+
+/** A journal whose agent writes run as a granted entry point's would. */
+export function grantedJournal<J extends object>(journal: J): J {
+  return new Proxy(journal, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function" || !JOURNAL_WRITES.has(String(property))) return value;
+      return (...args: unknown[]) => asGrantedWriter(() => value.apply(target, args));
     },
   });
 }

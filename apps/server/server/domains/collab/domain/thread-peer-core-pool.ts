@@ -25,6 +25,7 @@ import {
   type FileAccess,
   type FileAccessDenied,
   type FileGrant,
+  markReplyConfirmed,
   runWithEditGrants,
 } from "../../file-policy/index.js";
 import {
@@ -472,6 +473,8 @@ export function createThreadPeerCorePool(input: {
         record.participants.delete(core);
       }
     }
+    // The seams these documents' participants reach take this as their grant.
+    markReplyConfirmed([...record.documents.keys(), ...record.reversals.keys()]);
     await input.lockLiveDocuments(
       [...record.documents]
         .filter(([, entry]) => entry.core === input.liveUtilityCore)

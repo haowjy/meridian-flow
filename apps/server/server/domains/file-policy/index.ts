@@ -30,7 +30,9 @@ export {
 export {
   FileEditRefusedError,
   grantWorkIds,
+  markReplyConfirmed,
   runWithEditGrants,
+  UngrantedAgentWriteError,
 } from "./edit-confirmation.js";
 export {
   createFileAccess,

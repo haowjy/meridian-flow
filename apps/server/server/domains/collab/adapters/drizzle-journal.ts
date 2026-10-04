@@ -48,6 +48,7 @@ import {
   isInDrizzleTransaction,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import {
   insertionAttributions,
@@ -135,6 +136,13 @@ function collectDependentCheckTurnIds(records: readonly ReversalRecord[]): TurnI
     if (record.turnId) turnIds.add(record.turnId);
   }
   return [...turnIds] as TurnId[];
+}
+
+/** Written by an agent: its own write, or a reversal an agent asked for. */
+function agentAuthored(meta: UpdateMeta | undefined): boolean {
+  if (!meta) return false;
+  if (meta.reversalActor) return meta.reversalActor.type === "agent";
+  return meta.origin.startsWith("agent:");
 }
 
 function parseOrigin(meta: UpdateMeta): {
@@ -810,6 +818,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async append(docId, update, meta) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        if (agentAuthored(meta)) requireAgentWriteGrant([docId]);
         await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return (await appendUpdate(txDb, docId, update, meta)).seq;
@@ -831,6 +840,10 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       const journalCommitKind = isInDrizzleTransaction() ? "staged" : "durable";
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        const agentDocs = entries.filter((entry) => agentAuthored(entry.meta));
+        if (agentDocs.length > 0) {
+          requireAgentWriteGrant(uniqueSortedDocIds(agentDocs.map((entry) => entry.docId)));
+        }
         await lockSeamWorks(db as Database, []);
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
@@ -1347,6 +1360,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       let undoUpdateSeq: number | undefined;
       const result = await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        if (actor.type === "agent") requireAgentWriteGrant([docId]);
         await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         // The dependency check (any later live journal row that depends on the
@@ -1453,6 +1467,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async persistRedo(docId, redoUpdate, ref, meta) {
       const result = await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        if (agentAuthored(meta)) requireAgentWriteGrant([docId]);
         await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, [{ update: redoUpdate, ref, meta }]);
@@ -1463,6 +1478,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async persistRedoBatch(docId, entries) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        if (entries.some((entry) => agentAuthored(entry.meta))) requireAgentWriteGrant([docId]);
         await lockSeamWorks(db as Database, []);
         await lockDocumentMutation(txDb, docId);
         return persistRedoEntries(txDb, docId, entries);

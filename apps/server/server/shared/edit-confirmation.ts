@@ -5,9 +5,13 @@
  * namespace transaction) locks their Works with its own in id order, then
  * confirms them before taking any advisory lock.
  *
+ * A reply's save confirms its grants once, before any participant writes
+ * (§5.2), and marks those documents confirmed for its transaction.
+ *
  * A seam reached with no scope is one of the writers §5.1 names (a replay of
- * an already confirmed write, a derived write, a lifecycle-owned write) or an
- * entry point that has no grant yet; it keeps its own locked lifecycle check.
+ * an already confirmed write, a derived write, a lifecycle-owned write); it
+ * keeps its own locked lifecycle check. An agent write is never one of them,
+ * so an agent write with no scope and no confirmed reply is refused.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -51,4 +55,35 @@ export async function confirmScopedEdits(): Promise<void> {
   if (getDrizzleTransactionLocal<boolean>(confirmation)) return;
   await confirmation.confirm();
   setDrizzleTransactionLocal(confirmation, true);
+}
+
+const replyConfirmed = { key: "reply-confirmed-documents" };
+
+/**
+ * The reply's save confirmed these documents' grants in this transaction
+ * (§5.2). Outside a transaction (the in-memory composition) no seam checks.
+ */
+export function markReplyConfirmed(documentIds: Iterable<string>): void {
+  const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed) ?? new Set<string>();
+  for (const documentId of documentIds) confirmed.add(documentId);
+  setDrizzleTransactionLocal(replyConfirmed, confirmed);
+}
+
+/** An agent write reached a seam with no grant: an entry point skipped the file policy. */
+export class UngrantedAgentWriteError extends Error {
+  constructor(readonly documentIds: readonly string[]) {
+    super(`Agent write without a file grant: ${documentIds.join(", ")}`);
+    this.name = "UngrantedAgentWriteError";
+  }
+}
+
+/**
+ * Refuses an agent write that carries no grant: none bound to the call, and
+ * the reply saving it didn't confirm these documents.
+ */
+export function requireAgentWriteGrant(documentIds: readonly string[]): void {
+  if (scope.getStore()) return;
+  const confirmed = getDrizzleTransactionLocal<Set<string>>(replyConfirmed);
+  if (confirmed && documentIds.every((documentId) => confirmed.has(documentId))) return;
+  throw new UngrantedAgentWriteError(documentIds);
 }

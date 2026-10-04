@@ -12,7 +12,11 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { confirmEveryGrant, testFileGrant } from "../../../test-support/file-grants.js";
+import {
+  confirmEveryGrant,
+  grantedJournal,
+  testFileGrant,
+} from "../../../test-support/file-grants.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
@@ -371,10 +375,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     if (!block) throw new Error("writer target is unavailable after push commit");
     const before = Y.encodeStateVector(doc);
     model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
-    await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
+    await grantedJournal(persistence.journal).append(
+      documentId,
+      Y.encodeStateAsUpdate(doc, before),
+      {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      },
+    );
   };
   const deleteWriterPrefix = async (documentId: DocumentId, length: number) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -383,10 +391,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     if (!block) throw new Error("writer target is unavailable after push commit");
     const before = Y.encodeStateVector(doc);
     model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: length }, "");
-    await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-      origin: `human:${USER_ID}`,
-      seq: 0,
-    });
+    await grantedJournal(persistence.journal).append(
+      documentId,
+      Y.encodeStateAsUpdate(doc, before),
+      {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      },
+    );
   };
   const settlementStore = {
     ...durableSettlementStore,
@@ -801,10 +813,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           "Writer concurrent edit: ",
         );
         if (journalWriterEdit) {
-          await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-            origin: `human:${USER_ID}`,
-            seq: 0,
-          });
+          await grantedJournal(persistence.journal).append(
+            documentId,
+            Y.encodeStateAsUpdate(doc, before),
+            {
+              origin: `human:${USER_ID}`,
+              seq: 0,
+            },
+          );
         }
       });
     // The probe edit lands after the response's read but before the destructive
@@ -851,10 +867,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         null,
         markupCodec.parse("Writer captured body.\n\nSurvivor."),
       );
-      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        documentId,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
     });
     const context = {
       grant: testFileGrant(DRAFT_DESTINATION),
@@ -890,10 +910,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       if (!block) throw new Error("live writer block missing");
       const before = Y.encodeStateVector(doc);
       model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer recent: ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
     });
     return branch.branchId;
   }
@@ -910,10 +934,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         null,
         markupCodec.parse("Historical writer body.\n\nSurvivor."),
       );
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
     });
     const context = {
       sessionId: THREAD_ID,
@@ -946,10 +974,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         if (!block) throw new Error("live writer block missing");
         const before = Y.encodeStateVector(doc);
         model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Recent writer: ");
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${input.recentWriterUserId}`,
-          seq: 0,
-        });
+        await grantedJournal(persistence.journal).append(
+          ALPHA_ID,
+          Y.encodeStateAsUpdate(doc, before),
+          {
+            origin: `human:${input.recentWriterUserId}`,
+            seq: 0,
+          },
+        );
       });
     }
     return branch.branchId;
@@ -965,18 +997,26 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
       for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
         before = Y.encodeStateVector(doc);
         if (step.remint) remintMarkdown(doc, step.markdown);
         else replaceMarkdown(doc, step.markdown);
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        });
+        await grantedJournal(persistence.journal).append(
+          ALPHA_ID,
+          Y.encodeStateAsUpdate(doc, before),
+          {
+            origin: `human:${USER_ID}`,
+            seq: 0,
+          },
+        );
       }
     });
     const context = {
@@ -1087,13 +1127,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     const childUpdate = Y.encodeStateAsUpdate(source, parentVector);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       Y.applyUpdate(doc, childUpdate);
-      await persistence.journal.append(ALPHA_ID, childUpdate, {
+      await grantedJournal(persistence.journal).append(ALPHA_ID, childUpdate, {
         origin: `agent:${TURN_ID}`,
         actorTurnId: TURN_ID,
         seq: 0,
       });
       Y.applyUpdate(doc, parentUpdate);
-      await persistence.journal.append(ALPHA_ID, parentUpdate, {
+      await grantedJournal(persistence.journal).append(ALPHA_ID, parentUpdate, {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
@@ -1142,10 +1182,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, markdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
     });
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
@@ -1169,21 +1213,29 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Agent-only passage.");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `agent:${TURN_ID}`,
+          actorTurnId: TURN_ID,
+          seq: 0,
+        },
+      );
       await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
 
       const firstBlock = model.getBlocks(toDocHandle(doc))[0];
       if (!firstBlock) throw new Error("compaction probe block is unavailable");
       const beforeWriter = Y.encodeStateVector(doc);
       model.applyTextEdit(toDocHandle(doc), firstBlock, { from: 0, to: 0 }, "Writer prefix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, beforeWriter), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, beforeWriter),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
       await persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
 
       const warm = await persistence.journal.materializeDestructiveProvenance?.({
@@ -1244,7 +1296,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
-      const baseSeq = await persistence.journal.append(
+      const baseSeq = await grantedJournal(persistence.journal).append(
         ALPHA_ID,
         Y.encodeStateAsUpdate(doc, before),
         {
@@ -1266,10 +1318,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       if (!block) throw new Error("replacement probe block is unavailable");
       before = Y.encodeStateVector(doc);
       model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Retired suffix. ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
       return checkpoint.id;
     });
   }
@@ -1381,10 +1437,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        },
+      );
       const carries = Array.isArray(input.carriedMarkdown)
         ? input.carriedMarkdown
         : [input.carriedMarkdown];
@@ -1426,11 +1486,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           },
         };
         createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(doc), ir, before);
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `agent:${TURN_ID}`,
-          actorTurnId: TURN_ID,
-          seq: 0,
-        });
+        await grantedJournal(persistence.journal).append(
+          ALPHA_ID,
+          Y.encodeStateAsUpdate(doc, before),
+          {
+            origin: `agent:${TURN_ID}`,
+            actorTurnId: TURN_ID,
+            seq: 0,
+          },
+        );
       }
     });
     await collab.agentEdit().read(
@@ -1595,11 +1659,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         },
         before,
       );
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `agent:${TURN_ID}`,
-        actorTurnId: TURN_ID,
-        seq: 0,
-      });
+      await grantedJournal(persistence.journal).append(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc, before),
+        {
+          origin: `agent:${TURN_ID}`,
+          actorTurnId: TURN_ID,
+          seq: 0,
+        },
+      );
     });
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
@@ -1841,10 +1909,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         if (!block) throw new Error("live dependency block missing");
         const before = Y.encodeStateVector(doc);
         model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer follow-up: ");
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
-          seq: 0,
-        });
+        await grantedJournal(persistence.journal).append(
+          ALPHA_ID,
+          Y.encodeStateAsUpdate(doc, before),
+          {
+            origin: `human:${USER_ID}`,
+            seq: 0,
+          },
+        );
       }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
     async probeStaleSettlementClaim(claim: {
