@@ -18,6 +18,14 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   getDetached(lease: LiveDocumentSessionLease): DocumentSession;
   attachDetached(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
+  /**
+   * Drop a live room whose pending edits the server refused (4409): revoke
+   * each lease's access, which tears the session down and clears its local
+   * copy, so the next open loads the server's state instead of replaying
+   * them. Idempotent; settles (never rejects) once the drop is done or failed,
+   * and at once for a session that has nothing to drop.
+   */
+  dropRefusedRoom(session: DocumentSession): Promise<void>;
   retain(
     ownerId: string,
     leases: Iterable<LiveDocumentSessionLease>,
