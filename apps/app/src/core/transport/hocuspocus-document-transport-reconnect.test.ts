@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Recovery hints exercise the real Hocuspocus retry loop with socket-boundary fakes. */
+import { MessageType } from "@hocuspocus/provider";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -26,7 +27,9 @@ class FakeSocket extends EventTarget {
     this.readyState = 1;
     this.dispatchEvent(new Event("open"));
     // Hocuspocus resolves connection attempts on the first server frame (Ping).
-    this.dispatchEvent(new MessageEvent("message", { data: new Uint8Array([7]).buffer }));
+    this.dispatchEvent(
+      new MessageEvent("message", { data: new Uint8Array([MessageType.Ping]).buffer }),
+    );
   }
 }
 vi.mock("./tapped-websocket", () => ({
@@ -112,4 +115,29 @@ it.each(["terminal", "destroyed"])("never resurrects a %s room", async (state) =
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(5_000);
   expect(sockets).toHaveLength(2);
+});
+
+it("fences the delayed close retry while a hinted replacement is still connecting", async () => {
+  const { hint } = setup();
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[0].connected();
+  sockets[0].close(1006);
+  hint("retry-now");
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(sockets).toHaveLength(2);
+  expect(sockets[1].readyState).toBe(0);
+});
+it("fences the pre-first-message retry after a hinted replacement becomes healthy", async () => {
+  const { hint } = setup();
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[0].readyState = 1;
+  sockets[0].dispatchEvent(new Event("open"));
+  sockets[0].close(1006);
+  await vi.advanceTimersByTimeAsync(0);
+  hint("retry-now");
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[1].connected();
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(sockets).toHaveLength(2);
+  expect(sockets[1].readyState).toBe(1);
 });

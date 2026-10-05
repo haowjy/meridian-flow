@@ -33,7 +33,6 @@ vi.mock("@hocuspocus/provider", () => {
 
     constructor() {
       hocuspocus.websockets.push(this);
-      void this.connect();
     }
 
     emitClose(event: { code: number; reason: string }) {
@@ -41,6 +40,8 @@ vi.mock("@hocuspocus/provider", () => {
       setTimeout(() => void this.connect(), 1_000);
       for (const provider of this.providers) provider.onClose({ event });
     }
+
+    rejectConnectionAttempt() {}
 
     async connect() {
       this.connectCount += 1;

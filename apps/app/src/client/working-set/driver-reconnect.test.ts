@@ -2,7 +2,12 @@
 /** Shared recovery hints re-confirm working-set authority before sending pending changes. */
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConnectivityHint } from "@/core/transport/connectivity-hints";
-import { configureWorkingSetSync, hydrateWorkingSet, replaceRecentRoutes } from "./driver";
+import {
+  bindWorkingSetSyncLifetime,
+  configureWorkingSetSync,
+  hydrateWorkingSet,
+  replaceRecentRoutes,
+} from "./driver";
 import { buildWorkingSetRoute } from "./store";
 
 const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
@@ -22,7 +27,8 @@ it("retry-now confirms a suspect baseline and flushes before the report debounce
   api.put.mockResolvedValue({ revision: 1 });
   let callback: (hint: ConnectivityHint) => void = () => {};
   const stop = vi.fn();
-  configureWorkingSetSync("account", true, {
+  configureWorkingSetSync("account", true);
+  const close = bindWorkingSetSyncLifetime("account", new AbortController().signal, {
     subscribe: (_source, listener) => {
       callback = listener;
       return stop;
@@ -40,6 +46,7 @@ it("retry-now confirms a suspect baseline and flushes before the report debounce
   await vi.advanceTimersByTimeAsync(0);
   expect(api.get).toHaveBeenCalledWith("project");
   expect(api.put).toHaveBeenCalledWith("project", { recentRoutes: [route] }, { keepalive: false });
+  close();
   configureWorkingSetSync("account", false);
   expect(stop).toHaveBeenCalledTimes(1);
 });

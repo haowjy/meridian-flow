@@ -217,7 +217,7 @@ export class WsThreadTransport implements ThreadTransport {
       onConnected: () => {
         this.socket.resetBackoff();
         this.serverConnected = true;
-        this.publishConnectionState({ kind: "connected" });
+        this.socket.publishConnectionState({ kind: "connected" });
         this.sendResume();
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", projectId });

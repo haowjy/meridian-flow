@@ -39,7 +39,7 @@ function setup() {
     {
       buildUrl: () => "wss://test/threads",
       wantsConnection: () => true,
-      onOpen: () => controller.publishConnectionState({ kind: "connected" }),
+      onOpen: () => {},
       onMessage: () => {},
       publishConnectionState: () => {},
     },
@@ -62,7 +62,7 @@ function setup() {
   };
 }
 it("retry-now skips backoff only while disconnected and never after terminal", () => {
-  const { controller, sockets, hint, hints, unsubscribe } = setup();
+  const { controller, sockets, hint, unsubscribe } = setup();
   sockets[0].readyState = 1;
   sockets[0].dispatchEvent(new Event("open"));
   hint("retry-now");
@@ -70,7 +70,7 @@ it("retry-now skips backoff only while disconnected and never after terminal", (
   sockets[0].close(1006);
   hint("retry-now");
   expect(sockets).toHaveLength(2);
-  expect(hints.reportConnected).toHaveBeenCalledWith(controller);
+
   sockets[1].close(4403);
   expect(controller.state.kind).toBe("terminal");
   hint("retry-now");

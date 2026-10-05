@@ -58,6 +58,10 @@ Entry hydration is unchanged for UI plans, but when a project
 is suspect the driver does not confirm baselines from loader results — stale
 router cache cannot resurrect a trustworthy baseline mid-session.
 
-The authenticated shell injects shared connectivity hints through working-set
-configuration. `retry-now` marks baselines suspect and flushes pending reports;
-pagehide and hidden-visibility keepalive flushes remain local saving signals.
+The account preference owner configures consent synchronously before descendant
+hydration. Its committed effect separately binds shared connectivity hints to
+the account epoch. Abort or unmount disposes the subscription and fences driver
+sweeps, including pending GET/PUT completions and keepalive flushes. Effect
+replay can reopen the same account without losing preference or hydration state.
+`retry-now` marks baselines suspect and flushes pending reports; pagehide and
+hidden-visibility keepalive flushes remain local saving signals.

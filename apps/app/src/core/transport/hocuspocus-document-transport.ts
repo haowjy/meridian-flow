@@ -45,11 +45,49 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
 
-  // Hocuspocus 4.3 schedules an untracked reconnect from its close handler.
-  // Guard connect itself so a terminal room cannot resurrect after destroy().
+  private reconnectGeneration = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
   override async connect() {
-    if (this.permanentlyDestroyed) return;
+    if (this.permanentlyDestroyed || this.status === WebSocketStatus.Connected) return;
+    this.reconnectGeneration += 1;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    // Settle the superseded attempt before replacing its shared resolve/reject
+    // slot. super.connect cancels that retryer's next attempt synchronously.
+    this.rejectConnectionAttempt();
     return super.connect();
+  }
+
+  override async onOpen(event: Event) {
+    // 4.3 clears cancellation on native open, before the first frame settles
+    // the attempt. Keep it until resolution so retry-now can fence that loop.
+    const cancel = this.cancelWebsocketRetry;
+    void super.onOpen(event);
+    this.cancelWebsocketRetry = cancel;
+  }
+
+  override resolveConnectionAttempt(): void {
+    super.resolveConnectionAttempt();
+    this.cancelWebsocketRetry = undefined;
+  }
+
+  override onClose(parameters: onCloseParameters): void {
+    const shouldConnect = this.shouldConnect;
+    // Retain library cleanup/status/queue semantics, but own its otherwise
+    // untracked delayed-close timer. The abortable retry still owns failures
+    // before the first frame, with its cancellation handle retained above.
+    this.shouldConnect = false;
+    super.onClose(parameters);
+    this.shouldConnect = shouldConnect && !this.permanentlyDestroyed;
+    if (!this.shouldConnect || this.cancelWebsocketRetry) return;
+    const generation = this.reconnectGeneration;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      if (generation !== this.reconnectGeneration || !this.shouldConnect) return;
+      this.reconnectTimer = undefined;
+      void this.connect();
+    }, this.configuration.delay);
   }
 
   suspectOffline(): void {
@@ -62,6 +100,9 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
 
   override destroy(): void {
     this.permanentlyDestroyed = true;
+    this.reconnectGeneration += 1;
+    clearTimeout(this.reconnectTimer);
+    this.cancelWebsocketRetry?.();
     super.destroy();
   }
 }
@@ -164,6 +205,7 @@ export function createHocuspocusDocumentTransport({
   const websocket = new RoomScopedHocuspocusWebsocket({
     url: buildSameOriginWsUrl(yjsWsPath()),
     WebSocketPolyfill: CollabSchemaWebSocket,
+    autoConnect: false,
   });
   let currentState = mapStatus(websocket.status);
   let terminal = false;
@@ -250,13 +292,14 @@ export function createHocuspocusDocumentTransport({
         // Do not use disconnect(): it disables Hocuspocus's normal retry loop.
         websocket.suspectOffline();
       } else if (websocket.status !== WebSocketStatus.Connected) {
-        // connect() cancels the abortable retry before starting a fresh attempt.
+        // The room adapter fences both the delayed-close and abortable retries.
         void websocket.connect();
       }
     }) ?? (() => {});
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
+  void websocket.connect();
 
   if (provider.synced) {
     resolveSynced();
