@@ -114,7 +114,22 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     expect(document.activeElement).not.toBe(document.body);
     await act(async () => reject(new Error("offline")));
     expect(document.body.textContent).toContain("Couldn't switch, so you're still in Draft.");
-    expect(document.activeElement?.textContent).toBe("Keep them for review");
+    // A failed first check still names the locally known pending change.
+    expect(document.body.textContent).toContain("Book has 1 pending change waiting for review.");
+    expect(document.activeElement?.textContent).toBe("Keep it for review");
+  });
+
+  it("keeps a failed plain switch on the choices page", async () => {
+    groups = [];
+    mutateAsync = vi.fn().mockRejectedValue(new Error("offline"));
+    await act(async () => root.render(<Harness />));
+    await act(async () => findButton("AI write mode: Draft")?.click());
+    await act(async () => findButton("Auto-apply")?.click());
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn't switch, so you're still in Draft.",
+    );
+    expect(document.body.textContent).not.toContain("pending");
   });
 
   it("returns to choices after a successful confirmation and on the next open", async () => {

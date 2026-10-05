@@ -233,12 +233,12 @@ msgid "{binary} is a binary file."
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{changes, plural, one {Apply it now} other {Apply them now}}"
-msgstr ""
+#~ msgid "{changes, plural, one {Apply it now} other {Apply them now}}"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{changes, plural, one {Keep it for review} other {Keep them for review}}"
-msgstr ""
+#~ msgid "{changes, plural, one {Keep it for review} other {Keep them for review}}"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
@@ -250,6 +250,14 @@ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# more} other {# more}}"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{count, plural, one {Apply it now} other {Apply them now}}"
+msgstr ""
+
+#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+msgid "{count, plural, one {Keep it for review} other {Keep them for review}}"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
@@ -301,16 +309,16 @@ msgid "{name} has {count, plural, one {# pending change} other {# pending change
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{name} has pending changes waiting for review. From now on, AI changes go live right away."
-msgstr ""
+#~ msgid "{name} has pending changes waiting for review. From now on, AI changes go live right away."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #~ msgid "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
 #~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away."
-msgstr ""
+#~ msgid "{name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -4594,8 +4602,8 @@ msgid "You have {count, plural, one {# pending change} other {# pending changes}
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "You have pending changes waiting for review. From now on, AI changes go live right away."
-msgstr ""
+#~ msgid "You have pending changes waiting for review. From now on, AI changes go live right away."
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

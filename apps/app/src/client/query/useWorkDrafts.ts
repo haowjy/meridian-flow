@@ -7,7 +7,6 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
-import type { Work } from "@meridian/contracts/works";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
@@ -146,12 +145,10 @@ export function useWorkDrafts(
   };
 }
 
-export type UpdateWorkWriteModeMutationInput = Work["aiWriteMode"] | UpdateWorkWriteModeRequest;
-
 export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateWorkWriteModeMutationInput) => {
+    mutationFn: (input: UpdateWorkWriteModeRequest) => {
       if (!workId) throw new Error("Cannot update write mode before a work is loaded");
       return updateWorkWriteMode(projectId, workId, input);
     },
