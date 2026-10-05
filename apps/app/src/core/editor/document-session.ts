@@ -78,7 +78,7 @@ export type DocumentSessionSnapshot = {
   status: DocumentSessionStatus;
   connectionState: DocumentSessionConnectionState | null;
   localPersistenceSynced: boolean;
-  /** A cached session whose adoption into server ownership cannot proceed: edits stay local only. */
+  /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
   adoptionStalled: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
@@ -166,7 +166,8 @@ export class DocumentSession {
   private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
-  private adoptionStalled = false;
+  /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
+  private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeChangeEvents: (() => void) | null = null;
@@ -238,6 +239,7 @@ export class DocumentSession {
     }
 
     this.transportAttachmentPending = true;
+    this.adoptionFailed = false;
     this.recomputeStatus();
     if (this.persistence && !this.localPersistenceSynced) {
       void this.waitForLocalPersistenceTransportGate().then(() => {
@@ -264,7 +266,6 @@ export class DocumentSession {
       throw error;
     }
     this.transportAttachmentPending = false;
-    this.adoptionStalled = false;
     this.resolveTransportAttached();
     this.status = "syncing";
     this.unsubscribeTransportStatus =
@@ -334,20 +335,23 @@ export class DocumentSession {
       status: this.status,
       connectionState: this.transportState,
       localPersistenceSynced: this.localPersistenceSynced,
-      adoptionStalled: this.adoptionStalled,
+      adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
     };
   }
 
   /**
-   * The adopter reports that a cached session cannot reach server ownership
-   * (authority unreachable or adoption failed). Only an explicit report says so;
-   * a session merely awaiting its transport stays quietly detached.
+   * The adopter reports whether a cached session cannot reach server ownership
+   * (authority unreachable or adoption failed). A failure is recorded only while
+   * the session is `detached` with no transport; otherwise it is a no-op, so a
+   * transport-owned or destroyed session is never labelled stalled.
    */
-  setAdoptionStalled(stalled: boolean): void {
-    if (this.destroyed || this.adoptionStalled === stalled) return;
-    this.adoptionStalled = stalled;
+  reportAdoptionStalled(stalled: boolean): void {
+    if (this.destroyed) return;
+    const next = stalled && this.status === "detached";
+    if (this.adoptionFailed === next) return;
+    this.adoptionFailed = next;
     this.emit();
   }
 
