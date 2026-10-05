@@ -2,7 +2,6 @@
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
-import type { FileAccessLevel } from "./file-access.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
 
@@ -111,12 +110,6 @@ export type CatalogSnapshot = {
   headRevision: string;
   cursor: CatalogCursor;
   entries: readonly CatalogEntry[];
-  /**
-   * The asking person's access to every file this scope owns (file-access §6):
-   * access varies by owner, not by row, so archiving a Work changes it without
-   * touching its rows. Absent for the user scope.
-   */
-  access?: FileAccessLevel;
 };
 
 export type CatalogChanges =
