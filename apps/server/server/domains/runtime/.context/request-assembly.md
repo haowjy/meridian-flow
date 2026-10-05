@@ -55,7 +55,7 @@ dropping `model-invocable: false`; the model loads one with the `skill` tool
 (D58). Subagent threads read their own binding the same way as primaries;
 nothing falls back to the parent's or the writer's skills. Account installs
 never join the prompt or `skills://`. `skills.load` bodies are baked into the
-first prompt (rendered like a slash activation, headed by `skill`'s result
+first prompt (rendered like a slash activation, headed by the shared skill-file
 header when the model can read the skill) regardless of `model-invocable`,
 which only governs what `skills://` shows. The first-bake
 CAS persists the Agent-available slugs (`[]` when the list is empty). Skills

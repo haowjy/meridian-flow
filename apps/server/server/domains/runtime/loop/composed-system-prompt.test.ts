@@ -62,7 +62,7 @@ describe("assembleComposedSystemPrompt", () => {
       ],
     });
     expect(prompt).toContain(
-      'skills://story-review/SKILL.md (read-only)\nFind this skill\'s other files with ls("skills://story-review").\n\ndescription: Review drafts.\n\nReview body.\n',
+      "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\ndescription: Review drafts.\n\nReview body.\n",
     );
   });
 

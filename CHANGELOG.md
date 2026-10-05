@@ -13,7 +13,7 @@
 - `read`, `search` and `ls` take `version: draft | live` (omitted: the version your writes change). A write against a different version than the last read returns `read_required`.
 - Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
 - Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
-- Skills are read-only files under `skills://<skill>/`. The prompt lists available skills by slug, and `skill({name})` loads one: `read`'s result for its `SKILL.md` plus a line pointing at `ls` for the skill's other files, which `read` and `ls` reach. An agent sees only the skills its own Agent preloads or offers as `model-invocable`; `skill` refuses any other with the names it can load, and `read` answers not found. `write` and `search` refuse `skills://`.
+- Skills are read-only files under `skills://<skill>/`. The prompt lists available skills by slug, and `skill({name})` loads one, returning exactly what `read` returns for its `SKILL.md`: the address, a line saying paths in the skill are relative to its folder, then the text. `read` and `ls` reach the skill's other files. An agent sees only the skills its own Agent preloads or offers as `model-invocable`; `skill` refuses any other with the names it can load, and `read` answers not found. `write` and `search` refuse `skills://`.
 - A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
 - An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
