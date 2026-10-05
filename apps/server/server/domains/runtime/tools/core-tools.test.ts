@@ -6,7 +6,7 @@ import {
   createCoreToolRegistrations,
   WorkCommandSchema,
 } from "./core-tools.js";
-import type { LsResult } from "./ls-result.js";
+import { type LsResult, sortLsEntries } from "./ls-result.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
 
@@ -145,6 +145,20 @@ describe("ls", () => {
         "  notes.pdf (pdf, 1.2 MB, edited 2026-10-04 09:05 UTC, read-only)",
       ].join("\n"),
     );
+  });
+
+  it("sorts folders first, then names in natural order", () => {
+    const uris = ["kb://ch-10.md", "kb://b", "kb://ch-2.md", "kb://a"];
+    const entries = uris.map((uri) => ({
+      uri,
+      kind: uri.endsWith(".md") ? ("file" as const) : ("directory" as const),
+    }));
+    expect(sortLsEntries(entries).map(({ uri }) => uri)).toEqual([
+      "kb://a",
+      "kb://b",
+      "kb://ch-2.md",
+      "kb://ch-10.md",
+    ]);
   });
 
   // D43: the app and code mode read the typed listing, persisted beside the text.

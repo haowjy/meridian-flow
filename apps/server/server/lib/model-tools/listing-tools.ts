@@ -16,6 +16,7 @@ import {
   refuseSkillSearch,
   type SearchToolInput,
   skillsRootEntries,
+  sortLsEntries,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { containerReadonly, withDraftWork } from "./file-access.js";
@@ -45,7 +46,10 @@ function listedDocumentIds(rows: readonly { documentId?: string }[]): DocumentId
 export function createLsHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext): Promise<LsResult | ToolErrorOutput> => {
     const { path, details = false, version } = input as LsToolInput;
-    if (path && isSkillsUri(path)) return listSkillDir(deps, ctx.threadId, path);
+    if (path && isSkillsUri(path)) {
+      const skills = await listSkillDir(deps, ctx.threadId, path);
+      return { uri: skills.uri, entries: sortLsEntries(skills.entries) };
+    }
     const call = await listingCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
@@ -72,7 +76,8 @@ export function createLsHandler(deps: ToolWiringDeps) {
       }),
     );
     const listing = entries.flat();
-    if (path) return { uri: result.value.uri, entries: listing };
+    // Storage returns rows unordered; the model reads a sorted listing.
+    if (path) return { uri: result.value.uri, entries: sortLsEntries(listing) };
     return { uri: null, entries: [...listing, ...(await skillsRootEntries(deps, ctx.threadId))] };
   };
 }
