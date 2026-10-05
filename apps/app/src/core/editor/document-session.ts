@@ -87,6 +87,8 @@ export type DocumentSessionSnapshot = {
    */
   access: DocumentSessionAccess | null;
   localPersistenceSynced: boolean;
+  /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
+  adoptionStalled: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
 };
@@ -182,6 +184,8 @@ export class DocumentSession {
   private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
+  /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
+  private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeTransportAccess: (() => void) | null = null;
@@ -255,6 +259,7 @@ export class DocumentSession {
     }
 
     this.transportAttachmentPending = true;
+    this.adoptionFailed = false;
     this.recomputeStatus();
     if (this.persistence && !this.localPersistenceSynced) {
       void this.waitForLocalPersistenceTransportGate().then(() => {
@@ -371,9 +376,24 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       localPersistenceSynced: this.localPersistenceSynced,
+      adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
     };
+  }
+
+  /**
+   * The adopter reports whether a cached session cannot reach server ownership
+   * (authority unreachable or adoption failed). A failure is recorded only while
+   * the session is `detached` with no transport; otherwise it is a no-op, so a
+   * transport-owned or destroyed session is never labelled stalled.
+   */
+  reportAdoptionStalled(stalled: boolean): void {
+    if (this.destroyed) return;
+    const next = stalled && this.status === "detached";
+    if (this.adoptionFailed === next) return;
+    this.adoptionFailed = next;
+    this.emit();
   }
 
   /** Append one session-scoped repair verdict and notify every report surface. */

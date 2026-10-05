@@ -18,7 +18,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -35,6 +35,7 @@ import type {
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
+import { deriveDocument } from "../domain/document-derivations.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
@@ -45,10 +46,13 @@ import type {
 } from "../domain/ports/pending-settlement-store.js";
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
+import { loadDocumentState } from "./document-loader.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
+import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
+import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -503,15 +507,26 @@ async function completeStagedPush(
       schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
-    const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
-    await upsertHead(db, documentId, canonicalRow.id, durable.stateVector);
-    await projectionEffects.applyPushCompletion({
-      documentId: branch.documentId,
-      markdown: durable.markdownProjection,
-      ...(branch.workId ? { workId: branch.workId } : {}),
-      at: new Date(),
-    });
   }
+  const derivation = await deriveDocument(
+    {
+      store: createDrizzleDocumentDerivationStore(db as Database),
+      serializer: durableProjectionSerializer,
+    },
+    documentId,
+  );
+  // Completion already owns the mutation transaction: a stale cut is not an
+  // expected scheduling deferral here and must not certify push completion.
+  if (derivation.status !== "derived")
+    throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
+  const { stateVector } = derivation;
+  await upsertHead(db, documentId, canonicalRow.id, stateVector);
+  await projectionEffects.applyPushCompletion({
+    documentId,
+    ...(branchRow?.workId ? { workId: branchRow.workId } : {}),
+    at: new Date(),
+  });
+
   await joinAdmissionWithinTx(db, {
     documentId,
     source: { kind: "staged_push", id: String(canonicalRow.id) },
@@ -881,96 +896,16 @@ export async function joinAdmissionWithinTx(
   return joined;
 }
 
-async function deriveDurableProjection(
-  db: DrizzleDb,
-  documentId: DocumentId,
-  durableProjectionSerializer: DurableProjectionSerializer,
-): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
-  await lockDocumentYjsHead(db, documentId);
-  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
-    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId));
-  const checkpoint = minRetainedSeq
-    ? (
-        await db
-          .select()
-          .from(documentYjsCheckpoints)
-          .where(
-            and(
-              eq(documentYjsCheckpoints.documentId, documentId),
-              lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
-            ),
-          )
-          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-          .limit(1)
-      )[0]
-    : null;
-  const rows = await db
-    .select({ updateData: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId))
-    .orderBy(documentYjsUpdates.id);
-  const doc = createCollabYDoc({ gc: false });
-  try {
-    if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-    for (const row of rows) Y.applyUpdate(doc, row.updateData);
-    const markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
-    return {
-      markdownProjection,
-      stateVector: Y.encodeStateVector(doc),
-    };
-  } finally {
-    doc.destroy();
-  }
-}
-
 async function materializeDurableDocumentBefore(
   db: DrizzleDb,
   documentId: DocumentId,
   beforeUpdateSeq: number,
 ): Promise<Y.Doc> {
-  const [checkpoint] = await db
-    .select()
-    .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, documentId),
-        lt(documentYjsCheckpoints.upToSeq, beforeUpdateSeq),
-      ),
-    )
-    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-    .limit(1);
-  const rows = await db
-    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, documentId),
-        lt(documentYjsUpdates.id, beforeUpdateSeq),
-        checkpoint ? sql`${documentYjsUpdates.id} > ${checkpoint.upToSeq}` : undefined,
-      ),
-    )
-    .orderBy(documentYjsUpdates.id);
+  const journal = createDrizzleJournal(db as Database);
+  // Journal bounds are inclusive; settlement must exclude its own push update.
+  const snapshot = await journal.read(documentId, { until: beforeUpdateSeq - 1 });
+  const state = await loadDocumentState(journal, documentId, undefined, snapshot);
   const doc = createCollabYDoc({ gc: false });
-  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-  for (const row of rows) Y.applyUpdate(doc, row.update);
+  if (state) Y.applyUpdate(doc, state);
   return doc;
-}
-
-async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {
-  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packedSchemaVersion,
-      latestUpdateSeq: 0,
-      latestStateVector: Buffer.from(new Uint8Array()),
-      latestCheckpointId: null,
-    })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
-  await db.execute(
-    sql`SELECT document_id FROM document_yjs_heads WHERE document_id = ${documentId} FOR UPDATE`,
-  );
 }

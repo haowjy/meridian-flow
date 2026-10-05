@@ -114,9 +114,14 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
   };
 }
 
-export function createDrizzleAuthorityGenerationReader(db: AuthorityHeadDb) {
+/**
+ * Reads through the caller's transaction, like the journal snapshot it validates.
+ * A room loaded inside a transaction that already admitted to this head would
+ * otherwise wait on its own row lock from a second connection.
+ */
+export function createDrizzleAuthorityGenerationReader(db: Database) {
   return async (documentId: DocumentId): Promise<bigint> =>
-    (await ensureAndReadDocumentAuthorityHead(db, documentId)).generation;
+    (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
 }
 
 async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {

@@ -45,6 +45,7 @@ function sessionFor(roomKey: string): DocumentSession {
     connectionState: null,
     access: "edit",
     localPersistenceSynced: true,
+    adoptionStalled: false,
     schemaFence: null,
     schemaRepairs: [],
   };

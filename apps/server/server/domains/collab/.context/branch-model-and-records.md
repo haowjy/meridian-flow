@@ -50,10 +50,12 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
-Live checkpoints are a separate cadence from those pulls: auto every 100 updates
-appended to the log (`reason: "auto"`), and Hocuspocus `onStoreDocument` at
-`debounce: 2000` / `maxDebounce: 10000` plus last-client disconnect
-(`reason: "store"`).
+Live checkpoints are a separate cadence from those pulls. They come from four
+sources: the initialize-only seed (`up_to_seq = 0`); Hocuspocus
+`onStoreDocument` at `debounce: 2000` / `maxDebounce: 10000` plus last-client
+disconnect; explicit `CollabDomain.checkpoint`; and `journal.compact`. Compaction
+is implemented but has no production caller, so live journal rows are never
+deleted.
 
 **Releasing a live room never waits on a database lock.** Closing the last
 connection runs `onStoreDocument` inline in the releaser's async context, often
@@ -172,8 +174,9 @@ persist their branch state inside that transaction; they never push live (D59).
   lineage never duplicates block diffs.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
-sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
-recovers storage, and journal row counts are not equivalent to semantic edits.
+sentence becomes ~50 rows / ~935 bytes. Journal row counts are not equivalent
+to semantic edits. Checkpoint compaction would recover the storage, but it has
+no production caller.
 Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 

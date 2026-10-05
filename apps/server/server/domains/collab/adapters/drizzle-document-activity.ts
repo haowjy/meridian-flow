@@ -11,14 +11,6 @@ export function createDrizzleDocumentProjectionEffects(
   workProjection?: WorkProjectionMutation,
 ): DocumentProjectionEffects {
   return {
-    async updateProjection(input) {
-      const activeDb = currentDrizzleDb(db);
-      await activeDb
-        .update(documents)
-        .set(projectionValues(input.markdown, input.at))
-        .where(eq(documents.id, input.documentId));
-    },
-
     async touchDocumentActivity(input) {
       const activeDb = currentDrizzleDb(db);
       const [scope] = await activeDb
@@ -59,10 +51,6 @@ export function createDrizzleDocumentProjectionEffects(
     async applyPushCompletion(input) {
       const activeDb = currentDrizzleDb(db);
       await activeDb
-        .update(documents)
-        .set(projectionValues(input.markdown, input.at))
-        .where(eq(documents.id, input.documentId));
-      await activeDb
         .update(threadDocuments)
         .set({ lastTouchedAt: input.at })
         .where(eq(threadDocuments.documentId, input.documentId));
@@ -82,14 +70,5 @@ export function createDrizzleDocumentProjectionEffects(
           .where(eq(projects.id, scope.projectId));
       }
     },
-  };
-}
-
-/** A tracked document's size is its Markdown projection's, kept with it. */
-function projectionValues(markdown: string, at: Date) {
-  return {
-    markdownProjection: markdown,
-    sizeBytes: Buffer.byteLength(markdown, "utf8"),
-    updatedAt: at,
   };
 }

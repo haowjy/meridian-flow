@@ -189,7 +189,8 @@
   replacement, while checkpoint state supplies sweep policy's neutral covered
   root floor. Under the same document-mutation lock as generation replacement,
   compaction reads, folds, and deletes only the current authority generation;
-  retired-generation suffixes never enter restored authority. Durable trails
+  retired-generation suffixes never enter restored authority. Compaction
+  (`journal.compact`) is implemented but has no production caller. Durable trails
   retain the ordinary before/after record regardless of classification; writer
   lineage only decides whether an authenticated connected session elevates the
   mark.

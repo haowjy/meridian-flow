@@ -49,6 +49,7 @@ function versionGateServices(
       members: [liveDocumentName],
     })),
     reconcileProjectManifest: vi.fn(async () => undefined),
+    validateHocuspocusDocument: vi.fn(async () => {}),
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,

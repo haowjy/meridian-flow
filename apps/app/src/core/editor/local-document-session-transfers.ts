@@ -208,14 +208,14 @@ export class LocalDocumentSessionTransfers
             if (!state || (state.session && state.session !== session))
               throw new Error("A different live session won adoption");
             state.session = session;
-            state.persistenceGeneration = input.generation;
+            state.persistenceGeneration = lease.persistenceGeneration;
             state.exactDatabaseName = input.pending.exactDatabaseName;
             const ownerId = `local-transfer:${input.pending.transitionId}`;
             this.registry.retain(ownerId, [lease], { detachedDocumentIds: [input.documentId] });
             let released = false;
             const ownership: TransferredDocumentSessionOwnership = Object.freeze({
               lease,
-              persistenceGeneration: input.generation,
+              persistenceGeneration: lease.persistenceGeneration,
               exactDatabaseName: input.pending.exactDatabaseName,
               release: () => {
                 if (released) return;

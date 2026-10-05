@@ -11,6 +11,7 @@ import {
   type ResourceNamespaceLock,
   type ResourceRecord,
 } from "@meridian/resource-replica";
+import type { DocumentSession } from "@/core/editor/document-session";
 import type {
   LocalDocumentSessionAdoptionPort,
   LocalDocumentSessionHandoff,
@@ -108,7 +109,12 @@ export class ResourceSessionAdoptionCoordinator {
     );
     if (opened.kind !== "opened") return opened.kind === "cancelled" ? "blocked" : "waiting";
     try {
-      return await this.reconcileOpen(key, witness);
+      const result = await this.reconcileOpen(key, witness, opened.handle.session);
+      if (result === "adopted") opened.handle.session.reportAdoptionStalled(false);
+      return result;
+    } catch (error) {
+      opened.handle.session.reportAdoptionStalled(true);
+      throw error;
     } finally {
       opened.handle.release();
     }
@@ -117,6 +123,7 @@ export class ResourceSessionAdoptionCoordinator {
   private async reconcileOpen(
     key: ResourceKey,
     witness: SessionAdoption,
+    session: DocumentSession,
   ): Promise<ResourceSessionAdoptionResult> {
     const transfer = await this.content.reserveTransfer(
       {
@@ -131,7 +138,7 @@ export class ResourceSessionAdoptionCoordinator {
     );
     if (transfer.kind === "adopted") {
       this.activeTransfers.delete(encodeURIComponent(key.handle));
-      return this.finishRecordedAdoption(key, witness, transfer.ownership.persistenceGeneration);
+      return this.finishRecordedAdoption(key, witness, transfer.ownership.lease.generation);
     }
     if (transfer.kind === "waiting") return "waiting";
     this.activeTransfers.set(encodeURIComponent(key.handle), { key, handoff: transfer.handoff });
@@ -153,8 +160,10 @@ export class ResourceSessionAdoptionCoordinator {
       witness.documentId,
       this.close.signal,
     );
-    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
+    if (authority.kind !== "available" || authority.documentId !== witness.documentId) {
+      session.reportAdoptionStalled(true);
       return "waiting";
+    }
     assertAvailabilityGeneration(authority.generation);
     const authorityState = await this.adoption.inspect({
       documentId: witness.documentId,

@@ -20,18 +20,6 @@ perf bench's item 9 shows how), then restructure so no path waits for a
 connection while holding one. See
 [file-policy performance](../../file-policy/.context/performance.md).
 
-## Refresh the markdown projection after human Yjs writes
-
-The WebSocket persistence path durably journals and checkpoints human Yjs
-updates but does not schedule `DocumentProjectionRefresher.refresh`.
-`documents.markdown_projection` can therefore remain at the pre-edit manuscript
-while the CRDT head is current; AI context and any projection reader then see
-stale prose. Define the post-journal projection obligation for human writes and
-make it retryable without delaying each live update acknowledgement.
-
-Affected paths: `apps/server/server/lib/yjs-ws-handler.ts`, the collab durable
-projection port/adapter, and projection consumers.
-
 ## Draft preview fails on empty paragraphs
 
 The draft-preview endpoint returns HTTP 500 when a draft contains an empty

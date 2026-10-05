@@ -352,7 +352,14 @@ export function createMutationCommit(deps: {
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
       input.journalEntries.length > 0
-        ? (await commitJournalBatch(input.journalEntries)).journalCommitKind
+        ? (
+            await commitJournalBatch(
+              input.journalEntries.map((entry) => ({
+                ...entry,
+                authority: coordinator.documentAuthority?.(liveDoc),
+              })),
+            )
+          ).journalCommitKind
         : null;
     if (journalCommitKind) input.onJournalAccepted?.(journalCommitKind);
     const current = input.preflight

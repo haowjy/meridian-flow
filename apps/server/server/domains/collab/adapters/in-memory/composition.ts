@@ -24,10 +24,7 @@ import {
 } from "../../domain/agent-edit-runtime.js";
 import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
-import {
-  createDocumentProjectionRefresher,
-  createDocumentWriteHookRunner,
-} from "../../domain/document-projection-refresher.js";
+import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
@@ -110,11 +107,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  const projections = createDocumentProjectionRefresher({
-    documents: runtime.markdownDocuments,
-    runDocumentWriteHook,
-    diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
-  });
+  const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal,
     hocuspocus: hocuspocusBinding.current,
@@ -166,6 +159,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
@@ -207,7 +201,19 @@ export function createInMemoryCollabDomain(): CollabDomain {
       writeDocument: runtime.markdownDocuments.writeDocument,
       editDocument: runtime.markdownDocuments.editDocument,
     },
-    projections: { refreshDocumentProjection: projections.refresh },
+    projections: {
+      refreshDocumentProjection: projections.refresh,
+      documentDerivations: {
+        derive: async (documentId) => {
+          await projections.refresh({ documentId });
+          return { status: "missing" };
+        },
+        schedule: () => {},
+        sweep: async () => 0,
+        flush: async () => {},
+        stop: async () => {},
+      },
+    },
     lineage,
     responses: responseFinalizer,
     checkpoints,
