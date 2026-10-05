@@ -85,7 +85,7 @@ failure or cancellation leaves it in place. Later turns send
 (plus the spawn description and, for a subagent thread, `return_result`) every
 turn. Live policy from the immutable binding gates execution every turn:
 freezing pins what the model is *told* it can call, never what dispatch and
-the permission gate allow. A frozen advertised tool missing from the live
+the tool policy allow. A frozen advertised tool missing from the live
 registry returns an ordinary `Tool not found` tool result
 (`tools/tool-executor.ts`), because dispatch is by name against the live
 registry.
