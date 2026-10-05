@@ -352,6 +352,7 @@ describe("RunSession", () => {
         status: 402,
         message: providerMessage.slice(0, 1_000),
         gatewayCallId: captured?.gatewayCallId,
+        retryable: false,
       },
     });
   });

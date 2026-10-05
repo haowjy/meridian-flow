@@ -2,7 +2,12 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  isProviderRefusal,
+  isTerminalTurnStatus,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
@@ -197,7 +202,15 @@ function AssistantTurnComponent({
         {isErrored ? (
           <ErrorBlock
             isLatest={endsTranscript}
-            kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
+            kind={
+              replyRetry?.requestLost
+                ? "retry"
+                : failedSendRetry
+                  ? "send"
+                  : isProviderRefusal(turn.metadata)
+                    ? "refused"
+                    : "generation"
+            }
             onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
             retryRefused={replyRetry?.refused ?? false}
           />

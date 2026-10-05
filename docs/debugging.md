@@ -147,8 +147,11 @@ When a provider answers a model call with an error, three places keep it:
 ```
 
 - **The failed reply** keeps `metadata.providerError`: `{ status, message,
-  gatewayCallId }`, with the provider's message capped at 1,000 characters.
-  It is owner-scoped like the transcript and survives restarts. `thread view`
+  gatewayCallId, retryable }`, with the provider's message capped at 1,000
+  characters. It is owner-scoped like the transcript and survives restarts.
+  `retryable: false` is the gateway's verdict that resending fails the same
+  way; the app then shows "The AI provider turned this request down." with no
+  Retry, and never shows the message. `thread view`
   truncates the message to 300 characters; `--full` prints all of it.
   `turn.error` stays the writer-facing copy.
 - **The capture record** for that call holds `providerError: { status, body }`,

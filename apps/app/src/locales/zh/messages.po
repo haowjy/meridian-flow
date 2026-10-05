@@ -3634,6 +3634,14 @@ msgstr ""
 msgid "The AI asked you a question"
 msgstr ""
 
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down."
+msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
+msgstr ""
+
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
 msgstr ""
