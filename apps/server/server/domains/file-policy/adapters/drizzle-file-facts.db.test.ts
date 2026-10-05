@@ -115,17 +115,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toBeNull();
     });
 
-    it("reads lifecycle through folders and Works, under locks too", async () => {
+    it("reads lifecycle through folders and Works", async () => {
       const db = database.current;
       await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, chapters));
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));
-      const [ch1, scratchNote] = await createDrizzleFileFacts(db).loadLocked(
-        [
-          { target: { kind: "document", documentId: chapter } },
-          { target: { kind: "document", documentId: note } },
-        ],
-        [a],
-      );
+      const facts = createDrizzleFileFacts(db);
+      const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
+      const scratchNote = await facts.load({ target: { kind: "document", documentId: note } });
       expect(ch1?.deleted).toBe(true);
       expect(scratchNote?.ownerWork?.archived).toBe(true);
     });

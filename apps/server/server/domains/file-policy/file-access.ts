@@ -46,12 +46,13 @@ export interface FileAccess {
     destination: FileDestination,
   ): Promise<FileGrant<"edit"> | FileAccessDenied>;
   /**
-   * Authoritative, inside the ambient save transaction, once per reply
-   * (§5, §5.2): locks the Works the grants' facts name in id order, re-reads
-   * facts and each agent chain, and re-runs the policy at each grant's
-   * destination. A file whose owner or draft Work moved outside the locked
-   * set is refused, since locking it now would break the id order. Refused
-   * grants are returned, not thrown, so the rest of the reply can commit.
+   * Authoritative, inside the ambient transaction (§5, §5.2). The caller has
+   * already locked the Works the grants' facts name (`grantWorkIds`), in one
+   * id-ordered select with its own. Re-reads facts and each agent chain, and
+   * re-runs the policy at each grant's destination. A file whose owner or
+   * draft Work moved outside that locked set is refused, since locking it now
+   * would break the id order. Refused grants are returned, not thrown, so the
+   * rest of the reply can commit.
    */
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileAccessDenied[]>;
   /**
@@ -102,13 +103,15 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
 
     async confirmEdit(grants) {
       const locked = new Set(grants.flatMap((grant) => grantWorkIds(grant.facts)));
-      const fresh = await deps.facts.loadLocked(
-        grants.map(({ facts, destination }) => ({
-          target: facts.target,
-          ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
-        })),
-        [...locked],
-      );
+      const fresh: (FileFacts | null)[] = [];
+      for (const { facts, destination } of grants) {
+        fresh.push(
+          await deps.facts.load({
+            target: facts.target,
+            ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
+          }),
+        );
+      }
       const chains = new Map<ThreadId, Promise<AgentChain>>();
       const freshChain = (threadId: ThreadId) => {
         let chain = chains.get(threadId);

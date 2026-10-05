@@ -14,6 +14,7 @@ import {
   runOutsideDrizzleTransaction,
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
+import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
@@ -279,6 +280,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
     fileAccess: deps.fileAccess,
+    async lockWorks(workIds) {
+      await lockWorksInIdOrder(currentDrizzleDb(deps.db), workIds);
+    },
     async lockLiveDocuments(documentIds) {
       const tx = currentDrizzleDb(deps.db);
       for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);

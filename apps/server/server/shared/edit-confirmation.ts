@@ -23,7 +23,7 @@ import {
 export interface EditConfirmation {
   /** Named Works the grants lock, so a seam sorts them with its own Work locks. */
   readonly workIds: readonly string[];
-  /** Locks and re-checks the grants in the ambient transaction; throws on a refusal. */
+  /** Re-checks the grants under the seam's Work locks, in its transaction; throws on a refusal. */
   confirm(): Promise<void>;
   /** The grants name each document, or it lies in a container they grant. */
   covers(documentIds: readonly string[]): Promise<boolean>;

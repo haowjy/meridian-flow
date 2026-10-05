@@ -107,6 +107,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
   const projections = createDocumentProjectionRefresher({

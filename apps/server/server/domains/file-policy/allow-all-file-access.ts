@@ -44,9 +44,6 @@ export function createAllowAllFileAccess(): FileAccess {
       async load(request) {
         return openFacts(request);
       },
-      async loadLocked(requests) {
-        return requests.map(openFacts);
-      },
       async loadList(documentIds, draftWorkId) {
         return new Map(
           documentIds.map((documentId: DocumentId) => [

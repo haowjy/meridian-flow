@@ -26,6 +26,7 @@ import {
   type FileAccessDenied,
   type FileDestination,
   type FileGrant,
+  grantWorkIds,
   markReplyConfirmed,
   runWithEditGrants,
   targetDocumentId,
@@ -107,6 +108,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
@@ -114,6 +116,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
     liveHistory: input.journal,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
+    lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     responseTransactionSettlement: input.responseTransactionSettlement,
@@ -221,6 +224,8 @@ export function createThreadPeerCorePool(input: {
    * a reply's save. Authorizes a reversal at the destination its write landed in.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  /** Locks Work rows `FOR NO KEY UPDATE` in one id-ordered select, in the save's transaction. */
+  lockWorks(workIds: readonly string[]): Promise<void>;
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   maxThreadCores?: number;
@@ -460,7 +465,9 @@ export function createThreadPeerCorePool(input: {
   async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
     const pinned = [...record.documents, ...record.reversals];
     if (pinned.length === 0) return [];
-    const refused = await input.fileAccess.confirmEdit(pinned.map(([, entry]) => entry.grant));
+    const grants = pinned.map(([, entry]) => entry.grant);
+    await input.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
+    const refused = await input.fileAccess.confirmEdit(grants);
     const refusals = new Map<DocumentId, FileAccessDenied>();
     for (const denial of refused) refusals.set(targetDocumentId(denial.target), denial);
     for (const documentId of refusals.keys()) {

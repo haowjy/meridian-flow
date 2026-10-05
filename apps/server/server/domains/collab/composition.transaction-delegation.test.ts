@@ -29,6 +29,7 @@ function createCore(
     commitThreadResponseAtomically,
     ...inProcessResponseTransactions,
     fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
   return { core, ...cores };
