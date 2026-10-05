@@ -241,8 +241,9 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`read`, `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
-`thread_report`, and `return_result`. `ask_user` and `helper-result` render
+`read`, `write`, `work`, `ls`, `search`, `skill`, `ask_user`, `spawn`,
+`thread_message`, `thread_report`, `thread_ls`, `thread_history`, and
+`return_result`. `ask_user` and `helper-result` render
 through custom cards; `spawn` and a foreground `thread_message` that ran have
 hidden tool rows because the retained invocation card owns their writer
 surface, while a queued or failed `thread_message` shows as its own row
