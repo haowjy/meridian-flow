@@ -193,8 +193,10 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     phrases: (tool) => {
       const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
-      const skill = humanizeSkillSlug(slug);
-      return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
+      // The quotes ride inside the value: an apostrophe in an ICU message
+      // escapes the placeholder next to it.
+      const skill = `'${humanizeSkillSlug(slug)}'`;
+      return tenses(t`Invoking ${skill}…`, t`Invoked ${skill}`);
     },
     failureVerb: () => t`Couldn't run that skill`,
     pathlessTitle: null,

@@ -89,7 +89,7 @@ function writeModeLines(
     }
     if (work.aiWriteMode === "direct") {
       return [
-        "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, check with the user, then unarchive it with work unarchive.",
+        "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
       ];
     }
     return [

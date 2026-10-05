@@ -67,9 +67,9 @@ describe("skill rows", () => {
         "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\n# Story review",
     });
 
-    expect(toolActivityPhrase(tool)).toEqual({ verb: "Invoked the Story Review skill" });
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Invoked 'Story Review'" });
     expect(toolActivityPhrase({ ...tool, status: "partial" })).toEqual({
-      verb: "Invoking the Story Review skill…",
+      verb: "Invoking 'Story Review'…",
     });
     expect(rendererFor("skill").expand).toBeUndefined();
   });
