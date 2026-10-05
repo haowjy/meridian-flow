@@ -19,7 +19,8 @@
 - `summary/transcript.ts`: consider extracting the document body for the short
   read excerpt, while preserving result status and its re-readable URI. The
   current 1,200-character rendered-result prefix is correct but spends some of
-  its excerpt budget on the agent-edit envelope (p8916, non-blocking).
+  its excerpt budget on the status line and each block's `hash|` prefix
+  (p8916, non-blocking).
 
 - `loop/run-session.ts` / `adapters/drizzle-run-claim.ts`: distinguish intentional
   terminal-transaction lease release from lease loss in the heartbeat. `renew`

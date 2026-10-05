@@ -80,7 +80,7 @@ In progress
   ```text
   read({"path":"manuscript://chapter-11.md","format":"outline"}) → 5 of 62 blocks
   write({"command":"replace","path":"ch3.md","content":"The moon was low over the ridge…(212 words)","find":"The moon was"}) → w4, 212 words, version: draft (@rewrite)
-  read({"path":"skill://story-review/resources/developmental-edit.md"}) → failed: document_not_found
+  read({"path":"skills://story-review/resources/pacing.md"}) → failed: document_not_found
   spawn({"agent":"critic","prompt":"Load the story-review skill…(310 words)","name":"Pacing review"}) → p8
   ```
 
@@ -176,8 +176,8 @@ its own run's report.
 ## Errors
 
 Domain readers return `{ ok: false, error: MeridianError }`. Tool registrations
-project these into canonical error results (`isError: true` with the structured
-`MeridianError` as output). Codes include
+project these into error results (`isError: true`); the typed result keeps the
+`MeridianError`, and the model reads `<message> (<code>)`. Codes include
 `thread_not_found`, `thread_not_connected`, `invalid_cursor`, `item_not_found`,
 and `invalid_run` (the report route only). The report HTTP route maps authorization
 failures to HTTP 404/403 instead of returning a successful report response.
@@ -192,8 +192,8 @@ model-only projections.
 `spawn({ prompt, from?: "current" | string, ... })` accepts one prior-conversation
 ref. `current` resolves to the caller. The same live owner/project/lineage check
 runs before creating the child. Invalid, trashed and disconnected targets return
-structured tool errors without a child, run or debit. Error codes are
-`invalid_from` for a non-string value, `thread_not_found` for a malformed,
+tool errors without a child, run or debit. Error codes are
+`invalid_arguments` for a non-string or empty value, `thread_not_found` for a malformed,
 missing or trashed ref, and `thread_not_connected` for another lineage.
 
 The child's first user turn holds the task prompt followed by a
