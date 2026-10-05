@@ -549,15 +549,26 @@ export function ReadableProjectRoute({
             options,
           ),
   };
+  // A resource pointer holds identity, not an Untitled address. Once placement
+  // exists, publish its real locator so the removal host does not repair it
+  // back into this same pointer-bearing destination on every render.
+  const localTarget =
+    localDocument.kind === "resolved" && localDocument.owner.kind === "materialized-local"
+      ? localDocument.owner.target
+      : null;
   const search: ProjectSearch = {
     screen: activeScreen,
     work: workId ?? undefined,
     scheme: localDocumentId
-      ? "unfiled"
+      ? (localTarget?.scheme ?? "unfiled")
       : destination.kind === "document" || destination.kind === "browse"
         ? (destination.scheme ?? undefined)
         : undefined,
-    path: localDocumentId ? "" : documentDestination ? `/${documentDestination.path}` : undefined,
+    path: localDocumentId
+      ? (localTarget?.path ?? "")
+      : documentDestination
+        ? `/${documentDestination.path}`
+        : undefined,
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     results: address.results ? "" : undefined,
     view: address.workView ?? address.worksView,
