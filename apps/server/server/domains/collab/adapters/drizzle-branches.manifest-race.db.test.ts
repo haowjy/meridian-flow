@@ -1,6 +1,5 @@
 /** PostgreSQL contracts for project manifest identity and reconciliation. */
 import { randomUUID } from "node:crypto";
-
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {

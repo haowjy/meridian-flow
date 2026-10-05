@@ -73,7 +73,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
         async onLoadDocument({ documentName, document }) {
-          const state = await collab.loadHocuspocusDocument(documentName);
+          const state = await collab.loadHocuspocusDocument(documentName, document);
           if (state) Y.applyUpdate(document, state);
         },
         onStoreDocument: ({ documentName, document }) =>

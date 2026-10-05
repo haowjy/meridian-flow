@@ -46,6 +46,7 @@ export type UpdateOrigin =
 export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
 
 export type SyncError =
+  | { code: "stale_generation"; documentId: string }
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
@@ -78,7 +79,6 @@ export type DocumentWriteResult = {
 export type DocumentWriteHook = (event: {
   documentId: DocumentId;
   threadId?: ThreadId;
-  markdown: string;
   at: Date;
 }) => Promise<void>;
 
@@ -111,7 +111,7 @@ export type CollabTransport = {
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
-  loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
+  loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusBranchState(
     branchId: string,
     generation: number,
@@ -124,6 +124,7 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitBranchWriterUpdate(input: {
     branchId: string;
     update: Uint8Array;
@@ -217,6 +218,7 @@ export type MarkdownDocumentStore = {
 };
 
 export type DocumentProjectionRefresher = {
+  documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 

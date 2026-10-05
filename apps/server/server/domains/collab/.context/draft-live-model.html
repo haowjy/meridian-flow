@@ -79,10 +79,11 @@
 <h1>The Draft / Live Model</h1>
 <p class="lede">
 One document, two surfaces, <strong>one consent point</strong>. Everything in
-the system merges automatically — AI edits into the draft, live edits into the
-draft — except a single edge: promoting the <span class="draft-word">draft</span>
+the system merges automatically (draft-mode AI edits into the draft, live edits
+into the draft) except a single edge: promoting the <span class="draft-word">draft</span>
 into <span class="live-word">live</span>. That edge is
-<span class="gate-word">Apply</span>, and it belongs to the writer.
+<span class="gate-word">Apply</span>, and it belongs to the writer. A Work in
+direct mode has no draft: its AI writes go straight to live.
 </p>
 
 <figure aria-label="Flow diagram of the draft/live model">
@@ -124,7 +125,7 @@ into <span class="live-word">live</span>. That edge is
     <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one review branch per (document, Work) · real Y.Doc</text>
   </g>
   <!-- AI -->
-  <text x="200" y="372" fill="var(--muted)" font-size="13" font-family="sans-serif">AI (thread peers) always writes here — never to live</text>
+  <text x="200" y="372" fill="var(--muted)" font-size="13" font-family="sans-serif">Draft-mode AI (thread peers) writes here</text>
   <line x1="190" y1="366" x2="190" y2="332" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arrA)" style="color: var(--muted)"/>
 </svg>
 <figcaption>
@@ -149,8 +150,8 @@ prop that drifts.
   </tr>
   <tr>
     <td><strong>Who writes</strong></td>
-    <td>The writer and other live sessions. Never the AI directly.</td>
-    <td>AI thread peers push every write here; live content pulls in continuously.</td>
+    <td>The writer and other live sessions, plus the AI when its Work is in direct mode.</td>
+    <td>Draft-mode AI thread peers push every write here; live content pulls in continuously.</td>
   </tr>
   <tr>
     <td><strong>Annotations</strong></td>
@@ -167,9 +168,11 @@ prop that drifts.
 
 <h2>Everything below the gate is automatic</h2>
 <ul class="rule-list">
-  <li><strong>AI always writes to the branch.</strong>
-      <code>createBranchAgentEditCoordinator</code> gives the AI no path to
-      live. There is no per-edit accept, no veto, no sweep negotiation.</li>
+  <li><strong>Draft-mode AI writes to the branch.</strong>
+      <code>createBranchAgentEditCoordinator</code> gives a draft-mode thread
+      no path to live. A Work in direct mode (<code>aiWriteMode: "direct"</code>)
+      routes AI writes to the live core instead (<code>composition.ts</code>).
+      Either way there is no per-edit accept, no veto, no sweep negotiation.</li>
   <li><strong>The draft continuously pulls from live.</strong>
       <code>branch-pulls.ts</code> (<code>scheduleLivePull</code> /
       <code>flushLivePull</code>) merges live updates into the draft. Room
@@ -202,16 +205,19 @@ The writer's protection is not a veto layer. It is two things:
   <li><strong>Seeing what Apply will do</strong> — the review surface, and a
       planned live-vs-draft diff mode
       (<a href="https://github.com/haowjy/meridian-flow/issues/421">#421</a>).</li>
-  <li><strong>The stale-Apply invariant</strong> — below.</li>
+  <li><strong>Refusing a stale Apply</strong>: decided, not yet built (below).</li>
 </ol>
 
 <details>
-<summary>Core invariant: refuse a stale Apply (#420)</summary>
+<summary>Decided, not built: refuse a stale Apply (#420)</summary>
 <p>
-Apply consents only to replacing <em>the live the writer was looking at</em>.
-If live advanced past the draft's rendered pull state at the moment of Apply,
-the server refuses — <code>git push</code> non-fast-forward semantics. Held
-by mechanism, not prose:
+<strong>Not implemented.</strong> Apply takes only <code>{ draftId }</code> and
+pushes the branch against whatever live holds; tracked in
+<a href="https://github.com/haowjy/meridian-flow/issues/420">#420</a>. The
+decided rule: Apply consents only to replacing <em>the live the writer was
+looking at</em>. If live advanced past the draft's rendered pull state at the
+moment of Apply, the server refuses (<code>git push</code> non-fast-forward
+semantics). The planned mechanism:
 </p>
 <ol>
   <li><strong>Type:</strong> Apply requires a branded
@@ -281,8 +287,8 @@ cure was one mechanism, enforced by types and keys rather than prose.
 <table>
   <tr><th>Edge</th><th>Rule</th></tr>
   <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
-  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion; guarded by the stale-Apply invariant.</td></tr>
-  <tr><td>AI → live</td><td><strong>Does not exist.</strong> AI writes to the branch, always.</td></tr>
+  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. The stale-Apply guard (#420) is not built yet.</td></tr>
+  <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode Work's AI writes to the branch, always.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
 </table>
 </div>
@@ -291,7 +297,7 @@ cure was one mechanism, enforced by types and keys rather than prose.
 <ul>
   <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, branch model in depth</li>
   <li><a href="../AGENTS.md">collab AGENTS.md</a> — the working mental model for this domain</li>
-  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse-stale-Apply invariant</a> ·
+  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse stale Apply (not built)</a> ·
       <a href="https://github.com/haowjy/meridian-flow/issues/421">#421 diff mode</a> ·
       <a href="https://github.com/haowjy/meridian-flow/issues/422">#422 one mark vocabulary</a></li>
 </ul>

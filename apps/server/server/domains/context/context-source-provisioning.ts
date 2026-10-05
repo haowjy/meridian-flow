@@ -28,8 +28,8 @@ import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
+  CreateDocumentInput,
   UpsertBinaryDocumentInput,
-  UpsertDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 
@@ -291,15 +291,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.recordDocumentMembership(documentId));
   }
 
-  async updateDocumentProjection(documentId: string, markdown: string) {
-    return this.mutate((store) => store.updateDocumentProjection(documentId, markdown));
+  async createDocument(input: CreateDocumentInput) {
+    return this.mutate((store) => store.createDocument(input));
   }
 
-  async upsertDocument(input: UpsertDocumentInput) {
-    return this.mutate((store) => store.upsertDocument(input));
-  }
-
-  async createDocumentRecordIfAbsent(input: UpsertDocumentInput) {
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput) {
     return this.mutate((store) => store.createDocumentRecordIfAbsent(input));
   }
 

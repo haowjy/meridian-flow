@@ -44,6 +44,7 @@ function sessionFor(roomKey: string): DocumentSession {
     status: "detached",
     connectionState: null,
     localPersistenceSynced: true,
+    adoptionStalled: false,
     schemaFence: null,
     schemaRepairs: [],
   };

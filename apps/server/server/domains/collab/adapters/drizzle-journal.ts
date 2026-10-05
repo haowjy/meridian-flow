@@ -47,6 +47,11 @@ import {
   isInDrizzleTransaction,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { RetiredDocumentHandleError } from "../domain/document-handle.js";
+import type {
+  CheckpointAuthority,
+  CheckpointJournal,
+} from "../domain/ports/checkpoint-authority.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -86,14 +91,15 @@ export type CollabFacadeStore = {
     state: Uint8Array,
     reason: string,
     upToSeq: number,
-  ): Promise<string>;
+    authority: CheckpointAuthority,
+  ): Promise<string | null>;
   getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
-export type CollabJournal = UpdateJournal &
+export type CollabJournal = CheckpointJournal &
   ReversalStore & {
     headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
   };
@@ -250,70 +256,51 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
   };
 }
 
-async function latestCheckpoint(db: JournalDb, documentId: string) {
+async function latestCheckpoint(
+  db: JournalDb,
+  documentId: string,
+  authority: CheckpointAuthority,
+  untilSeq?: number,
+) {
+  const conditions = [
+    eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+    eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+    eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+  ];
+  if (untilSeq !== undefined) conditions.push(lte(documentYjsCheckpoints.upToSeq, untilSeq));
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
-    .where(eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)))
-    .orderBy(desc(documentYjsCheckpoints.id))
-    .limit(1);
-  return row ?? null;
-}
-
-async function latestCheckpointAtOrBefore(db: JournalDb, documentId: string, untilSeq: number) {
-  const [row] = await db
-    .select()
-    .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        lte(documentYjsCheckpoints.upToSeq, untilSeq),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
   return row ?? null;
 }
 
-async function reconstructionCheckpoint(db: JournalDb, documentId: string, untilSeq?: number) {
-  // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-  // above the latest compacted checkpoint; reconstruction can safely use the newest
-  // checkpoint below the earliest retained update needed for this read. Historical
-  // reads must not select a checkpoint newer than `untilSeq`: that checkpoint contains
-  // future live edits relative to a draft base.
-  const retainedConditions = [eq(documentYjsUpdates.documentId, asDocumentId(documentId))];
+async function reconstructionCheckpoint(
+  db: JournalDb,
+  documentId: string,
+  authority: CheckpointAuthority,
+  untilSeq?: number,
+) {
+  // Undo needs retained rows, not merely the latest materialized state. Only
+  // consider rows in this read's captured generation, including the compacted base.
+  const retainedConditions = [
+    eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
+    eq(documentYjsUpdates.authorityId, authority.authorityId),
+    eq(documentYjsUpdates.authorityGeneration, authority.generation),
+  ];
   if (untilSeq !== undefined) retainedConditions.push(lte(documentYjsUpdates.id, untilSeq));
-
   const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
     .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
     .from(documentYjsUpdates)
     .where(and(...retainedConditions));
-
-  // No retained updates in range: the document (or historical prefix) is fully
-  // checkpointed, so use the newest checkpoint that is still within the requested bound.
-  if (minRetainedSeq === null) {
-    return untilSeq === undefined
-      ? await latestCheckpoint(db, documentId)
-      : await latestCheckpointAtOrBefore(db, documentId, untilSeq);
-  }
-
-  const checkpointConditions = [
-    eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-    lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
-  ];
-  if (untilSeq !== undefined)
-    checkpointConditions.push(lte(documentYjsCheckpoints.upToSeq, untilSeq));
-
-  const [row] = await db
-    .select()
-    .from(documentYjsCheckpoints)
-    .where(and(...checkpointConditions))
-    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-    .limit(1);
-  // null when no checkpoint precedes the earliest retained update (e.g. the server
-  // checkpoints at the head with no upToSeq-0 baseline): reconstruct from an empty base
-  // plus every retained update row — never a checkpoint that hides the rows undo needs.
-  return row ?? null;
+  return latestCheckpoint(
+    db,
+    documentId,
+    authority,
+    minRetainedSeq === null ? untilSeq : minRetainedSeq - 1,
+  );
 }
 
 async function readHeadSchemaVersion(
@@ -383,9 +370,9 @@ async function insertCheckpoint(
   state: Uint8Array,
   upToSeq: number,
   reason: string,
+  authorityHead: CheckpointAuthority,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
-  const authorityHead = await ensureAndReadDocumentAuthorityHead(db, documentId);
   const attributionManifest = await checkpointAttributionManifest(
     db,
     documentId,
@@ -438,13 +425,32 @@ async function insertCheckpoint(
   return row.id;
 }
 
+/** Called only while holding the document mutation lock. Unbound producers own their cut. */
+async function validateAppendAuthority(
+  db: JournalDb,
+  documentId: string,
+  authority?: { authorityId: string; generation: bigint },
+): Promise<void> {
+  if (!authority) return;
+  const head = await findDocumentAuthorityHead(db, documentId);
+  if (
+    !head ||
+    head.authorityId !== authority.authorityId ||
+    head.generation !== authority.generation
+  ) {
+    throw new RetiredDocumentHandleError();
+  }
+}
+
 async function appendUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
+  authority?: { authorityId: string; generation: bigint },
 ): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
+  await validateAppendAuthority(db, documentId, authority);
   const authorityHead = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
@@ -806,19 +812,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
 
-    async append(docId, update, meta) {
+    async append(docId, update, meta, authority) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        return (await appendUpdate(txDb, docId, update, meta)).seq;
+        return (await appendUpdate(txDb, docId, update, meta, authority)).seq;
       });
     },
 
-    async appendWriterUpdate(docId, update, meta) {
+    async appendWriterUpdate(docId, update, meta, authority) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        return appendUpdate(txDb, docId, update, meta);
+        return appendUpdate(txDb, docId, update, meta, authority);
       });
     },
 
@@ -832,6 +838,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
+        for (const entry of entries)
+          await validateAppendAuthority(txDb, entry.docId, entry.authority);
         const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
@@ -1178,22 +1186,14 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
       await assertReadableHead(readDb, docId);
 
-      const fromCheckpoint = opts.fromCheckpoint ?? true;
-      const checkpoint = fromCheckpoint
-        ? opts.until !== undefined
-          ? await latestCheckpointAtOrBefore(readDb, docId, opts.until)
-          : await latestCheckpoint(readDb, docId)
-        : await reconstructionCheckpoint(readDb, docId, opts.until);
-      const authorityHead = checkpoint
-        ? {
-            authorityId: checkpoint.authorityId,
-            generation: checkpoint.authorityGeneration,
-          }
-        : await findDocumentAuthorityHead(readDb, docId);
-      // A read of a never-admitted document must stay read-only. The
-      // coordinator interprets an empty snapshot as absence; creating a head
-      // here used to turn concurrent deletion into a raw FK failure.
+      // Capture once: neither a checkpoint nor retained history may choose
+      // authority for this read. Sequence bounds stay within this generation.
+      const authorityHead = await findDocumentAuthorityHead(readDb, docId);
       if (!authorityHead) return { checkpoint: null, updates: [] };
+      const checkpoint =
+        (opts.fromCheckpoint ?? true)
+          ? await latestCheckpoint(readDb, docId, authorityHead, opts.until)
+          : await reconstructionCheckpoint(readDb, docId, authorityHead, opts.until);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
@@ -1210,6 +1210,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         .orderBy(asc(documentYjsUpdates.id));
 
       return {
+        authority: { authorityId: authorityHead.authorityId, generation: authorityHead.generation },
         checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
         updates: rows.map((row) => mapUpdate(row)),
       };
@@ -1224,11 +1225,23 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       )(docId, { fromCheckpoint: false });
     },
 
-    async checkpoint(docId, state, upToSeq) {
+    async checkpoint(docId, state, upToSeq, authority) {
+      // Unbound seed/conformance producers have no loaded handle. Handle-backed
+      // callers always supply their immutable binding; validation is under lock.
+      const captured =
+        authority ??
+        (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db as Database), docId));
       await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const existing = await latestCheckpoint(txDb, docId);
+        const current = await findDocumentAuthorityHead(txDb, docId);
+        if (
+          !current ||
+          current.authorityId !== captured.authorityId ||
+          current.generation !== captured.generation
+        )
+          return;
+        const existing = await latestCheckpoint(txDb, docId, captured);
         // A checkpoint names a durable journal cut. A later snapshot at the same
         // cut cannot contain legitimate extra state because admission is journal-first.
         // Keeping the first snapshot prevents a stale warm room from replacing an
@@ -1236,7 +1249,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         if (existing && existing.upToSeq >= upToSeq) return;
         // upToSeq must be ≤ the updates reflected in state; replaying extra
         // updates is idempotent, but skipping one loses durable document data.
-        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint");
+        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
         if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
           // ensureDocument's empty cut only bootstraps a room before its first
           // journal admission. Once a real cut is stored it has no restore value;
@@ -1297,6 +1310,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             Y.encodeStateAsUpdate(doc),
             compactedThroughSeq,
             "compact",
+            authorityHead,
           );
         }
 
@@ -1524,7 +1538,14 @@ export function createServerDocumentLifecycle(
             .limit(1),
         ]);
         if (checkpoint[0] || update[0]) return false;
-        await insertCheckpoint(txDb, docId, state, 0, "seed");
+        await insertCheckpoint(
+          txDb,
+          docId,
+          state,
+          0,
+          "seed",
+          await ensureAndReadDocumentAuthorityHead(txDb, docId),
+        );
         return true;
       });
     },
@@ -1533,8 +1554,10 @@ export function createServerDocumentLifecycle(
       // Never stamp a head before verifying the stored head is not stale.
       await assertReadableHead(lifecycleDb, docId);
       const snapshot = await journal.read(docId);
-      await upsertHead(lifecycleDb, docId);
+      // Existing authority is already initialized. Do not retain a head-row
+      // update lock in an ambient context command before its root journal batch.
       if (snapshot.checkpoint || snapshot.updates.length > 0) return;
+      await upsertHead(lifecycleDb, docId);
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
       const emptyDoc = createCollabYDoc({ gc: false });
@@ -1545,9 +1568,24 @@ export function createServerDocumentLifecycle(
 
 export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore {
   return {
-    async createCheckpoint(docId, state, reason, upToSeq) {
+    async createCheckpoint(docId, state, reason, upToSeq, captured) {
       return db.transaction(async (tx) => {
-        const checkpointId = await insertCheckpoint(tx as JournalDb, docId, state, upToSeq, reason);
+        await lockDocumentMutation(tx, docId);
+        const current = await findDocumentAuthorityHead(tx, docId);
+        if (
+          !current ||
+          current.authorityId !== captured.authorityId ||
+          current.generation !== captured.generation
+        )
+          return null;
+        const checkpointId = await insertCheckpoint(
+          tx as JournalDb,
+          docId,
+          state,
+          upToSeq,
+          reason,
+          captured,
+        );
         return String(checkpointId);
       });
     },
