@@ -4,6 +4,7 @@ import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
   type Block,
   blockPlainText,
+  type ReplyProviderError,
   replyProviderError,
   type Thread,
   type Turn,
@@ -29,7 +30,7 @@ export type CompactTurn = {
   error: string | null;
   failureReason?: string;
   /** The provider's own answer on a failed reply; its full response is in `thread context --call`. */
-  providerError?: { status: number | null; message: string; gatewayCallId: string };
+  providerError?: ReplyProviderError;
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
@@ -133,14 +134,9 @@ function providerErrorView(
 ): Pick<CompactTurn, "providerError"> {
   const error = replyProviderError(metadata);
   if (!error) return {};
+  if (limits.full) return { providerError: error };
   return {
-    providerError: {
-      status: error.status,
-      message: limits.full
-        ? error.message
-        : truncate(oneLine(error.message), PROVIDER_MESSAGE_LIMIT),
-      gatewayCallId: error.gatewayCallId,
-    },
+    providerError: { ...error, message: truncate(oneLine(error.message), PROVIDER_MESSAGE_LIMIT) },
   };
 }
 

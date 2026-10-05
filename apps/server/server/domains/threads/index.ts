@@ -138,6 +138,7 @@ export {
   PromptEpochMetadataCodec,
   promptEpochMetadata,
   REPLY_PROVIDER_MESSAGE_LIMIT,
+  type ReplyProviderFailure,
   replyFailureMetadata,
   SavedSubagentReportMetadataCodec,
   SteerMetadataCodec,

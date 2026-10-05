@@ -4,6 +4,7 @@
  * through the same pure functions so diagnostic evidence cannot drift.
  */
 import type { JsonObject, JsonValue } from "./index.js";
+import type { ProviderErrorResponse } from "./provider-error.js";
 
 const MAX_READABLE_PART_BYTES = 32 * 1024;
 const MAX_READABLE_LABEL_BYTES = 256;
@@ -34,13 +35,6 @@ export type ModelRequestDebugCapture =
   | { status: "complete" }
   | { status: "omitted"; reason: "request_too_large"; maxRequestBytes: number };
 
-/** The provider's failure response for this call, as received (body capped at 4 KiB). */
-export type ModelRequestDebugProviderError = {
-  /** HTTP status; null when the provider reported the failure inside the stream. */
-  status: number | null;
-  body: string;
-};
-
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
   schema: "meridian.model-request-debug.v3";
@@ -62,7 +56,7 @@ export type ModelRequestDebugRecord = {
   skills: { slug: string; layer: string }[];
   toolRegistrations: { name: string; source: string; capability: string | null }[];
   /** Set when the call failed with a provider response; null until then and on success. */
-  providerError: ModelRequestDebugProviderError | null;
+  providerError: ProviderErrorResponse | null;
 };
 
 export type ModelRequestDebugRetention = {
@@ -340,7 +334,7 @@ export function summarizeModelRequestDebugView(
   };
 }
 
-function providerErrorMarkdown(error: ModelRequestDebugProviderError): string {
+function providerErrorMarkdown(error: ProviderErrorResponse): string {
   const status = error.status === null ? "in-stream (no HTTP status)" : `HTTP ${error.status}`;
   return [
     "# Provider error response",

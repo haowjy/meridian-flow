@@ -3,9 +3,9 @@
  * (production default). Routes return 404 when captureEnabled is false.
  */
 import type {
-  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
+  ProviderErrorResponse,
 } from "@meridian/contracts/threads";
 import type { ModelRequestDebugCaptureInput } from "../../build-record.js";
 import type { ModelRequestDebugStore } from "../../ports/model-request-debug-store.js";
@@ -17,7 +17,7 @@ export class NoopModelRequestDebugStore implements ModelRequestDebugStore {
     // intentionally empty
   }
 
-  recordProviderError(_gatewayCallId: string, _error: ModelRequestDebugProviderError): void {
+  recordProviderError(_gatewayCallId: string, _error: ProviderErrorResponse): void {
     // intentionally empty
   }
 
