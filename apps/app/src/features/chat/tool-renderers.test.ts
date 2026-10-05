@@ -1,6 +1,6 @@
 import type { JsonValue } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { descriptorFor, toolActivityPhrase } from "./command-descriptor";
+import { toolActivityPhrase } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
 import { toolView } from "./report-test-fixtures";
 import { documentToolFailureCopy, rendererFor } from "./tool-renderers";
@@ -52,43 +52,42 @@ describe("document tool rows", () => {
   });
 });
 
-describe("skill reads", () => {
-  const skillBody = "skills://story-review/SKILL.md (read-only)\n\n# Story review";
+describe("skill rows", () => {
+  function skillCall(args: { result: JsonValue; isError?: boolean }): ToolView {
+    return {
+      ...toolView({ toolCallId: "call-1", toolName: "skill", result: args.result }),
+      input: { name: "story-review" },
+      isError: args.isError ?? false,
+    };
+  }
 
-  it("shows a read of a skill's SKILL.md as invoking that skill, with nothing to expand", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "skills://story-review/SKILL.md" },
-      result: skillBody,
+  it("shows a skill call as invoking that skill, with nothing to expand", () => {
+    const tool = skillCall({
+      result:
+        "skill invoked: story-review\nFolder: skills://story-review/ (read-only)\n\n# Story review",
     });
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Invoked the Story Review skill" });
     expect(toolActivityPhrase({ ...tool, status: "partial" })).toEqual({
       verb: "Invoking the Story Review skill…",
     });
-    expect(rendererFor("read").expand?.(tool)).toBeNull();
+    expect(rendererFor("skill").expand).toBeUndefined();
   });
 
-  it("names a failed skill load as the skill failing, not as a missing document", () => {
+  it("names a failed skill call as the skill failing", () => {
+    const tool = skillCall({ result: 'Unknown skill "story-review".', isError: true });
+
+    expect(rendererFor("skill").title(tool)).toBe("Couldn't run that skill");
+  });
+
+  it("shows a read of any skills:// file, SKILL.md included, as an ordinary read", () => {
     const tool = documentTool({
       toolName: "read",
       input: { path: "skills://story-review/SKILL.md" },
-      result: { schema: "meridian.agent-edit.v1", command: "read", status: "document_not_found" },
-      isError: true,
+      result: "skills://story-review/SKILL.md (read-only)\n\n# Story review",
     });
 
-    expect(descriptorFor(tool).failureVerb("direct")).toBe("Couldn't run that skill");
-    expect(rendererFor("read").expand?.(tool)).toBeNull();
-  });
-
-  it("shows a skill resource as an ordinary read and tolerates its plain-text result", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "skills://story-review/references/beats.md" },
-      result: "skills://story-review/references/beats.md (read-only)\n\nBeat one.",
-    });
-
-    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "beats.md" });
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "SKILL.md" });
     expect(rendererFor("read").expand?.(tool)).toBeNull();
   });
 });

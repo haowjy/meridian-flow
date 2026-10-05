@@ -187,8 +187,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  // A `read` of `skills://<slug>/SKILL.md` loads that skill. The row names the
-  // skill, not the file: the writer never opens a skill body as a document.
+  // A `skill` call loads that skill's SKILL.md. The row names the skill, not
+  // the file: the writer never opens a skill body as a document.
   invoke: {
     Icon: Sparkles,
     phrases: (tool) => {
