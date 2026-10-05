@@ -20,9 +20,11 @@ export type ErrorBlockProps = {
    *   without partial output.
    * - `retry` → a failed reply's Retry never reached the server; this is its
    *   stand-in, and Retry re-sends the same request.
+   * - `refused` → the AI provider turned the request down and the server
+   *   judged a retry futile; never offers Retry.
    */
-  kind?: "send" | "generation" | "retry";
-  /** Retry this turn. Omit to hide the control. */
+  kind?: "send" | "generation" | "retry" | "refused";
+  /** Retry this turn. Omit to hide the control; ignored for `refused`. */
   onRetry?: () => void;
   /**
    * The server refused this turn's last Retry; the cause stays in diagnostics.
@@ -38,6 +40,10 @@ function copy(kind: ErrorBlockProps["kind"], current: boolean): string {
       return t`Couldn't send.`;
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
+    case "refused":
+      return current
+        ? t`The AI provider turned this request down. Trying again won't help until that's fixed.`
+        : t`The AI provider turned this request down.`;
     default:
       return t`This response failed.`;
   }
@@ -61,7 +67,7 @@ export function ErrorBlock({
     return <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>;
   }
   return (
-    <ActiveError kind={kind} onRetry={onRetry}>
+    <ActiveError kind={kind} onRetry={kind === "refused" ? undefined : onRetry}>
       {retryRefused ? <RefusedNote /> : null}
     </ActiveError>
   );

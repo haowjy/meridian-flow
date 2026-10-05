@@ -1,7 +1,13 @@
 /** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
 import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
-import { type Block, blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
+import {
+  type Block,
+  blockPlainText,
+  replyProviderError,
+  type Thread,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { oneLine, truncate } from "../../core/output";
 
 export type TranscriptLimits = { full: boolean };
@@ -122,14 +128,14 @@ export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlo
 const PROVIDER_MESSAGE_LIMIT = 300;
 
 function providerErrorView(
-  value: unknown,
+  metadata: Turn["metadata"],
   limits: TranscriptLimits,
 ): Pick<CompactTurn, "providerError"> {
-  const error = asRecord(value);
-  if (typeof error.message !== "string" || typeof error.gatewayCallId !== "string") return {};
+  const error = replyProviderError(metadata);
+  if (!error) return {};
   return {
     providerError: {
-      status: typeof error.status === "number" ? error.status : null,
+      status: error.status,
       message: limits.full
         ? error.message
         : truncate(oneLine(error.message), PROVIDER_MESSAGE_LIMIT),
@@ -186,7 +192,7 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
       ? { failureReason: metadata.reason }
       : {}),
     ...(turn.role === "assistant" && turn.status === "error"
-      ? providerErrorView(metadata.providerError, limits)
+      ? providerErrorView(turn.metadata, limits)
       : {}),
     ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
       ? { compactionMetadata }

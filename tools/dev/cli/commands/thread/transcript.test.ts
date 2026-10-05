@@ -24,6 +24,7 @@ describe("thread transcript compaction failures", () => {
           status: 402,
           message: `Insufficient Balance ${"x".repeat(400)}`,
           gatewayCallId: "call-1",
+          retryable: false,
         },
       },
       createdAt: "2026-09-27T00:00:00.000Z",

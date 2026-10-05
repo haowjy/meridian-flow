@@ -9,6 +9,7 @@ import {
   type FinishReason,
   isTerminalTurnStatus,
   type OrchestratorEvent,
+  type ReplyProviderError,
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -17,7 +18,6 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
-  type ReplyProviderError,
   replyFailureMetadata,
   type ThreadRepositories,
   turnFailedCopy,

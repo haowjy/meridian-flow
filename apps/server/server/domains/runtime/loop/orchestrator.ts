@@ -65,6 +65,7 @@ import type {
   Block,
   ModelResponseReceivedRow,
   OrchestratorEvent,
+  ReplyProviderError,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
@@ -79,7 +80,6 @@ import type {
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
-  ReplyProviderError,
   ThreadRepositories,
   ThreadRepository,
   TurnRepository,
@@ -2113,6 +2113,7 @@ async function executeLoop({
                   status: event.providerResponse.status,
                   message: event.providerResponse.message,
                   gatewayCallId,
+                  retryable: event.retryable,
                 },
               ),
             );

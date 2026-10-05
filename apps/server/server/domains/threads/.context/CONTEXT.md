@@ -85,7 +85,10 @@ role set to those copies. Every failed terminal cause supplies writer copy
 explicitly; `turn.error` stores only that copy while raw causes remain in journal
 diagnostics, logs, and `./mf`. A failed reply's metadata carries `reason` and,
 when a provider answered, `providerError` (`status`, message capped at 1,000
-characters, `gatewayCallId`), written only by `replyFailureMetadata`. Event
+characters, `gatewayCallId`, and the gateway's `retryable` verdict), written
+only by `replyFailureMetadata`. Its codec lives in
+`@meridian/contracts/threads` so the app reads the same shape: a reply with
+`retryable: false` renders as a provider refusal with no Retry. Event
 logs carry its status and call id, never its message. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and
