@@ -12,11 +12,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import {
-  confirmEveryGrant,
-  grantedJournal,
-  testFileGrant,
-} from "../../../test-support/file-grants.js";
+import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
@@ -551,7 +548,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     diagnostics: projectionDiagnostics,
   });
   const agentEdit = createBranchThreadPeerAgentEditCore({
-    fileAccess: confirmEveryGrant,
+    fileAccess: createAllowAllFileAccess(),
     lockLiveDocuments: async () => {},
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,
@@ -607,7 +604,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-    fileAccess: confirmEveryGrant,
+    fileAccess: createAllowAllFileAccess(),
     atomic: (operation) => runInDrizzleTransaction(db, operation),
     isDraftWorkUnavailable: (cause) => cause instanceof WorkLifecycleUnavailableError,
     live: {

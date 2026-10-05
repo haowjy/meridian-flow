@@ -573,15 +573,6 @@ async function documentGrant<N extends FileNeed>(
     : grant;
 }
 
-/** Where a create or copy makes its file; null when the path names no Work. */
-function containerTarget(
-  deps: Pick<ToolWiringDeps, "works">,
-  context: ResolvedModelContextPort,
-  path: string,
-): Promise<FileTarget | null> {
-  return threadContainerTarget(deps.works, context.resolution, path);
-}
-
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
 function fileAccessDeniedError(
   command: DocumentCommandName,
@@ -1146,7 +1137,7 @@ async function containerReadonly(
   context: ResolvedModelContextPort,
   path: string,
 ): Promise<boolean | undefined> {
-  const target = await containerTarget(deps, context, path);
+  const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
 }
@@ -1286,7 +1277,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
-    const target = creates ? await containerTarget(deps, portOrError, parsed.path) : null;
+    const target = creates
+      ? await threadContainerTarget(deps.works, portOrError.resolution, parsed.path)
+      : null;
     const inContainer = async <T>(
       asPrincipal: Principal,
       operation: () => Promise<T>,

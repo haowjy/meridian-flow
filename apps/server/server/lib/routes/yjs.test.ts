@@ -7,6 +7,9 @@ import { createBranchPullService } from "../../domains/collab/domain/branch-pull
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
+  type FileAccessDenied,
+  type FileGrant,
+  isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
 import {
   admitWriterSync,
@@ -547,7 +550,7 @@ describe("Yjs room access", () => {
         // An archived Work's file: readable, not editable.
         authorize: (async (principal, target, need) =>
           input.readOnly && need === "edit"
-            ? { denied: true, level: "read", reason: "work_archived", target, need }
+            ? archivedDenial(await allowAll.authorize(principal, target, "read"))
             : allowAll.authorize(principal, target, need)) as typeof allowAll.authorize,
       },
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -638,7 +641,7 @@ describe("Yjs room access", () => {
     // The Work is archived after admission's checks, before the room hears changes.
     services.fileAccess.authorize = (async (principal, target, need) => {
       if (archived && need === "edit") {
-        return { denied: true, level: "read", reason: "work_archived", target, need };
+        return archivedDenial(await allowAll(principal, target, "read"));
       }
       const decision = await allowAll(principal, target, need);
       if (need === "edit") archived = true;
@@ -661,3 +664,18 @@ describe("Yjs room access", () => {
     expect(context.closeTransport).toHaveBeenCalledWith({ code: 4409, reason: "access-changed" });
   });
 });
+
+/** An archived Work's file, as the policy refuses an edit: readable, with its facts. */
+function archivedDenial(read: FileGrant | FileAccessDenied): FileAccessDenied {
+  if (isFileAccessDenied(read)) return read;
+  return {
+    denied: true,
+    target: read.facts.target,
+    reason: "work_archived",
+    level: "read",
+    archivedWork: null,
+    facts: read.facts,
+    destination: read.destination,
+    agentChain: null,
+  };
+}

@@ -313,7 +313,7 @@ export function createThreadPeerCorePool(input: {
     const draftWork = side === "draft" ? { id: caller.threadWorkId, slug: null } : null;
     return input.fileAccess.authorize(
       { ...grant.principal, agent: { ...agent, draftWork } },
-      grant.target,
+      grant.facts.target,
       "edit",
     );
   }
@@ -555,7 +555,7 @@ export function createThreadPeerCorePool(input: {
   async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
     const pinned = [...record.documents, ...record.reversals];
     if (pinned.length === 0) return [];
-    const { refused } = await input.fileAccess.confirmEdit(pinned.map(([, entry]) => entry.grant));
+    const refused = await input.fileAccess.confirmEdit(pinned.map(([, entry]) => entry.grant));
     const refusals = new Map<DocumentId, FileAccessDenied>();
     for (const denial of refused) refusals.set(denialDocumentId(denial), denial);
     for (const documentId of refusals.keys()) {

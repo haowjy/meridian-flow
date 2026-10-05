@@ -1,4 +1,4 @@
-/** Postgres file facts: ownership, lifecycle, path and the ancestor chain. */
+/** Postgres file facts: ownership, lifecycle and the ancestor chain. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -69,7 +69,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerWork: null,
         deleted: false,
         scheme: "manuscript",
-        path: "chapters/arc-1/ch1.md",
         self: { kind: "document", id: chapter },
         ancestors: [
           { kind: "folder", id: arc },
@@ -108,7 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const container = await facts.load({
         target: { kind: "container", scheme: "scratch", owner: { scope: "work", workId: a } },
       });
-      expect(container).toMatchObject({ self: null, path: "", ownerWork: { id: a } });
+      expect(container).toMatchObject({ self: null, ownerWork: { id: a } });
       expect(container?.ancestors).toEqual(scratchNote?.ancestors);
 
       expect(
@@ -120,10 +119,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, chapters));
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));
-      const [ch1, scratchNote] = await createDrizzleFileFacts(db).loadLocked([
-        { target: { kind: "document", documentId: chapter } },
-        { target: { kind: "document", documentId: note } },
-      ]);
+      const [ch1, scratchNote] = await createDrizzleFileFacts(db).loadLocked(
+        [
+          { target: { kind: "document", documentId: chapter } },
+          { target: { kind: "document", documentId: note } },
+        ],
+        [a],
+      );
       expect(ch1?.deleted).toBe(true);
       expect(scratchNote?.ownerWork?.archived).toBe(true);
     });

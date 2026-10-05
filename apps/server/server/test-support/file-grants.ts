@@ -1,12 +1,11 @@
 /**
  * Test-only file grants. Tests of routing and saving mint a grant for a
- * destination without asking the policy, and confirm every grant; tests of
+ * destination without asking the policy, and `createAllowAllFileAccess` confirms every grant; tests of
  * access use the real `createFileAccess`.
  */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  createAllowAllFileAccess,
   createDrizzleFileFacts,
   createFileAccess,
   createOwnerFileGrants,
@@ -23,7 +22,6 @@ export function testFileGrant(
   const target = { kind: "document", documentId: documentId as DocumentId } as const;
   return {
     principal: { accountId: "test-user" as UserId },
-    target,
     facts: {
       target,
       projectId: "test-project" as ProjectId,
@@ -32,22 +30,23 @@ export function testFileGrant(
       ownerWork: null,
       deleted: false,
       scheme: "manuscript",
-      path: "",
       self: { kind: "document", id: documentId as DocumentId },
       ancestors: [],
+      ...(destination.kind === "draft"
+        ? {
+            draftWork: {
+              id: destination.workId,
+              slug: destination.workSlug,
+              isNoWork: false,
+              archived: false,
+              deleted: false,
+            },
+          }
+        : {}),
     },
-    level: "edit",
     destination,
   } as unknown as FileGrant<"edit">;
 }
-
-/** Grants and confirms everything: for tests where access isn't the subject. */
-export const confirmEveryGrant: FileAccess = {
-  ...createAllowAllFileAccess(),
-  async confirmEdit(grants) {
-    return { confirmed: [...grants], refused: [] };
-  },
-};
 
 /** The real policy over Postgres facts, for routes and readers whose access is under test. */
 export function drizzleFileAccess(db: Database): FileAccess {
