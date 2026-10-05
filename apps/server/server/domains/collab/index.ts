@@ -9,3 +9,4 @@ export {
   isDocumentSchemaMajorMismatchError,
   isStaleSchema,
 } from "./domain/stale-schema.js";
+export { countWords } from "./domain/word-count.js";

@@ -766,7 +766,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(port.list("manuscript://Act 1/Source")).resolves.toEqual({
         ok: true,
-        value: [],
+        value: { uri: "manuscript://Act 1/Source", entries: [] },
       });
       await expect(port.list(`scratch://@current-work/Source`)).resolves.toMatchObject({
         ok: true,

@@ -32,6 +32,7 @@ import { z } from "zod";
 import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
 import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
 import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
+import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -146,6 +147,7 @@ export const LsToolInputSchema = z
       .min(1)
       .describe("Folder path or context URI; omit to list the roots.")
       .optional(),
+    details: z.boolean().describe("Add each file's size and when it was last edited.").optional(),
     version: DocumentVersionSchema.optional(),
   })
   .strict();
@@ -269,6 +271,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.ls },
       historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderLsResult,
     },
     {
       source: "core",

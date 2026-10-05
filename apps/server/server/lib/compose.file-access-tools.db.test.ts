@@ -126,9 +126,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return runtimes.script(runtime, THREAD);
     }
 
-    type Listed = { uri: string; readonly?: boolean; editable?: unknown };
-    const listed = (result: { output: unknown }) =>
-      (typeof result.output === "string" ? JSON.parse(result.output) : result.output) as Listed[];
+    type Listed = { uri: string; readonly?: boolean; editable?: unknown; wordCount?: number };
+    const listed = (result: { result: unknown }) =>
+      (result.result as { entries: Listed[] }).entries;
 
     it("lists an archived Work's scratch read-only and the manuscript editable", async () => {
       const script = await start();
@@ -138,15 +138,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, WORK_ID));
       const { call } = await script.begin();
 
-      const scratch = listed(await call("ls", { path: "scratch://" }));
+      const scratchCall = await call("ls", { path: "scratch://" });
+      const scratch = listed(scratchCall);
       expect(scratch).toEqual([
         expect.objectContaining({ uri: "scratch://@rewrite/notes.md", readonly: true }),
       ]);
       expect(scratch[0]).not.toHaveProperty("editable");
-      const manuscript = listed(await call("ls", { path: "manuscript://" }));
-      expect(manuscript).toEqual([
+      expect(scratch[0]).not.toHaveProperty("documentId");
+      expect(scratchCall.output).toBe("scratch://@rewrite/\n  notes.md (read-only)");
+      const manuscriptCall = await call("ls", { path: "manuscript://" });
+      expect(listed(manuscriptCall)).toEqual([
         expect.objectContaining({ uri: "manuscript://chapter.md", readonly: false }),
       ]);
+      expect(manuscriptCall.output).toBe("manuscript://\n  chapter.md");
     });
 
     // D37, D51: a switch that couldn't happen says why instead of asking for approval.
@@ -256,8 +260,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(chapter.ok && chapter.value).toContain("Writer chapter.");
       expect(await script.text("scratch://ideas.md")).toContain("Agent ideas.");
       const { call: next } = await script.begin();
-      expect(listed(await next("ls", { path: "scratch://" }))).toContainEqual(
-        expect.objectContaining({ uri: "scratch://@rewrite/ideas.md", sizeBytes: 13 }),
+      expect(listed(await next("ls", { path: "scratch://", details: true }))).toContainEqual(
+        expect.objectContaining({ uri: "scratch://@rewrite/ideas.md", wordCount: 2 }),
       );
     });
   });
