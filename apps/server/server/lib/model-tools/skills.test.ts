@@ -89,7 +89,13 @@ describe("skills:// at the model tools", () => {
     // A GitHub-style slug (case, doubled hyphens) finds the same section.
     expect(await call("read", { path: `${file}#--Method` })).toContain("## Method\n");
     expect(await call("read", { path: file, format: "outline" })).toContain(
-      ["## Method", `read({"path": "${file}#method"})`, "## Check"].join("\n"),
+      [
+        `Read a section with read({"path": "${file}#<slug>"}).`,
+        "",
+        "# Line Edit  #line-edit",
+        "## Method  #method",
+        "## Check  #check",
+      ].join("\n"),
     );
     expect(await call("read", { path: `${file}#nope` })).toContain(
       'Section "#nope" was not found.',

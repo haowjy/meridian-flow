@@ -148,7 +148,9 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
     [
       "format: outline",
       "",
-      ...headings.flatMap(({ heading, slug }) => [heading, readCall(`${uri}#${slug}`)]),
+      `Read a section with ${readCall(`${uri}#<slug>`)}.`,
+      "",
+      ...headings.map(({ heading, slug }) => `${heading}  #${slug}`),
     ].join("\n"),
   );
 }
