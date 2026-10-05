@@ -75,7 +75,7 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -154,7 +154,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
