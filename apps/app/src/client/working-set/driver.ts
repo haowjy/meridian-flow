@@ -1,3 +1,4 @@
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 /** Serialized report-and-sweep driver for device working-set state. */
 
 import type { ProjectWorkingSet, WorkingSetRoute } from "@meridian/contracts/protocol";
@@ -247,10 +248,6 @@ function browserDriver(): WorkingSetSyncDriver | null {
   );
   if (!listenersInstalled) {
     listenersInstalled = true;
-    window.addEventListener("online", () => {
-      driver?.markSuspectOnReconnect();
-      driver?.flush();
-    });
     window.addEventListener("pagehide", () => driver?.flush(true));
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") driver?.flush(true);
@@ -259,7 +256,23 @@ function browserDriver(): WorkingSetSyncDriver | null {
   return driver;
 }
 
-export function configureWorkingSetSync(userId: string, enabled: boolean): void {
+let subscribedHints: ConnectivityHintsPort | undefined;
+let stopHints: (() => void) | undefined;
+
+export function configureWorkingSetSync(
+  userId: string,
+  enabled: boolean,
+  hints?: ConnectivityHintsPort,
+): void {
+  if (hints !== subscribedHints) {
+    stopHints?.();
+    subscribedHints = hints;
+    stopHints = hints?.subscribe({}, (hint) => {
+      if (hint !== "retry-now") return;
+      driver?.markSuspectOnReconnect();
+      driver?.flush();
+    });
+  }
   browserDriver()?.configure(userId, enabled);
 }
 

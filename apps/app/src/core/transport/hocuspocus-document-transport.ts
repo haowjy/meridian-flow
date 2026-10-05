@@ -33,6 +33,7 @@ import type {
   DocumentSessionTransportProvider,
 } from "@/core/editor/document-session";
 
+import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
@@ -49,6 +50,14 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   override async connect() {
     if (this.permanentlyDestroyed) return;
     return super.connect();
+  }
+
+  suspectOffline(): void {
+    if (this.permanentlyDestroyed || this.status !== WebSocketStatus.Connected) return;
+    // Drive normal cleanup now: native close handshakes can stall offline.
+    this.emit("close", {
+      event: new CloseEvent("close", { code: 1000, reason: "browser_offline" }),
+    });
   }
 
   override destroy(): void {
@@ -117,6 +126,7 @@ export type HocuspocusDocumentTransportOptions = {
   roomName: string;
   document: Y.Doc;
   awareness: Awareness;
+  connectivityHints?: ConnectivityHintsPort;
 };
 
 /** Initial SyncStep2 plus a later zero-count SyncStatus acknowledgement. */
@@ -147,6 +157,7 @@ export function createHocuspocusDocumentTransport({
   roomName,
   document,
   awareness,
+  connectivityHints,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
@@ -163,7 +174,12 @@ export function createHocuspocusDocumentTransport({
   });
   const durableSync = createDurableSyncBarrier();
 
+  const source = {};
+  let stopHints = () => {};
+
   function publish(state: DocumentSessionConnectionState): void {
+    if (state.kind === "connected") connectivityHints?.reportConnected(source);
+    else connectivityHints?.reportDisconnected(source);
     currentState = state;
     for (const listener of listeners) listener(state);
   }
@@ -171,6 +187,7 @@ export function createHocuspocusDocumentTransport({
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
+    stopHints();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -226,6 +243,18 @@ export function createHocuspocusDocumentTransport({
     notifyYjsRoomAttached(roomName, document.clientID);
   }
 
+  stopHints =
+    connectivityHints?.subscribe(source, (hint) => {
+      if (terminal || destroyed) return;
+      if (hint === "suspect-offline") {
+        // Do not use disconnect(): it disables Hocuspocus's normal retry loop.
+        websocket.suspectOffline();
+      } else if (websocket.status !== WebSocketStatus.Connected) {
+        // connect() cancels the abortable retry before starting a fresh attempt.
+        void websocket.connect();
+      }
+    }) ?? (() => {});
+
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
 
@@ -254,6 +283,7 @@ export function createHocuspocusDocumentTransport({
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      stopHints();
       provider.destroy();
       websocket.destroy();
       listeners.clear();

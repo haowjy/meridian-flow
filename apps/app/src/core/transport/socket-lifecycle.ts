@@ -1,6 +1,7 @@
 /** Manages WebSocket reconnects and current-generation callbacks. */
 
 import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
+import type { ConnectivityHintsPort } from "./connectivity-hints";
 import type { ConnectionState } from "./ThreadTransport";
 import { notifyThreadFrame, notifyThreadSocketClose, notifyThreadSocketOpen } from "./wire-tap";
 import {
@@ -16,6 +17,7 @@ import {
 } from "./ws-thread-socket-utils";
 
 export type SocketLifecycleOptions = {
+  connectivityHints?: ConnectivityHintsPort;
   webSocketFactory?: (url: string) => WebSocket;
   backoff?: WsReconnectBackoffConfig;
   now?: () => number;
@@ -64,6 +66,9 @@ export class SocketLifecycleController {
   private readonly clearTimeoutFn: typeof clearTimeout;
   private readonly consumer: SocketLifecycleConsumer;
 
+  private readonly connectivityHints?: ConnectivityHintsPort;
+  private stopHints: (() => void) | null = null;
+
   private socket: WebSocket | null = null;
   private socketGeneration = 0;
   private reconnectAttempt = 0;
@@ -73,6 +78,7 @@ export class SocketLifecycleController {
 
   constructor(consumer: SocketLifecycleConsumer, options: SocketLifecycleOptions = {}) {
     this.consumer = consumer;
+    this.connectivityHints = options.connectivityHints;
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
     const backoff = resolveWsReconnectBackoff(options.backoff);
     this.maxReconnectAttempts = backoff.maxReconnectAttempts;
@@ -120,6 +126,7 @@ export class SocketLifecycleController {
   /** Open a socket if one isn't already live. No-op after a terminal close. */
   ensureConnected(): void {
     if (this.connectionState.kind === "terminal") return;
+    this.subscribeHints();
     if (this.isSocketLive()) return;
     this.startSocket();
   }
@@ -127,18 +134,18 @@ export class SocketLifecycleController {
   /** Force immediate (re)connect, resetting backoff. No-op after terminal. */
   reconnectNow(): void {
     if (this.connectionState.kind === "terminal") return;
+    this.subscribeHints();
     this.clearReconnectTimer();
     this.clearPingTimer();
-    this.reconnectAttempt = 0;
-    if (this.isSocketLive()) {
-      this.socket?.close(4000, "manual_reconnect");
-      return;
-    }
+    if (this.isSocketLive()) this.closeCurrentSocket("manual_reconnect");
+    this.resetBackoff();
     this.startSocket();
   }
 
   /** Tear down the socket and timers; publishes `disconnected`. */
   teardown(): void {
+    this.stopHints?.();
+    this.stopHints = null;
     this.clearReconnectTimer();
     this.clearPingTimer();
     this.reconnectAttempt = 0;
@@ -180,8 +187,23 @@ export class SocketLifecycleController {
   }
 
   publishConnectionState(state: ConnectionState): void {
+    if (state.kind === "connected") this.connectivityHints?.reportConnected(this);
+    else this.connectivityHints?.reportDisconnected(this);
     this.connectionState = state;
     this.consumer.publishConnectionState(state);
+  }
+
+  private subscribeHints(): void {
+    if (this.stopHints) return;
+    this.stopHints =
+      this.connectivityHints?.subscribe(this, (hint) => {
+        if (this.connectionState.kind === "terminal" || !this.consumer.wantsConnection()) return;
+        if (hint === "suspect-offline") {
+          this.closeCurrentSocket("browser_offline");
+        } else if (!this.isSocketOpen()) {
+          this.reconnectNow();
+        }
+      }) ?? null;
   }
 
   private startSocket(): void {
@@ -226,28 +248,43 @@ export class SocketLifecycleController {
         notifyThreadSocketClose(generation, closeEvent.code, closeEvent.wasClean);
       }
       if (!this.isCurrentSocket(generation, socket)) return;
-      this.socket = null;
-      this.clearPingTimer();
-      this.consumer.onClose?.(event as CloseEvent);
-
-      if (!this.consumer.wantsConnection()) {
-        this.publishConnectionState({ kind: "disconnected" });
-        return;
-      }
-
-      if (isTerminalWsClose(event as CloseEvent)) {
-        const reason = formatWsCloseReason(event as CloseEvent);
-        this.publishConnectionState({
-          kind: "terminal",
-          reason,
-          code: (event as CloseEvent).code,
-        });
-        this.consumer.publishError?.(new Error(reason));
-        return;
-      }
-
-      this.scheduleReconnect(new Error(formatWsCloseReason(event as CloseEvent)));
+      this.handleSocketClose(event as CloseEvent);
     });
+  }
+
+  private closeCurrentSocket(reason: string): void {
+    const socket = this.socket;
+    if (!socket) return;
+    const generation = this.socketGeneration;
+    socket.close(4000, reason);
+    // Native close may await a handshake that an offline network cannot finish.
+    if (this.isCurrentSocket(generation, socket)) {
+      this.handleSocketClose({ code: 4000, reason, wasClean: false } as CloseEvent);
+    }
+  }
+
+  private handleSocketClose(event: CloseEvent): void {
+    this.socket = null;
+    this.clearPingTimer();
+    this.consumer.onClose?.(event);
+
+    if (!this.consumer.wantsConnection()) {
+      this.publishConnectionState({ kind: "disconnected" });
+      return;
+    }
+
+    if (isTerminalWsClose(event)) {
+      const reason = formatWsCloseReason(event);
+      this.publishConnectionState({
+        kind: "terminal",
+        reason,
+        code: event.code,
+      });
+      this.consumer.publishError?.(new Error(reason));
+      return;
+    }
+
+    this.scheduleReconnect(new Error(formatWsCloseReason(event)));
   }
 
   private scheduleReconnect(error: Error): void {

@@ -1,7 +1,7 @@
 # Working-set client
 
 The working-set module is the device-local restore truth for a project's recent
-document routes and remembered thread. `DeviceWorkingSetStore` owns the
+document routes. `DeviceWorkingSetStore` owns the
 user-stamped persisted record; `WorkingSetSyncDriver` owns server baselines,
 pending reports, hydration, and serialized sweeps.
 
@@ -38,7 +38,8 @@ unconditional LWW; this rule applies only on recovery paths.
 A project's in-memory baseline becomes **suspect** when:
 
 1. a PUT fails (any error, including network),
-2. the browser fires `online` after an offline period,
+2. shared connectivity hints emit `retry-now` (network return, tab wake, or
+   another connection recovering),
 3. sync is re-enabled after the account toggle was off (baselines are cleared;
    entry hydration must re-establish before push — same gate, folded here).
 
@@ -50,9 +51,13 @@ then runs `planSuspectBaselineConfirmation` / `reduceWorkingSetHydration`:
 - **server** (row moved past pending's base) → adopt row into the store (data
   only — no navigation, seeding, or tab changes), discard pending, confirm the
   new revision as baseline.
-- **read-degraded** (GET fails) → stay suspect; backoff; retry on `online` or
+- **read-degraded** (GET fails) → stay suspect; backoff; retry on `retry-now` or
   the next sweep.
 
 Entry hydration is unchanged for UI plans, but when a project
 is suspect the driver does not confirm baselines from loader results — stale
 router cache cannot resurrect a trustworthy baseline mid-session.
+
+The authenticated shell injects shared connectivity hints through working-set
+configuration. `retry-now` marks baselines suspect and flushes pending reports;
+pagehide and hidden-visibility keepalive flushes remain local saving signals.
