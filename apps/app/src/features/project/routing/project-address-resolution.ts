@@ -66,13 +66,6 @@ export function workSelectionFor(
   noWorkId: string | null,
 ): AddressSelection {
   if (workId === undefined) return { kind: "absent" };
-  if (
-    (destination.kind === "editor" ||
-      destination.kind === "document" ||
-      destination.kind === "browse") &&
-    !workIsIdentity(destination) &&
-    workId === noWorkId
-  )
-    return { kind: "none" };
+  if (!workIsIdentity(destination) && workId === noWorkId) return { kind: "none" };
   return workIdSelection(workId);
 }
