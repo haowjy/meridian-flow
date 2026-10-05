@@ -173,8 +173,6 @@ export type AskUserChoiceProps = AskUserBaseProps & {
 
 export type AskUserFreeTextProps = AskUserBaseProps;
 
-export type AskUserComponentProps = AskUserChoiceProps | AskUserFreeTextProps;
-
 export type AskUserComponentContent =
   | (ComponentBlockContent & {
       kind: "choice";

@@ -71,17 +71,6 @@ export type ProjectBootstrapRepository = {
   ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult>;
 };
 
-export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
-  return {
-    async ensureDefaultBootstrapReady() {
-      return false;
-    },
-    async ensureDefaultBootstrap() {
-      throw new Error("in-memory project repository is not implemented");
-    },
-  };
-}
-
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
