@@ -55,9 +55,8 @@ surface.
 
 Work mutation rows consume the shared structured receipt contract. The server
 supplies operation, identity, before/after facts, and a typed inverse; this
-surface maps those facts through the active Lingui catalog. Work-switch receipts
-remain factual tool activity with `inverse: null` and never mount this card or
-contribute Undo/Redo. Idempotent receipts likewise do not claim a change.
+surface maps those facts through the active Lingui catalog. Idempotent receipts
+do not claim a change.
 
 `TurnEditsReceipt` renders every authorized trail change in ordinal order. The
 one-shot *Open conversation* reveal only expands the receipt and emphasizes the
