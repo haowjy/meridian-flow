@@ -97,7 +97,7 @@ describe("instrumented gateway", () => {
     }
 
     const close = sink.events.find((event) => event.name === "stream.close");
-    expect(close?.payload).toMatchObject({ errorCode: "provider_error", providerStatus: 402 });
+    expect(close?.correlation).toMatchObject({ errorCode: "provider_error", providerStatus: 402 });
     expect(JSON.stringify(close)).not.toContain("Insufficient Balance");
   });
 });

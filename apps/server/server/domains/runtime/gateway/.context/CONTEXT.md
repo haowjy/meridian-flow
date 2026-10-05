@@ -79,7 +79,7 @@ provider answered. SDK clients are built with `providerFetch`, which keeps a
 failed response's body text (capped at 4 KiB) keyed by the `Headers` object the
 SDK error carries, because SDKs keep only part of a parsed body. Without it the
 body falls back to the SDK's parsed view. `stream.close` logs only
-`providerStatus`. The runtime puts status and message on the failed reply's
+`providerStatus`, in its correlation beside `errorCode`. The runtime puts status and message on the failed reply's
 metadata and the body on the dev capture record; see
 [Provider Failures](../../../../../../../docs/debugging.md#provider-failures).
 

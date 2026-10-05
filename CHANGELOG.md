@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice; the provider's status and message stay on the failed reply (`./mf thread view`), its response body on the captured call (`./mf thread context --call`), and `providerStatus` on `stream.close`/`turn.error` logs.
+- Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice; the provider's status and message stay on the failed reply (`./mf thread view`), its response body on the captured call (`./mf thread context --call`), and `providerStatus` on the call's `stream.close` log.
 - Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
 
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.

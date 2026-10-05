@@ -135,7 +135,7 @@ When a provider answers a model call with an error, three places keep it:
 ./mf thread view <id> --turn <turnId> --full             # the stored message untruncated
 ./mf thread context <id> --call <gatewayCallId>          # the provider's response body beside the request
 ./mf thread context <id> --call <gatewayCallId> --view raw   # status and body exactly as received
-./mf log --thread <id> --level warn                      # providerStatus=402 gatewayCallId=… on stream.close and turn.error
+./mf log --thread <id> --level warn                      # providerStatus=402 gatewayCallId=… on stream.close
 ```
 
 ```text
@@ -160,8 +160,8 @@ When a provider answers a model call with an error, three places keep it:
   text before the SDK parses it. This lives with the captured request: the
   debug gate must be open, it is in memory only, and a restart or eviction
   loses it.
-- **Server events** carry only `providerStatus` (on `stream.close` and
-  `turn.error`) and `gatewayCallId`. Provider text never enters `EventSink`,
+- **Server events** carry only `providerStatus` and `gatewayCallId`, in the
+  correlation of the call's `stream.close`. Provider text never enters `EventSink`,
   JSONL, or model context.
 
 `status` is null when the provider reported the failure inside a successful
@@ -300,9 +300,9 @@ jar:
 
 Filters are `--event`, `--trace`, `--thread`, `--turn`, `--document`,
 `--error-code`, `--source`, `--name`, `--level`, `--since` (duration or ISO
-time), and `--limit` (default 50). Compact output omits payloads except a
-provider failure's `providerStatus`, printed with its `gatewayCallId`; `--full`
-includes the sanitized records. JSON output includes dropped record/byte counts.
+time), and `--limit` (default 50). Compact lines print the correlation keys
+`threadId`, `turnId`, `traceId`, `toolName`, `errorCode`, `providerStatus`, and
+`gatewayCallId` and omit payloads; `--full` includes the sanitized records. JSON output includes dropped record/byte counts.
 Failures exit nonzero with a hint.
 
 Servers with the debug gate open and the `local` event provider retain up to

@@ -7,7 +7,7 @@
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { type OrchestratorEvent, replyProviderError } from "@meridian/contracts/threads";
+import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { createOrchestratorEventProjector } from "./domain/orchestrator-event-projector.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
@@ -198,24 +198,12 @@ export function createThreadEventHub(
         for (const entry of entries) {
           const event = entry.payload as OrchestratorEvent;
           if (event.type === "turn.error") {
-            // Status and call id only; the provider's text stays on the turn and in capture.
-            const provider = replyProviderError(event.turn.metadata);
             emitEvent(eventSink, {
               level: "error",
               source: "threads.event-hub",
               name: "turn.error",
-              correlation: {
-                threadId,
-                turnId: event.turn.id,
-                runId: event.turn.id,
-                ...(provider ? { gatewayCallId: provider.gatewayCallId } : {}),
-              },
-              payload: {
-                threadId,
-                turnId: event.turn.id,
-                error: event.error,
-                ...(provider?.status == null ? {} : { providerStatus: provider.status }),
-              },
+              correlation: { threadId, turnId: event.turn.id, runId: event.turn.id },
+              payload: { threadId, turnId: event.turn.id, error: event.error },
             });
           }
           const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
