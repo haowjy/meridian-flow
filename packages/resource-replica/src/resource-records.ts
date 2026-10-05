@@ -126,6 +126,7 @@ export type NamespaceIntent = ResourceKey & {
     | "submitted"
     | "received"
     | "settled"
+    | "superseded"
     | "needs-repair"
     | "cancelled"
     | "settled-locally";

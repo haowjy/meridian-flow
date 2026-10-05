@@ -33,7 +33,7 @@ export function supersedeRepairableNamespaceWork(
         intent.desired.kind === "create"
       )
         return intent;
-      if (intent.state === "needs-repair") return { ...intent, state: "settled" };
+      if (intent.state === "needs-repair") return { ...intent, state: "superseded" };
       if (intent.state === "pending" && intent.attempts.length === 0)
         return { ...intent, state: "cancelled" };
       return intent;
@@ -41,28 +41,26 @@ export function supersedeRepairableNamespaceWork(
   };
 }
 
-/** Historical rejected deletes remain evidence, not deletion ownership after supersession. */
+/** Local deletion settlement owns deletion; rejected and superseded history never does. */
 export function intentOwnsDeletion(intent: NamespaceIntent): boolean {
-  if (intent.desired.kind !== "delete") return false;
-  if (intent.state === "cancelled" || intent.state === "needs-repair") return false;
-  const outcome = intent.attempts.at(-1)?.outcome;
-  return !(
-    intent.state === "settled" &&
-    outcome?.kind === "operation" &&
-    !outcome.receipt.result.ok
+  return (
+    intent.desired.kind === "delete" &&
+    (intent.state === "pending" ||
+      intent.state === "submitted" ||
+      intent.state === "received" ||
+      intent.state === "settled" ||
+      intent.state === "settled-locally")
   );
 }
 
-/** Rejected history is evidence, never placement ownership after a retry supersedes it. */
+/** Only active or accepted moves can own placement. */
 export function intentOwnsLocation(intent: NamespaceIntent): boolean {
-  if (intent.desired.kind !== "set-location" && intent.desired.kind !== "set-folder-location")
-    return false;
-  if (["cancelled", "settled-locally", "needs-repair"].includes(intent.state)) return false;
-  const outcome = intent.attempts.at(-1)?.outcome;
-  return !(
-    intent.state === "settled" &&
-    outcome?.kind === "operation" &&
-    !outcome.receipt.result.ok
+  return (
+    (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+    (intent.state === "pending" ||
+      intent.state === "submitted" ||
+      intent.state === "received" ||
+      intent.state === "settled")
   );
 }
 

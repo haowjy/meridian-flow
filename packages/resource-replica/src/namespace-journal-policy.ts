@@ -73,7 +73,9 @@ export function validateNamespaceJournal(input: {
       intent.settledAt !== undefined &&
       (!Number.isFinite(intent.settledAt) ||
         intent.settledAt < 0 ||
-        (intent.state !== "settled" && intent.state !== "needs-repair"))
+        (intent.state !== "settled" &&
+          intent.state !== "needs-repair" &&
+          intent.state !== "superseded"))
     )
       throw new Error("Invalid namespace settlement time");
     const attempts = new Set<string>();
@@ -151,7 +153,10 @@ export function validateNamespaceJournal(input: {
     if (intent.state === "settled-locally") {
       if (
         next.intents.some(
-          (other) => other.intentId !== intent.intentId && other.state !== "cancelled",
+          (other) =>
+            other.intentId !== intent.intentId &&
+            other.state !== "cancelled" &&
+            other.state !== "superseded",
         )
       )
         throw new Error("Locally deleted resources cannot retain executable namespace work");
@@ -165,8 +170,23 @@ export function validateNamespaceJournal(input: {
       throw new Error("Submitted intention requires an unresolved attempt");
     if (intent.state === "received" && !lastAttempt?.outcome)
       throw new Error("Received intention requires a durable outcome");
-    if (intent.state === "settled" && !lastAttempt?.outcome)
-      throw new Error("Settled intention requires an outcome");
+    const outcome = lastAttempt?.outcome;
+    const accepted =
+      outcome?.kind === "operation"
+        ? outcome.receipt.result.ok
+        : outcome?.kind === "create" && outcome.result.status !== "conflict";
+    if (intent.state === "settled" && !accepted)
+      throw new Error("Settled intention requires an accepted outcome");
+    if (
+      intent.state === "superseded" &&
+      ((intent.attempts.length > 0 && !outcome) ||
+        accepted ||
+        (previousIntent &&
+          previousIntent.state !== "needs-repair" &&
+          previousIntent.state !== "received" &&
+          previousIntent.state !== "superseded"))
+    )
+      throw new Error("Only failed namespace work can be superseded");
     if (intent.state === "pending" && intent.attempts.length > 0)
       throw new Error("Recorded attempts cannot return to pending");
     if (intent.attempts.slice(0, -1).some((attempt) => !attempt.outcome))
@@ -190,10 +210,10 @@ export function validateNamespaceJournal(input: {
     )
       throw new Error("Locally completed namespace work cannot restart");
     if (
-      oldIntent.state === "settled" &&
-      (intent.state !== "settled" || intent.attempts.length !== oldIntent.attempts.length)
+      (oldIntent.state === "settled" || oldIntent.state === "superseded") &&
+      (intent.state !== oldIntent.state || intent.attempts.length !== oldIntent.attempts.length)
     )
-      throw new Error("Settled intentions cannot restart");
+      throw new Error("Terminal intentions cannot restart");
     if (
       oldIntent.state === "received" &&
       (intent.state === "pending" ||

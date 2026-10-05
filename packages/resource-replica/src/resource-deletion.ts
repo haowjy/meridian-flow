@@ -44,7 +44,10 @@ export function planResourceDeletion(
       },
       intents: [
         ...superseded.intents.map((intent) =>
-          !superseded.repaired && intent.attempts.length === 0 && intent.state !== "cancelled"
+          !superseded.repaired &&
+          intent.attempts.length === 0 &&
+          intent.state !== "cancelled" &&
+          intent.state !== "superseded"
             ? { ...intent, state: "cancelled" as const }
             : intent,
         ),
