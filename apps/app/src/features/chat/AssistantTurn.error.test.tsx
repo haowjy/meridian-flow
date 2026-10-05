@@ -114,7 +114,7 @@ describe("AssistantTurn failure", () => {
     const providerError = { status: 402, message: "Insufficient Balance", gatewayCallId: "c1" };
     const refusedTurn = {
       ...failedTurn,
-      metadata: { reason: "provider_error", providerError: { ...providerError, retryable: false } },
+      metadata: { reason: "provider_error", retryable: false, providerError },
     } as unknown as Turn;
     const refused = renderToStaticMarkup(
       <AssistantTurn turn={refusedTurn} endsTranscript replyRetry={retry} />,
@@ -127,7 +127,7 @@ describe("AssistantTurn failure", () => {
 
     const exhausted = {
       ...failedTurn,
-      metadata: { reason: "rate_limited", providerError: { ...providerError, retryable: true } },
+      metadata: { reason: "rate_limited", retryable: true, providerError },
     } as unknown as Turn;
     const html = renderToStaticMarkup(
       <AssistantTurn turn={exhausted} endsTranscript replyRetry={retry} />,
