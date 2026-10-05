@@ -26,6 +26,7 @@ vi.mock("@hocuspocus/provider", () => {
       websocketConfigurations.push(configuration);
     }
 
+    rejectConnectionAttempt(): void {}
     async connect(): Promise<void> {}
     destroy(): void {}
   }

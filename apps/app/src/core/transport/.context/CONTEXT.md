@@ -99,9 +99,14 @@ recovery, and immediately emits `suspect-offline`.
 Hints do not replace backoff or poll. Document and thread sockets leave healthy
 connections alone, fence terminal/destroyed owners, and take their normal close
 path immediately on offline, without waiting for a native close handshake.
-Hocuspocus `connect()` cancels its previous abortable retry; do not mutate its
-retry internals or call `disconnect()` for browser offline (that disables its
-normal reconnect loop).
+The room adapter owns reconnect generations: it cancels and fences the delayed
+close timer and retains Hocuspocus 4.3's abortable retry cancellation through
+native open until the first frame settles the attempt. A new generation settles
+the superseded attempt and cancels its retry before replacement. Library
+backoff, socket cleanup, message queues, and acknowledgement handling remain
+unchanged. Do not call `disconnect()` for browser offline (that disables the
+normal reconnect loop). Thread success is reported only on the server's
+`connected` frame through the socket lifecycle's canonical state publisher.
 
 The resource replica retains its 30-second retry interval: failed HTTP work can
 remain pending without another browser event or socket success. Working-set

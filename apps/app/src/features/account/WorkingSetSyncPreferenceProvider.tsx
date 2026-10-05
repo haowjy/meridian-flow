@@ -7,10 +7,10 @@
  * the driver and the row consume this context, so a stale or `null` loader echo
  * cannot move the driver or hide the switch once a local confirm exists.
  */
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 
-import { configureWorkingSetSync } from "@/client/working-set";
+import { bindWorkingSetSyncLifetime, configureWorkingSetSync } from "@/client/working-set";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -59,10 +59,15 @@ function WorkingSetSyncPreferenceOwner({
 }) {
   const preference = useWorkingSetSyncPreference(serverValue);
   const connectivityHints = useConnectivityHints();
+  const accountEpoch = useAccountEpochSignal();
+  useEffect(
+    () => bindWorkingSetSyncLifetime(accountId, accountEpoch, connectivityHints),
+    [accountId, accountEpoch, connectivityHints],
+  );
   // Configure during render, ahead of the descendant project-route bootstrap's
   // hydration layout commit. The driver must already know its enabled state;
   // `configure` is idempotent for an unchanged account/value pair.
-  configureWorkingSetSync(accountId, preference.confirmed, connectivityHints);
+  configureWorkingSetSync(accountId, preference.confirmed && !accountEpoch.aborted);
   return (
     <WorkingSetSyncPreferenceContext.Provider value={preference}>
       {children}
