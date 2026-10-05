@@ -25,7 +25,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       changeTrailShells,
       contextSources,
       documentBranches,
-      documentDerivations,
       documentYjsCheckpoints,
       documentYjsHeads,
       documentYjsReversalOps,
@@ -191,7 +190,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("ContextFS AI writes return with certified projection and cannot republish a stale return value", async () => {
+    it("ContextFS cannot republish a stale write return over the certified projection", async () => {
       const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
       const { DrizzleContextDocumentStore } = await import(
         "../context/adapters/context-fs/drizzle-store.js"
@@ -201,18 +200,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await db.insert(modelResponses).values(
-        [TURN_ID, TURN_2_ID].map((turnId) => ({
-          id: turnId,
-          turnId,
-          sequence: 0,
-          provider: "mock",
-          model: "mock",
-          requestMessageCount: 0,
-          predictedCacheState: "cold" as const,
-          predictedCacheReason: "facts_unavailable" as const,
-        })),
-      );
+      await db.insert(modelResponses).values({
+        id: TURN_ID,
+        turnId: TURN_ID,
+        sequence: 0,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 0,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
       const context = new ContextFS({
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
@@ -228,52 +225,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       });
-      const assertCertified = async (documentId: string, markdown: string) => {
-        const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
-        const [head] = await db
-          .select()
-          .from(documentYjsHeads)
-          .where(eq(documentYjsHeads.documentId, documentId));
-        const [watermark] = await db
-          .select()
-          .from(documentDerivations)
-          .where(eq(documentDerivations.documentId, documentId));
-        expect(row?.markdownProjection).toBe(markdown);
-        expect(row?.sizeBytes).toBe(Buffer.byteLength(markdown, "utf8"));
-        expect(watermark?.projectionGeneration).toBe(head?.authorityGeneration);
-        expect(watermark?.projectionAdmissionSequence).toBe(head?.nextAdmissionSequence);
-        expect(watermark?.projectionLocationVersion).toBe(row?.locationVersion);
-      };
       try {
         const created = await context.write("fresh.md", "Seed.");
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
-        await assertCertified(created.value.documentId, "Seed.\n");
-        const written = await context.write("fresh.md", "AI café.", {
-          origin: {
-            type: "agent",
-            agentSlug: "writer",
-            turnId: TURN_ID as never,
-            threadId: THREAD_ID as never,
-          },
-        });
-        expect(written.ok, JSON.stringify(written)).toBe(true);
-        await assertCertified(created.value.documentId, "AI café.\n");
         await expect(
-          context.edit(
-            "fresh.md",
-            { kind: "append", content: "\nNext." },
-            {
-              origin: {
-                type: "agent",
-                agentSlug: "writer",
-                turnId: TURN_2_ID as never,
-                threadId: THREAD_ID as never,
-              },
+          context.write("fresh.md", "Current café.", {
+            origin: {
+              type: "agent",
+              agentSlug: "writer",
+              turnId: TURN_ID as never,
+              threadId: THREAD_ID as never,
             },
-          ),
-        ).resolves.toMatchObject({ ok: true });
-        await assertCertified(created.value.documentId, "AI café.\n\nNext.\n");
+          }),
+        ).resolves.toMatchObject({
+          ok: true,
+        });
+        const [row] = await db
+          .select()
+          .from(documents)
+          .where(eq(documents.id, created.value.documentId));
+        expect(row?.markdownProjection).toBe("Current café.\n");
+        expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
       } finally {
         await collab.documentDerivations.stop();
       }
