@@ -2223,6 +2223,10 @@ msgstr "界面语言"
 msgid "Interject"
 msgstr "插一句"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Invoked {skill}"
+msgstr ""
+
 #: src/features/chat/thinking-digest.ts
 msgid "Invoked {skills}"
 msgstr ""
@@ -2232,7 +2236,11 @@ msgid "Invoked a skill"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Invoked the {skill} skill"
+#~ msgid "Invoked the {skill} skill"
+#~ msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Invoking {skill}…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2240,8 +2248,8 @@ msgid "Invoking a skill…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Invoking the {skill} skill…"
-msgstr ""
+#~ msgid "Invoking the {skill} skill…"
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."

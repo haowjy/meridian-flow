@@ -50,7 +50,7 @@ describe("renderWorkContext", () => {
       "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Check with the user, then unarchive it with work unarchive, or ask them to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
     );
     expect(writes(work(archived), true)).toBe(
-      "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, check with the user, then unarchive it with work unarchive.",
+      "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
     );
     expect(writes(work({ ...archived, aiWriteMode: "draft" }), false)).toBe(
       "  writes: archived. This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",

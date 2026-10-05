@@ -34,6 +34,7 @@
 - `work` results name the write mode `writes` and the pending count `pendingChangeCount`.
 - HTTP `work_archived` is now 403 (was 409).
 - Tool names never fold onto another Flow tool: `search` stays `search` in `tools` and `disallowed-tools`. `spawn` `overrides.disallowed_tools` refuses a name outside the tool catalog and lists the tools.
+- A skill's chat row reads "Invoked 'Story Review'", like the Thinking fold's summary. An archived Work's context line tells the model to unarchive it with `work unarchive` to change its scratch or draft, without checking with the user first. `ls` `details` says to leave it off unless the model needs sizes and edit times.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
