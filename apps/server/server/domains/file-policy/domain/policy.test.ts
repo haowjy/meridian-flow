@@ -28,7 +28,6 @@ function file(
     ownerWork,
     deleted: false,
     scheme,
-    path: "a.md",
     self: { kind: "document", id: "doc" },
     ancestors: [{ kind: "project", id: PROJECT }],
     ...over,
@@ -57,9 +56,9 @@ describe("file policy", () => {
   const table: [string, Principal, FileFacts, string, string | null][] = [
     ["owner edits a project file", person, file("manuscript"), "edit", null],
     ["a stranger gets nothing", { accountId: "stranger" }, file("manuscript"), "none", "not_found"],
-    ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "deleted"],
-    ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "deleted"],
-    ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "deleted"],
+    ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
+    ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
+    ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
     ["an edit agent edits manuscript", agent(link("edit", "a")), file("manuscript"), "edit", null],
@@ -128,15 +127,14 @@ describe("skill rule", () => {
   };
 
   // biome-ignore format: one row per case
-  const table: [string, Principal, string, string][] = [
-    ["a model-invocable available skill is readable", agent(link("edit", "a")), "story-review", "read"],
-    ["an available skill the model can't invoke is not found", agent(link("edit", "a")), "hidden", "none"],
-    ["the same skill preloaded is readable", agent(link("read", "a")), "preloaded-hidden", "read"],
-    ["an unbound skill is not found", agent(link("edit", "a")), "elsewhere", "none"],
-    ["a person never reads skills://", person, "story-review", "none"],
+  const table: [string, string, string][] = [
+    ["a model-invocable available skill is readable", "story-review", "read"],
+    ["an available skill the model can't invoke is not found", "hidden", "none"],
+    ["the same skill preloaded is readable", "preloaded-hidden", "read"],
+    ["an unbound skill is not found", "elsewhere", "none"],
   ];
 
-  it.each(table)("%s", (_case, principal, skill, level) => {
-    expect(skillLevel(principal, facts, skill)).toBe(level);
+  it.each(table)("%s", (_case, skill, level) => {
+    expect(skillLevel(facts, skill)).toBe(level);
   });
 });

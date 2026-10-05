@@ -2,14 +2,19 @@
  * Splits a model undo or redo between the two journals a thread's writes to
  * one document can land in: live, and the thread's Work draft. Each selected
  * write is reversed where it landed, so a selection that spans both runs once
- * per journal with the part that journal holds.
+ * per journal with the part that journal holds; `mergeReversals` joins the
+ * parts' results.
  */
 import {
   type ActiveWriteSummary,
+  isWriteErrorStatus,
   parseWriteHandle,
   type ReversalRecord,
   type ReversalSelection,
+  type WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import { type FileAccessDenied, FileEditRefusedError } from "../../file-policy/index.js";
+import type { RoutedWriteOutcome } from "./agent-edit-cores.js";
 
 export type ReversalSide = "live" | "draft";
 
@@ -106,4 +111,54 @@ function selectCandidates(selection: ReversalSelection, candidates: Candidate[])
     case "turn":
       return candidates;
   }
+}
+
+/**
+ * One result for a reversal that ran in both journals, or was refused in one.
+ * Anything reversed makes it `partial` unless every part reversed; with
+ * nothing reversed, an error from either part is the result, and a refusal
+ * alone is thrown as the refusal it is.
+ */
+export function mergeReversals(
+  direction: "undo" | "redo",
+  outcomes: readonly WriteOutcome[],
+  refused: { writeIds: string[]; denial: FileAccessDenied }[],
+): RoutedWriteOutcome {
+  const noop = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const effective = outcomes.filter((outcome) => outcome.status !== noop);
+  const [first] = effective.length > 0 ? effective : outcomes;
+  if (!first) throw new FileEditRefusedError(refused.map(({ denial }) => denial));
+  if (refused.length === 0 && effective.length <= 1) return first;
+  const reversed = effective.filter(
+    (outcome) => outcome.status === "reversed" || outcome.status === "reconciled",
+  );
+  if (reversed.length === 0) {
+    if (effective.length === 0) throw new FileEditRefusedError(refused.map(({ denial }) => denial));
+    return first;
+  }
+  const whole = reversed.length === effective.length && refused.length === 0;
+  const status = !whole
+    ? "partial"
+    : reversed.some((outcome) => outcome.status === "reconciled")
+      ? "reconciled"
+      : "reversed";
+  const results = effective.map((outcome) => outcome.result);
+  const messages = results.flatMap((result) => (result.message ? [result.message] : []));
+  const blocks = results.flatMap((result) => result.blocks ?? []);
+  const writes = reversed
+    .flatMap((outcome) => outcome.result.reversal?.writes ?? [])
+    .sort((left, right) => (parseWriteHandle(left) ?? 0) - (parseWriteHandle(right) ?? 0));
+  return {
+    ...first,
+    status,
+    isError: isWriteErrorStatus(status),
+    result: {
+      ...first.result,
+      status,
+      reversal: { direction, writes },
+      ...(blocks.length > 0 ? { blocks } : {}),
+      ...(messages.length > 0 ? { message: messages.join(" ") } : {}),
+    },
+    ...(refused.length > 0 ? { refusedWrites: refused } : {}),
+  } as RoutedWriteOutcome;
 }

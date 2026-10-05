@@ -12,8 +12,8 @@ import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
+  type FileAccessDenial,
   type FileAccessLevel,
-  type FileAccessLimit,
   type FileDecision,
   type FileDestination,
   type FileFacts,
@@ -94,7 +94,7 @@ export function decide(
   return levelAt(principal, facts, grants, destinationFor(principal, facts));
 }
 
-type Term = { cap: FileAccessLevel; limit: FileAccessLimit; work?: WorkRef };
+type Term = { cap: FileAccessLevel; limit: FileAccessDenial; work?: WorkRef };
 
 /**
  * The level at a given destination. `confirmEdit` calls this with the
@@ -123,7 +123,7 @@ export function levelAt(
 }
 
 /** The highest grant on the file or any ancestor (§3.1). */
-function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccessLevel {
+export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccessLevel {
   return matchAncestors(facts, grants).reduce<FileAccessLevel>(
     (best, grant) => higherLevel(best, grant.level),
     "none",
@@ -137,7 +137,7 @@ function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccess
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
   if (facts.projectDeleted || facts.deleted || facts.ownerWork?.deleted) {
-    terms.push({ cap: "none", limit: "deleted" });
+    terms.push({ cap: "none", limit: "not_found" });
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
@@ -150,7 +150,7 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 }
 
 function workTerms(work: FileWorkFacts): Term[] {
-  if (work.deleted) return [{ cap: "none", limit: "deleted" }];
+  if (work.deleted) return [{ cap: "none", limit: "not_found" }];
   if (work.archived) {
     return [{ cap: "read", limit: "work_archived", work: { id: work.id, slug: work.slug } }];
   }
@@ -173,24 +173,14 @@ function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
 }
 
 /**
- * A skill's files (`skills://<skill>/…`, D52) as the calling agent sees them:
- * `read` when its own binding preloads the skill or offers it as
- * `model-invocable`, otherwise `none`, so an invisible skill reads as
- * missing. Never `edit`. No person surface reads `skills://`, so a person
- * gets `none`.
+ * A skill's files (`skills://<skill>/…`, D52) as an agent sees them, judged
+ * on its own thread's binding: `read` when the binding preloads the skill or
+ * offers it as `model-invocable`, otherwise `none`, so an invisible skill
+ * reads as missing. Never `edit` (D58). Only model tools read `skills://`.
  */
-export function skillLevel(
-  principal: Principal,
-  facts: SkillFacts,
-  skill: string,
-): FileAccessLevel {
-  return principal.agent && skillVisible(facts, skill) ? "read" : "none";
-}
-
-/** Whether a binding lets its agent read a skill: preloaded, or available and `model-invocable`. */
-export function skillVisible(facts: SkillFacts, skill: string): boolean {
-  return (
+export function skillLevel(facts: SkillFacts, skill: string): FileAccessLevel {
+  const visible =
     facts.load.includes(skill) ||
-    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable)
-  );
+    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable);
+  return visible ? "read" : "none";
 }

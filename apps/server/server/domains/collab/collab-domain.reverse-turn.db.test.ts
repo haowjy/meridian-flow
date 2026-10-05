@@ -4,7 +4,8 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { confirmEveryGrant, testFileGrant } from "../../test-support/file-grants.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -56,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const collabs: Array<{ dispose(): void }> = [];
     const createTestCollab = () => {
       const collab = createCollabDomain({
-        fileAccess: confirmEveryGrant,
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
@@ -68,6 +69,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterEach(() => {
       for (const collab of collabs.splice(0)) collab.dispose();
     });
+
+    /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
+    async function applyDraft(
+      collab: ReturnType<typeof createTestCollab>,
+      documentId: string,
+    ): Promise<void> {
+      const [draft] = await db
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, documentId as never),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        );
+      if (!draft) throw new Error(`missing Work draft for ${documentId}`);
+      await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
+    }
 
     async function currentDraftId(
       collab: ReturnType<typeof createTestCollab>,
@@ -265,7 +285,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [find, content] of [
         [fountain, gate],
         [gate, ""],
@@ -281,6 +300,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, DOC_ID);
       }
 
       const undo = await collab.reverseTurn({
@@ -312,7 +332,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [documentId, markdown] of [
         [DOC_ID, "First base."],
         [CREATED_DOC_ID, "Second base."],
@@ -339,6 +358,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, documentId);
       }
       await collab.writeDocument({
         documentId: CREATED_DOC_ID as never,
@@ -542,7 +562,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
-    it("keeps a pending draft manual after switching to auto-apply and applies it later", async () => {
+    it("keeps a pending draft after switching to auto-apply and applies it later", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
@@ -574,17 +594,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(works)
         .where(eq(works.id, WORK_ID));
       expect(work?.aiWriteMode).toBe("direct");
-      // The kept draft stays manual, so no draft write can auto-push it live.
-      const drafts = await db
-        .select({ pushPolicy: documentBranches.pushPolicy })
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, DOC_ID as never),
-            eq(documentBranches.kind, "work_draft"),
-          ),
-        );
-      expect(drafts.map((draft) => draft.pushPolicy)).toEqual(["manual"]);
       const draftId = await currentDraftId(collab, DOC_ID);
       const preview = await collab.draftReview.preview({
         workId: WORK_ID as never,

@@ -14,7 +14,6 @@ import type { BranchPeerShadowAccess, SyncError } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
-import type { AutoBranchPushPort } from "./branch-push-contracts.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -31,13 +30,11 @@ export function createEffectiveDocumentReader(input: {
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
   branchPulls: BranchPullService;
-  branchPush: AutoBranchPushPort;
   liveCoordinator: DocumentCoordinator;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "readVersionedMarkdown" | "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
 }): BranchPeerShadowAccess {
   /**
    * Whether this reply's staged writes to the document belong to the version
@@ -162,20 +159,6 @@ export function createEffectiveDocumentReader(input: {
     }
   }
 
-  async function pushManifestMutation(
-    mutation: { workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined,
-  ): Promise<void> {
-    if (mutation?.workDraftBranchId) {
-      const workDraftBranchId = mutation.workDraftBranchId;
-      const push = async () => {
-        await input.branchPush.pushAutoBranchAfterThreadPeerWrite({
-          workDraftBranchId,
-        });
-      };
-      if (!input.deferUntilCommit?.(push)) await push();
-    }
-  }
-
   return {
     async readEffectiveRevision(command) {
       try {
@@ -259,17 +242,13 @@ export function createEffectiveDocumentReader(input: {
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
     ) {
-      await pushManifestMutation(
-        await input.branches.recordManifestDocumentCreated(documentId, view),
-      );
+      await input.branches.recordManifestDocumentCreated(documentId, view);
     },
     async recordManifestDocumentDeleted(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
     ) {
-      await pushManifestMutation(
-        await input.branches.recordManifestDocumentDeleted(documentId, view),
-      );
+      await input.branches.recordManifestDocumentDeleted(documentId, view);
     },
   };
 }

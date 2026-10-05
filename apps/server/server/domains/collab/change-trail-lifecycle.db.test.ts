@@ -303,8 +303,9 @@ describe("change trail (postgres)", () => {
     expect(await harness.branchGeneration(branchId)).toBe(2);
 
     await harness.stageAnotherDestructiveEdit(branchId);
+    // A push outside trail work doesn't reset the branch.
     await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expect(await harness.branchGeneration(branchId)).toBe(3);
+    expect(await harness.branchGeneration(branchId)).toBe(2);
   });
 
   it("claims pending trail work only when its retry deadline arrives", async () => {

@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 type DocumentMutationLockDb = Pick<Database, "execute">;
 
 /** Shared key for serializing mutations against one live document. */
-export function documentMutationLockKey(documentIdOrBranchId: string): string {
+function documentMutationLockKey(documentIdOrBranchId: string): string {
   return `document-mutation:${documentIdOrBranchId}`;
 }
 

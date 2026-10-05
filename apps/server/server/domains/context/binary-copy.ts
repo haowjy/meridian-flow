@@ -35,7 +35,7 @@ export interface BinaryCopyInput {
 export async function copyBinaryDocument(
   input: BinaryCopyInput,
 ): Promise<Result<ContextWriteResult, ContextError>> {
-  const granted = input.sourceGrant.target;
+  const granted = input.sourceGrant.facts.target;
   if (granted.kind === "container" || granted.documentId !== input.source.documentId) {
     throw new Error("A binary copy's grant must name its source document");
   }

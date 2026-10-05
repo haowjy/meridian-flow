@@ -47,7 +47,6 @@ function createService(input: {
     resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
     listEditedDocumentsForTurn: async () => input.lineage ?? [],
     fileAccess: visibleOnly(input.allowed),
-    isDraftWorkUnavailable: () => false,
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
@@ -170,7 +169,6 @@ describe("cross-scope reversal", () => {
       resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
       listEditedDocumentsForTurn: async () => [],
       fileAccess: visibleOnly(),
-      isDraftWorkUnavailable: () => false,
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -242,7 +240,6 @@ describe("cross-scope reversal", () => {
       resolveDocumentUri: async () => "manuscript://branch.md",
       listEditedDocumentsForTurn: async () => [],
       fileAccess: visibleOnly(),
-      isDraftWorkUnavailable: () => false,
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -272,12 +269,10 @@ function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
         return {
           denied: true,
           target,
-          need,
           reason: "not_found",
-          limitedBy: "not_found",
           level: "none",
           archivedWork: null,
-          scheme: null,
+          facts: null,
           destination: null,
           agentChain: null,
         };

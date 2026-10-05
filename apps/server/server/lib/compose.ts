@@ -58,6 +58,7 @@ import {
   type UploadIntake,
 } from "../domains/context/index.js";
 import {
+  type AgentChain,
   createAllowAllFileAccess,
   createDrizzleFileFacts,
   createFileAccess,
@@ -171,7 +172,6 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  readThreadSkillFacts,
   resolveThreadUserInvocableSkills,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
@@ -305,6 +305,8 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** A thread's delegation chain, read fresh (file-access §8). */
+  readAgentChain(threadId: ThreadId): Promise<AgentChain>;
   /** The file policy every model read and write asks (file-access §1). */
   fileAccess: FileAccess;
   fileAccessChanges: PgFileAccessChanges;
@@ -457,16 +459,17 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
+  const agentRevisions = createDrizzleAgentRevisionStore(db);
+  const chainDeps = {
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+    agentRevisions,
+  };
+  const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db, {
-      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
-    }),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
-    readAgentChain: (threadId) =>
-      readAgentChain(
-        { threads: threadRepos.threads, threadWorks: threadRepos.threadWorks, agentRevisions },
-        threadId,
-      ),
+    readAgentChain: readChain,
   });
   const documentSync = createCollabDomain({
     db,
@@ -531,7 +534,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     assetPaths: assetPathResolver,
   });
-  const agentRevisions = createDrizzleAgentRevisionStore(db);
   await seedGeneralAgent(agentRevisions, defaultModel);
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,
@@ -626,6 +628,7 @@ export async function createProductionAppPorts(input: {
     promotionService,
     notices,
     activeDocuments,
+    readAgentChain: readChain,
   };
 }
 
@@ -644,7 +647,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
+    // Trail work retries only an auto-policy branch's push (drizzle-turn-trail-work).
+    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId, resetPolicy: "auto" }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
@@ -652,15 +656,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
-    readAgentChain: (threadId) =>
-      readAgentChain(
-        {
-          threads: ports.threadRepos.threads,
-          threadWorks: ports.threadRepos.threadWorks,
-          agentRevisions: ports.agentRevisions,
-        },
-        threadId,
-      ),
+    readAgentChain: ports.readAgentChain,
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
@@ -723,15 +719,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     fileAccess: ports.fileAccess,
     agentRevisions: ports.agentRevisions,
-    readAgentChain: (threadId: ThreadId) =>
-      readAgentChain(
-        {
-          threads: ports.threadRepos.threads,
-          threadWorks: ports.threadRepos.threadWorks,
-          agentRevisions: ports.agentRevisions,
-        },
-        threadId,
-      ),
+    readAgentChain: ports.readAgentChain,
   };
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -1582,9 +1570,7 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    fileAccess: createAllowAllFileAccess({
-      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
-    }),
+    fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,

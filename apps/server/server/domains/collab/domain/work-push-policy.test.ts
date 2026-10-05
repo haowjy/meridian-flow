@@ -1,10 +1,7 @@
-/** Contract tests for work-draft auto/manual push policy transitions. */
+/** Contract tests for switching a Work's AI write mode (D40, D59). */
 
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
@@ -12,36 +9,10 @@ import { createWorkPushPolicy } from "./work-push-policy.js";
 const WORK_ID = "00000000-0000-4000-8000-000000000001" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000002" as UserId;
 
-function workDraft(
-  pushPolicy: "manual" | "auto",
-  status: "active" | "closed" = "active",
-): BranchSnapshot {
-  return {
-    branchId: "work-draft",
-    documentId: "00000000-0000-4000-8000-000000000003",
-    kind: "work_draft",
-    upstreamBranchId: null,
-    workId: WORK_ID,
-    threadId: null,
-    pushPolicy,
-    status,
-    generation: 1,
-    state: new Uint8Array(),
-    stateVector: new Uint8Array(),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
-  } as BranchSnapshot;
-}
-
-function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
+function createHarness() {
   const events: string[] = [];
-  const branchStore: BranchStore = {
-    ...unimplementedBranchMutations(),
-    getBranch: vi.fn(async () => branch),
-    updateBranchSnapshot: vi.fn(),
-    deferUntilCommit: vi.fn(() => false),
-  };
   const workPushPolicyStore: WorkPushPolicyStore = {
-    updateWorkDraftPushPolicy: vi.fn(async (_workId, policy) => {
+    setWorkWriteMode: vi.fn(async (_workId, policy) => {
       events.push(`policy:${policy}`);
     }),
   };
@@ -49,16 +20,6 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
     list: vi.fn(async () => []),
     countPendingByWorkIds: vi.fn(async () => new Map()),
   };
-  const pushToLive = vi.fn(async ({ branchId }: { branchId: string }) => {
-    events.push(`push:${branchId}`);
-    return {
-      status: "noop" as const,
-      branchId,
-      documentId: "00000000-0000-4000-8000-000000000003" as BranchSnapshot["documentId"],
-      branchGeneration: 1,
-      reason: "no_active_rows" as const,
-    };
-  });
   const applyPendingDraft = vi.fn(
     async ({ draft }: { draft: Awaited<ReturnType<WorkDraftPending["list"]>>[number] }) => {
       events.push(`push:${draft.branch.branchId}`);
@@ -72,60 +33,21 @@ function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
     },
   );
   const policy = createWorkPushPolicy({
-    branchStore,
     workPushPolicyStore,
     workDraftPending,
-    pushToLive,
     applyPendingDraft,
   });
 
   return {
     applyPendingDraft,
-    branchStore,
     events,
     policy,
-    pushToLive,
     workDraftPending,
     workPushPolicyStore,
   };
 }
 
 describe("work push policy", () => {
-  it.each([
-    { branch: null, reason: "not_active_work_draft" },
-    {
-      branch: { ...workDraft("auto"), kind: "thread_peer" as const },
-      reason: "not_active_work_draft",
-    },
-    { branch: workDraft("auto", "closed"), reason: "not_active_work_draft" },
-    { branch: workDraft("manual"), reason: "manual_policy" },
-  ] as const)("does not auto-push $reason branches", async ({ branch, reason }) => {
-    const harness = createHarness(branch);
-
-    await expect(
-      harness.policy.pushAutoBranchAfterThreadPeerWrite({
-        workDraftBranchId: "work-draft",
-        pushedByUserId: USER_ID,
-      }),
-    ).resolves.toEqual({ status: "skipped", reason });
-    expect(harness.pushToLive).not.toHaveBeenCalled();
-  });
-
-  it("auto-pushes an active auto work draft with writer lineage", async () => {
-    const harness = createHarness(workDraft("auto"));
-
-    await expect(
-      harness.policy.pushAutoBranchAfterThreadPeerWrite({
-        workDraftBranchId: "work-draft",
-        pushedByUserId: USER_ID,
-      }),
-    ).resolves.toMatchObject({ status: "noop" });
-    expect(harness.pushToLive).toHaveBeenCalledWith({
-      branchId: "work-draft",
-      pushedByUserId: USER_ID,
-    });
-  });
-
   it("switches to manual without inspecting or pushing pending work", async () => {
     const harness = createHarness();
 
@@ -133,7 +55,7 @@ describe("work push policy", () => {
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "manual" }),
     ).resolves.toEqual({ status: "updated", policy: "manual" });
     expect(harness.workDraftPending.list).not.toHaveBeenCalled();
-    expect(harness.pushToLive).not.toHaveBeenCalled();
+    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
     expect(harness.events).toEqual(["policy:manual"]);
   });
 
@@ -146,8 +68,8 @@ describe("work push policy", () => {
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto" }),
     ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 2 });
-    expect(harness.pushToLive).not.toHaveBeenCalled();
-    expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).not.toHaveBeenCalled();
+    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
+    expect(harness.workPushPolicyStore.setWorkWriteMode).not.toHaveBeenCalled();
   });
 
   it("pushes every active draft before enabling auto policy", async () => {
@@ -173,12 +95,7 @@ describe("work push policy", () => {
     });
   });
 
-  it.each([
-    { archived: false },
-    { archived: true },
-  ])("keeps pending work for review and switches only the Work's mode (archived: $archived)", async ({
-    archived,
-  }) => {
+  it("keeps pending work for review and switches only the Work's mode", async () => {
     const harness = createHarness();
     vi.mocked(harness.workDraftPending.list).mockResolvedValue(
       pendingDrafts("branch-a", "branch-b"),
@@ -189,36 +106,10 @@ describe("work push policy", () => {
         workId: WORK_ID,
         policy: "auto",
         pending: "keep",
-        archived,
       }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.applyPendingDraft).not.toHaveBeenCalled();
-    expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).toHaveBeenCalledWith(
-      WORK_ID,
-      "auto",
-      { keepDraftBranches: true },
-    );
-  });
-
-  it.each([
-    { pending: [] as string[] },
-    { pending: ["branch-a"] },
-  ])("refuses to apply an archived Work's frozen drafts ($pending.length pending)", async ({
-    pending,
-  }) => {
-    const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(pendingDrafts(...pending));
-
-    await expect(
-      harness.policy.setWorkPushPolicy({
-        workId: WORK_ID,
-        policy: "auto",
-        pending: "apply",
-        archived: true,
-      }),
-    ).resolves.toEqual({ status: "refused", reason: "work_archived" });
-    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
-    expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).not.toHaveBeenCalled();
+    expect(harness.workPushPolicyStore.setWorkWriteMode).toHaveBeenCalledWith(WORK_ID, "auto");
   });
 
   it("does not enable auto policy when a confirmed push fails", async () => {
@@ -229,7 +120,7 @@ describe("work push policy", () => {
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "apply" }),
     ).rejects.toThrow("push failed");
-    expect(harness.workPushPolicyStore.updateWorkDraftPushPolicy).not.toHaveBeenCalled();
+    expect(harness.workPushPolicyStore.setWorkWriteMode).not.toHaveBeenCalled();
   });
 });
 
@@ -237,7 +128,7 @@ function pendingDrafts(...branchIds: string[]) {
   return branchIds.map((branchId) => ({
     branch: {
       branchId,
-      documentId: workDraft("manual").documentId,
+      documentId: "00000000-0000-4000-8000-000000000003",
       workId: WORK_ID,
       generation: 1,
     },

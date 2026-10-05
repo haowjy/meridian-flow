@@ -49,16 +49,6 @@ export function runOutsideEditConfirmation<T>(operation: () => T): T {
   return scope.exit(operation);
 }
 
-/**
- * Captures the bound grants for a step that is still part of this write but
- * runs after it commits (an auto-applied draft), so the step carries them
- * explicitly once after-commit dispatch has left the scope.
- */
-export function captureEditConfirmation(): <T>(operation: () => T) => T {
-  const confirmation = scope.getStore();
-  return (operation) => (confirmation ? scope.run(confirmation, operation) : scope.exit(operation));
-}
-
 /** The Works the bound grants lock; a seam adds them to its own sorted Work locks. */
 export function scopedEditWorkIds(): readonly string[] {
   return scope.getStore()?.workIds ?? [];

@@ -12,17 +12,13 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
+  runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
-import { runOutsideEditConfirmation } from "../../shared/edit-confirmation.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import type { EventSink } from "../observability/index.js";
-import {
-  type ProjectWorkAuthorityResolver,
-  WorkLifecycleUnavailableError,
-  type WorkProjectionMutation,
-} from "../projects/index.js";
+import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
@@ -127,7 +123,7 @@ type CollabDomainDeps = {
    * Confirms writes' grants under lock where they become durable (file-access
    * §5); the writer's turn undo also asks it for its grants.
    */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
 };
@@ -163,8 +159,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
     // A pull isn't the write that scheduled it: it leaves that write's grants too.
-    outsideTransaction: (operation) =>
-      runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation)),
+    outsideTransaction: runOutsideWrite,
     rootTransaction: (operation) => runInRootDrizzleTransaction(deps.db, operation),
     liveCoordinator,
     branchCoordinator,
@@ -294,7 +289,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     branchCoordinator,
     branchPulls,
-    branchPush,
     branchJournal,
     concurrentJournalWatermarks,
     diagnostics: createBranchAgentEditDiagnostics(deps.eventSink),
@@ -392,13 +386,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     branchCoordinator,
     branchPulls,
-    branchPush,
     liveCoordinator,
     agentEdit,
     documents: runtime.markdownDocuments,
     model: runtime.model,
     codec: runtime.codec,
-    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
@@ -436,7 +428,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
     fileAccess: deps.fileAccess,
-    isDraftWorkUnavailable: (cause) => cause instanceof WorkLifecycleUnavailableError,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

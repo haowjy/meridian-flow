@@ -16,6 +16,7 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createDrizzleJournal } from "../collab/adapters/drizzle-journal.js";
 import {
@@ -28,7 +29,6 @@ import {
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
-  UngrantedAgentWriteError,
 } from "./index.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";

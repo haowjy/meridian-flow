@@ -318,20 +318,8 @@ export function createDrizzleWorkPushPolicyStore(
   workProjection?: WorkProjectionMutation,
 ): WorkPushPolicyStore {
   return {
-    async updateWorkDraftPushPolicy(workId, policy, options) {
+    async setWorkWriteMode(workId, policy) {
       await runInDrizzleTransaction(db, async () => {
-        if (!options?.keepDraftBranches) {
-          await currentDrizzleDb(db)
-            .update(documentBranches)
-            .set({ pushPolicy: policy, updatedAt: new Date() })
-            .where(
-              and(
-                eq(documentBranches.workId, workId),
-                eq(documentBranches.kind, "work_draft"),
-                eq(documentBranches.status, "active"),
-              ),
-            );
-        }
         const [changed] = await currentDrizzleDb(db)
           .update(works)
           .set({
