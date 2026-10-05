@@ -46,6 +46,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
+const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
@@ -67,7 +68,7 @@ const { createBranchPushService } = await import("../domain/branch-push.js");
 const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
 const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
-const { createDocumentProjectionRefresher, createDocumentWriteHookRunner } = await import(
+const { createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
 );
 const { enlistResponseParticipant, runResponseTransaction } = await import(
@@ -539,11 +540,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentFiletype: async () => null,
     observability,
   });
-  const projections = createDocumentProjectionRefresher({
-    documents: runtime.markdownDocuments,
-    runDocumentWriteHook,
-    diagnostics: projectionDiagnostics,
-  });
+  const projections = { refresh: runDocumentWriteHook };
   const agentEdit = createBranchThreadPeerAgentEditCore({
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,
@@ -1222,7 +1219,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           seq: 0,
         },
       );
-      await persistence.journal.checkpoint(ALPHA_ID, Y.encodeStateAsUpdate(doc), baseSeq);
+      await persistence.journal.checkpoint(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc),
+        baseSeq,
+        documentAuthority(doc),
+      );
       const [checkpoint] = await db
         .select({ id: schema.documentYjsCheckpoints.id })
         .from(schema.documentYjsCheckpoints)
@@ -1462,19 +1464,23 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       initialMarkdown: restored,
       carriedMarkdown: restored,
     });
-    const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
-      Y.encodeStateAsUpdate(doc),
+    const { state, upToSeq, authorityHead } = await liveCoordinator.withDocument(
+      ALPHA_ID,
+      async (doc) => {
+        const authorityHead = documentAuthority(doc);
+        const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
+        return { state: Y.encodeStateAsUpdate(doc), upToSeq, authorityHead };
+      },
     );
-    const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
     const checkpointId = Number(
       await persistence.store.createCheckpoint(
         ALPHA_ID,
         state,
         "oracle-explicit-restoration",
         upToSeq,
+        authorityHead,
       ),
     );
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
