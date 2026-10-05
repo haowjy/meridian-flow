@@ -64,6 +64,11 @@ that safe:
   its live snapshot before opening its root transaction, never while holding
   it: the snapshot needs its own connection, and pulls that each hold one while
   waiting for another exhaust the pool and deadlock.
+- **Room loads read in the caller's transaction.** A room opened under a
+  command transaction loads its journal snapshot and validates its handle's
+  authority generation through that transaction. The transaction may already
+  hold the authority head row from an admission, so a second connection would
+  wait on it forever.
 - **Joiners wait for the next run.** A caller that joins an in-flight live pull
   awaits one coalesced run that starts after its call. The in-flight snapshot
   may predate a writer edit the caller must observe.
