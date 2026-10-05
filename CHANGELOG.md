@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Failed Work loading offers Retry in the new-chat picker. Local document navigation keeps its history identity while the Editor Work loads.
+
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
 
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.

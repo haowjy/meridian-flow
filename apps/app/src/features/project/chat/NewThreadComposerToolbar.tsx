@@ -15,7 +15,6 @@ import {
   useSelectedWorkWriteModeToolbarControl,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
-import { Button } from "@/components/ui/button";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -147,10 +146,10 @@ function useProspectiveWorkControl({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const catalog =
-    worksStatus === "loading" || !noWork
-      ? { status: "loading" as const }
-      : worksStatus === "error"
-        ? { status: "error" as const, retry: onRetryWorks }
+    worksStatus === "error"
+      ? { status: "error" as const, retry: onRetryWorks }
+      : worksStatus === "loading" || !noWork
+        ? { status: "loading" as const }
         : { status: "ready" as const, works, noWork, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
 
@@ -191,36 +190,25 @@ function useProspectiveWorkControl({
               : [],
         fallback: "content",
       },
-      render: ({ terminalClose }) =>
-        selectedWorkId ? (
-          <WorkPickerPanel
-            purposeLabel={t`Choose Work for new chat`}
-            view={view}
-            operation={{
-              currentWorkId: selectedWorkId,
-              targetId: null,
-              pending: false,
-              failure: null,
-            }}
-            onQueryChange={setQuery}
-            onChoose={(next) => {
-              onWorkChange(next);
-              terminalClose();
-            }}
-            searchRef={searchRef}
-            focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-          />
-        ) : (
-          <div>
-            {view.status === "error" ? (
-              <Button onClick={view.retry}>
-                <Trans>Retry</Trans>
-              </Button>
-            ) : (
-              <Trans>Loading Work…</Trans>
-            )}
-          </div>
-        ),
+      render: ({ terminalClose }) => (
+        <WorkPickerPanel
+          purposeLabel={t`Choose Work for new chat`}
+          view={view}
+          operation={{
+            currentWorkId: selectedWorkId,
+            targetId: null,
+            pending: false,
+            failure: null,
+          }}
+          onQueryChange={setQuery}
+          onChoose={(next) => {
+            onWorkChange(next);
+            terminalClose();
+          }}
+          searchRef={searchRef}
+          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+        />
+      ),
     },
   };
 }
