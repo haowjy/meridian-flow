@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Creating a missing Scratch document from a chat link opens an editable Editor and survives reload.
+
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
 
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.

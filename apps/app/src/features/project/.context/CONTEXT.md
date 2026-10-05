@@ -272,6 +272,9 @@ since binding a chat to one is refused.
 The Editor shows a tab by one rule, `isEditorTab(tab, workId)` in
 `client/stores/context-tabs-store/editor-workspace-model.ts`: every scheme but
 Uploads (`isEditorScheme`), and a Work's Scratch only in that Work's Editor.
+A local-resource history pointer pins document identity, not its namespace.
+Once placed, its removal/viewer locator uses the tracked tab's scheme and path;
+only an unplaced local document publishes `unfiled` with an empty path.
 
 ### Slot paints the material; surfaces must not
 

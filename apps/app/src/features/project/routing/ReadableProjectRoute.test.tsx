@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Unresolved Editor opens retain local history and the same tab-lifetime fence as resolved opens. */
+/** Local Editor opens retain history, fence tab lifetimes, and publish placed resource locators. */
 import type { ProjectDto } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -12,7 +12,9 @@ import type { NavigationSettlement } from "./project-navigation";
 import { ReadableProjectRoute } from "./ReadableProjectRoute";
 
 const projectId = "00000000-0000-4000-8000-000000000020";
+const workId = "00000000-0000-4000-8000-000000000021";
 const state = vi.hoisted(() => ({
+  ready: false,
   router: null as unknown as {
     history: ReturnType<typeof createMemoryHistory>;
     navigate: (options: { href: string; replace: boolean; state: object }) => Promise<void>;
@@ -29,11 +31,11 @@ vi.mock("./work-route", async (original) => ({
   useWorkRoute: () => ({
     routeWork: { status: "absent" },
     workCatalog: {
-      status: "loading",
+      status: state.ready ? "ready" : "loading",
       entries: [],
       creations: new Map(),
       isFetching: false,
-      noWork: null,
+      noWork: state.ready ? { id: "00000000-0000-4000-8000-000000000021", isNoWork: true } : null,
     },
     rememberedWork: null,
   }),
@@ -57,11 +59,13 @@ vi.mock("../context/open-project-document", () => ({
   ProjectDocumentNavigationProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../ProjectView", () => ({
-  ProjectView: () => {
+  ProjectView: (props: { activeContextScheme: string; activeContextPath: string }) => {
+    displayed = props;
     return <Probe />;
   },
 }));
 
+let displayed: { activeContextScheme: string; activeContextPath: string };
 let open: ReturnType<typeof useOpenContextRoute>;
 let departure: { run(): void; cancel(): void } | undefined;
 let dirty = false;
@@ -78,7 +82,7 @@ function Probe() {
   return null;
 }
 
-it("opens local content without a Work, but refuses a stale tab after a waiting departure", async () => {
+it("preserves local opens and tab lifetime fencing, then publishes the placed Scratch locator", async () => {
   const history = createMemoryHistory({ initialEntries: [`/p/${projectId}/chats`] });
   state.router = {
     history,
@@ -156,9 +160,39 @@ it("opens local content without a Work, but refuses a stale tab after a waiting 
         });
         expect(result).toEqual({ kind: "superseded" });
         expect(history.location.state.__TSR_key).toBe(entryKey);
+        // A persisted history pointer can outlive local document materialization.
+        // It must not keep publishing the Untitled locator after Scratch placement.
+        state.ready = true;
+        await act(async () => {
+          useContextTabsStore.setState({
+            byProject: {
+              [projectId]: {
+                tabs: [
+                  {
+                    ...getContextTabs(projectId).tabs[0],
+                    kind: "tracked",
+                    scheme: "scratch",
+                    path: "/note.md",
+                    workId,
+                    origin: "local-resource",
+                    editable: true,
+                    filetype: "markdown",
+                    schemaType: "document",
+                  },
+                ],
+                selectedTabIdByWork: { [workId]: local.documentId },
+              },
+            },
+          });
+        });
+        expect(displayed).toMatchObject({
+          activeContextScheme: "scratch",
+          activeContextPath: "/note.md",
+        });
       },
     );
   } finally {
+    state.ready = false;
     dirty = false;
     departure = undefined;
     client.clear();
