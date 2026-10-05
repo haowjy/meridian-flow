@@ -12,7 +12,8 @@ import {
   isInvalidArgumentsResult,
   renderInvalidArguments,
 } from "../tools/invalid-arguments.js";
-import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
+import { renderRefusal } from "../tools/refusal.js";
+import { renderReportBlock, reportContent } from "./history-result.js";
 
 export const queuedNoReplyCopy =
   "Message queued. No reply is pushed back; the target's response is readable in its transcript.";

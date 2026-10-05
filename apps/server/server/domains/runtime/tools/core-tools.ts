@@ -147,7 +147,7 @@ export const LsToolInputSchema = z
       .min(1)
       .describe("Folder path or context URI; omit to list the roots.")
       .optional(),
-    details: z
+    verbose: z
       .boolean()
       .describe(
         "Add each file's size and when it was last edited. Leave it off unless you need them.",

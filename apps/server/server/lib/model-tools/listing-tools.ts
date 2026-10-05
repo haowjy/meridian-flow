@@ -45,7 +45,7 @@ function listedDocumentIds(rows: readonly { documentId?: string }[]): DocumentId
 
 export function createLsHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext): Promise<LsResult | ToolErrorOutput> => {
-    const { path, details = false, version } = input as LsToolInput;
+    const { path, verbose = false, version } = input as LsToolInput;
     if (path && isSkillsUri(path)) {
       const skills = await listSkillDir(deps, ctx.threadId, path);
       return { uri: skills.uri, entries: sortLsEntries(skills.entries) };
@@ -53,7 +53,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const call = await listingCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
-    const result = await context.port.list(path, { wordCounts: details });
+    const result = await context.port.list(path, { wordCounts: verbose });
     if (!result.ok) return contextToolError(result.error);
     const listed = result.value.entries;
     const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed));
@@ -72,7 +72,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
         }
         const decision = entry.documentId ? access.get(entry.documentId as DocumentId) : undefined;
         if (!decision) return [];
-        return [{ ...lsFile(entry, details), readonly: decision.level !== "edit" }];
+        return [{ ...lsFile(entry, verbose), readonly: decision.level !== "edit" }];
       }),
     );
     const listing = entries.flat();
@@ -83,15 +83,15 @@ export function createLsHandler(deps: ToolWiringDeps) {
 }
 
 /** A file row's model-facing fields; IDs and schema details stay behind (D61). */
-function lsFile(entry: ContextFileEntry, details: boolean): Omit<LsEntry, "readonly"> {
+function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "readonly"> {
   const text = entry.editable;
   return {
     uri: entry.uri,
     kind: "file",
     ...(text ? {} : { fileType: entry.fileType }),
-    ...(details && text && entry.wordCount !== undefined ? { wordCount: entry.wordCount } : {}),
-    ...(details && !text && entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
-    ...(details && entry.updatedAt ? { updatedAt: entry.updatedAt } : {}),
+    ...(verbose && text && entry.wordCount !== undefined ? { wordCount: entry.wordCount } : {}),
+    ...(verbose && !text && entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
+    ...(verbose && entry.updatedAt ? { updatedAt: entry.updatedAt } : {}),
   };
 }
 
