@@ -35,7 +35,7 @@ export type {
   UpdateThreadUserStateResponse,
 } from "../threads/project-chat-feed.js";
 export { updateThreadUserStateRequestSchema } from "../threads/project-chat-feed.js";
-export { isProviderRefusal } from "../threads/provider-error.js";
+export { isProviderDeclined } from "../threads/provider-error.js";
 export type { RenameThreadRequest, RenameThreadResponse } from "../threads/rename-thread.js";
 export { renameThreadRequestSchema, THREAD_TITLE_MAX_LENGTH } from "../threads/rename-thread.js";
 export type { TurnStatus } from "../threads/status.js";
