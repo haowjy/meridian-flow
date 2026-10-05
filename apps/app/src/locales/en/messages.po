@@ -2223,6 +2223,10 @@ msgstr "Interface language"
 msgid "Interject"
 msgstr "Interject"
 
+#: src/features/chat/thinking-digest.ts
+msgid "Invoked {skills}"
+msgstr "Invoked {skills}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Invoked a skill"
 msgstr "Invoked a skill"

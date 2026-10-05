@@ -5,20 +5,31 @@
  * `countFoldTools` holds the counting rule as a pure, macro-free core so it can
  * be unit-tested; `thinkingDigest` only formats its result.
  */
+import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ToolView } from "./group-delivery-segments";
-import { stringInput, type ToolCommand, toolCommand, toolInputObject } from "./tool-command";
+import {
+  humanizeSkillSlug,
+  skillFile,
+  stringInput,
+  type ToolCommand,
+  toolCommand,
+  toolInputObject,
+} from "./tool-command";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
 export type FoldToolCounts = {
+  /** Skill slugs the fold loaded, in call order. */
+  invokedSkills: Set<string>;
   readDocuments: Set<string>;
   editedDocuments: Set<string>;
   steps: number;
 };
 
 export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
+  const invokedSkills = new Set<string>();
   const readDocuments = new Set<string>();
   const editedDocuments = new Set<string>();
   let steps = 0;
@@ -28,8 +39,14 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     // `read` calls count as reads and `write` calls as edits. A write command
     // the app doesn't know is a step.
     const command = toolCommand(tool);
+    const skill = stringInput(toolInputObject(tool), "name");
 
-    if (!tool.isError && path && isReadCommand(command)) {
+    if (!tool.isError && command === "skill" && skill) {
+      invokedSkills.add(skill);
+      continue;
+    }
+    // A skill's own files are not the writer's documents; reading one is a step.
+    if (!tool.isError && path && isReadCommand(command) && !skillFile(path)) {
       readDocuments.add(documentIdentity(path));
       continue;
     }
@@ -37,12 +54,12 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       editedDocuments.add(documentIdentity(path));
       continue;
     }
-    // Failed, non-document (`search`, `ls`, `work`) and pathless operations
-    // are uncountable: they contribute a step instead.
+    // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
+    // pathless operations are uncountable: they contribute a step instead.
     steps += 1;
   }
 
-  return { readDocuments, editedDocuments, steps };
+  return { invokedSkills, readDocuments, editedDocuments, steps };
 }
 
 /** A command that only looked at a document. */
@@ -65,8 +82,18 @@ export function thinkingDigest(
   tools: readonly ToolView[],
   writeMode: ThinkingDigestWriteMode,
 ): string | null {
-  const { readDocuments, editedDocuments, steps } = countFoldTools(tools);
+  const { invokedSkills, readDocuments, editedDocuments, steps } = countFoldTools(tools);
   const clauses: string[] = [];
+
+  if (invokedSkills.size > 0) {
+    // The quotes ride inside the value: an apostrophe in an ICU message
+    // escapes the placeholder next to it.
+    const skills = new Intl.ListFormat(i18n.locale || undefined, {
+      style: "long",
+      type: "conjunction",
+    }).format([...invokedSkills].map((slug) => `'${humanizeSkillSlug(slug)}'`));
+    clauses.push(t`Invoked ${skills}`);
+  }
 
   if (readDocuments.size > 0) {
     clauses.push(
