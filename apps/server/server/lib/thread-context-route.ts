@@ -18,7 +18,7 @@ export interface ThreadContextRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject" | "findNoWork">;
+  works: Pick<WorkRepository, "listByProject" | "findNoWork" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 

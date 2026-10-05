@@ -23,7 +23,7 @@ export interface ThreadContextResolution {
 export interface ThreadContextResolutionDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -50,7 +50,10 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
-  const primaryWork = projectWorks.find((work) => work.id === primaryMembership?.workId);
+  // By id: the project listing leaves out No Work, which can be in draft mode too.
+  const primaryWork = primaryMembership
+    ? await deps.works.findById(primaryMembership.workId)
+    : null;
   return {
     thread,
     primaryWorkId: primaryMembership?.workId ?? null,
@@ -90,7 +93,7 @@ export function contextPortForThread(
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
