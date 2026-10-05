@@ -140,6 +140,13 @@ thread's binding preloads or offers as `model-invocable`, and never edits
 one (D58). `runtime/loop/skill-files.ts` reads the binding once per call and
 filters with it. Skill edits will need the same file and folder permissions.
 
+## Performance
+
+Measured costs per operation, what they mean for typing and agent work, and
+the pool deadlock this domain's write paths once caused:
+[performance.md](performance.md). Re-measure before narrowing confirmation
+or adding a cache.
+
 ## Tests and in-memory
 
 `createAllowAllFileAccess` grants and confirms everything; use it where
