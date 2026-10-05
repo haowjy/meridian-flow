@@ -193,6 +193,9 @@ export async function finalizeExecution(
           ? {
               metadata: replyFailureMetadata(turn.metadata, {
                 reason: input.cause.reason,
+                ...(typeof input.cause.error === "string"
+                  ? {}
+                  : { retryable: input.cause.error.retryable }),
                 ...(input.cause.providerError ? { providerError: input.cause.providerError } : {}),
               }),
             }

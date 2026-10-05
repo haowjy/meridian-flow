@@ -2113,7 +2113,6 @@ async function executeLoop({
                   status: event.providerResponse.status,
                   message: event.providerResponse.message,
                   gatewayCallId,
-                  retryable: event.retryable,
                 },
               ),
             );

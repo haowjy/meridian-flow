@@ -4,16 +4,13 @@ import { z } from "zod";
 import type { JsonValue } from "./index.js";
 
 /**
- * Owner-scoped debug evidence for `./mf thread view`, plus the gateway's retry
- * decision. The message never enters event payloads or model context, and the
- * app never shows it.
+ * Owner-scoped debug evidence for `./mf thread view`. The message never enters
+ * event payloads or model context, and the app never shows it.
  */
 export const ReplyProviderErrorCodec = z.object({
   status: z.number().int().nullable(),
   message: z.string(),
   gatewayCallId: z.string().min(1),
-  /** The gateway's verdict on this answer: `false` means sending it again fails the same way. */
-  retryable: z.boolean(),
 });
 export type ReplyProviderError = z.infer<typeof ReplyProviderErrorCodec>;
 
@@ -25,7 +22,11 @@ export function replyProviderError(
   return ReplyProviderErrorCodec.safeParse(metadata.providerError).data ?? null;
 }
 
-/** The provider turned the request down and the gateway judged a retry futile. */
+/**
+ * The provider turned the request down and the gateway judged a retry futile:
+ * the failed reply's `metadata.retryable` is false and the provider answered.
+ */
 export function isProviderRefusal(metadata: JsonValue | null | undefined): boolean {
-  return replyProviderError(metadata)?.retryable === false;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  return metadata.retryable === false && replyProviderError(metadata) !== null;
 }

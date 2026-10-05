@@ -288,20 +288,25 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
 /** Cap on the provider message kept on a failed reply; the full response lives in dev capture. */
 export const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
 
-/** Failed-reply metadata: the terminal reason, plus the provider's response when it gave one. */
+/**
+ * Failed-reply metadata: the terminal reason, the gateway's retry verdict when the
+ * failure carried one, and the provider's response when it gave one.
+ */
 export function replyFailureMetadata(
   metadata: JsonValue | null | undefined,
-  failure: { reason: string; providerError?: ReplyProviderError },
+  failure: { reason: string; retryable?: boolean; providerError?: ReplyProviderError },
 ): JsonObject {
   const previous =
     metadata && typeof metadata === "object" && !Array.isArray(metadata)
       ? (metadata as JsonObject)
       : {};
   const preserved = { ...previous };
+  delete preserved.retryable;
   delete preserved.providerError;
   return {
     ...preserved,
     reason: failure.reason,
+    ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
     ...(failure.providerError
       ? {
           providerError: {

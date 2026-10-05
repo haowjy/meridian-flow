@@ -348,11 +348,11 @@ describe("RunSession", () => {
     expect(captured?.providerError).toEqual({ status: 402, body });
     const turn = await f.repos.turns.findById(run.executionTurnId);
     expect(turn?.metadata).toMatchObject({
+      retryable: false,
       providerError: {
         status: 402,
         message: providerMessage.slice(0, 1_000),
         gatewayCallId: captured?.gatewayCallId,
-        retryable: false,
       },
     });
   });
