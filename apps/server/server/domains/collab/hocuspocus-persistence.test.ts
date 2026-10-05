@@ -904,7 +904,6 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
     upstreamBranchId: null,
     workId: "work-1" as never,
     threadId: null,
-    pushPolicy: "manual",
     status: "active",
     generation: 2,
     state: Y.encodeStateAsUpdate(doc),

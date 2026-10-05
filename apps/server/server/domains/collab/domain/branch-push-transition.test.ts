@@ -120,7 +120,6 @@ function fixture() {
       upstreamBranchId: null,
       workId: "work" as WorkId,
       threadId: null,
-      pushPolicy: "manual",
       status: "active",
       generation: 1,
       state: Y.encodeStateAsUpdate(branch),

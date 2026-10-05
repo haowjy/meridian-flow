@@ -61,13 +61,6 @@ export function branchJournalRevision(
     .join(",");
 }
 
-export type AutoBranchPushPort = {
-  pushAutoBranchAfterThreadPeerWrite(input: {
-    workDraftBranchId: string;
-    pushedByUserId?: UserId;
-  }): Promise<{ status: string; [key: string]: unknown }>;
-};
-
 export type PublicationBlockChange = {
   blockId: string;
   beforeText: string | null;
@@ -239,15 +232,8 @@ export type PushCommitStore = {
 };
 
 export type WorkPushPolicyStore = {
-  /**
-   * Sets the Work's AI write mode and its active drafts' push policy.
-   * `keepDraftBranches` changes only the Work's mode, for kept drafts (D40).
-   */
-  updateWorkDraftPushPolicy(
-    workId: WorkId,
-    policy: "manual" | "auto",
-    options?: { keepDraftBranches?: boolean },
-  ): Promise<void>;
+  /** Sets the Work's AI write mode: `auto` is auto-apply, `manual` is draft mode. */
+  setWorkWriteMode(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
 };
 
 export type PushUpdateComputer = (input: {
@@ -255,15 +241,6 @@ export type PushUpdateComputer = (input: {
   branchDoc: Y.Doc;
   liveDoc: Y.Doc;
 }) => Uint8Array;
-
-export type AutoPushAfterThreadPeerWriteInput = {
-  workDraftBranchId: string;
-  pushedByUserId?: UserId;
-};
-
-export type AutoPushAfterThreadPeerWriteResult =
-  | PushToLiveResult
-  | { status: "skipped"; reason: "manual_policy" | "not_active_work_draft" };
 
 export type BranchPushService = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
@@ -281,9 +258,6 @@ export type BranchPushService = {
     signal?: AbortSignal;
     resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
-  pushAutoBranchAfterThreadPeerWrite(
-    input: AutoPushAfterThreadPeerWriteInput,
-  ): Promise<AutoPushAfterThreadPeerWriteResult>;
   setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
 

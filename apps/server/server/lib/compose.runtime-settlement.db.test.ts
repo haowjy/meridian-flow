@@ -1,4 +1,4 @@
-/** Production-composition regression for response credit and staged-push completion. */
+/** Production-composition regression for response credit and staged-push settlement. */
 
 import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
@@ -320,6 +320,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       });
+      // The Work is in auto-apply, but this reply wrote its draft: the writes
+      // wait there (D59) until the writer applies them.
+      const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);
+      expect(unapplied.ok && unapplied.value.trim()).toBe(
+        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
+      );
+      const [draft] = await db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.documentId, DOC_ID),
+          ),
+        );
+      if (!draft) throw new Error("the reply's draft is missing");
+      await ports.documentSync.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID });
       await app.changeTrailDelivery.drain();
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);

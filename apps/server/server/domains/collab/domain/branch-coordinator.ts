@@ -26,7 +26,6 @@ import { currentResponseTransactionId, enlistResponseParticipant } from "./respo
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
-export type BranchPushPolicy = "manual" | "auto";
 export type BranchStatus = "active" | "closed";
 
 export type BranchSnapshot = {
@@ -36,7 +35,6 @@ export type BranchSnapshot = {
   upstreamBranchId: string | null;
   workId: WorkId | null;
   threadId: ThreadId | null;
-  pushPolicy: BranchPushPolicy;
   status: BranchStatus;
   generation: number;
   state: Uint8Array;

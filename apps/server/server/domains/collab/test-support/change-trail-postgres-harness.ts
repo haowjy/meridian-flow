@@ -478,7 +478,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         failNextTrailRetry = false;
         throw new Error("injected retryable auto-push failure");
       }
-      return realBranchPush.pushToLive({ branchId });
+      return realBranchPush.pushToLive({ branchId, resetPolicy: "auto" });
     },
     onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
     turnTrailWorkSchedule: {
@@ -488,21 +488,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       successRetryMs: 1_000,
     },
   });
-  const autoPushSchedules: string[] = [];
-  const autoPushPromises: Promise<unknown>[] = [];
-  let suppressScheduledAutoPush = false;
-  const branchPush = {
-    ...realBranchPush,
-    async pushAutoBranchAfterThreadPeerWrite(input: { workDraftBranchId: string }) {
-      autoPushSchedules.push(input.workDraftBranchId);
-      if (suppressScheduledAutoPush) {
-        return { status: "skipped" as const, reason: "manual_policy" as const };
-      }
-      const push = realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
-      autoPushPromises.push(push);
-      return push;
-    },
-  };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
   const eventSink: import("../../observability/index.js").EventSink = {
@@ -556,7 +541,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     branchCoordinator,
     branchPulls,
-    branchPush,
     branchJournal: durableBranchJournalReadStore,
     concurrentJournalWatermarks: watermarks,
     diagnostics: createBranchAgentEditDiagnostics(eventSink),
@@ -628,7 +612,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,
-    branchPush,
+    branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
     liveCoordinator,
@@ -745,8 +729,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     // measurement window after staging so it covers only the commit attempt.
     branchBroadcasts.length = 0;
     watermarkCommits.length = 0;
-    autoPushSchedules.length = 0;
-    autoPushPromises.length = 0;
     hocuspocus.broadcasts.length = 0;
     const workDrafts = await db
       .select({ id: schema.documentBranches.id })
@@ -764,7 +746,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     writerEditBeforeWrite = false,
     sameIdentityRewrite = false,
   ) {
-    suppressScheduledAutoPush = true;
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
     await collab.writeDocument({
       documentId,
@@ -1757,7 +1738,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     crossWorkProbeFixture: () => ({
       runtime,
       branchPulls,
-      branchPush,
+      branchPush: realBranchPush,
       db,
       schema,
       persistence,
@@ -2018,16 +1999,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     commit: (responseId: string) =>
       collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
     afterCommitEffects: () => ({
-      autoPushSchedules: [...autoPushSchedules].sort(),
       branchBroadcasts: [...branchBroadcasts].sort(),
       watermarkCommits: [...watermarkCommits].sort(),
     }),
-    waitForAutoPushes: async () => {
-      for (let attempt = 0; autoPushPromises.length === 0 && attempt < 100; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      await Promise.all(autoPushPromises);
-    },
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
     /** Agent-origin live journal rows for a document. */
@@ -2151,7 +2125,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         phase: "closed",
       });
       expect(branchBroadcasts).toHaveLength(2);
-      expect(autoPushSchedules).toHaveLength(2);
       expect(watermarkCommits).toHaveLength(2);
       expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     },

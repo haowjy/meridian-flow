@@ -290,7 +290,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     branchCoordinator,
     branchPulls,
-    branchPush,
     branchJournal,
     concurrentJournalWatermarks,
     diagnostics: createBranchAgentEditDiagnostics(deps.eventSink),
@@ -388,13 +387,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     branchCoordinator,
     branchPulls,
-    branchPush,
     liveCoordinator,
     agentEdit,
     documents: runtime.markdownDocuments,
     model: runtime.model,
     codec: runtime.codec,
-    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({

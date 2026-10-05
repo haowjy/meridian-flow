@@ -493,7 +493,6 @@ async function completeStagedPush(
       upstreamBranchId: branchRow.upstreamBranchId,
       workId: branchRow.workId,
       threadId: branchRow.threadId,
-      pushPolicy: branchRow.pushPolicy,
       status: branchRow.status,
       generation: branchRow.generation,
       state: new Uint8Array(branchRow.state),

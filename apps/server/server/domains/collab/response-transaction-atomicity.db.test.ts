@@ -70,7 +70,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     ); // 8. lifecycle not closed (retained buffers prove buffered ownership)
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     }); // 9. callbacks not dispatched
@@ -170,7 +169,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     );
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     });
@@ -179,7 +177,7 @@ describe("change trail (postgres)", () => {
   it("reports a writer sweep journaled after the observation cut", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
-    await harness.seedProbeTimelineSweep(responseId);
+    const branchId = await harness.seedProbeTimelineSweep(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -191,9 +189,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.autoPush(branchId);
 
     const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
@@ -212,7 +208,7 @@ describe("change trail (postgres)", () => {
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
-    await harness.seedProbeTimelineAfterRead(responseId);
+    const branchId = await harness.seedProbeTimelineAfterRead(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -222,8 +218,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.autoPush(branchId);
     await harness.pollTrails();
     await harness.pollTrails();
 

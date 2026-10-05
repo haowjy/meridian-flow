@@ -460,7 +460,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               kind: "work_draft",
               upstreamBranchId: null,
               threadId: null,
-              pushPolicy: "manual",
               generation: 1,
               status: "active",
               state: new Uint8Array([0]),
