@@ -2,7 +2,7 @@
  * Shared provider SDK error mapping: one HTTP-status retry policy for every adapter,
  * plus the provider's own response (status, message, capped body) as debug evidence.
  *
- * Retry policy: network errors, status-less SDK failures, 429 and 5xx retry. Every
+ * Retry policy: network errors, status-less SDK failures, 408, 429 and 5xx retry. Every
  * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
  * model, 413/422 rejected payload); sending it again gets the same answer.
  */
@@ -105,6 +105,7 @@ export function mapProviderHttpError(
       return { code: "auth_error", message, retryable: false };
     }
     if (status === 429) return { code: "rate_limited", message, retryable: true };
+    if (status === 408) return { code: "network_error", message, retryable: true };
     if (status === 400) {
       const lower = message.toLowerCase();
       if (patterns.contextOverflow.test(lower)) {

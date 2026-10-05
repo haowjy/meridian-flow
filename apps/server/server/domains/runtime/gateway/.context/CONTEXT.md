@@ -68,7 +68,7 @@ Rates and their evidence live in the [runtime compaction context](../../.context
 `adapters/provider-http-error.ts` owns one HTTP-status policy for every adapter
 (the OpenAI Responses, Chat Completions, and OpenRouter adapters share
 `openai-compatible/errors.ts`). Network failures, failures with no response,
-429, and 5xx retry. 401/403 are `auth_error`; 400 is `invalid_request`,
+408, 429, and 5xx retry. 401/403 are `auth_error`; 400 is `invalid_request`,
 `context_overflow`, or `content_filtered`. Every other 4xx, including 402 out
 of balance, is `provider_error` with `retryable: false`: the provider refused
 this request and will refuse it again. There is no separate code for an
