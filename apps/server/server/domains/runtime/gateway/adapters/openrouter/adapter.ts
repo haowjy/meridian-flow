@@ -16,6 +16,7 @@ import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapOpenAIError } from "../openai-compatible/errors.js";
 import { toOpenAIChatCompletionParams } from "../openai-compatible/request-map.js";
 import { accumulatorHasPartialResult } from "../openai-compatible/stream-collect.js";
+import { providerFetch } from "../provider-http-error.js";
 import { DEFAULT_OPENROUTER_BASE_URL, resolveOpenRouterApiKey } from "./config.js";
 import { enrichOpenRouterResult } from "./enrich-result.js";
 import {
@@ -53,6 +54,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
     defaultHeaders: openRouterHeaders(config),
     // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
     maxRetries: 0,
+    fetch: providerFetch,
   });
   const providerId = config.id;
 

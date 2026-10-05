@@ -49,10 +49,32 @@ function capBody(text: string): string {
   return text.length > PROVIDER_ERROR_BODY_LIMIT ? text.slice(0, PROVIDER_ERROR_BODY_LIMIT) : text;
 }
 
+// SDKs parse failure bodies and keep only part (OpenAI keeps `body.error`). The
+// SDK error carries the same Headers object as the Response, so it keys the text.
+const failureBodies = new WeakMap<Headers, string>();
+
+/** `fetch` for provider SDK clients: records each failed response's exact body text. */
+export const providerFetch: typeof fetch = async (input, init) => {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    try {
+      failureBodies.set(response.headers, capBody(await response.clone().text()));
+    } catch {
+      // An unreadable body leaves the SDK's parsed view as the evidence.
+    }
+  }
+  return response;
+};
+
+function exactFailureBody(err: unknown): string | undefined {
+  const headers = record(err)?.headers;
+  return headers instanceof Headers ? failureBodies.get(headers) : undefined;
+}
+
 /**
- * The provider's response as the SDK parsed it. OpenAI-shaped SDKs keep the body's
- * `error` object; Anthropic keeps the whole body; a non-JSON body survives only as
- * the SDK message. Absent when the SDK never received a response.
+ * The provider's response: the exact body text when the client used `providerFetch`,
+ * otherwise the SDK's parsed view (OpenAI-shaped SDKs keep the body's `error`
+ * object, Anthropic the whole body). Absent when the SDK never received a response.
  */
 export function providerErrorResponse(err: unknown): ProviderErrorResponse | undefined {
   const status = httpStatus(err);
@@ -66,11 +88,10 @@ export function providerErrorResponse(err: unknown): ProviderErrorResponse | und
       : typeof record(nested?.error)?.message === "string"
         ? String(record(nested?.error)?.message)
         : message;
-  let body: string;
-  if (parsed === undefined) body = message;
-  else if (typeof parsed === "string") body = parsed;
-  else body = JSON.stringify(parsed) ?? message;
-  return { status: status ?? null, message: providerMessage, body: capBody(body) };
+  let body = exactFailureBody(err);
+  if (body === undefined && parsed === undefined) body = message;
+  else if (body === undefined) body = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+  return { status: status ?? null, message: providerMessage, body: capBody(body ?? message) };
 }
 
 export function mapProviderHttpError(
