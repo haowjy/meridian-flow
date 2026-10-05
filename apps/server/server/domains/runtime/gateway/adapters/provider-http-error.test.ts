@@ -3,57 +3,44 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANTHROPIC_ERROR_PATTERNS } from "./anthropic/adapter.js";
-import { withProviderRetryMetadata } from "./provider-error-metadata.js";
 import { mapProviderHttpError, providerFetch } from "./provider-http-error.js";
-
-const mapOpenAIError = (err: unknown) => mapProviderHttpError(err);
-const mapAnthropicError = (err: unknown) => mapProviderHttpError(err, ANTHROPIC_ERROR_PATTERNS);
 
 afterEach(() => vi.useRealTimers());
 
-describe("withProviderRetryMetadata", () => {
+describe("provider retry headers", () => {
   it("parses millisecond and seconds headers", () => {
     expect(
-      withProviderRetryMetadata(
-        { headers: new Headers({ "retry-after-ms": "1250", "retry-after": "9" }) },
-        { retryable: true },
-      ),
-    ).toEqual({ retryable: true, retryAfterMs: 1_250 });
+      mapProviderHttpError({
+        status: 429,
+        message: "rate limited",
+        headers: new Headers({ "retry-after-ms": "1250", "retry-after": "9" }),
+      }),
+    ).toMatchObject({ retryable: true, retryAfterMs: 1_250 });
 
     expect(
-      withProviderRetryMetadata({ headers: { "Retry-After": "2.5" } }, { retryable: true }),
-    ).toEqual({ retryable: true, retryAfterMs: 2_500 });
+      mapProviderHttpError({
+        status: 429,
+        message: "rate limited",
+        headers: { "Retry-After": "2.5" },
+      }),
+    ).toMatchObject({ retryable: true, retryAfterMs: 2_500 });
   });
 
   it("parses HTTP dates and lets x-should-retry false override classification", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-18T00:00:00.000Z"));
     expect(
-      withProviderRetryMetadata(
-        {
-          response: {
-            headers: new Headers({
-              "retry-after": "Sat, 18 Jul 2026 00:00:03 GMT",
-              "x-should-retry": "false",
-            }),
-          },
-        },
-        { retryable: true },
-      ),
-    ).toEqual({ retryable: false, retryAfterMs: 3_000 });
-  });
-
-  it.each([
-    ["Anthropic", mapAnthropicError],
-    ["OpenAI", mapOpenAIError],
-  ])("carries retry hints through the %s mapper", (_provider, mapError) => {
-    expect(
-      mapError({
+      mapProviderHttpError({
         status: 429,
         message: "rate limited",
-        headers: { "retry-after-ms": "750", "x-should-retry": "false" },
+        response: {
+          headers: new Headers({
+            "retry-after": "Sat, 18 Jul 2026 00:00:03 GMT",
+            "x-should-retry": "false",
+          }),
+        },
       }),
-    ).toMatchObject({ retryAfterMs: 750, retryable: false });
+    ).toMatchObject({ retryable: false, retryAfterMs: 3_000 });
   });
 });
 
@@ -72,10 +59,10 @@ describe("provider HTTP failures", () => {
   );
 
   it.each([
-    ["OpenAI", mapOpenAIError, openAI402],
-    ["Anthropic", mapAnthropicError, anthropic402],
-  ])("does not retry a %s 402 and keeps its status, message and body", (_provider, mapError, err) => {
-    const mapped = mapError(err);
+    ["OpenAI", openAI402],
+    ["Anthropic", anthropic402],
+  ])("does not retry a %s 402 and keeps its status, message and body", (_provider, err) => {
+    const mapped = mapProviderHttpError(err);
     expect(mapped).toMatchObject({
       code: "provider_error",
       retryable: false,
@@ -85,20 +72,20 @@ describe("provider HTTP failures", () => {
   });
 
   it.each([404, 409, 413, 422])("does not retry an unnamed %i", (status) => {
-    expect(mapOpenAIError({ status, message: "rejected" })).toMatchObject({
+    expect(mapProviderHttpError({ status, message: "rejected" })).toMatchObject({
       code: "provider_error",
       retryable: false,
     });
   });
 
   it("still retries 408, 429, 5xx and failures without a response", () => {
-    expect(mapOpenAIError({ status: 408, message: "timed out" }).retryable).toBe(true);
-    expect(mapOpenAIError({ status: 429, message: "slow down" }).retryable).toBe(true);
-    expect(mapAnthropicError({ status: 529, message: "overloaded" })).toMatchObject({
+    expect(mapProviderHttpError({ status: 408, message: "timed out" }).retryable).toBe(true);
+    expect(mapProviderHttpError({ status: 429, message: "slow down" }).retryable).toBe(true);
+    expect(mapProviderHttpError({ status: 529, message: "overloaded" })).toMatchObject({
       code: "server_error",
       retryable: true,
     });
-    const offline = mapOpenAIError(new TypeError("fetch failed"));
+    const offline = mapProviderHttpError(new TypeError("fetch failed"));
     expect(offline).toMatchObject({ code: "network_error", retryable: true });
     expect(offline.providerResponse).toBeUndefined();
   });
@@ -143,19 +130,28 @@ describe("provider HTTP failures", () => {
 
   it("calls an Anthropic 400 content_filtered only when it says filtered or blocked", () => {
     expect(
-      mapAnthropicError({ status: 400, message: "Output blocked by content policy" }).code,
+      mapProviderHttpError(
+        { status: 400, message: "Output blocked by content policy" },
+        ANTHROPIC_ERROR_PATTERNS,
+      ).code,
     ).toBe("content_filtered");
-    expect(mapAnthropicError({ status: 400, message: "content filtering triggered" }).code).toBe(
-      "content_filtered",
-    );
     expect(
-      mapAnthropicError({ status: 400, message: "messages.0: invalid content block type" }).code,
+      mapProviderHttpError(
+        { status: 400, message: "content filtering triggered" },
+        ANTHROPIC_ERROR_PATTERNS,
+      ).code,
+    ).toBe("content_filtered");
+    expect(
+      mapProviderHttpError(
+        { status: 400, message: "messages.0: invalid content block type" },
+        ANTHROPIC_ERROR_PATTERNS,
+      ).code,
     ).toBe("invalid_request");
   });
 
   it("caps the stored body at 4,096 characters", () => {
     const html = `<html>${"x".repeat(10_000)}</html>`;
-    const mapped = mapOpenAIError({ status: 502, message: "bad gateway", error: html });
+    const mapped = mapProviderHttpError({ status: 502, message: "bad gateway", error: html });
     expect(mapped.providerResponse?.body).toHaveLength(4_096);
   });
 });

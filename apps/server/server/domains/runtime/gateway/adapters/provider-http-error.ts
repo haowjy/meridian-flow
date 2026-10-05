@@ -1,6 +1,7 @@
 /**
  * Shared provider SDK error mapping: one HTTP-status retry policy for every adapter,
- * plus the provider's own response (status, message, capped body) as debug evidence.
+ * the provider's retry headers, and the provider's own response (status, message, capped
+ * body) as debug evidence.
  *
  * Retry policy: network errors, status-less SDK failures, 408, 429 and 5xx retry. Every
  * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
@@ -8,9 +9,8 @@
  */
 import { providerErrorResponse } from "@meridian/contracts/threads";
 import type { ErrorCode, ProviderErrorResponse } from "../domain/index.js";
-import { withProviderRetryMetadata } from "./provider-error-metadata.js";
 
-export type MappedProviderError = {
+type MappedProviderError = {
   code: ErrorCode;
   message: string;
   retryable: boolean;
@@ -35,6 +35,35 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function header(headers: unknown, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
+  const values = record(headers);
+  if (!values) return undefined;
+  const key = Object.keys(values).find((candidate) => candidate.toLowerCase() === name);
+  const value = key ? values[key] : undefined;
+  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+}
+
+function retryAfterMs(headers: unknown, now: number): number | undefined {
+  const milliseconds = header(headers, "retry-after-ms");
+  if (milliseconds !== undefined) {
+    const value = Number(milliseconds);
+    if (Number.isFinite(value) && value >= 0) return Math.round(value);
+  }
+
+  const retryAfter = header(headers, "retry-after");
+  if (retryAfter === undefined) return undefined;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? Math.round(seconds * 1_000) : undefined;
+  const date = Date.parse(retryAfter);
+  return Number.isFinite(date) ? Math.max(0, date - now) : undefined;
+}
+
+function responseHeaders(err: unknown): unknown {
+  const errorRecord = record(err);
+  return errorRecord?.headers ?? record(errorRecord?.response)?.headers;
 }
 
 function httpStatus(err: unknown): number | undefined {
@@ -130,8 +159,13 @@ export function mapProviderHttpError(
     return { code: "provider_error", message, retryable: true };
   })();
   const providerResponse = providerResponseOf(err);
-  return withProviderRetryMetadata(err, {
+  const headers = responseHeaders(err);
+  const retryAfter = retryAfterMs(headers, Date.now());
+  const shouldRetry = header(headers, "x-should-retry")?.trim().toLowerCase();
+  return {
     ...mapped,
+    ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
+    ...(shouldRetry === "false" ? { retryable: false } : {}),
     ...(providerResponse ? { providerResponse } : {}),
-  });
+  };
 }
