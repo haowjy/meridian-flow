@@ -687,3 +687,17 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Independently certifiable outputs of the live-document derive step. */
+export const documentDerivations = pgTable("document_derivations", {
+  documentId: uuid("document_id")
+    .$type<DocumentId>()
+    .primaryKey()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  projectionGeneration: bigint("projection_generation", { mode: "bigint" }).notNull(),
+  projectionAdmissionSequence: bigint("projection_admission_sequence", {
+    mode: "bigint",
+  }).notNull(),
+  projectionLocationVersion: bigint("projection_location_version", { mode: "bigint" }).notNull(),
+  projectionExtractorVersion: integer("projection_extractor_version").notNull(),
+});

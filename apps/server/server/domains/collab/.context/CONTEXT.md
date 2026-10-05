@@ -97,9 +97,56 @@ The real-Postgres change-trail harness types its local collab handle around the
 capabilities it exercises. It must not cast to a complete `CollabDomain`.
 
 Method bodies beyond delegation, conditional business behavior, and mutable
-runtime state do not belong in the composition root. Durable projection for
-ordinary writes and push completion shares one `DocumentProjectionEffects` port
-without collapsing their distinct caller contracts.
+runtime state do not belong in the composition root. Activity effects stay separate
+from document derivation.
+
+## Durable document derivation
+
+`domain/document-derivations.ts` is the sole projection pipeline. The write hook
+runs it immediately; WebSocket admissions and generation replacement schedule it
+with a two-second trailing debounce and ten-second maximum wait. The projection
+feeds search, listings and sizes, the download fallback, and the link index;
+the Editor and AI read live Yjs, and renames flush first. Push completion
+runs the same derive in its ambient completion transaction, so journal, projection,
+watermark, and settlement roll back together.
+
+One authority generation per checkpoint and per reconstruction. Room and explicit
+checkpoint producers capture authority identity and generation before asynchronous
+snapshot work; persistence validates both under the document mutation lock and
+drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
+`stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots
+are produced under that same lock. Current reads capture the head once and constrain
+checkpoint selection, earliest retained-update selection, and replay to that identity
+and generation. Sequence bounds do not authorize retired-generation history; only
+explicit checkpoint lookup/listing and restore expose historical checkpoints.
+
+The store captures checkpoint plus current-generation journal under the document
+mutation lock. Never substitute a warm room: a socket admission can already be
+durable while Hocuspocus has not applied it. Certification retakes the mutation
+lock, checks generation and `next_admission_sequence`, and conditionally updates
+the document at the captured `location_version`. A move increments that counter
+at the common `recordDocumentMove` seam, including same-source folder renames.
+Serialization runs outside the lock unless the caller already owns a transaction.
+For an initialized live document, lifecycle ensure is read-only: retaining an
+ambient head-row update lock would deadlock the subsequent root journal batch.
+The root batch still commits before live apply; derivation can then join the
+context command transaction.
+A changed cut retries three times, then remains stale for recovery.
+
+`document_derivations` certifies projection output by generation, next admission
+sequence, location version, and extractor version. Equal cuts are idempotent;
+older cuts cannot replace newer output. Projection byte size comes from the same
+certified serialization. Changing the extractor invalidates older output: bump
+its version when adding link extraction and add the output and link watermarks
+to the existing certification transaction, not a second post-write hook.
+
+The recovery scheduler sweeps database staleness at startup and every ten seconds,
+at most 100 stale documents returned per pass with a wraparound cursor. This
+limits derivation work, not query scan work: an entirely current corpus is
+scanned in full on every idle pass. Scoped `flush` pages all stale
+documents in a project, or every project owned by `personalOwnerId`. Both ignore
+caller transactions and timer queues. Failed derives log and retain last-good
+output without advancing certification; a later sweep retries them.
 
 ## Reference map
 
@@ -109,3 +156,4 @@ without collapsing their distinct caller contracts.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
+- [Collab domain visual explainer, end to end](collab-domain.html)

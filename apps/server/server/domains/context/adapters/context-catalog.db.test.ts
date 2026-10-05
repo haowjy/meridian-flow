@@ -376,12 +376,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await catalog.refreshSources([SOURCE_ID]);
       const beforeContentWrite = await catalog.snapshot(scope);
-      const store = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: SOURCE_ID,
-        catalogMutations: catalog,
-      });
-      await store.updateDocumentProjection(contentDocumentId, "new words only");
+      await db
+        .update(documents)
+        .set({ markdownProjection: "new words only" })
+        .where(eq(documents.id, contentDocumentId));
       const afterContentWrite = await catalog.snapshot(scope);
       expect(afterContentWrite.headRevision).toBe(beforeContentWrite.headRevision);
       await expect(catalog.changes(scope, beforeContentWrite.cursor)).resolves.toMatchObject({

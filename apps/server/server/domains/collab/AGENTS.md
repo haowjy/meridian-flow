@@ -32,6 +32,9 @@ editor UI or transport-shell policy.
   struct history.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
+- Derive live read models from a journal-locked durable cut, never a warm room
+  paired with a database watermark. The recovery sweep owns freshness; triggers
+  only reduce latency. Push derivation joins its completion transaction.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
@@ -39,5 +42,6 @@ editor UI or transport-shell policy.
   silently loses that index.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).
 Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).
