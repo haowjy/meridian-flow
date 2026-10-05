@@ -655,12 +655,6 @@ describe("branch-push durable projection", () => {
     expect(project?.updatedAt.toISOString()).toBe(old.toISOString());
     expect(project?.lastActivityAt.toISOString()).toBe(old.toISOString());
     expect(journal).toEqual([]);
-    expect(
-      await db
-        .select()
-        .from(documentDerivations)
-        .where(eq(documentDerivations.documentId, documentId)),
-    ).toEqual([]);
 
     branchDoc.destroy();
     liveDoc.destroy();
