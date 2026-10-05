@@ -48,16 +48,13 @@ export function createWorkPushPolicy(input: {
     /**
      * Switching to auto-apply with pending changes needs the writer's choice
      * (D40): `apply` pushes every pending draft first, `keep` leaves them for
-     * review. An archived Work's drafts are frozen, so it allows only `keep`
-     * (D30).
+     * review. An archived Work's drafts are frozen (D30): `apply`'s first
+     * push refuses under the Work lock.
      */
     async setWorkPushPolicy(policyInput: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult> {
       if (policyInput.policy === "manual") {
         await input.workPushPolicyStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
         return { status: "updated", policy: "manual" };
-      }
-      if (policyInput.pending === "apply" && policyInput.archived) {
-        return { status: "refused", reason: "work_archived" };
       }
       const pendingDrafts = await input.workDraftPending.list(policyInput.workId);
       if (pendingDrafts.length > 0 && !policyInput.pending) {
