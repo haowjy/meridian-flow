@@ -10,6 +10,7 @@ import {
   atLeast,
   type FileAccessDenied,
   type FileDecision,
+  type FileDestination,
   type FileFacts,
   type FileGrant,
   type FileNeed,
@@ -34,6 +35,16 @@ export interface FileAccess {
     target: FileTarget,
     need: N,
   ): Promise<FileGrant<N> | FileAccessDenied>;
+  /**
+   * Edit at an explicit destination instead of the one the principal's mode
+   * picks: an undo reverses a write where it landed, which a mode switch since
+   * may have moved new writes away from.
+   */
+  authorizeAt(
+    principal: Principal,
+    target: FileTarget,
+    destination: FileDestination,
+  ): Promise<FileGrant<"edit"> | FileAccessDenied>;
   /**
    * Authoritative, inside the ambient save transaction, once per reply
    * (§5, §5.2): locks the Works the grants' facts name in id order, re-reads
@@ -74,6 +85,18 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       if (!facts) return notFound(principal, target);
       const result = await decision(principal, facts);
       if (!atLeast(result.level, need)) return denied(principal, facts, result);
+      return mint(principal, facts, result);
+    },
+
+    async authorizeAt(principal, target, destination) {
+      const facts = await deps.facts.load({
+        target,
+        ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
+      });
+      if (!facts) return notFound(principal, target);
+      const grants = await deps.grants.personGrants(principal.accountId, facts);
+      const result = levelAt(principal, facts, grants, destination);
+      if (!atLeast(result.level, "edit")) return denied(principal, facts, result);
       return mint(principal, facts, result);
     },
 

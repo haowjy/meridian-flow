@@ -1,10 +1,7 @@
 /** Contract tests for switching a Work's AI write mode (D40, D59). */
 
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
