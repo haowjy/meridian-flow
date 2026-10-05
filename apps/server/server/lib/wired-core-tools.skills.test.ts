@@ -15,7 +15,6 @@ import {
   resolveAgentConfiguration,
 } from "../domains/packages/index.js";
 import type { ToolRegistration } from "../domains/runtime/index.js";
-import { readThreadSkillFacts } from "../domains/runtime/loop/available-skills.js";
 import { createWiredCoreToolRegistrations, type ToolWiringDeps } from "./wired-core-tools.js";
 
 const LAUNCH_AGENTS = path.resolve(
@@ -50,9 +49,7 @@ async function criticTools() {
     readAgentChain: async (threadId: string) => [
       { threadId, permission: "edit", threadWorkId: "work-1" },
     ],
-    fileAccess: createAllowAllFileAccess({
-      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
-    }),
+    fileAccess: createAllowAllFileAccess(),
     agentRevisions,
   } as unknown as ToolWiringDeps;
   const registrations = createWiredCoreToolRegistrations(deps);

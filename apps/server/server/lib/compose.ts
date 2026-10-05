@@ -172,7 +172,6 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  readThreadSkillFacts,
   resolveThreadUserInvocableSkills,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
@@ -468,9 +467,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db, {
-      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
-    }),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
@@ -1572,9 +1569,7 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    fileAccess: createAllowAllFileAccess({
-      skillFacts: (threadId) => readThreadSkillFacts({ threadId, agentRevisions }),
-    }),
+    fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,

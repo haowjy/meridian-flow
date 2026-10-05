@@ -5,20 +5,19 @@
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
  * skill name is unique within a thread, because binding resolution refuses
- * one two packages share, so no source id is written. Every lookup asks the
- * file policy first; a skill the agent may not see reads as missing.
+ * one two packages share, so no source id is written. Every lookup reads the
+ * thread's binding once and asks the pure `skillLevel`; a skill the agent may
+ * not see reads as missing.
  */
 import { posix } from "node:path";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
-import type { FileAccess, Principal } from "../../file-policy/index.js";
+import { skillLevel } from "../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
+import { readThreadSkills } from "./available-skills.js";
 
 export const SKILLS_URI_ROOT = "skills://";
 
-const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
-
 export interface SkillFilesDeps {
-  fileAccess: Pick<FileAccess, "skillAccess">;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }
 
@@ -73,13 +72,12 @@ export function parseSkillUri(uri: string): SkillUri | null {
 /** One file's text, or why there is none. A folder or missing file is not found. */
 export async function readSkillFile(
   deps: SkillFilesDeps,
-  principal: Principal,
   threadId: string,
   uri: string,
 ): Promise<SkillFileRead> {
   const parsed = parseSkillUri(uri);
   if (!parsed?.skill || !parsed.path) return { kind: "not_found" };
-  const folder = await visibleSkillFolder(deps, principal, threadId, parsed.skill);
+  const folder = await visibleSkillFolder(deps, threadId, parsed.skill);
   const entry = folder?.files[`${folder.directory}/${parsed.path}`];
   if (entry === undefined) return { kind: "not_found" };
   if (typeof entry !== "string") return { kind: "binary" };
@@ -93,20 +91,19 @@ export async function readSkillFile(
  */
 export async function listSkillDir(
   deps: SkillFilesDeps,
-  principal: Principal,
   threadId: string,
   uri: string,
 ): Promise<SkillListEntry[]> {
   const parsed = parseSkillUri(uri);
   if (!parsed) return [];
   if (!parsed.skill) {
-    return (await visibleSkillNames(deps, principal, threadId)).map((skill) => ({
+    return (await visibleSkillNames(deps, threadId)).map((skill) => ({
       uri: `${SKILLS_URI_ROOT}${skill}`,
       kind: "directory",
       readonly: true,
     }));
   }
-  const folder = await visibleSkillFolder(deps, principal, threadId, parsed.skill);
+  const folder = await visibleSkillFolder(deps, threadId, parsed.skill);
   if (!folder) return [];
   const prefix = parsed.path ? `${folder.directory}/${parsed.path}/` : `${folder.directory}/`;
   const base = parsed.path
@@ -124,56 +121,27 @@ export async function listSkillDir(
 }
 
 /** The names of the skills this agent may read, sorted. */
-export async function visibleSkillNames(
-  deps: SkillFilesDeps,
-  principal: Principal,
-  threadId: string,
-): Promise<string[]> {
-  return [...(await visibleSkills(deps, principal, threadId)).keys()].sort();
+export async function visibleSkillNames(deps: SkillFilesDeps, threadId: string): Promise<string[]> {
+  return [...(await visibleSkills(deps, threadId)).keys()].sort();
 }
 
 /** The skills this agent may read, each with its bound reference. */
 async function visibleSkills(
   deps: SkillFilesDeps,
-  principal: Principal,
   threadId: string,
 ): Promise<Map<string, RetainedSkillReference>> {
-  const bound = await boundSkills(deps, threadId);
-  const visible = await Promise.all(
-    [...bound].map(async (entry) =>
-      (await deps.fileAccess.skillAccess(principal, entry[0])) === "read" ? [entry] : [],
-    ),
-  );
-  return new Map(visible.flat());
+  const { facts, bound } = await readThreadSkills(deps.agentRevisions, threadId);
+  return new Map([...bound].filter(([skill]) => skillLevel(facts, skill) === "read"));
 }
 
 async function visibleSkillFolder(
   deps: SkillFilesDeps,
-  principal: Principal,
   threadId: string,
   skill: string,
 ): Promise<{ directory: string; files: Record<string, unknown> } | undefined> {
-  if ((await deps.fileAccess.skillAccess(principal, skill)) !== "read") return undefined;
-  const reference = (await boundSkills(deps, threadId)).get(skill);
+  const reference = (await visibleSkills(deps, threadId)).get(skill);
   if (!reference) return undefined;
   const source = await deps.agentRevisions.readSource(reference.packageRevisionId);
   if (!source) return undefined;
   return { directory: posix.dirname(reference.path), files: source.files };
-}
-
-/** Every skill the thread's binding names (`load` and `available`), by name. */
-async function boundSkills(
-  deps: SkillFilesDeps,
-  threadId: string,
-): Promise<Map<string, RetainedSkillReference>> {
-  const binding = await deps.agentRevisions.readThreadBinding(threadId);
-  const bound = new Map<string, RetainedSkillReference>();
-  for (const reference of [
-    ...(binding?.configuration.skills.load ?? []),
-    ...(binding?.configuration.skills.available ?? []),
-  ]) {
-    const slug = SKILL_MD_PATH.exec(reference.path)?.[1];
-    if (slug && !bound.has(slug)) bound.set(slug, reference);
-  }
-  return bound;
 }

@@ -127,15 +127,14 @@ describe("skill rule", () => {
   };
 
   // biome-ignore format: one row per case
-  const table: [string, Principal, string, string][] = [
-    ["a model-invocable available skill is readable", agent(link("edit", "a")), "story-review", "read"],
-    ["an available skill the model can't invoke is not found", agent(link("edit", "a")), "hidden", "none"],
-    ["the same skill preloaded is readable", agent(link("read", "a")), "preloaded-hidden", "read"],
-    ["an unbound skill is not found", agent(link("edit", "a")), "elsewhere", "none"],
-    ["a person never reads skills://", person, "story-review", "none"],
+  const table: [string, string, string][] = [
+    ["a model-invocable available skill is readable", "story-review", "read"],
+    ["an available skill the model can't invoke is not found", "hidden", "none"],
+    ["the same skill preloaded is readable", "preloaded-hidden", "read"],
+    ["an unbound skill is not found", "elsewhere", "none"],
   ];
 
-  it.each(table)("%s", (_case, principal, skill, level) => {
-    expect(skillLevel(principal, facts, skill)).toBe(level);
+  it.each(table)("%s", (_case, skill, level) => {
+    expect(skillLevel(facts, skill)).toBe(level);
   });
 });

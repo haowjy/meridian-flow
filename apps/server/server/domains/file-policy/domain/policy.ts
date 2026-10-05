@@ -173,24 +173,14 @@ function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
 }
 
 /**
- * A skill's files (`skills://<skill>/…`, D52) as the calling agent sees them:
- * `read` when its own binding preloads the skill or offers it as
- * `model-invocable`, otherwise `none`, so an invisible skill reads as
- * missing. Never `edit`. No person surface reads `skills://`, so a person
- * gets `none`.
+ * A skill's files (`skills://<skill>/…`, D52) as an agent sees them, judged
+ * on its own thread's binding: `read` when the binding preloads the skill or
+ * offers it as `model-invocable`, otherwise `none`, so an invisible skill
+ * reads as missing. Never `edit` (D58). Only model tools read `skills://`.
  */
-export function skillLevel(
-  principal: Principal,
-  facts: SkillFacts,
-  skill: string,
-): FileAccessLevel {
-  return principal.agent && skillVisible(facts, skill) ? "read" : "none";
-}
-
-/** Whether a binding lets its agent read a skill: preloaded, or available and `model-invocable`. */
-export function skillVisible(facts: SkillFacts, skill: string): boolean {
-  return (
+export function skillLevel(facts: SkillFacts, skill: string): FileAccessLevel {
+  const visible =
     facts.load.includes(skill) ||
-    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable)
-  );
+    facts.available.some((entry) => entry.slug === skill && entry.modelInvocable);
+  return visible ? "read" : "none";
 }
