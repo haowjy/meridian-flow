@@ -151,6 +151,15 @@ export async function recordDocumentMove(
   // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
   for (let offset = 0; offset < vacated.length; offset += 500) {
     const batch = vacated.slice(offset, offset + 500);
+    await tx
+      .update(documents)
+      .set({ locationVersion: sql`${documents.locationVersion} + 1` })
+      .where(
+        inArray(
+          documents.id,
+          batch.map((entry) => entry.id),
+        ),
+      );
     await tx.delete(documentPreviousLocations).where(
       and(
         eq(documentPreviousLocations.contextSourceId, sourceId),

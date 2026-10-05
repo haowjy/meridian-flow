@@ -4,7 +4,9 @@
  * Subscribes to a `DocumentSession` snapshot and renders a localized status
  * badge. Labels are derived directly from the session's status semantics
  * (see `core/editor/document-session.ts`):
- *   - `detached`  → no indicator              (room not materialized yet)
+ *   - `detached`  → no indicator              (a local-only document, or one awaiting its
+ *                                              transport); once adoption reports it cannot
+ *                                              reach the server it reads as offline
  *   - `synced`    → "Synced"                  (edits are on the server)
  *   - `syncing`   → "Syncing…"                (initial / reconnect in flight)
  *   - `offline`   → "Saved locally (offline)" (buffered until reconnect)
@@ -30,13 +32,16 @@ export function SyncStatus({ session }: SyncStatusProps) {
   // say nothing — "no news is good news." We only surface a state the user
   // might actually act on: edits buffered locally while offline, or a
   // torn-down session. Rendered as a quiet floating pill by EditorView.
-  if (
-    snapshot.status === "detached" ||
-    snapshot.status === "synced" ||
-    snapshot.status === "syncing"
-  ) {
-    return null;
-  }
+  // One exclusive label: terminal states win over offline or stalled adoption.
+  const label =
+    snapshot.status === "destroyed" ? (
+      <Trans>Closed</Trans>
+    ) : snapshot.status === "access-lost" ? (
+      <Trans>Access lost (not saving to the server)</Trans>
+    ) : snapshot.status === "offline" || snapshot.adoptionStalled ? (
+      <Trans>Saved locally (offline)</Trans>
+    ) : null;
+  if (!label) return null;
 
   return (
     <div
@@ -45,11 +50,7 @@ export function SyncStatus({ session }: SyncStatusProps) {
       aria-live="polite"
     >
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
-      {snapshot.status === "offline" ? <Trans>Saved locally (offline)</Trans> : null}
-      {snapshot.status === "access-lost" ? (
-        <Trans>Access lost (not saving to the server)</Trans>
-      ) : null}
-      {snapshot.status === "destroyed" ? <Trans>Closed</Trans> : null}
+      {label}
     </div>
   );
 }

@@ -47,7 +47,7 @@ export interface LocatedContextDocument {
   active: boolean;
 }
 
-export interface UpsertDocumentInput {
+export interface CreateDocumentInput {
   /** Optional caller-chosen document id for imports that need stable keys before insert. */
   id?: string;
   folderId: string | null;
@@ -93,14 +93,12 @@ export interface ContextDocumentStore {
   findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
   /** Persist membership inside the caller's ambient document-creation transaction. */
   recordDocumentMembership(documentId: string): Promise<void>;
-  /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
-  updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
-  upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;
+  createDocument(input: CreateDocumentInput): Promise<ContextDocument>;
   /**
    * Claim only the SQL/tree identity. The document-creation aggregate owns
    * Yjs initialization and manifest membership around this operation.
    */
-  createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
+  createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;

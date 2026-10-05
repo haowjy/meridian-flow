@@ -1,6 +1,6 @@
 {
-  "id": "55363c77-9c1c-4dee-acba-edf5894cbce1",
-  "prevId": "e0fee2d3-ae1e-4453-9bd3-f0826ebbdecc",
+  "id": "60d4681f-fb9d-4ac0-8940-c0612374700a",
+  "prevId": "616c26f2-5aa2-448a-b0c0-30d675758ba4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4338,6 +4338,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "location_version": {
+          "name": "location_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
         "markdown_projection": {
           "name": "markdown_projection",
           "type": "text",
@@ -8238,6 +8245,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "push_policy": {
+          "name": "push_policy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -8457,6 +8471,10 @@
           "name": "document_branches_kind_valid",
           "value": "\"document_branches\".\"kind\" IN ('work_draft', 'thread_peer')"
         },
+        "document_branches_push_policy_valid": {
+          "name": "document_branches_push_policy_valid",
+          "value": "\"document_branches\".\"push_policy\" IN ('manual', 'auto')"
+        },
         "document_branches_status_valid": {
           "name": "document_branches_status_valid",
           "value": "\"document_branches\".\"status\" IN ('active', 'closed')"
@@ -8466,6 +8484,63 @@
           "value": "(\"document_branches\".\"kind\" = 'work_draft' AND \"document_branches\".\"work_id\" IS NOT NULL AND \"document_branches\".\"thread_id\" IS NULL) OR (\"document_branches\".\"kind\" = 'thread_peer' AND \"document_branches\".\"thread_id\" IS NOT NULL)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.document_derivations": {
+      "name": "document_derivations",
+      "schema": "",
+      "columns": {
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "projection_generation": {
+          "name": "projection_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projection_admission_sequence": {
+          "name": "projection_admission_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projection_location_version": {
+          "name": "projection_location_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "projection_extractor_version": {
+          "name": "projection_extractor_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "document_derivations_document_id_documents_id_fk": {
+          "name": "document_derivations_document_id_documents_id_fk",
+          "tableFrom": "document_derivations",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.document_yjs_checkpoints": {

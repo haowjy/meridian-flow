@@ -231,9 +231,9 @@ currently available to the request owner in the requested project.
   missing folders on writes and `mkdir`.
 - Text documents are Yjs-canonical. Reads call the collab domain's
   `readAsMarkdown` directly. Writes flow through collab markdown/write APIs,
-  read back from Yjs, and persist that projection by stable document ID for
-  listing/search. A concurrent move can change the path, never which row receives
-  the post-write projection.
+  and await the immediate certified derive hook for listing/search. ContextFS
+  never republishes returned serialization. The derive transaction writes both
+  projection and UTF-8 byte size from its durable cut.
 - Every text create/seed/write path resolves filetype before constructing Yjs
   content. New documents derive it from the path and persist it before calling
   the collab engine; existing documents write with their persisted classification
@@ -248,7 +248,7 @@ currently available to the request owner in the requested project.
   schema before mutating the context tree. Binary content must enter through
   `writeBinary`/the upload flow; unknown extensions remain tracked prose.
 - Tracked writes also reject an existing storage-backed row before collab work;
-  the document-store upsert boundary independently refuses binary-to-tracked
+  the document-store creation boundary independently refuses binary-to-tracked
   conversion so storage URL and MIME metadata cannot be erased.
 - Tracked documents default to the full document schema. The strict code schema
   is an explicit filetype allowlist (`python`, `typescript`, `javascript`,

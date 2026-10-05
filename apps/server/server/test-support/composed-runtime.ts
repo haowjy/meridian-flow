@@ -32,7 +32,7 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   const hocuspocus = new Hocuspocus({
     yDocOptions: { gc: false, gcFilter: () => true },
     async onLoadDocument({ documentName, document }) {
-      const state = await ports.documentSync.loadHocuspocusDocument(documentName);
+      const state = await ports.documentSync.loadHocuspocusDocument(documentName, document);
       if (state) Y.applyUpdate(document, state);
     },
     onStoreDocument: ({ documentName, document }) =>

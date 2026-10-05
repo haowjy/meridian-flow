@@ -20,20 +20,6 @@ describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
-  it("persists a push receipt without a model-context notice", async () => {
-    const success = createHarness();
-    const successBranchId = await success.seedDestructivePush("push-receipt-success");
-    const beforeSuccess = await success.liveMarkdown(ALPHA_ID);
-    await expect(success.push(successBranchId)).resolves.toMatchObject({ status: "pushed" });
-    expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
-    expect(await success.noticeRows()).toEqual([]);
-    expect(await success.trailRowMembership()).toMatchObject({
-      shells: [{}],
-      details: [{}],
-      outbox: [{}],
-    });
-  });
-
   it("rolls content, lineage, shell, detail, and outbox back at every trail insert boundary", async () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-insert-boundaries");
@@ -105,7 +91,10 @@ describe("change trail (postgres)", () => {
   it("commits normalized trail state once and reuses it on an already-pushed retry", async () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-commit-retry");
+    const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
     await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+    expect(await harness.liveMarkdown(ALPHA_ID)).not.toEqual(beforeMarkdown);
+    expect(await harness.noticeRows()).toEqual([]);
     const committed = await harness.trailRowMembership();
     expect(committed.shells).toHaveLength(1);
     expect(committed.details).toHaveLength(1);
