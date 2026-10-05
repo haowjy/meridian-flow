@@ -77,14 +77,10 @@ async function invokeSkill(deps: SkillFilesDeps, threadId: string, name: string)
   if (file.kind === "text") return renderSkillFile(file.skill, file.path, file.text);
   const visible = await visibleSkillNames(deps, threadId);
   const missing = `Skill ${JSON.stringify(name)} isn't available.`;
-  return {
-    isError: true,
-    output: {
-      message: visible.length
-        ? `${missing} Skills you can load: ${visible.join(", ")}.`
-        : `${missing} This agent has no skills.`,
-    },
-  };
+  const message = visible.length
+    ? `${missing} Skills you can load: ${visible.join(", ")}.`
+    : `${missing} This agent has no skills.`;
+  return { isError: true as const, output: meridianErrorFromTool(message, undefined, "not_found") };
 }
 
 function readError(status: WriteErrorStatus, message: string, path: string) {

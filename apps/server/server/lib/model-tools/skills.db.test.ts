@@ -153,9 +153,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await call(CHILD, "read", { path: RESOURCE })).toBe(
         `status: document_not_found; path: ${RESOURCE}\n\nFile not found. Check the path with \`ls\`.`,
       );
-      expect(await call(CHILD, "skill", { name: "story-review" })).toMatchObject({
-        message: expect.stringContaining('Skill "story-review" isn\'t available.'),
-      });
+      expect(await call(CHILD, "skill", { name: "story-review" })).toBe(
+        'Skill "story-review" isn\'t available. This agent has no skills. (not_found)',
+      );
     });
   });
 }
