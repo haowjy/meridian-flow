@@ -219,6 +219,66 @@ describe("assembleNextTurnContext skill freeze", () => {
   });
 });
 
+describe("assembleNextTurnContext invoked skill tool", () => {
+  it("offers skill on the turn after a later /skill in a chat baked without skills", async () => {
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    await agentRevisions.bindThread(
+      thread.id,
+      null,
+      {
+        model: "fixture-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
+      null,
+    );
+    const baseTools = ["read", "skill"].map((name) => ({
+      type: "function" as const,
+      name,
+      description: name,
+      inputSchema: {},
+    }));
+    const assemble = async () => {
+      const current = await repos.threads.findById(thread.id);
+      if (!current) throw new Error("Thread missing");
+      return assembleNextTurnContext({
+        thread: current,
+        turns: [],
+        blocks: [],
+        agentRevisions,
+        threads: repos.threads,
+        toolRegistry: createToolRegistry(),
+        baseTools,
+        promptBakes: repos.promptBakes,
+        persistBake: true,
+        bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
+        workContext: emptyWorkContext(project.id),
+      });
+    };
+    const names = (tools: { name: string }[]) => tools.map((tool) => tool.name);
+
+    const first = await assemble();
+    expect(names(first.tools)).toEqual(["read"]);
+
+    await agentRevisions.recordInvokedSkill(thread.id, "story-review", {
+      packageRevisionId: "package-revision-1",
+      path: "skills/story-review/SKILL.md",
+      contentDigest: "digest",
+    });
+    const afterInvoke = await assemble();
+    expect(names(afterInvoke.tools)).toEqual(["read", "skill"]);
+    expect(afterInvoke.generateRequest.tools).toEqual(afterInvoke.tools);
+    expect(afterInvoke.systemPrompt).toBe(first.systemPrompt);
+  });
+});
+
 describe("assembleNextTurnContext prompt epochs", () => {
   it("uses the bake introduced by the latest completed epoch boundary", async () => {
     const { createBoundThread, assemble, repos } = await writerChat();

@@ -5,8 +5,8 @@ and tool list, the rendered history, and the cache hints. The rule this file
 protects:
 
 **A thread's cached request prefix (system prompt, advertised tools, and
-history) is fixed except at named prompt-epoch boundaries and image-removal
-breaks.** Rationale lives in the KB:
+history) is fixed except at named prompt-epoch boundaries, image-removal
+breaks, and the `skill` tool joining after the user's first `/skill`.** Rationale lives in the KB:
 [A Thread's Request Prefix Changes Only at Named Epochs][kb-frozen-prefix].
 
 | File | Role |
@@ -79,7 +79,11 @@ row. First assembly inserts a bake and wins the thread's write-once
 row lock and all receive the winner. The first bake commits with a
 successfully prepared run start, before model execution; a later gateway
 failure or cancellation leaves it in place. Later turns send
-`PromptBake.composedSystemPrompt` and `PromptBake.bakedTools` verbatim.
+`PromptBake.composedSystemPrompt` and `PromptBake.bakedTools` verbatim, with
+one exception: a bake without `skill` gains the live `skill` tool, appended,
+once the user invokes a skill in the thread (D64). Invocations are never
+removed, so the tool list changes once and stays stable; that one change costs
+a cache miss the warmth prediction doesn't see.
 
 `agent-thread-context.ts` still re-derives `advertiseTools(baseTools, policy)`
 (plus the spawn description and, for a subagent thread, `return_result`) every
