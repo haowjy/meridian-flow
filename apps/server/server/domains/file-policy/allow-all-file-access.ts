@@ -24,7 +24,6 @@ function openFacts(request: FileFactsRequest): FileFacts {
     ownerWork: null,
     deleted: false,
     scheme: target.kind === "container" ? target.scheme : "manuscript",
-    path: "",
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
     ...(draftWorkId

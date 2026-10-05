@@ -129,8 +129,6 @@ export interface FileFacts {
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
   scheme: ContextUriScheme;
-  /** Source-relative path; empty for a container. */
-  path: string;
   /** The document itself; null for a container. */
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
@@ -148,18 +146,13 @@ export type FileDestination =
   | { kind: "live" }
   | { kind: "draft"; workId: WorkId; workSlug: string | null };
 
-/**
- * The term that held the level below `edit`, in precedence order. `deleted`
- * is logged only: every transport answers it as `not_found`.
- */
-export type FileAccessLimit = FileAccessDenial | "deleted";
-
-/** The reason a transport reports (§9); the wire type. */
+/** The reason a transport reports (§9); the wire type. A deleted file is `not_found`. */
 export type { FileAccessDenial };
 
 export interface FileDecision {
   level: FileAccessLevel;
-  limitedBy: FileAccessLimit | null;
+  /** The term that held the level below `edit`, in precedence order. */
+  limitedBy: FileAccessDenial | null;
   /** Set for `work_archived`: the archived Work, for refusal copy. */
   archivedWork: WorkRef | null;
   destination: FileDestination;
@@ -176,9 +169,8 @@ declare const fileGrantBrand: unique symbol;
 export interface FileGrant<N extends FileNeed = FileNeed> {
   readonly [fileGrantBrand]: N extends "edit" ? { read: true; edit: true } : { read: true };
   readonly principal: Principal;
-  readonly target: FileTarget;
+  /** What was granted; `facts.target` names it. */
   readonly facts: FileFacts;
-  readonly level: FileAccessLevel;
   readonly destination: FileDestination;
 }
 
@@ -186,19 +178,34 @@ export interface FileGrant<N extends FileNeed = FileNeed> {
 export interface FileAccessDenied {
   readonly denied: true;
   readonly target: FileTarget;
-  readonly need: FileNeed;
   readonly reason: FileAccessDenial;
-  readonly limitedBy: FileAccessLimit;
+  /** The level the principal does have, `read` or `none`. */
   readonly level: FileAccessLevel;
   readonly archivedWork: WorkRef | null;
-  /** The refused file's source; null when it wasn't found. */
-  readonly scheme: ContextUriScheme | null;
+  /** The refused file's facts; null when it wasn't found. */
+  readonly facts: FileFacts | null;
   readonly destination: FileDestination | null;
   /**
    * The asking agent's delegation chain, so refusal copy offers only calls
    * the action policy allows; null for a person.
    */
   readonly agentChain: AgentChain | null;
+}
+
+/** The document a target names; null for a container. */
+export function targetDocumentId(target: FileTarget): DocumentId | null {
+  return target.kind === "container" ? null : target.documentId;
+}
+
+/**
+ * The named Works a write to this file locks (§5): its owner and its draft's
+ * Work. The project and No Work can't be archived, so they lock nothing.
+ */
+export function grantWorkIds(facts: FileFacts): WorkId[] {
+  const ids: WorkId[] = [];
+  if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.push(facts.ownerWork.id);
+  if (facts.draftWork && !facts.draftWork.isNoWork) ids.push(facts.draftWork.id);
+  return ids;
 }
 
 export function isFileAccessDenied(value: unknown): value is FileAccessDenied {

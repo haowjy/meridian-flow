@@ -41,7 +41,7 @@ type WorkRow = {
   deletedAt: Date | null;
 };
 
-type FolderRow = { id: FolderId; name: string; deleted: boolean };
+type FolderRow = { id: FolderId; deleted: boolean };
 
 export function createDrizzleFileFacts(
   db: Database,
@@ -79,7 +79,7 @@ export function createDrizzleFileFacts(
         const documentId = row.documentId as DocumentId;
         const target = { kind: "document", documentId } as const;
         const base: FileFacts = {
-          ...documentBase(row, documentId, [], ""),
+          ...documentBase(row, documentId, []),
           scheme: row.scheme,
           target,
         };
@@ -95,35 +95,13 @@ export function createDrizzleFileFacts(
       }
       return out;
     },
-    async loadLocked(requests) {
-      const loadAll = async () => {
-        const out: (FileFacts | null)[] = [];
-        for (const request of requests) out.push(await load(request));
-        return out;
-      };
-      const owners = (facts: readonly (FileFacts | null)[]) =>
-        facts.flatMap((fact, index) => lockedWorkIds(fact, requests[index]));
-      const locked = new Set(owners(await loadAll()));
-      await lockWorksInIdOrder(db, [...locked]);
-      // An owner that moved between the unlocked read and the lock can't be
-      // locked now without breaking the id order (§5): that file is refused.
-      return (await loadAll()).map((fact, index) =>
-        lockedWorkIds(fact, requests[index]).every((id) => locked.has(id)) ? fact : null,
-      );
+    async loadLocked(requests, workIds) {
+      await lockWorksInIdOrder(db, workIds);
+      const out: (FileFacts | null)[] = [];
+      for (const request of requests) out.push(await load(request));
+      return out;
     },
   };
-}
-
-/**
- * Named Works a write must lock: the file's owner and the draft's Work. The
- * project and No Work can't be archived, so their files lock nothing (§5).
- */
-function lockedWorkIds(facts: FileFacts | null, request: FileFactsRequest | undefined): string[] {
-  const ids: string[] = [];
-  if (facts?.ownerWork && !facts.ownerWork.isNoWork) ids.push(facts.ownerWork.id);
-  if (facts?.draftWork && !facts.draftWork.isNoWork) ids.push(facts.draftWork.id);
-  else if (!facts && request?.draftWorkId) ids.push(request.draftWorkId);
-  return ids;
 }
 
 type BaseFacts = Omit<FileFacts, "target" | "draftWork">;
@@ -132,8 +110,6 @@ function documentRows(db: Database) {
   return currentDrizzleDb(db)
     .select({
       documentId: documents.id,
-      name: documents.name,
-      extension: documents.extension,
       folderId: documents.folderId,
       documentDeletedAt: documents.deletedAt,
       sourceId: contextSources.id,
@@ -163,7 +139,6 @@ function documentBase(
   row: DocumentRow,
   documentId: DocumentId,
   folders: readonly FolderRow[],
-  path: string,
 ): Omit<BaseFacts, "scheme"> {
   return {
     projectId: row.projectId,
@@ -174,7 +149,6 @@ function documentBase(
       row.documentDeletedAt !== null ||
       row.sourceDeletedAt !== null ||
       folders.some((folder) => folder.deleted),
-    path,
     self: { kind: "document", id: documentId },
     ancestors: [
       ...folders.map((folder): FileNode => ({ kind: "folder", id: folder.id })),
@@ -190,9 +164,7 @@ async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseF
     .limit(1);
   if (!row || !isContextUriScheme(row.scheme)) return null;
   const folders = row.folderId ? await readFolderChain(db, row.folderId) : [];
-  const file = row.extension ? `${row.name}.${row.extension}` : row.name;
-  const path = [...folders.map((folder) => folder.name).reverse(), file].join("/");
-  return { ...documentBase(row, documentId, folders, path), scheme: row.scheme };
+  return { ...documentBase(row, documentId, folders), scheme: row.scheme };
 }
 
 async function loadContainer(
@@ -228,7 +200,6 @@ async function loadContainer(
     // A missing source is provisioned by the create itself.
     deleted: false,
     scheme,
-    path: "",
     self: null,
     ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, projectId),
   };
@@ -250,20 +221,19 @@ function sourceAncestors(
 async function readFolderChain(db: Database, folderId: FolderId): Promise<FolderRow[]> {
   const rows = await currentDrizzleDb(db).execute<{
     id: string;
-    name: string;
     deleted: boolean;
     depth: number;
   }>(sql`
     WITH RECURSIVE chain AS (
-      SELECT id, parent_id, name, deleted_at IS NOT NULL AS deleted, 0 AS depth
+      SELECT id, parent_id, deleted_at IS NOT NULL AS deleted, 0 AS depth
       FROM folders WHERE id = ${folderId}::uuid
       UNION ALL
-      SELECT f.id, f.parent_id, f.name, f.deleted_at IS NOT NULL, c.depth + 1
+      SELECT f.id, f.parent_id, f.deleted_at IS NOT NULL, c.depth + 1
       FROM folders f JOIN chain c ON f.id = c.parent_id
     )
-    SELECT id::text, name, deleted, depth FROM chain ORDER BY depth
+    SELECT id::text, deleted, depth FROM chain ORDER BY depth
   `);
-  return rows.map((row) => ({ id: row.id as FolderId, name: row.name, deleted: row.deleted }));
+  return rows.map((row) => ({ id: row.id as FolderId, deleted: row.deleted }));
 }
 
 async function readWork(db: Database, workId: WorkId): Promise<WorkRow | null> {

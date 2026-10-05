@@ -298,8 +298,8 @@ async function writerGrants(
 }
 
 function documentOf(grant: FileGrant): DocumentId {
-  if (grant.target.kind === "container") throw new Error("A reversal grant names a document");
-  return grant.target.documentId;
+  if (grant.facts.target.kind === "container") throw new Error("A reversal grant names a document");
+  return grant.facts.target.documentId;
 }
 
 function denialDocument(denial: FileAccessDenied): DocumentId {

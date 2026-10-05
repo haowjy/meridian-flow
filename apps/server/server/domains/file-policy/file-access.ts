@@ -3,9 +3,8 @@
  * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
  * re-check a write seam runs inside its transaction.
  */
-import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { decide, levelAt, skillLevel } from "./domain/policy.js";
+import { decide, levelAt, personLevel, skillLevel } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
@@ -16,6 +15,7 @@ import {
   type FileGrant,
   type FileNeed,
   type FileTarget,
+  grantWorkIds,
   type Principal,
 } from "./domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "./ports/file-facts.js";
@@ -28,11 +28,6 @@ export interface FileAccessDeps {
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
 }
 
-export interface FileEditConfirmation {
-  confirmed: FileGrant<"edit">[];
-  refused: FileAccessDenied[];
-}
-
 export interface FileAccess {
   /** Preflight: fast errors and UI state. Advisory for writes. */
   authorize<N extends FileNeed>(
@@ -42,11 +37,13 @@ export interface FileAccess {
   ): Promise<FileGrant<N> | FileAccessDenied>;
   /**
    * Authoritative, inside the ambient save transaction, once per reply
-   * (§5, §5.2): locks the grants' Works in id order, re-reads facts and each
-   * agent chain, and re-runs the policy at each grant's destination. Refused
-   * grants are reported, not thrown, so the rest of the reply can commit.
+   * (§5, §5.2): locks the Works the grants' facts name in id order, re-reads
+   * facts and each agent chain, and re-runs the policy at each grant's
+   * destination. A file whose owner or draft Work moved outside the locked
+   * set is refused, since locking it now would break the id order. Refused
+   * grants are returned, not thrown, so the rest of the reply can commit.
    */
-  confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileEditConfirmation>;
+  confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's draft rows decided at the draft. A document the principal
@@ -80,21 +77,21 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   return {
     async authorize(principal, target, need) {
       const facts = await deps.facts.load(factsRequest(principal, target));
-      if (!facts) return notFound(principal, target, need);
+      if (!facts) return notFound(principal, target);
       const result = await decision(principal, facts);
-      if (!atLeast(result.level, need))
-        return denied(principal, target, need, result, facts.scheme);
+      if (!atLeast(result.level, need)) return denied(principal, facts, result);
       return mint(principal, facts, result);
     },
 
     async confirmEdit(grants) {
-      const requests = grants.map(
-        (grant): FileFactsRequest => ({
-          target: grant.target,
-          ...(grant.destination.kind === "draft" ? { draftWorkId: grant.destination.workId } : {}),
-        }),
+      const locked = new Set(grants.flatMap((grant) => grantWorkIds(grant.facts)));
+      const fresh = await deps.facts.loadLocked(
+        grants.map(({ facts, destination }) => ({
+          target: facts.target,
+          ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
+        })),
+        [...locked],
       );
-      const locked = await deps.facts.loadLocked(requests);
       const chains = new Map<ThreadId, Promise<AgentChain>>();
       const freshChain = (threadId: ThreadId) => {
         let chain = chains.get(threadId);
@@ -104,34 +101,27 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         }
         return chain;
       };
-      const result: FileEditConfirmation = { confirmed: [], refused: [] };
+      const refused: FileAccessDenied[] = [];
       for (const [index, grant] of grants.entries()) {
-        const facts = locked[index];
-        if (!facts) {
-          result.refused.push(notFound(grant.principal, grant.target, "edit"));
+        const facts = fresh[index];
+        if (!facts || !grantWorkIds(facts).every((id) => locked.has(id))) {
+          refused.push(notFound(grant.principal, grant.facts.target));
           continue;
         }
         const principal = await refreshPrincipal(grant.principal, freshChain);
         const personGrants = await deps.grants.personGrants(principal.accountId, facts);
         const at = levelAt(principal, facts, personGrants, grant.destination);
-        if (atLeast(at.level, "edit")) result.confirmed.push(mint(principal, facts, at));
-        else result.refused.push(denied(principal, grant.target, "edit", at, facts.scheme));
+        if (!atLeast(at.level, "edit")) refused.push(denied(principal, facts, at));
       }
-      return result;
+      return refused;
     },
 
     async historyAccess(principal, documentId) {
       const facts = await deps.facts.load({ target: { kind: "document", documentId } });
       if (!facts || facts.projectDeleted) return null;
-      const deleted = facts.deleted || facts.ownerWork?.deleted === true;
-      const standing: FileFacts = {
-        ...facts,
-        deleted: false,
-        ownerWork: facts.ownerWork && { ...facts.ownerWork, deleted: false, archived: false },
-      };
-      const result = await decision({ accountId: principal.accountId }, standing);
-      if (!atLeast(result.level, "read")) return null;
-      return deleted ? "deleted" : "available";
+      const grants = await deps.grants.personGrants(principal.accountId, facts);
+      if (!atLeast(personLevel(facts, grants), "read")) return null;
+      return facts.deleted || facts.ownerWork?.deleted === true ? "deleted" : "available";
     },
 
     async skillAccess(principal, skill) {
@@ -172,47 +162,30 @@ function mint<N extends FileNeed>(
   facts: FileFacts,
   result: FileDecision,
 ): FileGrant<N> {
-  return {
-    principal,
-    target: facts.target,
-    facts,
-    level: result.level,
-    destination: result.destination,
-  } as unknown as FileGrant<N>;
+  return { principal, facts, destination: result.destination } as unknown as FileGrant<N>;
 }
 
-function denied(
-  principal: Principal,
-  target: FileTarget,
-  need: FileNeed,
-  result: FileDecision,
-  scheme: ContextUriScheme,
-): FileAccessDenied {
-  const limitedBy = result.limitedBy ?? "not_found";
+function denied(principal: Principal, facts: FileFacts, result: FileDecision): FileAccessDenied {
   return {
     denied: true,
-    target,
-    need,
-    reason: limitedBy === "deleted" ? "not_found" : limitedBy,
-    limitedBy,
+    target: facts.target,
+    reason: result.limitedBy ?? "not_found",
     level: result.level,
     archivedWork: result.archivedWork,
-    scheme,
+    facts,
     destination: result.destination,
     agentChain: principal.agent?.chain ?? null,
   };
 }
 
-function notFound(principal: Principal, target: FileTarget, need: FileNeed): FileAccessDenied {
+function notFound(principal: Principal, target: FileTarget): FileAccessDenied {
   return {
     denied: true,
     target,
-    need,
     reason: "not_found",
-    limitedBy: "not_found",
     level: "none",
     archivedWork: null,
-    scheme: null,
+    facts: null,
     destination: null,
     agentChain: principal.agent?.chain ?? null,
   };

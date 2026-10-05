@@ -272,12 +272,10 @@ function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
         return {
           denied: true,
           target,
-          need,
           reason: "not_found",
-          limitedBy: "not_found",
           level: "none",
           archivedWork: null,
-          scheme: null,
+          facts: null,
           destination: null,
           agentChain: null,
         };

@@ -27,6 +27,7 @@ import {
   type FileFacts,
   type FileGrant,
   type FileTarget,
+  grantWorkIds,
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
@@ -245,21 +246,11 @@ async function findRoomAccess(
   userId: UserId,
   target: FileTarget,
 ): Promise<{ access: YjsRoomAccess; facts: FileFacts } | null> {
-  const principal = { accountId: userId };
-  const edit = await services.fileAccess.authorize(principal, target, "edit");
+  const edit = await services.fileAccess.authorize({ accountId: userId }, target, "edit");
   if (!isFileAccessDenied(edit))
     return { access: { level: "edit", grant: edit }, facts: edit.facts };
-  if (edit.level !== "read") return null;
-  const read = await services.fileAccess.authorize(principal, target, "read");
-  if (isFileAccessDenied(read)) return null;
-  return { access: { level: "read" }, facts: read.facts };
-}
-
-function accessWorkIds(facts: FileFacts): WorkId[] {
-  const ids = new Set<WorkId>();
-  if (facts.ownerWork) ids.add(facts.ownerWork.id);
-  if (facts.draftWork) ids.add(facts.draftWork.id);
-  return [...ids];
+  if (edit.level !== "read" || !edit.facts) return null;
+  return { access: { level: "read" }, facts: edit.facts };
 }
 
 async function classifyYjsConnectionAdmission(input: {
@@ -330,7 +321,7 @@ async function classifyYjsConnectionAdmission(input: {
   const access = {
     fileTarget,
     access: admitted.access,
-    accessWorkIds: accessWorkIds(admitted.facts),
+    accessWorkIds: grantWorkIds(admitted.facts),
   };
   if (room.kind === "live") {
     return {

@@ -12,8 +12,8 @@ import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
+  type FileAccessDenial,
   type FileAccessLevel,
-  type FileAccessLimit,
   type FileDecision,
   type FileDestination,
   type FileFacts,
@@ -94,7 +94,7 @@ export function decide(
   return levelAt(principal, facts, grants, destinationFor(principal, facts));
 }
 
-type Term = { cap: FileAccessLevel; limit: FileAccessLimit; work?: WorkRef };
+type Term = { cap: FileAccessLevel; limit: FileAccessDenial; work?: WorkRef };
 
 /**
  * The level at a given destination. `confirmEdit` calls this with the
@@ -123,7 +123,7 @@ export function levelAt(
 }
 
 /** The highest grant on the file or any ancestor (§3.1). */
-function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccessLevel {
+export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccessLevel {
   return matchAncestors(facts, grants).reduce<FileAccessLevel>(
     (best, grant) => higherLevel(best, grant.level),
     "none",
@@ -137,7 +137,7 @@ function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): FileAccess
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
   if (facts.projectDeleted || facts.deleted || facts.ownerWork?.deleted) {
-    terms.push({ cap: "none", limit: "deleted" });
+    terms.push({ cap: "none", limit: "not_found" });
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
@@ -150,7 +150,7 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 }
 
 function workTerms(work: FileWorkFacts): Term[] {
-  if (work.deleted) return [{ cap: "none", limit: "deleted" }];
+  if (work.deleted) return [{ cap: "none", limit: "not_found" }];
   if (work.archived) {
     return [{ cap: "read", limit: "work_archived", work: { id: work.id, slug: work.slug } }];
   }

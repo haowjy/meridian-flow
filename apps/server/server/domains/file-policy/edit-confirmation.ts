@@ -5,13 +5,14 @@
  */
 import { type EditConfirmation, runWithEditConfirmation } from "../../shared/edit-confirmation.js";
 
-export { markReplyConfirmed, UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
+export { markReplyConfirmed } from "../../shared/edit-confirmation.js";
 
 import {
   type FileAccessDenied,
   type FileFacts,
   type FileGrant,
   type FileTarget,
+  grantWorkIds,
   isFileAccessDenied,
 } from "./domain/types.js";
 import type { FileAccess } from "./file-access.js";
@@ -22,16 +23,6 @@ export class FileEditRefusedError extends Error {
     super(`File edit refused: ${refused.map((denial) => denial.reason).join(", ")}`);
     this.name = "FileEditRefusedError";
   }
-}
-
-/** The named Works a grant's write locks: its owner and its draft's Work (§5). */
-function grantWorkIds(grants: readonly FileGrant[]): string[] {
-  const ids = new Set<string>();
-  for (const { facts } of grants) {
-    if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.add(facts.ownerWork.id);
-    if (facts.draftWork && !facts.draftWork.isNoWork) ids.add(facts.draftWork.id);
-  }
-  return [...ids].sort();
 }
 
 /**
@@ -45,9 +36,9 @@ export async function runWithEditGrants<T>(
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
   let refusal: FileEditRefusedError | undefined;
   const confirmation: EditConfirmation = {
-    workIds: grantWorkIds(grants),
+    workIds: [...new Set(grants.flatMap((grant) => grantWorkIds(grant.facts)))].sort(),
     async confirm() {
-      const { refused } = await access.confirmEdit(grants);
+      const refused = await access.confirmEdit(grants);
       if (refused.length === 0) return;
       refusal = new FileEditRefusedError(refused);
       throw refusal;
@@ -74,7 +65,9 @@ async function grantsCover(
 ): Promise<boolean> {
   const named = new Set<string>();
   const containers: Array<Extract<FileTarget, { kind: "container" }>> = [];
-  for (const { target } of grants) {
+  for (const {
+    facts: { target },
+  } of grants) {
     if (target.kind === "container") containers.push(target);
     else named.add(target.documentId);
   }

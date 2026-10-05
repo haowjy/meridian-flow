@@ -16,15 +16,13 @@ export function isPermissionDenial(denial: FileAccessDenied): denial is Permissi
   return denial.reason !== "not_found";
 }
 
-export const UPLOADS_READ_ONLY_MESSAGE =
-  "Files in uploads:// are read-only, so this change wasn't made.";
+const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
 
 /** Matches the read agent's permission line (D54). */
-export const AGENT_READ_ONLY_MESSAGE =
-  "Your permission is read, so you can change only scratch://.";
+const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only scratch://.";
 
 /** A read agent's own scratch is always writable, so a refused scratch file is another Work's. */
-export const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
+const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
 /** What the model reads when the policy refused a write. */
@@ -35,7 +33,7 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
     case "uploads_read_only":
       return UPLOADS_READ_ONLY_MESSAGE;
     case "agent_read_only":
-      return denial.scheme === "scratch"
+      return denial.facts?.scheme === "scratch"
         ? AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE
         : AGENT_READ_ONLY_MESSAGE;
   }
