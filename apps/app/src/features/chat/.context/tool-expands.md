@@ -179,10 +179,10 @@ carry no affordance.
   never "Showing…", which is systems voice. Listings and outlines cap at 8, one
   line each; search hits cap at 4, because each is three lines.
 
-**The anchor is the trap.** `StreamTail` is bottom-pinned with a *top* fade,
+**The anchor is the trap.** A stream tail is bottom-pinned with a *top* fade,
 because for a running command the newest output wins. A preview is the
 opposite: **top-anchored with a bottom fade**, because the opening of the
-passage wins. Reusing `StreamTail` here shows the end of the chapter.
+passage wins. Reusing a tail here shows the end of the chapter.
 
 **A second door sits at the fade** of clipped *prose*, labelled `Open
 ‹Document›`. The row title carries the first door, at the top; this one sits

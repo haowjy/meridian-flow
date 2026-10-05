@@ -76,7 +76,7 @@ represented as a fully-typed slot:
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
 | `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |
 | `mockModelScript` | runtime | Scripted replies for the in-process mock model; null with real providers or when the debug gate (`APP_DEBUG`, never production) is closed |
-| `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
+| `runClaim` | runtime | The thread run claim (`RunClaim` port; Drizzle or in-memory): one live run per thread across replicas, with its lease and status |
 
 ## Tool wiring
 
@@ -120,7 +120,6 @@ over HTTP and for Yjs rooms, is the [file policy](../../domains/file-policy/.con
 | `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
 | `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Admission asks the file policy for `edit`, then `read`; a `read` room is read-only. Each edit-room frame runs under its grant, and a refused frame or a Work access change closes with 4409. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
 | `yjs-room-access.ts` | Admitted rooms indexed by the Works their access depends on, so a Work's `FileAccessChanges` event closes exactly its scratch and draft rooms. |
-| `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
 
 For typed Yjs admission refusals, `YjsConnectionContext.closeTransport` is the
 physical-close seam. `refuseSchemaAdmission()` emits the correlated

@@ -25,7 +25,7 @@ dependency). `spawn/child-run-driver.ts` supplies admission input to the shared
 run session, binds the parent card before execution, then reads the exact saved
 result and publishes after the session releases. It owns no lease or terminal
 report policy. `loop/execution-finalizer.ts`
-owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
+owns immutable terminal transaction A.
 `spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
 original card in place with `block.updated`, appends body-free
 `agent.run_completed`, queues compact child-provenance notice text for
@@ -100,8 +100,7 @@ original card is bound at admission and terminally replaced by B; a missing card
 but a live caller still receives the notification. `return_result` captures
 candidate content with its successful ordinary `tool_result` in one
 transaction; capture alone never makes success. `spawn_status` remains a
-lifecycle hint for activity readers, while the removed `spawn_result` column is
-not a competing body store. Every child run publishes neutral, body-free
+lifecycle hint for activity readers, not a body store. Every child run publishes neutral, body-free
 `agent.run_completed` metadata; there is no spawn-named completion event.
 
 ## Activity

@@ -433,8 +433,9 @@ contract shapes.
   active-leaf advancement commit atomically. Do not map `23505` to 409: the
   unique constraint is a post-hoc signal after stale snapshot reads, and it
   does not cover two concurrent starts against a non-empty thread. The
-  in-memory adapter serializes every snapshot transaction on a process-wide
-  `transactionTail` chain (with an `AsyncLocalStorage` reentrancy guard);
+  in-memory adapter serializes every snapshot transaction through
+  `InMemoryTransactionOwner` (`shared/in-memory-transaction.ts`: a promise
+  tail with an `AsyncLocalStorage` reentrancy guard);
   per-transaction snapshots that interleaved across threads could erase winner
   state on loser rollback. Durable live-run ownership across the cluster is a
   separate problem ([#365](https://github.com/haowjy/meridian-flow/issues/365)).
