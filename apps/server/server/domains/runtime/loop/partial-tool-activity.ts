@@ -2,10 +2,9 @@
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const ACTIVITY_FIELDS: Record<string, readonly string[]> = {
-  write: ["command", "path", "uri"],
-  edit: ["path", "uri"],
-  read: ["path", "uri"],
-  search: ["query", "pattern"],
+  write: ["command", "path"],
+  read: ["path"],
+  search: ["pattern"],
   spawn: ["agent"],
 };
 
@@ -123,12 +122,11 @@ export function hasPartialToolActivityTarget(
   switch (toolName) {
     case "write":
       // Every write changes a document; its verb (create, replace, remove…) comes from the command.
-      return hasText("command") && hasText("path", "uri");
-    case "edit":
+      return hasText("command") && hasText("path");
     case "read":
-      return hasText("path", "uri");
+      return hasText("path");
     case "search":
-      return hasText("query", "pattern");
+      return hasText("pattern");
     case "spawn":
       return hasText("agent");
     default:

@@ -29,14 +29,14 @@ describe("partial tool activity input", () => {
   });
 
   it("extracts search and spawn targets without traversing unrelated arguments", () => {
-    const query = parsePartialToolActivityInput(
+    const pattern = parsePartialToolActivityInput(
       "search",
-      '{"query":"lantern","options":{"query":"nested"}',
+      '{"pattern":"lantern","options":{"pattern":"nested"}',
     );
     const agent = parsePartialToolActivityInput("spawn", '{"agent":"Editor","prompt":"');
 
-    expect(query).toEqual({ query: "lantern" });
-    expect(hasPartialToolActivityTarget("search", query)).toBe(true);
+    expect(pattern).toEqual({ pattern: "lantern" });
+    expect(hasPartialToolActivityTarget("search", pattern)).toBe(true);
     expect(agent).toEqual({ agent: "Editor" });
     expect(hasPartialToolActivityTarget("spawn", agent)).toBe(true);
   });
