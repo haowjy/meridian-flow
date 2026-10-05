@@ -15,7 +15,7 @@ export type ToolCommand =
   | "redo"
   | "search"
   | "list"
-  | "invoke"
+  | "skill"
   | "work-read"
   | "work-create"
   | "work-update"
@@ -34,7 +34,7 @@ export function toolCommand(tool: ToolView): ToolCommand {
     case "ls":
       return "list";
     case "skill":
-      return "invoke";
+      return "skill";
     case "work":
       return workToolCommand(tool);
     default:
@@ -155,10 +155,17 @@ export function stringInput(input: Record<string, JsonValue>, field: string): st
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** The skill a `skill` call loaded, or `undefined` for any other call. */
-export function invokedSkillSlug(tool: ToolView): string | undefined {
-  if (tool.toolName !== "skill") return undefined;
-  return stringInput(toolInputObject(tool), "name");
+/** A file inside a skill package: `skills://<skill>/<path>`. */
+export type SkillFile = { skill: string; path: string };
+
+/**
+ * The skill a `skills://` path belongs to, and the file's path inside it.
+ * `skills://` addresses no writer document, so it never parses as a context URI.
+ */
+export function skillFile(path: string): SkillFile | null {
+  const match = path.trim().match(/^skills:\/\/([^/]+)\/(.+)$/);
+  if (!match?.[1] || !match[2]) return null;
+  return { skill: match[1], path: match[2] };
 }
 
 export function humanizeSkillSlug(slug: string): string {

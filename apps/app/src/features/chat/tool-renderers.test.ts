@@ -74,21 +74,37 @@ describe("skill rows", () => {
     expect(rendererFor("skill").expand).toBeUndefined();
   });
 
+  it("names a skill file read by its file and skill, in every tense", () => {
+    const read = documentTool({
+      toolName: "read",
+      input: { path: "skills://story-review/resources/prose-critique.md" },
+    });
+    const section = documentTool({
+      toolName: "read",
+      input: { path: "skills://creative-writing-modes/resources/prose-modes.md#line-polish" },
+    });
+    const missing = documentTool({
+      toolName: "read",
+      input: { path: "skills://story-review/resources/prose-critique/voice.md" },
+      result: { schema: "meridian.agent-edit.v1", command: "read", status: "document_not_found" },
+      isError: true,
+    });
+
+    expect(toolActivityPhrase(read)).toEqual({
+      verb: "Read",
+      parameter: "prose-critique (Story Review)",
+    });
+    expect(toolActivityPhrase({ ...read, status: "partial" })).toEqual({
+      verb: "Reading",
+      parameter: "prose-critique (Story Review)…",
+    });
+    expect(toolActivityPhrase(section).parameter).toBe("prose-modes (Creative Writing Modes)");
+    expect(documentToolFailureCopy(missing)).toBe("Couldn't find voice (Story Review).");
+  });
+
   it("names a failed skill call as the skill failing", () => {
     const tool = skillCall({ result: 'Unknown skill "story-review".', isError: true });
 
     expect(rendererFor("skill").title(tool)).toBe("Couldn't run that skill");
-  });
-
-  it("shows a read of any skills:// file, SKILL.md included, as an ordinary read", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "skills://story-review/SKILL.md" },
-      result:
-        "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\n# Story review",
-    });
-
-    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "SKILL.md" });
-    expect(rendererFor("read").expand?.(tool)).toBeNull();
   });
 });

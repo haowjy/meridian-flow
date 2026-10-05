@@ -36,11 +36,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type {
-  DocumentSession,
-  DocumentSessionAccess,
-  DocumentSessionSnapshot,
-} from "@/core/editor/document-session";
+import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
@@ -114,13 +110,6 @@ export type EditorViewProps = {
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
-  /**
-   * The server named a scope for this room that `editable` doesn't show: its
-   * Work was archived or unarchived somewhere this host hasn't seen yet. The
-   * editor already follows the room; the host refreshes whatever decides
-   * `editable`. Asked only while `active`.
-   */
-  onRoomAccessMismatch?: () => void;
 };
 
 let editorSessionOwnerSequence = 0;
@@ -214,53 +203,17 @@ export function EditorView(props: EditorViewProps) {
 
   // The one place an editor's lifetime is decided. Every input the session
   // lookup above reads is part of this key, so a session swap always arrives
-  // with a fresh mount and nothing else can force one. A review room keeps its
-  // name across a rebuild, so its session instance is part of the key.
+  // with a fresh mount and nothing else can force one. A rebuilt or reopened
+  // room keeps its name, so the session's own Y.Doc is part of the key.
   return (
     <SessionEditorView
-      key={
-        inReview
-          ? `${editorMountKey(identity)}|${sessionMountId(session)}`
-          : editorMountKey(identity)
-      }
+      key={`${editorMountKey(identity)}|${session.document.guid}`}
       {...props}
       identity={identity}
       session={session}
       liveSession={props.session ?? null}
     />
   );
-}
-
-const sessionMountIds = new WeakMap<DocumentSession, number>();
-let sessionMountSequence = 0;
-
-function sessionMountId(session: DocumentSession): number {
-  let id = sessionMountIds.get(session);
-  if (id === undefined) {
-    id = ++sessionMountSequence;
-    sessionMountIds.set(session, id);
-  }
-  return id;
-}
-
-/**
- * Checks the host's `editable` against each scope the server names, and on
- * activation. The host's own changes to `editable` (its archive command, say)
- * never ask: the room's next named scope confirms or contradicts them.
- */
-function useRoomAccessMismatch(
-  access: DocumentSessionAccess | null,
-  editable: boolean,
-  active: boolean,
-  onMismatch: (() => void) | undefined,
-) {
-  const latest = useRef({ editable, onMismatch });
-  latest.current = { editable, onMismatch };
-  useEffect(() => {
-    if (!active || access === null) return;
-    if ((access === "edit") === latest.current.editable) return;
-    latest.current.onMismatch?.();
-  }, [access, active]);
 }
 
 type SessionEditorViewProps = EditorViewProps & {
@@ -329,7 +282,6 @@ function ActiveSessionEditorView({
   workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
-  onRoomAccessMismatch,
   session,
   liveSession,
   snapshot,
@@ -345,7 +297,6 @@ function ActiveSessionEditorView({
   const effectiveEditableRef = useRef(true);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
   const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
-  useRoomAccessMismatch(snapshot.access, editable, active, onRoomAccessMismatch);
   effectiveEditableRef.current = effectiveEditable;
 
   // Which project and which Work this editor is open in. Everything that has to

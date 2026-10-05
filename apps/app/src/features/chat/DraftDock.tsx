@@ -92,8 +92,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       rows.length > 0 ||
       projectDraftDispositionRows(dispositionSnapshot, controller.projectId).length > 0,
     isBusy: controller.isDisposing,
-    /** Archived Work: Review stays, Apply and Discard disable (D30). */
-    frozen: controller.draftsFrozen,
+    dispositionLocked: controller.dispositionLocked,
     dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
@@ -206,7 +205,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       setConfirmingDiscardAll(false);
                       dock.startDiscardAll();
                     }}
-                    disabled={dock.isBusy || dock.frozen}
+                    disabled={dock.dispositionLocked}
                   >
                     <Trans>Discard</Trans>
                   </QuietButton>
@@ -218,7 +217,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       if (single && firstPending) dock.discardRow(firstPending);
                       else setConfirmingDiscardAll(true);
                     }}
-                    disabled={dock.generating || dock.isBusy || dock.frozen || !firstPending}
+                    disabled={dock.generating || dock.dispositionLocked || !firstPending}
                   >
                     {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
                   </QuietButton>
@@ -227,7 +226,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
                       else dock.startApplyAll();
                     }}
-                    disabled={dock.generating || dock.isBusy || dock.frozen || !firstPending}
+                    disabled={dock.generating || dock.dispositionLocked || !firstPending}
                   >
                     {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
                   </QuietButton>

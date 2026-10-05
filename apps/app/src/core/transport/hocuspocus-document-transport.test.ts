@@ -90,15 +90,6 @@ describe("Hocuspocus document transport adapter", () => {
     ).toBeNull();
   });
 
-  it("never routes access-changed through the terminal denial path", () => {
-    expect(
-      classifyDocumentTransportClose("branch:draft-1:gen:1", {
-        code: 4409,
-        reason: "access-changed",
-      }),
-    ).toBeNull();
-  });
-
   it("offers exactly the formatted schema subprotocol", () => {
     new CollabSchemaWebSocket("ws://test/ws/yjs");
 
