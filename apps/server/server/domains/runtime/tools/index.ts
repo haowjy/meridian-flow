@@ -21,9 +21,7 @@ export {
   type LsToolInput,
   type SearchToolInput,
   type WorkCommand,
-  type WorkCommandCategory,
   WorkCommandSchema,
-  workCommandCategory,
 } from "./core-tools.js";
 export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
 export { createInspectionToolRegistrations } from "./inspection-tools.js";

@@ -174,7 +174,6 @@ export class ResourceSessionAdoptionCoordinator {
       authorityState === "bindable"
         ? null
         : await this.adoption.begin({
-            projectId: witness.projectId,
             documentId: witness.documentId,
             lineageHandle: key.handle,
             exactDatabaseName: witness.exactDatabaseName,

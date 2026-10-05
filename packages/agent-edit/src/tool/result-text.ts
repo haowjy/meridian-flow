@@ -32,7 +32,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   if (outline) {
     sections.push(`Read a section with ${readCall(`${outline}#<slug>`, result.read?.version)}.`);
   }
-  const body = bodyLines(result, groups, outline);
+  const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
   return sections.join("\n\n");
 }
@@ -161,11 +161,7 @@ function outlineFile(result: AgentEditResultV1): string | undefined {
   return splitDocumentFile(result.path).filePath;
 }
 
-function bodyLines(
-  result: AgentEditResultV1,
-  groups: readonly AgentEditBlockGroup[],
-  outline: string | undefined,
-): string[] {
+function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | undefined): string[] {
   const items = groups
     .filter((group) => group.relation !== "swept")
     .flatMap((group) => group.items);
