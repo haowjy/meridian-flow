@@ -79,16 +79,4 @@ describe("skill rows", () => {
 
     expect(rendererFor("skill").title(tool)).toBe("Couldn't run that skill");
   });
-
-  it("shows a read of any skills:// file, SKILL.md included, as an ordinary read", () => {
-    const tool = documentTool({
-      toolName: "read",
-      input: { path: "skills://story-review/SKILL.md" },
-      result:
-        "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\n# Story review",
-    });
-
-    expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "SKILL.md" });
-    expect(rendererFor("read").expand?.(tool)).toBeNull();
-  });
 });

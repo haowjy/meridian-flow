@@ -15,7 +15,7 @@ export type ToolCommand =
   | "redo"
   | "search"
   | "list"
-  | "invoke"
+  | "skill"
   | "work-read"
   | "work-create"
   | "work-update"
@@ -34,7 +34,7 @@ export function toolCommand(tool: ToolView): ToolCommand {
     case "ls":
       return "list";
     case "skill":
-      return "invoke";
+      return "skill";
     case "work":
       return workToolCommand(tool);
     default:
@@ -153,12 +153,6 @@ export function toolInputObject(tool: ToolView): Record<string, JsonValue> {
 export function stringInput(input: Record<string, JsonValue>, field: string): string | undefined {
   const value = input[field];
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** The skill a `skill` call loaded, or `undefined` for any other call. */
-export function invokedSkillSlug(tool: ToolView): string | undefined {
-  if (tool.toolName !== "skill") return undefined;
-  return stringInput(toolInputObject(tool), "name");
 }
 
 export function humanizeSkillSlug(slug: string): string {

@@ -22,7 +22,6 @@ import type { ToolView } from "./group-delivery-segments";
 import {
   copySourcePath,
   humanizeSkillSlug,
-  invokedSkillSlug,
   stringInput,
   type ToolCommand,
   toolCommand,
@@ -189,10 +188,10 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   // A `skill` call loads that skill's SKILL.md. The row names the skill, not
   // the file: the writer never opens a skill body as a document.
-  invoke: {
+  skill: {
     Icon: Sparkles,
     phrases: (tool) => {
-      const slug = invokedSkillSlug(tool);
+      const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
       const skill = humanizeSkillSlug(slug);
       return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
