@@ -3,7 +3,7 @@
 ## Key invariants
 
 “Live” and “canonical” below mean the document supplied by this core's
-coordinator. A host may supply a branch rather than the published document.
+coordinator. A host may supply a branch rather than the live document.
 The memory-only runtime replica is distinct from that host-owned branch.
 
 - **Block identity and display address are different.** Canonical identity is the
@@ -120,10 +120,11 @@ going blind to a concurrent human edit.
   suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). Model-facing framing is a versioned JSON envelope:
-  groups carry `{ extent, relation, items: [{ hash, body }] }`, so each logical
-  block remains distinct without repeating shared semantics. Only full
-  document/changed/swept groups and prefix context groups exist. Concurrent
+  deterministically (#383). The typed result's groups carry
+  `{ extent, relation, items: [{ hash, body }] }`, so each logical block remains
+  distinct without repeating shared semantics; `renderAgentEditResult` renders
+  them to the text the model reads. Only full document/changed/swept groups and
+  prefix context/copied groups exist. Concurrent
   blocks and tombstones sit in `concurrent.runs`; placement, not another block
   relation, conveys their concurrent semantics.
 - **Tool results have one typed form and one rendering.** Read, mutation, undo,
