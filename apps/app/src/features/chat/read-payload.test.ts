@@ -80,6 +80,6 @@ describe("readPayloadOutline", () => {
 
   it("returns null for a value that isn't a read result", () => {
     expect(readPayloadOutline(null)).toBeNull();
-    expect(readPayloadOutline('h1|## Chapter One\nread({"path": "x#h1"})')).toBeNull();
+    expect(readPayloadOutline("h1|## Chapter One  #chapter-one")).toBeNull();
   });
 });

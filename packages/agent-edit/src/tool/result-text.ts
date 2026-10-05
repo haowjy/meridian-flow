@@ -21,13 +21,18 @@ export function readCall(path: string, version?: "draft" | "live"): string {
 
 /**
  * Renders one status line, any notes (concurrent edits, sweeps, the message),
- * then the blocks as `hash|text` lines.
+ * then the blocks as `hash|text` lines. An outline says once how to read a
+ * section, and each heading carries its `#slug`.
  */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
   const sections = [[statusLine(result), ...notes(result, groups)].join("\n")];
   if (result.message) sections.push(result.message);
-  const body = bodyLines(result, groups);
+  const outline = outlineFile(result);
+  if (outline) {
+    sections.push(`Read a section with ${readCall(`${outline}#<slug>`, result.read?.version)}.`);
+  }
+  const body = bodyLines(result, groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
   return sections.join("\n\n");
 }
@@ -150,17 +155,23 @@ function concurrentLines(
   return rendered.length > 0 ? ["concurrent edits:", ...rendered] : [];
 }
 
-function bodyLines(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {
+/** The file an outline's sections are read from; undefined when the result isn't an outline. */
+function outlineFile(result: AgentEditResultV1): string | undefined {
+  if (result.read?.format !== "outline" || !result.path) return undefined;
+  return splitDocumentFile(result.path).filePath;
+}
+
+function bodyLines(
+  result: AgentEditResultV1,
+  groups: readonly AgentEditBlockGroup[],
+  outline: string | undefined,
+): string[] {
   const items = groups
     .filter((group) => group.relation !== "swept")
     .flatMap((group) => group.items);
-  if (result.read?.format !== "outline" || !result.path) return items.map(blockLine);
-  // An outline lists headings; each one prints the call that reads its section.
-  const { filePath } = splitDocumentFile(result.path);
-  return items.flatMap((item) => [
-    blockLine(item),
-    readCall(`${filePath}#${item.section ?? item.hash}`, result.read?.version),
-  ]);
+  if (!outline) return items.map(blockLine);
+  // A heading whose slug looks like a hash is read by its hash.
+  return items.map((item) => `${blockLine(item)}  #${item.section ?? item.hash}`);
 }
 
 function documentItems(groups: readonly AgentEditBlockGroup[]): AgentEditBlockItem[] {
