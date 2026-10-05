@@ -7,7 +7,11 @@
  */
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
+import {
+  type InvalidArgumentsResult,
+  isInvalidArgumentsResult,
+  renderInvalidArguments,
+} from "../tools/invalid-arguments.js";
 import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
 
 export const queuedNoReplyCopy =
@@ -32,9 +36,7 @@ export function spawnToolResult(
 }
 
 export function renderSpawnOutput(value: JsonValue): string {
-  if (isInvalidArguments(value)) {
-    return renderInvalidArguments("spawn", (value as unknown as InvalidArgumentsResult).issues);
-  }
+  if (isInvalidArgumentsResult(value)) return renderInvalidArguments("spawn", value.issues);
   if (!isSpawnResult(value)) return renderRefusal(value);
   const result = value as SpawnResult;
   if (result.status === "background") {
@@ -55,16 +57,6 @@ export function renderSpawnOutput(value: JsonValue): string {
       content: reportContent(report.summary, report.payload, report.artifacts),
     }),
   ].join("\n");
-}
-
-function isInvalidArguments(value: JsonValue): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    value.error === "invalid_arguments" &&
-    Array.isArray(value.issues)
-  );
 }
 
 function isSpawnResult(value: JsonValue): boolean {

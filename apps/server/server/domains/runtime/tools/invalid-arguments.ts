@@ -24,6 +24,15 @@ export function invalidArgumentsResult(
   return { error: "invalid_arguments", issues: [...issues] };
 }
 
+export function isInvalidArgumentsResult(value: unknown): value is InvalidArgumentsResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { error?: unknown }).error === "invalid_arguments" &&
+    Array.isArray((value as { issues?: unknown }).issues)
+  );
+}
+
 /** The model's text for an `invalid_arguments` refusal. */
 export function renderInvalidArguments(
   toolName: string,

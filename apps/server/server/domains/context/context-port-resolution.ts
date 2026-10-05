@@ -4,7 +4,7 @@
  */
 import type { DocumentVersion } from "@meridian/agent-edit";
 import type { Thread } from "@meridian/contracts/threads";
-import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { ResolvedWorkAuthority, Work, WorkSlug } from "@meridian/contracts/works";
 import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
@@ -14,6 +14,8 @@ import type { UnifiedContextPortFactory } from "./unified-context-port-factory.j
 export interface ThreadContextResolution {
   thread: Thread;
   primaryWorkId: string | null;
+  /** The thread's Work as listed with the project's; null when it has none or it is gone. */
+  primaryWork: Work | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
   /** The thread's Work when it drafts AI writes; null in auto-apply. */
@@ -54,6 +56,7 @@ export async function resolveThreadContext(
   return {
     thread,
     primaryWorkId: primaryMembership?.workId ?? null,
+    primaryWork: primaryWork ?? null,
     workAuthorities,
     primaryWorkAuthority,
     primaryDraftWork:

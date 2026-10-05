@@ -25,6 +25,16 @@ const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only
 const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
+/**
+ * A write whose file was deleted under it: at the reply's save (D29, D42), or
+ * when an undo or redo reached it.
+ */
+export function deletedFileMessage(when: "save" | "reversal"): string {
+  return when === "save"
+    ? "This file was deleted before this reply was saved, so this change wasn't made."
+    : "This file was deleted, so this change wasn't made.";
+}
+
 /** What the model reads when the policy refused a write. */
 export function permissionDeniedMessage(denial: PermissionDenial): string {
   switch (denial.reason) {
