@@ -22,7 +22,15 @@ Every `ToolExecutionResult` carries `output` (what the model sees) and
 `result` on the `tool_result` block and the `tool.result` event, and every
 reader (history summaries, `thread_history`, the app) reads `result`, never
 `output` (D8, D43). With `renderResult`, `output` is its text; without, both
-are the value. Parse failures return `invalid_arguments` with `result`
+are the value. `renderResult(result, input)` gets the parsed input, so a
+`verbose` flag shapes the text, not the handler (D65). A refusal (any
+`MeridianError`, handler-owned or the executor's own) never reaches a
+renderer: `modelOutput` renders it once as its message plus the code
+(`tools/refusal.ts`; the code is left off when it's the generic `tool_error`
+or the message already holds it), and `details` stays on `result`. Results are
+short text by default: no ids, nulls, zero counts, echoed inputs or flags that
+restate the default; `verbose: true` on `ls`, `work` (`list`, `show`) and
+`search` adds the rest. Parse failures return `invalid_arguments` with `result`
 `{ error, issues }` and a rendered text. Timeout, abort, and thrown failures
 belong to the executor; it delegates those to the registration's
 `formatExecutionError` when present and otherwise uses the generic Meridian
@@ -104,14 +112,32 @@ policy-free.
   authorization, change Work binding, or change write mode.
 - `ls` returns a typed `LsResult` (`tools/ls-result.ts`): the listed folder's
   canonical URI (null at the root) and entries with `uri`, `kind`,
-  `readonly`, a non-text file's `fileType`, and with `details: true` the
+  `readonly`, a non-text file's `fileType`, and with `verbose: true` the
   `wordCount` (text), `sizeBytes` (uploads) and `updatedAt`. No IDs or schema
   fields. `renderLsResult` gives the model plain text (D61): the folder URI,
   then entries relative to it, folders ending in `/`, with one parenthesis
   for kind, details and `read-only` when any apply; `  (empty)` for an empty
   folder; one line per source at the root. `skills://` listings share the
   shape. Word counts come from the projection the listing query already
-  loads, counted only when `details` is set.
+  loads, counted only when `verbose` is set.
+- `work` returns typed Works (`ModelWork`, `WorkShowResult` in
+  `tools/work-result.ts`; `historySummary` reads them). `renderWorkResult`
+  gives one line per Work: `@slug`, name with its status, the goal clipped
+  at a word, `draft mode` only when not auto-apply, pending changes only
+  above zero, `(archived)`. `show` adds the goal in full, recent chats and
+  drafts; create, update, archive, unarchive and delete say what happened,
+  then the Work line. `verbose` adds created, updated and last-activity dates.
+- `search` returns typed hits (`uri`, `version`, `matches` of `{ excerpt,
+  blockHash? }` with the whole block as excerpt, `matchCount`, `readonly`);
+  the app's previews and `PassageDoor` read them. `renderSearchResult`
+  (`tools/search-result.ts`) prints each file's URI, then `hash|excerpt` per
+  passage as `read` prints blocks, the excerpt cut to about 120 characters
+  either side of the match; `read-only` and the count only when they say
+  something. `verbose` gives whole blocks and the score. Compaction's
+  `searchDocumentText` re-renders from the typed hits (`elide` gets `result`
+  beside `output`), so a changed file loses only its own passages.
+- A `read` with `format: "outline"` (documents and `skills://`) says once how
+  to read a section, then lists each heading with its `#slug` (D65).
 - Model-call cost gating is not part of the tool policy. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.

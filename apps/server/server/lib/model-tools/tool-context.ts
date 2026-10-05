@@ -198,6 +198,7 @@ export function contextErrorMessage(error: ContextError): string {
     return `Unknown scheme "${error.unknownScheme}". Known schemes: ${known}`;
   }
   if (error.code === "invalid_uri") return error.reason;
+  if (error.code === "not_found") return `No file or folder at ${error.uri}.`;
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
 }
