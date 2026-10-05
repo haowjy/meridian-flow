@@ -297,6 +297,7 @@ async function resolveDerivedBinding(
     revision: selected.revision,
     configuration: selected.configuration,
     invocationOverlay: null,
+    invokedSkills: {},
   };
 }
 

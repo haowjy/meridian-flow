@@ -228,7 +228,7 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
+    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;

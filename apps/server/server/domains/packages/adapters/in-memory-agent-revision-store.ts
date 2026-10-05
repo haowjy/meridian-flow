@@ -6,6 +6,7 @@ import {
   GENERIC_SUBAGENT_NAME,
   type InvocationOverlay,
   type ResolvedAgentConfiguration,
+  type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
@@ -34,6 +35,7 @@ type State = {
       revisionId: string | null;
       configuration: ResolvedAgentConfiguration;
       invocationOverlay: InvocationOverlay | null;
+      invokedSkills: Record<string, RetainedSkillReference>;
     }
   >;
 };
@@ -290,7 +292,12 @@ export function createInMemoryAgentRevisionStore(input: {
             isDeepStrictEqual(existing.configuration, configuration) &&
             isDeepStrictEqual(existing.invocationOverlay, invocationOverlay)
           );
-        state().bindings.set(threadId, { revisionId, configuration, invocationOverlay });
+        state().bindings.set(threadId, {
+          revisionId,
+          configuration,
+          invocationOverlay,
+          invokedSkills: {},
+        });
         return true;
       });
     },
@@ -303,7 +310,17 @@ export function createInMemoryAgentRevisionStore(input: {
         revision: revision ?? null,
         configuration: binding.configuration,
         invocationOverlay: binding.invocationOverlay ?? null,
+        invokedSkills: binding.invokedSkills,
       });
+    },
+    async recordInvokedSkill(threadId, slug, reference) {
+      const binding = state().bindings.get(threadId);
+      if (!binding) return false;
+      state().bindings.set(threadId, {
+        ...binding,
+        invokedSkills: { ...binding.invokedSkills, [slug]: copy(reference) },
+      });
+      return true;
     },
   };
   return store;
