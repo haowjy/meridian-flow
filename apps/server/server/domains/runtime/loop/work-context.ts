@@ -93,7 +93,7 @@ function writeModeLines(
       ];
     }
     return [
-      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Check with the user, then unarchive it with work unarchive, or ask them to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
     ];
   }
   if (work.aiWriteMode === "direct")
