@@ -183,9 +183,10 @@ project document therefore cannot resolve this Work's draft-only tab.
   provider forces a fresh live-manuscript manifest read. Membership means
   Apply metadata resolution; absence means coordinator discard. A failed read leaves the tab
   intact, and a replacement active draft for that document cancels resolution.
-- A live-tree `openTab` refresh clears a stale marker. `saveLastContextRoute`
-  skips draftOnly tabs so a discarded path can't replay on the next visit;
-  the coordinator repairs the route when disposition removes the route-active tab.
+- A live-tree `openTab` refresh clears a stale marker. Persisted Editor
+  workspace state never keeps `draftOnly` (`durableTab` in
+  `client/stores/context-tabs-store/editor-workspace-state.ts`); the
+  coordinator repairs the route when disposition removes the route-active tab.
 
 Server-side twin: discarding a new-document draft also removes its entry from
 the work manifest branch. Later Apply operations publish the manifest as well as

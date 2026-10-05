@@ -83,8 +83,8 @@ stable reversal-result identity.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
   the dependency check (`hasDependentLaterRows` in
   `domain/journal-dependencies.ts`) inside the same transaction, under
-  `lockDocumentMutation` advisory lock. There is
-  no separate live `ReversalCommitGuard`. Work-draft reversal uses the generation and
+  `lockDocumentMutation` advisory lock; nothing else guards a live
+  reversal commit. Work-draft reversal uses the generation and
   journal-watermark fence above.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
