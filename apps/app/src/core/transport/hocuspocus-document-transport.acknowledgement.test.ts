@@ -5,123 +5,33 @@
  * what these tests refuse to trust: after a reconnect it can reach zero while
  * messages are still unacknowledged.
  */
-import * as encoding from "lib0/encoding";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
-import { writeSyncStep1, writeSyncStep2 } from "y-protocols/sync";
 import * as Y from "yjs";
 
 const ROOM = "document-1";
 
-const sockets = vi.hoisted(() => ({ instances: [] as unknown[] }));
+import { DocumentSocketHarness, sentSyncKinds } from "./test-support/DocumentSocketHarness";
 
 vi.mock("./dev-transport", () => ({
   buildSameOriginWsUrl: (path: string) => `ws://test${path}`,
 }));
 
-vi.mock("./tapped-websocket", () => {
-  type Handler = (event: unknown) => void;
-  class FakeSocket {
-    readyState = 0;
-    binaryType = "blob";
-    readonly sent: Uint8Array[] = [];
-    private readonly handlers = new Map<string, Set<Handler>>();
-
-    constructor(_url: string | URL, _protocols?: string | string[]) {
-      sockets.instances.push(this);
-    }
-
-    addEventListener(name: string, handler: Handler) {
-      const set = this.handlers.get(name) ?? new Set();
-      set.add(handler);
-      this.handlers.set(name, set);
-    }
-    removeEventListener(name: string, handler: Handler) {
-      this.handlers.get(name)?.delete(handler);
-    }
-    send(data: Uint8Array) {
-      this.sent.push(data);
-    }
-    close() {
-      this.readyState = 3;
-    }
-    dispatch(name: string, event: unknown) {
-      for (const handler of this.handlers.get(name) ?? []) handler(event);
-    }
-  }
-  return { notifyYjsRoomAttached: () => {}, TappedWebSocket: FakeSocket };
+vi.mock("./tapped-websocket", async () => {
+  const { DocumentSocketHarness } = await import("./test-support/DocumentSocketHarness");
+  return { notifyYjsRoomAttached: () => {}, TappedWebSocket: DocumentSocketHarness };
 });
 
 const { createHocuspocusDocumentTransport } = await import("./hocuspocus-document-transport");
 
-type FakeServerSocket = {
-  readyState: number;
-  sent: Uint8Array[];
-  dispatch(name: string, event: unknown): void;
-};
-
-const MESSAGE_SYNC = 0;
-const MESSAGE_SYNC_STATUS = 8;
-
-function frame(type: number, write: (encoder: encoding.Encoder) => void): ArrayBuffer {
-  const encoder = encoding.createEncoder();
-  encoding.writeVarString(encoder, ROOM);
-  encoding.writeVarUint(encoder, type);
-  write(encoder);
-  const bytes = encoding.toUint8Array(encoder);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-/** Client sync frames on the wire, by kind (awareness, auth, and step 1 are not counted). */
-function sentSyncKinds(socket: FakeServerSocket): Array<"step2" | "update"> {
-  const kinds: Array<"step2" | "update"> = [];
-  for (const bytes of socket.sent) {
-    const decoder = decodeFrame(bytes);
-    if (decoder?.type !== MESSAGE_SYNC) continue;
-    if (decoder.syncType === 1) kinds.push("step2");
-    if (decoder.syncType === 2) kinds.push("update");
-  }
-  return kinds;
-}
-
-function decodeFrame(bytes: Uint8Array): { type: number; syncType: number } | null {
-  let position = 0;
-  const readVarUint = () => {
-    let value = 0;
-    let shift = 0;
-    for (;;) {
-      const byte = bytes[position++];
-      if (byte === undefined) throw new Error("short frame");
-      value |= (byte & 0x7f) << shift;
-      if (byte < 0x80) return value;
-      shift += 7;
-    }
-  };
-  try {
-    const nameLength = readVarUint();
-    position += nameLength;
-    const type = readVarUint();
-    return { type, syncType: type === MESSAGE_SYNC ? readVarUint() : -1 };
-  } catch {
-    return null;
-  }
-}
-
-function latestSocket(): FakeServerSocket {
-  const socket = sockets.instances.at(-1);
+function latestSocket(): DocumentSocketHarness {
+  const socket = DocumentSocketHarness.instances.at(-1);
   if (!socket) throw new Error("no socket created");
-  return socket as FakeServerSocket;
+  return socket;
 }
 
-function receive(socket: FakeServerSocket, data: ArrayBuffer) {
-  socket.dispatch("message", { data });
-}
-
-const acknowledge = (socket: FakeServerSocket, applied = true) =>
-  receive(
-    socket,
-    frame(MESSAGE_SYNC_STATUS, (encoder) => encoding.writeVarUint(encoder, applied ? 1 : 0)),
-  );
+const acknowledge = (socket: DocumentSocketHarness, applied = true) =>
+  socket.acknowledge(ROOM, applied);
 
 async function settle() {
   await vi.advanceTimersByTimeAsync(0);
@@ -138,29 +48,19 @@ function createHarness() {
   transport.subscribeServerAcknowledgement?.((acknowledged) => values.push(acknowledged));
 
   /** Open the newest socket and play the server's half of the handshake. */
-  async function connect(): Promise<FakeServerSocket> {
+  async function connect(): Promise<DocumentSocketHarness> {
     await settle();
     const socket = latestSocket();
-    socket.readyState = 1;
-    socket.dispatch("open", {});
+    socket.open();
     await settle();
-    receive(
-      socket,
-      frame(MESSAGE_SYNC, (encoder) => writeSyncStep1(encoder, serverDocument)),
-    );
-    receive(
-      socket,
-      frame(MESSAGE_SYNC, (encoder) =>
-        writeSyncStep2(encoder, serverDocument, Y.encodeStateVector(document)),
-      ),
-    );
+    socket.syncStep1(ROOM, serverDocument);
+    socket.syncStep2(ROOM, serverDocument, Y.encodeStateVector(document));
     await settle();
     return socket;
   }
 
-  function drop(socket: FakeServerSocket) {
-    socket.readyState = 3;
-    socket.dispatch("close", { code: 1006, reason: "" });
+  function drop(socket: DocumentSocketHarness) {
+    socket.deliverClose();
   }
 
   const edit = (text: string, origin?: unknown) =>
@@ -189,7 +89,7 @@ describe("document transport server acknowledgement", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    sockets.instances.length = 0;
+    DocumentSocketHarness.instances.length = 0;
     harness = createHarness();
   });
 
@@ -201,8 +101,7 @@ describe("document transport server acknowledgement", () => {
   it("is not saved merely because a socket opened with nothing pending", async () => {
     await settle();
     const socket = latestSocket();
-    socket.readyState = 1;
-    socket.dispatch("open", {});
+    socket.open();
     await settle();
 
     expect(sentSyncKinds(socket)).toEqual([]);
@@ -299,7 +198,7 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(true);
 
     // CLOSING (e.g. the connection checker called close()); Hocuspocus has not yet seen "close".
-    first.readyState = 2;
+    first.stallClose();
     harness.edit("typed while closing");
     expect(sentSyncKinds(first)).toEqual(["step2"]);
     expect(harness.acknowledged).toBe(false);
@@ -313,5 +212,37 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(false);
     acknowledge(second);
     expect(harness.acknowledged).toBe(true);
+  });
+
+  it("keeps first-frame connection, document sync and acknowledgement as separate evidence", async () => {
+    await settle();
+    const socket = latestSocket();
+    const states: string[] = [];
+    const unsubscribe = harness.transport.subscribeStatus?.((state) => states.push(state.kind));
+    const serverDocument = new Y.Doc();
+
+    try {
+      socket.open();
+      await settle();
+      expect(states.at(-1)).toBe("connected");
+      expect(harness.transport.synced).toBe(false);
+      expect(harness.acknowledged).toBe(false);
+
+      socket.syncStep1(ROOM, serverDocument);
+      expect(states.at(-1)).toBe("connected");
+      expect(sentSyncKinds(socket)).toEqual(["step2"]);
+      expect(harness.transport.synced).toBe(false);
+      expect(harness.acknowledged).toBe(false);
+
+      socket.syncStep2(ROOM, serverDocument, Y.encodeStateVector(harness.document));
+      await harness.transport.whenSynced;
+      expect(harness.transport.synced).toBe(true);
+      expect(harness.acknowledged).toBe(false);
+      acknowledge(socket);
+      expect(harness.acknowledged).toBe(true);
+    } finally {
+      unsubscribe?.();
+      serverDocument.destroy();
+    }
   });
 });
