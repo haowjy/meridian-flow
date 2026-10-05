@@ -1,5 +1,6 @@
 /** Bounded in-memory model-request capture; content never enters persistent logs. */
 import type {
+  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
 } from "@meridian/contracts/threads";
@@ -72,6 +73,19 @@ export class InMemoryModelRequestDebugStore implements ModelRequestDebugStore {
 
     this.records.push({ record, bytes });
     this.retainedBytes += bytes;
+  }
+
+  recordProviderError(gatewayCallId: string, error: ModelRequestDebugProviderError): void {
+    let index = this.records.length - 1;
+    while (index >= 0 && this.records[index]?.record.gatewayCallId !== gatewayCallId) index -= 1;
+    const stored = this.records[index];
+    if (!stored) return;
+    const record = { ...stored.record, providerError: error };
+    const bytes = serializedBytes(record);
+    this.records[index] = { record, bytes };
+    // The body is capped upstream, so one error cannot push retention far past
+    // the bound; the next capture evicts back under it.
+    this.retainedBytes += bytes - stored.bytes;
   }
 
   listByTurn(threadId: string, turnId: string): ModelRequestDebugRecord[] {

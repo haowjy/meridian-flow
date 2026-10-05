@@ -17,7 +17,7 @@ function record(
   request: ModelRequestDebugRequest | null,
 ): ModelRequestDebugRecord {
   return {
-    schema: "meridian.model-request-debug.v2",
+    schema: "meridian.model-request-debug.v3",
     gatewayCallId: `call-${iteration}`,
     threadId: "thread-1",
     turnId: "turn-1",
@@ -32,6 +32,7 @@ function record(
     request,
     skills: [],
     toolRegistrations: [],
+    providerError: null,
   };
 }
 

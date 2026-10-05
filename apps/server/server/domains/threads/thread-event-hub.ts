@@ -10,6 +10,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { createOrchestratorEventProjector } from "./domain/orchestrator-event-projector.js";
+import { ReplyProviderErrorCodec } from "./domain/turn-metadata.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 
 const HOT_CACHE_LIMIT = 500;
@@ -198,12 +199,28 @@ export function createThreadEventHub(
         for (const entry of entries) {
           const event = entry.payload as OrchestratorEvent;
           if (event.type === "turn.error") {
+            // Status and call id only; the provider's text stays on the turn and in capture.
+            const metadata = event.turn.metadata;
+            const provider =
+              metadata && typeof metadata === "object" && !Array.isArray(metadata)
+                ? ReplyProviderErrorCodec.safeParse(metadata.providerError).data
+                : undefined;
             emitEvent(eventSink, {
               level: "error",
               source: "threads.event-hub",
               name: "turn.error",
-              correlation: { threadId, turnId: event.turn.id, runId: event.turn.id },
-              payload: { threadId, turnId: event.turn.id, error: event.error },
+              correlation: {
+                threadId,
+                turnId: event.turn.id,
+                runId: event.turn.id,
+                ...(provider ? { gatewayCallId: provider.gatewayCallId } : {}),
+              },
+              payload: {
+                threadId,
+                turnId: event.turn.id,
+                error: event.error,
+                ...(provider?.status == null ? {} : { providerStatus: provider.status }),
+              },
             });
           }
           const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);

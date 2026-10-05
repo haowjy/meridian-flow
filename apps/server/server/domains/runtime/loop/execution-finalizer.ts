@@ -17,6 +17,8 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
+  type ReplyProviderError,
+  replyFailureMetadata,
   type ThreadRepositories,
   turnFailedCopy,
 } from "../../threads/index.js";
@@ -29,6 +31,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
+      /** The provider's own answer, kept on the failed reply's metadata. */
+      providerError?: ReplyProviderError;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -187,14 +191,10 @@ export async function finalizeExecution(
         ...turn,
         ...(turn.role === "assistant" && input.cause.kind === "failed"
           ? {
-              metadata: {
-                ...(turn.metadata &&
-                typeof turn.metadata === "object" &&
-                !Array.isArray(turn.metadata)
-                  ? turn.metadata
-                  : {}),
+              metadata: replyFailureMetadata(turn.metadata, {
                 reason: input.cause.reason,
-              },
+                ...(input.cause.providerError ? { providerError: input.cause.providerError } : {}),
+              }),
             }
           : {}),
         ...(turn.role === "compaction" && input.cause.kind === "failed"

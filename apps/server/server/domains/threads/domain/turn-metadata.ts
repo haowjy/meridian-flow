@@ -286,6 +286,45 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
 }
 
 /** Replace failure fields without disturbing the placeholder's control metadata. */
+/** Cap on the provider message kept on a failed reply; the full response lives in dev capture. */
+export const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
+
+/**
+ * The provider's own answer on a failed reply: owner-scoped debug evidence for
+ * `./mf thread view`. Never enters event payloads or model context.
+ */
+export const ReplyProviderErrorCodec = z.object({
+  status: z.number().int().nullable(),
+  message: z.string(),
+  gatewayCallId: z.string().min(1),
+});
+export type ReplyProviderError = z.infer<typeof ReplyProviderErrorCodec>;
+
+/** Failed-reply metadata: the terminal reason, plus the provider's response when it gave one. */
+export function replyFailureMetadata(
+  metadata: JsonValue | null | undefined,
+  failure: { reason: string; providerError?: ReplyProviderError },
+): JsonObject {
+  const previous =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as JsonObject)
+      : {};
+  const preserved = { ...previous };
+  delete preserved.providerError;
+  return {
+    ...preserved,
+    reason: failure.reason,
+    ...(failure.providerError
+      ? {
+          providerError: {
+            ...failure.providerError,
+            message: failure.providerError.message.slice(0, REPLY_PROVIDER_MESSAGE_LIMIT),
+          },
+        }
+      : {}),
+  };
+}
+
 export function compactionFailureMetadata(
   metadata: JsonValue | null | undefined,
   failure: CompactionFailureOutcome,

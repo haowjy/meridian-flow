@@ -79,6 +79,7 @@ import type {
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
+  ReplyProviderError,
   ThreadRepositories,
   ThreadRepository,
   TurnRepository,
@@ -1796,10 +1797,15 @@ async function executeLoop({
           error: "Runtime shut down before the response completed",
         }
       : cancelTerminal;
-  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
+  const errorTerminal = (
+    error: MeridianError | string,
+    reason?: string,
+    providerError?: ReplyProviderError,
+  ): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
     error,
+    ...(providerError ? { providerError } : {}),
   });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
@@ -2041,6 +2047,22 @@ async function executeLoop({
             if (cancelRequested) {
               break;
             }
+            if (event.providerResponse) {
+              try {
+                deps.modelRequestDebug.recordProviderError(gatewayCallId, {
+                  status: event.providerResponse.status,
+                  body: event.providerResponse.body,
+                });
+              } catch (cause) {
+                emitEvent(eventSink, {
+                  level: "warn",
+                  source: "runtime.orchestrator",
+                  name: "model_request_debug.capture_failed",
+                  correlation: { threadId: input.threadId, turnId: currentTurn.id, gatewayCallId },
+                  payload: unknownToEventPayload(cause),
+                });
+              }
+            }
             if (event.code === "context_overflow") {
               // Partial output from the rejected request is not a completed tool group.
               // Keep its paid usage, but only prior completed responses remain in A.
@@ -2084,7 +2106,15 @@ async function executeLoop({
             }
             return exitRun(
               false,
-              errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
+              errorTerminal(
+                meridianErrorFromGateway(event.code, event.message, event.retryable),
+                undefined,
+                event.providerResponse && {
+                  status: event.providerResponse.status,
+                  message: event.providerResponse.message,
+                  gatewayCallId,
+                },
+              ),
             );
           }
         }

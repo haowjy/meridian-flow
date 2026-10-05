@@ -53,7 +53,7 @@ export function buildModelRequestDebugRecord(
       : (JSON.parse(serializedRequest) as ModelRequestDebugRequest);
 
   return {
-    schema: "meridian.model-request-debug.v2",
+    schema: "meridian.model-request-debug.v3",
     gatewayCallId: input.gatewayCallId,
     threadId: input.threadId,
     turnId: input.turnId,
@@ -69,5 +69,6 @@ export function buildModelRequestDebugRecord(
     request,
     skills: [],
     toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
+    providerError: null,
   };
 }

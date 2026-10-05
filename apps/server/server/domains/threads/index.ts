@@ -102,6 +102,7 @@ export type {
   HistoryItemClass,
   ImageContextBreak,
   ImageInclusionMetadata,
+  ReplyProviderError,
 } from "./domain/turn-metadata.js";
 export {
   activeCompaction,
@@ -137,6 +138,9 @@ export {
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
+  REPLY_PROVIDER_MESSAGE_LIMIT,
+  ReplyProviderErrorCodec,
+  replyFailureMetadata,
   SavedSubagentReportMetadataCodec,
   SteerMetadataCodec,
   SystemUpdateMetadataCodec,
