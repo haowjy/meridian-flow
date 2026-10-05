@@ -95,6 +95,9 @@ cooldown schedules one deferred hint instead of losing recovery evidence.
 Success reports are transition-based and exclude the successful source.
 Offline cancels pending retries, resets the cooldown for the next network
 recovery, and immediately emits `suspect-offline`.
+A `retry-now` restarts a disconnected subscriber's backoff from its aggressive
+phase. Against a server that stays down, repeated focus changes therefore cost
+at most one attempt per connection per cooldown; that bound is intended.
 
 Hints do not replace backoff or poll. Document and thread sockets leave healthy
 connections alone, fence terminal/destroyed owners, and take their normal close

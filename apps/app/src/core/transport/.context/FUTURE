@@ -4,3 +4,10 @@
   socket contract isolates schema close codes and unhealthy rooms. Revisit only with
   measured browser/socket pressure and a protocol that can reject one room without
   physically closing healthy rooms on the shared connection.
+- Recovery after a server restart with the browser online still waits on backoff:
+  no browser signal says the server is back, so the first connection to get through
+  depends on the randomized delay (Hocuspocus `maxDelay` 30 s, thread
+  `persistentDelayMs` 30 s; observed 0.8–22 s). Peer success then pulls the other
+  connections within ~0.5 s. Lowering those caps trades reconnect load for latency;
+  revisit with production deploy-restart data. Affected paths:
+  `hocuspocus-document-transport.ts`, `ws-reconnect.ts`.
