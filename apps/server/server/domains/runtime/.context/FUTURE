@@ -27,3 +27,13 @@
   who deleted it; any owner-local release signal must become visible only after
   commit (and handle a renewal racing commit). Avoid a second lifecycle tracker
   solely to suppress this harmless log until the claim port gains that signal.
+
+- `readThreadSkills` reads each available skill's package source separately
+  (2 statements per skill) although they usually share one package revision,
+  and `skill()` or `read skills://…` pays the full 1 + 2N to check one skill.
+  Read each distinct source once (`runtime/loop/available-skills.ts`).
+
+- Turn assembly walks the parent's lineage twice at chain depth > 1: once for
+  the prompt's lineage line and once in `readChainPermission` for
+  `<work_context>` (10 of 17 statements at depth 3). Read the lineage once and
+  derive both (`runtime/loop/work-context.ts`, `loop/permissions/agent-chain.ts`).

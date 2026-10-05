@@ -1,17 +1,24 @@
 # collab TODO
 
-## Measure `confirmEdit` on every live frame
+## Paths that hold a pooled connection while taking another
 
-Each frame an edit room persists binds the writer's grant, and the journal
-seam runs a full `confirmEdit` inside the journal transaction: a facts
-load, the recursive folder walk and the person grants. Manuscript rooms pay
-it too, although no Work lifecycle can change their access. Measure frame
-latency under typing load before narrowing it, for example by skipping
-confirmation when the grant locks no Work. PR 2 review, finding 7.
+The live-pull deadlock (10 concurrent pulls each held a root transaction and
+waited for a second connection) is fixed by snapshotting first. These paths
+still hold one connection while acquiring another, on purpose for lock
+order, so enough concurrent callers can exhaust the pool the same way:
 
-Affected paths: `apps/server/server/lib/yjs-ws-handler.ts` (`admitLiveSync`),
-`domains/file-policy/file-access.ts` (`confirmEdit`), the journal seam in
-`adapters/drizzle-journal.ts`.
+- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
+  transaction: its live snapshots and its `run(...)` each need a connection.
+- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
+  thread in one transaction, then opens a separate root transaction.
+- `createDeferredLiveProjectionCoordinator.withDocument` in
+  `adapters/hocuspocus-coordinator.ts`: inside a response transaction, reads
+  committed state on a second connection.
+
+Reproduce each with more concurrent callers than the pool's size (the PR 2
+perf bench's item 9 shows how), then restructure so no path waits for a
+connection while holding one. See
+[file-policy performance](../../file-policy/.context/performance.md).
 
 ## Refresh the markdown projection after human Yjs writes
 
