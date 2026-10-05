@@ -1,10 +1,9 @@
 /** Editor hosts' reopen after the server refused a live room's pending edits. */
-import { useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "./account-feature-context";
 
-/** Refused sessions whose drop has finished, whether or not it removed them. */
-const settledDrops = new WeakSet<DocumentSession>();
+const unsubscribed = () => undefined;
 
 /**
  * The session registry drops a live room whose pending edits the server
@@ -12,41 +11,31 @@ const settledDrops = new WeakSet<DocumentSession>();
  * once, before that Y.Doc is torn down, and reopens once the drop has
  * finished, so the editor loads the server's state. Returns the session the
  * host may bind: `null` while a refused session is being dropped. A session
- * the drop couldn't remove binds again, read-only, instead of reopening again.
+ * the drop couldn't remove binds again, read-only: its drop has settled.
  */
 export function useRefusedEditsReopen(
   session: DocumentSession | null,
   reopen: () => void,
 ): DocumentSession | null {
   const registry = useLiveDocumentSessionRegistry();
-  const [, rerender] = useReducer((value: number) => value + 1, 0);
   const reopenRef = useRef(reopen);
   reopenRef.current = reopen;
+  // The registry hears every change before a host can, so its drop is the
+  // snapshot here: the same promise for as long as it runs.
+  const drop = useSyncExternalStore(
+    useCallback((onChange: () => void) => session?.subscribe(onChange) ?? unsubscribed, [session]),
+    () => (session ? registry.whenRefusedRoomDropped(session) : null),
+  );
   useEffect(() => {
-    if (!session || settledDrops.has(session)) return;
+    if (!drop) return;
     let active = true;
-    let started = false;
-    const unsubscribe = session.subscribe(() => {
-      if (started || !session.refusedLocalEdits()) return;
-      started = true;
-      rerender();
-      void registry.dropRefusedRoom(session).then(() => {
-        settledDrops.add(session);
-        if (!active) return;
-        rerender();
-        reopenRef.current();
-      });
+    void drop.then(() => {
+      if (active) reopenRef.current();
     });
     return () => {
       active = false;
-      unsubscribe();
     };
-  }, [registry, session]);
-  if (
-    !session ||
-    session.getSnapshot().status === "destroyed" ||
-    (session.refusedLocalEdits() && !settledDrops.has(session))
-  )
-    return null;
+  }, [drop]);
+  if (!session || drop || session.getSnapshot().status === "destroyed") return null;
   return session;
 }

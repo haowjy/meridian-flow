@@ -515,7 +515,7 @@ export function useDraftReviewScopeValue({
 export function useDraftReview(): DraftReviewContextValue {
   const value = useContext(DraftReviewContext);
   if (!value) {
-    throw new Error("useDraftReview must be used within DraftReviewProvider");
+    throw new Error("useDraftReview must be used within DraftReviewBoundary");
   }
   return value;
 }
