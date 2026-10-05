@@ -53,8 +53,9 @@
     background: var(--chip); color: var(--ink); border: 1px solid var(--rule);
     border-radius: 999px; padding: 0.35rem 0.7rem; cursor: pointer; font-size: 0.9rem;
   }
-  figure { margin: 1.5rem 0; }
-  figure svg { width: 100%; height: auto; display: block; max-width: 34rem; margin: 0 auto; }
+  figure { margin: 1.5rem 0; overflow-x: auto; }
+  /* min-width keeps the smallest diagram labels near 11px on phones; narrow screens scroll. */
+  figure svg { width: 100%; min-width: 520px; height: auto; display: block; max-width: 34rem; margin: 0 auto; }
   figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.4rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
   th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
