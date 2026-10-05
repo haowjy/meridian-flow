@@ -33,6 +33,7 @@ import {
   isFileAccessDenied,
   markReplyConfirmed,
   runWithEditGrants,
+  targetDocumentId,
 } from "../../file-policy/index.js";
 import {
   type AgentEditDestination,
@@ -557,7 +558,7 @@ export function createThreadPeerCorePool(input: {
     if (pinned.length === 0) return [];
     const refused = await input.fileAccess.confirmEdit(pinned.map(([, entry]) => entry.grant));
     const refusals = new Map<DocumentId, FileAccessDenied>();
-    for (const denial of refused) refusals.set(denialDocumentId(denial), denial);
+    for (const denial of refused) refusals.set(targetDocumentId(denial.target), denial);
     for (const documentId of refusals.keys()) {
       for (const documents of [record.documents, record.reversals]) {
         const entry = documents.get(documentId);
@@ -907,11 +908,4 @@ function mergeReversals(
     },
     ...(refused.length > 0 ? { refusedWrites: refused } : {}),
   } as RoutedWriteOutcome;
-}
-
-function denialDocumentId(denial: FileAccessDenied): DocumentId {
-  if (denial.target.kind === "container") {
-    throw new Error("A reply's grants name documents, not containers");
-  }
-  return denial.target.documentId;
 }

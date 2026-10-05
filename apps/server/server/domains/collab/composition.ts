@@ -18,11 +18,7 @@ import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import type { EventSink } from "../observability/index.js";
-import {
-  type ProjectWorkAuthorityResolver,
-  WorkLifecycleUnavailableError,
-  type WorkProjectionMutation,
-} from "../projects/index.js";
+import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
@@ -436,7 +432,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
     fileAccess: deps.fileAccess,
-    isDraftWorkUnavailable: (cause) => cause instanceof WorkLifecycleUnavailableError,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });

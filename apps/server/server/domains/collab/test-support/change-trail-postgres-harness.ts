@@ -56,7 +56,6 @@ const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGenerati
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { runOutsideEditConfirmation } = await import("../../../shared/edit-confirmation.js");
-const { WorkLifecycleUnavailableError } = await import("../../projects/domain/work-lifecycle.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -606,7 +605,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
     fileAccess: createAllowAllFileAccess(),
     atomic: (operation) => runInDrizzleTransaction(db, operation),
-    isDraftWorkUnavailable: (cause) => cause instanceof WorkLifecycleUnavailableError,
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,
