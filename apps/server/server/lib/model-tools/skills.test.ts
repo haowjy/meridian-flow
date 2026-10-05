@@ -14,7 +14,7 @@ import {
   createInMemoryAgentRevisionStore,
   resolveAgentConfiguration,
 } from "../../domains/packages/index.js";
-import type { ToolRegistration } from "../../domains/runtime/index.js";
+import { createToolExecutor, createToolRegistry } from "../../domains/runtime/index.js";
 import { createModelToolRegistrations, type ToolWiringDeps } from "./index.js";
 
 const LAUNCH_AGENTS = path.resolve(
@@ -53,21 +53,16 @@ async function criticTools() {
     fileAccess: createAllowAllFileAccess(),
     agentRevisions,
   } as unknown as ToolWiringDeps;
-  const registrations = createModelToolRegistrations(deps);
-  const ctx = { threadId: THREAD_ID, turnId: "turn-1" } as never;
-  return async (name: string, input: unknown) => {
-    const registration = registrations.find((entry) => entry.definition.name === name);
-    const execution = registration?.execution as Extract<
-      ToolRegistration["execution"],
-      { type: "server" }
-    >;
-    const result = (await execution.handler(input, ctx)) as {
-      isError?: boolean;
-      output?: unknown;
-    };
-    const value = result.isError ? result.output : result;
-    return registration?.renderResult?.(value as never) ?? value;
-  };
+  const executor = createToolExecutor(
+    createToolRegistry({ registrations: createModelToolRegistrations(deps) }),
+  );
+  return async (name: string, input: Record<string, unknown>) =>
+    (
+      await executor.executeTool({ id: "call-1", name, arguments: input }, {
+        threadId: THREAD_ID,
+        turnId: "turn-1",
+      } as never)
+    ).output;
 }
 
 describe("skills:// at the model tools", () => {

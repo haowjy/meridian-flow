@@ -286,10 +286,12 @@ export interface ToolRegistration {
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**
-   * Renders the handler's typed result, success or error, into the text the
-   * model sees (D43). The executor stores the typed result beside the text.
+   * Renders the handler's typed result into the text the model sees (D43, D65),
+   * given the call's parsed input (`{}` when it didn't parse). The executor
+   * stores the typed result beside the text. A refusal (`MeridianError`) never
+   * reaches it: the executor renders refusals itself.
    */
-  renderResult?: (result: JsonValue) => string;
+  renderResult?: (result: JsonValue, input: JsonObject) => string;
 }
 
 export interface ToolExecutionError {

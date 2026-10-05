@@ -5,6 +5,7 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { renderRefusal } from "../tools/refusal.js";
 import { callLine } from "./history-call-line.js";
 import type { ThreadHistoryInput } from "./thread-history.js";
 
@@ -246,15 +247,6 @@ export function renderHistoryResult(result: HistoryResult): string {
     blocks.push(result.next ? "Nothing to show on this page." : "No messages yet.");
   if (result.next) blocks.push(`More: ${call(result.next.call)}`);
   return blocks.join("\n\n");
-}
-
-/** A tool refusal (a `MeridianError`) as the model reads it: its message and code. */
-export function renderRefusal(value: JsonValue): string {
-  const error =
-    typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
-  return typeof error?.message === "string"
-    ? `${error.message}${typeof error.code === "string" ? ` (${error.code})` : ""}`
-    : JSON.stringify(value);
 }
 
 /** The tool-result boundary: a history result or a refusal, rendered as text. */

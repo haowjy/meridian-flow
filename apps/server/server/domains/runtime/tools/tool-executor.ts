@@ -29,6 +29,10 @@
  *   - Returning `{ isError: true, output: JsonValue }` → recognized as a
  *     structured error, output extracted directly.
  *
+ * A refusal (`MeridianError`) reaches the model as its message and code, never
+ * as JSON (D65); the typed error stays on `result`. Any other result is the
+ * registration's `renderResult` text, or the value itself.
+ *
  * The second path exists so that handlers backed by structured error types
  * (e.g. `ContextError` from the context domain) can surface detailed error
  * information through the execution result without throwing.
@@ -63,6 +67,7 @@ import {
   parseToolInput,
   renderInvalidArguments,
 } from "./invalid-arguments.js";
+import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
 import type {
   InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
@@ -94,7 +99,7 @@ export function toolFailureResult(result: { ok: false; error: MeridianError }) {
  */
 function errorResult(toolCallId: string, error: MeridianError): ToolExecutionResult {
   const value = meridianErrorToJson(error);
-  return { toolCallId, output: value, result: value, isError: true };
+  return { toolCallId, output: renderRefusal(value), result: value, isError: true };
 }
 
 function executionErrorResult(
@@ -106,7 +111,11 @@ function executionErrorResult(
     try {
       return {
         toolCallId,
-        ...modelOutput(registration, toJsonValue(registration.formatExecutionError(error))),
+        ...modelOutput(
+          registration,
+          toJsonValue(registration.formatExecutionError(error)),
+          inputObject(error.arguments),
+        ),
         isError: true,
       };
     } catch {
@@ -172,11 +181,12 @@ function successResult(
   toolCallId: string,
   output: unknown,
   registration: ToolRegistration,
+  input: JsonObject,
 ): ToolExecutionResult {
   if (isHandlerErrorResult(output)) {
     return {
       toolCallId,
-      ...modelOutput(registration, toJsonValue(output.output)),
+      ...modelOutput(registration, toJsonValue(output.output), input),
       isError: true,
     };
   }
@@ -188,7 +198,7 @@ function successResult(
   }
   return {
     toolCallId,
-    ...modelOutput(registration, toJsonValue(value)),
+    ...modelOutput(registration, toJsonValue(value), input),
     ...(metadata ? { metadata } : {}),
     ...(registration.capability === "return_result" && isReturnResultOutcome(value)
       ? { returnResult: value }
@@ -197,15 +207,25 @@ function successResult(
 }
 
 /**
- * The typed result and what the model reads of it: the registration's
- * rendering, or the value itself for a tool with no renderer. `result` is
- * always set, so readers have one place to look.
+ * The typed result and what the model reads of it: a refusal's message, the
+ * registration's rendering, or the value itself for a tool with no renderer.
+ * `result` is always set, so readers have one place to look.
  */
 function modelOutput(
   registration: ToolRegistration,
   value: JsonValue,
+  input: JsonObject,
 ): Pick<ToolExecutionResult, "output" | "result"> {
-  return { output: registration.renderResult?.(value) ?? value, result: value };
+  const output = isMeridianErrorValue(value)
+    ? renderRefusal(value)
+    : (registration.renderResult?.(value, input) ?? value);
+  return { output, result: value };
+}
+
+/** The call's input as a renderer reads it; `{}` when it isn't an object. */
+function inputObject(value: unknown): JsonObject {
+  const json = toJsonValue(value);
+  return typeof json === "object" && json !== null && !Array.isArray(json) ? json : {};
 }
 
 /**
@@ -419,7 +439,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
             arguments: call.arguments,
           });
         }
-        return successResult(call.id, outcome.result, registration);
+        return successResult(call.id, outcome.result, registration, inputObject(input));
       }
 
       const handler = registration.execution.handler as (
@@ -440,7 +460,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           arguments: call.arguments,
         });
       }
-      return successResult(call.id, outcome.result, registration);
+      return successResult(call.id, outcome.result, registration, inputObject(input));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return executionErrorResult(call.id, registration, {

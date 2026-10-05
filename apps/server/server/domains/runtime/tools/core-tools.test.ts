@@ -107,7 +107,7 @@ describe("ls", () => {
     ).toBe("kb://\nskills:// (read-only)");
   });
 
-  it("adds words or file size and the last edit with details", async () => {
+  it("adds words or file size and the last edit with verbose", async () => {
     const detailed: LsResult = {
       uri: "manuscript://volume-1",
       entries: [
@@ -136,7 +136,7 @@ describe("ls", () => {
         },
       ],
     };
-    expect((await ls(detailed, { details: true })).output).toBe(
+    expect((await ls(detailed, { verbose: true })).output).toBe(
       [
         "manuscript://volume-1/",
         "  arc/",

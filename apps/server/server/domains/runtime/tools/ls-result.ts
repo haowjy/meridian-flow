@@ -13,11 +13,11 @@ export interface LsEntry {
   readonly: boolean;
   /** A non-text file's kind, so the model knows `read` returns no text. Text documents have none. */
   fileType?: DocumentFileType;
-  /** With `details`: words in a text document. */
+  /** With `verbose`: words in a text document. */
   wordCount?: number;
-  /** With `details`: an upload's stored size. */
+  /** With `verbose`: an upload's stored size. */
   sizeBytes?: number;
-  /** With `details`: when the file was last edited (ISO 8601). */
+  /** With `verbose`: when the file was last edited (ISO 8601). */
   updatedAt?: string;
 }
 
@@ -44,7 +44,7 @@ export function sortLsEntries<T extends Pick<LsEntry, "uri" | "kind">>(entries: 
   );
 }
 
-/** The model's text for an `ls` result; a refusal keeps its JSON. */
+/** The model's text for an `ls` result; the executor renders refusals (D65). */
 export function renderLsResult(value: JsonValue): string {
   if (!isLsResult(value)) return JSON.stringify(value);
   if (value.uri === null) {

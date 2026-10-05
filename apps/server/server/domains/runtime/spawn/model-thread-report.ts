@@ -4,7 +4,8 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ModelThreadReportResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
-import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
+import { renderRefusal } from "../tools/refusal.js";
+import { renderReportBlock, reportContent } from "./history-result.js";
 import { readThreadReport } from "./read-thread-report.js";
 
 export const runningAgainCopy = (ref: string, notified = true) =>
