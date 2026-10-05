@@ -1,6 +1,6 @@
 /**
- * Skill files under `skills://` (D52): the read-only folders of the skills an
- * agent's own binding offers it. `skills://` is model-facing only; it is not a
+ * Skill files under `skills://` (D52) and the `skill` tool's load (D58): the
+ * read-only folders of the skills an agent's own binding offers it. `skills://` is model-facing only; it is not a
  * context scheme, so the writer's file tree, catalog and routes never see it.
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
@@ -26,7 +26,7 @@ export interface SkillFilesDeps {
 export type SkillUri = { skill: null } | { skill: string; path: string };
 
 export type SkillFileRead =
-  | { kind: "text"; uri: string; text: string }
+  | { kind: "text"; skill: string; path: string; text: string }
   | { kind: "binary" }
   | { kind: "not_found" };
 
@@ -34,6 +34,21 @@ export interface SkillListEntry {
   uri: string;
   kind: "file" | "directory";
   readonly: true;
+}
+
+/** A skill's `SKILL.md` as the model reads it. */
+export function skillMdUri(slug: string): string {
+  return `${SKILLS_URI_ROOT}${slug}/SKILL.md`;
+}
+
+/**
+ * The header over a skill file's text: its address, and the folder its
+ * relative paths start from. Shared by `read`, `skill`, and preloaded or
+ * activated bodies the model can read (D58).
+ */
+export function skillFileHeader(skill: string, path: string): string {
+  const folder = `${SKILLS_URI_ROOT}${skill}/`;
+  return `${folder}${path}\nPaths in this skill are relative to ${folder}.`;
 }
 
 export function isSkillsUri(path: string): boolean {
@@ -68,7 +83,7 @@ export async function readSkillFile(
   const entry = folder?.files[`${folder.directory}/${parsed.path}`];
   if (entry === undefined) return { kind: "not_found" };
   if (typeof entry !== "string") return { kind: "binary" };
-  return { kind: "text", uri: `${SKILLS_URI_ROOT}${parsed.skill}/${parsed.path}`, text: entry };
+  return { kind: "text", skill: parsed.skill, path: parsed.path, text: entry };
 }
 
 /**
@@ -85,8 +100,7 @@ export async function listSkillDir(
   const parsed = parseSkillUri(uri);
   if (!parsed) return [];
   if (!parsed.skill) {
-    const visible = await visibleSkills(deps, principal, threadId);
-    return [...visible.keys()].sort().map((skill) => ({
+    return (await visibleSkillNames(deps, principal, threadId)).map((skill) => ({
       uri: `${SKILLS_URI_ROOT}${skill}`,
       kind: "directory",
       readonly: true,
@@ -107,6 +121,15 @@ export async function listSkillDir(
   return [...entries]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, kind]) => ({ uri: `${base}/${name}`, kind, readonly: true }));
+}
+
+/** The names of the skills this agent may read, sorted. */
+export async function visibleSkillNames(
+  deps: SkillFilesDeps,
+  principal: Principal,
+  threadId: string,
+): Promise<string[]> {
+  return [...(await visibleSkills(deps, principal, threadId)).keys()].sort();
 }
 
 /** The skills this agent may read, each with its bound reference. */

@@ -24,13 +24,14 @@
  */
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem, skillBodyMetadata } from "../../threads/index.js";
+import { skillFileHeader } from "./skill-files.js";
 
 /** One activated skill's loaded body, ready to render onto its hidden body turn. */
 export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
-  /** Whether the model can read the skill's files under `skills://` (D52). */
+  /** Whether the model can read the skill's files; if so the body takes `skill`'s header (D58). */
   readable: boolean;
 }
 
@@ -66,16 +67,10 @@ export function formatInvokedSkills(skills: readonly ActivatedSkillBody[]): stri
 
 function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
-  const identity = skill.readable ? skillFileUri(skill.slug) : skill.slug;
   return [
-    `skill invoked: ${identity}`,
+    skill.readable ? skillFileHeader(skill.slug, "SKILL.md") : `skill invoked: ${skill.slug}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
     skill.body,
   ].join("\n");
-}
-
-/** A skill's `SKILL.md` as the model reads it. */
-export function skillFileUri(slug: string): string {
-  return `skills://${slug}/SKILL.md`;
 }
