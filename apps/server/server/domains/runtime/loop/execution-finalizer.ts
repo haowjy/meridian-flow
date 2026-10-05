@@ -9,7 +9,6 @@ import {
   type FinishReason,
   isTerminalTurnStatus,
   type OrchestratorEvent,
-  type ReplyProviderError,
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -18,6 +17,7 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
+  type ReplyProviderFailure,
   replyFailureMetadata,
   type ThreadRepositories,
   turnFailedCopy,
@@ -32,7 +32,7 @@ export type TerminalCause =
       reason: string;
       error: MeridianError | string;
       /** The provider's own answer, kept on the failed reply's metadata. */
-      providerError?: ReplyProviderError;
+      providerError?: ReplyProviderFailure;
     }
   | { kind: "cancelled"; reason: string };
 

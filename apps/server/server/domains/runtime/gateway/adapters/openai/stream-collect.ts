@@ -26,6 +26,7 @@
  */
 
 import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
+import { providerErrorResponse } from "@meridian/contracts/threads";
 import type OpenAI from "openai";
 import type {
   ContentPart,
@@ -35,7 +36,6 @@ import type {
   ToolCall,
 } from "../../domain/index.js";
 import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
-import { PROVIDER_ERROR_BODY_LIMIT } from "../provider-http-error.js";
 
 // ── Accumulator ───────────────────────────────────────────────────
 
@@ -474,11 +474,11 @@ export function* eventsFromResponseStreamEvent(
               : "provider_error",
           message: response.error.message,
           retryable: false,
-          providerResponse: {
+          providerResponse: providerErrorResponse({
             status: null,
             message: response.error.message,
-            body: JSON.stringify(response.error).slice(0, PROVIDER_ERROR_BODY_LIMIT),
-          },
+            rawBody: JSON.stringify(response.error),
+          }),
           result: buildGenerateResult(acc),
         };
       }

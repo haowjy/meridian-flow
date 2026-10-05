@@ -6,11 +6,9 @@
  * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
  * model, 413/422 rejected payload); sending it again gets the same answer.
  */
+import { providerErrorResponse } from "@meridian/contracts/threads";
 import type { ErrorCode, ProviderErrorResponse } from "../domain/index.js";
 import { withProviderRetryMetadata } from "./provider-error-metadata.js";
-
-/** Bound on the stored provider body; error bodies are small unless a proxy returns HTML. */
-export const PROVIDER_ERROR_BODY_LIMIT = 4_096;
 
 export type MappedProviderError = {
   code: ErrorCode;
@@ -45,10 +43,6 @@ function errorMessage(err: unknown): string {
   return message !== undefined ? String(message) : String(err);
 }
 
-function capBody(text: string): string {
-  return text.length > PROVIDER_ERROR_BODY_LIMIT ? text.slice(0, PROVIDER_ERROR_BODY_LIMIT) : text;
-}
-
 // SDKs parse failure bodies and keep only part (OpenAI keeps `body.error`). The
 // SDK error carries the same Headers object as the Response, so it keys the text.
 const failureBodies = new WeakMap<Headers, string>();
@@ -58,7 +52,7 @@ export const providerFetch: typeof fetch = async (input, init) => {
   const response = await fetch(input, init);
   if (!response.ok) {
     try {
-      failureBodies.set(response.headers, capBody(await response.clone().text()));
+      failureBodies.set(response.headers, await response.clone().text());
     } catch {
       // An unreadable body leaves the SDK's parsed view as the evidence.
     }
@@ -76,7 +70,7 @@ function exactFailureBody(err: unknown): string | undefined {
  * otherwise the SDK's parsed view (OpenAI-shaped SDKs keep the body's `error`
  * object, Anthropic the whole body). Absent when the SDK never received a response.
  */
-export function providerErrorResponse(err: unknown): ProviderErrorResponse | undefined {
+function providerResponseOf(err: unknown): ProviderErrorResponse | undefined {
   const status = httpStatus(err);
   const parsed = record(err)?.error;
   if (status === undefined && parsed === undefined) return undefined;
@@ -91,7 +85,11 @@ export function providerErrorResponse(err: unknown): ProviderErrorResponse | und
   let body = exactFailureBody(err);
   if (body === undefined && parsed === undefined) body = message;
   else if (body === undefined) body = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-  return { status: status ?? null, message: providerMessage, body: capBody(body ?? message) };
+  return providerErrorResponse({
+    status: status ?? null,
+    message: providerMessage,
+    rawBody: body ?? message,
+  });
 }
 
 export function mapProviderHttpError(
@@ -127,7 +125,7 @@ export function mapProviderHttpError(
     }
     return { code: "provider_error", message, retryable: true };
   })();
-  const providerResponse = providerErrorResponse(err);
+  const providerResponse = providerResponseOf(err);
   return withProviderRetryMetadata(err, {
     ...mapped,
     ...(providerResponse ? { providerResponse } : {}),

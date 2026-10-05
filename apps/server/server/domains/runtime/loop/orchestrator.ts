@@ -65,7 +65,6 @@ import type {
   Block,
   ModelResponseReceivedRow,
   OrchestratorEvent,
-  ReplyProviderError,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
@@ -80,6 +79,7 @@ import type {
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
+  ReplyProviderFailure,
   ThreadRepositories,
   ThreadRepository,
   TurnRepository,
@@ -1800,7 +1800,7 @@ async function executeLoop({
   const errorTerminal = (
     error: MeridianError | string,
     reason?: string,
-    providerError?: ReplyProviderError,
+    providerError?: ReplyProviderFailure,
   ): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
@@ -2049,10 +2049,7 @@ async function executeLoop({
             }
             if (event.providerResponse) {
               try {
-                deps.modelRequestDebug.recordProviderError(gatewayCallId, {
-                  status: event.providerResponse.status,
-                  body: event.providerResponse.body,
-                });
+                deps.modelRequestDebug.recordProviderError(gatewayCallId, event.providerResponse);
               } catch (cause) {
                 emitEvent(eventSink, {
                   level: "warn",
@@ -2109,11 +2106,7 @@ async function executeLoop({
               errorTerminal(
                 meridianErrorFromGateway(event.code, event.message, event.retryable),
                 undefined,
-                event.providerResponse && {
-                  status: event.providerResponse.status,
-                  message: event.providerResponse.message,
-                  gatewayCallId,
-                },
+                event.providerResponse && { ...event.providerResponse, gatewayCallId },
               ),
             );
           }

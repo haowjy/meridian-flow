@@ -1,8 +1,8 @@
 /** Bounded in-memory model-request capture; content never enters persistent logs. */
 import type {
-  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
+  ProviderErrorResponse,
 } from "@meridian/contracts/threads";
 import {
   buildModelRequestDebugRecord,
@@ -75,7 +75,7 @@ export class InMemoryModelRequestDebugStore implements ModelRequestDebugStore {
     this.retainedBytes += bytes;
   }
 
-  recordProviderError(gatewayCallId: string, error: ModelRequestDebugProviderError): void {
+  recordProviderError(gatewayCallId: string, error: ProviderErrorResponse): void {
     let index = this.records.length - 1;
     while (index >= 0 && this.records[index]?.record.gatewayCallId !== gatewayCallId) index -= 1;
     const stored = this.records[index];

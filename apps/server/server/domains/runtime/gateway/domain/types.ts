@@ -25,6 +25,7 @@
  *   `prompt_cache_key` routing hint, or nothing at all).
  */
 import type { Usage } from "@meridian/contracts/runtime";
+import type { ProviderErrorResponse } from "@meridian/contracts/threads";
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;
 
@@ -286,16 +287,7 @@ export type ErrorCode =
   | "context_overflow"
   | "provider_error";
 
-/**
- * The provider's own failure response, kept as debug evidence. `message` is the
- * provider's human text; `body` is the response body as received, capped at 4 KiB.
- * Never enters event payloads or model context.
- */
-export interface ProviderErrorResponse {
-  status: number | null;
-  message: string;
-  body: string;
-}
+export type { ProviderErrorResponse } from "@meridian/contracts/threads";
 
 /**
  * Stream event — the canonical event set that every adapter emits and the

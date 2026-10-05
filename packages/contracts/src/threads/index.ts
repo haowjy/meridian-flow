@@ -411,10 +411,12 @@ export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export {
   isProviderRefusal,
+  PROVIDER_ERROR_BODY_LIMIT,
+  type ProviderErrorResponse,
+  providerErrorResponse,
   type ReplyProviderError,
-  ReplyProviderErrorCodec,
   replyProviderError,
-} from "./reply-provider-error.js";
+} from "./provider-error.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
@@ -462,7 +464,6 @@ export * from "./golden/index.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,
-  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
   ModelRequestDebugRetention,

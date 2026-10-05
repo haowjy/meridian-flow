@@ -4,9 +4,9 @@
  * Not journal-backed — bounded in-memory only.
  */
 import type {
-  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
+  ProviderErrorResponse,
 } from "@meridian/contracts/threads";
 import type { ModelRequestDebugCaptureInput } from "../build-record.js";
 
@@ -15,7 +15,7 @@ export interface ModelRequestDebugStore {
   readonly captureEnabled: boolean;
   capture(input: ModelRequestDebugCaptureInput): void;
   /** Attach the provider's failure response to the captured call; a no-op once it was evicted. */
-  recordProviderError(gatewayCallId: string, error: ModelRequestDebugProviderError): void;
+  recordProviderError(gatewayCallId: string, error: ProviderErrorResponse): void;
   listByTurn(threadId: string, turnId: string): ModelRequestDebugRecord[];
   listByThread(threadId: string): ModelRequestDebugRecord[];
   retention(): ModelRequestDebugRetention;

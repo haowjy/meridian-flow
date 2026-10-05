@@ -345,7 +345,7 @@ describe("RunSession", () => {
       "provider_error",
     );
     const [captured] = f.deps.modelRequestDebug.listByTurn(f.thread.id, run.executionTurnId);
-    expect(captured?.providerError).toEqual({ status: 402, body });
+    expect(captured?.providerError).toEqual({ status: 402, message: providerMessage, body });
     const turn = await f.repos.turns.findById(run.executionTurnId);
     expect(turn?.metadata).toMatchObject({
       retryable: false,
