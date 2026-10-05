@@ -347,17 +347,27 @@ describe("DocumentSession status derivation", () => {
     await session.destroy();
   });
 
-  it("flags a detached session as stalled only when its adopter reports it, until transport attaches", async () => {
+  it("reports a detached session as stalled only after an adoption failure, until it is attached or closed", async () => {
     const { factory } = makeFakeTransport();
     const session = new DocumentSession({ roomKey: "doc-stalled", persistence: { kind: "none" } });
     expect(session.getSnapshot().adoptionStalled).toBe(false);
 
-    session.setAdoptionStalled(true);
+    session.reportAdoptionStalled(true);
     expect(session.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
 
     session.attachTransport(factory);
     expect(session.getSnapshot()).toMatchObject({ status: "syncing", adoptionStalled: false });
+    session.reportAdoptionStalled(true);
+    expect(session.getSnapshot()).toMatchObject({ status: "syncing", adoptionStalled: false });
     await session.destroy();
+
+    const closed = new DocumentSession({
+      roomKey: "doc-stalled-closed",
+      persistence: { kind: "none" },
+    });
+    closed.reportAdoptionStalled(true);
+    await closed.destroy();
+    expect(closed.getSnapshot()).toMatchObject({ status: "destroyed", adoptionStalled: false });
   });
 
   it("settles whenSynced when an attached session is destroyed before server sync", async () => {
