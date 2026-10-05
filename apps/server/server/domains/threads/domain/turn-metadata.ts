@@ -292,7 +292,7 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
 }
 
 /** Cap on the provider message kept on a failed reply; the full response lives in dev capture. */
-export const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
+const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
 
 /** A provider's failure answer and the call it answered, as the runtime hands it over. */
 export type ReplyProviderFailure = ProviderErrorResponse & { gatewayCallId: string };

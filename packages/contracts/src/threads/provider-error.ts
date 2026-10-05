@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { JsonValue } from "./index.js";
 
 /** Bound on a stored provider body; error bodies are small unless a proxy returns HTML. */
-export const PROVIDER_ERROR_BODY_LIMIT = 4_096;
+const PROVIDER_ERROR_BODY_LIMIT = 4_096;
 
 /**
  * The provider's own failure response, kept as debug evidence. `message` is the
