@@ -26,13 +26,6 @@ export function expectOutcome(outcome: WriteOutcome, status: WriteStatus, isErro
   expect(outcome.isError).toBe(isError);
 }
 
-export function expectNoInternalIds(text: string): void {
-  expect(text).not.toMatch(
-    /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
-  );
-  expect(text).not.toContain("turn-");
-}
-
 /** The block bodies a result carries, without hashes. */
 export function renderedBlockBodies(output: WriteOutcome): string[] {
   return output.result.blocks?.flatMap((group) => group.items.map((item) => item.body)) ?? [];
