@@ -71,8 +71,8 @@ within the current chat; it never switches threads. A pop-up row jumps through
 a block-level conversation reveal to the child's latest point: the finished
 row once it completed, else its launch card.
 
-Server activity (snapshot plus `meridian.subagent.activity`) is still the
-viewed thread's whole subtree. The shared `useThreadActivity` store owns the
+Server activity (snapshot plus `meridian.subagent.activity`) is the viewed
+thread's direct children (see `activity-row-anatomy.md`). The shared `useThreadActivity` store owns the
 cached live view and one transport subscription per thread; the running panel
 shows direct children running in the background, and the Subagents pop-up
 lists every direct child.

@@ -34,8 +34,9 @@ focus; feature controls own domain state and page content. See the
 [composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
 
 `ComposerWorkControl` can rebind an idle existing thread. The controller carries
-that behavior through cache convergence and durable projection. Writer and LLM
-rebinding share the canonical server transition.
+that behavior through cache convergence and durable projection. Only the writer
+rebinds; the model's `work switch` never does
+([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
 
 The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
 mutation and uses the active-draft count only to open confirmation quickly.

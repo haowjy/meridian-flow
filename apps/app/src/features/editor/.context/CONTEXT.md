@@ -109,10 +109,10 @@ visible signal that the draft surface is active.
 
 ### Command modules the surfaces consume
 
-`block-alignment.ts`, `link-selection.ts`, and `core/editor/table-operations.ts`
-outlived the chrome that called them and are the command and resolution layer
-the rebuilt surfaces consume. The toolbar uses the first two; the third waits
-for the table surfaces.
+`block-alignment.ts`, `core/editor/links/link-commands.ts`, and
+`core/editor/table-operations.ts` are the command and resolution layer the
+surfaces consume. The toolbar uses the first two; the table surfaces use the
+third.
 
 `linkAttributesAtSelection` exists because `editor.isActive("link")` can miss an
 empty selection at a mark boundary, notably the link's start. It uses

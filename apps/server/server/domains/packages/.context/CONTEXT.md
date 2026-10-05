@@ -30,7 +30,8 @@ over retained source revisions. It is not a fifth content or execution owner.
   alias may equal a Flow tool name. TOML overlays use `tools.allowed` and
   `tools.disallowed`, each replacing its list; an explicit empty list clears
   it. Access is `permission: read | edit` (default `edit`), never a tool:
-  `edit` and its aliases are refused with a message naming `permission`.
+  `edit` and its aliases in `tools` are refused with a message naming
+  `permission`; in `disallowed-tools` they are ignored (D57).
   Runtime support then refuses a `tools` name outside `TOOL_CATALOG` and
   ignores an unknown `disallowed-tools` name, which denies nothing
   ([runtime tools](../../runtime/.context/tools.md#permissions)).

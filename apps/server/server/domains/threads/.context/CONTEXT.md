@@ -188,13 +188,13 @@ owns only the SQL predicate beside its partial index.
   marked chats and their thread-owned rows.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
-  the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-      targeted durable context refresh inbox notice. Writer and model commands share
-      that transition; switch receipts are factual and are not reversible through
-      turn Undo/Redo. The authenticated writer adapter additionally holds
-      cross-process thread-run ownership across its transaction. Preflight
-      absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
-      typed refreshable conflict, No Work receipts use a Work id and null slug, and database failures propagate unchanged.
+  the transaction-composable binding transition, idempotent no-op behavior, and the
+  targeted durable context refresh inbox notice. Only the writer's adapter calls
+  it; the model's `work switch` never rebinds
+  ([rule](../../runtime/.context/tools.md#permissions)). The writer adapter
+  holds cross-process thread-run ownership across its transaction. Preflight
+  absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
+  typed refreshable conflict, and database failures propagate unchanged.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -234,7 +234,7 @@ owns only the SQL predicate beside its partial index.
   earlier one's status, so a failed reply stays `error` after the writer sends
   again. Whether its error is current is a render-time derivation (the client's
   `endsTranscript`), never a stored rewrite. Status-sensitive readers (compaction
-  plans, undo baselines, fork cutoffs, the transcript read, trail auto-push)
+  plans, undo baselines, fork cutoffs, the transcript read, trail settlement)
   depend on this.
 - **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
@@ -433,8 +433,9 @@ contract shapes.
   active-leaf advancement commit atomically. Do not map `23505` to 409: the
   unique constraint is a post-hoc signal after stale snapshot reads, and it
   does not cover two concurrent starts against a non-empty thread. The
-  in-memory adapter serializes every snapshot transaction on a process-wide
-  `transactionTail` chain (with an `AsyncLocalStorage` reentrancy guard);
+  in-memory adapter serializes every snapshot transaction through
+  `InMemoryTransactionOwner` (`shared/in-memory-transaction.ts`: a promise
+  tail with an `AsyncLocalStorage` reentrancy guard);
   per-transaction snapshots that interleaved across threads could erase winner
   state on loser rollback. Durable live-run ownership across the cluster is a
   separate problem ([#365](https://github.com/haowjy/meridian-flow/issues/365)).

@@ -271,8 +271,7 @@ currently available to the request owner in the requested project.
   checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
   manifest-aware view consistently, and observations fail closed when membership
   authority is unavailable. New non-empty content is parsed into a detached
-  initialize-only checkpoint; work/thread manifest auto-push also waits for the
-  aggregate commit.
+  initialize-only checkpoint.
   An older row missing membership is repaired on its next tracked-document touch;
   repair seeds absent Yjs state from the row projection and preserves existing
   canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project

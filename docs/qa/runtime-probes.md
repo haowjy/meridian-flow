@@ -306,7 +306,7 @@ end-to-end as one suite.
 
   ```bash
   ./mf doc put manuscript://rp10.md --text 'RP10_OLD_SENTINEL' --json
-  ./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"write","args":{"command":"read","path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
+  ./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
   ./mf doc put manuscript://rp10.md --text 'RP10_NEW_SENTINEL' --overwrite --json
   ./mf mock script '[{"text":"Earlier planning context."}]' --json
   compact
