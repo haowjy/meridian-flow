@@ -96,11 +96,6 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
-#. placeholder {0}: item.matchedAlias
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-#~ msgid "(also {0})"
-#~ msgstr ""
-
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -111,16 +106,6 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr ""
 
-#. placeholder {0}: count ?? 0
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
-#~ msgstr ""
-
-#. placeholder {0}: count ?? 2
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{0, plural, one {Apply it now} other {Apply them now}}"
-#~ msgstr ""
-
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -130,11 +115,6 @@ msgstr ""
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr ""
-
-#. placeholder {0}: count ?? 2
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{0, plural, one {Keep it for review} other {Keep them for review}}"
-#~ msgstr ""
 
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -223,22 +203,9 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
-#. placeholder {0}: work.name
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "{0}, Archived"
-#~ msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{changes, plural, one {Apply it now} other {Apply them now}}"
-#~ msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{changes, plural, one {Keep it for review} other {Keep them for review}}"
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
@@ -263,10 +230,6 @@ msgstr ""
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
-#~ msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -311,18 +274,6 @@ msgstr ""
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
 msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{name} has pending changes waiting for review. From now on, AI changes go live right away."
-#~ msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{name} is archived, so its {count, plural, one {# pending change stays} other {# pending changes stay}} frozen. Unarchive it to review them. AI changes to project files will go live right away."
-#~ msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "{name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away."
-#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -423,10 +374,6 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
-
-#: src/features/project/work/WorkCollection.tsx
-#~ msgid "A Work keeps the chats and drafts for one piece of writing together. Its goal tells the AI what you’re after."
-#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -595,10 +542,6 @@ msgid "Apply all"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Apply them now"
-#~ msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
 
@@ -610,18 +553,10 @@ msgstr ""
 msgid "Archived"
 msgstr ""
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "Archived Work"
-#~ msgstr ""
-
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Asleep"
-#~ msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -841,11 +776,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Chats you start here stay with this Work."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Check again"
@@ -857,20 +787,12 @@ msgid "Check submission status"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-#~ msgid "Checked recent changes"
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Checking recent changes…"
-#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Checking whether Apply finished."
@@ -1168,19 +1090,11 @@ msgstr ""
 msgid "Couldn't apply every change, so you're still in Draft."
 msgstr ""
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Couldn't check recent changes"
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -1478,11 +1392,6 @@ msgstr ""
 msgid "Couldn't write"
 msgstr ""
 
-#. placeholder {0}: item.name
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-#~ msgid "Create “{0}”"
-#~ msgstr ""
-
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Create “{name}”"
 msgstr ""
@@ -1507,18 +1416,10 @@ msgstr ""
 msgid "Create it and this link opens it."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#~ msgid "Create it now and the link starts working. Nothing about the link changes."
-#~ msgstr ""
-
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr ""
-
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#~ msgid "Create the document"
-#~ msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Create Work"
@@ -1634,14 +1535,6 @@ msgstr ""
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
-#~ msgstr ""
-
-#: src/features/project/work/DeletedWorkList.tsx
-#~ msgid "Deletes for good within a day"
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -1770,10 +1663,6 @@ msgstr ""
 msgid "Drafting"
 msgstr "起草中"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Drafts are waiting"
-#~ msgstr ""
-
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
 msgstr ""
@@ -1883,10 +1772,6 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
 msgstr ""
-
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "Errored."
-#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -2026,10 +1911,6 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr ""
-
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Generating"
-#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -2236,20 +2117,12 @@ msgid "Invoked a skill"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-#~ msgid "Invoked the {skill} skill"
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
 msgid "Invoking {skill}…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Invoking a skill…"
 msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Invoking the {skill} skill…"
-#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
@@ -2272,10 +2145,6 @@ msgstr ""
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Keep editing"
 msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Keep them for review"
-#~ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
@@ -2326,10 +2195,6 @@ msgstr ""
 msgid "Link"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
-#~ msgid "Link a document"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link a file"
 msgstr ""
@@ -2342,10 +2207,6 @@ msgstr ""
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Link to “{0}” (not written yet)"
 msgstr ""
-
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-#~ msgid "links now, page later"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "list"
@@ -2684,17 +2545,6 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#~ msgid "No document answers to this name. A document can be created for it once the name works as a filename."
-#~ msgstr ""
-
-#: src/features/chat/ChatView.tsx
-#: src/features/editor/surfaces/link/LinkForm.tsx
-#: src/features/editor/surfaces/link/LinkHint.tsx
-#: src/features/editor/surfaces/link/LinkMenu.tsx
-#~ msgid "No document with this name yet"
-#~ msgstr ""
-
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
 msgstr ""
@@ -2782,10 +2632,6 @@ msgstr "未找到"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
-
-#: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
-#~ msgid "Nothing carries that name yet"
-#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
@@ -3352,10 +3198,6 @@ msgstr ""
 msgid "Review"
 msgstr ""
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Review changes"
-#~ msgstr ""
-
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewChip.tsx
 msgid "Review draft"
@@ -3395,10 +3237,6 @@ msgstr ""
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save changes"
 msgstr ""
-
-#: src/features/project/work/WorkMetadata.tsx
-#~ msgid "Save failed"
-#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save goal changes?"
@@ -3631,11 +3469,6 @@ msgstr ""
 msgid "Split cell"
 msgstr ""
 
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
-#~ msgid "Start a chat in this Work"
-#~ msgstr ""
-
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
 msgstr ""
@@ -3754,10 +3587,6 @@ msgstr ""
 msgid "Switch {name} to <0>auto-apply?</0>"
 msgstr ""
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Switch {name} to auto-apply?"
-#~ msgstr ""
-
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
 msgstr ""
@@ -3768,15 +3597,6 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Switch to <0>auto-apply?</0>"
-msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "Switch to auto-apply?"
-#~ msgstr ""
-
-#. js-lingui-explicit-id
-#: src/features/chat/work-receipt-copy.ts
-msgid "workReceipt.switched"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3975,11 +3795,6 @@ msgstr "思考"
 msgid "Thinking out loud?"
 msgstr "边想边说？"
 
-#. placeholder {0}: processIndex + 1
-#: src/features/chat/AssistantTurn.tsx
-#~ msgid "Thinking part {0}"
-#~ msgstr ""
-
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This brief failed."
 msgstr ""
@@ -4085,11 +3900,6 @@ msgstr ""
 msgid "This conversation couldn't be compacted."
 msgstr ""
 
-#. js-lingui-explicit-id
-#: src/features/chat/work-receipt-copy.ts
-msgid "workReceipt.alreadyCurrent"
-msgstr ""
-
 #: src/features/project/context/ContextViewer.tsx
 msgid "This destination couldn't load."
 msgstr ""
@@ -4157,10 +3967,6 @@ msgid "This file type ({0}) doesn't have an inline viewer yet. Download the orig
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "This file's Work is archived, so this change can't be reversed."
-#~ msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This file's Work is archived. Unarchive the Work to reverse this change."
 msgstr ""
 
@@ -4219,10 +4025,6 @@ msgstr ""
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
-#~ msgstr ""
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
@@ -4307,10 +4109,6 @@ msgstr ""
 #: src/features/debug/llm-calls/LlmCallsViewer.tsx
 msgid "Turns {0}"
 msgstr "轮次 {0}"
-
-#: src/features/editor/surfaces/link/WikilinkMenu.tsx
-#~ msgid "two documents share this name"
-#~ msgstr ""
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
@@ -4468,10 +4266,6 @@ msgstr ""
 msgid "Wait for this response to finish, then try again."
 msgstr ""
 
-#: src/features/chat/ThreadStatusLabel.tsx
-#~ msgid "Waiting"
-#~ msgstr ""
-
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr ""
@@ -4616,10 +4410,6 @@ msgstr ""
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "You have {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
 msgstr ""
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-#~ msgid "You have pending changes waiting for review. From now on, AI changes go live right away."
-#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
