@@ -31,8 +31,10 @@ read data is not treated as a mismatch.
 `ModelRequestInspector` presents the provider-neutral `GenerateRequest` in this
 order:
 
-1. **Markdown** shows ordered messages and advertised tools. It quotes message
-   boundaries and shortens any single extreme part beyond 32 KiB.
+1. **Markdown** shows ordered messages and advertised tools, then a
+   `# Provider error response` section (HTTP status and capped body) when the
+   call failed with a provider answer. It quotes message boundaries and
+   shortens any single extreme part beyond 32 KiB.
 2. **Raw** shows the exact captured request JSON.
 3. **Debug** shows digests, correlation IDs, prefix evidence, capture status,
    resolved skills, and tool provenance.
