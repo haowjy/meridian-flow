@@ -7,6 +7,7 @@ import { deriveDocumentLinkRows } from "./document-link-rows.js";
 import type {
   DerivationScope,
   DocumentDerivationCut,
+  DocumentDerivationResult,
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
@@ -16,6 +17,7 @@ export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
   serializer: DurableProjectionSerializer;
   outsideTransaction<T>(operation: () => T): T;
+  deferred(documentId: DocumentId): void;
   failed(documentId: DocumentId, cause: unknown): void;
 }): DocumentDerivationService {
   const timers = new Map<DocumentId, { trailing?: NodeJS.Timeout; maximum?: NodeJS.Timeout }>();
@@ -24,7 +26,11 @@ export function createDocumentDerivationService(input: {
   let stopped = false;
   let sweepCursor: DocumentId | undefined;
 
-  const derive = (documentId: DocumentId, at?: Date) => deriveDocument(input, documentId, at);
+  const derive = async (documentId: DocumentId, at?: Date) => {
+    const result = await deriveDocument(input, documentId, at);
+    if (result.status === "deferred") input.deferred(documentId);
+    return result;
+  };
 
   function clear(documentId: DocumentId) {
     const entry = timers.get(documentId);
@@ -109,22 +115,23 @@ export async function deriveDocument(
   input: { store: DocumentDerivationStore; serializer: DurableProjectionSerializer },
   documentId: DocumentId,
   at = new Date(),
-): Promise<Uint8Array | null> {
+): Promise<DocumentDerivationResult> {
   // Retry only stale cuts, not serializer/database failures. A constantly edited
   // document yields to the next hint or sweep instead of monopolizing a worker.
   for (let attempt = 0; attempt < 3; attempt++) {
     const cut = await input.store.capture(documentId);
-    if (!cut) return null;
+    if (!cut) return { status: "missing" };
     const doc = createCollabYDoc({ gc: false });
     try {
       Y.applyUpdate(doc, cut.state);
       const outputs = await deriveDocumentOutputs(cut, doc, input.serializer);
-      if (await input.store.certify(cut, outputs, at)) return Y.encodeStateVector(doc);
+      if (await input.store.certify(cut, outputs, at))
+        return { status: "derived", stateVector: Y.encodeStateVector(doc) };
     } finally {
       doc.destroy();
     }
   }
-  throw new Error("Document changed during derivation; retry on the next sweep");
+  return { status: "deferred" };
 }
 
 /** Projection and link rows always describe the same private document. */

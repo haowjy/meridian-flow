@@ -14,7 +14,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
 import type { NoticePort } from "../notices/index.js";
-import type { EventSink } from "../observability/index.js";
+import { type EventSink, emitEvent } from "../observability/index.js";
 import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditInvariantDiagnostic,
@@ -44,7 +44,6 @@ import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import {
   createDrizzleAuthorityGenerationReader,
-  createDrizzleCheckpointAuthorityReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
@@ -192,6 +191,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
     },
     outsideTransaction: runOutsideDrizzleTransaction,
+    deferred: (documentId) => {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "debug",
+        source: "collab.document_derivation",
+        name: "projection_refresh.deferred",
+        correlation: { documentId },
+        payload: { reason: "stale_cut" },
+      });
+    },
     failed: (documentId, cause) =>
       projectionDiagnostics.failed({
         documentId,
@@ -325,10 +334,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveTurnThreadId: lookups.resolveTurnThreadId,
     resolveDocumentUri: documentUriResolver,
   });
-  const readCheckpointAuthority = createDrizzleCheckpointAuthorityReader(deps.db);
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    readCheckpointAuthority,
     journal: persistence.journal,
     branchStore: branches,
     branchCoordinator,
@@ -414,7 +421,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onReplaced: derivations.schedule,
   });
   const checkpoints = createCheckpointService({
-    readCheckpointAuthority,
     coordinator: liveCoordinator,
     store: persistence.store,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
@@ -456,6 +462,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,

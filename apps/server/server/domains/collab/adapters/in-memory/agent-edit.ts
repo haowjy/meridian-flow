@@ -12,6 +12,7 @@ import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
+import { bindDocumentAuthority } from "../../domain/document-handle.js";
 import { loadDocumentState } from "../document-loader.js";
 
 export type InMemoryCheckpointRecord = {
@@ -45,6 +46,13 @@ export type InMemoryJournal = UpdateJournal &
   };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
+  override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {
+    return {
+      ...(await super.read(docId, opts)),
+      authority: { authorityId: docId, generation: 1n },
+    };
+  }
+
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
 
@@ -124,6 +132,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     const existing = docs.get(docId);
     if (existing) return existing;
     const doc = createCollabYDoc({ gc: false });
+    bindDocumentAuthority(doc, { authorityId: docId as never, generation: 1n });
     docs.set(docId, doc);
     return doc;
   }
