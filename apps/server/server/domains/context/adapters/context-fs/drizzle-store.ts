@@ -18,8 +18,8 @@ import {
   ContextEntryConflictError,
   type ContextFolder,
   type CreateBinaryDocumentInput,
+  type CreateDocumentInput,
   type UpsertBinaryDocumentInput,
-  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
 import {
   claimDocumentLocation,
@@ -85,23 +85,6 @@ export async function notifyMembershipObserver(
     if (deferred) resolve();
   });
   await completed;
-}
-
-export async function updateDocumentProjectionById(
-  db: Database,
-  documentId: string,
-  markdown: string,
-): Promise<boolean> {
-  const [row] = await db
-    .update(documents)
-    .set({
-      markdownProjection: markdown,
-      sizeBytes: Buffer.byteLength(markdown, "utf8"),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
-    .returning({ id: documents.id });
-  return Boolean(row);
 }
 
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
@@ -186,11 +169,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return row ? mapDocument(row) : null;
   }
 
-  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
-    return updateDocumentProjectionById(this.db, documentId, markdown);
-  }
-
-  async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
+  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (
@@ -207,24 +186,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       if (existing && existing.fileType !== null) {
         throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       }
-      const values = {
-        fileType: input.filetype,
-        storageUrl: null,
-        mimeType: null,
-        markdownProjection: input.markdown,
-        sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-        updatedAt: new Date(),
-      };
-      if (existing) {
-        const [row] = await this.db
-          .update(documents)
-          .set(values)
-          .where(and(eq(documents.id, existing.id), isNull(documents.storageUrl)))
-          .returning();
-        if (!row)
-          throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
-        return mapDocument(row);
-      }
+      if (existing) throw new ContextEntryConflictError();
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -251,7 +213,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (

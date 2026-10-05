@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
+
+- Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.
 - Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
 
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".

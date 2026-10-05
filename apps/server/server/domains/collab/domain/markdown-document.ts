@@ -596,6 +596,8 @@ export function syncErrorMessage(error: SyncError): string {
   switch (error.code) {
     case "not_found":
       return `Document not found: ${error.documentId}`;
+    case "stale_generation":
+      return `Document generation changed: ${error.documentId}`;
     case "checkpoint_not_found":
       return `Checkpoint not found: ${error.checkpointId}`;
     case "corrupt_state":

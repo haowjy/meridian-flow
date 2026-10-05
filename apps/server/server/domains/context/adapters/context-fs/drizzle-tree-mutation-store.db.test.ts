@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps file and folder namespace claims exclusive in either order", async () => {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      await store.upsertDocument({
+      await store.createDocument({
         folderId: null,
         name: "file",
         extension: "md",
@@ -107,7 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toBeNull();
       await expect(
-        store.upsertDocument({
+        store.createDocument({
           folderId: null,
           name: "folder",
           extension: "md",
