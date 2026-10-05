@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep Uploads links out of Editor tab admission while preserving Scratch tabs.
+
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
