@@ -21,11 +21,6 @@ function parseContextLocation(uriOrPath: string): ParsedContextLocation {
   return parsed.ok ? parsed.value : { scheme: "manuscript", path: uriOrPath };
 }
 
-export function isContextUri(value: string): boolean {
-  const parsed = parseUnifiedContextUri(value);
-  return parsed.ok && value.trim().startsWith(`${parsed.value.scheme}://`);
-}
-
 /**
  * The document's name, and nothing else. Where it lives is not part of what a
  * timeline row claims: the row says what the agent did to a document, and the
