@@ -14,6 +14,7 @@
 - Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
 - Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
 - Skills are read-only files under `skills://<skill>/`. The prompt lists available skills by slug, and `skill({name})` loads one, returning exactly what `read` returns for its `SKILL.md`: the address, a line saying paths in the skill are relative to its folder, then the text. `read` and `ls` reach the skill's other files. An agent sees only the skills its own Agent preloads or offers as `model-invocable`; `skill` refuses any other with the names it can load, and `read` answers not found. `write` and `search` refuse `skills://`.
+- A skill the user invokes with `/skill` stays readable under `skills://` for the rest of that chat, even when the Agent doesn't offer it, and its body carries the same header as `skill()`; spawned subagents don't inherit it. Migration 0027 adds `thread_agent_bindings.invoked_skills`. An agent that can see no skill isn't offered the `skill` tool.
 - A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
 - An undo or redo is `reconciled` only when other edits survive it.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.

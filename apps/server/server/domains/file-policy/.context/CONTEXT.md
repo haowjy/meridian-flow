@@ -136,8 +136,13 @@ at its new level. Manuscript, kb and user rooms never close on a Work change.
 
 `skills://` isn't a context source and has no facts or grants. `skillLevel`
 (`domain/policy.ts`) is the pure rule: an agent reads a skill its own
-thread's binding preloads or offers as `model-invocable`, and never edits
-one (D58). `runtime/loop/skill-files.ts` reads the binding once per call and
+thread's binding preloads or offers as `model-invocable`, or that the user
+invoked with `/skill` in that thread (D64), and never edits one (D58). An
+invocation is pinned on the thread's binding row (`invoked_skills`, slug to
+the package reference the body was read from; re-invoking replaces it), so
+it rides the same binding read and a spawned child, with its own binding,
+doesn't inherit it. A slug both bound and invoked reads from the binding's
+reference. `runtime/loop/skill-files.ts` reads the binding once per call and
 filters with it. Skill edits will need the same file and folder permissions.
 
 ## Performance
