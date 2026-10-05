@@ -68,7 +68,6 @@ async function fixture(mode: "direct" | "draft") {
     branches: f.branchStore,
     branchCoordinator: f.branchCoordinator,
     branchPulls: f.branchPulls,
-    branchPush: f.branchPush,
     liveCoordinator: f.liveCoordinator,
     agentEdit: f.collab.agentEdit(),
     documents: f.runtime.markdownDocuments,

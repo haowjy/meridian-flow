@@ -647,7 +647,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
+    // Trail work retries only an auto-policy branch's push (drizzle-turn-trail-work).
+    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId, resetPolicy: "auto" }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();

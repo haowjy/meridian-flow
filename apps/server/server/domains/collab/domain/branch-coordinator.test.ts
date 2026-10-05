@@ -42,7 +42,6 @@ function branchSnapshot(input: {
     upstreamBranchId: input.upstreamBranchId ?? null,
     workId: WORK_ID,
     threadId: input.kind === "thread_peer" ? THREAD_ID : null,
-    pushPolicy: "manual",
     status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(input.doc),

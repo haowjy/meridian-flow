@@ -57,7 +57,7 @@ import {
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
-import type { AutoBranchPushPort, BranchJournalReadStore } from "./branch-push-contracts.js";
+import type { BranchJournalReadStore } from "./branch-push-contracts.js";
 import {
   type BranchReversalHistoryReader,
   buildBranchReversalState,
@@ -100,7 +100,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
   branchPulls: BranchPullService;
-  branchPush: AutoBranchPushPort;
   branchJournal: BranchJournalReadStore;
   concurrentJournalWatermarks: BranchConcurrentJournalWatermarks;
   diagnostics: BranchAgentEditDiagnostics;
@@ -148,7 +147,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
           branchCoordinator: input.branchCoordinator,
           branches: input.branches,
           pendingJournalEntries,
-          branchPush: input.branchPush,
           journalRows: input.branchJournal,
           liveJournal: input.journal,
           diagnostics: input.diagnostics,

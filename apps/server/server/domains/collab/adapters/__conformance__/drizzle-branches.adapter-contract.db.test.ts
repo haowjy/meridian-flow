@@ -304,25 +304,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
-    it("seeds work-draft push policy from the work write mode", async () => {
-      const directWork = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("direct mode"),
-      });
-      expect(directWork.pushPolicy).toBe("auto");
-
-      await db.delete(documentBranches).where(eq(documentBranches.id, directWork.branchId));
-      await db.update(works).set({ aiWriteMode: "draft" }).where(eq(works.id, WORK_ID));
-
-      const draftWork = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("draft mode"),
-      });
-      expect(draftWork.pushPolicy).toBe("manual");
-    });
-
     it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
       const majorMismatchVersion = { major: 1, minor: 0, patch: 0 };
       const packedMajorMismatchVersion = packCollabSchemaVersion(majorMismatchVersion);
