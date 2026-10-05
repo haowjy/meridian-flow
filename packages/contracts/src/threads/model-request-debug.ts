@@ -91,7 +91,6 @@ export type ModelRequestDebugSummary = {
   turnId: string;
   requestedAt: string;
   agentSlug: string | null;
-  providerStatus: number | null;
 };
 
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
@@ -330,7 +329,6 @@ export function summarizeModelRequestDebugView(
     turnId: view.record.turnId,
     requestedAt: view.record.requestedAt,
     agentSlug: view.record.agentSlug,
-    providerStatus: view.record.providerError?.status ?? null,
   };
 }
 
