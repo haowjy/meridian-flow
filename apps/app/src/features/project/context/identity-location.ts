@@ -56,7 +56,7 @@ export function destinationWorkAuthority(
   noWork: { id: string } | null | undefined,
 ): ResourceWorkAuthority | null {
   if (destination.scheme !== "scratch" && !destination.workId) return { workId: null };
-  const workId = destination.workId ?? noWork?.id;
+  const workId = destination.workId;
   if (!workId || !noWork) return null;
   try {
     return resourceWorkAuthorityFor(workId, { works: works ?? [], noWork });

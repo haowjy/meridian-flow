@@ -18,12 +18,9 @@
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
-import { acquireWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import {
   type CreatableLinkScheme,
   documentFileName,
@@ -64,15 +61,13 @@ export type CreateLinkedDocument = {
 type WorkList = readonly { id: string; slug: string | null }[];
 
 /**
- * `workId` is the surface's Work (a named Work or the No Work row, null for No
- * Work): what a contextual `scratch://` address means there.
+ * `workId` is the surface's Work (a named Work or the No Work row; null while unresolved): what a contextual `scratch://` address means there.
  */
 export function useCreateLinkedDocument(
   projectId: string | null,
   workId: string | null,
 ): CreateLinkedDocument {
   const resources = useAccountResourceReplica();
-  const queryClient = useQueryClient();
   const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const [creating, setCreating] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -89,20 +84,12 @@ export function useCreateLinkedDocument(
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        let noWorkId: string | null = noWork?.id ?? null;
-        let work = scratchWork(target, workId, works, noWorkId);
-        // The Works list is still loading: a slug it will name is not missing.
-        if (
-          (work === "unknown" && works === null) ||
-          (target.scheme === "scratch" && work !== "unknown" && work.workId === null)
-        ) {
-          const snapshot = await queryClient.ensureQueryData({
-            queryKey: projectQueryKeys.works(projectId),
-            queryFn: () => acquireWorksSnapshot(queryClient, projectId),
-          });
-          noWorkId = snapshot.noWork.id;
-          work = scratchWork(target, workId, snapshot.works, noWorkId);
-        }
+        const work =
+          target.scheme === "scratch"
+            ? workId && noWork
+              ? scratchWork(target, workId, { works: works ?? [], noWork })
+              : "unknown"
+            : { workId: null };
         if (work === "unknown") throw new Error("The address names no Work this project has");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
@@ -132,35 +119,25 @@ export function useCreateLinkedDocument(
       if (!documentId) setFailed(true);
       return documentId;
     },
-    [noWork?.id, projectId, queryClient, resources, workId, works],
+    [noWork, projectId, resources, workId, works],
   );
 
   return { create, creating, failed };
 }
 
-/** Resolve Scratch authority to its row id and canonical URI slug (null for No Work). */
+/** Resolve URI authority once against the surface's loaded Works snapshot. */
 function scratchWork(
   target: LinkCreationTarget,
-  surfaceWorkId: string | null,
-  works: WorkList | null,
-  noWorkId: string | null,
+  surfaceWorkId: string,
+  snapshot: { works: WorkList; noWork: { id: string } },
 ): ResourceWorkAuthority | "unknown" {
-  if (target.scheme !== "scratch") return { workId: null };
-  if (target.authority.kind === "none")
-    return noWorkId
-      ? resourceWorkAuthorityFor(noWorkId, { works: works ?? [], noWork: { id: noWorkId } })
-      : { workId: null };
   const { authority } = target;
-  if (authority.kind === "contextual" && (!surfaceWorkId || surfaceWorkId === noWorkId))
-    return noWorkId
-      ? resourceWorkAuthorityFor(noWorkId, { works: works ?? [], noWork: { id: noWorkId } })
-      : { workId: null };
-  const work = works?.find((candidate) =>
-    authority.kind === "work"
-      ? candidate.slug === authority.workSlug
-      : candidate.id === surfaceWorkId,
-  );
-  return work && noWorkId
-    ? resourceWorkAuthorityFor(work.id, { works: works ?? [], noWork: { id: noWorkId } })
-    : "unknown";
+  const workId =
+    authority.kind === "none"
+      ? snapshot.noWork.id
+      : authority.kind === "contextual"
+        ? surfaceWorkId
+        : snapshot.works.find((work) => work.slug === authority.workSlug)?.id;
+  if (!workId) return "unknown";
+  return resourceWorkAuthorityFor(workId, snapshot);
 }

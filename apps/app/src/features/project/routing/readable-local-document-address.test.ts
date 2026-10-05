@@ -281,7 +281,7 @@ it("keeps local ownership while canonical metadata replaces a stale same-ID path
 });
 
 const kbRoute = { kind: "document" as const, scheme: "kb" as const, path: "Original.md" };
-function bound(workId: string | null, documentId = "doc-a") {
+function bound(workId: string, documentId = "doc-a") {
   return {
     status: "bound" as const,
     revision: 1,
@@ -291,11 +291,11 @@ function bound(workId: string | null, documentId = "doc-a") {
 }
 
 it.each([
-  [null, null, null, null],
-  ["doc-b", null, null, null],
-  ["doc-a", null, null, "doc-a"],
+  [null, "no-work", "no-work", null],
+  ["doc-b", "no-work", "no-work", null],
+  ["doc-a", "no-work", "no-work", "doc-a"],
   ["doc-a", "work-1", "work-1", "doc-a"],
-  ["doc-a", "work-1", null, null],
+  ["doc-a", "work-1", "no-work", null],
 ])("requires admission %s and matching Editor context %s / %s", (admittedDocumentId, editorWorkId, selectionWork, expected) => {
   expect(
     routeContinuityDocumentId({

@@ -112,7 +112,7 @@ export function useLinkFollower({
   const scopeWaiters = useRef(new Set<() => void>());
 
   useEffect(() => {
-    if (!resolution || !projectId) return;
+    if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
       { baseUri },
@@ -174,7 +174,7 @@ export function useLinkFollower({
   // aborts. A pending scope becoming known is not a move: that is the answer
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
-  const scopeKey = ready ? `${ready.projectId}\u0000${ready.workId ?? ""}` : pending ? null : "";
+  const scopeKey = ready ? `${ready.projectId}\u0000${ready.workId}` : pending ? null : "";
   useEffect(() => {
     if (scopeKey === null) return;
     if (answeredScope.current !== null && answeredScope.current !== scopeKey) {

@@ -290,7 +290,7 @@ function FolderListingBody({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId });
+    void openDocument({ documentId: file.documentId, workId: workId ?? undefined });
   }
 
   const siblingNames = children.map((child) => child.name);

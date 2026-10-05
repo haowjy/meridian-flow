@@ -24,7 +24,7 @@ import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocum
 export type LinkResolutionScope = {
   projectId: string;
   /** Named Work or No Work row id; null is public No Work (`@/`). */
-  workId: string | null;
+  workId: string;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**

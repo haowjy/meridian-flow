@@ -45,7 +45,12 @@ describe("AccountFeatureTestProvider", () => {
       useContextProjectAuthority({
         projectId: "project-1",
         workspaceHydrated: false,
-        editorScope: { status: "ready", workId: null, source: "route" },
+        editorScope: {
+          status: "ready",
+          workId:
+            "00000000-0000-4000-8000-000000000009" as import("@meridian/contracts/request-id").ParsedRequestId,
+          source: "route",
+        },
       });
       return <p>Project shell</p>;
     }

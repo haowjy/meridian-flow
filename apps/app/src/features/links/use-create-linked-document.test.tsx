@@ -52,7 +52,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 it("opens a No Work Scratch Create before the server answers", async () => {
   let creation!: CreateLinkedDocument;
   function Probe() {
-    creation = useCreateLinkedDocument("project", null);
+    creation = useCreateLinkedDocument("project", "123e4567-e89b-42d3-a456-426614174000");
     return null;
   }
   const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
@@ -161,7 +161,7 @@ it("opens a No Work Scratch Create before the server answers", async () => {
           }),
         }),
       );
-      expect(openRoute.mock.calls[0]?.[1]?.tab).not.toHaveProperty("workId");
+      expect(openRoute.mock.calls[0]?.[1]?.tab).toHaveProperty("workId", workId);
       assertLocalDestination("document");
       expect(resources.setLocation).toHaveBeenCalledWith(
         "project",
@@ -186,12 +186,13 @@ it("keeps the locked No Work row in the destination after an Editor identity ren
   function Probe() {
     rename = useIdentityCommit({
       projectId: "project",
-      editorWorkId: null,
+      editorWorkId: "123e4567-e89b-42d3-a456-426614174000",
       tab: {
         kind: "tracked",
         documentId: "document",
         resourceHandle: "resource",
         scheme: "scratch",
+        workId: "123e4567-e89b-42d3-a456-426614174000",
         path: "/before.md",
         name: "before.md",
         editable: true,
@@ -204,7 +205,14 @@ it("keeps the locked No Work row in the destination after an Editor identity ren
   }
   await withReactRoot(<Probe />, async () => {
     await act(async () => {
-      await rename({ destination: { scheme: "scratch", folderPath: "" }, name: "after.md" });
+      await rename({
+        destination: {
+          scheme: "scratch",
+          folderPath: "",
+          workId: "123e4567-e89b-42d3-a456-426614174000",
+        },
+        name: "after.md",
+      });
     });
     expect(committed).toHaveBeenCalledWith(
       "document",

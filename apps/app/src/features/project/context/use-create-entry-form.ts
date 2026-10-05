@@ -74,7 +74,9 @@ export function useCreateEntryForm({
       const path = joinContextEntryPath(parent, trimmed);
       if (kind === "file" && usesResourceDocumentCreate(path)) {
         const work = isWorkScopedProjectContextScheme(scheme)
-          ? works?.find((work) => work.id === workId)
+          ? workId === noWork?.id
+            ? noWork
+            : works?.find((work) => work.id === workId)
           : null;
         if (isWorkScopedProjectContextScheme(scheme) && (!work || !noWork))
           throw new Error(t`Couldn't create this file.`);
@@ -107,7 +109,19 @@ export function useCreateEntryForm({
       }
       onCreated?.(path);
     },
-    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId, works],
+    [
+      mutation,
+      queryClient,
+      projectId,
+      scheme,
+      kind,
+      parent,
+      onCreated,
+      resources,
+      workId,
+      works,
+      noWork,
+    ],
   );
 
   const form = useInlineEdit({

@@ -26,7 +26,7 @@ function doc(name: string): ResolvedDocumentLink {
     scheme: "manuscript",
     path: `${name}.md`,
     uri: `manuscript://${name}.md`,
-    workId: null,
+    workId: "no-work",
   };
 }
 
@@ -38,7 +38,7 @@ let root: Root;
 let host: HTMLDivElement;
 let follower: LinkFollower;
 
-const scope: LinkResolutionScope = { projectId: "project-1", workId: null, baseUri: null };
+const scope: LinkResolutionScope = { projectId: "project-1", workId: "no-work", baseUri: null };
 const reporter: FollowReporter = {
   report: (outcome) => events.push(`report:${outcome.state}`),
   clear: () => events.push("clear"),

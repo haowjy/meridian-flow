@@ -15,8 +15,8 @@ import { workFromSnapshot } from "./works-projection-acquisition";
 
 export type ThreadWorkMutationInput =
   | {
-      workId: string | null;
-      previousWorkId: string | null;
+      workId: string;
+      previousWorkId: string;
     }
   | { targetWorkId: string; previousWorkId: string };
 
@@ -58,14 +58,12 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
           { source: "confirmed", projectId, result: response },
           accountSignal,
         );
-        const work = targetWorkId
-          ? workFromSnapshot(
-              client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
-                projectQueryKeys.works(projectId),
-              ),
-              targetWorkId,
-            )
-          : null;
+        const work = workFromSnapshot(
+          client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
+            projectQueryKeys.works(projectId),
+          ),
+          targetWorkId,
+        );
         if (work) {
           return {
             kind: "confirmed",

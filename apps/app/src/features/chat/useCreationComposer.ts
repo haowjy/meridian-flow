@@ -21,10 +21,7 @@ export function useCreationComposer(projectId: string) {
     choices,
     updateChoices,
     updateDraft: (_change: ComposerDraftChange) => undefined,
-    submit(
-      submission: ComposerSubmitEnvelope,
-      context: { workId: string | null; agent: CreationAgent },
-    ) {
+    submit(submission: ComposerSubmitEnvelope, context: { workId: string; agent: CreationAgent }) {
       return (
         sendProjectChat({
           accountId,

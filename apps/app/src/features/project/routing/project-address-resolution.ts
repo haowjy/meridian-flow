@@ -52,6 +52,16 @@ export function guardProjectQuerySelections(
 /** Project content spells No Work as none; identity destinations retain the row id. */
 export function workSelectionFor(
   destination: ProjectDestination,
+  workId: string,
+  noWorkId: string | null,
+): Exclude<AddressSelection, { kind: "absent" }>;
+export function workSelectionFor(
+  destination: ProjectDestination,
+  workId: string | undefined,
+  noWorkId: string | null,
+): AddressSelection;
+export function workSelectionFor(
+  destination: ProjectDestination,
   workId: string | undefined,
   noWorkId: string | null,
 ): AddressSelection {
