@@ -71,15 +71,9 @@ export function projectResourceLocation(
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
-  const named = record.intents.some((intent) => {
-    const outcome = intent.attempts.at(-1)?.outcome;
-    return (
-      intent.desired.kind === "set-location" &&
-      intent.state === "settled" &&
-      outcome?.kind === "operation" &&
-      outcome.receipt.result.ok
-    );
-  });
+  const named = record.intents.some(
+    (intent) => intent.desired.kind === "set-location" && intent.state === "settled",
+  );
   if (record.resource.canonical)
     return { ...record.resource.canonical, provisional: create?.kind === "create" && !named };
   if (create?.kind !== "create") return null;
@@ -100,7 +94,12 @@ export function resourceVisibleInProject(
   catalogs: readonly ResourceCatalogCheckpoint[],
 ): boolean {
   if (
-    record.intents.some((intent) => intent.projectId === projectId && intent.state !== "cancelled")
+    record.intents.some(
+      (intent) =>
+        intent.projectId === projectId &&
+        intent.state !== "cancelled" &&
+        intent.state !== "superseded",
+    )
   )
     return true;
   const documentId = record.resource.identity.documentId;

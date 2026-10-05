@@ -69,6 +69,11 @@ it("retries create-conflict repair but leaves writer-actionable rename repair id
 
 it("skips settled resources and retries unfinished adoption or cleanup", () => {
   expect(resourceNeedsBackgroundReconciliation(record())).toBe(false);
+  expect(
+    resourceNeedsBackgroundReconciliation(
+      record({ state: "superseded", desired: { kind: "create", folderPath: "" } }),
+    ),
+  ).toBe(false);
 
   const adoption = record();
   adoption.resource.obligations.sessionAdoption = {

@@ -600,7 +600,7 @@ describe("namespace reconciliation", () => {
   });
 });
 
-it("puts a No Work Scratch sync failure on the acted-on document", async () => {
+it("keeps canonical Scratch placement after a rejected rename and rejected delete", async () => {
   const before = local();
   before.resource.canonical = {
     scheme: "scratch",
@@ -656,6 +656,47 @@ it("puts a No Work Scratch sync failure on the acted-on document", async () => {
     kind: "set-location",
     name: "after.md",
   });
+  const rejectedRename = structuredClone(store.record.intents[0]?.attempts);
+  const deletion = planResourceDeletion(store.record, "project", "delete");
+  if (!deletion) throw new Error("Delete must supersede the rejected rename");
+  await store.commitResource(deletion);
+  expect(store.record.intents[0]?.state).toBe("superseded");
+  expect(store.record.intents[0]?.attempts).toEqual(rejectedRename);
+  expect(() =>
+    validateResourceRecordUpdate(store.record, {
+      ...store.record,
+      resource: { ...store.record.resource, revision: store.record.resource.revision + 1 },
+      intents: store.record.intents.map((intent) =>
+        intent.state === "superseded" ? { ...intent, state: "needs-repair" } : intent,
+      ),
+    }),
+  ).toThrow("Terminal intentions cannot restart");
+  expect(projectResourceNeedsRepair("project", store.record)).toBeNull();
+  expect(projectResourceLocation("project", store.record)).toBeNull();
+  expect(
+    await reconcileResourceNamespace({
+      key: before.resource,
+      metadata: asMetadata(store),
+      lock: immediateLock,
+      newAttemptIds: () => ({ attemptId: "delete-attempt", operationId: "delete-operation" }),
+      transport: transport({
+        submit: async () => ({
+          kind: "operation",
+          receipt: {
+            operationId: "delete-operation",
+            command: {
+              kind: "delete",
+              uri: "scratch://@/before.md",
+              expected: { kind: "file", documentId: "document" },
+            },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@/before.md" } },
+          },
+        }),
+      }),
+    }),
+  ).toBe("needs-repair");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceNeedsRepair("project", store.record)?.kind).toBe("delete");
 });
 
 it("restores a rejected delete after retry and admits another delete", async () => {

@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- Retain superseded namespace failures as inactive history, so rejected renames cannot reappear after a rejected delete.
+
 - Restore the journal/move foreign-key lock regression alongside the worker overwrite lock test.
 
 - Removed test-only link traversal exports from the collaboration public barrel.

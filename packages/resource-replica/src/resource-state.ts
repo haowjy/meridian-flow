@@ -211,7 +211,7 @@ export function remintCreateConflict(input: {
       intents: [
         ...record.intents.map((intent) => {
           if (intent.intentId === conflicted.intentId)
-            return { ...intent, state: "settled" as const };
+            return { ...intent, state: "superseded" as const };
           if (dependents.some((dependent) => dependent.intentId === intent.intentId))
             return { ...intent, state: "cancelled" as const };
           return intent;

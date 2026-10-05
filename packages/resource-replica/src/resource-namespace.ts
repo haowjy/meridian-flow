@@ -47,6 +47,7 @@ export function activeNamespaceIntent(record: {
         (intent) =>
           intent.state !== "cancelled" &&
           intent.state !== "settled" &&
+          intent.state !== "superseded" &&
           intent.state !== "settled-locally",
       ) ?? null
   );
