@@ -7,6 +7,7 @@ const PRIMARY_DEFAULT = [
   "ls",
   "read",
   "search",
+  "skill",
   "spawn",
   "thread_history",
   "thread_ls",

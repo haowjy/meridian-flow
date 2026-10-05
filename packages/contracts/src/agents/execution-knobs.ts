@@ -73,6 +73,7 @@ export const toolAliases: Record<string, string> = {
   subagent: "agent",
   spawn_agent: "agent",
   task: "agent",
+  skill: "skill",
   workflow: "workflow",
   glob: "glob",
   grep: "grep",

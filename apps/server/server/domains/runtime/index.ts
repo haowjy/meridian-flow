@@ -137,9 +137,14 @@ export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.
 export {
   isSkillsUri,
   listSkillDir,
+  parseSkillUri,
   readSkillFile,
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
+  skillFileHeader,
+  skillLoadHeader,
+  skillMdUri,
+  visibleSkillNames,
 } from "./loop/skill-files.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export { threadControlRequestSchema } from "./loop/thread-control-request.js";

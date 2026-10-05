@@ -34,6 +34,11 @@ export {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 export {
+  createSkillToolRegistrations,
+  type SkillInvocation,
+  SkillToolInputSchema,
+} from "./skill-tool.js";
+export {
   createSpawnToolRegistrations,
   SpawnInputSchema,
   type SpawnToolArgs,
