@@ -42,6 +42,9 @@
 
 ## [Unreleased]
 
+- `read` on a `skills://` markdown file takes `#heading` for one section and `format: "outline"` for its headings, with the same heading slugs as documents; `in` and `around` are `invalid_arguments`, since skill files have no block hashes. The built-in skills no longer name files or skills that don't ship.
+- An Agent profile's `disallowed-tools` naming an edit tool (`Edit`, `apply_patch`) is ignored like any tool Flow doesn't have; in `tools` it still fails, naming `permission`.
+- Development: migration 0026 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
 - An AI reply that was writing to a Work's draft when you switched the Work to auto-apply now finishes in that draft, where it waits for your review like the changes you kept. Nothing in a draft goes live until you apply it.
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".
 - Chat: web links open in a new tab without a confirmation, like the Editor.

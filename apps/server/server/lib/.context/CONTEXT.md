@@ -80,7 +80,7 @@ represented as a fully-typed slot:
 
 ## Tool wiring
 
-`composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete tool catalogue lives in `domains/runtime/tools/`; `lib/` wires it through `wired-core-tools.ts` but does not own tool algorithms.
+`composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete tool catalogue lives in `domains/runtime/tools/`; `lib/model-tools/` binds the handlers to context, collab, file-policy and thread services (one file per tool, plus `tool-context.ts` for the shared per-call resolution and `file-access.ts` for the model's file-policy adapter) but does not own tool algorithms. Skill files and the `skill` tool live in runtime.
 
 Context-backed handlers resolve the active thread to the unified
 `ContextPort` with `resolveThreadContext(...)` + `contextPortForThread(...)`.
@@ -192,8 +192,7 @@ Domain API call → contract wire shape
   factories called from it. Domains must not import from `lib/`.
 - **Explicit required deps.** EventSink, CreditLedger,
   InterruptRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
-  explicit adapters. Tool names are gated per turn from advertised policy, not
-  a compose-time PermissionGate.
+  explicit adapters. Tool names are gated per turn from the tool policy.
 - **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
   fan-out is process-local even though journal rows are durable.
 - **Ownership gate on every route and WS subscribe.** Project workspace/thread gates run
