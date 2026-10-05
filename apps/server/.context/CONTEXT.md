@@ -202,10 +202,6 @@ same grammar; `server/lib/request-id.ts` wraps it with HTTP error mapping.
 Malformed HTTP IDs become 400 responses before any repository call; thread
 WebSocket messages deliberately report not-found.
 
-`UUID_SHAPE_PATTERN` in `context/uri.ts` is a URI disambiguator for UUID-shaped
-typos, not a second DB-UUID grammar. Actual acceptance still goes through
-`parseRequestId`.
-
 ### Route-core handlers
 
 Heavier routes keep testable route-core functions in `server/lib/*-route.ts`.

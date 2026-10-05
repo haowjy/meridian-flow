@@ -72,8 +72,8 @@ translate those to `title` and `description` in `ProjectDto`.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked
-  No Work as primary. Human Chat rebind and model `work.switch` remain explicit,
-  separate commands.
+  No Work as primary. Only the writer's Chat rebind changes a chat's Work; the
+  model's `work switch` never rebinds ([rule](../../runtime/.context/tools.md#permissions)).
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.

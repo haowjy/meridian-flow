@@ -10,7 +10,7 @@ host-provided ports. `read()` and `write()` are separate entry points; every
 Agent-edit edits a memory-only runtime Y.Doc. The host supplies durable journal
 ports and live/branch coordinators; the package never owns Postgres, Hocuspocus,
 routes, auth, or Meridian Work/Project concepts. The coordinator's document is
-this core's canonical world; it need not be the host's published live document.
+this core's canonical world; it need not be the host's live document.
 
 Runtime sync state is memory-only. The journal is the only durable record;
 restart/cold paths reconstruct from retained updates/checkpoints. Attribution is

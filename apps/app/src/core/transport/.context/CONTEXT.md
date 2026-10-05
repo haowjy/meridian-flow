@@ -35,10 +35,11 @@ connection state: a read-only room that drops offline stays read-only.
 `null` is what lets a named `edit` count. The Editor host's `readOnly` comes
 from its Works catalog, which can predate the room's first connect (a tab
 that loaded while the Work was archived and whose room connected after the
-unarchive). `EditorView` checks each named scope, and each activation,
-against its `editable` prop and calls `onRoomAccessMismatch` when they
-disagree; the host refreshes its Works catalog. Its own changes to `editable`
-never ask, so the tab that archives fetches nothing extra.
+unarchive). The host's `RoomScopeCatalogCheck`
+(`features/project/context/ContextEditorMountHost.tsx`) watches each named
+scope, and each activation, against its `readOnly` and refreshes its Works
+catalog when they disagree. Its own changes to `readOnly` never ask, so the
+tab that archives fetches nothing extra.
 
 A 4409 `access-changed` close (a Work archived, unarchived, deleted or
 restored) is not terminal. The transport freezes the room (`read`) and lets

@@ -241,8 +241,9 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`read`, `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
-`thread_report`, and `return_result`. `ask_user` and `helper-result` render
+`read`, `write`, `work`, `ls`, `search`, `skill`, `ask_user`, `spawn`,
+`thread_message`, `thread_report`, `thread_ls`, `thread_history`, and
+`return_result`. `ask_user` and `helper-result` render
 through custom cards; `spawn` and a foreground `thread_message` that ran have
 hidden tool rows because the retained invocation card owns their writer
 surface, while a queued or failed `thread_message` shows as its own row
@@ -263,9 +264,10 @@ Three conventions govern all renderers:
   the tool name with underscores replaced by spaces and its first letter
   capitalized — never arguments or paths. Tool arguments are developer detail
   that should not appear in the writer's chat surface.
-- **`toolVerb()` for status-aware tense.** Every registered renderer uses
-  `toolVerb(tool, completedNode, activeNode)` to conjugate the action label
-  by `tool.status` (`complete` vs `partial`). This keeps verb presentation
+- **`toolActivityPhrase()` for status-aware tense.** Every registered renderer
+  takes its label from `toolActivityPhrase(tool, writeMode)` in
+  `command-descriptor.ts`, which picks the descriptor's `complete` or `active`
+  phrase by `tool.status`. This keeps verb presentation
   consistent and prevents missing-tense bugs when adding new tools.
 - **Curated expand content.** Inline expansions render result rows, stream tails,
   or plain output — never raw JSON. If raw JSON is needed for debugging, it goes
@@ -289,7 +291,7 @@ Key files:
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
-| `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolVerb()` for tense and may show curated expand content. Mismatched keys don't error — a renamed tool silently falls through to the bare-name default, so verify registry keys against the server tool names when either side changes |
+| `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolActivityPhrase()` for tense and may show curated expand content. Mismatched keys don't error — a renamed tool silently falls through to the bare-name default, so verify registry keys against the server tool names when either side changes |
 | `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent ToolViews as sibling `ToolRow`s inside a fold |
 | `ActivityRow.tsx` | Timeline row primitive: 19px icon gutter where each row paints its own 1px rail segment (no sibling-aware CSS). The rail invariants live in its header comment |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning blocks inside a fold; text and artifacts are handled upstream |

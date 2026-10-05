@@ -41,9 +41,10 @@ because the new one has not finished materializing.
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds qualified `scratch://` context.
 Every project has one locked **No Work** row. Omitting a Work or sending
-explicit null binds the thread to that row. After creation, the writer or LLM
-may explicitly rebind the chat through one canonical operation; Work management
-and navigation never invoke it implicitly. Work-capable URIs use `@/` for No Work authority and
+explicit null binds the thread to that row. After creation, the writer may
+explicitly rebind the chat through one canonical operation; Work management
+and navigation never invoke it implicitly. The model can't rebind; see the
+[model's `work switch`][model-work-switch]. Work-capable URIs use `@/` for No Work authority and
 `@slug` for a named Work; internal IDs never appear in URI authority. The schema
 is `works` + `thread_works`.
 
@@ -145,3 +146,4 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions

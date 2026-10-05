@@ -28,7 +28,7 @@ Production wiring is split by side-effect boundary:
    env-driven provider ports: Drizzle repositories, event journal, object store,
    document sync, context port factory, Agent revision store/package fetcher/seeder,
    preferences, projects/works/users, billing, model gateway, model-request debug,
-   upload/figure/result services, and document access.
+   upload/figure/result services, and file access (the file policy).
 3. `composeAppServices()` in `compose.ts` is pure service graph wiring: it builds
    the ThreadEventHub, interrupt registry, tool registry/executor, late-bound
    turn runner, child-run coordinator, orchestrator, `threadRuntime`, and explicit
@@ -76,7 +76,7 @@ represented as a fully-typed slot:
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
 | `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |
 | `mockModelScript` | runtime | Scripted replies for the in-process mock model; null with real providers or when the debug gate (`APP_DEBUG`, never production) is closed |
-| `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
+| `runClaim` | runtime | The thread run claim (`RunClaim` port; Drizzle or in-memory): one live run per thread across replicas, with its lease and status |
 
 ## Tool wiring
 
@@ -90,8 +90,10 @@ free of Meridian URI schemes and database concerns.
 
 | Tool | Backend |
 |---|---|
-| `write` | Command grammar per [runtime tools](../../domains/runtime/.context/tools.md#policy-and-cost). Each call asks the [file policy](../../domains/file-policy/.context/CONTEXT.md) for a grant on its target (a container grant for a create) and passes it to the thread-peer pool; refusals render through `file-access-denial-copy.ts`. Handler resolves context paths to tracked document IDs and returns the package's versioned JSON result for successes and failures. With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch), the same schema for every agent. `actionPolicy` over the agent chain decides each command before the handler runs: Work changes are refused for a `read` chain, and the model's `switch` is always refused for now (it needs the writer's approval). `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and projects results through a model-facing identity boundary that strips UUIDs and translates canonical URIs to `@slug` form. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. Context-changing mutations call `deliverNow` after result persistence. The reversal planner covers create/update/delete; switch receipts are factual and have no inverse. Switch settles pre-switch staged writes and rotates the response scope before rebinding. |
+| `write` | Command grammar per [runtime tools](../../domains/runtime/.context/tools.md#policy-and-cost). Each call asks the [file policy](../../domains/file-policy/.context/CONTEXT.md) for a grant on its target (a container grant for a create) and passes it to the thread-peer pool; refusals render through `file-access-denial-copy.ts`. Handler resolves context paths to tracked document IDs and returns the package's typed `meridian.agent-edit.v1` result for successes and failures; `renderAgentEditResult` turns it into the model's text (D43). With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
+| `read` | `document-tools.ts` resolves the path, asks the file policy for read, and calls `readDocument` (`read-document.ts`), the one server read path shared with copy sources and references. Same typed result and text rendering as `write`. `skills://` paths go to the skill files. |
+| `skill` | Registered by runtime (`createSkillToolRegistrations`) and offered only when the thread can see a skill; returns what `read` returns for the skill's `SKILL.md`. |
+| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch), the same schema for every agent. `actionPolicy` over the agent chain decides each command before the handler runs: Work changes are refused for a `read` chain, and the model's `switch` never rebinds ([rule](../../domains/runtime/.context/tools.md#permissions)). `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and returns typed `ModelWork` results without UUIDs; `renderWorkResult` gives the model text. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. The reversal planner covers create/update/delete. |
 | `ls` | Lists the resolved unified `ContextPort` path/URI; `listAccess` drops unreadable rows and sets each row's `readonly`. Returns `{ uri, entries }` without IDs; the model reads it as plain text (D61). Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `search` | Searches the resolved unified `ContextPort` scope; hits go through `listAccess` like `ls`. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
 | `ask_user` | Registered but never advertised until its rework ([#601](https://github.com/haowjy/meridian-flow/issues/601)); the handler creates an interrupt component block and keeps the assistant turn interruptible/resumable. |
@@ -118,7 +120,6 @@ over HTTP and for Yjs rooms, is the [file policy](../../domains/file-policy/.con
 | `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
 | `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Admission asks the file policy for `edit`, then `read`; a `read` room is read-only. Each edit-room frame runs under its grant, and a refused frame or a Work access change closes with 4409. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
 | `yjs-room-access.ts` | Admitted rooms indexed by the Works their access depends on, so a Work's `FileAccessChanges` event closes exactly its scratch and draft rooms. |
-| `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
 
 For typed Yjs admission refusals, `YjsConnectionContext.closeTransport` is the
 physical-close seam. `refuseSchemaAdmission()` emits the correlated
@@ -162,7 +163,7 @@ Writer-origin thread Work rebinds record a durable `work_switched` Notice inside
 the binding transaction. It is appended after the next writer message for one
 model request while the independent hidden `<system_update>` keeps the new Work
 context authoritative on later requests. Selecting the previous Work is an
-ordinary reverse rebind. Model-origin `work.switch` does not emit the notice.
+ordinary reverse rebind.
 
 ## Request flow (HTTP)
 
