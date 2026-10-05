@@ -31,13 +31,18 @@ import { usePostApplyDraftGroupProjections } from "@/features/project/draft-appl
  */
 type ConfirmationPhase = "checking" | "ready" | "submitting" | "failed" | "archivedMidway";
 
+/**
+ * A plain switch (nothing pending locally) stays on the choices page, failure
+ * included. The confirmation page always has a count: the local one until the
+ * server's arrives, so a failed first check still names what is pending.
+ */
 type WriteModeInteraction =
-  | { workId: string; page: "choices"; phase: "idle" | "switching" }
+  | { workId: string; page: "choices"; phase: "idle" | "switching" | "failed" }
   | {
       workId: string;
       page: "confirmation";
       phase: ConfirmationPhase;
-      count: number | null;
+      count: number;
       choice: PendingChangesChoice | null;
     };
 
@@ -71,7 +76,6 @@ export function useSelectedWorkWriteModeToolbarControl({
     interaction.phase === "switching" ||
     interaction.phase === "checking" ||
     interaction.phase === "submitting";
-  const serverCount = confirmation?.count ?? null;
   const archived = isWorkArchived(work) || confirmation?.phase === "archivedMidway";
   const loaded = drafts.groups !== null;
   const requestAuto = async (
@@ -79,13 +83,15 @@ export function useSelectedWorkWriteModeToolbarControl({
     settle: (outcome: "close" | "stay") => void,
   ) => {
     if (requesting) return;
-    const localConfirmation = choice === null && work.aiWriteMode === "draft" && groups.length > 0;
+    const confirming = confirmation !== null || groups.length > 0;
+    const confirm = (
+      phase: ConfirmationPhase,
+      count = confirmation?.count ?? groups.length,
+    ): WriteModeInteraction => ({ workId: work.id, page: "confirmation", phase, count, choice });
     setInteraction(
-      choice !== null
-        ? { workId: work.id, page: "confirmation", phase: "submitting", count: serverCount, choice }
-        : localConfirmation
-          ? { workId: work.id, page: "confirmation", phase: "checking", count: null, choice }
-          : { workId: work.id, page: "choices", phase: "switching" },
+      confirming
+        ? confirm(choice === null ? "checking" : "submitting")
+        : { workId: work.id, page: "choices", phase: "switching" },
     );
     const outcome = await update
       .mutateAsync(
@@ -99,31 +105,23 @@ export function useSelectedWorkWriteModeToolbarControl({
             : ("failed" as const),
       );
     if (outcome === "archived" || outcome === "failed") {
-      setInteraction({
-        workId: work.id,
-        page: "confirmation",
-        phase: outcome === "archived" ? "archivedMidway" : "failed",
-        count: serverCount,
-        choice,
-      });
+      setInteraction(
+        confirming
+          ? confirm(outcome === "archived" ? "archivedMidway" : "failed")
+          : { workId: work.id, page: "choices", phase: "failed" },
+      );
       settle("stay");
     } else if (outcome.status === "updated") {
       setInteraction(choices(work.id));
       settle("close");
     } else {
       // A chosen request that still asks for confirmation didn't take the choice.
-      setInteraction({
-        workId: work.id,
-        page: "confirmation",
-        phase: choice === null ? "ready" : "failed",
-        count: outcome.pendingChangeCount,
-        choice,
-      });
+      setInteraction(confirm(choice === null ? "ready" : "failed", outcome.pendingChangeCount));
       settle("stay");
     }
   };
   const chooseDraft = (terminalClose: () => void) => {
-    update.mutate("draft");
+    update.mutate({ aiWriteMode: "draft" });
     setInteraction(choices(work.id));
     terminalClose();
   };
@@ -136,18 +134,7 @@ export function useSelectedWorkWriteModeToolbarControl({
   const choicesDisabled = update.isPending || requesting;
   const localizedValue = value === "draft" ? t`Draft` : t`Auto-apply`;
   const failed = confirmation?.phase === "failed";
-  // Checking is its own page so the arriving count enters the dialog and
-  // focuses its first choice instead of leaving focus on the dialog itself.
-  const pageId =
-    confirmation === null
-      ? "choices"
-      : confirmation.phase === "checking"
-        ? "confirmation-checking"
-        : archived
-          ? "confirmation-archived"
-          : failed
-            ? "confirmation-error"
-            : "confirmation";
+  const pageId = writeModePageId(confirmation?.phase ?? null, archived);
   const focus =
     confirmation === null
       ? {
@@ -165,7 +152,7 @@ export function useSelectedWorkWriteModeToolbarControl({
         }
       : {
           pageId,
-          repairRevision: [confirmation.phase, serverCount, archived].join(":"),
+          repairRevision: [confirmation.phase, confirmation.count, archived].join(":"),
           // Keep is the choice that changes nothing already written, so it takes
           // focus first; after a failed Apply, focus stays on the retry.
           candidates:
@@ -186,12 +173,15 @@ export function useSelectedWorkWriteModeToolbarControl({
         <WriteModeChoices
           value={value}
           disabled={choicesDisabled}
+          failed={interaction.phase === "failed"}
           loaded={loaded}
           pending={loaded ? groups.length : null}
           draftRef={draftRef}
           directRef={directRef}
           onDraft={() => chooseDraft(context.terminalClose)}
           onAuto={() => {
+            // Already auto-apply: there is nothing to switch, even with kept changes.
+            if (value === "direct") return close(context.terminalClose);
             const lock = context.beginBlocking();
             if (lock.kind === "started") void requestAuto(null, lock.settle);
           }}
@@ -208,7 +198,7 @@ export function useSelectedWorkWriteModeToolbarControl({
         archived={archived}
         phase={confirmation.phase}
         choice={confirmation.choice}
-        count={serverCount}
+        count={confirmation.count}
         applyRef={applyRef}
         keepRef={keepRef}
         cancelRef={cancelRef}
@@ -245,9 +235,21 @@ export function useSelectedWorkWriteModeToolbarControl({
   };
 }
 
+/**
+ * Checking is its own page so the arriving count enters the dialog and
+ * focuses its first choice instead of leaving focus on the dialog itself.
+ */
+function writeModePageId(phase: ConfirmationPhase | null, archived: boolean): string {
+  if (phase === null) return "choices";
+  if (phase === "checking") return "confirmation-checking";
+  if (archived) return "confirmation-archived";
+  return phase === "failed" ? "confirmation-error" : "confirmation";
+}
+
 function WriteModeChoices({
   value,
   disabled,
+  failed,
   loaded,
   pending,
   draftRef,
@@ -257,6 +259,8 @@ function WriteModeChoices({
 }: {
   value: AiWriteMode;
   disabled: boolean;
+  /** The last plain switch failed; the writer is still in Draft. */
+  failed: boolean;
   loaded: boolean;
   pending: number | null;
   draftRef: RefObject<HTMLButtonElement | null>;
@@ -265,37 +269,47 @@ function WriteModeChoices({
   onAuto(): void;
 }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label={t`AI write mode`}
-      className="space-y-[var(--chat-space-row)]"
-    >
-      <Button
-        ref={draftRef}
-        role="radio"
-        aria-checked={value === "draft"}
-        variant="ghost"
-        className={dropdownRowVariants({ selected: value === "draft" })}
-        disabled={disabled || !loaded}
-        onClick={onDraft}
+    <>
+      <div
+        role="radiogroup"
+        aria-label={t`AI write mode`}
+        className="space-y-[var(--chat-space-row)]"
       >
-        <span className="min-w-0 flex-1 text-left">
-          <Trans>Draft</Trans>
-        </span>
-        {pending ? <span className="shrink-0">({pending})</span> : null}
-      </Button>
-      <Button
-        ref={directRef}
-        role="radio"
-        aria-checked={value === "direct"}
-        variant="ghost"
-        className={dropdownRowVariants({ selected: value === "direct" })}
-        disabled={disabled}
-        onClick={onAuto}
-      >
-        <Trans>Auto-apply</Trans>
-      </Button>
-    </div>
+        <Button
+          ref={draftRef}
+          role="radio"
+          aria-checked={value === "draft"}
+          variant="ghost"
+          className={dropdownRowVariants({ selected: value === "draft" })}
+          disabled={disabled || !loaded}
+          onClick={onDraft}
+        >
+          <span className="min-w-0 flex-1 text-left">
+            <Trans>Draft</Trans>
+          </span>
+          {pending ? <span className="shrink-0">({pending})</span> : null}
+        </Button>
+        <Button
+          ref={directRef}
+          role="radio"
+          aria-checked={value === "direct"}
+          variant="ghost"
+          className={dropdownRowVariants({ selected: value === "direct" })}
+          disabled={disabled}
+          onClick={onAuto}
+        >
+          <Trans>Auto-apply</Trans>
+        </Button>
+      </div>
+      {failed ? (
+        <p
+          className="mt-[var(--chat-space-inline)] px-[var(--chat-space-inline)] text-caption text-destructive"
+          role="alert"
+        >
+          <Trans>Couldn't switch, so you're still in Draft.</Trans>
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -321,7 +335,7 @@ function Confirmation({
   archived: boolean;
   phase: ConfirmationPhase;
   choice: PendingChangesChoice | null;
-  count: number | null;
+  count: number;
   applyRef: RefObject<HTMLButtonElement | null>;
   keepRef: RefObject<HTMLButtonElement | null>;
   cancelRef: RefObject<HTMLButtonElement | null>;
@@ -330,11 +344,7 @@ function Confirmation({
   onKeep(): void;
 }) {
   const busy = phase === "checking" || phase === "submitting";
-  // A failed first check has no count, but either choice is still a valid retry.
-  const choosable = !busy && (count !== null || phase === "failed" || phase === "archivedMidway");
   const name = work.name;
-  // An unknown count reads as several: "them" fits a retry after a failed check.
-  const changes = count ?? 2;
   return (
     <div className="px-[var(--chat-space-inline)]">
       <h2 className="font-semibold">
@@ -370,29 +380,23 @@ function Confirmation({
       </p>
       <div className="mt-[var(--chat-space-block)] flex flex-col gap-[var(--chat-space-inline)]">
         {archived ? (
-          <Button ref={keepRef} size="sm" disabled={!choosable} onClick={onKeep}>
+          <Button ref={keepRef} size="sm" disabled={busy} onClick={onKeep}>
             {phase === "submitting" ? <Trans>Switching…</Trans> : <Trans>Switch</Trans>}
           </Button>
         ) : (
           <>
-            <Button ref={applyRef} size="sm" disabled={!choosable} onClick={onApply}>
+            <Button ref={applyRef} size="sm" disabled={busy} onClick={onApply}>
               {phase === "submitting" && choice === "apply" ? (
                 <Trans>Applying…</Trans>
               ) : (
-                <Plural value={changes} one="Apply it now" other="Apply them now" />
+                <Plural value={count} one="Apply it now" other="Apply them now" />
               )}
             </Button>
-            <Button
-              ref={keepRef}
-              variant="secondary"
-              size="sm"
-              disabled={!choosable}
-              onClick={onKeep}
-            >
+            <Button ref={keepRef} variant="secondary" size="sm" disabled={busy} onClick={onKeep}>
               {phase === "submitting" && choice === "keep" ? (
                 <Trans>Switching…</Trans>
               ) : (
-                <Plural value={changes} one="Keep it for review" other="Keep them for review" />
+                <Plural value={count} one="Keep it for review" other="Keep them for review" />
               )}
             </Button>
           </>
@@ -413,32 +417,16 @@ function SwitchSummary({
 }: {
   work: Work;
   archived: boolean;
-  count: number | null;
+  count: number;
 }) {
   const name = work.name;
   if (archived) {
-    return count === null ? (
-      <Trans>
-        {name} is archived, so its pending changes stay frozen. Unarchive it to review them. AI
-        changes to project files will go live right away.
-      </Trans>
-    ) : (
+    return (
       <Plural
         value={count}
         one={`${name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.`}
         other={`${name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.`}
       />
-    );
-  }
-  if (count === null) {
-    return work.isNoWork ? (
-      <Trans>
-        You have pending changes waiting for review. From now on, AI changes go live right away.
-      </Trans>
-    ) : (
-      <Trans>
-        {name} has pending changes waiting for review. From now on, AI changes go live right away.
-      </Trans>
     );
   }
   return work.isNoWork ? (
