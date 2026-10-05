@@ -216,6 +216,8 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "io_error",
           message: `Yjs document not found: ${error.documentId}`,
         };
+      case "stale_generation":
+        return { code: "io_error", message: `Document generation changed: ${error.documentId}` };
       case "checkpoint_not_found":
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
@@ -256,8 +258,6 @@ export class ContextFS implements ContextSchemeAdapter {
             await this.documentCreation.ensureDocument(documentId);
             return "";
           }
-          const persisted = await this.persistProjection(documentId, input.content);
-          if (!persisted.ok) throw new DocumentCreationFault(persisted.error);
           const provenance = input.options?.origin;
           const origin: DocumentSeedOrigin =
             provenance?.type === "import"
@@ -310,17 +310,6 @@ export class ContextFS implements ContextSchemeAdapter {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
       throw error;
     }
-  }
-
-  private async persistProjection(
-    documentId: string,
-    markdown: string,
-  ): Promise<Result<void, AdapterFault>> {
-    if (await this.store.updateDocumentProjection(documentId, markdown)) return Ok(undefined);
-    return Err({
-      code: "io_error",
-      message: `Document disappeared while persisting its text projection: ${documentId}`,
-    });
   }
 
   /** Resolve a folder chain without creating; `MISSING` if any segment is absent. */
@@ -461,8 +450,6 @@ export class ContextFS implements ContextSchemeAdapter {
       provenance: options?.origin,
     });
     if (!write.ok) return write;
-    const persisted = await this.persistProjection(existing.id, write.markdown);
-    if (!persisted.ok) return persisted;
     return Ok({
       documentId: existing.id,
       markdown: write.markdown,
@@ -711,8 +698,6 @@ export class ContextFS implements ContextSchemeAdapter {
     });
     if (!edited.ok) return edited;
 
-    const persisted = await this.persistProjection(doc.id, edited.markdown);
-    if (!persisted.ok) return persisted;
     return Ok({
       documentId: doc.id,
       markdown: edited.markdown,

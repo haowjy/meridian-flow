@@ -12,7 +12,10 @@ generation where needed.
 
 Work draft capture, redo, and Apply require an active Work under the shared
 lifecycle row lock before durable mutation. Archive preserves captured evidence
-and permits Discard cleanup; it does not permit new capture or Apply. Replaying
+and permits no new capture or Apply. Full Discard
+(`adapters/drizzle-work-draft-discard.ts`) also requires an active Work;
+selective Discard (`discardSelected` in `domain/branch-review-operations.ts`)
+does not check Work lifecycle. Replaying
 an already committed push returns its durable receipt without reauthorizing a
 new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset
@@ -47,10 +50,12 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
-Live checkpoints are a separate cadence from those pulls: auto every 100 updates
-appended to the log (`reason: "auto"`), and Hocuspocus `onStoreDocument` at
-`debounce: 2000` / `maxDebounce: 10000` plus last-client disconnect
-(`reason: "store"`).
+Live checkpoints are a separate cadence from those pulls. They come from four
+sources: the initialize-only seed (`up_to_seq = 0`); Hocuspocus
+`onStoreDocument` at `debounce: 2000` / `maxDebounce: 10000` plus last-client
+disconnect; explicit `CollabDomain.checkpoint`; and `journal.compact`. Compaction
+is implemented but has no production caller, so live journal rows are never
+deleted.
 
 **Releasing a live room never waits on a database lock.** Closing the last
 connection runs `onStoreDocument` inline in the releaser's async context, often
@@ -170,8 +175,9 @@ push until commit.
   lineage never duplicates block diffs.
 
 Human-origin edits produce one journal row per keystroke. A 50-character
-sentence becomes ~50 rows / ~935 bytes. This is expected: checkpoint compaction
-recovers storage, and journal row counts are not equivalent to semantic edits.
+sentence becomes ~50 rows / ~935 bytes. Journal row counts are not equivalent
+to semantic edits. Checkpoint compaction would recover the storage, but it has
+no production caller.
 Reconnect frames already contained by the live document are acknowledged but
 do not enter the journal or trigger post-persistence hooks.
 

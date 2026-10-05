@@ -25,6 +25,8 @@ function syncFault(error: SyncError): AdapterFault {
         code: "io_error",
         message: `Yjs document not found: ${error.documentId}`,
       };
+    case "stale_generation":
+      return { code: "io_error", message: `Document generation changed: ${error.documentId}` };
     case "checkpoint_not_found":
       return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
     case "corrupt_state":

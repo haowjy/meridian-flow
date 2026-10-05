@@ -322,9 +322,7 @@ export type BranchPushServiceInput = {
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
-  journal: UpdateJournal & {
-    readForReconstruction?: UpdateJournal["read"];
-  };
+  journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: MarkupCodec;

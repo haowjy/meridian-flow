@@ -579,7 +579,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), manifest.documentId),
       ).resolves.toBeNull();
       await expect(
-        contentStore.upsertDocument({
+        contentStore.createDocument({
           id: "00000000-0000-4000-8000-000000000607" as never,
           folderId: null,
           name: ".manifest",

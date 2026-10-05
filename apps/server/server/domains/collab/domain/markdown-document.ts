@@ -33,6 +33,7 @@ import type {
   SyncError,
   UpdateOrigin,
 } from "../contracts.js";
+import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
@@ -232,9 +233,18 @@ export function createMarkdownDocumentEngine(
     let seq = 0;
     await admitFreshAuthorship(
       {
-        readMutationTarget: () => ({ documentId, generation: 0n, doc: liveDoc }),
+        readMutationTarget: () => ({
+          documentId,
+          generation: documentAuthority(liveDoc).generation,
+          doc: liveDoc,
+        }),
         admitImmediate: async ({ update: admittedUpdate }) => {
-          seq = await deps.journal.append(documentId, admittedUpdate, meta);
+          seq = await deps.journal.append(
+            documentId,
+            admittedUpdate,
+            meta,
+            documentAuthority(liveDoc),
+          );
           Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
           return { sequence: BigInt(seq), joined: 0 };
         },
@@ -596,6 +606,8 @@ export function syncErrorMessage(error: SyncError): string {
   switch (error.code) {
     case "not_found":
       return `Document not found: ${error.documentId}`;
+    case "stale_generation":
+      return `Document generation changed: ${error.documentId}`;
     case "checkpoint_not_found":
       return `Checkpoint not found: ${error.checkpointId}`;
     case "corrupt_state":
