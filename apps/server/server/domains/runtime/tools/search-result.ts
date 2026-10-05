@@ -20,6 +20,8 @@ export interface SearchHit {
 
 /** Characters kept either side of the match. */
 const WINDOW = 120;
+/** A cut that would drop fewer characters than this keeps them instead. */
+const SLACK = 24;
 
 export const CLEARED_SEARCH_PASSAGES =
   "[Cleared at compaction: changed since this search; read it for current text]";
@@ -96,8 +98,9 @@ function around(excerpt: string, pattern: string): string {
   const needles = [pattern, markdownPlainText(pattern)].map((needle) => needle.toLowerCase());
   const needle = needles.find((candidate) => candidate && lower.includes(candidate)) ?? "";
   const at = needle ? lower.indexOf(needle) : 0;
-  let start = Math.max(0, at - WINDOW);
-  let end = Math.min(flat.length, at + needle.length + WINDOW);
+  let start = at - WINDOW > SLACK ? at - WINDOW : 0;
+  let end =
+    flat.length - (at + needle.length + WINDOW) > SLACK ? at + needle.length + WINDOW : flat.length;
   if (start > 0) {
     const space = flat.indexOf(" ", start);
     if (space >= 0 && space < at) start = space + 1;

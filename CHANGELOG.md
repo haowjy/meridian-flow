@@ -44,7 +44,8 @@
 
 ## [Unreleased]
 
-- `ls` returns plain text to the model: the folder's URI, then one line per entry with `(read-only)` and a non-text file's kind only when they apply; `details: true` adds words (text) or file size (uploads) and when each file was last edited.
+- `ls` returns plain text to the model: the folder's URI, then one line per entry with `(read-only)` and a non-text file's kind only when they apply; `verbose: true` adds words (text) or file size (uploads) and when each file was last edited.
+- `work` and `search` return short text to the model, and every tool refusal reads as its message and code instead of JSON: one line per Work, `search` as `hash|excerpt` around each match, a `read` outline with each heading's `#slug`; `verbose: true` on `work` and `search` adds dates and whole blocks.
 - `read` on a `skills://` markdown file takes `#heading` for one section and `format: "outline"` for its headings, with the same heading slugs as documents; `in` and `around` are `invalid_arguments`, since skill files have no block hashes. The built-in skills no longer name files or skills that don't ship.
 - An Agent profile's `disallowed-tools` naming an edit tool (`Edit`, `apply_patch`) is ignored like any tool Flow doesn't have; in `tools` it still fails, naming `permission`.
 - Development: migration 0026 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
