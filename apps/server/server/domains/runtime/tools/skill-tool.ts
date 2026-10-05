@@ -8,6 +8,7 @@ import {
   documentNotFoundMessage,
   markdownSections,
   modelResult,
+  normalizeRequestedSlug,
   type ReadToolInput,
   readCall,
   sectionNotFoundMessage,
@@ -124,7 +125,8 @@ export async function readSkill(deps: SkillFilesDeps, threadId: string, input: R
     ]);
   }
   const { lines, sections } = markdownSections(file.text);
-  const section = fragment === undefined ? null : sections.find(({ slug }) => slug === fragment);
+  const wanted = fragment === undefined ? undefined : normalizeRequestedSlug(fragment);
+  const section = wanted === undefined ? null : sections.find(({ slug }) => slug === wanted);
   if (section === undefined) {
     return readError("not_found", sectionNotFoundMessage(fragment ?? ""), path);
   }

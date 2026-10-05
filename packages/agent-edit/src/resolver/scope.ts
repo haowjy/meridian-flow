@@ -1,7 +1,12 @@
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { DocumentModel } from "../ports/model.js";
 import { locateBlockByHash } from "./hash-locator.js";
-import { headingSlugs, sectionEndIndex, sectionNotFoundMessage } from "./heading-sections.js";
+import {
+  headingSlugs,
+  normalizeRequestedSlug,
+  sectionEndIndex,
+  sectionNotFoundMessage,
+} from "./heading-sections.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
 
@@ -204,7 +209,8 @@ function blockIndexForHash(ctx: ScopeContext, hash: string): BlockIndexResult {
 
 function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
   const headings = headingSlugEntries(ctx);
-  const found = headings.find((entry) => entry.slug === slug);
+  const wanted = normalizeRequestedSlug(slug);
+  const found = headings.find((entry) => entry.slug === wanted);
   if (!found) return notFound(sectionNotFoundMessage(slug));
   return sectionFromHeading(ctx, found.index);
 }
