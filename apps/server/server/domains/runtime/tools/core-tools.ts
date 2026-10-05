@@ -35,6 +35,7 @@ import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-argu
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import { renderWorkResult } from "./work-result.js";
 
 /** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
 const WorkRefSchema = z
@@ -79,16 +80,25 @@ const WorkStatusSchema = z
     return status;
   });
 
+const WorkVerboseSchema = z
+  .boolean()
+  .describe("Add dates. Leave it off unless you need them.")
+  .optional();
+
 const WorkSelectorSchema = z.object({
   work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
 });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
-    .object({ command: z.literal("list"), archived: z.boolean().optional() })
+    .object({
+      command: z.literal("list"),
+      archived: z.boolean().optional(),
+      verbose: WorkVerboseSchema,
+    })
     .strict()
     .describe("List Works: active, or archived when archived is true."),
-  WorkSelectorSchema.extend({ command: z.literal("show") })
+  WorkSelectorSchema.extend({ command: z.literal("show"), verbose: WorkVerboseSchema })
     .strict()
     .describe("Show one Work."),
   z
@@ -263,6 +273,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
+      renderResult: renderWorkResult,
     },
     {
       source: "core",

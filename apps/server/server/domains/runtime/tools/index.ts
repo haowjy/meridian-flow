@@ -65,3 +65,4 @@ export type {
   ToolRegistration,
   ToolRegistry,
 } from "./types.js";
+export type { ModelWork, WorkShowResult } from "./work-result.js";

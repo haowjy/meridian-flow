@@ -170,23 +170,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const switchTo = async (work: string) =>
         (await call("work", { command: "switch", work })).output;
 
-      expect(await switchTo("ghost")).toMatchObject({
-        code: "work_not_found",
-        message: 'Unknown Work @ghost. List Works with work({"command":"list"}).',
-      });
-      expect(await switchTo("frozen")).toMatchObject({
-        code: "work_archived",
-        message:
-          "Work @frozen is archived, so this chat can't switch to it until the user unarchives it.",
-      });
-      expect(await switchTo("@rewrite")).toEqual({
-        message: "This chat is already in @rewrite.",
-      });
-      expect(await switchTo("other")).toMatchObject({
-        code: "permission_denied",
-        message:
-          "Switching this chat's Work needs the user's approval. Ask them to switch it to @other from the chat.",
-      });
+      // D65: a refusal reaches the model as its message and code.
+      expect(await switchTo("ghost")).toBe(
+        'Unknown Work @ghost. List Works with work({"command":"list"}). (work_not_found)',
+      );
+      expect(await switchTo("frozen")).toBe(
+        "Work @frozen is archived, so this chat can't switch to it until the user unarchives it. (work_archived)",
+      );
+      expect(await switchTo("@rewrite")).toBe("This chat is already in @rewrite.");
+      expect(await switchTo("other")).toBe(
+        "Switching this chat's Work needs the user's approval. Ask them to switch it to @other from the chat. (permission_denied)",
+      );
     });
 
     it("gives a read agent write, refuses the manuscript and Work changes, and lets it write its own scratch", async () => {
@@ -218,11 +212,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const archive = await call("work", { command: "archive", work: "rewrite" });
       expect(archive.isError).toBe(true);
-      expect(archive.output).toMatchObject({
-        code: "permission_denied",
-        message: "This agent can read but can't change Works. Ask the user to make this change.",
-        details: { reason: "action_denied" },
-      });
+      expect(archive.output).toBe(
+        "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
+      );
+      expect(archive.result).toMatchObject({ details: { reason: "action_denied" } });
 
       const root = listed(await call("ls", {}));
       expect(root).toEqual(

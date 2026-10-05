@@ -89,9 +89,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function formatUtc(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
+/** A time as the model reads it: minutes, in UTC. */
+export function formatUtc(value: string | Date): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
   const utc = date.toISOString();
   return `${utc.slice(0, 10)} ${utc.slice(11, 16)} UTC`;
 }
