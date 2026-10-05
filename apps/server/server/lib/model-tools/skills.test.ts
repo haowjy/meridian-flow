@@ -115,14 +115,12 @@ describe("skills:// at the model tools", () => {
 
   it("lists only the skills the binding offers", async () => {
     const call = await criticTools();
-    expect(await call("ls", { path: "skills://" })).toEqual([
-      { uri: "skills://story-review", kind: "directory", readonly: true },
-      { uri: "skills://writing-principles", kind: "directory", readonly: true },
-    ]);
-    expect(await call("ls", { path: "skills://story-review" })).toEqual([
-      { uri: "skills://story-review/resources", kind: "directory", readonly: true },
-      { uri: "skills://story-review/SKILL.md", kind: "file", readonly: true },
-    ]);
+    expect(await call("ls", { path: "skills://" })).toBe(
+      "skills://\n  story-review/ (read-only)\n  writing-principles/ (read-only)",
+    );
+    expect(await call("ls", { path: "skills://story-review" })).toBe(
+      "skills://story-review/\n  resources/ (read-only)\n  SKILL.md (read-only)",
+    );
   });
 
   it("answers an unbound skill and a path out of the folder as not found", async () => {
@@ -135,7 +133,9 @@ describe("skills:// at the model tools", () => {
         `status: document_not_found; path: ${path}\n\nFile not found. Check the path with \`ls\`.`,
       );
     }
-    expect(await call("ls", { path: "skills://creative-writing-modes" })).toEqual([]);
+    expect(await call("ls", { path: "skills://creative-writing-modes" })).toBe(
+      "skills://creative-writing-modes/\n  (empty)",
+    );
   });
 
   it("refuses writes to skills://", async () => {

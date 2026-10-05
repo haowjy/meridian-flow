@@ -21,7 +21,7 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
-import { createDocumentCreationAggregate } from "../../../collab/index.js";
+import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
@@ -46,6 +46,7 @@ import type { ContextCommandTransaction } from "../../ports/context-command-tran
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextCreateUntitledDocumentOptions,
+  ContextListOptions,
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
@@ -766,7 +767,10 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  async list(path: string): Promise<Result<AdapterFileEntry[], AdapterFault>> {
+  async list(
+    path: string,
+    options?: ContextListOptions,
+  ): Promise<Result<AdapterFileEntry[], AdapterFault>> {
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folderId = await this.findFolderId(path.split("/").filter(Boolean));
     if (folderId === MISSING) return Ok([]);
@@ -799,6 +803,8 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
+              // The listing query already loaded the projection, so a count costs no query.
+              ...(options?.wordCounts ? { wordCount: countWords(doc.markdown) } : {}),
             }
           : {
               editable: false as const,
