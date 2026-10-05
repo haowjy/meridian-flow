@@ -495,9 +495,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         new Map([[authority.workSlug, authority]]),
       );
 
-      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toEqual({
+      await expect(port.list(`scratch://@${authority.workSlug}/`)).resolves.toMatchObject({
         ok: true,
-        value: [],
+        value: { entries: [] },
       });
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, WORK_ID)),

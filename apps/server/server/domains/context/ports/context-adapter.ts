@@ -12,6 +12,7 @@ import type {
   ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
+  ContextListOptions,
   ContextReadResult,
   ContextScheme,
   ContextWriteBinaryOptions,
@@ -154,7 +155,10 @@ export interface ContextSchemeAdapter {
     path: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
-  list(path: string): Promise<Result<AdapterFileEntry[], AdapterFault>>;
+  list(
+    path: string,
+    options?: ContextListOptions,
+  ): Promise<Result<AdapterFileEntry[], AdapterFault>>;
   mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
   search(query: string, pathPrefix?: string): Promise<Result<AdapterSearchHit[], AdapterFault>>;
 }

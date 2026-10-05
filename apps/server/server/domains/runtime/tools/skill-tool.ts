@@ -157,7 +157,9 @@ export async function skillsRootEntries(
   threadId: string,
 ): Promise<SkillListEntry[]> {
   const skills = await listSkillDir(deps, threadId, SKILLS_URI_ROOT);
-  return skills.length > 0 ? [{ kind: "directory", uri: SKILLS_URI_ROOT, readonly: true }] : [];
+  return skills.entries.length > 0
+    ? [{ kind: "directory", uri: SKILLS_URI_ROOT, readonly: true }]
+    : [];
 }
 
 /** A `write` naming a `skills://` file as its target or its `from` is refused; null otherwise. */

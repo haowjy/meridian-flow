@@ -174,7 +174,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const loreHits = await call("search", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore.md");
       const listedLive = await call("ls", { path: "kb://", version: "live" });
-      expect(text(listedLive)).not.toContain("kb://lore.md");
+      expect(text(listedLive)).toMatch(/^kb:\/\//);
+      expect(text(listedLive)).not.toContain("lore.md");
     });
 
     // D40: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
