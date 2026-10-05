@@ -300,6 +300,10 @@ msgstr "{matches} results in {inDocuments}"
 msgid "{minutes}m"
 msgstr "{minutes}m"
 
+#: src/features/chat/document-display-name.ts
+msgid "{name} ({skill})"
+msgstr "{name} ({skill})"
+
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "{name} (in the trash)"
 msgstr "{name} (in the trash)"

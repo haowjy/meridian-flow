@@ -300,6 +300,10 @@ msgstr ""
 msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
+#: src/features/chat/document-display-name.ts
+msgid "{name} ({skill})"
+msgstr ""
+
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "{name} (in the trash)"
 msgstr ""
