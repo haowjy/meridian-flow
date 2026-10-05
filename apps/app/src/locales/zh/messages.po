@@ -566,6 +566,10 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Back online (all changes saved)"
+msgstr ""
+
 #: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr ""
