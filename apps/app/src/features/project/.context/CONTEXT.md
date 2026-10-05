@@ -257,8 +257,9 @@ management and navigation never rebind a chat implicitly.
 
 The desktop rail contains Manuscript, Knowledge Base, User and Unfiled. Chat
 resources have no Editor sections or resource tabs. Editor Work remains a route
-context for draft review, independent of later Chat changes. Null is shared
-scope; loading/error is never converted to null. Invalid optional query selectors
+context for draft review, independent of later Chat changes. Ready Editor scopes
+use a Work row id, including No Work; null means the Editor is unresolved, or
+a resource has project scope with no Work owner. Invalid optional query selectors
 are cleared without blocking documents; required path identities remain errors.
 Archived Work identity remains manageable but cannot authorize content mutation.
 `isWorkArchived` (`@meridian/contracts/works`) is the one archived test. An
@@ -432,7 +433,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 ?settings=<section> on any screen; ?results on a chat or the Editor
 ```
 
-`ProjectDestination` never carries a Work; the address's `work` is the one Work
+A context `ProjectDestination` never carries a Work; the address's `work` is the one Work
 selection for every scheme. For project schemes (manuscript, kb, user,
 unfiled) `?work` is the editing context: absent, empty (no Work) or an id. For
 Scratch and Uploads (`workIsIdentity`) `?work` is the resource's identity:
@@ -449,7 +450,7 @@ confirmation never replaces the browser path. Browser paths never contain
 Work slugs or `@`; those remain in the model's context-URI address space.
 `routing/work-route.ts`'s `resolveRouteWork` is the one resolver from an
 address selection to a `RouteWorkResolution` (present, creating, unresolved or
-none) for both the route and the Editor; `routeWorkId()` is the one route-Work
+absent) for both the route and the Editor; `routeWorkId()` is the one route-Work
 identity. The account-scoped `client/creation/creation-registry` owns Project
 creation records (`pending`, `failed`, or `confirmed`); the create mutation drops
 its confirmed record once the route has reloaded. Project route loading
@@ -481,8 +482,11 @@ entry's history state when the URL is readable. Their exact local tab, not a
 server path lookup, owns selection until departure: an unacknowledged address
 may still be missing or occupied by another document. Background namespace
 rejection therefore stays on the acted-on document's existing identity field.
-Work-scoped tab ownership uses the named Work id or null for No Work, even when
-the public document route carries the No Work row id.
+Work-scoped tab ownership and the ready Editor Work use the Work row id, including
+the locked No Work row. Only `workSelectionFor` spells that row as `none` for
+project-content addresses; Scratch and Uploads addresses carry the row id.
+An omitted open-document Work keeps the current Editor Work. Unresolved Editor
+Work never creates a locator or an empty selection-map key.
 
 A project address has explicit selections, not defaults: absent, no-Work,
 Work id, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.

@@ -3,7 +3,7 @@
  *
  * Keeps desktop and phone context navigation on the same tab construction path
  * so file classification, schema type, and viewer metadata cannot drift between
- * shells.
+ * shells. Work-scoped tabs retain their owner row id, including No Work.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";

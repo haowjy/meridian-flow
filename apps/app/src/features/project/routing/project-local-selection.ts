@@ -45,7 +45,7 @@ export function selectEditorEntryTab(input: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   recentRoutes: readonly WorkingSetRoute[];
-  /** The Editor being entered: its Work, or null for No Work. */
+  /** The Editor being entered: its row id, or null while unresolved. */
   workId: string | null;
 }): ContextTab | null {
   const eligible = input.tabs.filter((tab) => isEditorTab(tab, input.workId));

@@ -7,8 +7,9 @@
  * Scope: the thread's Work, with no base URI (so relative links are text). It
  * is pending only while the thread or the Works snapshot is loading; a click
  * then waits, showing checking, and is never answered from a guessed Work.
- * Once loaded the scope is always known. A No Work thread's Work is the No
- * Work row, by id whichever snapshot names it first, so the scope does not
+ * A null thread binding remains pending rather than guessing No Work. A No
+ * Work thread uses the locked row id whichever snapshot names it first, so
+ * the scope does not
  * change identity mid-load and drop a click. A thread whose Work the loaded
  * snapshot does not have (deleted, or not visible) asks with its own binding,
  * and the server answers. Known gap: the server answers null once that Work is
@@ -16,7 +17,8 @@
  * its Work, and the fix is the server's.
  *
  * Destination: the Editor, opened the way chat's other document doors open it
- * (exact-reference pills, tool-row names), with no Work. Having the Editor
+ * (exact-reference pills, tool-row names), with no explicit host Work: the
+ * route keeps the current Editor Work. Having the Editor
  * adopt the chat's Work is a decision for all of chat's doors at once (#625).
  *
  * Visibility: `active` is the chat's visibility, so hiding the dock or opening

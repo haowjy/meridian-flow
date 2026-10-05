@@ -1,4 +1,4 @@
-/** Work route resolution, Works still being created, and remembered Work routing. */
+/** Normalize Editor Works to row identities; screen chrome separately omits the locked No Work row. */
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readCurrentWork, writeCurrentWork } from "@/client/current-work";
@@ -18,7 +18,7 @@ export type WorkCatalog = AddressCatalog<AddressableWork> & {
 };
 type WorkNavigation = ReturnType<typeof createProjectNavigation>;
 
-/** Which Work an address selection names, against the projected catalog and its creations. */
+/** Resolve public No Work grammar to its row, or wait for the catalog without inventing an id. */
 export function resolveRouteWork(
   selection: Exclude<AddressSelection, { kind: "absent" }>,
   catalog: WorkCatalog,
