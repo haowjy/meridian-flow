@@ -47,8 +47,8 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
   return Object.freeze({
     accountId,
     registry,
-    localReservation: registry,
-    localAdoption: registry,
+    localReservation: registry.localTransfers,
+    localAdoption: registry.localTransfers,
     localConstruction: registry,
     connectLocalResources: (port: LocalResourceLifetimePort) =>
       registry.connectLocalResources(port),

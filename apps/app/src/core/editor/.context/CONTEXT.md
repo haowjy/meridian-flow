@@ -42,6 +42,11 @@ lifetime.
 
 ## Contracts
 
+- The registry alone reacts when the server refuses a live room's pending
+  edits (4409): it drops the room, clearing its local copy. Hosts unbind while
+  `whenRefusedRoomDropped` runs and reopen after; a refused review room is
+  rebuilt by its editor. Branch rooms live in `branch-room-pool.ts` and the
+  private local-transfer facet in `local-document-session-transfers.ts`.
 - `createEditorExtensions()` is the only app-side extension assembly point for
   collaborative documents, and its TipTap schema must stay structurally equal to
   `buildDocumentSchema()`. The two are built separately and parity is not
