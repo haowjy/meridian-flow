@@ -113,9 +113,11 @@ lifetime.
   handshake SyncStep2 and every document Update sent on it. It is false on any
   local edit (including same-browser peer and IndexedDB replay, which the
   provider also sends), on disconnect, and in terminal states, and becomes true
-  again after each reconnect. The horizon is the server's in-memory Y.Doc
-  (`SyncStatus` applied); the journal write and debounced store follow, and the
-  next handshake's state-vector diff re-sends whatever the server lost. The
+  again after each reconnect. For a live room the server journals each client
+  update (unless already contained), then applies it and replies `SyncStatus`,
+  so an acknowledgement means applied and journaled; only the debounced
+  full-document store is asynchronous, and the next handshake's state-vector
+  diff re-sends whatever the server lost. The
   transport counts frames on its own socket (`core/transport/server-acknowledgement.ts`)
   because Hocuspocus' `unsyncedChanges` resets to one on every handshake.
   `SyncStatus.tsx` uses the signal to confirm "Back online (all changes saved)"

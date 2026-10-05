@@ -29,8 +29,9 @@
  *
  * `serverHasLocalChanges` is separate from `status`: true only while `synced`
  * AND the server has acknowledged every local change on the current
- * connection (it applied them to its in-memory document; journaling and the
- * debounced store follow, and the next handshake re-sends anything lost). It
+ * connection (for a live room it journaled each update and applied it to its
+ * in-memory document before replying; only the debounced full-document store
+ * is asynchronous, and the next handshake re-sends anything lost). It
  * turns false on the next local edit and on any disconnect, then true again
  * after the acknowledgements arrive, so subscribers can show "back online and
  * saved" after an outage.

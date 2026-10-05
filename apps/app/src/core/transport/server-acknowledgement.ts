@@ -12,10 +12,12 @@
  * Invariant for `acknowledged`: on the current connection the server has
  * acknowledged (`SyncStatus` applied) the handshake SyncStep2 and every
  * document Update sent since. It is false on any local change, disconnect,
- * reconnect, or rejected (`SyncStatus` not applied) message. The horizon is
- * the server's in-memory Y.Doc: the journal write and the debounced
- * full-document store follow asynchronously, and the next handshake's
- * state-vector diff re-sends anything the server later loses.
+ * reconnect, or rejected (`SyncStatus` not applied) message. For a live
+ * document room the server journals a client update (unless the document
+ * already contains it) before it applies the update and replies `SyncStatus`,
+ * so an acknowledgement means the server applied the edit and journaled it.
+ * Only the debounced full-document store is asynchronous, and the next
+ * handshake's state-vector diff re-sends anything the server later loses.
  *
  * Pure bookkeeping over wire frames; the socket subclass in
  * `hocuspocus-document-transport.ts` feeds it.
@@ -34,6 +36,12 @@ export type ServerAcknowledgementTracker = {
   endConnection(): void;
   /** A frame was handed to the open socket (not merely queued for later). */
   noteFrameSent(frame: Uint8Array): void;
+  /**
+   * A document frame was queued because the socket is not open (including
+   * `CLOSING`, which precedes the close event). It is not counted as sent, but
+   * the server can no longer be said to have everything.
+   */
+  noteFrameQueued(frame: Uint8Array): void;
   noteFrameReceived(frame: Uint8Array): void;
   readonly acknowledged: boolean;
 };
@@ -45,6 +53,18 @@ function readMessageType(frame: Uint8Array): { type: number; body: decoding.Deco
     return { type: decoding.readVarUint(body), body };
   } catch {
     // Pings, pongs, and other frames without a document name.
+    return null;
+  }
+}
+
+/** The Sync sub-type of a SyncStep2 or Update frame; null for anything else. */
+function readDocumentSyncType(frame: Uint8Array): number | null {
+  const message = readMessageType(frame);
+  if (message?.type !== MESSAGE_SYNC) return null;
+  try {
+    const syncType = decoding.readVarUint(message.body);
+    return syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate ? syncType : null;
+  } catch {
     return null;
   }
 }
@@ -82,17 +102,17 @@ export function createServerAcknowledgementTracker(
     },
     noteFrameSent(frame) {
       if (!open) return;
-      const message = readMessageType(frame);
-      if (message?.type !== MESSAGE_SYNC) return;
-      let syncType: number;
-      try {
-        syncType = decoding.readVarUint(message.body);
-      } catch {
-        return;
-      }
+      const syncType = readDocumentSyncType(frame);
+      if (syncType === null) return;
       if (syncType === messageYjsSyncStep2) handshakeSent = true;
-      else if (syncType !== messageYjsUpdate) return;
       sent += 1;
+      publish();
+    },
+    noteFrameQueued(frame) {
+      if (readDocumentSyncType(frame) === null) return;
+      // The socket is closing or closed: nothing more on it will be acknowledged.
+      // The next connection restarts the count and flushes the queued frame.
+      open = false;
       publish();
     },
     noteFrameReceived(frame) {

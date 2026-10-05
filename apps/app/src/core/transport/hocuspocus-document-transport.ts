@@ -74,10 +74,12 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
 
   // Every document frame passes here, whether the provider sent it directly,
   // flushed it from the offline queue, or replied to a server SyncStep1.
-  // Counted before the write so a synchronous reply cannot overtake it.
+  // Counted before the write so a synchronous reply cannot overtake it. A frame
+  // the base class will queue (socket not open) invalidates instead.
   override send(message: unknown) {
-    if (this.webSocket?.readyState === SOCKET_OPEN && message instanceof Uint8Array) {
-      this.acknowledgement.noteFrameSent(message);
+    if (message instanceof Uint8Array) {
+      if (this.webSocket?.readyState === SOCKET_OPEN) this.acknowledgement.noteFrameSent(message);
+      else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
   }
