@@ -106,6 +106,20 @@ lifetime.
   together: `detached` (proven local Y.Doc, no authorized transport), `syncing`,
   `synced`, `offline`, `access-lost`, `destroyed`. `schemaFence` is orthogonal,
   never a status value.
+- `synced` is a handshake fact (connected, Hocuspocus `provider.synced` after
+  the server's SyncStep2), not a claim that the server has the writer's latest
+  edits. That claim is `DocumentSessionSnapshot.serverHasLocalChanges`, true
+  only while `synced` and only while the server has acknowledged the connection's
+  handshake SyncStep2 and every document Update sent on it. It is false on any
+  local edit (including same-browser peer and IndexedDB replay, which the
+  provider also sends), on disconnect, and in terminal states, and becomes true
+  again after each reconnect. The horizon is the server's in-memory Y.Doc
+  (`SyncStatus` applied); the journal write and debounced store follow, and the
+  next handshake's state-vector diff re-sends whatever the server lost. The
+  transport counts frames on its own socket (`core/transport/server-acknowledgement.ts`)
+  because Hocuspocus' `unsyncedChanges` resets to one on every handshake.
+  `SyncStatus.tsx` uses the signal to confirm "Back online (all changes saved)"
+  after an outage; healthy sessions and first loads show nothing.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation. Every session receives
