@@ -191,8 +191,6 @@ export interface SearchResult {
   revision: string | null;
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
-  /** The version the passages came from: this thread's Work draft, or live (D14). */
-  version: "draft" | "live";
   /** Matching passages in file order, capped by the adapter. Never empty. */
   matches: SearchMatch[];
   /**

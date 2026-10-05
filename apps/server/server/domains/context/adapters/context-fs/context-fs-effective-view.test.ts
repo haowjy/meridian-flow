@@ -93,7 +93,6 @@ describe("ContextFS drafted-source effective view", () => {
         path: "draft-created.md",
         documentId: CREATED_DOC_ID,
         revision: "test-revision",
-        version: "draft",
         matches: [{ excerpt: "new branch bytes", blockHash: "createdhash" }],
         matchCount: 1,
       },

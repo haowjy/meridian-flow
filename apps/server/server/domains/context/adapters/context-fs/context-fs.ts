@@ -837,7 +837,6 @@ export class ContextFS implements ContextSchemeAdapter {
         path: row.path,
         documentId: row.document.id,
         revision: read.value.revision,
-        version: this.threadView()?.version ?? "live",
         ...match,
       });
     }
