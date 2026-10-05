@@ -33,7 +33,7 @@ export {
   invalidArgumentsResult,
   renderInvalidArguments,
 } from "./invalid-arguments.js";
-export type { LsEntry, LsResult } from "./ls-result.js";
+export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
 export {
   createSkillToolRegistrations,
   readSkill,

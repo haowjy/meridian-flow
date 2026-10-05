@@ -33,6 +33,17 @@ export function isLsResult(value: unknown): value is LsResult {
   return (typeof result.uri === "string" || result.uri === null) && Array.isArray(result.entries);
 }
 
+const NAME_ORDER = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+/** Folders first, then files, each in natural name order (`chapter-2` before `chapter-10`). */
+export function sortLsEntries<T extends Pick<LsEntry, "uri" | "kind">>(entries: readonly T[]): T[] {
+  return [...entries].sort(
+    (a, b) =>
+      Number(a.kind !== "directory") - Number(b.kind !== "directory") ||
+      NAME_ORDER.compare(a.uri, b.uri),
+  );
+}
+
 /** The model's text for an `ls` result; a refusal keeps its JSON. */
 export function renderLsResult(value: JsonValue): string {
   if (!isLsResult(value)) return JSON.stringify(value);
