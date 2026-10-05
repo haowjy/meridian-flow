@@ -134,6 +134,14 @@ class MemoryMetadata implements ResourceMetadataStore {
   async finishClose() {}
 }
 
+function transportEntry() {
+  let signal!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  return { entered, signal };
+}
+
 function transport(overrides: Partial<ResourceCatalogTransport> = {}): ResourceCatalogTransport {
   return {
     accountId: "account",
@@ -174,15 +182,22 @@ it("installs a discovered resource once and avoids identical polling churn", asy
 it("reuses a captured response after resource CAS loss without regressing newer canonical truth", async () => {
   const metadata = new MemoryMetadata();
   metadata.records.set("resource", resource("before.md", 1, true));
+  const snapshotEntry = transportEntry();
   let resolveSnapshot: (value: CatalogSnapshot) => void = () => undefined;
   const response = new Promise<CatalogSnapshot>((resolve) => {
     resolveSnapshot = resolve;
   });
-  const catalogTransport = transport({ snapshot: vi.fn(() => response) });
+  const catalogTransport = transport({
+    snapshot: vi.fn(() => {
+      snapshotEntry.signal();
+      return response;
+    }),
+  });
   const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
 
   const pending = acquisition.acquire(projectId, scope);
-  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1));
+  await snapshotEntry.entered;
+  expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1);
   metadata.records.set("resource", resource("newer.md", 2));
   resolveSnapshot(snapshot("stale.md"));
   await pending;
@@ -195,19 +210,22 @@ it("reuses a captured response after resource CAS loss without regressing newer 
 it("installs an external rename across an unrelated resource revision race", async () => {
   const metadata = new MemoryMetadata();
   metadata.records.set("resource", resource("before.md", 1));
+  const snapshotEntry = transportEntry();
   let resolveSnapshot: (value: CatalogSnapshot) => void = () => undefined;
   const catalogTransport = transport({
     snapshot: vi.fn(
       () =>
         new Promise<CatalogSnapshot>((resolve) => {
           resolveSnapshot = resolve;
+          snapshotEntry.signal();
         }),
     ),
   });
   const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
 
   const pending = acquisition.acquire(projectId, scope);
-  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledOnce());
+  await snapshotEntry.entered;
+  expect(catalogTransport.snapshot).toHaveBeenCalledOnce();
   const unrelated = resource("before.md", 2);
   unrelated.resource.content = { kind: "exact", databaseName: "new-cache", schema: "0.5" };
   metadata.records.set("resource", unrelated);
@@ -287,19 +305,22 @@ it("rejects a malformed request before dispatch", async () => {
 
 it("re-reads account resources after HTTP before discovering document identity", async () => {
   const metadata = new MemoryMetadata();
+  const snapshotEntry = transportEntry();
   let resolveSnapshot: (value: CatalogSnapshot) => void = () => undefined;
   const catalogTransport = transport({
     snapshot: vi.fn(
       () =>
         new Promise<CatalogSnapshot>((resolve) => {
           resolveSnapshot = resolve;
+          snapshotEntry.signal();
         }),
     ),
   });
   const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
 
   const pending = acquisition.acquire(projectId, scope);
-  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledOnce());
+  await snapshotEntry.entered;
+  expect(catalogTransport.snapshot).toHaveBeenCalledOnce();
   metadata.records.set("created-during-request", {
     ...resource("local.md", 1),
     resource: { ...resource("local.md", 1).resource, handle: "created-during-request" },
@@ -319,6 +340,7 @@ it("serializes wake hints and drains to the highest revision observed in flight"
   let active = 0;
   let maxActive = 0;
   const pending: Array<(value: CatalogChanges) => void> = [];
+  const changeEntries = [transportEntry(), transportEntry()];
   const catalogTransport = transport({
     snapshot: vi.fn(async () => snapshot("chapter.md", "0")),
     changes: vi.fn(
@@ -331,6 +353,7 @@ it("serializes wake hints and drains to the highest revision observed in flight"
             active -= 1;
             resolve(value);
           });
+          changeEntries[cursors.length - 1]?.signal();
         }),
     ),
   });
@@ -338,7 +361,8 @@ it("serializes wake hints and drains to the highest revision observed in flight"
   await acquisition.acquire(projectId, scope);
 
   const first = acquisition.hint(projectId, scope, "1");
-  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  await changeEntries[0].entered;
+  expect(pending).toHaveLength(1);
   const duplicate = acquisition.hint(projectId, scope, "1");
   const highWater = acquisition.hint(projectId, scope, "2");
   expect(duplicate).toBe(first);
@@ -359,7 +383,8 @@ it("serializes wake hints and drains to the highest revision observed in flight"
     headRevision: "1",
     hasMore: false,
   });
-  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  await changeEntries[1].entered;
+  expect(pending).toHaveLength(1);
   pending.shift()?.({
     kind: "delta",
     scope,
@@ -384,6 +409,7 @@ it("serializes wake hints and drains to the highest revision observed in flight"
 
 it("aborts an in-flight request and installs no late checkpoint after close", async () => {
   const metadata = new MemoryMetadata();
+  const snapshotEntry = transportEntry();
   let requestSignal: AbortSignal | undefined;
   const acquisition = new ResourceCatalogAcquisition(
     "account",
@@ -395,13 +421,15 @@ it("aborts an in-flight request and installs no late checkpoint after close", as
             requestSignal = signal;
             signal.addEventListener("abort", () => reject(signal.reason), { once: true });
             void resolve;
+            snapshotEntry.signal();
           }),
       ),
     }),
   );
 
   const acquiring = acquisition.acquire(projectId, scope);
-  await vi.waitFor(() => expect(requestSignal).toBeDefined());
+  await snapshotEntry.entered;
+  expect(requestSignal).toBeDefined();
   acquisition.beginClose();
 
   await expect(acquiring).rejects.toThrow("closing");
@@ -413,15 +441,22 @@ it("aborts an in-flight request and installs no late checkpoint after close", as
 
 it("acquireAfter observes after an older in-flight acquisition instead of joining it", async () => {
   const metadata = new MemoryMetadata();
+  const snapshotEntry = transportEntry();
   let resolveStale: (value: CatalogSnapshot) => void = () => undefined;
   const stale = new Promise<CatalogSnapshot>((resolve) => {
     resolveStale = resolve;
   });
-  const catalogTransport = transport({ snapshot: vi.fn(() => stale) });
+  const catalogTransport = transport({
+    snapshot: vi.fn(() => {
+      snapshotEntry.signal();
+      return stale;
+    }),
+  });
   const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
 
   const older = acquisition.acquire(projectId, scope);
-  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1));
+  await snapshotEntry.entered;
+  expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1);
   const fresh = acquisition.acquireAfter(projectId, scope);
   const alsoFresh = acquisition.acquireAfter(projectId, scope);
   expect(catalogTransport.changes).not.toHaveBeenCalled();
