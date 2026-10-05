@@ -11,39 +11,14 @@
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
-- Retain superseded namespace failures as inactive history, so rejected renames cannot reappear after a rejected delete.
-
-- Restore the journal/move foreign-key lock regression alongside the worker overwrite lock test.
-
-- Removed test-only link traversal exports from the collaboration public barrel.
-
-- Reduced folder-journal and rename-surface fixtures while retaining refused-queue, refresh, scope and resolver-cache regressions.
-
-- Pruned rename/link-rewrite tests to stored-link contracts, transaction regressions and a real worker/move lock overlap.
-
-- Offer the latest queued file or folder name for repair when an earlier rename is refused, preserving the writer's newest request through shared journal policy.
-
-- Recover refused queued folder renames at the accepted location, dispatch identity-bound moves after foreign catalog changes, preserve completed document naming, and share personal-folder rename journals across projects.
-
-- Respell relative links when their holder moves into personal space, preserving project targets rather than linking to unrelated personal documents.
+- Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
 
 - Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
 
-- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item.
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
 
-- Add local folder-move journals and descendant catalog rebasing for instant rename integration; retain complete settled receipts for short-lived item feedback.
-- Preserve whole-holder link batches while targets are deleted, serialize overwrite moves with maintenance, and leave personal links unresolved when their targets move into another project.
+- A rename the server refused no longer comes back under the refused name after a later delete of the same document is also refused.
 
-- Rewrite links after committed renames and moves in the background, preserving custom labels and retrying failed or lifecycle-blocked maintenance. Keep each holder's pending batch together when another move arrives during backoff.
-
-- Add atomic link maintenance for committed document moves, preserving AI Undo and publishing to live rooms only after durable commit.
-- Preserve document-link targets through renames with pending identity redirects and move receipt counts; old chat addresses follow renamed documents until another document occupies them.
-
-- Index internal document links alongside certified projections, including relative links and image references; refresh their address keys when the holder moves.
-
-- Add shared href respelling and snapshot link-occurrence primitives for rename rewriting, preserving address style and exact filename labels.
-- Refresh document search and AI-context projections after writer typing and checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata.
-- Refresh document search and AI-context projections 500 ms after writer typing pauses (at most three seconds during continuous typing) and after checkpoint restores; retry missed refreshes automatically. Keep ContextFS writes on that same certified pipeline, including text-size metadata. Read checkpoints from the current authority generation so a late old-room checkpoint cannot undo a restore.
 - No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
