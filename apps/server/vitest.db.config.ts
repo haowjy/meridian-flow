@@ -90,6 +90,7 @@ const expectedSuites = [
   "apps/server/server/lib/compose.file-access-tools.db.test.ts",
   "apps/server/server/lib/compose.live-reversal.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
+  "apps/server/server/lib/model-tools/skills.db.test.ts",
   "apps/server/server/lib/routes/context-create-read.db.test.ts",
   "apps/server/server/lib/routes/context-thread-existing-document.db.test.ts",
   "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts",

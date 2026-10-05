@@ -1,13 +1,14 @@
 /**
  * Skill files under `skills://` (D52): the read-only folders of the skills an
- * agent's own binding offers it. `skills://` is model-facing only; it is not a
- * context scheme, so the writer's file tree, catalog and routes never see it.
+ * agent's own binding offers it, and of the skills its user invoked in the
+ * thread (D64). `skills://` is model-facing only; it is not a context scheme,
+ * so the writer's file tree, catalog and routes never see it.
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
- * skill name is unique within a thread, because binding resolution refuses
- * one two packages share, so no source id is written. Every lookup reads the
- * thread's binding once and asks the pure `skillLevel`; a skill the agent may
- * not see reads as missing.
+ * skill name is unique within a thread: binding resolution refuses one two
+ * packages share, and a bound name wins over an invoked one, so no source id
+ * is written. Every lookup reads the thread's binding once and asks the pure
+ * `skillLevel`; a skill the agent may not see reads as missing.
  */
 import { posix } from "node:path";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";

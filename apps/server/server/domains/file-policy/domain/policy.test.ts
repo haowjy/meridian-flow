@@ -124,6 +124,7 @@ describe("skill rule", () => {
       { slug: "hidden", modelInvocable: false },
       { slug: "preloaded-hidden", modelInvocable: false },
     ],
+    invoked: ["user-invoked"],
   };
 
   // biome-ignore format: one row per case
@@ -131,6 +132,7 @@ describe("skill rule", () => {
     ["a model-invocable available skill is readable", "story-review", "read"],
     ["an available skill the model can't invoke is not found", "hidden", "none"],
     ["the same skill preloaded is readable", "preloaded-hidden", "read"],
+    ["a skill the user invoked is readable", "user-invoked", "read"],
     ["an unbound skill is not found", "elsewhere", "none"],
   ];
 

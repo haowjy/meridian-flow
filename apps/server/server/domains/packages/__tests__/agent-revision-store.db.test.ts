@@ -261,6 +261,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revision: first,
         configuration,
         invocationOverlay: null,
+        invokedSkills: {},
       });
       expect(
         await store.bindThread(
@@ -294,6 +295,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revision: null,
         configuration,
         invocationOverlay,
+        invokedSkills: {},
       });
     });
 

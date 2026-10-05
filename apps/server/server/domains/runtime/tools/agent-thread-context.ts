@@ -10,6 +10,7 @@ import type { AgentRevisionStore } from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
+import { bindingNamesSkills } from "../loop/available-skills.js";
 import { readChainPermission } from "../loop/permissions/agent-chain.js";
 import {
   advertiseTools,
@@ -89,7 +90,10 @@ export async function resolveAgentThreadTurnContext(
     if (reasons.length) throw new Error(reasons.join(" "));
   }
 
-  const policy = projectToolPolicy(binding.configuration, input.thread.kind);
+  const policy = withoutSkillToolWhenNoSkills(
+    projectToolPolicy(binding.configuration, input.thread.kind),
+    binding,
+  );
   // return_result is unadvertised in the registry; the policy adds it for subagents.
   const report = input.toolRegistry.getRegistration("return_result")?.definition;
   const tools = advertiseTools(
@@ -123,6 +127,19 @@ export async function resolveAgentThreadTurnContext(
       ? READ_PERMISSION_GUIDANCE
       : undefined,
   };
+}
+
+/**
+ * A thread that can see no skill isn't offered `skill` (D64). It reads only
+ * the binding already in hand, so an agent whose listed skills are all hidden
+ * from the model keeps the tool and gets a refusal instead.
+ */
+function withoutSkillToolWhenNoSkills(
+  policy: ToolPolicy,
+  binding: Parameters<typeof bindingNamesSkills>[0],
+): ToolPolicy {
+  if (!policy.has("skill") || bindingNamesSkills(binding)) return policy;
+  return new Set([...policy].filter((tool) => tool !== "skill"));
 }
 
 /** A root thread needs no lineage walk; a child is `read` when any spawner is. */
