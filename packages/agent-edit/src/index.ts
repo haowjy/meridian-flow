@@ -53,6 +53,7 @@ export {
 export {
   type MarkdownSection,
   markdownSections,
+  normalizeRequestedSlug,
   sectionNotFoundMessage,
 } from "./resolver/heading-sections.js";
 export type {

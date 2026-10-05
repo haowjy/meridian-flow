@@ -78,20 +78,6 @@ Open with a brief overall assessment: what's the big picture for this draft? The
 
 In multi-critic parallel lanes, keep your report focused on your assigned area. The orchestrator synthesizes across critics: you go deep, not broad.
 
-## Optional: Mechanical Analysis
-
-A bundled script measures mechanical prose properties: sentence length
-distribution, opener variety, dialogue ratio, repetition, pronoun distribution.
-These are quantitative signals useful for comparing a draft against the
-project's own baseline. Read-only agents (critic, continuity-checker) should
-request this data from the orchestrator; agents with bash access can run it
-directly:
-
-```bash
-uv run resources/prose-critique/analyze.py <file.md> [window_size]
-```
-
 ## Resources
 
 - [`resources/prose-critique/antipatterns.md`](prose-critique/antipatterns.md): AI writing antipatterns, categorized as research-backed vs community folklore
-- [`resources/prose-critique/baseline.md`](prose-critique/baseline.md): establishing a project baseline and comparing drafts against it
