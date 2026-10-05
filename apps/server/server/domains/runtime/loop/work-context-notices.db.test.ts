@@ -46,7 +46,7 @@ else
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
-      readAgentChain: async () => [],
+      readChainPermission: async () => "edit" as const,
     });
     const eventWriter = createDrizzleEventJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);

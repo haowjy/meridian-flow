@@ -4,7 +4,7 @@
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
+import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
@@ -281,42 +281,49 @@ async function fixture(
     eventSink,
   });
   let invocation = 0;
+  // Override refusals come back typed; `runChild` is for tests that expect a run.
+  const runChildOrRefusal = async (
+    request: Parameters<typeof coreCoordinator.runChild>[0],
+    options: Parameters<typeof coreCoordinator.runChild>[1],
+  ) => {
+    if (request.kind === "message" && options.mode === "background") {
+      return coreCoordinator.runChild(request, options);
+    }
+    if (!(await repos.turns.findById(request.parentTurnId))) {
+      const thread = await repos.threads.findById(request.parentThread.id);
+      await repos.turns.create({
+        id: request.parentTurnId,
+        threadId: request.parentThread.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+        prevTurnId: thread?.activeLeafTurnId ?? null,
+      });
+    }
+    invocation += 1;
+    return coreCoordinator.runChild(
+      {
+        ...request,
+        reportCorrelation: request.reportCorrelation ?? {
+          callerThreadId: request.parentThread.id,
+          callerTurnId: request.parentTurnId,
+          toolCallId:
+            request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
+          cardBlockId: null,
+          origin: request.kind === "spawn" ? "spawn" : "message",
+          deliveryMode: options.mode === "background" ? "background_notification" : "direct",
+        },
+      },
+      options,
+    );
+  };
   const coordinator = {
     ...coreCoordinator,
-    async runChild(
-      request: Parameters<typeof coreCoordinator.runChild>[0],
-      options: Parameters<typeof coreCoordinator.runChild>[1],
-    ) {
-      if (request.kind === "message" && options.mode === "background") {
-        return coreCoordinator.runChild(request, options);
-      }
-      if (!(await repos.turns.findById(request.parentTurnId))) {
-        const thread = await repos.threads.findById(request.parentThread.id);
-        await repos.turns.create({
-          id: request.parentTurnId,
-          threadId: request.parentThread.id,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-          prevTurnId: thread?.activeLeafTurnId ?? null,
-        });
-      }
-      invocation += 1;
-      return coreCoordinator.runChild(
-        {
-          ...request,
-          reportCorrelation: request.reportCorrelation ?? {
-            callerThreadId: request.parentThread.id,
-            callerTurnId: request.parentTurnId,
-            toolCallId:
-              request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
-            cardBlockId: null,
-            origin: request.kind === "spawn" ? "spawn" : "message",
-            deliveryMode: options.mode === "background" ? "background_notification" : "direct",
-          },
-        },
-        options,
-      );
+    runChildOrRefusal,
+    async runChild(...args: Parameters<typeof runChildOrRefusal>): Promise<SpawnResult> {
+      const result = await runChildOrRefusal(...args);
+      if ("issues" in result) throw new Error(`Refused: ${JSON.stringify(result.issues)}`);
+      return result;
     },
   };
 
@@ -792,7 +799,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
       null,
     );
     const spawn = (overrides?: { "disallowed-tools": string[] }) =>
-      coordinator.runChild(
+      coordinator.runChildOrRefusal(
         {
           kind: "spawn",
           parentThread: restrictedParent,
@@ -805,16 +812,20 @@ describe("ChildRunCoordinator invocation overlay", () => {
         { mode: "foreground" },
       );
     const refused = await spawn();
-    expect(refused.status === "error" && refused.error).toMatchObject({
-      code: "invalid_arguments",
-      message:
-        'Invalid arguments for spawn:\n- overrides.disallowed_tools: critic has "write" and you don\'t; add it here',
+    expect(refused).toEqual({
+      error: "invalid_arguments",
+      issues: [
+        {
+          path: "overrides.disallowed_tools",
+          message: 'critic has "write" and you don\'t; add it here',
+        },
+      ],
     });
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
 
     const narrowed = await spawn({ "disallowed-tools": ["write"] });
-    expect(narrowed.status).toBe("completed");
-    if (narrowed.status !== "completed") return;
+    if (!("status" in narrowed) || narrowed.status !== "completed")
+      throw new Error("Expected a run");
     const binding = await revisions.readThreadBinding(narrowed.report.threadId);
     expect(binding?.configuration["disallowed-tools"]).toEqual(["write"]);
   });
@@ -822,7 +833,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
   it("lets overrides.permission lower to read and refuses a raise as invalid arguments", async () => {
     const { coordinator, revisions, repos, parent, journal } = await fixture();
     const spawn = (parentThread: typeof parent, agentSlug: string, permission: "read" | "edit") =>
-      coordinator.runChild(
+      coordinator.runChildOrRefusal(
         {
           kind: "spawn",
           parentThread,
@@ -836,8 +847,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
       );
 
     const lowered = await spawn(parent, "", "read");
-    expect(lowered.status).toBe("completed");
-    if (lowered.status !== "completed") return;
+    if (!("status" in lowered) || lowered.status !== "completed") throw new Error("Expected a run");
     const loweredBinding = await revisions.readThreadBinding(lowered.report.threadId);
     expect(loweredBinding?.configuration.permission).toBe("read");
 
@@ -853,19 +863,25 @@ describe("ChildRunCoordinator invocation overlay", () => {
     );
     const underReadParent = await spawn(readParent, "", "edit");
     const overReadProfile = await spawn(parent, "critic", "edit");
-    expect(
-      [underReadParent, overReadProfile].map((result) => result.status === "error" && result.error),
-    ).toEqual([
-      expect.objectContaining({
-        code: "invalid_arguments",
-        message:
-          'Invalid arguments for spawn:\n- overrides.permission: can only lower permission, and yours is "read"',
-      }),
-      expect.objectContaining({
-        code: "invalid_arguments",
-        message:
-          'Invalid arguments for spawn:\n- overrides.permission: can only lower permission, and critic\'s is "read"',
-      }),
+    expect([underReadParent, overReadProfile]).toEqual([
+      {
+        error: "invalid_arguments",
+        issues: [
+          {
+            path: "overrides.permission",
+            message: 'can only lower permission, and yours is "read"',
+          },
+        ],
+      },
+      {
+        error: "invalid_arguments",
+        issues: [
+          {
+            path: "overrides.permission",
+            message: 'can only lower permission, and critic\'s is "read"',
+          },
+        ],
+      },
     ]);
     expect(journal.filter((event) => event.type === "agent.spawn")).toHaveLength(spawnsBefore);
   });

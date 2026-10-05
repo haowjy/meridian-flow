@@ -8,18 +8,18 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { createAllowAllFileAccess } from "../domains/file-policy/index.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
   type AgentSourceSnapshot,
   createInMemoryAgentRevisionStore,
   resolveAgentConfiguration,
-} from "../domains/packages/index.js";
-import type { ToolRegistration } from "../domains/runtime/index.js";
-import { createWiredCoreToolRegistrations, type ToolWiringDeps } from "./wired-core-tools.js";
+} from "../../domains/packages/index.js";
+import type { ToolRegistration } from "../../domains/runtime/index.js";
+import { createModelToolRegistrations, type ToolWiringDeps } from "./index.js";
 
 const LAUNCH_AGENTS = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../domains/packages/builtin/launch-agents",
+  "../../domains/packages/builtin/launch-agents",
 );
 const THREAD_ID = "critic-thread";
 
@@ -49,10 +49,11 @@ async function criticTools() {
     readAgentChain: async (threadId: string) => [
       { threadId, permission: "edit", threadWorkId: "work-1" },
     ],
+    readChainPermission: async () => "edit",
     fileAccess: createAllowAllFileAccess(),
     agentRevisions,
   } as unknown as ToolWiringDeps;
-  const registrations = createWiredCoreToolRegistrations(deps);
+  const registrations = createModelToolRegistrations(deps);
   const ctx = { threadId: THREAD_ID, turnId: "turn-1" } as never;
   return async (name: string, input: unknown) => {
     const registration = registrations.find((entry) => entry.definition.name === name);
@@ -79,6 +80,25 @@ describe("skills:// at the model tools", () => {
     const resource = await call("read", { path: "skills://story-review/resources/line-edit.md" });
     expect(resource).toMatch(
       /^skills:\/\/story-review\/resources\/line-edit\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n/,
+    );
+  });
+
+  it("reads a markdown file's #heading section and outline with document slugs (D60)", async () => {
+    const call = await criticTools();
+    const file = "skills://story-review/resources/line-edit.md";
+    const section = (await call("read", { path: `${file}#method` })) as string;
+    expect(section).toMatch(
+      /^skills:\/\/story-review\/resources\/line-edit\.md#method\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n## Method\n/,
+    );
+    expect(section).not.toContain("## Check");
+    expect(await call("read", { path: file, format: "outline" })).toContain(
+      ["## Method", `read({"path": "${file}#method"})`, "## Check"].join("\n"),
+    );
+    expect(await call("read", { path: `${file}#nope` })).toContain(
+      'Section "#nope" was not found.',
+    );
+    expect(await call("read", { path: file, in: "abcd" })).toBe(
+      "Invalid arguments for read:\n- in: skills:// files have no block hashes, so in doesn't work here. Read the whole file or a #heading.",
     );
   });
 

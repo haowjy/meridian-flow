@@ -94,7 +94,6 @@ describe("Yjs branch handshake route guard", () => {
           upstreamBranchId: null,
           workId: "work-1" as never,
           threadId: null,
-          pushPolicy: "manual",
           status: "active",
           generation: 3,
           state: storedState,

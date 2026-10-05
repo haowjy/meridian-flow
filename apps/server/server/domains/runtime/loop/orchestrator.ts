@@ -34,7 +34,7 @@
  *   | tool.executing          | Tool dispatch begins                        |
  *   | tool.output_delta       | Best-effort live stdout/stderr chunk        |
  *   | tool.result             | Tool execution completes                    |
- *   | permission.denied       | Tool blocked by PermissionGate              |
+ *   | permission.denied       | Tool outside the agent's tool policy        |
  *   | model.response_received | A model response is recorded                |
  *   | usage                   | Cumulative token/cost tick                  |
  *   | turn.completed          | Turn finishes successfully                  |
@@ -147,11 +147,7 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import {
-  type PermissionDecision,
-  type PermissionGate,
-  permissionGateFromToolPolicy,
-} from "./permissions/index.js";
+import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -1042,14 +1038,11 @@ async function persistToolRejection(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  decision: Extract<PermissionDecision, { allowed: false }> & {
-    category: Extract<OrchestratorEvent, { type: "permission.denied" }>["category"];
-  };
+  reason: string;
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionResult: JsonObject = { error: input.decision.kind, reason: input.decision.reason };
-  const rejectionOutput: JsonValue = rejectionResult;
+  const rejectionResult: JsonObject = { error: "permission_denied", reason: input.reason };
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1057,7 +1050,7 @@ async function persistToolRejection(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: rejectionOutput,
+        output: rejectionResult,
         result: rejectionResult,
         isError: true,
       },
@@ -1067,21 +1060,17 @@ async function persistToolRejection(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        ...(input.decision.kind === "permission_denied"
-          ? [
-              {
-                type: "permission.denied" as const,
-                toolCallId: input.call.id,
-                toolName: input.call.name,
-                category: input.decision.category,
-                reason: input.decision.reason,
-              },
-            ]
-          : []),
+        {
+          type: "permission.denied" as const,
+          toolCallId: input.call.id,
+          toolName: input.call.name,
+          category: "tool_denied" as const,
+          reason: input.reason,
+        },
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: rejectionOutput,
+          output: rejectionResult,
           result: rejectionResult,
           isError: true,
         },
@@ -1358,7 +1347,7 @@ type BuiltGenerateRequest = {
   agentSlug: string | null;
   thread: Thread;
   resolvedModel: AssembledNextTurnContext["resolvedModel"];
-  permissionGate: PermissionGate;
+  policy: ToolPolicy;
 };
 
 function buildGenerateRequestFromAssembled(input: {
@@ -1371,7 +1360,7 @@ function buildGenerateRequestFromAssembled(input: {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
     resolvedModel: assembled.resolvedModel,
-    permissionGate: permissionGateFromToolPolicy(assembled.policy),
+    policy: assembled.policy,
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -2237,14 +2226,13 @@ async function executeLoop({
 
             // If denied, we still persist a tool_result block (with isError: true)
             // so the model sees the rejection in the next turn's context build.
-            const decision = built.permissionGate.check(call.name);
-            if (!decision.allowed) {
+            if (!built.policy.has(call.name)) {
               const persistedRejection = await persistToolRejection({
                 deps,
                 threadId: input.threadId,
                 turn: currentTurn,
                 call,
-                decision: { ...decision, category: "tool_denied" },
+                reason: missingToolRefusal(call.name),
                 blockSeq,
               });
               blockSeq = persistedRejection.nextBlockSeq;

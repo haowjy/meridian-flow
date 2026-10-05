@@ -252,11 +252,10 @@ owns only the SQL predicate beside its partial index.
   The column is owned by the Work, not the thread. It is seeded from the
   project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → primary Work → works.ai_write_mode`. Missing primary is corrupt. No Work uses the same column; `draftOwner` is null only for Auto-apply.
 
-  The write-mode route (`lib/work-write-mode-route.ts`) maps
-  `aiWriteMode` → branch `pushPolicy` (`'direct'` → `'auto'`, `'draft'` →
-  `'manual'`). Mode changes: `draft` → `direct` with active drafts requires
-  explicit confirmation; the confirmed request pushes every pending Work draft
-  to live before switching the policy. `direct` → `draft` is always permitted.
+  The write-mode route (`lib/work-write-mode-route.ts`) sets only the Work's
+  mode; branches carry no push policy (D59). `draft` → `direct` with pending
+  changes needs a choice (D40): `apply` pushes each pending draft first, `keep`
+  leaves them for review. `direct` → `draft` is always permitted.
 
   → See [`domains/collab/.context/CONTEXT.md`](../../collab/.context/CONTEXT.md)
     for the branch review model.

@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -161,6 +162,7 @@ import {
   type RunStarter,
   type RunTurnPort,
   readAgentChain,
+  readChainPermission,
   readPendingInbox,
   requireWritableThread,
   sweepWakes,
@@ -219,14 +221,14 @@ import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createModelToolRegistrations,
+  createReferenceReader,
+} from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
-import {
-  createAgentEditResponseWriteLifecycle,
-  createReferenceReader,
-  createWiredCoreToolRegistrations,
-} from "./wired-core-tools.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -307,6 +309,8 @@ export type ProductionAppPorts = {
   db: Database;
   /** A thread's delegation chain, read fresh (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  /** The chain's effective permission, from the lighter lineage walk. */
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
   /** The file policy every model read and write asks (file-access §1). */
   fileAccess: FileAccess;
   fileAccessChanges: PgFileAccessChanges;
@@ -629,6 +633,7 @@ export async function createProductionAppPorts(input: {
     notices,
     activeDocuments,
     readAgentChain: readChain,
+    readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
   };
 }
 
@@ -647,8 +652,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    // Trail work retries only an auto-policy branch's push (drizzle-turn-trail-work).
-    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId, resetPolicy: "auto" }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
@@ -656,7 +659,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
-    readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
@@ -715,13 +718,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
-    transaction: ports.threadRepos.transaction,
     objectStore: ports.objectStore,
     fileAccess: ports.fileAccess,
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
   };
-  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
+  for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
   for (const registration of createInspectionToolRegistrations({

@@ -1,7 +1,7 @@
 /** Shared execution-support checks for immutable Agent selection and turn preparation. */
 import type { CompiledAgentDefinition } from "../packages/index.js";
 import type { Gateway } from "./gateway/index.js";
-import { TOOL_CATALOG } from "./loop/permissions/project-tool-policy.js";
+import { TOOL_CATALOG } from "./loop/permissions/tool-policy.js";
 
 const supported = new Set([
   "name",

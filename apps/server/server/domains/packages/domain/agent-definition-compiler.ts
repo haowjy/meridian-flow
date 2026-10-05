@@ -2,7 +2,8 @@
 import {
   agentEffortAuthoringSchema,
   agentPermissionSchema,
-  toolReferencesSchema,
+  toolAllowListSchema,
+  toolDenyListSchema,
 } from "@meridian/contracts/agents";
 import { z } from "zod";
 import { sha256 } from "./helpers.js";
@@ -27,8 +28,8 @@ const metadata = z.looseObject({
   permission: agentPermissionSchema.optional(),
   "model-invocable": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
-  tools: toolReferencesSchema.optional(),
-  "disallowed-tools": toolReferencesSchema.optional(),
+  tools: toolAllowListSchema.optional(),
+  "disallowed-tools": toolDenyListSchema.optional(),
   subagents: references.optional(),
   skills: skills.optional(),
   approval: z.enum(["default", "auto", "confirm", "never"]).optional(),
@@ -39,8 +40,8 @@ const metadata = z.looseObject({
 const overlayMetadata = metadata.extend({
   tools: z
     .strictObject({
-      allowed: toolReferencesSchema.optional(),
-      disallowed: toolReferencesSchema.optional(),
+      allowed: toolAllowListSchema.optional(),
+      disallowed: toolDenyListSchema.optional(),
     })
     .optional(),
 });

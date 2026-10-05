@@ -10,9 +10,12 @@ import type { AgentRevisionStore } from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
-import { chainPermission, readLineage } from "../loop/permissions/agent-chain.js";
-import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
-import { projectToolPolicy, type ToolPolicy } from "../loop/permissions/project-tool-policy.js";
+import { readChainPermission } from "../loop/permissions/agent-chain.js";
+import {
+  advertiseTools,
+  projectToolPolicy,
+  type ToolPolicy,
+} from "../loop/permissions/tool-policy.js";
 import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 
@@ -129,5 +132,5 @@ async function chainIsReadOnly(
 ): Promise<boolean> {
   if (own === "read") return true;
   const parentId = input.thread.parentThreadId;
-  return parentId != null && chainPermission(await readLineage(input, parentId)) === "read";
+  return parentId != null && (await readChainPermission(input, parentId)) === "read";
 }

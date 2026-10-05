@@ -5,7 +5,7 @@
  */
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
-import { actionPolicy } from "../domains/runtime/index.js";
+import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 
 /** A file-policy refusal the model sees as `permission_denied`. */
 export type PermissionDenial = FileAccessDenied & {
@@ -24,6 +24,16 @@ const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only
 /** A read agent's own scratch is always writable, so a refused scratch file is another Work's. */
 const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
+
+/**
+ * A write whose file was deleted under it: at the reply's save (D29, D42), or
+ * when an undo or redo reached it.
+ */
+export function deletedFileMessage(when: "save" | "reversal"): string {
+  return when === "save"
+    ? "This file was deleted before this reply was saved, so this change wasn't made."
+    : "This file was deleted, so this change wasn't made.";
+}
 
 /** What the model reads when the policy refused a write. */
 export function permissionDeniedMessage(denial: PermissionDenial): string {
@@ -52,7 +62,7 @@ function workArchivedMessage(denial: FileAccessDenied): string {
   const mayUnarchive =
     unarchive !== null &&
     denial.agentChain !== null &&
-    actionPolicy(denial.agentChain, "work.unarchive") === "allow";
+    mayChangeWorks(chainPermission(denial.agentChain));
   if (denial.destination?.kind === "draft") {
     const frozen = `${work} is archived, so its draft is frozen and this change wasn't made.`;
     return mayUnarchive
