@@ -50,9 +50,11 @@ export function NavigationDrawer({
       onOpenChange(false);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId }).then((result) => {
-      if (result.kind === "opened") onOpenChange(false);
-    });
+    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined }).then(
+      (result) => {
+        if (result.kind === "opened") onOpenChange(false);
+      },
+    );
   };
   // The drawer owns its own inline-create state: the desktop shell's shared
   // creation seam (empty state → sidebar) has no phone counterpart — phone

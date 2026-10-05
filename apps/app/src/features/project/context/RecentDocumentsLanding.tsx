@@ -224,7 +224,10 @@ async function openRecent(
   },
 ): Promise<void> {
   if (item.address.kind !== "local") {
-    await ports.openDocument({ documentId: item.documentId, workId: ports.editorWorkId });
+    await ports.openDocument({
+      documentId: item.documentId,
+      workId: ports.editorWorkId ?? undefined,
+    });
     return;
   }
   if (!ports.openRoute) return;
@@ -241,7 +244,7 @@ async function openRecent(
       {
         scheme: "unfiled",
         path: "",
-        workId: ports.editorWorkId,
+        workId: ports.editorWorkId ?? undefined,
         documentId: item.documentId,
       },
       {

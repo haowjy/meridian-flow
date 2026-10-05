@@ -13,30 +13,21 @@ import {
   type ResourceRecord,
   type ResourceWorkAuthority,
   rebaseFolderResourceLocation,
-  resourceContextAuthority,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 import type { ContextTab } from "@/client/stores";
 
-/**
- * The Work an Editor tab carries: a named Work's id. No Work's documents carry
- * none, because the No Work Editor names no Work. A Work id always states its
- * slug checked by the command constructor or asserted by the scoped catalog;
- * the shared durable authority rule decides No Work.
- */
+/** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
-  if (location.workId === null) return undefined;
-  return resourceContextAuthority("scratch", location).kind === "work"
-    ? location.workId
-    : undefined;
+  return location.workId ?? undefined;
 }
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
-  workId?: string | null,
+  workId?: string,
 ): ContextTab {
   if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
     return {
@@ -46,6 +37,8 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
+  if (isWorkScopedProjectContextScheme(scheme) && !workId)
+    throw new Error("Work-scoped tabs require a Work row id");
   const base = {
     documentId: file.documentId,
     scheme,

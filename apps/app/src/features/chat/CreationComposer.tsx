@@ -33,7 +33,7 @@ export function CreationComposer({
    */
   newChatFocusRequestId?: number | null;
   /** Explicit Work scope carried by a context-specific New chat action. */
-  newChatWorkId?: string | null;
+  newChatWorkId?: string;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
@@ -73,7 +73,7 @@ export function CreationComposer({
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenProjectDocument(projectId);
-  const context = agent ? { workId, agent } : undefined;
+  const context = agent && workId ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(
@@ -140,7 +140,7 @@ export function CreationComposer({
             agent={agent}
             disabled={modePending}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected?.id ?? null })}
+            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
             onRetryWorks={works.refetch}
             onModePendingChange={setModePending}
           />

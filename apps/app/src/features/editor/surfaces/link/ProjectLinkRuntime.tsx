@@ -48,7 +48,7 @@ export function useEditorLinkDestination(): LinkDestination {
     (document, gesture) =>
       openDocument({
         documentId: document.documentId,
-        workId,
+        workId: workId ?? undefined,
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openDocument, workId],
@@ -84,7 +84,7 @@ export function ProjectLinkRuntime({
 
   const scope = useMemo<LinkResolutionScope | null>(
     () =>
-      active && projectId
+      active && projectId && workId
         ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
         : null,
     [active, baseUri, documentId, documentRevision, projectId, workId],

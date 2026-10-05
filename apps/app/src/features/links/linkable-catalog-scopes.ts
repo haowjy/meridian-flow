@@ -34,12 +34,10 @@ export type LinkableCatalogScopes = {
 export function linkableCatalogScopes({
   projectId,
   workId,
-  noWorkId,
 }: {
   projectId: string | null;
   workId: string | null;
-  noWorkId: string | null;
 }): LinkableCatalogScopes | null {
-  if (!projectId) return null;
-  return { projectId, workId: workId ?? noWorkId };
+  if (!projectId || !workId) return null;
+  return { projectId, workId };
 }

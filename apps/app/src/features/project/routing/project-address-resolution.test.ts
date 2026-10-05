@@ -7,6 +7,7 @@ import {
   addressWorkSelection,
   guardProjectQuerySelections,
   resolveAddressSelection,
+  workSelectionFor,
 } from "./project-address-resolution";
 
 function address(href: string) {
@@ -141,4 +142,29 @@ describe("optional query guard", () => {
       work: { kind: "none" },
     });
   });
+});
+
+it("serializes No Work uniformly without changing project content URLs", () => {
+  const noWorkId = "00000000-0000-4000-8000-000000000009";
+  for (const [destination, workId, kind, suffix] of [
+    [
+      { kind: "document", scheme: "manuscript", path: "chapter.md" },
+      noWorkId,
+      "none",
+      "/editor/manuscript/chapter.md",
+    ],
+    [
+      { kind: "browse", scheme: "scratch", path: "" },
+      noWorkId,
+      "id",
+      `/editor/browse/scratch?work=${noWorkId}`,
+    ],
+    [{ kind: "editor" }, undefined, "absent", "/editor"],
+  ] as const) {
+    const work = workSelectionFor(destination, workId, noWorkId);
+    expect(work.kind).toBe(kind);
+    expect(projectAddressHref({ projectId: "project", destination, work, results: false })).toBe(
+      `/p/project${suffix}`,
+    );
+  }
 });

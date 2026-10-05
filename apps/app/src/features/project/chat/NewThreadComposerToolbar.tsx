@@ -43,7 +43,7 @@ export function NewThreadComposerToolbar({
   agent: CreationAgent | null;
   disabled: boolean;
   onAgentChange(agent: CreationAgent): void;
-  onWorkChange(work: Work | null): void;
+  onWorkChange(work: Work): void;
   onRetryWorks(): void;
   onModePendingChange(pending: boolean): void;
 }) {
@@ -138,7 +138,7 @@ function useProspectiveWorkControl({
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   disabled: boolean;
-  onWorkChange(work: Work | null): void;
+  onWorkChange(work: Work): void;
   onRetryWorks(): void;
 }): ComposerToolbarControl {
   const [query, setQuery] = useState("");

@@ -61,7 +61,6 @@ function chatLinkScope({
   activeWork,
   thread,
   worksSettled,
-  noWorkId,
 }: {
   projectId: string;
   /** The thread's Work from the Works snapshot; null when unknown or missing. */
@@ -69,12 +68,10 @@ function chatLinkScope({
   thread: Pick<Thread, "workId"> | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
-  /** The project's No Work row, once the Works snapshot has it. */
-  noWorkId: string | null;
 }): LinkResolutionScope | "pending" {
   if (activeWork) return { projectId, workId: activeWork.id, baseUri: null };
-  if (!worksSettled || !thread) return "pending";
-  return { projectId, workId: thread.workId ?? noWorkId, baseUri: null };
+  if (!worksSettled || !thread?.workId) return "pending";
+  return { projectId, workId: thread.workId, baseUri: null };
 }
 
 export function useChatLinkFollowing({
@@ -93,10 +90,9 @@ export function useChatLinkFollowing({
   references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
 } {
-  const { status: worksStatus, noWork } = useWorks(projectId);
+  const { status: worksStatus } = useWorks(projectId);
   const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
-  const noWorkId = noWork?.id ?? null;
   const scope = useMemo(
     () =>
       chatLinkScope({
@@ -104,9 +100,8 @@ export function useChatLinkFollowing({
         activeWork,
         thread: threadKnown ? { workId: threadWorkId } : null,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
-        noWorkId,
       }),
-    [activeWork, noWorkId, projectId, threadKnown, threadWorkId, worksStatus],
+    [activeWork, projectId, threadKnown, threadWorkId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,

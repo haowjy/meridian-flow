@@ -26,7 +26,6 @@ import { useMemo, useRef } from "react";
 
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
-import { useWorks } from "@/client/query/useWorks";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
 
@@ -61,8 +60,7 @@ export function useLinkableDocuments({
   workId: string | null;
 }): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) && !workId });
-  const scopes = linkableCatalogScopes({ projectId, workId, noWorkId: noWork?.id ?? null });
+  const scopes = linkableCatalogScopes({ projectId, workId });
   const catalogWorkId = scopes?.workId ?? null;
   const {
     manuscript: { catalog: manuscript, isComplete: manuscriptComplete },

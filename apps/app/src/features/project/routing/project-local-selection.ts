@@ -27,7 +27,7 @@ export function resolveLocalDocumentSelection(input: {
     !pointer.resourceHandle
   )
     return { kind: "unavailable" } as const;
-  if (!input.hydrated) return { kind: "loading" } as const;
+  if (!input.hydrated || !input.workId) return { kind: "loading" } as const;
   const tab = input.tabs.find((candidate) => candidate.resourceHandle === pointer.resourceHandle);
   if (!tab) return { kind: "unavailable" } as const;
   const owner = resolveWorkspaceRoute({
