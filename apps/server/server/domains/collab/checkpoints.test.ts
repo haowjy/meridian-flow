@@ -32,10 +32,6 @@ describe("checkpoint restore", () => {
     const replaceAuthorityGeneration = vi.fn(async () => ({ generation: 2n }));
     const restoreFromYDoc = vi.fn(async () => Ok(undefined));
     const service = createCheckpointService({
-      readCheckpointAuthority: async () => ({
-        authorityId: "test-authority" as never,
-        generation: 1n,
-      }),
       coordinator: {
         async withDocument(_docId, operation) {
           return operation(liveDoc);
@@ -81,10 +77,6 @@ describe("checkpoint restore", () => {
       return Ok(undefined);
     });
     const service = createCheckpointService({
-      readCheckpointAuthority: async () => ({
-        authorityId: "test-authority" as never,
-        generation: 1n,
-      }),
       coordinator: {
         async withDocument(_docId, operation) {
           return operation(liveDoc);

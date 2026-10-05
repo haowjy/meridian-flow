@@ -17,7 +17,6 @@ import type * as Y from "yjs";
 import { hasLiveManifestMembership } from "../../../lib/yjs-ws-handler.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
-import { ensureAndReadDocumentAuthorityHead } from "./drizzle-document-authority-head.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
@@ -45,7 +44,6 @@ describe("Drizzle manifest persistence", () => {
     },
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    readCheckpointAuthority: (id) => ensureAndReadDocumentAuthorityHead(db, id),
     journal: livePersistence.journal,
     hocuspocus: () => ({ documents: liveDocs }) as never,
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
