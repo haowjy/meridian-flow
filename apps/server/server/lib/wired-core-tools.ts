@@ -78,7 +78,6 @@ import {
   FileEditRefusedError,
   type FileGrant,
   type FileNeed,
-  type FileTarget,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
