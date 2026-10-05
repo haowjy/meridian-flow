@@ -212,8 +212,8 @@ function preservedToolFields(content: Record<string, JsonValue>): {
   isError: boolean;
   // Carried across every tool-block upsert so TOOL_CALL_ARGS/END/RESULT and
   // tool.progress activity events don't wipe the running stdout/stderr log.
-  // Intentionally kept past completion — the structured `output` is what the
-  // card's preview consumes, but the streamed buffer remains visible in details.
+  // Intentionally kept past completion — the typed `result` is what the card's
+  // preview consumes, but the streamed buffer remains visible in details.
   streamedOutput: string | null;
   metadata: Record<string, JsonValue> | null;
 } {
