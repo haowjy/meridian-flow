@@ -102,17 +102,24 @@ import {
 import {
   actionPolicy,
   createCoreToolRegistrations,
+  createSkillToolRegistrations,
   type InterruptToolHandlerContext,
   isSkillsUri,
   type LsToolInput,
   listSkillDir,
+  parseSkillUri,
   type ReferenceReader,
   readSkillFile,
   type SearchToolInput,
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
+  type SkillInvocation,
+  skillFileHeader,
+  skillLoadHeader,
+  skillMdUri,
   type ToolHandlerContext,
   type ToolRegistration,
+  visibleSkillNames,
   type WorkCommand,
   workActionRefusal,
 } from "../domains/runtime/index.js";
@@ -1194,7 +1201,36 @@ async function readSkill(
   if (file.kind === "not_found") {
     return writeToolError("read", documentNotFoundMessage("read"), "document_not_found", { path });
   }
-  return `${file.uri} (read-only)\n\n${file.text}`;
+  return `${skillFileHeader(file.uri)}\n\n${file.text}`;
+}
+
+/**
+ * `skill` (D58): `read`'s result for the skill's `SKILL.md`, with a line
+ * pointing at `ls` for its other files; or the skills it could load instead.
+ */
+async function invokeSkill(
+  deps: ToolWiringDeps,
+  threadId: string,
+  name: string,
+): Promise<SkillInvocation> {
+  const principal = await skillPrincipal(deps, threadId);
+  if (isToolError(principal)) return { ok: false, message: principal.output.message };
+  const uri = skillMdUri(name);
+  const parsed = parseSkillUri(uri);
+  // A name is one folder: "a/b" or ".." must not reach another skill's file.
+  const file =
+    parsed?.skill === name && parsed.path === "SKILL.md"
+      ? await readSkillFile(deps, principal, threadId, uri)
+      : undefined;
+  if (file?.kind === "text") return { ok: true, text: `${skillLoadHeader(name)}\n\n${file.text}` };
+  const visible = await visibleSkillNames(deps, principal, threadId);
+  const missing = `Skill ${JSON.stringify(name)} isn't available.`;
+  return {
+    ok: false,
+    message: visible.length
+      ? `${missing} Skills you can load: ${visible.join(", ")}.`
+      : `${missing} This agent has no skills.`,
+  };
 }
 
 /** Whether a `write` names a `skills://` file as its target or its `from`. */
@@ -1379,7 +1415,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     };
   };
 
-  return createCoreToolRegistrations({
+  const core = createCoreToolRegistrations({
     read: readHandler,
     write: writeHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -1672,4 +1708,10 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     },
     ask_user: askUserHandler,
   });
+  return [
+    ...core,
+    ...createSkillToolRegistrations({
+      invoke: (threadId, name) => invokeSkill(deps, threadId, name),
+    }),
+  ];
 }

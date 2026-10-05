@@ -1,7 +1,8 @@
 /**
- * Skills as files at the wired model tools (D52), on the built-in launch
- * agents: Critic is offered `story-review` and `writing-principles`, so it reads
- * those folders under `skills://` and nothing else.
+ * Skills as files at the wired model tools (D52) and the `skill` tool (D58), on
+ * the built-in launch agents: Critic is offered `story-review` and
+ * `writing-principles`, so it loads and reads those folders under `skills://`
+ * and nothing else.
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -80,6 +81,18 @@ describe("skills:// at the model tools", () => {
     expect(resource).toMatch(
       /^skills:\/\/story-review\/resources\/line-edit\.md \(read-only\)\n\n/,
     );
+  });
+
+  it("loads a bound skill as read does, pointing at ls, and refuses an unbound one", async () => {
+    const call = await criticTools();
+    const loaded = await call("skill", { name: "story-review" });
+    expect(loaded).toMatch(
+      /^skills:\/\/story-review\/SKILL\.md \(read-only\)\nFind this skill's other files with ls\("skills:\/\/story-review"\)\.\n\n---\nname: story-review\n/,
+    );
+    expect(await call("skill", { name: "creative-writing-modes" })).toEqual({
+      message:
+        'Skill "creative-writing-modes" isn\'t available. Skills you can load: story-review, writing-principles.',
+    });
   });
 
   it("lists only the skills the binding offers", async () => {

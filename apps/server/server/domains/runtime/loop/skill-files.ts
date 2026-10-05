@@ -1,6 +1,6 @@
 /**
- * Skill files under `skills://` (D52): the read-only folders of the skills an
- * agent's own binding offers it. `skills://` is model-facing only; it is not a
+ * Skill files under `skills://` (D52) and the `skill` tool's load (D58): the
+ * read-only folders of the skills an agent's own binding offers it. `skills://` is model-facing only; it is not a
  * context scheme, so the writer's file tree, catalog and routes never see it.
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
@@ -34,6 +34,26 @@ export interface SkillListEntry {
   uri: string;
   kind: "file" | "directory";
   readonly: true;
+}
+
+/** A skill's `SKILL.md` as the model reads it. */
+export function skillMdUri(slug: string): string {
+  return `${SKILLS_URI_ROOT}${slug}/SKILL.md`;
+}
+
+/** The line heading a `skills://` file's text in a `read` result. */
+export function skillFileHeader(uri: string): string {
+  return `${uri} (read-only)`;
+}
+
+/**
+ * The header of a loaded skill the model can read: `read`'s header for its
+ * `SKILL.md`, plus where its other files are. Shared by the `skill` result and
+ * preloaded or activated bodies (D58).
+ */
+export function skillLoadHeader(slug: string): string {
+  const folder = JSON.stringify(`${SKILLS_URI_ROOT}${slug}`);
+  return `${skillFileHeader(skillMdUri(slug))}\nFind this skill's other files with ls(${folder}).`;
 }
 
 export function isSkillsUri(path: string): boolean {
@@ -85,8 +105,7 @@ export async function listSkillDir(
   const parsed = parseSkillUri(uri);
   if (!parsed) return [];
   if (!parsed.skill) {
-    const visible = await visibleSkills(deps, principal, threadId);
-    return [...visible.keys()].sort().map((skill) => ({
+    return (await visibleSkillNames(deps, principal, threadId)).map((skill) => ({
       uri: `${SKILLS_URI_ROOT}${skill}`,
       kind: "directory",
       readonly: true,
@@ -107,6 +126,15 @@ export async function listSkillDir(
   return [...entries]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, kind]) => ({ uri: `${base}/${name}`, kind, readonly: true }));
+}
+
+/** The names of the skills this agent may read, sorted. */
+export async function visibleSkillNames(
+  deps: SkillFilesDeps,
+  principal: Principal,
+  threadId: string,
+): Promise<string[]> {
+  return [...(await visibleSkills(deps, principal, threadId)).keys()].sort();
 }
 
 /** The skills this agent may read, each with its bound reference. */
