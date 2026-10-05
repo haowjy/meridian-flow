@@ -54,11 +54,7 @@ export type SocketLifecycleConsumer = {
 
 export class SocketLifecycleController {
   private readonly webSocketFactory: (url: string) => WebSocket;
-  private readonly maxReconnectAttempts: number;
-  private readonly baseDelayMs: number;
-  private readonly maxDelayMs: number;
-  private readonly jitterRatio: number;
-  private readonly persistentDelayMs: number;
+  private readonly backoff: Required<WsReconnectBackoffConfig>;
   private readonly pingTimeoutMs: number;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -80,12 +76,7 @@ export class SocketLifecycleController {
     this.consumer = consumer;
     this.connectivityHints = options.connectivityHints;
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
-    const backoff = resolveWsReconnectBackoff(options.backoff);
-    this.maxReconnectAttempts = backoff.maxReconnectAttempts;
-    this.baseDelayMs = backoff.baseDelayMs;
-    this.maxDelayMs = backoff.maxDelayMs;
-    this.jitterRatio = backoff.jitterRatio;
-    this.persistentDelayMs = backoff.persistentDelayMs;
+    this.backoff = resolveWsReconnectBackoff(options.backoff);
     this.pingTimeoutMs = options.pingTimeoutMs ?? DEFAULT_WS_PING_TIMEOUT_MS;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? (() => Math.random());
@@ -293,10 +284,10 @@ export class SocketLifecycleController {
     const nextAttempt = this.reconnectAttempt + 1;
     this.reconnectAttempt = nextAttempt;
 
-    const isAggressive = nextAttempt <= this.maxReconnectAttempts;
+    const isAggressive = nextAttempt <= this.backoff.maxReconnectAttempts;
     const delayMs = isAggressive
-      ? this.computeBackoffDelay(nextAttempt)
-      : this.computePersistentDelay();
+      ? computeReconnectDelayMs(this.backoff, nextAttempt, this.random)
+      : computePersistentReconnectDelayMs(this.backoff, this.random);
     const nextRetryAt = this.now() + delayMs;
     this.publishConnectionState(
       isAggressive
@@ -312,24 +303,6 @@ export class SocketLifecycleController {
       if (!this.consumer.wantsConnection()) return;
       this.startSocket();
     }, delayMs);
-  }
-
-  private computeBackoffDelay(attempt: number): number {
-    return computeReconnectDelayMs(this.backoffConfig(), attempt, this.random);
-  }
-
-  private computePersistentDelay(): number {
-    return computePersistentReconnectDelayMs(this.backoffConfig(), this.random);
-  }
-
-  private backoffConfig() {
-    return {
-      maxReconnectAttempts: this.maxReconnectAttempts,
-      baseDelayMs: this.baseDelayMs,
-      maxDelayMs: this.maxDelayMs,
-      jitterRatio: this.jitterRatio,
-      persistentDelayMs: this.persistentDelayMs,
-    };
   }
 
   private clearReconnectTimer(): void {
