@@ -33,6 +33,14 @@ export interface SkillListEntry {
   uri: string;
   kind: "file" | "directory";
   readonly: true;
+  /** Set on a file `read` returns no text for. */
+  fileType?: "binary";
+}
+
+/** A `skills://` folder's URI and entries, shaped like an `ls` result. */
+export interface SkillListing {
+  uri: string;
+  entries: SkillListEntry[];
 }
 
 /**
@@ -114,31 +122,43 @@ export async function listSkillDir(
   deps: SkillFilesDeps,
   threadId: string,
   uri: string,
-): Promise<SkillListEntry[]> {
+): Promise<SkillListing> {
   const parsed = parseSkillUri(uri);
-  if (!parsed) return [];
+  if (!parsed) return { uri: uri.trim(), entries: [] };
   if (!parsed.skill) {
-    return (await visibleSkillNames(deps, threadId)).map((skill) => ({
+    const entries = (await visibleSkillNames(deps, threadId)).map((skill) => ({
       uri: `${SKILLS_URI_ROOT}${skill}`,
-      kind: "directory",
-      readonly: true,
+      kind: "directory" as const,
+      readonly: true as const,
     }));
+    return { uri: SKILLS_URI_ROOT, entries };
   }
-  const folder = await visibleSkillFolder(deps, threadId, parsed.skill);
-  if (!folder) return [];
-  const prefix = parsed.path ? `${folder.directory}/${parsed.path}/` : `${folder.directory}/`;
   const base = parsed.path
     ? `${SKILLS_URI_ROOT}${parsed.skill}/${parsed.path}`
     : `${SKILLS_URI_ROOT}${parsed.skill}`;
-  const entries = new Map<string, SkillListEntry["kind"]>();
-  for (const path of Object.keys(folder.files)) {
+  const folder = await visibleSkillFolder(deps, threadId, parsed.skill);
+  if (!folder) return { uri: base, entries: [] };
+  const prefix = parsed.path ? `${folder.directory}/${parsed.path}/` : `${folder.directory}/`;
+  const entries = new Map<string, Omit<SkillListEntry, "uri">>();
+  for (const [path, file] of Object.entries(folder.files)) {
     if (!path.startsWith(prefix)) continue;
     const [name, ...below] = path.slice(prefix.length).split("/");
-    if (name) entries.set(name, below.length > 0 ? "directory" : "file");
+    if (!name) continue;
+    entries.set(
+      name,
+      below.length > 0
+        ? { kind: "directory", readonly: true }
+        : typeof file === "string"
+          ? { kind: "file", readonly: true }
+          : { kind: "file", readonly: true, fileType: "binary" },
+    );
   }
-  return [...entries]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, kind]) => ({ uri: `${base}/${name}`, kind, readonly: true }));
+  return {
+    uri: base,
+    entries: [...entries]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, entry]) => ({ uri: `${base}/${name}`, ...entry })),
+  };
 }
 
 /** The names of the skills this agent may read, sorted. */

@@ -114,6 +114,8 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
+  /** Words in the projection; set only when {@link ContextListOptions.wordCounts} asks. */
+  wordCount?: number;
 };
 
 export type BinaryFileEntry = BaseListEntry & {
@@ -128,6 +130,17 @@ export type DirectoryEntry = BaseListEntry & { kind: "directory" };
 export type ContextFileEntry = EditableFileEntry | BinaryFileEntry;
 export type ContextListEntry = DirectoryEntry | ContextFileEntry;
 export type FileEntry = ContextListEntry;
+
+/** A folder's entries and the folder's canonical URI; `uri` is null for the root listing. */
+export interface ContextListing {
+  uri: string | null;
+  entries: ContextListEntry[];
+}
+
+export interface ContextListOptions {
+  /** Count each text document's words from its projection (no extra query). */
+  wordCounts?: boolean;
+}
 
 interface BaseFileRef {
   uri: string;
@@ -310,7 +323,7 @@ export interface ContextPort {
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
-  list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;
+  list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 
   /**
    * Create an empty directory at the URI, including any missing ancestors.
