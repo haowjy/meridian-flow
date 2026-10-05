@@ -5,7 +5,7 @@
  * while refusing retries after committed output.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mapOpenAIError } from "./adapters/openai-compatible/errors.js";
+import { mapProviderHttpError } from "./adapters/provider-http-error.js";
 import { streamWithRetry } from "./attempt-stream.js";
 import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "./deadline.js";
 import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "./domain/index.js";
@@ -201,7 +201,7 @@ describe("streamWithRetry provider refusals", () => {
     async function* insufficientBalance(): AsyncGenerator<StreamEvent> {
       yield {
         type: "error",
-        ...mapOpenAIError({ status: 402, message: "402 Insufficient Balance" }),
+        ...mapProviderHttpError({ status: 402, message: "402 Insufficient Balance" }),
       };
     }
     const { adapter, calls } = scriptedAdapter([insufficientBalance, textThenEnd]);

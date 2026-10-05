@@ -21,8 +21,11 @@ import type {
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { providerFetch } from "../provider-http-error.js";
-import { mapAnthropicError } from "./errors.js";
+import {
+  mapProviderHttpError,
+  type ProviderErrorPatterns,
+  providerFetch,
+} from "../provider-http-error.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
@@ -35,6 +38,14 @@ function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
   if (!auth?.apiKey) return undefined;
   return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
 }
+
+/**
+ * Anthropic also reports a filtered request as "blocked". The word must be "blocked",
+ * not "block": "invalid content block" is a malformed request, not a filter.
+ */
+export const ANTHROPIC_ERROR_PATTERNS: Partial<ProviderErrorPatterns> = {
+  contentFiltered: /content[\s\S]*(?:filter|blocked)|(?:filter|blocked)[\s\S]*content/,
+};
 
 export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter {
   const apiKey = resolveApiKey(config.auth);
@@ -97,7 +108,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           };
           return;
         }
-        const mapped = mapAnthropicError(err);
+        const mapped = mapProviderHttpError(err, ANTHROPIC_ERROR_PATTERNS);
         yield { type: "error", ...mapped };
       }
     },

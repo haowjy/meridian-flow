@@ -1,12 +1,15 @@
 /** Provider window failures share one code; invalid token parameters do not trigger compaction. */
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
-import { mapAnthropicError } from "./anthropic/errors.js";
+import { ANTHROPIC_ERROR_PATTERNS } from "./anthropic/adapter.js";
 import {
   createStreamAccumulator,
   eventsFromAnthropicStreamEvent,
 } from "./anthropic/stream-collect.js";
-import { mapOpenAIError } from "./openai-compatible/errors.js";
+import { mapProviderHttpError } from "./provider-http-error.js";
+
+const mapOpenAIError = (err: unknown) => mapProviderHttpError(err);
+const mapAnthropicError = (err: unknown) => mapProviderHttpError(err, ANTHROPIC_ERROR_PATTERNS);
 
 describe("context window normalization", () => {
   it("maps Anthropic's untyped window stop and keeps paid usage", () => {
