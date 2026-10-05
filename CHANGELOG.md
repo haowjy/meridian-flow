@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Keep one resolved thread-socket retry configuration and read connection state directly from its lifecycle controller without changing reconnect behavior.
+
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo and branch reconstruction within the restored generation instead of replaying retired text.
 
 - Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.
