@@ -34,9 +34,16 @@ export type ModelRequestDebugCapture =
   | { status: "complete" }
   | { status: "omitted"; reason: "request_too_large"; maxRequestBytes: number };
 
+/** The provider's failure response for this call, as received (body capped at 4 KiB). */
+export type ModelRequestDebugProviderError = {
+  /** HTTP status; null when the provider reported the failure inside the stream. */
+  status: number | null;
+  body: string;
+};
+
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
-  schema: "meridian.model-request-debug.v2";
+  schema: "meridian.model-request-debug.v3";
   gatewayCallId: string;
   threadId: string;
   /** Assistant turn the request belongs to. */
@@ -54,6 +61,8 @@ export type ModelRequestDebugRecord = {
   request: ModelRequestDebugRequest | null;
   skills: { slug: string; layer: string }[];
   toolRegistrations: { name: string; source: string; capability: string | null }[];
+  /** Set when the call failed with a provider response; null until then and on success. */
+  providerError: ModelRequestDebugProviderError | null;
 };
 
 export type ModelRequestDebugRetention = {
@@ -88,6 +97,7 @@ export type ModelRequestDebugSummary = {
   turnId: string;
   requestedAt: string;
   agentSlug: string | null;
+  providerStatus: number | null;
 };
 
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
@@ -326,7 +336,25 @@ export function summarizeModelRequestDebugView(
     turnId: view.record.turnId,
     requestedAt: view.record.requestedAt,
     agentSlug: view.record.agentSlug,
+    providerStatus: view.record.providerError?.status ?? null,
   };
+}
+
+function providerErrorMarkdown(error: ModelRequestDebugProviderError): string {
+  const status = error.status === null ? "in-stream (no HTTP status)" : `HTTP ${error.status}`;
+  return [
+    "# Provider error response",
+    "",
+    status,
+    "",
+    boundedReadablePart(error.body, (visible, omittedBytes) =>
+      fencedBody(
+        omittedBytes
+          ? `${visible}\n[${omittedBytes} bytes omitted from readable view; use the raw view for exact data]`
+          : visible,
+      ),
+    ),
+  ].join("\n");
 }
 
 export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {
@@ -339,6 +367,7 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
       "",
       `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRequestBytes : "configured"}-byte capture limit. Open Debug for its retained metadata and digest.`,
     );
+    if (record.providerError) lines.push("", providerErrorMarkdown(record.providerError));
     return lines.join("\n");
   }
 
@@ -360,6 +389,8 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
       lines.push("", fencedJson(tool, `### ${name}\n\n`));
     }
   }
+
+  if (record.providerError) lines.push("", "---", "", providerErrorMarkdown(record.providerError));
 
   return lines.join("\n");
 }

@@ -456,6 +456,7 @@ export * from "./golden/index.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,
+  ModelRequestDebugProviderError,
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
   ModelRequestDebugRetention,

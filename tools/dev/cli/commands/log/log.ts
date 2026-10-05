@@ -55,11 +55,18 @@ function renderLine(event: EventRecord, full: boolean): string {
     .filter(([key]) => ["threadId", "turnId", "traceId", "toolName", "errorCode"].includes(key))
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
+  // A provider failure names its status and the call to open with `thread context --call`.
+  const providerStatus = (event.payload as { providerStatus?: unknown } | undefined)
+    ?.providerStatus;
+  const provider =
+    typeof providerStatus === "number"
+      ? ` providerStatus=${providerStatus} gatewayCallId=${String(event.correlation?.gatewayCallId ?? "?")}`
+      : "";
   const payload =
     full && event.payload !== undefined
       ? ` ${truncate(oneLine(JSON.stringify(event.payload)), 400)}`
       : "";
-  return `${event.timestamp ?? "?"} ${(event.level ?? "?").padEnd(5)} ${event.source ?? "?"} ${event.name ?? "?"}${correlation ? ` ${correlation}` : ""}${payload}`;
+  return `${event.timestamp ?? "?"} ${(event.level ?? "?").padEnd(5)} ${event.source ?? "?"} ${event.name ?? "?"}${correlation ? ` ${correlation}` : ""}${provider}${payload}`;
 }
 
 export const logCommand: CommandSpec = {
