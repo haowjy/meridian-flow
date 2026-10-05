@@ -12,6 +12,7 @@
 - Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.
 - Coalesce browser recovery signals and stagger connection retry nudges.
 - Fixed stale document retries replacing recovering connections, restored chat recovery hints, and stopped working-set recovery after account teardown.
+- Fixed stale document retries replacing recovering connections, restored chat recovery hints, and released account-owned working-set recovery subscriptions on teardown.
 
 - Documents and chat go offline promptly and retry together when the network returns, the tab wakes, or another connection recovers. Resource and working-set sync share the same recovery signals.
 

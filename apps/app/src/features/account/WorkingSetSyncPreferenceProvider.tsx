@@ -61,8 +61,8 @@ function WorkingSetSyncPreferenceOwner({
   const connectivityHints = useConnectivityHints();
   const accountEpoch = useAccountEpochSignal();
   useEffect(
-    () => bindWorkingSetSyncLifetime(accountId, accountEpoch, connectivityHints),
-    [accountId, accountEpoch, connectivityHints],
+    () => bindWorkingSetSyncLifetime(accountEpoch, connectivityHints),
+    [accountEpoch, connectivityHints],
   );
   // Configure during render, ahead of the descendant project-route bootstrap's
   // hydration layout commit. The driver must already know its enabled state;
