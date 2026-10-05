@@ -483,6 +483,20 @@ describe("document revisions (postgres and collab)", () => {
     expect(await f.current()).not.toBe(before);
   });
 
+  it("concurrent live pulls for more documents than pooled connections all finish", async () => {
+    const f = await fixture("draft");
+    // The harness pool holds 4 connections. A pull that takes its live snapshot
+    // while holding its root transaction needs a second one, so 8 at once
+    // would hold every connection and wait forever.
+    const documentIds = [
+      ALPHA_ID,
+      ...Array.from({ length: 7 }, () => crypto.randomUUID() as typeof ALPHA_ID),
+    ];
+    await bounded(() =>
+      Promise.all(documentIds.map((documentId) => f.branchPulls.flushLivePull(documentId))),
+    );
+  });
+
   it("publishes a root-committed pull even when its caller response aborts", async () => {
     const f = await fixture("draft");
     await f.read();
