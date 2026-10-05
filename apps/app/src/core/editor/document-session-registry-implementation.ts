@@ -14,7 +14,7 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
+import { DocumentSession } from "./document-session";
 import {
   compareAvailabilityGeneration,
   documentSessionPersistenceKey,
@@ -118,10 +118,6 @@ export class DocumentSessionRegistry
   private readonly settledLocalTransfers = new WeakSet<object>();
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
-  private readonly sessionObservers = new Map<
-    string,
-    Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
-  >();
   private localResources: LocalResourceLifetimePort | null = null;
 
   constructor(
@@ -221,17 +217,6 @@ export class DocumentSessionRegistry
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  getDetached(lease: LiveDocumentSessionLease): DocumentSession {
-    const state = this.requireLease(lease);
-    return this.getOrCreateLiveSession(lease, state, false);
-  }
-
-  attachDetached(lease: LiveDocumentSessionLease): DocumentSession {
-    const session = this.getDetached(lease);
-    if (session.getSnapshot().status === "detached") this.attachSessionTransport(session);
-    return session;
-  }
-
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
     const state = this.requireLease(lease);
     const session = state.session;
@@ -306,7 +291,7 @@ export class DocumentSessionRegistry
     this.teardownOwner.assertAvailable({ kind: "branch", roomKey });
     const existing = this.branchRooms.get(roomKey);
     if (existing) return existing;
-    const session = this.createSession(roomKey, { kind: "none" });
+    const session = this.constructSession(roomKey, { kind: "none" });
     this.attachSessionTransport(session);
     session.subscribe((snapshot) => {
       if (snapshot.connectionState?.kind !== "reset") return;
@@ -554,22 +539,6 @@ export class DocumentSessionRegistry
     return attempt;
   }
 
-  peekLive(lease: LiveDocumentSessionLease): DocumentSession | undefined {
-    return this.requireLease(lease).session ?? undefined;
-  }
-
-  hasLive(lease: LiveDocumentSessionLease): boolean {
-    return this.peekLive(lease) !== undefined;
-  }
-
-  observeLive(
-    lease: LiveDocumentSessionLease,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
-  ): () => void {
-    this.requireLease(lease);
-    return this.observeRoom(lease.documentId, observer);
-  }
-
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
@@ -791,22 +760,13 @@ export class DocumentSessionRegistry
       lease.documentId,
       state.persistenceGeneration,
     );
-    const session = this.createSession(lease.documentId, {
+    const session = this.constructSession(lease.documentId, {
       kind: "indexeddb",
       key: state.exactDatabaseName,
     });
     state.session = session;
     if (attach) this.attachSessionTransport(session);
     this.maybeWarnLiveDocCap();
-    return session;
-  }
-
-  private createSession(
-    roomKey: string,
-    persistence: DocumentSessionOptions["persistence"],
-  ): DocumentSession {
-    const session = this.constructSession(roomKey, persistence);
-    this.publishSession(roomKey, session);
     return session;
   }
 
@@ -937,32 +897,6 @@ export class DocumentSessionRegistry
       if (retained.has(roomKey)) return true;
     }
     return false;
-  }
-
-  private publishSession(roomKey: string, session: DocumentSession): void {
-    for (const [observer] of this.sessionObservers.get(roomKey) ?? []) {
-      this.sessionObservers.get(roomKey)?.set(observer, session.subscribe(observer));
-    }
-  }
-
-  private observeRoom(
-    roomKey: string,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
-  ): () => void {
-    let observers = this.sessionObservers.get(roomKey);
-    if (!observers) {
-      observers = new Map();
-      this.sessionObservers.set(roomKey, observers);
-    }
-    observers.set(
-      observer,
-      (this.branchRooms.get(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
-    );
-    return () => {
-      observers?.get(observer)?.();
-      observers?.delete(observer);
-      if (observers?.size === 0) this.sessionObservers.delete(roomKey);
-    };
   }
 
   private maybeWarnLiveDocCap(): void {

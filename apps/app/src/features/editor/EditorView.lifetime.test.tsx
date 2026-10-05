@@ -100,7 +100,6 @@ const registry = {
   retain: () => {},
   release: () => {},
   getRoom: sessionFor,
-  getDetached: sessionFor,
   has: () => false,
   get: sessionFor,
   retainBranchRooms: () => {},
