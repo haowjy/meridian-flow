@@ -20,16 +20,15 @@ describe("projection effects document write hook", () => {
       touchDocumentActivity: vi.fn(async () => {
         throw activityFailure;
       }),
-      updateProjection: vi.fn(() => projectionPending),
       applyPushCompletion: vi.fn(),
     };
-    const hook = createProjectionEffectsDocumentWriteHook(effects);
+    const derive = vi.fn(() => projectionPending);
+    const hook = createProjectionEffectsDocumentWriteHook(effects, derive);
     const at = new Date("2026-07-24T12:00:00.000Z");
 
     const completion = hook({
       documentId: DOCUMENT_ID,
       threadId: THREAD_ID,
-      markdown: "projection",
       at,
     });
     let completed = false;
@@ -51,10 +50,6 @@ describe("projection effects document write hook", () => {
       threadId: THREAD_ID,
       at,
     });
-    expect(effects.updateProjection).toHaveBeenCalledWith({
-      documentId: DOCUMENT_ID,
-      markdown: "projection",
-      at,
-    });
+    expect(derive).toHaveBeenCalledWith(DOCUMENT_ID, at);
   });
 });

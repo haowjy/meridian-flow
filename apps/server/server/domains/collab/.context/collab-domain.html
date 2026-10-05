@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Collab Domain, End to End</title>
+<style>
+  :root {
+    --paper: #fdfdfb;
+    --ink: #22262a;
+    --muted: #5c646b;
+    --rule: #e4e2dc;
+    --live: #3b5bdb;
+    --draft: #0f766e;
+    --gate: #b42318;
+    --chip: #f2f1ec;
+    --code-bg: #f2f1ec;
+  }
+  html.dark {
+    --paper: #16181b;
+    --ink: #e6e4de;
+    --muted: #9aa1a8;
+    --rule: #32363b;
+    --live: #7b96f4;
+    --draft: #3fb8a8;
+    --gate: #f08c7d;
+    --chip: #24272b;
+    --code-bg: #24272b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 1.2rem 0 0.4rem; text-wrap: balance; }
+  h2 { font-size: 1.15rem; margin: 2.6rem 0 0.6rem; text-wrap: balance; }
+  h3 { font-size: 1rem; margin: 1.6rem 0 0.4rem; }
+  p, li { max-width: 65ch; }
+  code {
+    font: 0.85em ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+  a { color: var(--live); }
+  .lede { font-size: 1.05rem; }
+  .muted { color: var(--muted); }
+  .ref { font-size: 0.82rem; color: var(--muted); white-space: normal; }
+  .toggle {
+    position: fixed; top: 0.75rem; right: 0.75rem;
+    background: var(--chip); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: 999px; padding: 0.35rem 0.7rem; cursor: pointer; font-size: 0.9rem;
+  }
+  figure { margin: 1.5rem 0; overflow-x: auto; }
+  /* min-width keeps the smallest diagram labels near 11px on phones; narrow screens scroll. */
+  figure svg { width: 100%; min-width: 520px; height: auto; display: block; max-width: 34rem; margin: 0 auto; }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.4rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  details { border: 1px solid var(--rule); border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.8rem 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 0.5rem; }
+  .gate-word { color: var(--gate); font-weight: 650; }
+  .live-word { color: var(--live); font-weight: 650; }
+  .draft-word { color: var(--draft); font-weight: 650; }
+  .rule-list li { margin-bottom: 0.45rem; }
+  .invariant {
+    border-left: 3px solid var(--gate); padding: 0.3rem 0 0.3rem 0.9rem; margin: 1rem 0;
+  }
+  .invariant p { margin: 0.3rem 0; }
+  nav.toc ol { padding-left: 1.4rem; }
+  nav.toc li { margin-bottom: 0.15rem; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    html:not(.light) {
+      --paper: #16181b; --ink: #e6e4de; --muted: #9aa1a8; --rule: #32363b;
+      --live: #7b96f4; --draft: #3fb8a8; --gate: #f08c7d; --chip: #24272b; --code-bg: #24272b;
+    }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle light or dark theme">Theme</button>
+<main>
+
+<h1>The Collab Domain, End to End</h1>
+<p class="lede">
+The collab domain turns Yjs updates into durable, fenced, attributed document
+history. Every content change is written to a Postgres journal before any
+Y.Doc applies it, so every in-memory Y.Doc can be thrown away and rebuilt. A
+writer's keystroke goes straight into the <span class="live-word">live</span>
+document. An AI write goes either straight to live (direct mode) or into a
+per-Work <span class="draft-word">draft</span> that reaches live only when the
+writer applies it.
+</p>
+<p class="muted">
+This page is a guided tour for building a mental model. It describes the code
+on this checkout and summarizes the deeper <code>.context/</code> pages rather
+than repeating them. Code references are paths relative to
+<code>apps/server/server/domains/collab/</code>; <code>lib/</code> means
+<code>apps/server/server/lib/</code> and <code>packages/</code> means the repo's
+packages directory. The draft versus live product model has its own page:
+<a href="draft-live-model.html">the draft / live model</a>.
+</p>
+
+<nav class="toc" aria-label="Contents">
+<ol>
+  <li><a href="#boundary">What the domain is for</a></li>
+  <li><a href="#ydocs">The three kinds of Y.Doc</a></li>
+  <li><a href="#authority">Document authority</a></li>
+  <li><a href="#writer">The writer write path</a></li>
+  <li><a href="#ai">The AI write path</a></li>
+  <li><a href="#journal">The journal and reconstruction</a></li>
+  <li><a href="#branches">Branches: pulls, pushes, Apply, Discard</a></li>
+  <li><a href="#reversal">Reversal</a></li>
+  <li><a href="#schema">Schema fence and repair</a></li>
+  <li><a href="#derived">Derived outputs on this checkout</a></li>
+  <li><a href="#composition">The composition root</a></li>
+  <li><a href="#deeper">Where to go deeper</a></li>
+</ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="boundary">1. What the domain is for</h2>
+<p>
+Collab owns durable Yjs infrastructure: the journals, checkpoints, authority
+heads and branches in Postgres, the server-side Y.Docs built from them, and the
+rules for admitting a change into them. It does not own editing semantics,
+the WebSocket shell, or files and folders. Four neighbors split the rest.
+</p>
+
+<figure aria-label="Topology of the collab domain and its neighbors">
+<svg viewBox="0 0 440 560" role="img">
+  <defs>
+    <marker id="arrT" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <!-- collab frame -->
+  <rect x="138" y="34" width="164" height="350" rx="12" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="220" y="26" text-anchor="middle" fill="var(--muted)" font-size="12" font-weight="600">collab domain</text>
+  <!-- Thread peer -->
+  <g style="color: var(--draft)">
+    <rect x="150" y="60" width="140" height="58" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
+    <text x="220" y="84" text-anchor="middle" fill="currentColor" font-size="14" font-weight="700">Thread peer</text>
+    <text x="220" y="103" text-anchor="middle" fill="var(--muted)" font-size="11">one per (document, thread)</text>
+  </g>
+  <!-- Work draft -->
+  <g style="color: var(--draft)">
+    <rect x="150" y="186" width="140" height="58" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
+    <text x="220" y="210" text-anchor="middle" fill="currentColor" font-size="14" font-weight="700">Work draft</text>
+    <text x="220" y="229" text-anchor="middle" fill="var(--muted)" font-size="11">one per (document, Work)</text>
+  </g>
+  <!-- Live -->
+  <g style="color: var(--live)">
+    <rect x="150" y="312" width="140" height="58" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
+    <text x="220" y="336" text-anchor="middle" fill="currentColor" font-size="14" font-weight="700">Live document</text>
+    <text x="220" y="355" text-anchor="middle" fill="var(--muted)" font-size="11">the manuscript</text>
+  </g>
+  <!-- peer <-> draft -->
+  <g style="color: var(--draft)">
+    <line x1="204" y1="118" x2="204" y2="184" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrT)"/>
+    <line x1="238" y1="186" x2="238" y2="120" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrT)"/>
+    <text x="198" y="156" text-anchor="end" fill="currentColor" font-size="10.5">commit</text>
+    <text x="244" y="156" fill="currentColor" font-size="10.5">pull</text>
+  </g>
+  <!-- draft <-> live -->
+  <line x1="204" y1="244" x2="204" y2="310" stroke="var(--gate)" stroke-width="2" marker-end="url(#arrT)" style="color: var(--gate)"/>
+  <text x="198" y="276" text-anchor="end" fill="var(--gate)" font-size="10.5" font-weight="600">push</text>
+  <text x="198" y="289" text-anchor="end" fill="var(--gate)" font-size="10">(Apply, auto)</text>
+  <line x1="238" y1="312" x2="238" y2="246" stroke="var(--draft)" stroke-width="1.6" marker-end="url(#arrT)" style="color: var(--draft)"/>
+  <text x="244" y="282" fill="var(--draft)" font-size="10.5">pull</text>
+  <!-- Writer via Hocuspocus -->
+  <g style="color: var(--muted)">
+    <rect x="4" y="242" width="122" height="78" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.4"/>
+    <text x="65" y="264" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="700">Writer's editor</text>
+    <text x="65" y="282" text-anchor="middle" fill="var(--muted)" font-size="10.5">via Hocuspocus</text>
+    <text x="65" y="297" text-anchor="middle" fill="var(--muted)" font-size="10.5">/ws/yjs</text>
+    <text x="65" y="312" text-anchor="middle" fill="var(--muted)" font-size="9.5">lib/yjs-ws-handler.ts</text>
+    <line x1="126" y1="258" x2="149" y2="230" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrT)"/>
+    <line x1="126" y1="306" x2="149" y2="334" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrT)"/>
+  </g>
+  <text x="4" y="232" fill="var(--muted)" font-size="10">review room</text>
+  <text x="4" y="340" fill="var(--muted)" font-size="10">live room</text>
+  <!-- agent-edit -->
+  <g style="color: var(--muted)">
+    <rect x="314" y="176" width="122" height="78" rx="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.4"/>
+    <text x="375" y="198" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="700">AI write tool</text>
+    <text x="375" y="216" text-anchor="middle" fill="var(--muted)" font-size="10.5">@meridian/agent-edit</text>
+    <text x="375" y="231" text-anchor="middle" fill="var(--muted)" font-size="10.5">runtime Y.Doc,</text>
+    <text x="375" y="245" text-anchor="middle" fill="var(--muted)" font-size="10.5">response buffer</text>
+    <line x1="340" y1="176" x2="292" y2="104" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrT)"/>
+    <line x1="340" y1="254" x2="292" y2="330" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrT)"/>
+  </g>
+  <text x="330" y="132" fill="var(--muted)" font-size="10">draft mode</text>
+  <text x="330" y="304" fill="var(--muted)" font-size="10">direct mode</text>
+  <!-- Postgres -->
+  <line x1="220" y1="384" x2="220" y2="420" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrT)" style="color: var(--muted)"/>
+  <text x="228" y="406" fill="var(--muted)" font-size="10.5">journal first</text>
+  <rect x="20" y="422" width="400" height="58" rx="9" fill="var(--chip)" stroke="var(--rule)" stroke-width="1.2"/>
+  <text x="220" y="445" text-anchor="middle" fill="var(--ink)" font-size="13" font-weight="700">Postgres</text>
+  <text x="220" y="464" text-anchor="middle" fill="var(--muted)" font-size="10.5">updates, checkpoints, authority heads, branches, trails</text>
+  <!-- context -->
+  <rect x="20" y="500" width="400" height="48" rx="9" fill="none" stroke="var(--rule)" stroke-width="1.2"/>
+  <text x="220" y="520" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="700">context domain</text>
+  <text x="220" y="537" text-anchor="middle" fill="var(--muted)" font-size="10.5">documents rows, folders, markdown_projection</text>
+</svg>
+<figcaption>
+Three Y.Docs per document, stacked by distance from the manuscript. Writers
+edit live (or the review room); the AI edits a thread peer in draft mode or
+live in direct mode. Every arrow into a Y.Doc is journaled first.
+</figcaption>
+</figure>
+
+<div class="scroll">
+<table>
+  <tr><th>Neighbor</th><th>Owns</th><th>Talks to collab through</th></tr>
+  <tr>
+    <td><code>@meridian/agent-edit</code></td>
+    <td>Model-facing <code>read</code>/<code>write</code>, the response buffer, write handles, and the cold undo/redo planner. It edits a memory-only runtime Y.Doc over host ports and never imports server code.</td>
+    <td>Collab builds the cores and supplies the journal and coordinator ports. <span class="ref"><code>domain/agent-edit-runtime.ts</code>, <code>domain/thread-peer-core-pool.ts</code>, <code>packages/agent-edit/AGENTS.md</code></span></td>
+  </tr>
+  <tr>
+    <td>Hocuspocus transport</td>
+    <td>Upgrade auth, room parsing, connection state, hook ordering, physical close codes, graceful drain.</td>
+    <td>The <code>CollabTransport</code> methods: load, admit, store, drain. <span class="ref"><code>lib/yjs-ws-handler.ts</code>, <code>hocuspocus-persistence.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>context domain</td>
+    <td><code>documents</code> rows, folder trees, paths and URIs, and the <code>markdown_projection</code> column.</td>
+    <td>Seeds, content reads and writes, effective reads for a thread. Content is Yjs-canonical; the projection is a cache. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>threads and runtime</td>
+    <td>The frozen <code>ThreadExecutionContext</code> and the write tool wiring.</td>
+    <td><code>agentEdit(context)</code> picks the core; <code>finalizeResponseCommit</code> closes a reply. <span class="ref"><code>composition.ts</code>, <code>lib/wired-core-tools.ts</code></span></td>
+  </tr>
+</table>
+</div>
+<p>
+The dependency direction is load-bearing: collab adapters import
+agent-edit, never the reverse. If agent-edit learned about Postgres or Works,
+it would stop being a reusable kernel and its cold reconstruction would start
+depending on server state it cannot replay.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="ydocs">2. The three kinds of Y.Doc</h2>
+<p>
+Every view of a document is a real Y.Doc, and changes move between them only
+by Yjs sync. That one rule is why a draft can fall behind live and catch up
+without a merge algorithm of our own.
+</p>
+<div class="scroll">
+<table>
+  <tr><th></th><th>Live document</th><th>Work draft</th><th>Thread peer</th></tr>
+  <tr>
+    <td><strong>Durable form</strong></td>
+    <td><code>document_yjs_updates</code> plus <code>document_yjs_checkpoints</code>, fenced by <code>document_yjs_heads</code></td>
+    <td><code>document_branches</code> row (kind <code>work_draft</code>) with a full state snapshot, plus <code>branch_write_journal</code> rows</td>
+    <td><code>document_branches</code> row (kind <code>thread_peer</code>), upstream is the Work draft</td>
+  </tr>
+  <tr>
+    <td><strong>Uniqueness</strong></td>
+    <td>One per document</td>
+    <td>One active per <code>(documentId, workId)</code>, shared by every thread in that Work</td>
+    <td>One active per <code>(documentId, threadId)</code></td>
+  </tr>
+  <tr>
+    <td><strong>In memory</strong></td>
+    <td>The Hocuspocus room named by the document ID</td>
+    <td>Branch-coordinator cache; Hocuspocus room <code>branch:&lt;id&gt;:gen:&lt;n&gt;</code> when a writer reviews it</td>
+    <td>Branch-coordinator cache only; no room</td>
+  </tr>
+  <tr>
+    <td><strong>Who writes</strong></td>
+    <td>Writers, direct-mode AI, push settlement, reversal</td>
+    <td>Thread-peer commits, writer edits in the review room, live pulls</td>
+    <td>The thread's agent-edit core</td>
+  </tr>
+</table>
+</div>
+<p class="ref"><code>packages/database/src/schema/yjs.ts</code> (unique indexes <code>document_branches_active_work_draft</code> and <code>document_branches_active_thread_peer</code>), <code>hocuspocus-persistence.ts</code> <code>resolveBranchHocuspocusRoom</code> (only <code>work_draft</code> branches get rooms)</p>
+
+<h3>How sync moves between them</h3>
+<ul class="rule-list">
+  <li><strong>Live to Work draft (pull).</strong> After a live writer update is
+    journaled, a pull is scheduled with a 2 s debounce and a 10 s maximum; a
+    review-room connection triggers one without waiting; a thread-peer write
+    flushes one first. The pull replicates the live state into every active
+    Work draft for that document and commits in its own root transaction, so a
+    caller's rollback cannot undo it.
+    <span class="ref"><code>domain/branch-pulls.ts</code>, <code>composition.ts</code> (<code>onLiveUpdatePersisted: branchPulls.scheduleLivePull</code>), <code>lib/yjs-ws-handler.ts</code> <code>onConnect</code></span></li>
+  <li><strong>Work draft to thread peer (pull).</strong> Before a thread's
+    first write to a document in a reply, <code>pullThreadPeer</code> flushes
+    the live pull, then syncs the Work draft into the peer and returns the
+    branch generation and watermarks the write is pinned to.
+    <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>write</code>, <code>domain/branch-pulls.ts</code></span></li>
+  <li><strong>Thread peer to Work draft (commit).</strong> At response commit,
+    the peer's delta is committed into the Work draft as one
+    <code>branch_write_journal</code> row (source <code>agent</code>).
+    <span class="ref"><code>domain/branch-agent-edit.ts</code> <code>createBranchAgentEditCoordinator</code></span></li>
+  <li><strong>Work draft to live (push).</strong> Writer Apply, or an
+    automatic push when the draft's push policy is <code>auto</code>. This is
+    the only edge that needs consent. See <a href="#branches">section 7</a>.</li>
+</ul>
+<p>
+All branch Y.Docs are created with <code>gc: false</code>, and so are the
+Hocuspocus rooms (<code>yDocOptions: { gc: false }</code> in
+<code>lib/yjs-ws-handler.ts</code>). Reversal dependency checks, echo
+attribution and the stale-client fence all read tombstoned struct history;
+garbage collection would make those checks silently wrong.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="authority">3. Document authority</h2>
+<p>
+Each live document has one durable <strong>authority head</strong>, a row in
+<code>document_yjs_heads</code>. It answers one question for every writer and
+every journal read: which run of history is current? Three fields carry that.
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Field</th><th>Meaning</th><th>What it fences</th></tr>
+  <tr>
+    <td><code>authority_id</code></td>
+    <td>Random UUID minted when the head is created. A generation replacement keeps it.</td>
+    <td>Part of the journal's unique admission key and of every journal read and compaction filter.</td>
+  </tr>
+  <tr>
+    <td><code>authority_generation</code></td>
+    <td>Starts at 1. Bumped only by a generation replacement (checkpoint restore).</td>
+    <td>Journal reads replay only rows of the checkpoint's generation. Compaction and checkpoint manifests stay inside the current generation. Each live WebSocket connection is bound to the generation it opened under and is refused once the head moves.</td>
+  </tr>
+  <tr>
+    <td><code>next_admission_sequence</code></td>
+    <td>Per-generation counter, incremented under the document mutation lock for each admission.</td>
+    <td>Total order of admissions within a generation. A batch (for example a push's authored rows plus its reconcile row) shares one sequence and is ordered by <code>batch_ordinal</code>.</td>
+  </tr>
+</table>
+</div>
+<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>allocateDocumentAdmission</code>, <code>packages/database/src/schema/yjs.ts</code> (<code>document_yjs_updates_authority_admission</code> unique index), <code>adapters/drizzle-journal.ts</code> <code>read</code> and <code>compact</code></p>
+<p>
+Every live journal append runs in a transaction that first takes
+<code>pg_advisory_xact_lock</code> on <code>document-mutation:&lt;documentId&gt;</code>,
+then allocates the admission, inserts the row, and joins any unresolved push
+settlement for that document. That lock is the cross-process serialization
+point for live content; the in-process coordinator mutex is not
+(<a href="#writer">section 4</a>).
+<span class="ref"><code>adapters/drizzle-document-mutation-lock.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendUpdate</code></span>
+</p>
+<p>
+"Document authority" names the durable head and nothing else. The operation
+capabilities that admit content (<code>admitFreshAuthorship</code>,
+<code>admitCertifiedMutation</code>, <code>replicateFrozenIdentity</code>,
+<code>replaceAuthorityGeneration</code>) are the <strong>document mutation
+policy</strong>, and an in-memory room is the <strong>live document</strong>.
+<span class="ref"><code>domain/document-mutation-policy.ts</code>, <a href="document-authority-and-schema.md">document authority and schema</a></span>
+</p>
+
+<h3>What a restore does to the head</h3>
+<p>
+Restoring a checkpoint cannot be a Yjs apply: applying old state to the
+current doc merges with it instead of replacing it. So a restore installs the
+checkpoint as a new generation.
+</p>
+<ol>
+  <li>Under the document mutation lock, check the head is still at the expected
+    generation, refuse with <code>authority_head_busy</code> while any push
+    settlement for the document is not completed, and refuse with
+    <code>checkpoint_incomplete</code> if the checkpoint lacks state or an
+    attribution manifest.</li>
+  <li>Copy the checkpoint into a new <code>document_yjs_checkpoints</code> row
+    at generation + 1, with the manifest floor reset to null, and move the head:
+    generation + 1, <code>next_admission_sequence</code> = 1.</li>
+  <li>Disconnect the old generation: record the retired room's state vector,
+    close its connections, and drop the room without checkpointing it. A stale
+    session's next frame is refused as <code>stale-durable-authority-generation</code>,
+    and a frame replaying retired structs is refused as
+    <code>retired-durable-authority-generation</code>.</li>
+</ol>
+<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>replaceDocumentAuthorityHeadGeneration</code>, <code>domain/document-mutation-policy.ts</code> <code>replaceAuthorityGeneration</code>, <code>hocuspocus-persistence.ts</code> <code>disconnectLiveGeneration</code> and <code>admitLiveWriterUpdate</code></p>
+<p>
+On this checkout, <code>CollabDomain.restore</code> is wired to that path in
+<code>composition.ts</code>, but no route or service outside collab calls it.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="writer">4. The writer write path</h2>
+<p>
+A writer's keystroke is durable in Postgres before Hocuspocus applies it,
+broadcasts it, or acknowledges it. The transport's awaited
+<code>beforeSync</code> hook is the admission point.
+</p>
+
+<figure aria-label="Writer keystroke admission sequence">
+<svg viewBox="0 0 440 600" role="img">
+  <defs>
+    <marker id="arrW" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g style="color: var(--muted)">
+    <!-- step boxes -->
+    <rect x="8" y="10" width="270" height="56" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="32" fill="var(--ink)" font-size="13" font-weight="700">1. Frame reaches beforeSync</text>
+    <text x="20" y="52" fill="var(--muted)" font-size="10.5">sync step 2 or update with a payload</text>
+
+    <line x1="143" y1="66" x2="143" y2="86" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="88" width="270" height="70" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="110" fill="var(--ink)" font-size="13" font-weight="700">2. Fence the target</text>
+    <text x="20" y="130" fill="var(--muted)" font-size="10.5">connection generation equals head generation,</text>
+    <text x="20" y="146" fill="var(--muted)" font-size="10.5">same room Y.Doc, no retired-struct replay</text>
+
+    <line x1="143" y1="158" x2="143" y2="178" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="180" width="270" height="56" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="202" fill="var(--ink)" font-size="13" font-weight="700">3. Already contained?</text>
+    <text x="20" y="222" fill="var(--muted)" font-size="10.5">exact delete-set-aware containment check</text>
+
+    <line x1="143" y1="236" x2="143" y2="256" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="258" width="270" height="70" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="280" fill="var(--ink)" font-size="13" font-weight="700">4. Fresh authorship</text>
+    <text x="20" y="300" fill="var(--muted)" font-size="10.5">no struct from client IDs 0 to 999,</text>
+    <text x="20" y="316" fill="var(--muted)" font-size="10.5">no touch of the provenance namespace</text>
+
+    <line x1="143" y1="328" x2="143" y2="348" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="350" width="270" height="86" rx="8" fill="var(--paper)" stroke="var(--gate)" stroke-width="2"/>
+    <text x="20" y="372" fill="var(--gate)" font-size="13" font-weight="700">5. Journal append (own transaction)</text>
+    <text x="20" y="392" fill="var(--muted)" font-size="10.5">advisory lock, allocate admission,</text>
+    <text x="20" y="408" fill="var(--muted)" font-size="10.5">insert human row, join unresolved</text>
+    <text x="20" y="424" fill="var(--muted)" font-size="10.5">push settlements</text>
+
+    <line x1="143" y1="436" x2="143" y2="456" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="458" width="270" height="56" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="480" fill="var(--ink)" font-size="13" font-weight="700">6. Hocuspocus applies, broadcasts, acks</text>
+    <text x="20" y="500" fill="var(--muted)" font-size="10.5">only after beforeSync resolves</text>
+
+    <line x1="143" y1="514" x2="143" y2="534" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrW)"/>
+    <rect x="8" y="536" width="270" height="56" rx="8" fill="var(--chip)" stroke="var(--rule)" stroke-width="1.2"/>
+    <text x="20" y="558" fill="var(--ink)" font-size="13" font-weight="700">7. After durability</text>
+    <text x="20" y="578" fill="var(--muted)" font-size="10.5">schedule draft pull, offline reconcile, checkpoint</text>
+
+    <!-- side exits -->
+    <line x1="278" y1="123" x2="300" y2="123" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrW)"/>
+    <text x="304" y="118" fill="var(--gate)" font-size="10.5" font-weight="600">fails: drop,</text>
+    <text x="304" y="132" fill="var(--gate)" font-size="10.5" font-weight="600">close 1013</text>
+    <line x1="278" y1="208" x2="300" y2="208" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrW)"/>
+    <text x="304" y="203" fill="var(--muted)" font-size="10.5">yes: ack without</text>
+    <text x="304" y="217" fill="var(--muted)" font-size="10.5">a journal row</text>
+    <line x1="278" y1="293" x2="300" y2="293" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrW)"/>
+    <text x="304" y="288" fill="var(--gate)" font-size="10.5" font-weight="600">fails: reject,</text>
+    <text x="304" y="302" fill="var(--gate)" font-size="10.5" font-weight="600">close 1013</text>
+    <line x1="278" y1="393" x2="300" y2="393" stroke="currentColor" stroke-width="1.3" marker-end="url(#arrW)"/>
+    <text x="304" y="388" fill="var(--gate)" font-size="10.5" font-weight="600">fails: close</text>
+    <text x="304" y="402" fill="var(--gate)" font-size="10.5" font-weight="600">1013, nothing</text>
+    <text x="304" y="416" fill="var(--gate)" font-size="10.5" font-weight="600">applied</text>
+  </g>
+</svg>
+<figcaption>
+Live-room admission. Steps 2 through 5 run inside the awaited
+<code>beforeSync</code> hook, so a failure leaves the room untouched and the
+client reconnects (1013 is retryable).
+</figcaption>
+</figure>
+
+<ol>
+  <li><strong>Connect.</strong> <code>onConnect</code> authenticates, checks
+    document access, requires live manifest membership for a live room, runs
+    the schema fence (<a href="#schema">section 9</a>), and records the
+    admission target. For a live room the target captures the current
+    authority generation; every later frame on that connection is checked
+    against it. <span class="ref"><code>lib/yjs-ws-handler.ts</code> <code>classifyYjsConnectionAdmission</code></span></li>
+  <li><strong>Admit.</strong> <code>beforeSync</code> calls
+    <code>admitLiveWriterUpdate</code>, which runs the shared
+    <code>admitWriterUpdate</code> sequence: fence, containment, fresh
+    authorship, append. <span class="ref"><code>hocuspocus-persistence.ts</code>, <code>domain/document-mutation-policy.ts</code></span></li>
+  <li><strong>Append.</strong> <code>appendWriterUpdate</code> opens its own
+    transaction, locks the document, allocates an admission, inserts the row
+    with <code>origin_type = human</code>, and calls
+    <code>joinAdmissionWithinTx</code> so any in-flight push settlement sees
+    this edit. <span class="ref"><code>adapters/drizzle-journal.ts</code></span></li>
+  <li><strong>Apply and broadcast.</strong> Hocuspocus applies the frame to the
+    room only after the hook resolves, then broadcasts and acknowledges it.</li>
+  <li><strong>Afterwards.</strong> The live-to-draft pull is scheduled; an
+    admitted sync step 2 (a reconnect carrying offline edits) is queued for
+    offline reconciliation, which adds writer blocks lost to a merged agent
+    deletion to that agent turn's change trail;
+    Hocuspocus <code>onStoreDocument</code> (2 s debounce, 10 s maximum, and
+    last disconnect) queues a checkpoint.
+    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>persistConnectionUpdate</code> and <code>storeHocuspocusDocument</code>, <code>domain/offline-reconciliation.ts</code></span></li>
+</ol>
+<p>
+A failed admission closes the socket through the raw peer with
+<code>1013 writer-journal-admission-failed</code>. Throwing alone is not
+enough: Hocuspocus swallows a thrown error's code, so only the direct peer
+close preserves it. <span class="ref"><a href="websocket-concurrency.md">WebSocket concurrency</a></span>
+</p>
+
+<div class="invariant">
+<p><strong>Journal first.</strong> Novel content is durable before any Yjs apply,
+broadcast, or ack. If it were applied first, a crash or failed insert would
+leave other clients holding prose that no durable record contains, and the next
+cold load would silently lose it.</p>
+</div>
+
+<h3>Reserved client IDs and the provenance namespace</h3>
+<p>
+Yjs client IDs 0 through 999 belong to server-authored streams; the
+agent-edit reversal writer uses 999. Every server Y.Doc is built with
+<code>createCollabYDoc</code>, which redraws until its ID is outside that band.
+A writer frame carrying a struct from the band is rejected, the document is
+marked so the next room checkpoint is skipped (the rejected struct may still
+sit in memory), and an invariant event is emitted. If a client could author
+under a reserved ID, two writers would share one client ID, which breaks the
+Yjs assumption that one ID has one writer and would let a client forge
+reversal history.
+<span class="ref"><code>packages/prosemirror-schema/src/index.ts</code> <code>RESERVED_CLIENT_ID_MAX</code>, <code>hocuspocus-persistence.ts</code> <code>rejectReservedClientIdUpdate</code></span>
+</p>
+<p>
+The Y.Map <code>__meridian_provenance_targets_v1</code> is the reserved
+provenance namespace. The server writes certified target-to-root lineage facts
+there so moved or restored prose keeps its original first-birth attribution.
+A writer update that inserts into, deletes from, or anchors inside that map is
+rejected before append. A client able to edit it could rewrite whose prose is
+whose, and with it which edits count as swept writer work.
+<span class="ref"><code>domain/provenance.ts</code> <code>PROVENANCE_TARGETS_TYPE</code> and <code>validateClientUpdateAdmission</code></span>
+</p>
+
+<h3>The WebSocket concurrency fence (LOCK-WS)</h3>
+<p>
+<code>withDocument()</code> on the live coordinator is an in-process mutex
+over coordinator callers. It does not stop Hocuspocus from applying a writer
+frame to the same Y.Doc while a coordinator callback is awaiting a database
+call. So any server-side apply that follows an <code>await</code> must re-check
+the live document and apply in one synchronous block with no
+<code>await</code> between them. agent-edit's
+<code>applyCommittedUpdateWithRecheck</code> is that block for response
+commits and reversal; push settlement uses a full-state fingerprint compare
+plus the writer-ingress generation inside its completion fence.
+<span class="ref"><code>adapters/hocuspocus-coordinator.ts</code>, <code>packages/agent-edit/src/tool/mutation-commit.ts</code>, <code>domain/branch-push-transition.ts</code> <code>completeUnderFence</code>, <a href="websocket-concurrency.md">WebSocket concurrency</a></span>
+</p>
+
+<details>
+<summary>The review-room variant (writer edits in a Work draft)</summary>
+<p>
+A draft review room is an ordinary collaborative room; the writer is one more
+peer. The transport first enforces the stale-client handshake: a sync step 1
+whose state vector reaches into clocks discarded by a branch reset closes with
+<code>4205 branch-stale-doc</code>, and no update is accepted before that
+handshake passes. Admission then runs the same sequence against one locked
+branch snapshot: the branch must be an active <code>work_draft</code> at the
+room's generation and the room must contain the snapshot; then containment,
+fresh authorship, and a snapshot compare-and-set plus a
+<code>branch_write_journal</code> row with source <code>writer</code>. A failure
+closes with <code>1008 branch-update-admission-failed</code>. Branch rooms never
+re-persist in <code>onStoreDocument</code>; every branch mutation is already
+durable.
+</p>
+<p class="ref"><code>lib/yjs-ws-handler.ts</code> <code>enforceBranchHandshake</code> and <code>admitBranchSync</code>, <code>domain/branch-coordinator.ts</code> <code>commitWriterUpdate</code>, <code>hocuspocus-persistence.ts</code> <code>admitBranchWriterUpdate</code> and <code>storeHocuspocusBranch</code></p>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="ai">5. The AI write path</h2>
+<p>
+An AI write is staged in agent-edit's runtime Y.Doc for the length of a model
+response, then committed in three phases. Where the commit lands depends on
+the thread's Work.
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Mode</th><th>Chosen when</th><th>Core</th><th>Lands in</th></tr>
+  <tr>
+    <td><span class="live-word">Direct</span></td>
+    <td>The Work's <code>aiWriteMode</code> is <code>direct</code> (Auto-apply), so <code>draftOwner === null</code>. This includes No Work.</td>
+    <td>The live utility core</td>
+    <td>The live journal and live room, at response commit</td>
+  </tr>
+  <tr>
+    <td><span class="draft-word">Draft</span></td>
+    <td><code>aiWriteMode</code> is <code>draft</code></td>
+    <td>The thread's thread-peer core</td>
+    <td>The Work draft; live only after a push</td>
+  </tr>
+</table>
+</div>
+<p class="ref"><code>composition.ts</code> (<code>agentEdit: (context) =&gt; context?.draftOwner === null ? runtime.liveUtilityCore : agentEdit</code>), <code>../threads/domain/thread-execution-context.ts</code></p>
+
+<h3>The three commit phases</h3>
+<ol>
+  <li><strong>Preflight.</strong> Under the coordinator lock, capture what
+    changed concurrently since the model's read. This feeds the echo the model
+    sees; it never vetoes the write.</li>
+  <li><strong>Journal acceptance.</strong> Direct mode calls
+    <code>appendBatch</code> on the live journal: one transaction that locks
+    every touched document in sorted order, allocates one admission per
+    document, inserts the agent rows and their <code>agent_edit_mutations</code>
+    rows (which carry the <code>w&lt;N&gt;</code> handles). Draft mode's journal
+    only stages the entries in memory; their durable home is the branch commit
+    in phase C.</li>
+  <li><strong>Apply.</strong> Under the coordinator lock,
+    <code>applyCommittedUpdateWithRecheck</code> re-captures concurrency and
+    applies the merged update in one synchronous block. In direct mode that
+    target is the live room. In draft mode it is the thread peer, and the
+    thread-peer coordinator then commits the peer's delta into the Work draft
+    (snapshot compare-and-set plus one <code>branch_write_journal</code> row,
+    through <code>admitCertifiedMutation</code> when the write carries a
+    semantic edit IR).</li>
+</ol>
+<p class="ref"><code>packages/agent-edit/src/tool/response-committer.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendBatch</code>, <code>domain/branch-agent-edit.ts</code>, <code>domain/branch-coordinator.ts</code> <code>commitSyncFromDoc</code></p>
+<p>
+Draft-mode commits run inside one Drizzle transaction per reply, with
+process-local effects (branch cache updates, watermarks, response ownership)
+enlisted as participants that commit or abort with it. A failed
+multi-document reply leaves nothing behind. Direct mode commits inside the
+live core instead. <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>commitResponse</code>, <code>domain/response-transaction.ts</code>, <code>domain/response-write-finalizer.ts</code></span>
+</p>
+<p>
+After commit, <code>finalizeResponseCommit</code> records late-sweep and
+awareness notices, checkpoints each touched thread peer (draft mode), and refreshes the
+markdown projection for each document (<a href="#derived">section 10</a>). If
+the Work draft's push policy is <code>auto</code>, a push is scheduled after
+the database commit.
+<span class="ref"><code>domain/response-write-finalizer.ts</code>, <code>domain/branch-agent-edit.ts</code> <code>scheduleAutoPushAfterCommit</code></span>
+</p>
+
+<div class="invariant">
+<p><strong>Merges are trusted.</strong> Destructive effects become marks,
+receipts and trail evidence, never a veto on a valid Yjs merge. Undo is the
+recovery. Adding an approval gate here would refuse the writer's own
+instruction to the AI.</p>
+</div>
+
+<h3>Settlement: how a push reaches live</h3>
+<p>
+A push (Apply or automatic) is a staged, fenced transition so that warm and
+cold execution produce the same live document.
+</p>
+<ol>
+  <li><strong>Lock.</strong> Branch locks in branch-ID order, then live
+    coordinator locks in document-ID order. The first thing done inside each
+    live lock is to capture the complete Yjs state: the <em>lock cut</em>.</li>
+  <li><strong>Durable commit.</strong> One transaction writes
+    <code>push_lineage</code> (publication identity and idempotency key), the
+    <code>branch_push_settlement_outbox</code> row (lock cut, push update,
+    trail seed, claim), and the required change trail.</li>
+  <li><strong>Settle.</strong> Drain writer admissions that started before
+    this point, reload the outbox (including any writer edits joined after the
+    cut), rebuild the final pre-push document from the lock cut plus those
+    post-cut updates, and settle the trail.</li>
+  <li><strong>Complete under the fence.</strong> In one transaction under the
+    document mutation lock: append the branch's exact authored rows with their
+    original attribution plus one <code>reconcile</code> row carrying the whole
+    push update, re-derive the projection from the durable journal, then, still
+    synchronously, compare the live room's full-state fingerprint to the
+    rebuilt pre-push document and apply the push only if they match. A newer
+    writer admission or mismatch means retry.</li>
+</ol>
+<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>withCompletionFence</code> and <code>completeStagedPush</code></p>
+<p>
+The reconcile row exists because the active authored rows alone can omit
+causal dependencies of the branch state being published; replaying only them
+cold would not reproduce the merged live document. It is coverage, not an
+author: dependency checks ignore it and it is never a reversal target. A crash
+after the durable commit leaves a pending outbox row that the recovery lane
+(<code>recoverPendingLiveSettlements</code>, run by the change-trail worker)
+completes with the same code path. Depth lives in
+<a href="settlement-and-trail.md">push settlement and change trail</a>.
+</p>
+
+<h3>The change trail and receipts</h3>
+<ul class="rule-list">
+  <li><strong>Change trail.</strong> The sole durable publication record: one
+    folded set of before/after block changes per turn (or one shared trail per
+    thread), keyed by Yjs <code>{clientID, clock}</code> identity. It is
+    written by push commit and settlement, and by offline reconciliation.
+    A direct-mode AI write does not write a trail on this checkout.
+    <span class="ref"><code>adapters/drizzle-branch-push.ts</code> <code>persistRequiredTrail</code>, <code>domain/offline-reconciliation.ts</code>, <code>adapters/drizzle-change-trail-aggregate.ts</code></span></li>
+  <li><strong>Turn trail work.</strong> A database trigger enlists every
+    turn-owned <code>branch_write_journal</code> row in
+    <code>turn_trail_work</code>. The change-trail worker retries auto-policy
+    pushes from it and marks work <code>no_op</code> when the push policy is
+    manual or the turn ended <code>error</code> or <code>cancelled</code>.
+    <span class="ref"><code>packages/database/src/migrations/0000_baseline.sql</code> <code>enlist_turn_trail_work</code>, <code>adapters/drizzle-turn-trail-work.ts</code>, <code>adapters/change-trail-worker.ts</code></span></li>
+  <li><strong>Receipts.</strong> A turn's receipt chip is server-derived:
+    for live writes from <code>agent_edit_mutations</code> plus agent-edit's
+    <code>planUndo</code>/<code>planRedo</code>; for draft writes from the
+    branch journal and the branch reversal planner. Receipt Undo/Redo is the
+    only reversal authority for AI changes; trail evidence is read-only.
+    <span class="ref"><code>adapters/drizzle-turn-receipt.ts</code>, <code>domain/turn-receipt.ts</code></span></li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="journal">6. The journal and reconstruction</h2>
+<p>
+The live journal is an append-only list of Yjs updates per document, plus
+checkpoints that cache a prefix of it. A live Y.Doc is always "the newest
+checkpoint plus every later row of the same generation".
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Table</th><th>Holds</th></tr>
+  <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response, reversal actor.</td></tr>
+  <tr><td><code>document_yjs_checkpoints</code></td><td>Full encoded state at <code>up_to_seq</code>, its authority generation, and an attribution manifest that freezes first-birth attribution so compaction cannot lose it.</td></tr>
+  <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp and latest checkpoint and state vector.</td></tr>
+  <tr><td><code>agent_edit_mutations</code>, <code>document_yjs_reversals</code>, <code>document_yjs_reversal_ops</code></td><td>Write handles and reversal state and lineage, keyed to update row IDs.</td></tr>
+</table>
+</div>
+<p class="ref"><code>packages/database/src/schema/yjs.ts</code></p>
+<p>
+A writer's typing produces roughly one row per keystroke; row counts are not
+semantic edits. Reconnect frames the room already contains are acknowledged
+without a row.
+</p>
+
+<h3>Where checkpoints come from</h3>
+<ul class="rule-list">
+  <li><strong>Seed.</strong> A new document's first content is installed as
+    an <code>up_to_seq = 0</code> checkpoint with no journal rows. Seeding is
+    initialize-only; a later attempt on a document with any admission or
+    checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerDocumentLifecycle</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
+  <li><strong>Room store.</strong> Hocuspocus <code>onStoreDocument</code>
+    snapshots the room and the latest row ID, then writes the checkpoint after
+    the caller's transaction commits (dropped on rollback or when the
+    generation was retired), one queued write per document, newest wins. A
+    checkpoint at a cut no newer than the existing one is skipped.
+    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>adapters/drizzle-journal.ts</code> <code>checkpoint</code></span></li>
+  <li><strong>Explicit.</strong> <code>CollabDomain.checkpoint(documentId, reason)</code>.
+    <span class="ref"><code>checkpoints.ts</code></span></li>
+  <li><strong>Compaction.</strong> <code>journal.compact(docId, before)</code>
+    folds the contiguous prefix of current-generation rows older than
+    <code>before</code> into a <code>compact</code> checkpoint, deletes those rows
+    and their reversal ops, and expires reversals created before the cutoff.
+    It is implemented and tested, but no production scheduler calls it on this
+    checkout, so live rows are never deleted.
+    <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>compact</code></span></li>
+</ul>
+<p>
+The rule for every checkpoint writer: it may under-claim but must never
+over-claim. A row at or below <code>up_to_seq</code> is never replayed again, so
+if the state lacked it the row is lost; a row above it replays harmlessly on
+top. That is why the writers read <code>up_to_seq</code> before encoding the
+state. <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
+</p>
+
+<figure aria-label="Read and reconstruct path">
+<svg viewBox="0 0 440 470" role="img">
+  <defs>
+    <marker id="arrR" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <text x="110" y="18" text-anchor="middle" fill="var(--live)" font-size="12.5" font-weight="700">Live document</text>
+  <text x="330" y="18" text-anchor="middle" fill="var(--draft)" font-size="12.5" font-weight="700">Work draft or peer</text>
+  <g style="color: var(--muted)">
+    <!-- live lane -->
+    <rect x="8" y="30" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
+    <text x="20" y="52" fill="var(--ink)" font-size="12" font-weight="700">1. Schema stamp check</text>
+    <text x="20" y="70" fill="var(--muted)" font-size="10.5">head major must match server</text>
+    <text x="20" y="85" fill="var(--muted)" font-size="10.5">or load throws (4407)</text>
+    <line x1="110" y1="94" x2="110" y2="112" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="8" y="114" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
+    <text x="20" y="136" fill="var(--ink)" font-size="12" font-weight="700">2. Newest checkpoint</text>
+    <text x="20" y="154" fill="var(--muted)" font-size="10.5">state at up_to_seq,</text>
+    <text x="20" y="169" fill="var(--muted)" font-size="10.5">generation g</text>
+    <line x1="110" y1="178" x2="110" y2="196" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="8" y="198" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
+    <text x="20" y="220" fill="var(--ink)" font-size="12" font-weight="700">3. Later rows of g</text>
+    <text x="20" y="238" fill="var(--muted)" font-size="10.5">id above up_to_seq,</text>
+    <text x="20" y="253" fill="var(--muted)" font-size="10.5">ordered by id</text>
+    <line x1="110" y1="262" x2="110" y2="280" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="8" y="282" width="204" height="64" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="304" fill="var(--ink)" font-size="12" font-weight="700">4. Apply to a fresh Y.Doc</text>
+    <text x="20" y="322" fill="var(--muted)" font-size="10.5">createCollabYDoc, gc false,</text>
+    <text x="20" y="337" fill="var(--muted)" font-size="10.5">encode as one state update</text>
+    <line x1="110" y1="346" x2="110" y2="364" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="8" y="366" width="204" height="92" rx="8" fill="var(--paper)" stroke="var(--live)" stroke-width="1.6"/>
+    <text x="20" y="388" fill="var(--ink)" font-size="12" font-weight="700">5. Consumers</text>
+    <text x="20" y="406" fill="var(--muted)" font-size="10.5">cold room load (onLoadDocument),</text>
+    <text x="20" y="421" fill="var(--muted)" font-size="10.5">coordinator heal of a warm room</text>
+    <text x="20" y="436" fill="var(--muted)" font-size="10.5">(apply the missing diff),</text>
+    <text x="20" y="451" fill="var(--muted)" font-size="10.5">push planning</text>
+    <!-- branch lane -->
+    <rect x="228" y="30" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
+    <text x="240" y="52" fill="var(--ink)" font-size="12" font-weight="700">1. Branch row</text>
+    <text x="240" y="70" fill="var(--muted)" font-size="10.5">status, kind, generation,</text>
+    <text x="240" y="85" fill="var(--muted)" font-size="10.5">schema stamp</text>
+    <line x1="330" y1="94" x2="330" y2="112" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="228" y="114" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
+    <text x="240" y="136" fill="var(--ink)" font-size="12" font-weight="700">2. Full snapshot</text>
+    <text x="240" y="154" fill="var(--muted)" font-size="10.5">state and state vector;</text>
+    <text x="240" y="169" fill="var(--muted)" font-size="10.5">no replay needed</text>
+    <line x1="330" y1="178" x2="330" y2="196" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrR)"/>
+    <rect x="228" y="198" width="204" height="64" rx="8" fill="var(--paper)" stroke="var(--draft)" stroke-width="1.6"/>
+    <text x="240" y="220" fill="var(--ink)" font-size="12" font-weight="700">3. Cached branch Y.Doc</text>
+    <text x="240" y="238" fill="var(--muted)" font-size="10.5">cloned before every write;</text>
+    <text x="240" y="253" fill="var(--muted)" font-size="10.5">CAS on persist</text>
+    <rect x="228" y="282" width="204" height="92" rx="8" fill="none" stroke="var(--rule)" stroke-dasharray="4 3"/>
+    <text x="240" y="304" fill="var(--muted)" font-size="10.5">branch_write_journal rows are</text>
+    <text x="240" y="319" fill="var(--muted)" font-size="10.5">review, attribution and</text>
+    <text x="240" y="334" fill="var(--muted)" font-size="10.5">reversal history; the</text>
+    <text x="240" y="349" fill="var(--muted)" font-size="10.5">snapshot is the content</text>
+    <text x="240" y="364" fill="var(--muted)" font-size="10.5">authority</text>
+  </g>
+</svg>
+<figcaption>
+Live state is rebuilt by replay; branch state is stored whole. Either way the
+in-memory Y.Doc is a cache of Postgres.
+</figcaption>
+</figure>
+<p class="ref"><code>adapters/document-loader.ts</code> <code>loadDocumentState</code>, <code>adapters/drizzle-journal.ts</code> <code>read</code>, <code>adapters/hocuspocus-coordinator.ts</code> <code>applyMissing</code>, <code>domain/branch-coordinator.ts</code> <code>materialize</code> and <code>runWithRetry</code></p>
+<p>
+The coordinator heal matters: every <code>withDocument</code> call opens the
+room, re-reads the journal, and applies whatever durable rows the room is
+missing before the callback runs. A row that was journaled but never applied
+to a warm room therefore heals on the next server touch, and a cold room
+simply replays it.
+</p>
+<details>
+<summary>Historical and reconstruction reads</summary>
+<p>
+<code>journal.read</code> takes optional <code>since</code> and <code>until</code>
+row bounds; with <code>until</code> it picks the newest checkpoint at or before
+that row so a historical read never sees later edits. No production caller
+passes <code>until</code> on this checkout. <code>readForReconstruction</code>
+(used by cold undo/redo and echo attribution) instead picks the newest
+checkpoint strictly below the earliest retained row, so it replays every
+retained row that reversal might target. Settlement rebuilds its historical
+"final pre-push" document from the outbox's own lock cut plus joined updates,
+never from the current room.
+</p>
+<p class="ref"><code>adapters/drizzle-journal.ts</code> <code>reconstructionCheckpoint</code>, <code>domain/branch-push-transition.ts</code> <code>materializeFinalPrePush</code></p>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="branches">7. Branches: pulls, pushes, Apply, Discard</h2>
+<p>
+Branch mechanics are covered in depth by
+<a href="branch-model-and-records.md">branch model and records</a> and the
+product shape by <a href="draft-live-model.html">the draft / live model</a>.
+The points below are the ones that change how you reason about edits here.
+</p>
+<ul class="rule-list">
+  <li><strong>Pulls are replication, not authorship.</strong> A live pull uses
+    <code>replicateFrozenIdentity</code> on a frozen copy of live, so pulled
+    structs keep their original Yjs identities and attribution. Pulls take the
+    snapshot compare-and-set without the Work lifecycle lock because they
+    create no reviewable edit, and they publish the delta to an open review
+    room through the normal branch update publisher.
+    <span class="ref"><code>domain/branch-coordinator.ts</code> <code>pullFromDoc</code></span></li>
+  <li><strong>Apply publishes the whole current branch.</strong>
+    <code>DraftApplyRequest</code> is <code>{ draftId }</code>. The server pushes
+    every reviewable row of the current generation, including writer edits made
+    after the preview was rendered. Preview revisions are evidence, not command
+    scope. A new document drafted only in the Work is pushed together with its
+    project-manifest entry in one batch.
+    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>applyWorkDraft</code>, <code>domain/branch-push.ts</code> <code>pushToLiveWithManifestEntry</code></span></li>
+  <li><strong>No stale-Apply refusal on this checkout.</strong> Apply carries no
+    live-head token; a push integrates through Yjs against whatever live holds
+    at the lock cut. The settlement fence protects concurrent writer edits from
+    being lost, not the writer from applying against a live they have not seen.</li>
+  <li><strong>Discard has two shapes.</strong> Full Discard resets the content
+    branch to live in one Work-locked transaction (and removes a draft-only
+    document's manifest entry); it bumps the branch generation, records the
+    discarded state vector, and requires the Work to be active. Selective
+    Discard removes the rows of server-vended discard classes chosen from the
+    preview; the client never reconstructs turns.
+    <span class="ref"><code>adapters/drizzle-work-draft-discard.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>discardWorkDraft</code>, <code>domain/branch-review-operations.ts</code></span></li>
+  <li><strong>Generation is branch identity.</strong> A reset bumps
+    <code>document_branches.generation</code>, closes the old room, and its
+    clients are fenced by the 4205 handshake. Thread-peer and Work-draft
+    generations are separate counters; see <a href="TODO.md">TODO</a>.
+    <span class="ref"><code>domain/branch-coordinator.ts</code> <code>persistReset</code>, <code>adapters/hocuspocus-binding.ts</code> <code>closeBranch</code></span></li>
+</ul>
+
+<h3>Echo attribution</h3>
+<p>
+When the model writes, its result echoes what others changed in the same
+blocks since its read. In draft mode the thread-peer coordinator builds that
+echo from durable evidence only: Work-draft journal rows after the thread's
+concurrent-journal watermark, plus live journal rows after the live sequence
+captured at pull time. It replays them over the peer's baseline and attributes
+each touched block to an agent turn or a writer by block coverage; whatever the
+rows do not explain becomes an unattributed human residual. Memory-only maps
+are never an attribution source, so a restarted process echoes the same thing.
+The watermark advances only when the surrounding branch write commits.
+</p>
+<p class="ref"><code>domain/branch-agent-edit.ts</code> <code>concurrentUpdatesSince</code> and <code>partitionConcurrentUpdates</code>, <code>domain/branch-update-attribution.ts</code></p>
+
+<!-- ============================================================ -->
+<h2 id="reversal">8. Reversal</h2>
+<p>
+Undo and Redo of AI writes are planned by agent-edit and authorized by
+collab's durable state. There is no hot undo stack: every reversal is a
+<strong>cold reconstruction</strong> from the journal. agent-edit replays the
+retained rows into a fresh Y.Doc, tags only the target write's rows for a
+local <code>Y.UndoManager</code>, runs undo or redo, and extracts the
+resulting update, which is then admitted like any other write under the
+reserved client ID 999.
+<span class="ref"><code>packages/agent-edit/.context/write-architecture.md</code>, <code>domain/thread-peer-core-pool.ts</code> (<code>undoClientId: AGENT_EDIT_UNDO_CLIENT_ID</code>)</span>
+</p>
+<ul class="rule-list">
+  <li><strong>Which journal.</strong> While the current Work-draft generation
+    holds agent rows for the thread, reversal is branch-scoped and writes a
+    system row into the branch journal. Otherwise, including after Apply
+    empties the branch, it routes to the live utility core.
+    <span class="ref"><code>domain/thread-peer-core-pool.ts</code> <code>reversalCoreFor</code>, <code>domain/branch-reversal-history.ts</code></span></li>
+  <li><strong>The live guard is intrinsic.</strong> <code>persistUndo</code>
+    re-runs the dependency check and the writer watermark inside the append
+    transaction under the document mutation lock, so a writer edit admitted
+    between planning and persisting turns the result into
+    <code>cant_undo_dependent</code> instead of undoing over it. Branch reversal
+    uses the branch generation, journal watermark and status revision under the
+    snapshot compare-and-set instead.
+    <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>persistUndo</code>, <code>adapters/drizzle-branches.ts</code> <code>commitBranchMutation</code></span></li>
+  <li><strong>Writer rows withdraw redo; agent and system rows do not.</strong>
+    One planner (<code>planUndo</code>, <code>planRedo</code>) drives both the
+    receipt's availability and the command, so they disagree only across a race,
+    and the endpoint returns those races as HTTP 200 outcomes
+    (<code>nothing_to_undo</code>, <code>cant_undo_dependent</code>,
+    <code>partial</code>, and so on).</li>
+  <li><strong>Turn reversal is atomic.</strong> Branch and live changes persist
+    in one transaction; a mixed success and no-op across documents aborts all
+    of it. Room application, broadcasts and projection refresh run only after
+    commit. <span class="ref"><code>domain/turn-reversal-service.ts</code></span></li>
+</ul>
+<p>
+Full contracts: <a href="reversal.md">reversal</a>.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="schema">9. Schema fence and repair</h2>
+<p>
+A Y.Doc's bytes only make sense under the ProseMirror schema that wrote them.
+The fence stops a client or server from replaying a document under a schema
+that would corrupt it; repair keeps a document usable when content does not
+fit.
+</p>
+<h3>The fence</h3>
+<ul class="rule-list">
+  <li>Heads and branch rows carry a packed <code>(major, minor, patch)</code>
+    stamp, raised with <code>greatest()</code> so a rolled-back server can never
+    lower it.</li>
+  <li>On connect, per connection (Hocuspocus deduplicates loads): if the
+    server's major differs from the head's, close <code>4407
+    document-schema-stale</code>; else if the client's (major, minor) is behind
+    the head, close <code>4406 client-schema-superseded</code>. Patch never
+    gates. An unstamped head passes.</li>
+  <li>Every journal read asserts the head's major matches the server and
+    throws <code>DocumentSchemaMajorMismatchError</code> otherwise; the load
+    hook turns that into the same 4407 close as a race backstop.</li>
+</ul>
+<p class="ref"><code>lib/yjs-ws-handler.ts</code> <code>classifyYjsConnectionAdmission</code>, <code>packages/prosemirror-schema/src/collab-schema-version.ts</code>, <code>domain/stale-schema.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>upsertHead</code> and <code>assertReadableHead</code></p>
+
+<h3>Coherence and repair</h3>
+<ul class="rule-list">
+  <li><strong>One engine.</strong> Every seed, write and serialization goes
+    through <code>domain/markdown-document.ts</code>, which resolves the
+    document's filetype first (markdown codec for documents; one verbatim
+    <code>code_block</code> for code). Hand-built fragment content could produce
+    state the client's schema would normalize away.</li>
+  <li><strong>Serialization never mutates its input.</strong> Projection runs on
+    a private <code>gc: false</code> clone. If normalization changes that clone,
+    a <code>collab.schema</code> <code>serialize.anomaly_observed</code> event is
+    emitted (schema version and counts, never prose) and serialization
+    continues.</li>
+  <li><strong>Client repairs merge.</strong> When y-prosemirror repairs
+    invalid content in the editor, the repair is an ordinary writer update that
+    goes through the path in <a href="#writer">section 4</a>; the client's
+    schema repair witness reports it to the writer and never blocks it.
+    <span class="ref"><code>apps/app/src/core/editor/schema-repair-witness.ts</code></span></li>
+</ul>
+<p>
+Depth: <a href="document-authority-and-schema.md">document authority and schema</a>.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="derived">10. Derived outputs on this checkout</h2>
+<p>
+<code>documents.markdown_projection</code> is a text cache of a document's
+live content. Yjs is the content authority; the projection is refreshed by
+specific write paths, and some write paths do not refresh it at all.
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Write path</th><th>Projection effect</th></tr>
+  <tr>
+    <td>Collab document API (<code>writeDocument</code>, <code>editDocument</code>, <code>seedFromMarkdown</code>)</td>
+    <td>Written after the write by the document write hook, together with thread, Work and project activity. <span class="ref"><code>domain/markdown-document.ts</code> <code>afterWrite</code>, <code>domain/document-projection-refresher.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>Context file create, write and edit</td>
+    <td>The context domain writes the operation's markdown into the column: the given content on create, collab's returned serialization on write and edit. <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>persistProjection</code></span></td>
+  </tr>
+  <tr>
+    <td>AI write tool outside a reply, and tool <code>undo</code>/<code>redo</code></td>
+    <td>Refreshed immediately by re-reading live. <span class="ref"><code>lib/wired-core-tools.ts</code> <code>refreshProjectionAfterToolWrite</code></span></td>
+  </tr>
+  <tr>
+    <td>AI writes staged in a reply</td>
+    <td>Refreshed per document at response finalization by re-reading <em>live</em>. In draft mode live has not changed, so the projection keeps showing live, not the draft. <span class="ref"><code>domain/response-write-finalizer.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>Receipt Undo/Redo and failed-reply rollback</td>
+    <td>Refreshed after a successful reversal (deferred to commit when inside one). <span class="ref"><code>domain/turn-reversal.ts</code>, <code>domain/turn-reversal-service.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>Push completion (Apply or automatic)</td>
+    <td>Re-derived from the durable journal inside the completion-fence transaction, so it rolls back with the push. <span class="ref"><code>adapters/drizzle-pending-settlement.ts</code> <code>deriveDurableProjection</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
+  </tr>
+  <tr>
+    <td>Writer typing over the WebSocket</td>
+    <td><span class="gate-word">Not refreshed.</span> The projection stays at the last refresh from some other path. Tracked in <a href="TODO.md">TODO</a>. <span class="ref"><code>hocuspocus-persistence.ts</code></span></td>
+  </tr>
+  <tr>
+    <td>Checkpoint restore</td>
+    <td>Not refreshed by the generation-replacement path. <span class="ref"><code>checkpoints.ts</code> <code>restore</code></span></td>
+  </tr>
+</table>
+</div>
+
+<h3>Who reads it</h3>
+<ul class="rule-list">
+  <li><strong>Search does not.</strong> <code>ContextFS.search</code> reads
+    content through collab: live markdown for ordinary scopes, and the thread's
+    effective view (thread peer or Work draft) for a manuscript search inside a
+    thread. So search is current even when the projection is stale. The
+    full-text and trigram indexes on <code>markdown_projection</code> exist in
+    the schema, but no query on this checkout uses them.
+    <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>search</code>, <code>packages/database/src/schema/content.ts</code></span></li>
+  <li><strong>Readers that do use it:</strong> repairing a tracked document
+    that is missing from manifest membership seeds Yjs from the projection
+    (a no-op when Yjs state already exists, since seeding is initialize-only); the download
+    route falls back to it when the Yjs read fails; upload identity lookups
+    return it.
+    <span class="ref"><code>../context/adapters/context-fs/context-fs.ts</code> <code>repairTrackedDocument</code>, <code>../../routes/api/documents/[documentId]/download.get.ts</code>, <code>../context/uploads/upload-identity.ts</code></span></li>
+</ul>
+<p>
+So on this checkout a stale projection is visible through the download
+fallback and upload identity, not through search or the editor.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="composition">11. The composition root</h2>
+<p>
+<code>createCollabDomain</code> in <code>composition.ts</code> is wiring only:
+it builds adapters, builds domain services with required dependencies, and
+returns the facade. Behavior lives in <code>domain/</code>;
+<code>collab-facade.ts</code> only spreads the service groups into
+<code>CollabDomain</code>. The order of construction follows the dependency
+graph.
+</p>
+<ol>
+  <li><strong>Persistence and live transport.</strong> The Drizzle journal and
+    lifecycle; a late-bound Hocuspocus binding (the gateway binds itself after
+    construction); the live coordinator over it.</li>
+  <li><strong>Branches.</strong> One <code>BranchCriticalSections</code> (the
+    only owner of the branch mutex, shared by store, coordinator, push, review
+    and discard so lock order stays global); the branch store, coordinator and
+    pull service.</li>
+  <li><strong>Runtime.</strong> <code>createAgentEditRuntime</code> builds the
+    markup codec exactly once with the injected asset path resolver, the
+    schema-aware markdown engine, and the live utility core. A second
+    <code>mdxCodec(...)</code> elsewhere would lose the asset index.</li>
+  <li><strong>Settlement and push.</strong> Pending-settlement store,
+    push-commit store, change-trail writer, writer-ingress binding (bound to the
+    Hocuspocus persistence barrier once that exists), push service, review
+    operations.</li>
+  <li><strong>AI cores.</strong> The thread-peer core pool over the live utility
+    core, branch services and the response-transaction hooks.</li>
+  <li><strong>Transport persistence.</strong> Hocuspocus persistence wired to
+    the journal, the authority-generation reader, offline reconciliation, and
+    <code>scheduleLivePull</code>.</li>
+  <li><strong>Read models and commands.</strong> Response finalizer, Work-draft
+    review service, effective reader, checkpoint service with generation
+    replacement, receipt lineage, turn reversal service; then the facade, whose
+    <code>agentEdit(context)</code> selects the core per call.</li>
+</ol>
+<p>
+Optional notices and the thread-context resolver are replaced by declared
+stubs in one place (<code>adapters/declared-stubs.ts</code>) instead of optional
+fields that would let a path silently skip a required operation. The
+in-memory composition (<code>adapters/in-memory/composition.ts</code>) builds the
+same interfaces for tests. Rules for this file are in
+<a href="CONTEXT.md">CONTEXT.md</a>.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="deeper">12. Where to go deeper</h2>
+<h3>In this directory</h3>
+<ul>
+  <li><a href="../AGENTS.md">collab AGENTS.md</a>: the rules to know before editing here</li>
+  <li><a href="CONTEXT.md">CONTEXT.md</a>: modes, revision identity, pull and provisioning transactions, composition rules</li>
+  <li><a href="document-authority-and-schema.md">Document authority, schema, and connection admission</a></li>
+  <li><a href="branch-model-and-records.md">Branch model, provenance, manifests, and durable records</a></li>
+  <li><a href="settlement-and-trail.md">Push settlement and change trail</a></li>
+  <li><a href="reversal.md">Reversal</a></li>
+  <li><a href="websocket-concurrency.md">WebSocket concurrency boundary</a></li>
+  <li><a href="draft-live-model.html">The draft / live model</a></li>
+  <li><a href="TODO.md">TODO</a> and <a href="FUTURE.md">FUTURE</a>: known gaps, including the projection refresh gap</li>
+  <li><a href="../../../../../../packages/agent-edit/AGENTS.md">@meridian/agent-edit</a> and its <code>.context/</code></li>
+</ul>
+<h3>In the knowledge base</h3>
+<ul>
+  <li><a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/overview.md">Collaboration architecture overview</a> and <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/agent-editing-and-reversal.md">agent editing and reversal</a></li>
+  <li><a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/yjs-source-of-truth.md">Yjs is the source of truth</a></li>
+  <li><a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/index.md">Collab decisions index</a> and <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/index.md">concurrent-safety decisions index</a></li>
+  <li>Journal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/concurrent-awareness-journal-first-durability.md">journal-first durability</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/lock-ws-invariant.md">LOCK-WS</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/response-transaction-unit-of-work.md">response transaction unit of work</a></li>
+  <li>Merge and settlement: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/agent-writes-merge-report-and-recover.md">agent writes merge</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/settlement/settlement-persistence-authority.md">settlement persistence authority</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/trail/ai-change-event-projections.md">durable change trails</a></li>
+  <li>Branches: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-branch-topology.md">draft-branch topology</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-publication-pipeline.md">publication pipeline</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-echo-attribution.md">echo attribution</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-stale-client-fencing.md">stale-client fencing</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md">Apply settles the whole branch</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/pull-cadence-chunked-attribution.md">pull cadence</a></li>
+  <li>Reversal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/cold-only-reversal.md">cold-only reversal</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/reserved-clientid-band.md">reserved client ID band</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/canonical-dependency-predicate.md">canonical dependency predicate</a></li>
+  <li>Schema: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/collab-schema-fence.md">schema fence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/schema-coherence-invariant.md">schema coherence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/schema-repair-witness.md">schema repair witness</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/repair-first-never-disable.md">repair first, never disable</a></li>
+</ul>
+<p class="muted">
+The KB records settled intent and may describe decisions this checkout has
+not built yet. When a KB page and this page disagree about current behavior,
+the code is the arbiter.
+</p>
+
+</main>
+<script>
+  const t = document.getElementById('themeToggle');
+  t.addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.classList.toggle('dark');
+    root.classList.toggle('light', !dark);
+  });
+</script>
+</body>
+</html>

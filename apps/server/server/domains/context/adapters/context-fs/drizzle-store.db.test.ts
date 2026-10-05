@@ -100,6 +100,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               .where(eq(documents.id, documentId));
             observedWriteFiletypes.push(row?.filetype ?? null);
             markdownByDocument.set(documentId, markdown);
+            // This sync fake supplies the collab-owned projection effect.
+            await db
+              .update(documents)
+              .set({
+                markdownProjection: markdown,
+                sizeBytes: Buffer.byteLength(markdown, "utf8"),
+                updatedAt: new Date(),
+              })
+              .where(eq(documents.id, documentId));
             return Ok({ updateSeq: 1 });
           },
         } as never,
@@ -267,7 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(
-        store.upsertDocument({
+        store.createDocument({
           folderId: null,
           name: "cover",
           extension: "webp",
@@ -343,7 +352,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         membershipObserver: observer,
       });
 
-      await contentStore.upsertDocument({
+      await contentStore.createDocument({
         id: DOC_CREATE_ID,
         folderId: null,
         name: "awaited-create",
@@ -389,7 +398,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleContextCatalog(db),
       );
 
-      await contentStore.upsertDocument({
+      await contentStore.createDocument({
         id: DOC_CREATE_ID,
         folderId: null,
         name: "created",
@@ -457,7 +466,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let sawObserverInsideTransaction = false;
 
       await runInDrizzleTransaction(db, async () => {
-        await store.upsertDocument({
+        await store.createDocument({
           id: DOC_AMBIENT_CREATE_ID,
           folderId: null,
           name: "ambient-create",

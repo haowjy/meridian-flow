@@ -371,8 +371,12 @@ export function createResponseCommitter(deps: {
           coordinator,
           docBuffer.docId,
           docBuffer.commandName,
-          (liveDoc) =>
-            mutationCommit.captureCommitPreflight(liveDoc, {
+          (liveDoc) => {
+            const authority = coordinator.documentAuthority?.(liveDoc);
+            for (const entry of journalBatch) {
+              if (entry.docId === docBuffer.docId) entry.authority = authority;
+            }
+            return mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
               deletedHashes: hashes.deletedHashes,
@@ -381,7 +385,8 @@ export function createResponseCommitter(deps: {
               interactionContext: docBuffer.interactionContext,
               ownTurnId: lastTurnId,
               actor: lastStagedUpdate(docBuffer).actor,
-            }),
+            });
+          },
           { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
         );
         if (isInternalWriteResult(preflight)) {

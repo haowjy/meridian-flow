@@ -21,8 +21,8 @@ import {
   ContextEntryConflictError,
   type ContextFolder,
   type CreateBinaryDocumentInput,
+  type CreateDocumentInput,
   type UpsertBinaryDocumentInput,
-  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -292,16 +292,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return null;
   }
 
-  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
-    const row = this.backing.documents.get(documentId);
-    if (!row || !isContentDocumentKind(row.kind) || row.deletedAt !== null) return false;
-    row.markdown = markdown;
-    row.sizeBytes = Buffer.byteLength(markdown, "utf8");
-    row.updatedAt = this.nextTimestamp();
-    return true;
-  }
-
-  async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
+  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     if (
       hasOppositeEntry(
         this.backing,
@@ -317,22 +308,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
     }
     const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
-    if (existing) {
-      const row = this.backing.documents.get(existing.id);
-      if (!row) throw new Error(`Document row disappeared: ${existing.id}`);
-      const updated: DocumentRow = {
-        ...row,
-        markdown: input.markdown,
-        fileType: null,
-        filetype: input.filetype,
-        storageUrl: null,
-        mimeType: null,
-        sizeBytes,
-        updatedAt: this.nextTimestamp(),
-      };
-      this.backing.documents.set(updated.id, updated);
-      return this.publicDocument(updated);
-    }
+    if (existing) throw new ContextEntryConflictError();
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
@@ -360,7 +336,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.publicDocument(doc);
   }
 
-  async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
     if (
       hasOppositeEntry(
         this.backing,

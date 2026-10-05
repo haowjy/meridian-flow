@@ -1042,6 +1042,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
+      await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
       if (!drained)

@@ -6,6 +6,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   branchPushSettlementOutbox,
   contextSources,
+  documentDerivations,
   documents,
   documentYjsUpdates,
   projects,
@@ -463,6 +464,11 @@ describe("branch-push durable projection", () => {
       .from(documents)
       .where(eq(documents.id, documentId));
     expect(documentAfterRecovery?.markdownProjection).toBe("Recovered projection\n");
+    const [watermark] = await db
+      .select()
+      .from(documentDerivations)
+      .where(eq(documentDerivations.documentId, documentId));
+    expect(watermark?.projectionAdmissionSequence).toBe(2n);
 
     branchDoc.destroy();
     liveDoc.destroy();

@@ -14,7 +14,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
 import type { NoticePort } from "../notices/index.js";
-import type { EventSink } from "../observability/index.js";
+import { type EventSink, emitEvent } from "../observability/index.js";
 import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditInvariantDiagnostic,
@@ -46,6 +46,7 @@ import {
   createDrizzleAuthorityGenerationReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
+import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -76,8 +77,8 @@ import { createBranchPushService } from "./domain/branch-push.js";
 import { createBranchReviewOperations } from "./domain/branch-review-operations.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
+import { createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
-  createDocumentProjectionRefresher,
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
@@ -182,7 +183,34 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
-  const documentWriteHook = createProjectionEffectsDocumentWriteHook(projectionEffects);
+  const derivations = createDocumentDerivationService({
+    store: createDrizzleDocumentDerivationStore(deps.db),
+    serializer: {
+      serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
+    },
+    outsideTransaction: runOutsideDrizzleTransaction,
+    deferred: (documentId) => {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "debug",
+        source: "collab.document_derivation",
+        name: "projection_refresh.deferred",
+        correlation: { documentId },
+        payload: { reason: "stale_cut" },
+      });
+    },
+    failed: (documentId, cause) =>
+      projectionDiagnostics.failed({
+        documentId,
+        source: "collab.document_derivation",
+        name: "projection_refresh.failed",
+        payload: projectionDiagnostics.payload(cause),
+      }),
+  });
+  const documentWriteHook = createProjectionEffectsDocumentWriteHook(
+    projectionEffects,
+    derivations.derive,
+  );
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: documentWriteHook,
     diagnostics: projectionDiagnostics,
@@ -221,11 +249,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     assetPathResolver: deps.assetPathResolver,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
-  const projectionRefresher = createDocumentProjectionRefresher({
-    documents: runtime.markdownDocuments,
-    runDocumentWriteHook,
-    diagnostics: projectionDiagnostics,
-  });
+  const projectionRefresher = { refresh: runDocumentWriteHook };
 
   const pendingSettlements = createDrizzlePendingSettlementStore(
     deps.db,
@@ -331,7 +355,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     readAuthorityHeadGeneration: authorityGeneration,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
-    onLiveUpdatePersisted: branchPulls.scheduleLivePull,
+    onLiveUpdatePersisted: (documentId) => {
+      branchPulls.scheduleLivePull(documentId);
+      derivations.schedule(documentId);
+    },
     offlineReconciliation,
   });
   writerIngress.bind(hocuspocusPersistence.writerIngressBarrier);
@@ -399,6 +426,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     checkpoints: persistence.store,
     disconnectGeneration: hocuspocusPersistence.disconnectLiveGeneration,
+    onReplaced: derivations.schedule,
   });
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,
@@ -443,6 +471,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
@@ -468,6 +497,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       editDocument: runtime.markdownDocuments.editDocument,
     },
     projections: {
+      documentDerivations: derivations,
       refreshDocumentProjection: projectionRefresher.refresh,
     },
     lineage,

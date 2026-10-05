@@ -6,7 +6,9 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
+import { documentAuthority, RetiredDocumentHandleError } from "./domain/document-handle.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
+import type { CheckpointAuthority } from "./domain/ports/checkpoint-authority.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
@@ -25,7 +27,8 @@ type CheckpointStore = {
     state: Uint8Array,
     reason: string,
     upToSeq: number,
-  ): Promise<string>;
+    authority: CheckpointAuthority,
+  ): Promise<string | null>;
   getCheckpoint(id: string): Promise<CheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<CheckpointRecord[]>;
 };
@@ -55,14 +58,21 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
   return {
     async checkpoint(documentId, reason) {
       try {
-        const { state, upToSeq } = await deps.coordinator.withDocument(documentId, async (doc) => {
-          const upToSeq = await deps.latestUpdateSeq(documentId);
-          // upToSeq must be ≤ the updates reflected in state; any later
-          // update is replayed after the checkpoint, which is safe in Yjs.
-          return { state: Y.encodeStateAsUpdate(doc), upToSeq };
-        });
-        return Ok(await deps.store.createCheckpoint(documentId, state, reason, upToSeq));
+        const { state, upToSeq, authority } = await deps.coordinator.withDocument(
+          documentId,
+          async (doc) => {
+            const authority = documentAuthority(doc);
+            const upToSeq = await deps.latestUpdateSeq(documentId);
+            // upToSeq must be ≤ the updates reflected in state; any later
+            // update is replayed after the checkpoint, which is safe in Yjs.
+            return { state: Y.encodeStateAsUpdate(doc), upToSeq, authority };
+          },
+        );
+        const id = await deps.store.createCheckpoint(documentId, state, reason, upToSeq, authority);
+        return id === null ? Err({ code: "stale_generation", documentId }) : Ok(id);
       } catch (cause) {
+        if (cause instanceof RetiredDocumentHandleError)
+          return Err({ code: "stale_generation", documentId });
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         throw cause;
       }
