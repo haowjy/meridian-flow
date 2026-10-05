@@ -244,6 +244,24 @@ describe("deriveModelRequestDebugViews", () => {
     expect(parseSingleCodeLabel(advertisedHeading ?? "").value).toBe(injected);
   });
 
+  it("appends the provider's error response after the request", () => {
+    const failed: ModelRequestDebugRecord = {
+      ...record(0, firstRequest),
+      providerError: {
+        status: 402,
+        message: "Insufficient Balance",
+        body: '{"error":{"message":"Insufficient Balance"}}',
+      },
+    };
+    const view = deriveModelRequestDebugViews([failed])[0];
+    const markdown = renderModelRequestDebugMarkdown(view as NonNullable<typeof view>);
+
+    const section = markdown.slice(markdown.indexOf("# Provider error response"));
+    expect(markdown.indexOf("# Advertised tools")).toBeLessThan(markdown.length - section.length);
+    expect(section).toMatch(/^# Provider error response\n\nHTTP 402\n\n`{3,}/);
+    expect(section).toContain('{"error":{"message":"Insufficient Balance"}}');
+  });
+
   it("keeps inline media bounded in the readable lens", () => {
     const inlineData = "a".repeat(513);
     const request: ModelRequestDebugRequest = {
