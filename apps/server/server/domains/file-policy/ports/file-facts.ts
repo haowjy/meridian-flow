@@ -24,12 +24,4 @@ export interface FileFactsPort {
     documentIds: readonly DocumentId[],
     draftWorkId?: WorkId,
   ): Promise<Map<DocumentId, FileFacts>>;
-  /**
-   * Inside the ambient transaction: lock `workIds` `FOR NO KEY UPDATE` in id
-   * order, then read each request's facts once under those locks.
-   */
-  loadLocked(
-    requests: readonly FileFactsRequest[],
-    workIds: readonly WorkId[],
-  ): Promise<(FileFacts | null)[]>;
 }

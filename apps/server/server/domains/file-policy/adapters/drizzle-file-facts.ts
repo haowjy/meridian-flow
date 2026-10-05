@@ -24,7 +24,6 @@ import {
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 
@@ -87,12 +86,6 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
           draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
         });
       }
-      return out;
-    },
-    async loadLocked(requests, workIds) {
-      await lockWorksInIdOrder(db, workIds);
-      const out: (FileFacts | null)[] = [];
-      for (const request of requests) out.push(await load(request));
       return out;
     },
   };

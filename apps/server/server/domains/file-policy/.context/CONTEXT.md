@@ -35,7 +35,7 @@ proof, not a flag: it carries the principal, the facts it was decided on
 |---|---|
 | `authorize(principal, target, need)` | Preflight for one target. Returns a `FileGrant` or a `FileAccessDenied`. Authoritative for reads; advisory for writes. |
 | `authorizeAt(principal, target, destination)` | Edit at an explicit destination, not the one the principal's mode picks. An undo reverses a write where it landed. |
-| `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Locks the Works the grants' facts name (`grantWorkIds`), reads facts once per grant, re-reads each agent chain, and re-runs the policy at each grant's own destination. A file whose owner or draft Work moved outside the locked set is refused, since locking it then would break the id order. Returns the refusals; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`, not directly. |
+| `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Takes no lock: the caller has already locked the Works the grants' facts name (`grantWorkIds`) in its one id-ordered select. Reads facts once per grant, re-reads each agent chain, and re-runs the policy at each grant's own destination. A file whose owner or draft Work moved outside the locked set is refused, since locking it then would break the id order. Returns the refusals; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`; the reply save locks the grants' Works itself first. |
 | `listAccess(principal, documentIds)` | Lists (`ls`, `search`, recent documents, link resolution, draft review). One facts query for every row; a row the principal can't read is absent from the map, so drop it. |
 | `historyAccess(principal, documentId)` | Change-trail detail. Person term only, so a deleted document's captured evidence stays visible: `"available"`, `"deleted"` or `null`. |
 
@@ -82,7 +82,8 @@ A write seam's transaction starts with `lockSeamWorks(db, ownWorkIds)`
 (`shared/work-lifecycle-lock.ts`). It locks the seam's own Works and the
 bound grants' Works in one id-ordered `FOR NO KEY UPDATE`, reading each
 Work's lifecycle in that same select, then confirms the grants once per
-transaction and returns the lifecycles. The project and No Work can't be
+transaction under those locks (`confirmEdit` locks nothing itself) and
+returns the lifecycles. The project and No Work can't be
 archived, so their files lock no Work row (`grantWorkIds`). The journal's
 methods enter through `enterJournalSeam`. The order is:
 
@@ -106,8 +107,9 @@ Work after commit leaves the scope (`runOutsideWrite`;
 see the write's own result. Nothing pushes a draft after an agent write
 (D59), so no after-commit step carries the grants.
 
-**A reply confirms once.** The thread-peer pool's save calls `confirmEdit`
-for every grant the reply wrote under and drops refused documents. It binds
+**A reply confirms once.** The thread-peer pool's save locks the Works of
+every grant the reply wrote under (`lockWorks`, one id-ordered select), calls
+`confirmEdit` for those grants and drops refused documents. It binds
 no grant scope; `markReplyConfirmed` instead satisfies the journal's no-grant
 guard for the documents it confirmed.
 

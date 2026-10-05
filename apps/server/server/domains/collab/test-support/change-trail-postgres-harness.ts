@@ -514,6 +514,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const agentEdit = createBranchThreadPeerAgentEditCore({
     fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
     lockLiveDocuments: async () => {},
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,

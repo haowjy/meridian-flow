@@ -28,6 +28,7 @@ function createPool() {
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
     fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
   return { pool, liveCore, threadCore, pullThreadPeer: history.pullThreadPeer };
