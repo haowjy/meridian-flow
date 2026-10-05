@@ -92,6 +92,10 @@ export function createBranchPullService(input: {
   }
 
   async function pullLive(documentId: DocumentId): Promise<void> {
+    // Most documents have no Work draft; skip the snapshot (a room open and
+    // release) for them. The root transaction re-lists: a branch can close in
+    // between, and one opened since waits for the next pull.
+    if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
     // Snapshot before the root transaction opens: the snapshot takes its own
     // connection, and taking it while holding the root's lets concurrent pulls
     // hold every pooled connection and wait on each other forever.
