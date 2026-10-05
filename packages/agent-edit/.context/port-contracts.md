@@ -57,7 +57,7 @@ atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Access to the coordinator-owned canonical Y.Doc, which may be a host branch
-rather than published live. `withDocument(docId, fn)` serializes callers through
+rather than live. `withDocument(docId, fn)` serializes callers through
 this port for the same docId. It does not by itself exclude mutations arriving
 through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects

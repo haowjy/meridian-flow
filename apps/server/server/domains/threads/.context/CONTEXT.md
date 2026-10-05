@@ -234,7 +234,7 @@ owns only the SQL predicate beside its partial index.
   earlier one's status, so a failed reply stays `error` after the writer sends
   again. Whether its error is current is a render-time derivation (the client's
   `endsTranscript`), never a stored rewrite. Status-sensitive readers (compaction
-  plans, undo baselines, fork cutoffs, the transcript read, trail auto-push)
+  plans, undo baselines, fork cutoffs, the transcript read, trail settlement)
   depend on this.
 - **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
