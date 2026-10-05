@@ -78,7 +78,10 @@ that safe:
   therefore resolves only on committed state, and a caller's rollback cannot
   undo it. Pulls also leave the response transaction context, so root-committed
   cache updates and broadcasts cannot be deferred to an aborting response.
-  Reruns and timer callbacks leave both initiating contexts.
+  Reruns and timer callbacks leave both initiating contexts. A live pull takes
+  its live snapshot before opening its root transaction, never while holding
+  it: the snapshot needs its own connection, and pulls that each hold one while
+  waiting for another exhaust the pool and deadlock.
 - **Joiners wait for the next run.** A caller that joins an in-flight live pull
   awaits one coalesced run that starts after its call. The in-flight snapshot
   may predate a writer edit the caller must observe.
