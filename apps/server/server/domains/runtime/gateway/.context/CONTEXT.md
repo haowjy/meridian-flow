@@ -63,6 +63,26 @@ family that undercounts the model lets a Chinese-heavy request cross the
 compaction trigger and price tier unseen; one that overcounts compacts early.
 Rates and their evidence live in the [runtime compaction context](../../.context/compaction.md).
 
+## Provider errors
+
+`adapters/provider-http-error.ts` owns one HTTP-status policy for every adapter
+(the OpenAI Responses, Chat Completions, and OpenRouter adapters share
+`openai-compatible/errors.ts`). Network failures, failures with no response,
+429, and 5xx retry. 401/403 are `auth_error`; 400 is `invalid_request`,
+`context_overflow`, or `content_filtered`. Every other 4xx, including 402 out
+of balance, is `provider_error` with `retryable: false`: the provider refused
+this request and will refuse it again. There is no separate code for an
+exhausted account. `x-should-retry: false` still overrides.
+
+An error event carries `providerResponse: { status, message, body }` when the
+provider answered. SDK clients are built with `providerFetch`, which keeps a
+failed response's body text (capped at 4 KiB) keyed by the `Headers` object the
+SDK error carries, because SDKs keep only part of a parsed body. Without it the
+body falls back to the SDK's parsed view. `stream.close` logs only
+`providerStatus`. The runtime puts status and message on the failed reply's
+metadata and the body on the dev capture record; see
+[Provider Failures](../../../../../../../docs/debugging.md#provider-failures).
+
 ## Context-window errors
 
 Every adapter normalizes a provider's context-window rejection to the one provider-neutral code `context_overflow`, non-retryable. Anthropic's `model_context_window_exceeded` stop reason is missing from the SDK union, so `anthropic/stream-collect.ts` matches the wire string and emits the error with the metered partial result; OpenAI Responses maps `context_length_exceeded`; the HTTP error mappers match context-length messages, not any message containing "token". The error event's `result` carries metered usage so the loop can bill it. The runtime turns `context_overflow` into one cold compaction and one retry per reply. With provider fallback enabled, the router yields a non-retryable error at once and only a retryable error moves to the next provider. A router that drops a non-retryable error ends the stream with no terminal event, and the loop never sees the overflow.

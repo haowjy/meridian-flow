@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- Gateway: a provider 4xx other than 429 (such as 402 out of balance) fails at once instead of retrying twice; the provider's status and message stay on the failed reply (`./mf thread view`), its response body on the captured call (`./mf thread context --call`), and `providerStatus` on `stream.close`/`turn.error` logs.
+
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.

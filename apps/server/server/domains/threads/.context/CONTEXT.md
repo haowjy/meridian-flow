@@ -83,7 +83,10 @@ metadata. `domain/failure-copy.ts` owns the generic writer copy for failed repli
 handoff briefs, and compactions, and exhaustively maps the pending-placeholder
 role set to those copies. Every failed terminal cause supplies writer copy
 explicitly; `turn.error` stores only that copy while raw causes remain in journal
-diagnostics, logs, and `./mf`. A completed
+diagnostics, logs, and `./mf`. A failed reply's metadata carries `reason` and,
+when a provider answered, `providerError` (`status`, message capped at 1,000
+characters, `gatewayCallId`), written only by `replyFailureMetadata`. Event
+logs carry its status and call id, never its message. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and
 `controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or
