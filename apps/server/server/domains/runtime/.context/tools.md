@@ -102,6 +102,16 @@ policy-free.
   model's text; the typed result is persisted beside it as `result` (D43).
   Reading does not expand URI, object, Project, owner, or document
   authorization, change Work binding, or change write mode.
+- `ls` returns a typed `LsResult` (`tools/ls-result.ts`): the listed folder's
+  canonical URI (null at the root) and entries with `uri`, `kind`,
+  `readonly`, a non-text file's `fileType`, and with `details: true` the
+  `wordCount` (text), `sizeBytes` (uploads) and `updatedAt`. No IDs or schema
+  fields. `renderLsResult` gives the model plain text (D61): the folder URI,
+  then entries relative to it, folders ending in `/`, with one parenthesis
+  for kind, details and `read-only` when any apply; `  (empty)` for an empty
+  folder; one line per source at the root. `skills://` listings share the
+  shape. Word counts come from the projection the listing query already
+  loads, counted only when `details` is set.
 - Model-call cost gating is not part of the tool policy. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
