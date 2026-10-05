@@ -140,8 +140,9 @@ thread's binding preloads or offers as `model-invocable`, or that the user
 invoked with `/skill` in that thread (D64), and never edits one (D58). An
 invocation is pinned on the thread's binding row (`invoked_skills`, slug to
 the package reference the body was read from; re-invoking replaces it), so
-it rides the same binding read and a spawned child, with its own binding,
-doesn't inherit it. A slug both bound and invoked reads from the binding's
+it rides the same binding read. A spawned child, with its own binding,
+doesn't inherit it; a handoff starts empty; a fork keeps it, since it copies
+the turns that invoked it. A slug both bound and invoked reads from the binding's
 reference. `runtime/loop/skill-files.ts` reads the binding once per call and
 filters with it. Skill edits will need the same file and folder permissions.
 

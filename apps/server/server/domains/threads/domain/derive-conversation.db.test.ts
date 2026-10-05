@@ -171,13 +171,15 @@ else
       ).rejects.toBeInstanceOf(DerivedSourceNotFoundError);
     });
 
-    it("keeps the source's retained binding after its catalog advances", async () => {
+    it("keeps the source's retained binding and invoked skills after its catalog advances", async () => {
       const fixture = await setupSource();
       await fixture.agentCatalog.save(ids.userId, {
         slug: fixture.agent.slug,
         content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced prompt.",
         expectedRevisionId: fixture.agent.selection.definitionRevisionId,
       });
+      const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
+      await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
 
       const { thread: fork } = await createFork(fixture.source, fixture.deps, {
         originTurnId: fixture.firstTurn.id,
@@ -187,6 +189,7 @@ else
       expect(binding?.revision?.id).toBe(fixture.selection.revision.id);
       expect(binding?.configuration).toEqual(fixture.configuration);
       expect(binding?.invocationOverlay).toEqual(fixture.invocationOverlay);
+      expect(binding?.invokedSkills).toEqual({ "story-review": invoked });
     });
 
     it("copies image decisions through compaction-aware fork cutoffs", async () => {
