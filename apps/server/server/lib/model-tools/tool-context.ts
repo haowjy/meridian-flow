@@ -138,7 +138,7 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
 /**
  * The thread's context, its port at `version` (a live read resolves paths
  * against live membership too), its Work's execution context and the
- * principal. The thread and its Work load once.
+ * principal. The thread's Work membership loads once.
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
@@ -147,8 +147,9 @@ export async function resolveToolCall(
 ): Promise<ToolCall | ToolErrorOutput> {
   const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
   if (isToolError(context)) return context;
-  const { primaryWorkId, primaryWork } = context.resolution;
+  const { primaryWorkId } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);
+  const primaryWork = await deps.works.findById(primaryWorkId);
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
