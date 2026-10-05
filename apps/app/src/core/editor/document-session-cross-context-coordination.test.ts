@@ -193,7 +193,7 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
         documentId,
         lineageHandle,
         exactDatabaseName: admitted.exactDatabaseName,
-        generation: "119",
+        generation: "117",
       }),
     ).resolves.toBe("mismatch");
     const transfer = {
@@ -220,7 +220,7 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
       originLineageHandle: undefined,
     });
     await expect(
-      coordination.commitLocalAdoption(projectId, "119", pending, transfer),
+      coordination.commitLocalAdoption(projectId, "117", pending, transfer),
     ).rejects.toThrow("Bindable local adoption authority changed before session transfer");
     expect(await persistedAuthority(store)).toEqual({
       phase: "bindable",
@@ -238,6 +238,68 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
     expect(installed).toEqual([
       expect.objectContaining({ exactDatabaseName: admitted.exactDatabaseName }),
     ]);
+  } finally {
+    await coordination.close();
+    await store.close();
+  }
+});
+
+it("adopts a cached incarnation at a later admission generation and keeps its persistence", async () => {
+  const accountId = nextAccount();
+  const store = new DocumentSessionAuthorityStore(accountId);
+  const installed: Array<{ generation: string; persistenceGeneration: string }> = [];
+  const coordination = createDocumentSessionCrossContextCoordination({
+    accountId,
+    local: {
+      ...localAuthority(),
+      installSynchronously: (input) => installed.push(input),
+    },
+    locks: memoryLocks(),
+    secureContext: true,
+    createWakeChannel: null,
+    reconcileIntervalMs: 60_000,
+  });
+  try {
+    // The project's availability head advances on any mutation, so a document cached
+    // at 118 is looked up at 125 on the next load. Its incarnation is still the one a
+    // live `admit` would reuse, so adoption must not strand the cached session detached.
+    const later = "125";
+    const lease = await coordination.admit(projectId, documentId, generation, lineageHandle);
+    await expect(
+      coordination.inspectLocalLineage({
+        documentId,
+        lineageHandle,
+        exactDatabaseName: lease.exactDatabaseName,
+        generation: later,
+      }),
+    ).resolves.toBe("bindable");
+    const transfer = {
+      prepareCommit: vi.fn(),
+      completeCommit: vi.fn(async () => undefined),
+    };
+    const admitted = await coordination.commitLocalAdoption(
+      projectId,
+      later,
+      {
+        documentId,
+        transitionId: "cached-later-generation",
+        lineageHandle,
+        exactDatabaseName: lease.exactDatabaseName,
+        targetGeneration: later,
+      },
+      transfer,
+    );
+    expect(admitted).toMatchObject({ generation: later, persistenceGeneration: generation });
+    expect(transfer.completeCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ generation: later, persistenceGeneration: generation }),
+    );
+    expect(installed.at(-1)).toMatchObject({
+      generation: later,
+      persistenceGeneration: generation,
+    });
+    const room = await store.readRoom(documentId);
+    expect(room.persistence).toMatchObject({ phase: "bindable", generation });
+    expect(room.documentAdmittedThrough).toBe(later);
   } finally {
     await coordination.close();
     await store.close();
