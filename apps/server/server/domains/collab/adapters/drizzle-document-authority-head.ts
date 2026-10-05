@@ -1,5 +1,6 @@
 /** Allocates ordered journal admissions from the durable document authority head. */
 
+import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
@@ -111,6 +112,14 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
         return rows;
       });
     },
+  };
+}
+
+export function createDrizzleCheckpointAuthorityReader(db: Database) {
+  return async (documentId: string): Promise<DocumentAuthorityHeadGeneration> => {
+    const head = await findDocumentAuthorityHead(currentDrizzleDb(db), documentId);
+    if (!head) throw new DocumentNotFoundError(documentId);
+    return head;
   };
 }
 

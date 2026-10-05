@@ -33,6 +33,7 @@ import type {
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
+import { deriveDocument } from "../domain/document-derivations.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
@@ -47,6 +48,7 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
+import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export async function stagePendingSettlementWithinTx(
@@ -489,15 +491,22 @@ async function completeStagedPush(
       schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
-    const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
-    await upsertHead(db, documentId, canonicalRow.id, durable.stateVector);
-    await projectionEffects.applyPushCompletion({
-      documentId: branch.documentId,
-      markdown: durable.markdownProjection,
-      ...(branch.workId ? { workId: branch.workId } : {}),
-      at: new Date(),
-    });
   }
+  const stateVector = await deriveDocument(
+    {
+      store: createDrizzleDocumentDerivationStore(db as Database),
+      serializer: durableProjectionSerializer,
+    },
+    documentId,
+  );
+  if (!stateVector) throw new Error(`Missing durable document for push ${pushId}`);
+  await upsertHead(db, documentId, canonicalRow.id, stateVector);
+  await projectionEffects.applyPushCompletion({
+    documentId,
+    ...(branchRow?.workId ? { workId: branchRow.workId } : {}),
+    at: new Date(),
+  });
+
   await joinAdmissionWithinTx(db, {
     documentId,
     source: { kind: "staged_push", id: String(canonicalRow.id) },
@@ -867,50 +876,6 @@ export async function joinAdmissionWithinTx(
   return joined;
 }
 
-async function deriveDurableProjection(
-  db: DrizzleDb,
-  documentId: DocumentId,
-  durableProjectionSerializer: DurableProjectionSerializer,
-): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
-  await lockDocumentYjsHead(db, documentId);
-  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
-    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId));
-  const checkpoint = minRetainedSeq
-    ? (
-        await db
-          .select()
-          .from(documentYjsCheckpoints)
-          .where(
-            and(
-              eq(documentYjsCheckpoints.documentId, documentId),
-              lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
-            ),
-          )
-          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-          .limit(1)
-      )[0]
-    : null;
-  const rows = await db
-    .select({ updateData: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId))
-    .orderBy(documentYjsUpdates.id);
-  const doc = createCollabYDoc({ gc: false });
-  try {
-    if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-    for (const row of rows) Y.applyUpdate(doc, row.updateData);
-    const markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
-    return {
-      markdownProjection,
-      stateVector: Y.encodeStateVector(doc),
-    };
-  } finally {
-    doc.destroy();
-  }
-}
-
 async function materializeDurableDocumentBefore(
   db: DrizzleDb,
   documentId: DocumentId,
@@ -942,21 +907,4 @@ async function materializeDurableDocumentBefore(
   if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
   for (const row of rows) Y.applyUpdate(doc, row.update);
   return doc;
-}
-
-async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {
-  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packedSchemaVersion,
-      latestUpdateSeq: 0,
-      latestStateVector: Buffer.from(new Uint8Array()),
-      latestCheckpointId: null,
-    })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
-  await db.execute(
-    sql`SELECT document_id FROM document_yjs_heads WHERE document_id = ${documentId} FOR UPDATE`,
-  );
 }
