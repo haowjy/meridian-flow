@@ -45,7 +45,8 @@ and the access.
   disabled`, plus `return_result` for a subagent. It never narrows a tool's
   commands. `TOOL_CATALOG` is the static list of every model tool;
   `model-tool-schema.test.ts` keeps it equal to the registrations, and
-  authoring and spawn's `disallowed_tools` refuse any other name. A call to a
+  an authoring `tools` list and spawn's `disallowed_tools` refuse any other
+  name. An unknown name in an authoring `disallowed-tools` is ignored. A call to a
   tool the agent lacks is `permission_denied`: `This agent has no "<tool>"
   tool. Tell the user you can't do this here.` A spawned child's tools must be
   a subset of its parent's (`toolsBeyondParent`); the refusal names the extra

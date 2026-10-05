@@ -47,10 +47,9 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
   }
-  for (const field of ["tools", "disallowed-tools"] as const) {
-    for (const name of meta[field] ?? []) {
-      if (!catalog.has(name)) reasons.push(`Unknown tool in ${field}: ${name}`);
-    }
+  // An unknown name in disallowed-tools denies nothing that exists, so it is ignored.
+  for (const name of meta.tools ?? []) {
+    if (!catalog.has(name)) reasons.push(`Unknown tool in tools: ${name}`);
   }
   return reasons;
 }
