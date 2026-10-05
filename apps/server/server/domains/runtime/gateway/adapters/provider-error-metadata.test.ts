@@ -89,7 +89,8 @@ describe("provider HTTP failures", () => {
     });
   });
 
-  it("still retries 429, 5xx and failures without a response", () => {
+  it("still retries 408, 429, 5xx and failures without a response", () => {
+    expect(mapOpenAIError({ status: 408, message: "timed out" }).retryable).toBe(true);
     expect(mapOpenAIError({ status: 429, message: "slow down" }).retryable).toBe(true);
     expect(mapAnthropicError({ status: 529, message: "overloaded" })).toMatchObject({
       code: "server_error",
