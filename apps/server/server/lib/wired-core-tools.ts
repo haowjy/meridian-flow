@@ -48,7 +48,6 @@ import type {
 import { workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  AgentEditDestination,
   CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
@@ -75,6 +74,7 @@ import {
   type AgentChain,
   type FileAccess,
   type FileAccessDenied,
+  type FileDestination,
   FileEditRefusedError,
   type FileGrant,
   type FileNeed,
@@ -662,7 +662,7 @@ function buildAgentWriteCommand(
 type ReadSelection = Pick<ReadToolInput, "in" | "around">;
 
 /** Writes report where they landed; a drafted write names its Work. */
-function withDestination(outcome: WriteOutcome, destination: AgentEditDestination): WriteOutcome {
+function withDestination(outcome: WriteOutcome, destination: FileDestination): WriteOutcome {
   if (outcome.isError) return outcome;
   return {
     ...outcome,

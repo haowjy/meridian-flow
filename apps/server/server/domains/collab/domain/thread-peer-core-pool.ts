@@ -28,6 +28,7 @@ import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirr
 import {
   type FileAccess,
   type FileAccessDenied,
+  type FileDestination,
   FileEditRefusedError,
   type FileGrant,
   isFileAccessDenied,
@@ -36,7 +37,6 @@ import {
   targetDocumentId,
 } from "../../file-policy/index.js";
 import {
-  type AgentEditDestination,
   asThreadPeerAgentEditCore,
   type LiveAgentEditCore,
   type RefusedResponseDocument,
@@ -236,7 +236,7 @@ export function createThreadPeerCorePool(input: {
   const responses = new Map<string, ResponseRecord>();
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
-  const lastSeen = new Map<string, AgentEditDestination>();
+  const lastSeen = new Map<string, FileDestination>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
@@ -369,7 +369,7 @@ export function createThreadPeerCorePool(input: {
     return `${threadId}\0${documentId}`;
   }
 
-  function coreForDestination(destination: AgentEditDestination, threadId: string | undefined) {
+  function coreForDestination(destination: FileDestination, threadId: string | undefined) {
     return destination.kind === "live" ? input.liveUtilityCore : coreFor(threadId);
   }
 
@@ -823,8 +823,8 @@ function mergeRollbackResults(
 /** D41: the write targets a different version than the model last read. */
 function readRequired(
   command: WriteCommand,
-  seen: AgentEditDestination,
-  destination: AgentEditDestination,
+  seen: FileDestination,
+  destination: FileDestination,
 ): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   const message = `You last read ${path} ${versionPhrase(seen, "in")}, but your writes now go ${versionPhrase(destination, "to")}. Read it again before editing.`;
@@ -841,7 +841,7 @@ function readRequired(
   };
 }
 
-function versionPhrase(destination: AgentEditDestination, preposition: "in" | "to"): string {
+function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {
   return destination.kind === "live"
     ? "live"
     : `${preposition} @${destination.workSlug ?? "/"}'s draft`;

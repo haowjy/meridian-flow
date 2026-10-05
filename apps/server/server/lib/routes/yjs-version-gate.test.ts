@@ -13,6 +13,7 @@ import {
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
 import { createInMemoryEventSink } from "../../domains/observability/index.js";
+import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
 const branchRoomName = "branch:branch_1:gen:3";
@@ -108,7 +109,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("refuses only live-room clients strictly older than a stored head", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const staleClientContext = connectContext(SENTINEL_SCHEMA_VERSION);
 
     await expect(
@@ -135,7 +136,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("records one info event when a superseded client is refused", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -167,7 +168,7 @@ describe("Yjs connect-time schema version gate", () => {
     vi.spyOn(services.eventSink, "emit").mockImplementation(() => {
       throw new Error("sink-failed");
     });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const context = connectContext(SENTINEL_SCHEMA_VERSION);
 
     await expect(
@@ -187,7 +188,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("passes a live room with no stamped head, including an absent-version client", async () => {
     const services = versionGateServices({ liveHead: null });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -204,7 +205,7 @@ describe("Yjs connect-time schema version gate", () => {
       liveHead: COLLAB_SCHEMA_VERSION,
       liveGeneration: 9n,
     });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const context = connectContext(COLLAB_SCHEMA_VERSION);
     const document = new Y.Doc({ gc: false });
     const payload = new Uint8Array([1, 2, 3]);
@@ -232,7 +233,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("rejects sync when the admitted target does not match the message room", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const context = connectContext(COLLAB_SCHEMA_VERSION);
 
     await hocuspocus.configuration.onConnect?.({
@@ -255,6 +256,7 @@ describe("Yjs connect-time schema version gate", () => {
   it("gates branch rooms at the same strict monotonic edge", async () => {
     const hocuspocus = createHocuspocus(
       versionGateServices({ branchHead: COLLAB_SCHEMA_VERSION }) as never,
+      createYjsRoomAccessIndex(),
     );
     const staleClientContext = connectContext(SENTINEL_SCHEMA_VERSION);
 
@@ -284,7 +286,7 @@ describe("Yjs connect-time schema version gate", () => {
       liveHead: majorMismatchHead,
       branchHead: majorMismatchHead,
     });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
     for (const room of [liveDocumentName, branchRoomName]) {
       const context = connectContext(COLLAB_SCHEMA_VERSION);
@@ -305,7 +307,7 @@ describe("Yjs connect-time schema version gate", () => {
   it("records one error event when the server cannot serve the document head", async () => {
     const headSchemaVersion = version(1, 0);
     const services = versionGateServices({ branchHead: headSchemaVersion });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -333,7 +335,10 @@ describe("Yjs connect-time schema version gate", () => {
   });
 
   it("prioritizes a server-stale head over an even older client", async () => {
-    const hocuspocus = createHocuspocus(versionGateServices({ liveHead: version(1, 0) }) as never);
+    const hocuspocus = createHocuspocus(
+      versionGateServices({ liveHead: version(1, 0) }) as never,
+      createYjsRoomAccessIndex(),
+    );
     const context = connectContext(SENTINEL_SCHEMA_VERSION);
 
     await expect(
@@ -352,7 +357,7 @@ describe("Yjs connect-time schema version gate", () => {
   it("maps a stale manifest dependency to the same typed close", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
     services.documentSync.resolveManifestMembership.mockRejectedValue(staleSchemaError());
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const context = connectContext(COLLAB_SCHEMA_VERSION);
 
     await expect(
@@ -381,7 +386,7 @@ describe("Yjs connect-time schema version gate", () => {
         throw staleSchemaError();
       }),
     });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
     const context = connectContext(COLLAB_SCHEMA_VERSION);
 
     await expect(
@@ -405,7 +410,7 @@ describe("Yjs connect-time schema version gate", () => {
         throw staleSchemaError();
       }),
     });
-    const hocuspocus = createHocuspocus(services as never);
+    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
     await expect(
       hocuspocus.configuration.onLoadDocument?.({

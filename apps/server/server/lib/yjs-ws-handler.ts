@@ -495,7 +495,7 @@ function refuseAccessChanged(context: YjsConnectionContext): never {
 
 export function createHocuspocus(
   services: YjsGatewayServices,
-  rooms: YjsRoomAccessIndex = createYjsRoomAccessIndex(),
+  rooms: YjsRoomAccessIndex,
 ): Hocuspocus<YjsConnectionContext> {
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",

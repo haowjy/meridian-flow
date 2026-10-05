@@ -17,13 +17,12 @@ import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type {
-  AgentEditDestination,
   RefusedResponseDocument,
   RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { AgentEditDestination, RefusedResponseDocument, RoutedWriteOutcome };
+export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type {
   SetWorkPushPolicyInput,
