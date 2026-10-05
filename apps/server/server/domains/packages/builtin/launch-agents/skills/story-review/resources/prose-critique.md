@@ -88,7 +88,7 @@ request this data from the orchestrator; agents with bash access can run it
 directly:
 
 ```bash
-uv run resources/analyze.py <file.md> [window_size]
+uv run resources/prose-critique/analyze.py <file.md> [window_size]
 ```
 
 ## Resources

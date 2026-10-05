@@ -7,9 +7,6 @@ description: >
 
 # Writing Principles
 
-Load `/llm-writing` if it isn't already loaded. This skill adds the
-fiction-specific layer.
-
 ## Trust the Reader
 
 The reader is an active collaborator. They reconstruct emotions from behavior,
