@@ -1,18 +1,10 @@
 # collab TODO
 
-## Bound thread-core lock order across a reply's cores
-
-A reply can hold several thread-peer cores (one per destination). Review
-finding F5 flagged a possible pool starvation when replies wait on each
-other's cores; not reproduced. PR 2 phase 3 (write seams and locking) sets the
-lock order. Affected: `domain/thread-peer-core-pool.ts`, the response
-finalizer.
-
 ## Measure `confirmEdit` on every live frame
 
 Each frame an edit room persists binds the writer's grant, and the journal
-seam runs a full `confirmEdit` inside the journal transaction: two facts
-loads, the recursive folder walk and the person grants. Manuscript rooms pay
+seam runs a full `confirmEdit` inside the journal transaction: a facts
+load, the recursive folder walk and the person grants. Manuscript rooms pay
 it too, although no Work lifecycle can change their access. Measure frame
 latency under typing load before narrowing it, for example by skipping
 confirmation when the grant locks no Work. PR 2 review, finding 7.

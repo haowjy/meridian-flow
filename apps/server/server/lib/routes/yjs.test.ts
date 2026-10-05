@@ -11,6 +11,7 @@ import {
   type FileGrant,
   isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
+import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
@@ -135,24 +136,27 @@ describe("Yjs branch handshake route guard", () => {
       },
     });
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
-    const hocuspocus = createHocuspocus({
-      fileAccess: createAllowAllFileAccess(),
-      fileAccessChanges: createLocalFileAccessChanges(),
-      documentSync: {
-        bindHocuspocus: vi.fn(),
-        resolveBranchHocuspocusRoom: vi.fn(async () => ({
-          branchId: "branch_1",
-          documentId: "document-1",
-          workId: "work-1",
-          generation: 3,
-          schemaVersion: COLLAB_SCHEMA_VERSION,
-          status: "active",
-        })),
-        headSchemaVersion: vi.fn(async () => null),
-        flushBranchLivePull,
-      } as never,
-      eventSink: { emit() {} } as never,
-    });
+    const hocuspocus = createHocuspocus(
+      {
+        fileAccess: createAllowAllFileAccess(),
+        fileAccessChanges: createLocalFileAccessChanges(),
+        documentSync: {
+          bindHocuspocus: vi.fn(),
+          resolveBranchHocuspocusRoom: vi.fn(async () => ({
+            branchId: "branch_1",
+            documentId: "document-1",
+            workId: "work-1",
+            generation: 3,
+            schemaVersion: COLLAB_SCHEMA_VERSION,
+            status: "active",
+          })),
+          headSchemaVersion: vi.fn(async () => null),
+          flushBranchLivePull,
+        } as never,
+        eventSink: { emit() {} } as never,
+      },
+      createYjsRoomAccessIndex(),
+    );
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -576,7 +580,7 @@ describe("Yjs room access", () => {
 
   it("admits a read-only room and keeps its updates out of the journal", async () => {
     const services = roomServices({ readOnly: true });
-    const hocuspocus = createHocuspocus(services);
+    const hocuspocus = createHocuspocus(services, createYjsRoomAccessIndex());
     const context = {
       userId: "user-1",
       clientSchemaVersion: COLLAB_SCHEMA_VERSION,
@@ -655,7 +659,7 @@ describe("Yjs room access", () => {
     };
 
     await expect(
-      createHocuspocus(services).configuration.onConnect?.({
+      createHocuspocus(services, createYjsRoomAccessIndex()).configuration.onConnect?.({
         documentName: liveRoom,
         context,
         connectionConfig: connectionConfig(),

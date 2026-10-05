@@ -30,6 +30,7 @@ export const {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
+  runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
@@ -55,7 +56,6 @@ const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGenerati
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
-const { runOutsideEditConfirmation } = await import("../../../shared/edit-confirmation.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -322,8 +322,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const branchPulls = createBranchPullService({
-    outsideTransaction: (operation) =>
-      runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation)),
+    outsideTransaction: runOutsideWrite,
     rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
     branchCoordinator,
