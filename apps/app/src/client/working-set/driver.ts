@@ -40,7 +40,6 @@ export class WorkingSetSyncDriver {
   private userId: string | null = null;
   private sessionGeneration = 0;
   private enabled = false;
-  private accountOpen = true;
   private readonly baselines = new Map<string, number | null>();
   private readonly suspectBaselines = new Set<string>();
   private readonly scheduled = new Set<string>();
@@ -70,23 +69,6 @@ export class WorkingSetSyncDriver {
     this.enabled = enabled;
   }
 
-  open(userId: string): void {
-    if (this.userId !== userId || this.accountOpen) return;
-    this.accountOpen = true;
-    this.flush();
-  }
-
-  close(userId: string): void {
-    if (this.userId !== userId) return;
-    this.accountOpen = false;
-    this.sessionGeneration += 1;
-    this.markSuspectOnReconnect();
-    this.scheduled.clear();
-    this.failures.clear();
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
-  }
-
   hydrate(projectId: string, result: ProjectRouteData["workingSet"]): WorkingSetHydrationPlan {
     if (!this.enabled) return { status: "disabled" };
     const plan = planWorkingSetHydration(true, result, this.store.read(projectId));
@@ -113,13 +95,11 @@ export class WorkingSetSyncDriver {
     const generation = this.sessionGeneration;
     try {
       const row = await this.get(projectId);
-      if (generation !== this.sessionGeneration || !this.enabled || !this.accountOpen)
-        return { status: "disabled" };
+      if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
       this.suspectBaselines.delete(projectId);
       return this.hydrate(projectId, row ? { status: "row", row } : { status: "absent" });
     } catch {
-      if (generation !== this.sessionGeneration || !this.enabled || !this.accountOpen)
-        return { status: "disabled" };
+      if (generation !== this.sessionGeneration || !this.enabled) return { status: "disabled" };
       this.markSuspect(projectId);
       return this.hydrate(projectId, { status: "unavailable" });
     }
@@ -183,7 +163,7 @@ export class WorkingSetSyncDriver {
     const generation = this.sessionGeneration;
     try {
       const row = await this.get(projectId);
-      if (generation !== this.sessionGeneration || !this.enabled || !this.accountOpen) return false;
+      if (generation !== this.sessionGeneration || !this.enabled) return false;
       const result = row ? { status: "row" as const, row } : { status: "absent" as const };
       const confirmation = planSuspectBaselineConfirmation(result, this.store.read(projectId));
       if (confirmation.status === "read-degraded") return false;
@@ -198,24 +178,15 @@ export class WorkingSetSyncDriver {
   private async sweep(keepalive: boolean): Promise<void> {
     if (this.sweeping) return;
     this.sweeping = true;
-    const generation = this.sessionGeneration;
     try {
       while (this.scheduled.size > 0) {
         const projectId = this.scheduled.values().next().value as string;
         this.scheduled.delete(projectId);
         const record = this.store.read(projectId);
-        if (
-          !canSweepWorkingSet(
-            this.enabled && this.accountOpen,
-            this.baselines.has(projectId),
-            record,
-          )
-        )
-          continue;
+        if (!canSweepWorkingSet(this.enabled, this.baselines.has(projectId), record)) continue;
         if (!record?.pending) continue;
         if (this.suspectBaselines.has(projectId)) {
           const confirmed = await this.confirmSuspectBaseline(projectId);
-          if (generation !== this.sessionGeneration || !this.enabled || !this.accountOpen) return;
           if (!confirmed) {
             const failures = (this.failures.get(projectId) ?? 0) + 1;
             this.failures.set(projectId, failures);
@@ -293,7 +264,6 @@ let closeAccountLifetime: (() => void) | undefined;
 
 /** Committed account owner; render-time preferences never install subscriptions. */
 export function bindWorkingSetSyncLifetime(
-  userId: string,
   epoch: AbortSignal,
   hints: ConnectivityHintsPort | undefined,
 ): () => void {
@@ -306,7 +276,6 @@ export function bindWorkingSetSyncLifetime(
     closed = true;
     stopHints();
     epoch.removeEventListener("abort", close);
-    activeDriver?.close(userId);
     if (closeAccountLifetime === close) closeAccountLifetime = undefined;
   };
   closeAccountLifetime = close;
@@ -314,7 +283,6 @@ export function bindWorkingSetSyncLifetime(
     close();
     return close;
   }
-  activeDriver?.open(userId);
   stopHints =
     hints?.subscribe({}, (hint) => {
       if (closed || epoch.aborted || hint !== "retry-now") return;

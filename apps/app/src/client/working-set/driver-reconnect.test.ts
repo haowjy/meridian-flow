@@ -28,7 +28,7 @@ it("retry-now confirms a suspect baseline and flushes before the report debounce
   let callback: (hint: ConnectivityHint) => void = () => {};
   const stop = vi.fn();
   configureWorkingSetSync("account", true);
-  const close = bindWorkingSetSyncLifetime("account", new AbortController().signal, {
+  const close = bindWorkingSetSyncLifetime(new AbortController().signal, {
     subscribe: (_source, listener) => {
       callback = listener;
       return stop;

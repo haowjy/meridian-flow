@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-/** Account teardown fences shared recovery and delayed working-set writes. */
+/** Account-owned recovery subscriptions preserve working-set write lineage. */
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { hydrateWorkingSet, replaceRecentRoutes } from "@/client/working-set/driver";
+import {
+  hydrateWorkingSet,
+  readRecentRoutes,
+  replaceRecentRoutes,
+} from "@/client/working-set/driver";
 import { buildWorkingSetRoute } from "@/client/working-set/store";
 import type { ConnectivityHint, ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { WorkingSetSyncPreferenceProvider } from "./WorkingSetSyncPreferenceProvider";
@@ -70,7 +74,7 @@ async function mount(strict = false) {
 it.each([
   "abort",
   "unmount",
-])("working-set owner releases recovery and fences writes on account %s", async (end) => {
+])("working-set owner releases its subscription and ignores hints after account %s", async (end) => {
   await mount();
   if (end === "abort") account.epoch.abort();
   else {
@@ -80,31 +84,76 @@ it.each([
   expect(account.stop).toHaveBeenCalledTimes(1);
   // Even a queued callback from the still-mounted shared shell is harmless.
   account.listener?.("retry-now");
-  document.dispatchEvent(new Event("visibilitychange"));
-  window.dispatchEvent(new Event("pagehide"));
-  await vi.advanceTimersByTimeAsync(5_000);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(account.get).not.toHaveBeenCalled();
   expect(account.put).not.toHaveBeenCalled();
 });
-it("account abort fences a recovery GET already in flight", async () => {
-  await mount();
-  let finish!: (row: null) => void;
-  account.get.mockImplementationOnce(
+it("committed subscription rebinds after StrictMode effect cleanup", async () => {
+  await mount(true);
+  account.listener?.("retry-now");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(account.put).toHaveBeenCalledTimes(1);
+});
+
+function route(id: string) {
+  const value = buildWorkingSetRoute(id, "unfiled", `/${id}.md`, null);
+  if (!value) throw new Error("Expected route");
+  return value;
+}
+async function unmount() {
+  account.epoch.abort();
+  await act(() => root?.unmount());
+  root = undefined;
+}
+it.each([
+  false,
+  true,
+])("same-account remount preserves newer recency while the old PUT drains (StrictMode=%s)", async (strict) => {
+  let finish!: (response: { revision: number }) => void;
+  account.put.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve;
       }),
   );
-  account.listener?.("retry-now");
-  expect(account.get).toHaveBeenCalledTimes(1);
-  account.epoch.abort();
-  finish(null);
-  await vi.advanceTimersByTimeAsync(5_000);
-  expect(account.put).not.toHaveBeenCalled();
-  expect(account.get).toHaveBeenCalledTimes(1);
-});
-it("committed lifetime can reopen after StrictMode effect cleanup", async () => {
-  await mount(true);
-  account.listener?.("retry-now");
-  await vi.advanceTimersByTimeAsync(0);
+  await mount();
+  replaceRecentRoutes("project", [route("old")]);
+  window.dispatchEvent(new Event("pagehide"));
   expect(account.put).toHaveBeenCalledTimes(1);
+  await unmount();
+  account.epoch = new AbortController();
+  await mount(strict);
+  replaceRecentRoutes("project", [route("new")]);
+  account.get.mockResolvedValue({ revision: 1, recentRoutes: [route("old")] });
+  await vi.advanceTimersByTimeAsync(4_000);
+  finish({ revision: 1 });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(readRecentRoutes("project")).toEqual([route("new")]);
+  expect(account.put).toHaveBeenCalledTimes(2);
+  expect(account.put.mock.calls[1]?.[1]).toEqual({ recentRoutes: [route("new")] });
+});
+it.each([
+  false,
+  true,
+])("account transition drains the new account queue after the old PUT (StrictMode=%s)", async (strict) => {
+  let finish!: (response: { revision: number }) => void;
+  account.put.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await mount();
+  window.dispatchEvent(new Event("pagehide"));
+  expect(account.put).toHaveBeenCalledTimes(1);
+  await unmount();
+  account.id += 1;
+  account.epoch = new AbortController();
+  await mount(strict);
+  account.listener?.("retry-now");
+  await vi.advanceTimersByTimeAsync(4_000);
+  finish({ revision: 1 });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(account.get).toHaveBeenCalledTimes(1);
+  expect(account.put).toHaveBeenCalledTimes(2);
 });
