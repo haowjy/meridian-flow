@@ -23,8 +23,7 @@ export function createSkillToolRegistrations(deps: {
       definition: {
         type: "function",
         name: "skill",
-        description:
-          "Load a skill listed under Available skills: its instructions, its folder and its files.",
+        description: "Load a skill listed under Available skills.",
         inputSchema: modelToolSchema(SkillToolInputSchema),
       },
       input: SkillToolInputSchema,

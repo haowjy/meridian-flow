@@ -64,7 +64,7 @@ describe("skill rows", () => {
   it("shows a skill call as invoking that skill, with nothing to expand", () => {
     const tool = skillCall({
       result:
-        "skill invoked: story-review\nFolder: skills://story-review/ (read-only)\n\n# Story review",
+        "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\n# Story review",
     });
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Invoked the Story Review skill" });
@@ -84,7 +84,8 @@ describe("skill rows", () => {
     const tool = documentTool({
       toolName: "read",
       input: { path: "skills://story-review/SKILL.md" },
-      result: "skills://story-review/SKILL.md (read-only)\n\n# Story review",
+      result:
+        "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\n# Story review",
     });
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Read", parameter: "SKILL.md" });
