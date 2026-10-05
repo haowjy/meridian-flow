@@ -4,12 +4,11 @@
  * re-check a write seam runs inside its transaction.
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { decide, levelAt, personLevel, skillLevel } from "./domain/policy.js";
+import { decide, levelAt, personLevel } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
   type FileAccessDenied,
-  type FileAccessLevel,
   type FileDecision,
   type FileFacts,
   type FileGrant,
@@ -62,11 +61,6 @@ export interface FileAccess {
     principal: Principal,
     documentId: DocumentId,
   ): Promise<"available" | "deleted" | null>;
-  /**
-   * A skill's files under `skills://` (D52), judged on the calling thread's
-   * own binding: `read` or `none`.
-   */
-  skillAccess(principal: Principal, skill: string): Promise<FileAccessLevel>;
 }
 
 export function createFileAccess(deps: FileAccessDeps): FileAccess {
@@ -122,12 +116,6 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const grants = await deps.grants.personGrants(principal.accountId, facts);
       if (!atLeast(personLevel(facts, grants), "read")) return null;
       return facts.deleted || facts.ownerWork?.deleted === true ? "deleted" : "available";
-    },
-
-    async skillAccess(principal, skill) {
-      const caller = principal.agent?.chain[0];
-      if (!caller) return "none";
-      return skillLevel(principal, await deps.facts.skillFacts(caller.threadId), skill);
     },
 
     async listAccess(principal, documentIds) {

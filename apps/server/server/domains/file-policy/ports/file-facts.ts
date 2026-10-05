@@ -1,6 +1,6 @@
 /** Port: load the facts the file policy decides on (file-access §2, §5). */
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { FileFacts, FileTarget, SkillFacts } from "../domain/types.js";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { FileFacts, FileTarget } from "../domain/types.js";
 
 export interface FileFactsRequest {
   target: FileTarget;
@@ -32,6 +32,4 @@ export interface FileFactsPort {
     requests: readonly FileFactsRequest[],
     workIds: readonly WorkId[],
   ): Promise<(FileFacts | null)[]>;
-  /** The skills a thread's own binding names (D52); `skillLevel` decides which it may read. */
-  skillFacts(threadId: ThreadId): Promise<SkillFacts>;
 }
