@@ -192,9 +192,10 @@ export interface FileAccessDenied {
   readonly agentChain: AgentChain | null;
 }
 
-/** The document a target names; null for a container. */
-export function targetDocumentId(target: FileTarget): DocumentId | null {
-  return target.kind === "container" ? null : target.documentId;
+/** The document a document or draft target names; a container names none. */
+export function targetDocumentId(target: FileTarget): DocumentId {
+  if (target.kind === "container") throw new Error("A container target names no document");
+  return target.documentId;
 }
 
 /**
