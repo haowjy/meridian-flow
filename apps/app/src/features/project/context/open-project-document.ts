@@ -191,7 +191,7 @@ export class ProjectDocumentLiveOpener {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
-  /** Host Work context for project-scoped files; resolved Work/no-Work authority wins. */
+  /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   disposition?: "current" | "background";
   /** Abandons the open when the caller that asked for it is gone. */

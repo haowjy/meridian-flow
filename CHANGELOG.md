@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
+
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.

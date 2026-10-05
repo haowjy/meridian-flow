@@ -36,8 +36,8 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
 }
 
 /**
- * The Work a route addresses. `unresolved` has no id when the address named
- * no Work it could parse.
+ * The Work a route addresses. Ready Editors include the No Work row; screen
+ * chrome collapses it to absent. Unresolved means identity is not ready.
  */
 export type RouteWorkResolution =
   | { status: "new" }
