@@ -29,7 +29,9 @@ async function main(): Promise<void> {
       timeout: 60_000,
     });
 
-    const thinkingButtons = page.getByRole("button", { name: /^Thinking$/i });
+    // The trigger is named by what it shows: "Thinking", or a digest such as
+    // "Read 2 documents, 1 step".
+    const thinkingButtons = page.locator('[data-turn-item-kind="process"] > div > button');
     const thinkingCount = await thinkingButtons.count();
     checks.push({
       name: "Settled turns with reasoning show ProcessDisclosure",

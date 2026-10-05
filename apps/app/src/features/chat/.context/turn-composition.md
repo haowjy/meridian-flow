@@ -85,8 +85,8 @@ calls contribute edited/drafted documents. Failed operations and every other
 tool (`search`, `ls`, `work`, a `read` of a `skills://` file) contribute steps
 instead of documents; a `write` paused with `read_required` counts as a step.
 Clauses are ordered skills → explore → edit → steps. A process item with no
-readable tool but a reasoning run still shows `Thinking`. The accessible name
-remains `Thinking` / `Thinking part N` regardless of the visible digest.
+readable tool but a reasoning run still shows `Thinking`. The trigger's
+accessible name is the visible label; there is no separate `aria-label`.
 
 ## Cards are artifacts
 
