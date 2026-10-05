@@ -65,11 +65,12 @@ Rates and their evidence live in the [runtime compaction context](../../.context
 
 ## Provider errors
 
-`adapters/provider-http-error.ts` owns one HTTP-status policy for every adapter
-(the OpenAI Responses, Chat Completions, and OpenRouter adapters share
-`openai-compatible/errors.ts`). Network failures, failures with no response,
-408, 429, and 5xx retry. 401/403 are `auth_error`; 400 is `invalid_request`,
-`context_overflow`, or `content_filtered`. Every other 4xx, including 402 out
+`adapters/provider-http-error.ts` owns one HTTP-status policy for every adapter;
+each calls `mapProviderHttpError` directly. Network failures, failures with no
+response, 408, 429, and 5xx retry. 401/403 are `auth_error`; 400 is
+`invalid_request`, `context_overflow`, or `content_filtered`, matched by shared
+default patterns. Anthropic overrides only the content filter, to also accept
+"blocked" (never "block", so "invalid content block" stays `invalid_request`). Every other 4xx, including 402 out
 of balance, is `provider_error` with `retryable: false`: the provider refused
 this request and will refuse it again. There is no separate code for an
 exhausted account. `x-should-retry: false` still overrides.
@@ -87,7 +88,7 @@ on the dev capture record; see
 
 ## Context-window errors
 
-Every adapter normalizes a provider's context-window rejection to the one provider-neutral code `context_overflow`, non-retryable. Anthropic's `model_context_window_exceeded` stop reason is missing from the SDK union, so `anthropic/stream-collect.ts` matches the wire string and emits the error with the metered partial result; OpenAI Responses maps `context_length_exceeded`; the HTTP error mappers match context-length messages, not any message containing "token". The error event's `result` carries metered usage so the loop can bill it. The runtime turns `context_overflow` into one cold compaction and one retry per reply. With provider fallback enabled, the router yields a non-retryable error at once and only a retryable error moves to the next provider. A router that drops a non-retryable error ends the stream with no terminal event, and the loop never sees the overflow.
+Every adapter normalizes a provider's context-window rejection to the one provider-neutral code `context_overflow`, non-retryable. Anthropic's `model_context_window_exceeded` stop reason is missing from the SDK union, so `anthropic/stream-collect.ts` matches the wire string and emits the error with the metered partial result; OpenAI Responses maps `context_length_exceeded`; the shared HTTP error mapper matches context-length messages, not any message containing "token". The error event's `result` carries metered usage so the loop can bill it. The runtime turns `context_overflow` into one cold compaction and one retry per reply. With provider fallback enabled, the router yields a non-retryable error at once and only a retryable error moves to the next provider. A router that drops a non-retryable error ends the stream with no terminal event, and the loop never sees the overflow.
 
 ## DeepSeek cache evidence
 

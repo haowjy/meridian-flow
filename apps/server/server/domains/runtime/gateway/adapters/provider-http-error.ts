@@ -24,6 +24,13 @@ export type ProviderErrorPatterns = {
   contentFiltered: RegExp;
 };
 
+/** Every provider's context-window and content-filter wording; an adapter overrides only what differs. */
+const DEFAULT_PATTERNS: ProviderErrorPatterns = {
+  contextOverflow:
+    /context[_ ](?:length|window)|exceeds? context limit|prompt is too long|maximum context length|too many (?:input )?tokens|input.*exceeds.*token/,
+  contentFiltered: /content[\s\S]*filter|filter[\s\S]*content/,
+};
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -90,8 +97,9 @@ function providerResponseOf(err: unknown): ProviderErrorResponse | undefined {
 
 export function mapProviderHttpError(
   err: unknown,
-  patterns: ProviderErrorPatterns,
+  overrides: Partial<ProviderErrorPatterns> = {},
 ): MappedProviderError {
+  const patterns = { ...DEFAULT_PATTERNS, ...overrides };
   const status = httpStatus(err);
   const message = errorMessage(err);
   const mapped: { code: ErrorCode; message: string; retryable: boolean } = (() => {
