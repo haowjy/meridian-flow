@@ -80,7 +80,7 @@ export function createAccountDocumentSessionRuntime(
         property === "releaseBranchRooms" ||
         property === "revokeDocument" ||
         property === "revokeAccess" ||
-        property === "dropRefusedRoom"
+        property === "whenRefusedRoomDropped"
       ) {
         return value.bind(target);
       }

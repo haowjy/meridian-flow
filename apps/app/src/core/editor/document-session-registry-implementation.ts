@@ -46,7 +46,6 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-const noop = () => undefined;
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -124,8 +123,8 @@ export class DocumentSessionRegistry
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
   private localResources: LocalResourceLifetimePort | null = null;
-  private readonly refusalWatchedSessions = new WeakSet<DocumentSession>();
-  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void>>();
+  /** Each refused live session's drop: running, or settled whether or not it removed the room. */
+  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void> | "settled">();
 
   constructor(
     private readonly createCoordination: (
@@ -580,6 +579,13 @@ export class DocumentSessionRegistry
     return this.observeRoom(lease.documentId, observer);
   }
 
+  observeBranchRoom(
+    roomKey: string,
+    observer: (snapshot: DocumentSessionSnapshot) => void,
+  ): () => void {
+    return this.observeRoom(roomKey, observer);
+  }
+
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
@@ -833,6 +839,9 @@ export class DocumentSessionRegistry
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
+    // Subscribed before any host can be, so a refusal's drop is already
+    // running when a host hears of it (`whenRefusedRoomDropped`).
+    if (session.room.kind === "live") session.subscribe(() => this.dropRefusedRoom(session));
     return session;
   }
 
@@ -845,38 +854,39 @@ export class DocumentSessionRegistry
   private attachSessionTransport(session: DocumentSession): void {
     if (session.getSnapshot().schemaFence) return;
     session.attachTransport(this.transportFactory);
-    this.dropOnRefusedEdits(session);
+  }
+
+  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null {
+    const drop = this.refusedRoomDrops.get(session);
+    return drop === "settled" ? null : (drop ?? null);
   }
 
   /**
-   * Drop refused live rooms even when no editor host holds them. Branch rooms
-   * hold no lease; their editor rebuilds them in place (`rebuildBranchRoom`).
+   * Drop a live room whose pending edits the server refused, even when no
+   * editor host holds it: revoking each lease's access tears the session down
+   * and clears its local copy. Branch rooms hold no lease; their editor
+   * rebuilds them in place (`rebuildBranchRoom`).
    */
-  private dropOnRefusedEdits(session: DocumentSession): void {
-    if (this.refusalWatchedSessions.has(session)) return;
-    this.refusalWatchedSessions.add(session);
-    session.subscribe(() => {
-      if (session.refusedLocalEdits()) void this.dropRefusedRoom(session);
-    });
-  }
-
-  dropRefusedRoom(session: DocumentSession): Promise<void> {
-    const existing = this.refusedRoomDrops.get(session);
-    if (existing) return existing;
+  private dropRefusedRoom(session: DocumentSession): void {
+    if (this.refusedRoomDrops.has(session) || !session.refusedLocalEdits()) return;
     const state = this.liveRooms.get(session.documentId as DocumentId);
-    if (!session.refusedLocalEdits() || state?.session !== session) return Promise.resolve();
-    const drop = Promise.all(
-      [...state.leases.values()].map((lease) =>
-        this.revokeAccess(
-          lease.projectId,
-          lease.documentId,
-          lease.generation,
-          `access-refused/v1/${lease.projectId}/${lease.documentId}/${lease.generation}`,
+    if (state?.session !== session) return;
+    const settle = () => {
+      this.refusedRoomDrops.set(session, "settled");
+    };
+    this.refusedRoomDrops.set(
+      session,
+      Promise.all(
+        [...state.leases.values()].map((lease) =>
+          this.revokeAccess(
+            lease.projectId,
+            lease.documentId,
+            lease.generation,
+            `access-refused/v1/${lease.projectId}/${lease.documentId}/${lease.generation}`,
+          ),
         ),
-      ),
-    ).then(noop, noop);
-    this.refusedRoomDrops.set(session, drop);
-    return drop;
+      ).then(settle, settle),
+    );
   }
 
   private removeRetainedProjectLease(projectId: ProjectId, documentId: DocumentId): boolean {
