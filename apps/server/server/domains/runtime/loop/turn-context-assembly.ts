@@ -52,7 +52,7 @@ import {
   type ImageInclusionDecision,
   projectImageBlocksForModel,
 } from "./image-context.js";
-import type { ToolPolicy } from "./permissions/project-tool-policy.js";
+import type { ToolPolicy } from "./permissions/tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 

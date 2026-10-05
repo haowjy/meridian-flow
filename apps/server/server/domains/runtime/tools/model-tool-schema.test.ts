@@ -3,8 +3,11 @@
  * registration's zod input, and the pinned size of the primary catalog.
  */
 import { describe, expect, it } from "vitest";
-import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
-import { projectToolPolicy, TOOL_CATALOG } from "../loop/permissions/project-tool-policy.js";
+import {
+  advertiseTools,
+  projectToolPolicy,
+  TOOL_CATALOG,
+} from "../loop/permissions/tool-policy.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { modelToolSchema } from "./model-tool-schema.js";

@@ -186,7 +186,7 @@ describe("createWorkContextReader", () => {
         findById: async () => null,
       },
       threadWorks: { findPrimary: async () => null },
-      readAgentChain: async () => [],
+      readChainPermission: async () => "edit" as const,
     });
     await expect(reader.renderForThread(THREAD_ID)).rejects.toThrow(
       `Thread primary Work is missing: ${THREAD_ID}`,

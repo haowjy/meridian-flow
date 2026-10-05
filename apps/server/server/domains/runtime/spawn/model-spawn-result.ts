@@ -7,12 +7,7 @@
  */
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
-import {
-  type InvalidArgumentIssue,
-  type InvalidArgumentsResult,
-  invalidArgumentsResult,
-  renderInvalidArguments,
-} from "../tools/invalid-arguments.js";
+import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
 
 export const queuedNoReplyCopy =
@@ -28,14 +23,11 @@ export const backgroundRunCopy = (handle: string) =>
  * failed is a delivered report and stays a plain result.
  */
 export function spawnToolResult(
-  result: SpawnResult,
+  result: SpawnResult | InvalidArgumentsResult,
 ): SpawnResult | { isError: true; output: SpawnResult | InvalidArgumentsResult } {
-  if (result.status !== "error" || result.execution !== undefined) return result;
   // An argument the coordinator refused reads exactly like the executor's parse refusal.
-  if (result.error.code === "invalid_arguments") {
-    const details = result.error.details as { issues?: InvalidArgumentIssue[] } | undefined;
-    return { isError: true, output: invalidArgumentsResult(details?.issues ?? []) };
-  }
+  if ("issues" in result) return { isError: true, output: result };
+  if (result.status !== "error" || result.execution !== undefined) return result;
   return { isError: true, output: result };
 }
 

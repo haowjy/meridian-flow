@@ -5,7 +5,7 @@
  */
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
-import { actionPolicy } from "../domains/runtime/index.js";
+import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 
 /** A file-policy refusal the model sees as `permission_denied`. */
 export type PermissionDenial = FileAccessDenied & {
@@ -52,7 +52,7 @@ function workArchivedMessage(denial: FileAccessDenied): string {
   const mayUnarchive =
     unarchive !== null &&
     denial.agentChain !== null &&
-    actionPolicy(denial.agentChain, "work.unarchive") === "allow";
+    mayChangeWorks(chainPermission(denial.agentChain));
   if (denial.destination?.kind === "draft") {
     const frozen = `${work} is archived, so its draft is frozen and this change wasn't made.`;
     return mayUnarchive

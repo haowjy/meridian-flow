@@ -5,7 +5,6 @@
  */
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { WorkCommand } from "../../tools/core-tools.js";
-import type { AgentChain } from "./agent-chain.js";
 
 export type ActionDecision = "allow" | "ask" | "deny";
 
@@ -28,19 +27,18 @@ const ACTIONS: Readonly<Record<AgentAction, Readonly<Record<AgentPermission, Act
   "work.show": ALWAYS,
 };
 
-const RANK: Readonly<Record<ActionDecision, number>> = { deny: 0, ask: 1, allow: 2 };
-
 /**
- * The lowest decision over every link of the delegation chain, so a `read`
- * parent caps a default-`edit` child (D35, D39).
+ * Decided on the chain's effective permission (`chainPermission`), so a `read`
+ * parent caps a default-`edit` child (D35, D39). Every row is monotone
+ * (read ≤ edit), so that equals the lowest decision over the chain.
  */
-export function actionPolicy(chain: AgentChain, action: AgentAction): ActionDecision {
-  let decision: ActionDecision = "allow";
-  for (const link of chain) {
-    const linkDecision = ACTIONS[action][link.permission];
-    if (RANK[linkDecision] < RANK[decision]) decision = linkDecision;
-  }
-  return decision;
+export function actionPolicy(permission: AgentPermission, action: AgentAction): ActionDecision {
+  return ACTIONS[action][permission];
+}
+
+/** Whether the agent may change Works, so refusal copy may offer `work unarchive`. */
+export function mayChangeWorks(permission: AgentPermission): boolean {
+  return actionPolicy(permission, "work.unarchive") === "allow";
 }
 
 /** What the model reads when the policy refused a `work` command. */
