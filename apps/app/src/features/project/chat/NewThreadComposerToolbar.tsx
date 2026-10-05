@@ -15,6 +15,7 @@ import {
   useSelectedWorkWriteModeToolbarControl,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
+import { Button } from "@/components/ui/button";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -24,6 +25,7 @@ export function NewThreadComposerToolbar({
   work,
   selectedWorkId,
   works,
+  noWork,
   worksStatus,
   agent: selectedAgent,
   disabled,
@@ -36,6 +38,7 @@ export function NewThreadComposerToolbar({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
   disabled: boolean;
@@ -55,6 +58,7 @@ export function NewThreadComposerToolbar({
     work,
     selectedWorkId,
     works,
+    noWork,
     worksStatus,
     disabled,
     onWorkChange,
@@ -122,6 +126,7 @@ function useProspectiveWorkControl({
   work,
   selectedWorkId,
   works,
+  noWork,
   worksStatus,
   disabled,
   onWorkChange,
@@ -130,6 +135,7 @@ function useProspectiveWorkControl({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   disabled: boolean;
   onWorkChange(work: Work | null): void;
@@ -141,13 +147,13 @@ function useProspectiveWorkControl({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const catalog =
-    worksStatus === "loading"
+    worksStatus === "loading" || !noWork
       ? { status: "loading" as const }
       : worksStatus === "error"
         ? { status: "error" as const, retry: onRetryWorks }
-        : { status: "ready" as const, works, refreshing: false };
+        : { status: "ready" as const, works, noWork, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
-  const noneSelected = !selectedWorkId || Boolean(work?.isNoWork);
+
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`No Work`;
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
@@ -177,7 +183,7 @@ function useProspectiveWorkControl({
           view.status === "ready"
             ? [
                 { key: "search", ref: searchRef },
-                { key: `selected:${noneSelected ? "none" : selectedWorkId}`, ref: selectedRef },
+                { key: `selected:${selectedWorkId}`, ref: selectedRef },
                 { key: `first:${view.enabledIds[0] ?? "none"}`, ref: firstRef },
               ]
             : view.status === "error"
@@ -185,29 +191,36 @@ function useProspectiveWorkControl({
               : [],
         fallback: "content",
       },
-      render: ({ terminalClose }) => (
-        <WorkPickerPanel
-          purposeLabel={t`Choose Work for new chat`}
-          view={view}
-          operation={{
-            currentWorkId: noneSelected ? "" : selectedWorkId,
-            targetId: null,
-            pending: false,
-            failure: null,
-          }}
-          onQueryChange={setQuery}
-          onChoose={(next) => {
-            onWorkChange(next);
-            terminalClose();
-          }}
-          onChooseNone={() => {
-            onWorkChange(null);
-            terminalClose();
-          }}
-          searchRef={searchRef}
-          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-        />
-      ),
+      render: ({ terminalClose }) =>
+        selectedWorkId ? (
+          <WorkPickerPanel
+            purposeLabel={t`Choose Work for new chat`}
+            view={view}
+            operation={{
+              currentWorkId: selectedWorkId,
+              targetId: null,
+              pending: false,
+              failure: null,
+            }}
+            onQueryChange={setQuery}
+            onChoose={(next) => {
+              onWorkChange(next);
+              terminalClose();
+            }}
+            searchRef={searchRef}
+            focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+          />
+        ) : (
+          <div>
+            {view.status === "error" ? (
+              <Button onClick={view.retry}>
+                <Trans>Retry</Trans>
+              </Button>
+            ) : (
+              <Trans>Loading Work…</Trans>
+            )}
+          </div>
+        ),
     },
   };
 }

@@ -89,7 +89,7 @@ export function useCreateLinkedDocument(
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        let noWorkId = noWork?.id ?? null;
+        let noWorkId: string | null = noWork?.id ?? null;
         let work = scratchWork(target, workId, works, noWorkId);
         // The Works list is still loading: a slug it will name is not missing.
         if (
@@ -147,14 +147,20 @@ function scratchWork(
 ): ResourceWorkAuthority | "unknown" {
   if (target.scheme !== "scratch") return { workId: null };
   if (target.authority.kind === "none")
-    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
+    return noWorkId
+      ? resourceWorkAuthorityFor(noWorkId, { works: works ?? [], noWork: { id: noWorkId } })
+      : { workId: null };
   const { authority } = target;
   if (authority.kind === "contextual" && (!surfaceWorkId || surfaceWorkId === noWorkId))
-    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
+    return noWorkId
+      ? resourceWorkAuthorityFor(noWorkId, { works: works ?? [], noWork: { id: noWorkId } })
+      : { workId: null };
   const work = works?.find((candidate) =>
     authority.kind === "work"
       ? candidate.slug === authority.workSlug
       : candidate.id === surfaceWorkId,
   );
-  return work ? resourceWorkAuthorityFor(work.id, works, noWorkId) : "unknown";
+  return work && noWorkId
+    ? resourceWorkAuthorityFor(work.id, { works: works ?? [], noWork: { id: noWorkId } })
+    : "unknown";
 }

@@ -1,5 +1,11 @@
 /** Resolves address selections against an authorized project catalog without inventing IDs. */
-import { type AddressSelection, type ProjectAddress, workIsIdentity } from "./project-address";
+import {
+  type AddressSelection,
+  type ProjectAddress,
+  type ProjectDestination,
+  workIdSelection,
+  workIsIdentity,
+} from "./project-address";
 
 export type AddressCatalog<T> =
   | { status: "loading" | "error"; entries?: readonly T[] }
@@ -41,4 +47,22 @@ export function guardProjectQuerySelections(
     return { ...address, work: { kind: "none" } };
   }
   return address;
+}
+
+/** Project content spells No Work as none; identity destinations retain the row id. */
+export function workSelectionFor(
+  destination: ProjectDestination,
+  workId: string | undefined,
+  noWorkId: string | null,
+): AddressSelection {
+  if (workId === undefined) return { kind: "absent" };
+  if (
+    (destination.kind === "editor" ||
+      destination.kind === "document" ||
+      destination.kind === "browse") &&
+    !workIsIdentity(destination) &&
+    workId === noWorkId
+  )
+    return { kind: "none" };
+  return workIdSelection(workId);
 }

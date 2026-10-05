@@ -49,7 +49,7 @@ import {
   projectAddressHref,
   workIdSelection,
 } from "./project-address";
-import { addressWorkSelection } from "./project-address-resolution";
+import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 import {
   createProjectNavigation,
@@ -182,7 +182,7 @@ export function ReadableProjectRoute({
     if (localDocumentId)
       void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
   }, [projectId, workId, localDocumentId]);
-  const shown = useRef<DisplayedProjectSelection>({ workId: null });
+  const shown = useRef<DisplayedProjectSelection>({ work: { kind: "none" } });
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
     enableBeforeUnload: () => navigation?.hasUnsavedChanges() ?? false,
@@ -231,7 +231,14 @@ export function ReadableProjectRoute({
   }, []);
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
-      shown.current = { workId, local: localPointer };
+      shown.current = {
+        work: workSelectionFor(
+          address.destination,
+          workId ?? undefined,
+          workCatalog.noWork?.id ?? null,
+        ),
+        local: localPointer,
+      };
       if (activeScreen === "context" && !routeWorkIssue(editorWork))
         rememberedEditor.current = workId;
     },
@@ -548,7 +555,7 @@ export function ReadableProjectRoute({
     return go(
       {
         ...toDestination({ kind: next === "work" ? "works" : "editor" }),
-        work: workIdSelection(rememberedEditor.current ?? shown.current.workId),
+        work: workIdSelection(rememberedEditor.current ?? workId),
       },
       { replace: false },
     );
@@ -558,7 +565,7 @@ export function ReadableProjectRoute({
     go(
       {
         ...toDestination(browseDestination(scheme, path)),
-        ...(isWorkScopedScheme(scheme) ? { work: workIdSelection(shown.current.workId) } : {}),
+        ...(isWorkScopedScheme(scheme) ? { work: workIdSelection(workId) } : {}),
       },
       { replace: false },
     );

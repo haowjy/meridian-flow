@@ -72,7 +72,7 @@ it.each([
       replaceEntry: () => undefined,
       navigate,
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
@@ -137,7 +137,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const localFile: CatalogFile = {
     kind: "file",
@@ -205,7 +205,7 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   function Harness() {
     const [admission, setAdmission] = useState<AddressAdmission | null>(null);
@@ -261,7 +261,7 @@ it.each([
       replaceEntry: () => undefined,
       navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",

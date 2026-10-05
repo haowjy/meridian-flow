@@ -23,6 +23,7 @@ const catalog = (status: WorkCatalog["status"]): WorkCatalog =>
       ],
     ]),
     isFetching: false,
+    noWork: null,
   }) as WorkCatalog;
 
 describe("resolveRouteWork", () => {
@@ -67,11 +68,14 @@ describe("resolveRouteWork", () => {
   it("reads the No Work row's id as No Work, as a No Work chat or Scratch address names it", () => {
     const noWorkId = id("00000000-0000-4000-8000-000000000009");
     expect(
-      resolveRouteWork({ kind: "id", id: noWorkId }, { ...catalog("ready"), noWorkId }),
+      resolveRouteWork(
+        { kind: "id", id: noWorkId },
+        { ...catalog("ready"), noWork: { id: noWorkId } as AddressableWork },
+      ),
     ).toEqual({ status: "none" });
     // Before the row is known it is not claimed as No Work, nor called unavailable.
     expect(
-      resolveRouteWork({ kind: "id", id: noWorkId }, { ...catalog("loading"), noWorkId: null }),
+      resolveRouteWork({ kind: "id", id: noWorkId }, { ...catalog("loading"), noWork: null }),
     ).toEqual({ status: "unresolved", reason: "loading", workId: noWorkId });
   });
 });

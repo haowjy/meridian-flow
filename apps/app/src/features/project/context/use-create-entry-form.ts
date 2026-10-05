@@ -67,7 +67,7 @@ export function useCreateEntryForm({
   const mutation = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const { works } = useWorks(projectId);
+  const { works, noWork } = useWorks(projectId);
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
@@ -76,7 +76,7 @@ export function useCreateEntryForm({
         const work = isWorkScopedProjectContextScheme(scheme)
           ? works?.find((work) => work.id === workId)
           : null;
-        if (isWorkScopedProjectContextScheme(scheme) && !work)
+        if (isWorkScopedProjectContextScheme(scheme) && (!work || !noWork))
           throw new Error(t`Couldn't create this file.`);
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
@@ -85,7 +85,9 @@ export function useCreateEntryForm({
             scheme,
             folderPath: parent,
             name: trimmed,
-            ...(work ? resourceWorkAuthorityFor(work.id, works, null) : { workId: null }),
+            ...(work && noWork
+              ? resourceWorkAuthorityFor(work.id, { works: works ?? [], noWork })
+              : { workId: null }),
           });
         } finally {
           reservation.content.handle.release();
