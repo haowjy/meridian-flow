@@ -35,13 +35,13 @@ export function normalizeWorkStatus(
 }
 
 /** Omitted fields stay omitted: on update they mean unchanged. */
-export type WorkMetadataInput = {
+type WorkMetadataInput = {
   name?: string;
   goal?: string | null;
   status?: string | null;
 };
 
-export type WorkMetadataNormalization =
+type WorkMetadataNormalization =
   | { ok: true; value: WorkMetadataInput }
   | { ok: false; field: "name" | "status"; message: string };
 

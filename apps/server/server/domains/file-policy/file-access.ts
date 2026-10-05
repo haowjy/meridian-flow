@@ -21,7 +21,7 @@ import {
 import type { FileFactsPort, FileFactsRequest } from "./ports/file-facts.js";
 import type { FileGrantsPort } from "./ports/file-grants.js";
 
-export interface FileAccessDeps {
+interface FileAccessDeps {
   facts: FileFactsPort;
   grants: FileGrantsPort;
   /** Each link's binding and Work, read fresh (runtime's `readAgentChain`). */

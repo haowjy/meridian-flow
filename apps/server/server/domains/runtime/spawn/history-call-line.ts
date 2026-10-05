@@ -113,7 +113,7 @@ export function shortenCallArgs(tool: string, args: JsonObject): JsonObject {
   return shortened;
 }
 
-export interface CallLineInput {
+interface CallLineInput {
   tool: string;
   /** Already shortened; null when history withholds them. */
   args: JsonObject | null;

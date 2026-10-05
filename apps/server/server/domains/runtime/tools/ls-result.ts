@@ -27,7 +27,7 @@ export interface LsResult {
   entries: LsEntry[];
 }
 
-export function isLsResult(value: unknown): value is LsResult {
+function isLsResult(value: unknown): value is LsResult {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const result = value as Partial<LsResult>;
   return (typeof result.uri === "string" || result.uri === null) && Array.isArray(result.entries);

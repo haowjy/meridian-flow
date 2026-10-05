@@ -144,7 +144,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
 
 export type WorkCommand = z.output<typeof WorkCommandSchema>;
 
-export const LsToolInputSchema = z
+const LsToolInputSchema = z
   .object({
     path: z
       .string()
@@ -162,7 +162,7 @@ export const LsToolInputSchema = z
   .strict();
 export type LsToolInput = z.output<typeof LsToolInputSchema>;
 
-export const SearchToolInputSchema = z
+const SearchToolInputSchema = z
   .object({
     pattern: z.string().min(1).describe("Literal text, not a regex."),
     scope: z

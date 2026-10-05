@@ -51,7 +51,6 @@ export {
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
 export {
-  type MarkdownSection,
   markdownSections,
   normalizeRequestedSlug,
   sectionNotFoundMessage,

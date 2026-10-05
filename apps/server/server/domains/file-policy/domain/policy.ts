@@ -77,7 +77,7 @@ export interface NodeGrant {
  * an agent in draft mode writes a drafted source's document, or creates in a
  * drafted source's folder, through its Work draft.
  */
-export function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
+function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
     return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };

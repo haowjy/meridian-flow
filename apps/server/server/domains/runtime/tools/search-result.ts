@@ -22,7 +22,7 @@ const WINDOW = 120;
 /** A cut that would drop fewer characters than this keeps them instead. */
 const SLACK = 24;
 
-export const CLEARED_SEARCH_PASSAGES =
+const CLEARED_SEARCH_PASSAGES =
   "[Cleared at compaction: changed since this search; read it for current text]";
 
 export function isSearchHits(value: JsonValue | undefined): value is JsonObject[] {

@@ -143,7 +143,7 @@ export function stringInput(input: Record<string, JsonValue>, field: string): st
 }
 
 /** A file inside a skill package: `skills://<skill>/<path>`. */
-export type SkillFile = { skill: string; path: string };
+type SkillFile = { skill: string; path: string };
 
 /**
  * The skill a `skills://` path belongs to, and the file's path inside it.

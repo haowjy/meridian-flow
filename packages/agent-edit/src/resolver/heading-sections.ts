@@ -3,7 +3,7 @@
  * and the same sections over plain markdown text, for `skills://` files (D60).
  */
 
-export function slugForHeadingText(text: string): string {
+function slugForHeadingText(text: string): string {
   return (
     text
       .normalize("NFKD")
@@ -56,7 +56,7 @@ export function sectionNotFoundMessage(slug: string): string {
 }
 
 /** A markdown heading line and the lines its section spans (`end` exclusive). */
-export interface MarkdownSection {
+interface MarkdownSection {
   /** The heading line as written, e.g. `## Action`. */
   heading: string;
   slug: string;

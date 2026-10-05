@@ -59,7 +59,7 @@ export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
 export type SavedOutcome = "succeeded" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
-export type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
+type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
 
 /** Durable user-facing identity carried by a child-completion turn. */

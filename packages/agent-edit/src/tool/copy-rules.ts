@@ -12,12 +12,12 @@ export interface CopySourceFields {
   from?: { path: string; in?: unknown };
 }
 
-export interface CopySourceIssue {
+interface CopySourceIssue {
   path: PropertyKey[];
   message: string;
 }
 
-export const CONTENT_OR_FROM_MESSAGE = "Give exactly one of `content` or `from`";
+const CONTENT_OR_FROM_MESSAGE = "Give exactly one of `content` or `from`";
 
 /** Every `from` rule the given fields break, in a stable order. */
 export function copySourceIssues(

@@ -121,7 +121,7 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
  * as parsed JSON, so `payload` is published as any value: the canonical
  * recursive JSON-value schema would add a self-referencing `$defs` entry.
  */
-export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
+const ReturnResultInputSchema = returnResultCaptureSchema.extend({
   summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
   payload: z.unknown().describe("Optional JSON result.").optional(),
   artifacts: returnResultCaptureSchema.shape.artifacts.describe(
@@ -131,7 +131,7 @@ export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
-export const ThreadMessageInputSchema = z
+const ThreadMessageInputSchema = z
   .object({
     ref: z
       .string()
@@ -150,7 +150,7 @@ export const ThreadMessageInputSchema = z
 export type ThreadMessageArgs = z.output<typeof ThreadMessageInputSchema>;
 export type ThreadMessageMode = ThreadMessageArgs["mode"];
 
-export const ThreadReportInputSchema = z
+const ThreadReportInputSchema = z
   .object({
     ref: z.string().min(1).describe('Subagent ref such as p3, or "current".'),
   })

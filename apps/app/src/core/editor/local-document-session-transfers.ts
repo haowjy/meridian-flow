@@ -27,7 +27,7 @@ import type {
 } from "./local-document-session-adoption";
 
 /** What the facet needs from the registry that owns the live rooms. */
-export type LocalTransferRegistryPort = {
+type LocalTransferRegistryPort = {
   requireOpen(): void;
   coordination(): Promise<DocumentSessionCrossContextCoordination>;
   /** Runs a coordination call, translating its refusals into the registry's. */

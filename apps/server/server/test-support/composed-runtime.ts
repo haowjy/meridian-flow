@@ -14,14 +14,14 @@ import { createNoopEventSink } from "../domains/observability/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
 
-export type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
-export type RuntimeThread = { threadId: string; turnId: string };
+type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
+type RuntimeThread = { threadId: string; turnId: string };
 export type ToolCall = (
   name: string,
   args: Record<string, unknown>,
 ) => Promise<ToolExecutionResult>;
 /** Calls a tool and returns its text, throwing when the tool reports an error. */
-export type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
+type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
 
 async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({

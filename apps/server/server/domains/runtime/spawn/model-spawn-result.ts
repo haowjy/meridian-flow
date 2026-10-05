@@ -15,11 +15,11 @@ import {
 import { renderRefusal } from "../tools/refusal.js";
 import { renderReportBlock, reportContent } from "./history-result.js";
 
-export const queuedNoReplyCopy =
+const queuedNoReplyCopy =
   "Message queued. No reply is pushed back; the target's response is readable in its transcript.";
-export const queuedNotifyCopy = (handle: string) =>
+const queuedNotifyCopy = (handle: string) =>
   `Message queued. You'll be notified when ${handle} finishes.`;
-export const backgroundRunCopy = (handle: string) =>
+const backgroundRunCopy = (handle: string) =>
   `${handle} is running in the background. You'll be notified when it finishes.`;
 
 /**

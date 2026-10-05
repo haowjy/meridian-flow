@@ -17,7 +17,7 @@ export interface SelectorFields {
   before?: string;
 }
 
-export interface SelectorIssue {
+interface SelectorIssue {
   /**
    * The argument the issue is reported on: `target` is the document path,
    * `arguments` the call as a whole.
@@ -26,7 +26,7 @@ export interface SelectorIssue {
   message: string;
 }
 
-export const ONE_SCOPE_MESSAGE = "Use one of in, around or a #fragment";
+const ONE_SCOPE_MESSAGE = "Use one of in, around or a #fragment";
 
 /** Every selector rule the given fields break, in a stable order. */
 export function selectorIssues(
@@ -106,7 +106,7 @@ export interface ReversalSelectorFields {
   all?: boolean;
 }
 
-export interface ReversalSelectorIssue {
+interface ReversalSelectorIssue {
   field: keyof ReversalSelectorFields;
   message: string;
 }

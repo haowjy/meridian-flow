@@ -21,7 +21,7 @@ const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
 type UserSkillCatalogStore = Pick<AgentRevisionStore, "listInstallations" | "readSource">;
 
 /** A skill body to inject, and whether the model can read its files under `skills://`. */
-export interface LoadedSkill extends SkillListing {
+interface LoadedSkill extends SkillListing {
   readable: boolean;
 }
 
@@ -95,7 +95,7 @@ export async function resolveThreadModelAvailableSkills(input: {
 }
 
 /** The skills a thread can name, with the reference each is read from, and the facts `skillLevel` decides on. */
-export interface ThreadSkills {
+interface ThreadSkills {
   facts: SkillFacts;
   bound: ReadonlyMap<string, RetainedSkillReference>;
 }

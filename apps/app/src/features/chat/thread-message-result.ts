@@ -11,12 +11,12 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
 import { stringInput, toolInputObject } from "./tool-command";
 
-export type QueuedThreadMessage = {
+type QueuedThreadMessage = {
   /** The model-facing ref the message was sent to (`pN`). */
   handle: string;
 };
 
-export type ThreadMessageRow =
+type ThreadMessageRow =
   | { kind: "queued"; message: QueuedThreadMessage }
   | { kind: "failed"; handle: string | null };
 
@@ -31,7 +31,7 @@ export function threadMessageRow(tool: ToolView): ThreadMessageRow | null {
   return null;
 }
 
-export function parseQueuedThreadMessage(value: JsonValue | null): QueuedThreadMessage | null {
+function parseQueuedThreadMessage(value: JsonValue | null): QueuedThreadMessage | null {
   if (!isRecord(value) || value.status !== "background") return null;
   if (typeof value.handle !== "string" || value.handle.length === 0) return null;
   // A spawned background run carries `execution` and its own card.
