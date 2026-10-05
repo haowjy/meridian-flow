@@ -193,7 +193,7 @@ export function describeBlock(input: {
                 : stringify(
                     !isError && policy
                       ? policy.elide(
-                          { input: args, output: result.output as JsonValue },
+                          { input: args, output: result.output as JsonValue, result: typed },
                           documents,
                           "history",
                         ).output

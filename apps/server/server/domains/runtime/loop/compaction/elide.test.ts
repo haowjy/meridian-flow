@@ -155,11 +155,12 @@ describe("document text elisions", () => {
       ]),
     ).toEqual([]);
   });
-  it("search elides changed excerpts only, preserving anchors and match counts", () => {
+  it("search elides changed passages only, preserving files and match counts", () => {
     const blocks = pair(
       "search",
       {
-        output: [
+        output: "b41|OLD DOCUMENT",
+        result: [
           {
             uri: evidence.uri,
             matches: [{ excerpt: "OLD DOCUMENT", blockHash: "b41" }],
@@ -187,12 +188,17 @@ describe("document text elisions", () => {
     expect(elisions[0]?.content).toMatchObject({
       toolCallId: "call-id",
       toolName: "search",
+      // The typed hits re-render; only the changed file loses its passages (D65).
       output: [
-        { uri: evidence.uri, matches: [{ blockHash: "b41" }], matchCount: 4 },
-        { uri: "kb://fresh", matches: [{ excerpt: "FRESH" }], matchCount: 1 },
-      ],
+        "manuscript://chapter.md (4 matches)",
+        "[Cleared at compaction: changed since this search; read it for current text]",
+        "",
+        "kb://fresh",
+        "FRESH",
+      ].join("\n"),
     });
-    expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
+    // The model reads `output`; the typed `result` stays for the app.
+    expect(String((elisions[0]?.content as JsonObject).output)).not.toContain("OLD DOCUMENT");
   });
   it("elides each pinned reference read without altering writer wording or mentions", () => {
     const reference = {

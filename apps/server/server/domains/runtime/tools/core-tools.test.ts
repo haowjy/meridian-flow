@@ -266,3 +266,44 @@ describe("work", () => {
     expect(result.result).toMatchObject({ slug: "arc-2" });
   });
 });
+
+describe("search", () => {
+  const long = `${"Rain hammered the arena roof. ".repeat(6)}Lin Feng drew the sword at last. ${"The crowd held its breath. ".repeat(6)}`;
+  const hits = [
+    {
+      uri: "manuscript://chapter-12.md",
+      version: "draft",
+      matches: [{ excerpt: long, blockHash: "3f2a" }],
+      matchCount: 4,
+      readonly: false,
+      score: 0.82,
+    },
+    {
+      uri: "kb://characters/lin-feng.md",
+      version: "draft",
+      matches: [{ excerpt: "Lin Feng carries his master's sword." }],
+      matchCount: 1,
+      readonly: true,
+    },
+  ];
+
+  it("prints each file, then a hash and a window around each match", async () => {
+    const output = (await run("search", hits, { pattern: "drew the sword" })).output as string;
+    const [head, passage, , kb, kbPassage] = output.split("\n");
+    expect(head).toBe("manuscript://chapter-12.md (4 matches)");
+    expect(passage).toMatch(/^3f2a\|….* Lin Feng drew the sword at last\. .*…$/u);
+    expect(passage?.length).toBeLessThan(long.length);
+    expect(kb).toBe("kb://characters/lin-feng.md (read-only)");
+    expect(kbPassage).toBe("Lin Feng carries his master's sword.");
+    expect(output).not.toContain("draft");
+  });
+
+  it("gives whole blocks and the score with verbose", async () => {
+    const output = (await run("search", hits, { pattern: "sword", verbose: true }))
+      .output as string;
+    expect(output.split("\n").slice(0, 2)).toEqual([
+      "manuscript://chapter-12.md (4 matches, score 0.82)",
+      `3f2a|${long}`,
+    ]);
+  });
+});
