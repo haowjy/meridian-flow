@@ -47,7 +47,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextTabFromFile } from "./context-tab-from-file";
@@ -407,7 +407,9 @@ export class ProjectDocumentNavigationAdapter {
       uri.value.authority.kind === "none"
         ? null
         : input.routeWorkId;
-    const tab = contextTabFromFile(input.scheme, input.file, tabWorkId);
+    const tab = isEditorScheme(input.scheme)
+      ? contextTabFromFile(input.scheme, input.file, tabWorkId)
+      : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)
