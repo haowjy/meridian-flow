@@ -31,39 +31,73 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
 /**
  * Advance on every snapshot, so the offline→confirmation swap is one state
  * change and no render exists between the two labels. A drop while confirmed
- * (any non-synced status) returns to awaiting; a later local edit does not,
- * because the connection is still healthy.
+ * (any non-synced status) returns to awaiting. A local edit while confirmed
+ * (the server no longer has everything) ends the confirmation and hides the
+ * pill: the connection is healthy, so it is not "offline" again, and waiting to
+ * re-show the confirmation would flicker on every keystroke.
  */
 function nextPhase(phase: OutagePhase, snapshot: DocumentSessionSnapshot): OutagePhase {
   if (snapshot.status === "offline") return "awaiting";
   if (phase === "idle") return phase;
   if (snapshot.status === "access-lost" || snapshot.status === "destroyed") return "idle";
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
-  return snapshot.status === "synced" ? "confirmed" : "awaiting";
+  if (snapshot.status !== "synced") return "awaiting";
+  return snapshot.serverHasLocalChanges ? "confirmed" : "idle";
 }
+
+/** Everything derived from one session's history; never carried to another session. */
+type Tracked = {
+  session: DocumentSession;
+  snapshot: DocumentSessionSnapshot;
+  phase: OutagePhase;
+};
+
+const trackSession = (session: DocumentSession): Tracked => ({
+  session,
+  snapshot: session.getSnapshot(),
+  phase: "idle",
+});
 
 export type SyncStatusProps = {
   session: DocumentSession;
 };
 
 export function SyncStatus({ session }: SyncStatusProps) {
-  const [snapshot, setSnapshot] = useState<DocumentSessionSnapshot>(() => session.getSnapshot());
-  const [phase, setPhase] = useState<OutagePhase>("idle");
+  const [stored, setStored] = useState<Tracked>(() => trackSession(session));
+
+  // A new session starts from its own snapshot with no outage history. Reset
+  // during render (React re-renders before committing) so the old session's
+  // label and timer never reach the screen for the new one.
+  let tracked = stored;
+  if (stored.session !== session) {
+    tracked = trackSession(session);
+    setStored(tracked);
+  }
+  const { snapshot, phase } = tracked;
 
   useEffect(
     () =>
       session.subscribe((next) => {
-        setSnapshot(next);
-        setPhase((current) => nextPhase(current, next));
+        setStored((current) =>
+          current.session === session
+            ? { session, snapshot: next, phase: nextPhase(current.phase, next) }
+            : current,
+        );
       }),
     [session],
   );
 
   useEffect(() => {
     if (phase !== "confirmed") return;
-    const timer = setTimeout(() => setPhase("idle"), SAVED_CONFIRMATION_VISIBLE_MS);
+    const timer = setTimeout(
+      () =>
+        setStored((current) =>
+          current.session === session ? { ...current, phase: "idle" } : current,
+        ),
+      SAVED_CONFIRMATION_VISIBLE_MS,
+    );
     return () => clearTimeout(timer);
-  }, [phase]);
+  }, [phase, session]);
 
   const { status } = snapshot;
   const terminal = status === "access-lost" || status === "destroyed";

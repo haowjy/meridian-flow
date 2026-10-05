@@ -3,7 +3,7 @@
  * (offline)" until the server has acknowledged every local change, swaps to
  * the confirmation in place, and then hides. Healthy use shows nothing.
  */
-import { act } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -123,13 +123,68 @@ describe("SyncStatus", () => {
     });
   });
 
-  it("keeps the confirmation through a fresh edit while the connection stays healthy", async () => {
+  it("ends the confirmation at once on a fresh edit, without an offline label or a flicker", async () => {
     const fake = fakeSession();
     await withReactRoot(<SyncStatus session={fake.session} />, () => {
       fake.set("offline");
       fake.set("synced", true);
-      fake.set("synced", false);
       expect(pill()?.textContent).toContain(CONFIRMED);
+
+      // The writer types: the server no longer has everything.
+      fake.set("synced", false);
+      expect(pill()).toBeNull();
+
+      // Its acknowledgement does not bring the confirmation back.
+      fake.set("synced", true);
+      expect(pill()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(pill()).toBeNull();
+    });
+  });
+
+  it("does not carry outage state or the confirmation timer into a replacement session", async () => {
+    const confirmed = fakeSession();
+    const healthy = fakeSession({ status: "synced", serverHasLocalChanges: false });
+    const pending = fakeSession({ status: "offline" });
+
+    // Every committed frame is recorded, so a one-frame leak is visible.
+    const committed: Array<string | null | undefined> = [];
+    let swap: (session: DocumentSession) => void = () => {};
+    const Host = () => {
+      const [session, setSession] = useState(confirmed.session);
+      swap = (next) => act(() => setSession(next));
+      useLayoutEffect(() => {
+        committed.push(pill()?.textContent);
+      });
+      return <SyncStatus session={session} />;
+    };
+
+    await withReactRoot(<Host />, () => {
+      confirmed.set("offline");
+      confirmed.set("synced", true);
+      expect(pill()?.textContent).toContain(CONFIRMED);
+
+      // Confirmed session A -> never-offline session B: B shows nothing.
+      committed.length = 0;
+      swap(healthy.session);
+      expect(committed.length).toBeGreaterThan(0);
+      expect(committed.some((text) => text?.includes(CONFIRMED))).toBe(false);
+      expect(pill()).toBeNull();
+      // B's first acknowledgement is not an outage recovery.
+      healthy.set("synced", true);
+      expect(pill()).toBeNull();
+
+      // Awaiting session A -> healthy session B: B does not inherit the offline label.
+      swap(pending.session);
+      expect(pill()?.textContent).toContain(OFFLINE);
+      committed.length = 0;
+      swap(healthy.session);
+      expect(committed.length).toBeGreaterThan(0);
+      expect(committed.some((text) => text?.includes(OFFLINE))).toBe(false);
+      healthy.set("synced", true);
+      expect(pill()).toBeNull();
     });
   });
 });

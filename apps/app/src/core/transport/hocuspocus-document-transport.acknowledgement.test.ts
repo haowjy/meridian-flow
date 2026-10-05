@@ -292,4 +292,26 @@ describe("document transport server acknowledgement", () => {
     acknowledge(second);
     expect(harness.acknowledged).toBe(true);
   });
+
+  it("is not saved after an edit queued while the socket is closing, before the close event", async () => {
+    const first = await harness.connect();
+    acknowledge(first);
+    expect(harness.acknowledged).toBe(true);
+
+    // CLOSING (e.g. the connection checker called close()); Hocuspocus has not yet seen "close".
+    first.readyState = 2;
+    harness.edit("typed while closing");
+    expect(sentSyncKinds(first)).toEqual(["step2"]);
+    expect(harness.acknowledged).toBe(false);
+
+    harness.drop(first);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await harness.connect();
+    // The queued update flushed on the new socket and needs its own acknowledgement.
+    expect(sentSyncKinds(second)).toEqual(["update", "step2"]);
+    acknowledge(second);
+    expect(harness.acknowledged).toBe(false);
+    acknowledge(second);
+    expect(harness.acknowledged).toBe(true);
+  });
 });
