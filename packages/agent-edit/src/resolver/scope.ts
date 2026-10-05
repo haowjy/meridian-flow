@@ -12,7 +12,7 @@ export const AROUND_BLOCK_RADIUS = 3;
 
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
-export interface ScopeContext {
+interface ScopeContext {
   doc: DocHandle;
   model: DocumentModel;
 }

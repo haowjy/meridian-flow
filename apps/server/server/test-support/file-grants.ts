@@ -60,7 +60,7 @@ export function drizzleFileAccess(db: Database): FileAccess {
 }
 
 /** Runs writes as an entry point holding already confirmed grants would: for adapter tests. */
-export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
+function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   return runWithEditConfirmation(
     { workIds: [], async confirm() {}, covers: async () => true },
     operation,

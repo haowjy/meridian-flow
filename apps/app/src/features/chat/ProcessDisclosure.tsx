@@ -17,7 +17,7 @@ import { ChevronRight } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export type ProcessDisclosureProps = {
+type ProcessDisclosureProps = {
   /** Also the button's accessible name: a screen reader hears what the fold shows. */
   label: ReactNode;
   children: ReactNode;

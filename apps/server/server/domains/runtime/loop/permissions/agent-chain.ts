@@ -62,7 +62,7 @@ type LineageLink = Pick<AgentLink, "threadId" | "permission">;
  * The thread, then each spawner up to the root, with its bound permission.
  * The prompt's permission line needs only this, not each link's Work.
  */
-export async function readLineage(
+async function readLineage(
   deps: Pick<AgentChainDeps, "threads" | "agentRevisions">,
   threadId: ThreadId,
 ): Promise<LineageLink[]> {

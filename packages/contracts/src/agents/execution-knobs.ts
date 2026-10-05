@@ -44,7 +44,7 @@ export const agentEffortAuthoringSchema = z
  * What an agent may change (file-access §8). `read` agents still edit their own
  * Work's `scratch://`; delegation applies the minimum over the agent chain.
  */
-export const AGENT_PERMISSION_VALUES = ["read", "edit"] as const;
+const AGENT_PERMISSION_VALUES = ["read", "edit"] as const;
 export type AgentPermission = (typeof AGENT_PERMISSION_VALUES)[number];
 /** An unset permission resolves to this. */
 export const DEFAULT_AGENT_PERMISSION: AgentPermission = "edit";
@@ -121,7 +121,7 @@ export const toolAliases: Record<string, string> = {
  * `edit` was a capability; access is now `permission` and the document tool is
  * `write` (D12, D34). An allow-list naming it fails with the replacement named.
  */
-export const EDIT_IS_PERMISSION_ERROR =
+const EDIT_IS_PERMISSION_ERROR =
   '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.';
 
 const TOOL_LIST_ERROR =

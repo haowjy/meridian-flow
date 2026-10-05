@@ -41,7 +41,7 @@ import {
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
 /** A run's result, or the spawn tool's `invalid_arguments` refusal of an override. */
-export type ChildRunResult = SpawnResult | InvalidArgumentsResult;
+type ChildRunResult = SpawnResult | InvalidArgumentsResult;
 
 export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */

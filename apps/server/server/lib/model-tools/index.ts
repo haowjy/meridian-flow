@@ -22,8 +22,6 @@ export { createReferenceReader } from "./reference-reader.js";
 export {
   type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
-  type ResponseWriteLifecycleCommitResult,
-  type StagedCreateCleanup,
 } from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 

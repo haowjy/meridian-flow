@@ -17,7 +17,7 @@ import type {
   WriteProvenance,
 } from "./ports/context-port.js";
 
-export interface BinaryCopyInput {
+interface BinaryCopyInput {
   /** The copier's own view, where the destination path must be free. */
   port: ContextPort;
   /** Where the file is created. Binary copies are never drafted (D24). */

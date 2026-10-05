@@ -6,10 +6,10 @@
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { WorkCommand } from "../../tools/core-tools.js";
 
-export type ActionDecision = "allow" | "ask" | "deny";
+type ActionDecision = "allow" | "ask" | "deny";
 
 /** An agent action the policy decides; Work actions are named by their `work` command. */
-export type AgentAction = `work.${WorkCommand["command"]}`;
+type AgentAction = `work.${WorkCommand["command"]}`;
 
 const WORK_CHANGE = { edit: "allow", read: "deny" } as const;
 const ALWAYS = { edit: "allow", read: "allow" } as const;

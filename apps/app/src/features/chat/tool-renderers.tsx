@@ -245,7 +245,7 @@ function documentFailureDocumentName(tool: ToolView): string | null {
  * (live, or a Work's draft). It moved nothing and the model reads again on its
  * own, so the writer sees a routine step rather than a failure.
  */
-export function isRereadPause(tool: ToolView): boolean {
+function isRereadPause(tool: ToolView): boolean {
   return (
     tool.isError && tool.toolName === "write" && documentFailureStatus(tool) === "read_required"
   );

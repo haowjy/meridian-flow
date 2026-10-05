@@ -54,7 +54,7 @@ export function parseToolInput<T extends z.ZodType>(
   return { ok: false, issues: invalidArgumentIssues(parsed.error) };
 }
 
-export function invalidArgumentIssues(error: ZodError): InvalidArgumentIssue[] {
+function invalidArgumentIssues(error: ZodError): InvalidArgumentIssue[] {
   return error.issues.flatMap((issue): InvalidArgumentIssue[] => {
     if (issue.code === "unrecognized_keys") {
       return issue.keys.map((key) => ({

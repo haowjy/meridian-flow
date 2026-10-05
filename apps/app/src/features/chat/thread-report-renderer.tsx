@@ -83,7 +83,7 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
   );
 }
 
-export type ThreadReportRead = {
+type ThreadReportRead = {
   report: ReportContentValue;
   /** The child is running again; this report is from its previous run. */
   runningAgain: boolean;

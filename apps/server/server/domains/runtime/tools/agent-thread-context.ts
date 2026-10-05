@@ -46,7 +46,7 @@ export const SUBAGENT_GUIDANCE =
   "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
 
 /** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
-export const READ_PERMISSION_GUIDANCE =
+const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only scratch://.";
 
 /**

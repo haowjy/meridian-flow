@@ -25,7 +25,7 @@ export type ReversalHistory = {
 };
 
 /** What one journal runs, and the writes it selected there. */
-export type ReversalRoute = { selection: ReversalSelection; handles: string[] };
+type ReversalRoute = { selection: ReversalSelection; handles: string[] };
 
 type Candidate = { handle: string; side: ReversalSide; ordinal: number; undoneAt: number };
 

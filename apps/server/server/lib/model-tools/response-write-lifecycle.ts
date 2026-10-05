@@ -18,7 +18,7 @@ import {
 } from "../file-access-denial-copy.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 
-export type StagedCreateCleanup = {
+type StagedCreateCleanup = {
   responseId: string;
   port: ContextPort;
   path: string;
@@ -38,7 +38,7 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
-export type ResponseWriteLifecycleCommitResult =
+type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;

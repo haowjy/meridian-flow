@@ -10,7 +10,7 @@
 const UNIT =
   /\\[!-/:-@[-`{-~]|&#[xX]([0-9a-fA-F]{1,6});|&#([0-9]{1,7});|\P{Mark}\p{Mark}*|\p{Mark}+/gu;
 
-export interface MarkdownTextView {
+interface MarkdownTextView {
   /** The text the writer sees, NFC-normalized. */
   text: string;
   /** Markdown offset where the unit behind each `text` code unit starts. */

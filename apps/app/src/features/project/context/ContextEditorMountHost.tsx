@@ -269,7 +269,7 @@ type ContextTabSessionProps = {
  * closes. A room dropped because the server refused its edits reopens as a
  * fresh session: local probe and server binding both start over.
  */
-export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
+function ContextTabSessionBoundary(props: ContextTabSessionProps) {
   const [opening, setOpening] = useState(0);
   const reopen = useCallback(() => setOpening((value) => value + 1), []);
   return <ContextTabSession key={opening} {...props} onReopen={reopen} />;

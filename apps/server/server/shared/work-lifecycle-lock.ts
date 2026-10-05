@@ -7,7 +7,7 @@ import { confirmScopedEdits, scopedEditWorkIds } from "./edit-confirmation.js";
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
-export interface LockedWork {
+interface LockedWork {
   state: LockedWorkLifecycle;
   slug: string | null;
 }

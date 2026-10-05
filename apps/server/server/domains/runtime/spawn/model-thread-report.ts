@@ -8,11 +8,11 @@ import { renderRefusal } from "../tools/refusal.js";
 import { renderReportBlock, reportContent } from "./history-result.js";
 import { readThreadReport } from "./read-thread-report.js";
 
-export const runningAgainCopy = (ref: string, notified = true) =>
+const runningAgainCopy = (ref: string, notified = true) =>
   notified
     ? `${ref} is running again; this report is from its previous run. You'll be notified when it finishes.`
     : `${ref} is running again; this report is from its previous run. You won't be notified when it finishes.`;
-export const reportUnavailableCopy = (ref: string, notified = true) =>
+const reportUnavailableCopy = (ref: string, notified = true) =>
   notified
     ? `${ref} has no finished report yet. You'll be notified when it finishes; don't call \`thread_report\` again until then.`
     : `${ref} has no finished report yet. You won't be notified when it finishes.`;

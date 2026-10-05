@@ -33,7 +33,7 @@ import {
 } from "./tool-context.js";
 
 /** `from` on `insert`, `replace` or `copy`. */
-export type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVersion };
+type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVersion };
 
 /** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
 export interface CopiedSource {

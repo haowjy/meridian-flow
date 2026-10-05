@@ -25,7 +25,7 @@ export interface SkillFilesDeps {
 /** A parsed `skills://` address: the root, or a path inside one skill's folder. */
 type SkillUri = { skill: null } | { skill: string; path: string };
 
-export type SkillFileRead =
+type SkillFileRead =
   | { kind: "text"; skill: string; path: string; text: string }
   | { kind: "binary" }
   | { kind: "not_found" };
