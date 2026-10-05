@@ -156,7 +156,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         upstreamBranchId: null,
         workId: WORK_ID as never,
         threadId: null,
-        pushPolicy: "manual" as const,
         generation: 1,
         status: "active" as const,
         state: new Uint8Array([0]),

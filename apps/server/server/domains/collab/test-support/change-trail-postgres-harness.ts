@@ -459,10 +459,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     criticalSections: branchCriticalSections,
   });
   const deliveredEvents: unknown[] = [];
-  const fences: Array<{ threadId: string; documentId: string }> = [];
-  let failNextTrailRetry = false;
-  let failAllTrailRetries = false;
-  let trailWorkTime = new Date(Date.now() + 60_000);
   const trailDelivery = createChangeTrailWorker({
     db,
     journalWriter: {
@@ -472,20 +468,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       },
     } as never,
     eventHub: { invalidateCommittedJournal() {} },
-    retryBranch: (branchId) => {
-      if (failAllTrailRetries || failNextTrailRetry) {
-        failNextTrailRetry = false;
-        throw new Error("injected retryable auto-push failure");
-      }
-      return realBranchPush.pushToLive({ branchId, resetPolicy: "auto" });
-    },
-    onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
-    turnTrailWorkSchedule: {
-      now: () => trailWorkTime,
-      retryDelayMs: (attempts) => Math.min(2 ** attempts, 30) * 1_000,
-      runningLeaseMs: 30_000,
-      successRetryMs: 1_000,
-    },
   });
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
@@ -761,7 +743,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       createdDocument: false,
     };
     await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
-    await db.update(schema.documentBranches).set({ pushPolicy: "manual" });
     if (writerEditBeforeWrite) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -1435,11 +1416,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     find: string;
     content: string;
   }): Promise<string> {
+    // Resolving the draft branch creates it before the write.
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    await db
-      .update(schema.documentBranches)
-      .set({ pushPolicy: "manual" })
-      .where(eq(schema.documentBranches.id, branch.branchId));
     branch.doc.destroy();
     const context = {
       sessionId: THREAD_ID,
@@ -1756,25 +1734,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     pollTrails: () => trailDelivery.drain(),
     /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
     cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
-    advanceTrailWorkTime(milliseconds: number) {
-      trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
-    },
-    deferTrailWork(milliseconds: number) {
-      return db.update(schema.turnTrailWork).set({
-        state: "pending",
-        nextAttemptAt: new Date(trailWorkTime.getTime() + milliseconds),
-      });
-    },
-    markTrailWorkRunning() {
-      return db.update(schema.turnTrailWork).set({ state: "running", updatedAt: trailWorkTime });
-    },
-    failNextTrailRetry() {
-      failNextTrailRetry = true;
-    },
-    failAllTrailRetries() {
-      failAllTrailRetries = true;
-    },
-    exhaustionFences: () => [...fences],
     workRows: () => db.select().from(schema.turnTrailWork),
     async branchGeneration(branchId: string) {
       const [branch] = await db
@@ -1810,8 +1769,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         staged.doc.destroy();
       }
     },
-    setPushPolicy: (pushPolicy: "auto" | "manual") =>
-      db.update(schema.documentBranches).set({ pushPolicy }),
     markTurnError: () =>
       db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
     rollbackResponse: (responseId: string) =>
