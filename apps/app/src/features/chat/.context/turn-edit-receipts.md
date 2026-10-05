@@ -3,9 +3,9 @@
 This page defines the chat contract for committed turn-edit records and reversal.
 
 The per-turn receipt is a quiet, default-collapsed record for committed
-document edits. Its line names one document or counts several and adds settled
-`+added −removed words` totals when the trail shell has them. Live
-single-document headers derive the same URI title without inventing a delta.
+document edits. Its header counts documents ("Edited 1 document") and never
+names one, and adds settled `+added −removed words` totals when the trail
+shell has them; document names belong to the expanded rows, which navigate.
 The shell carries header metadata, so collapse never triggers a detail fetch.
 Expanding shows live documents and every authorized durable trail row. Each row
 renders concise retained Before and/or After excerpts without a nested
