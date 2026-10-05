@@ -21,6 +21,7 @@ import type {
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
+import { providerFetch } from "../provider-http-error.js";
 import { mapAnthropicError } from "./errors.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 import {
@@ -43,6 +44,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
     defaultHeaders: config.auth?.headers,
     // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
     maxRetries: 0,
+    fetch: providerFetch,
   });
 
   const providerId = config.id;

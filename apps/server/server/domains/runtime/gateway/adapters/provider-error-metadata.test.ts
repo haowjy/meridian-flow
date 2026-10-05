@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mapAnthropicError } from "./anthropic/errors.js";
 import { mapOpenAIError } from "./openai-compatible/errors.js";
 import { withProviderRetryMetadata } from "./provider-error-metadata.js";
+import { providerFetch } from "./provider-http-error.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -97,6 +98,30 @@ describe("provider HTTP failures", () => {
     const offline = mapOpenAIError(new TypeError("fetch failed"));
     expect(offline).toMatchObject({ code: "network_error", retryable: true });
     expect(offline.providerResponse).toBeUndefined();
+  });
+
+  it("keeps the exact body text a providerFetch client received", async () => {
+    const body =
+      '{"error":{"message":"Insufficient Balance","type":"unknown_error"},"request_id":"r1"}';
+    vi.stubGlobal("fetch", async () => new Response(body, { status: 402 }));
+    try {
+      const client = new OpenAI({
+        apiKey: "test",
+        baseURL: "http://provider.invalid/v1",
+        maxRetries: 0,
+        fetch: providerFetch,
+      });
+      const err = await client.chat.completions
+        .create({ model: "m", messages: [{ role: "user", content: "hi" }] })
+        .catch((error: unknown) => error);
+      expect(mapOpenAIError(err)).toMatchObject({
+        code: "provider_error",
+        retryable: false,
+        providerResponse: { status: 402, message: "Insufficient Balance", body },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("caps the stored body at 4 KiB", () => {
