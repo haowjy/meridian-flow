@@ -9,6 +9,7 @@ import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contract
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 import { schemeLabel } from "@/features/project/context/context-schemes";
+import { humanizeSkillSlug, skillFile } from "./tool-command";
 
 type ParsedContextLocation = {
   scheme: ProjectContextTreeScheme;
@@ -33,14 +34,33 @@ export function isContextUri(value: string): boolean {
  * is missing from a particular section.
  */
 export function documentDisplayName(uriOrPath: string): string {
+  const skillFileName = skillFileDisplayName(uriOrPath);
+  if (skillFileName) return skillFileName;
   const { path } = parseContextLocation(uriOrPath);
   return documentTitleFromUri(path) ?? t`Untitled document`;
 }
 
-/** Exact file target for tool activity, retaining the extension to disambiguate it. */
+/**
+ * Exact file target for tool activity, retaining the extension to disambiguate
+ * it. A skill file is named by its skill instead.
+ */
 export function documentFileName(uriOrPath: string): string {
+  const skillFileName = skillFileDisplayName(uriOrPath);
+  if (skillFileName) return skillFileName;
   const { path } = parseContextLocation(uriOrPath);
   return path.split("/").filter(Boolean).at(-1) ?? t`Untitled document`;
+}
+
+/**
+ * A skill file says whose it is, "prose-critique (Story Review)": its bare name
+ * alone would pass for one of the writer's documents.
+ */
+function skillFileDisplayName(uriOrPath: string): string | null {
+  const file = skillFile(uriOrPath);
+  if (!file) return null;
+  const name = documentTitleFromUri(file.path.replace(/#.*$/, "")) ?? file.path;
+  const skill = humanizeSkillSlug(file.skill);
+  return t`${name} (${skill})`;
 }
 
 export function folderDisplayName(uriOrPath: string): string {

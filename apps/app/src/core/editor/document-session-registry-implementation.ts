@@ -9,7 +9,6 @@ import type {
   LiveDocumentSessionAuthority,
   LiveDocumentSessionLease,
 } from "@meridian/contracts/protocol";
-import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
@@ -18,9 +17,9 @@ import { DocumentSession, type DocumentSessionSnapshot } from "./document-sessio
 import {
   compareAvailabilityGeneration,
   documentSessionPersistenceKey,
-  type LocalAdoptionPendingReceipt,
 } from "./document-session-authority-store";
 import {
+  DocumentSessionAuthorityError,
   DocumentSessionCoordinationError,
   type DocumentSessionCrossContextCoordination,
   type LocalResourceLifetimePort,
@@ -28,25 +27,22 @@ import {
 } from "./document-session-coordination-contract";
 import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 
-export type { LocalResourceLifetimePort } from "./document-session-coordination-contract";
+export {
+  DocumentSessionAuthorityError,
+  type LocalResourceLifetimePort,
+} from "./document-session-coordination-contract";
 
+import { BranchRoomPool } from "./branch-room-pool";
 import type {
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import type {
-  LocalDocumentSessionAdoptionPort,
-  LocalDocumentSessionHandoff,
-  LocalDocumentSessionReservationPort,
-  LocalDocumentSessionTransfer,
-  TransferredDocumentSessionOwnership,
-} from "./local-document-session-adoption";
+import { LocalDocumentSessionTransfers } from "./local-document-session-transfers";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-const noop = () => undefined;
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -57,43 +53,8 @@ type LiveRoomState = {
 
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
-type LocalTransferReservation = {
-  handoff: LocalDocumentSessionHandoff;
-  transfer: LocalDocumentSessionTransfer;
-  settled: Promise<void>;
-  settle(): void;
-};
-
-function localTransferKey(documentId: DocumentId): string {
-  return encodeURIComponent(documentId);
-}
-
-export class DocumentSessionAuthorityError extends Error {
-  constructor(
-    readonly kind:
-      | "account-unconfigured"
-      | "authority-unavailable"
-      | "account-mismatch"
-      | "generation-revoked"
-      | "stale-lease"
-      | "older-command"
-      | "command-collision"
-      | "purge-pending"
-      | "adoption-pending",
-    message: string,
-  ) {
-    super(message);
-    this.name = "DocumentSessionAuthorityError";
-  }
-}
-
 export class DocumentSessionRegistry
-  implements
-    LiveDocumentSessionAuthority,
-    LocalSessionAuthority,
-    LocalDocumentSessionFactory,
-    LocalDocumentSessionReservationPort,
-    LocalDocumentSessionAdoptionPort
+  implements LiveDocumentSessionAuthority, LocalSessionAuthority, LocalDocumentSessionFactory
 {
   private accountId: AccountId | null = null;
   private coordination: DocumentSessionCrossContextCoordination | null = null;
@@ -108,15 +69,23 @@ export class DocumentSessionRegistry
       ),
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
-  private readonly branchRooms = new Map<string, DocumentSession>();
+  private readonly branchRooms: BranchRoomPool;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
-  private readonly retainedBranchRoomsByOwner = new Map<string, Set<string>>();
   private readonly admissionReservations = new Map<DocumentId, number>();
-  private readonly localTransferReservations = new Map<string, LocalTransferReservation>();
-  private readonly settledLocalTransfers = new WeakSet<object>();
+  /** The private local-transfer facet: the account runtime's reservation and adoption ports. */
+  readonly localTransfers = new LocalDocumentSessionTransfers({
+    requireOpen: () => this.requireAccountRuntimeOpen(),
+    coordination: () => this.configuredCoordination(),
+    translate: (operation) => this.translateCoordination(operation),
+    isAdmitting: (documentId) => (this.admissionReservations.get(documentId) ?? 0) > 0,
+    liveRoom: (documentId) => this.liveRooms.get(documentId),
+    retain: (ownerId, leases, options) => this.retain(ownerId, leases, options),
+    release: (ownerId) => this.release(ownerId),
+    attachTransport: (session) => this.attachSessionTransport(session),
+  });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
@@ -124,8 +93,8 @@ export class DocumentSessionRegistry
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
   private localResources: LocalResourceLifetimePort | null = null;
-  private readonly refusalWatchedSessions = new WeakSet<DocumentSession>();
-  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void>>();
+  /** Each refused live session's drop: running, or settled whether or not it removed the room. */
+  private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void> | "settled">();
 
   constructor(
     private readonly createCoordination: (
@@ -141,6 +110,15 @@ export class DocumentSessionRegistry
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
   ) {
+    this.branchRooms = new BranchRoomPool({
+      openSession: (roomKey) => {
+        const session = this.createSession(roomKey, { kind: "none" });
+        this.attachSessionTransport(session);
+        return session;
+      },
+      teardownOwner: this.teardownOwner,
+      teardownGraceMs,
+    });
     if (!accountId) return;
     this.accountId = accountId;
     try {
@@ -159,7 +137,7 @@ export class DocumentSessionRegistry
     compareAvailabilityGeneration(generation, generation);
     this.reserveAdmission(documentId);
     try {
-      await this.localTransferReservations.get(localTransferKey(documentId))?.settled;
+      await this.localTransfers.settled(documentId);
       this.requireAccountRuntimeOpen();
       const coordination = await this.configuredCoordination();
       const originLineageHandle =
@@ -287,45 +265,19 @@ export class DocumentSessionRegistry
   }
 
   retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void {
-    const keys = new Set(roomKeys);
-    for (const roomKey of keys) {
-      if (parseYjsRoomName(roomKey)?.kind !== "branch") {
-        throw new Error(`Branch retention requires a branch room: ${roomKey}`);
-      }
-    }
-    this.retainedBranchRoomsByOwner.set(ownerId, keys);
-    this.reconcileBranchRooms();
+    this.branchRooms.retain(ownerId, roomKeys);
   }
 
   releaseBranchRooms(ownerId: string): void {
-    this.retainedBranchRoomsByOwner.delete(ownerId);
-    this.reconcileBranchRooms();
+    this.branchRooms.release(ownerId);
   }
 
-  async rebuildBranchRoom(roomKey: string): Promise<DocumentSession> {
-    // A reset branch session is already retired; wait out its teardown quarantine.
-    await this.teardownOwner.drainRoom({ kind: "branch", roomKey });
-    return this.getBranchRoom(roomKey);
+  rebuildBranchRoom(roomKey: string): Promise<DocumentSession> {
+    return this.branchRooms.rebuild(roomKey);
   }
 
   getBranchRoom(roomKey: string): DocumentSession {
-    const room = parseYjsRoomName(roomKey);
-    if (room?.kind !== "branch")
-      throw new Error(`Branch session requires a branch room: ${roomKey}`);
-    this.cancelPendingTeardown(roomKey);
-    this.teardownOwner.assertAvailable({ kind: "branch", roomKey });
-    const existing = this.branchRooms.get(roomKey);
-    if (existing) return existing;
-    const session = this.createSession(roomKey, { kind: "none" });
-    this.attachSessionTransport(session);
-    session.subscribe((snapshot) => {
-      if (snapshot.connectionState?.kind !== "reset") return;
-      if (this.branchRooms.get(roomKey) !== session) return;
-      this.branchRooms.delete(roomKey);
-      void this.teardownOwner.retire({ kind: "branch", roomKey }, session).catch(() => undefined);
-    });
-    this.branchRooms.set(roomKey, session);
-    return session;
+    return this.branchRooms.get(roomKey);
   }
 
   async whenAuthorityReady(): Promise<void> {
@@ -356,183 +308,6 @@ export class DocumentSessionRegistry
     });
   }
 
-  reserve(transfer: LocalDocumentSessionTransfer): LocalDocumentSessionHandoff {
-    this.requireAccountRuntimeOpen();
-    const key = localTransferKey(transfer.documentId);
-    const existing = this.localTransferReservations.get(key);
-    if (existing) {
-      if (
-        existing.transfer.session === transfer.session &&
-        existing.transfer.projectId === transfer.projectId &&
-        existing.transfer.ownerRevision === transfer.ownerRevision
-      ) {
-        return existing.handoff;
-      }
-      throw new Error("A different local transfer already reserves this document");
-    }
-    if ((this.admissionReservations.get(transfer.documentId) ?? 0) > 0)
-      throw new Error("Live admission already reserves this document");
-    let settle!: () => void;
-    const settled = new Promise<void>((resolve) => {
-      settle = resolve;
-    });
-    const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
-    this.localTransferReservations.set(key, {
-      handoff,
-      transfer,
-      settled,
-      settle,
-    });
-    return handoff;
-  }
-
-  async begin(input: {
-    projectId: ProjectId;
-    documentId: DocumentId;
-    lineageHandle: string;
-    exactDatabaseName: string;
-    transitionId: string;
-  }): Promise<LocalAdoptionPendingReceipt> {
-    this.requireAccountRuntimeOpen();
-    const coordination = await this.configuredCoordination();
-    return this.translateCoordination(() =>
-      coordination.beginLocalAdoption({
-        documentId: input.documentId,
-        transitionId: input.transitionId,
-        lineageHandle: input.lineageHandle,
-        exactDatabaseName: input.exactDatabaseName,
-        targetGeneration: null,
-      }),
-    );
-  }
-
-  async abort(receipt: LocalAdoptionPendingReceipt): Promise<"aborted" | "stale">;
-  abort(handoff: LocalDocumentSessionHandoff): void;
-  abort(
-    input: LocalAdoptionPendingReceipt | LocalDocumentSessionHandoff,
-  ): Promise<"aborted" | "stale"> | undefined {
-    if ("documentId" in input) {
-      return this.configuredCoordination().then((coordination) =>
-        this.translateCoordination(() => coordination.abortLocalAdoption(input)),
-      );
-    }
-    for (const [key, reservation] of this.localTransferReservations) {
-      if (reservation.handoff !== input) continue;
-      this.localTransferReservations.delete(key);
-      this.settledLocalTransfers.add(input);
-      reservation.settle();
-      return;
-    }
-    if (!this.settledLocalTransfers.has(input))
-      throw new Error("Local document handoff is not reserved");
-  }
-
-  async inspect(input: {
-    documentId: DocumentId;
-    lineageHandle: string;
-    exactDatabaseName: string;
-    generation: AvailabilityGeneration;
-  }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
-    const coordination = await this.configuredCoordination();
-    return coordination.inspectLocalLineage(input);
-  }
-
-  async bindAndAdopt(input: {
-    projectId: ProjectId;
-    documentId: DocumentId;
-    generation: AvailabilityGeneration;
-    handoff: LocalDocumentSessionHandoff;
-    pending: LocalAdoptionPendingReceipt;
-  }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
-    this.requireAccountRuntimeOpen();
-    compareAvailabilityGeneration(input.generation, input.generation);
-    const reservationKey = localTransferKey(input.documentId);
-    const reservation = this.localTransferReservations.get(reservationKey);
-    if (
-      !reservation ||
-      reservation.handoff !== input.handoff ||
-      reservation.transfer.projectId !== input.projectId ||
-      reservation.transfer.documentId !== input.documentId
-    ) {
-      throw new Error("Local document handoff does not own this reservation");
-    }
-    const coordination = await this.configuredCoordination();
-    let admitted: Awaited<
-      ReturnType<DocumentSessionCrossContextCoordination["commitLocalAdoption"]>
-    >;
-    try {
-      admitted = await this.translateCoordination(() =>
-        coordination.commitLocalAdoption(input.projectId, input.generation, input.pending, {
-          prepareCommit: (lease) => {
-            this.requireAccountRuntimeOpen();
-            if (this.localTransferReservations.get(reservationKey) !== reservation)
-              throw new Error("Local document reservation changed during admission");
-            if (
-              reservation.transfer.lineageHandle !== input.pending.lineageHandle ||
-              reservation.transfer.exactDatabaseName !== lease.exactDatabaseName ||
-              reservation.transfer.session.persistenceName !== lease.exactDatabaseName
-            )
-              throw new Error("Local adoption persistence authority does not match the lineage");
-            reservation.transfer.prepareCommit();
-          },
-          completeCommit: async (lease) => {
-            const session = reservation.transfer.session;
-            const state = this.liveRooms.get(input.documentId);
-            if (!state || (state.session && state.session !== session))
-              throw new Error("A different live session won adoption");
-            state.session = session;
-            state.persistenceGeneration = input.generation;
-            state.exactDatabaseName = input.pending.exactDatabaseName;
-            const ownerId = `local-transfer:${input.pending.transitionId}`;
-            this.retain(ownerId, [lease], { detachedDocumentIds: [input.documentId] });
-            let released = false;
-            const ownership: TransferredDocumentSessionOwnership = Object.freeze({
-              lease,
-              persistenceGeneration: input.generation,
-              exactDatabaseName: input.pending.exactDatabaseName,
-              release: () => {
-                if (released) return;
-                released = true;
-                this.release(ownerId);
-              },
-            });
-            try {
-              await reservation.transfer.completeCommit(ownership);
-            } catch (error) {
-              ownership.release();
-              if (state.session === session) state.session = null;
-              throw error;
-            }
-            this.localTransferReservations.delete(reservationKey);
-            this.settledLocalTransfers.add(reservation.handoff);
-            reservation.settle();
-          },
-        }),
-      );
-    } catch (error) {
-      if (
-        error instanceof DocumentSessionAuthorityError &&
-        error.kind === "generation-revoked" &&
-        this.localTransferReservations.get(reservationKey) === reservation
-      ) {
-        this.localTransferReservations.delete(reservationKey);
-        this.settledLocalTransfers.add(reservation.handoff);
-        reservation.settle();
-      }
-      throw error;
-    }
-    const session = reservation.transfer.session;
-    const state = this.liveRooms.get(input.documentId);
-    if (!state || state.session !== session)
-      throw new Error("Local adoption did not converge on its reserved session");
-    try {
-      this.attachSessionTransport(session);
-    } catch {
-      // A later bind/open retries attachment on this same canonical session.
-    }
-    return { lease: admitted, session };
-  }
-
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
@@ -548,11 +323,7 @@ export class DocumentSessionRegistry
       const coordination = this.coordination;
       await (coordination?.close() ?? this.invalidateAll());
       if (this.coordination === coordination) this.coordination = null;
-      for (const reservation of this.localTransferReservations.values()) {
-        this.settledLocalTransfers.add(reservation.handoff);
-        reservation.settle();
-      }
-      this.localTransferReservations.clear();
+      this.localTransfers.settleAll();
       this.accountRuntimeState = "closed";
     });
     this.accountCloseAttempt = attempt;
@@ -580,29 +351,28 @@ export class DocumentSessionRegistry
     return this.observeRoom(lease.documentId, observer);
   }
 
+  observeBranchRoom(
+    roomKey: string,
+    observer: (snapshot: DocumentSessionSnapshot) => void,
+  ): () => void {
+    return this.observeRoom(roomKey, observer);
+  }
+
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
-    this.retainedBranchRoomsByOwner.clear();
+    this.branchRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
     this.pendingTeardownTimers.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session }]) =>
       session ? [{ documentId, session }] : [],
     );
-    const branchSessions = [...this.branchRooms.entries()].map(([roomKey, session]) => ({
-      roomKey,
-      session,
-    }));
     this.liveRooms.clear();
-    this.branchRooms.clear();
     for (const { documentId, session } of liveSessions) {
       void this.teardownOwner
         .retire({ kind: "live", roomKey: documentId }, session)
         .catch(() => undefined);
-    }
-    for (const { roomKey, session } of branchSessions) {
-      void this.teardownOwner.retire({ kind: "branch", roomKey }, session).catch(() => undefined);
     }
     return Promise.all([this.teardownOwner.drain(), this.localResources?.finishClose()]).then(
       () => undefined,
@@ -833,6 +603,9 @@ export class DocumentSessionRegistry
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
+    // Subscribed before any host can be, so a refusal's drop is already
+    // running when a host hears of it (`whenRefusedRoomDropped`).
+    if (session.room.kind === "live") session.subscribe(() => this.dropRefusedRoom(session));
     return session;
   }
 
@@ -845,38 +618,39 @@ export class DocumentSessionRegistry
   private attachSessionTransport(session: DocumentSession): void {
     if (session.getSnapshot().schemaFence) return;
     session.attachTransport(this.transportFactory);
-    this.dropOnRefusedEdits(session);
+  }
+
+  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null {
+    const drop = this.refusedRoomDrops.get(session);
+    return drop === "settled" ? null : (drop ?? null);
   }
 
   /**
-   * Drop refused live rooms even when no editor host holds them. Branch rooms
-   * hold no lease; their editor rebuilds them in place (`rebuildBranchRoom`).
+   * Drop a live room whose pending edits the server refused, even when no
+   * editor host holds it: revoking each lease's access tears the session down
+   * and clears its local copy. Branch rooms hold no lease; their editor
+   * rebuilds them in place (`rebuildBranchRoom`).
    */
-  private dropOnRefusedEdits(session: DocumentSession): void {
-    if (this.refusalWatchedSessions.has(session)) return;
-    this.refusalWatchedSessions.add(session);
-    session.subscribe(() => {
-      if (session.refusedLocalEdits()) void this.dropRefusedRoom(session);
-    });
-  }
-
-  dropRefusedRoom(session: DocumentSession): Promise<void> {
-    const existing = this.refusedRoomDrops.get(session);
-    if (existing) return existing;
+  private dropRefusedRoom(session: DocumentSession): void {
+    if (this.refusedRoomDrops.has(session) || !session.refusedLocalEdits()) return;
     const state = this.liveRooms.get(session.documentId as DocumentId);
-    if (!session.refusedLocalEdits() || state?.session !== session) return Promise.resolve();
-    const drop = Promise.all(
-      [...state.leases.values()].map((lease) =>
-        this.revokeAccess(
-          lease.projectId,
-          lease.documentId,
-          lease.generation,
-          `access-refused/v1/${lease.projectId}/${lease.documentId}/${lease.generation}`,
+    if (state?.session !== session) return;
+    const settle = () => {
+      this.refusedRoomDrops.set(session, "settled");
+    };
+    this.refusedRoomDrops.set(
+      session,
+      Promise.all(
+        [...state.leases.values()].map((lease) =>
+          this.revokeAccess(
+            lease.projectId,
+            lease.documentId,
+            lease.generation,
+            `access-refused/v1/${lease.projectId}/${lease.documentId}/${lease.generation}`,
+          ),
         ),
-      ),
-    ).then(noop, noop);
-    this.refusedRoomDrops.set(session, drop);
-    return drop;
+      ).then(settle, settle),
+    );
   }
 
   private removeRetainedProjectLease(projectId: ProjectId, documentId: DocumentId): boolean {
@@ -947,17 +721,10 @@ export class DocumentSessionRegistry
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
-      if (state?.session) {
-        if (this.isRetained(roomKey)) return;
-        const session = state.session;
-        state.session = null;
-        void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
-        return;
-      }
-      const branch = this.branchRooms.get(roomKey);
-      if (!branch || this.isBranchRetained(roomKey)) return;
-      this.branchRooms.delete(roomKey);
-      void this.teardownOwner.retire({ kind: "branch", roomKey }, branch).catch(() => undefined);
+      if (!state?.session || this.isRetained(roomKey)) return;
+      const session = state.session;
+      state.session = null;
+      void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
     }, this.teardownGraceMs);
     this.pendingTeardownTimers.set(roomKey, timer);
   }
@@ -971,13 +738,6 @@ export class DocumentSessionRegistry
 
   private isRetained(documentId: DocumentId): boolean {
     for (const retained of this.retainedByOwner.values()) if (retained.has(documentId)) return true;
-    return false;
-  }
-
-  private isBranchRetained(roomKey: string): boolean {
-    for (const retained of this.retainedBranchRoomsByOwner.values()) {
-      if (retained.has(roomKey)) return true;
-    }
     return false;
   }
 
@@ -998,7 +758,7 @@ export class DocumentSessionRegistry
     }
     observers.set(
       observer,
-      (this.branchRooms.get(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
+      (this.branchRooms.peek(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
     );
     return () => {
       observers?.get(observer)?.();
@@ -1014,16 +774,5 @@ export class DocumentSessionRegistry
     console.warn(
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
-  }
-
-  private reconcileBranchRooms(): void {
-    const keep = new Set<string>();
-    for (const retained of this.retainedBranchRoomsByOwner.values()) {
-      for (const roomKey of retained) keep.add(roomKey);
-    }
-    for (const roomKey of keep) this.getBranchRoom(roomKey);
-    for (const roomKey of this.branchRooms.keys()) {
-      if (!keep.has(roomKey)) this.scheduleTeardown(roomKey);
-    }
   }
 }

@@ -7,14 +7,21 @@ import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisitio
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import type { DocumentSession } from "@/core/editor/document-session";
+import type {
+  DocumentSession,
+  DocumentSessionAccess,
+  DocumentSessionSnapshot,
+} from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
 import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
-import { useAccountResourceReplica } from "./account-feature-context";
+import {
+  useAccountResourceReplica,
+  useLiveDocumentSessionRegistry,
+} from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
@@ -65,13 +72,6 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
-  // A room's scope follows its Work. When the server names one this tab's
-  // Works catalog doesn't explain, the catalog is behind: the archived notice,
-  // its Unarchive and `readOnly` all come from it.
-  const queryClient = useQueryClient();
-  const refreshWorks = useCallback(() => {
-    void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
-  }, [projectId, queryClient]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -193,12 +193,20 @@ export function ContextEditorMountHost({
               ) : waitingForReviewRoom ? null : (
                 <>
                   {active && isActive ? (
-                    <ActiveEditorProjection
-                      documentId={tab.documentId}
-                      session={session}
-                      inReview={Boolean(reviewDraftId)}
-                      setProjection={setActiveEditorDocumentId}
-                    />
+                    <>
+                      <ActiveEditorProjection
+                        documentId={tab.documentId}
+                        session={session}
+                        inReview={Boolean(reviewDraftId)}
+                        setProjection={setActiveEditorDocumentId}
+                      />
+                      <RoomScopeCatalogCheck
+                        projectId={projectId}
+                        session={session}
+                        reviewRoomName={reviewRoomName}
+                        readOnly={readOnly}
+                      />
+                    </>
                   ) : null}
                   <PresenceSuspension
                     session={session}
@@ -222,7 +230,6 @@ export function ContextEditorMountHost({
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
                     onReviewSessionUnavailable={controller.exitInlineReview}
-                    onRoomAccessMismatch={refreshWorks}
                   />
                 </>
               )}
@@ -245,14 +252,7 @@ export function ContextEditorMountHost({
   );
 }
 
-/** One stable host across local adoption; server retention lasts until the tab closes. */
-export function ContextTabSessionBoundary({
-  projectId,
-  documentId,
-  resourceHandle,
-  children,
-  active = true,
-}: {
+type ContextTabSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
@@ -262,7 +262,27 @@ export function ContextTabSessionBoundary({
     failed: boolean,
     localContentReady: boolean,
   ) => ReactNode;
-}) {
+};
+
+/**
+ * One stable host across local adoption; server retention lasts until the tab
+ * closes. A room dropped because the server refused its edits reopens as a
+ * fresh session: local probe and server binding both start over.
+ */
+export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
+  const [opening, setOpening] = useState(0);
+  const reopen = useCallback(() => setOpening((value) => value + 1), []);
+  return <ContextTabSession key={opening} {...props} onReopen={reopen} />;
+}
+
+function ContextTabSession({
+  projectId,
+  documentId,
+  resourceHandle,
+  children,
+  active = true,
+  onReopen,
+}: ContextTabSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
   const generation = useRef(++serverHostGeneration);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
@@ -276,8 +296,6 @@ export function ContextTabSessionBoundary({
         : ({ kind: "document", documentId } as const),
     [resourceIdentity],
   );
-  // Bumped to reopen after the registry dropped a room whose edits were refused.
-  const [reopenGeneration, setReopenGeneration] = useState(0);
   const [local, setLocal] = useState<{
     identity: string;
     documentId: string;
@@ -297,7 +315,6 @@ export function ContextTabSessionBoundary({
               : ("probing" as const),
         };
   useEffect(() => {
-    void reopenGeneration;
     const abort = new AbortController();
     let retained: ResourceContentHandle | null = null;
     setLocal((prior) => ({
@@ -358,7 +375,7 @@ export function ContextTabSessionBoundary({
       abort.abort();
       retained?.release();
     };
-  }, [projectId, reopenGeneration, resourceIdentity, resourceLookup, resources]);
+  }, [projectId, resourceIdentity, resourceLookup, resources]);
   const serverDocumentId = currentLocal.phase === "server" ? documentId : null;
   const binding = useLiveDocumentBinding({
     projectId,
@@ -375,14 +392,10 @@ export function ContextTabSessionBoundary({
       .catch(() => undefined);
   }, [documentId, projectId, resources, state]);
   const localSession = currentLocal.handle?.session ?? null;
-  const retry = binding.retry;
   const session = useRefusedEditsReopen(
     localSession ??
       (state.kind === "opened" && state.documentId === documentId ? state.session : null),
-    useCallback(() => {
-      setReopenGeneration((value) => value + 1);
-      retry();
-    }, [retry]),
+    onReopen,
   );
   return children(
     session,
@@ -414,6 +427,45 @@ function ActiveEditorProjection({
     setProjection(documentId, session, inReview, owner.current);
     return () => setProjection(null, null, false, owner.current);
   }, [documentId, inReview, session, setProjection]);
+  return null;
+}
+
+/**
+ * A room's scope follows its Work: an archived Work's draft and scratch are
+ * read-only (D33). The front editor already follows its room; when the server
+ * names a scope that `readOnly` doesn't show, this tab's Works catalog is
+ * behind (another tab archived or unarchived the Work), and the archived
+ * notice, its Unarchive and `readOnly` all come from it. Asked on activation
+ * and on each named scope; this tab's own `readOnly` changes (its archive
+ * command) never ask, because the room's next scope confirms them. A review
+ * watches the draft's room, never the live one it reviews against.
+ */
+function RoomScopeCatalogCheck({
+  projectId,
+  session,
+  reviewRoomName,
+  readOnly,
+}: {
+  projectId: string;
+  session: DocumentSession;
+  reviewRoomName: string | null;
+  readOnly: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const registry = useLiveDocumentSessionRegistry();
+  const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  useEffect(() => {
+    const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
+    return reviewRoomName
+      ? registry.observeBranchRoom(reviewRoomName, observer)
+      : session.subscribe(observer);
+  }, [registry, reviewRoomName, session]);
+  useEffect(() => {
+    if (access === null || (access === "read") === readOnlyRef.current) return;
+    void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
+  }, [access, projectId, queryClient]);
   return null;
 }
 

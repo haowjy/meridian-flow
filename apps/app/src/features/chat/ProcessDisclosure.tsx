@@ -18,12 +18,12 @@ import { type ReactNode, useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type ProcessDisclosureProps = {
+  /** Also the button's accessible name: a screen reader hears what the fold shows. */
   label: ReactNode;
-  ariaLabel?: string;
   children: ReactNode;
 };
 
-export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclosureProps) {
+export function ProcessDisclosure({ label, children }: ProcessDisclosureProps) {
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const panelId = useId();
@@ -42,7 +42,6 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
         onClick={handleToggle}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={ariaLabel}
         className="disclosure-trigger justify-start"
       >
         <ChevronRight

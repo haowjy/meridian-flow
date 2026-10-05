@@ -117,10 +117,12 @@ export function ContextViewer({
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
       : null;
-  const editorWorkArchived = editorWork && isWorkArchived(editorWork) ? editorWork : null;
-  // A review edits the Editor Work's draft, which archiving freezes (D30); the
+  const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
+  // Archiving freezes the Editor Work's own files and its drafts (D30). A
+  // review edits the draft, so its editor freezes and shows the notice; the
   // reviewed file itself may be project-owned and keeps its identity bar.
-  const archivedWork = activeFileInWork || activeReviewDraftId ? editorWorkArchived : null;
+  const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
+  const editorFrozen = Boolean((activeFileInWork || activeReviewDraftId) && archivedEditorWork);
 
   return (
     <div
@@ -156,8 +158,12 @@ export function ContextViewer({
         {activeTab && activeReviewDraftId ? (
           <DraftReviewHeader documentId={activeTab.documentId} draftId={activeReviewDraftId} />
         ) : null}
-        {archivedWork ? (
-          <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
+        {archivedEditorWork && editorFrozen ? (
+          <ArchivedWorkNotice
+            projectId={projectId}
+            work={archivedEditorWork}
+            className="px-4 pt-3"
+          />
         ) : null}
         {/* Identity bar — the top edge of the page every open document
             shares. Keyed by document so edit state never crosses tabs. */}
@@ -167,7 +173,7 @@ export function ContextViewer({
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
-            readOnly={Boolean(activeFileInWork && archivedWork)}
+            readOnly={fileFrozen}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
@@ -189,7 +195,7 @@ export function ContextViewer({
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
               // Warm editors are hidden, so following the front tab is enough.
-              readOnly={Boolean(archivedWork)}
+              readOnly={editorFrozen}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
             />
           </div>
