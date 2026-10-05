@@ -33,7 +33,7 @@ export type WorkCatalogView =
   | { status: "empty" }
   | { status: "ready"; works: Work[]; noWork: Work; refreshing: boolean };
 export type WorkPickerOperation = {
-  currentWorkId: string;
+  currentWorkId: string | null;
   targetId: string | null;
   pending: boolean;
   failure: WorkPickerFailure | null;

@@ -142,10 +142,10 @@ export function useComposerWorkBinding({
 
   const allWorks = worksQuery.works ?? [];
   const catalog: WorkCatalogView =
-    worksQuery.status === "loading" || worksQuery.status === "disabled" || !worksQuery.noWork
-      ? { status: "loading" }
-      : worksQuery.status === "error"
-        ? { status: "error", retry: worksQuery.refetch }
+    worksQuery.status === "error"
+      ? { status: "error", retry: worksQuery.refetch }
+      : worksQuery.status === "loading" || worksQuery.status === "disabled" || !worksQuery.noWork
+        ? { status: "loading" }
         : {
             status: "ready",
             works: allWorks,

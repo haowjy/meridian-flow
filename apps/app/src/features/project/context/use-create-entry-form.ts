@@ -12,7 +12,6 @@ import {
   filetypeForPath,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
-import { resourceWorkAuthorityFor } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
@@ -26,6 +25,7 @@ import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
+import { destinationWorkAuthority } from "./identity-location";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
@@ -73,12 +73,15 @@ export function useCreateEntryForm({
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
       if (kind === "file" && usesResourceDocumentCreate(path)) {
-        const work = isWorkScopedProjectContextScheme(scheme)
-          ? workId === noWork?.id
-            ? noWork
-            : works?.find((work) => work.id === workId)
-          : null;
-        if (isWorkScopedProjectContextScheme(scheme) && (!work || !noWork))
+        const authority = destinationWorkAuthority(
+          {
+            scheme,
+            workId: isWorkScopedProjectContextScheme(scheme) ? (workId ?? undefined) : undefined,
+          },
+          works,
+          noWork,
+        );
+        if (!authority || (isWorkScopedProjectContextScheme(scheme) && !authority.workId))
           throw new Error(t`Couldn't create this file.`);
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
@@ -87,9 +90,7 @@ export function useCreateEntryForm({
             scheme,
             folderPath: parent,
             name: trimmed,
-            ...(work && noWork
-              ? resourceWorkAuthorityFor(work.id, { works: works ?? [], noWork })
-              : { workId: null }),
+            ...authority,
           });
         } finally {
           reservation.content.handle.release();

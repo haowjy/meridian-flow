@@ -2253,7 +2253,6 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work…"
@@ -3104,7 +3103,6 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
