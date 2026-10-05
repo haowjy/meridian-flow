@@ -40,8 +40,9 @@ the locked No Work row uses a null slug and URI authority `@/`.
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
-single durable authority rule used by catalog projection, receipt matching and
-tab ownership.
+single durable URI authority rule (`@/` or `@slug`) used by catalog projection,
+receipt matching and folder re-basing. Tab ownership does not use it: app tabs
+carry the location's Work row id, No Work's included.
 
 The journal type and structural validator cannot prove that a row id is the
 project's locked row: they have no Works registry. Server catalog acquisition

@@ -144,7 +144,7 @@ questions the document itself cannot:
 
 | Consumer | What the Work decides |
 |---|---|
-| `useLinkableDocuments` | the `[[` menu offers that Work's Scratch and Uploads (the No Work row's when none is selected) beside the project's documents |
+| `useLinkableDocuments` | the `[[` menu offers that Work's Scratch and Uploads (No Work's by its row id) beside the project's documents; a null Work is unresolved, and the index has no scope until it resolves |
 | `ResolveDocumentLinkRequest.workId` | a contextual `scratch://` or `uploads://` link resolves in that Work |
 | `useOpenProjectDocument` | a followed link opens with that Work still selected |
 
