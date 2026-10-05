@@ -91,6 +91,22 @@ export function createBranchPullService(input: {
     return doc;
   }
 
+  async function pullLive(documentId: DocumentId): Promise<void> {
+    // Snapshot before the root transaction opens: the snapshot takes its own
+    // connection, and taking it while holding the root's lets concurrent pulls
+    // hold every pooled connection and wait on each other forever.
+    const liveDoc = await liveSnapshot(documentId);
+    try {
+      await input.rootTransaction(async () => {
+        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+        }
+      });
+    } finally {
+      liveDoc.destroy();
+    }
+  }
+
   async function run(documentId: DocumentId): Promise<void> {
     const current = timers.get(documentId);
     if (current?.running) {
@@ -108,17 +124,7 @@ export function createBranchPullService(input: {
     }
     const entry = current ?? {};
     const running = outsideCallerTransactions(() =>
-      input
-        .rootTransaction(async () => {
-          const liveDoc = await liveSnapshot(documentId);
-          try {
-            for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-              await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-            }
-          } finally {
-            liveDoc.destroy();
-          }
-        })
+      pullLive(documentId)
         .then(() => {
           // A queued snapshot may include newer edits; its retries still need these timers.
           if (entry.queued) return;
