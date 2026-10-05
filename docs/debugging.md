@@ -154,9 +154,9 @@ When a provider answers a model call with an error, three places keep it:
   Retry, and never shows the message. `thread view`
   truncates the message to 300 characters; `--full` prints all of it.
   `turn.error` stays the writer-facing copy.
-- **The capture record** for that call holds `providerError: { status, message, body }`,
-  the response body text exactly as the provider sent it, capped at 4 KiB.
-  Provider SDK clients use `providerFetch`, which keeps a failed response's
+- **The capture record** for that call holds `providerError: { status,
+  message, body }`, the body being the response text exactly as the provider
+  sent it, capped at 4,096 characters. Provider SDK clients use `providerFetch`, which keeps a failed response's
   text before the SDK parses it. This lives with the captured request: the
   debug gate must be open, it is in memory only, and a restart or eviction
   loses it.

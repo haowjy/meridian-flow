@@ -75,12 +75,14 @@ this request and will refuse it again. There is no separate code for an
 exhausted account. `x-should-retry: false` still overrides.
 
 An error event carries `providerResponse: { status, message, body }` when the
-provider answered. SDK clients are built with `providerFetch`, which keeps a
-failed response's body text (capped at 4 KiB) keyed by the `Headers` object the
-SDK error carries, because SDKs keep only part of a parsed body. Without it the
-body falls back to the SDK's parsed view. `stream.close` logs only
-`providerStatus`, in its correlation beside `errorCode`. The runtime puts status and message on the failed reply's
-metadata and the body on the dev capture record; see
+provider answered: a `ProviderErrorResponse` from `@meridian/contracts/threads`,
+whose one constructor caps the body at 4,096 characters. SDK clients are built
+with `providerFetch`, which keeps a failed response's body text keyed by the
+`Headers` object the SDK error carries, because SDKs keep only part of a parsed
+body. Without it the body falls back to the SDK's parsed view. `stream.close`
+logs only `providerStatus`, in its correlation beside `errorCode`. The runtime
+keeps status and message on the failed reply's metadata and the whole response
+on the dev capture record; see
 [Provider Failures](../../../../../../../docs/debugging.md#provider-failures).
 
 ## Context-window errors

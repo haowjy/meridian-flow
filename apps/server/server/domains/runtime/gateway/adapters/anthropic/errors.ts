@@ -7,7 +7,6 @@ const CONTEXT_OVERFLOW =
 export function mapAnthropicError(err: unknown): MappedProviderError {
   return mapProviderHttpError(err, {
     contextOverflow: CONTEXT_OVERFLOW,
-    contentFiltered: (lower) =>
-      lower.includes("content") && (lower.includes("filter") || lower.includes("block")),
+    contentFiltered: /content[\s\S]*(?:filter|block)|(?:filter|block)[\s\S]*content/,
   });
 }
