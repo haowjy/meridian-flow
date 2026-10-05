@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -219,14 +219,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(
-          context.write("fresh.md", "Current café.", {
-            origin: {
-              type: "agent",
-              agentSlug: "writer",
-              turnId: TURN_ID as never,
-              threadId: THREAD_ID as never,
-            },
-          }),
+          asGrantedWriter(() =>
+            context.write("fresh.md", "Current café.", {
+              origin: {
+                type: "agent",
+                agentSlug: "writer",
+                turnId: TURN_ID as never,
+                threadId: THREAD_ID as never,
+              },
+            }),
+          ),
         ).resolves.toMatchObject({
           ok: true,
         });
