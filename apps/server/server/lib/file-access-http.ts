@@ -9,7 +9,6 @@ import { createError } from "nitro/h3";
 import {
   type FileAccess,
   type FileAccessDenied,
-  FileEditRefusedError,
   type FileGrant,
   type FileNeed,
   type FileTarget,
@@ -21,12 +20,12 @@ import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";
 
-export function personPrincipal(userId: string): Principal {
+function personPrincipal(userId: string): Principal {
   return { accountId: userId as UserId };
 }
 
 /** 404 hides existence; an archived Work's files are 403 `work_archived`. */
-export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
+function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
   switch (denial.reason) {
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });
@@ -65,12 +64,4 @@ export async function withEditGrants<T>(
   const [denial] = result.refusal.refused;
   if (denial) throwFileAccessDenied(denial);
   throw result.refusal;
-}
-
-/** A seam refusal that escaped as an error, mapped like a preflight denial. */
-export function rethrowFileEditRefusal(cause: unknown): never {
-  if (cause instanceof FileEditRefusedError && cause.refused[0]) {
-    throwFileAccessDenied(cause.refused[0]);
-  }
-  throw cause;
 }

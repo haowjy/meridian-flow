@@ -21,7 +21,7 @@ import {
   createInMemoryRepositories,
 } from "../../server/domains/threads/index.js";
 import { createWiredCoreToolRegistrations } from "../../server/lib/wired-core-tools.js";
-import { confirmEveryGrant, testFileGrant } from "../../server/test-support/file-grants.js";
+import { testFileGrant } from "../../server/test-support/file-grants.js";
 
 const FILE_URI = "kb://notes.md";
 const FILE_CONTENT = "Smoke test seed content";
@@ -123,7 +123,7 @@ describe("smoke: in-process turn", () => {
               target.kind === "container" ? undefined : target.documentId,
             );
           },
-          confirmEdit: confirmEveryGrant.confirmEdit,
+          confirmEdit: async () => [],
         },
         readAgentChain: async () => [],
       }),

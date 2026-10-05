@@ -207,7 +207,7 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = transactionStorage.getStore();
   if (!active) {
-    void runAfterCommitCallback(callback);
+    void runOutsideWrite(callback);
     return false;
   }
   active.afterCommit.push(callback);
@@ -238,14 +238,17 @@ export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
 }
 
-/** After-commit work runs outside the transaction and outside the write's edit grants. */
-function runAfterCommitCallback(callback: () => void | Promise<void>): void | Promise<void> {
-  return runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(callback));
+/**
+ * Runs work a write triggers but isn't part of it (after-commit work, a
+ * scheduled pull) outside the transaction and outside the write's edit grants.
+ */
+export function runOutsideWrite<T>(operation: () => T): T {
+  return runOutsideDrizzleTransaction(() => runOutsideEditConfirmation(operation));
 }
 
 async function dispatchAfterCommit(callbacks: Array<() => void | Promise<void>>): Promise<void> {
   await Promise.allSettled(
-    callbacks.map((callback) => Promise.resolve().then(() => runAfterCommitCallback(callback))),
+    callbacks.map((callback) => Promise.resolve().then(() => runOutsideWrite(callback))),
   );
 }
 

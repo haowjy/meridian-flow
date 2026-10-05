@@ -28,13 +28,14 @@ Ancestors come from walking `folders.parent_id`; there is no closure table.
 ## The service (`file-access.ts`)
 
 `createFileAccess` is the only place a `FileGrant` is minted. A grant is
-proof, not a flag: it carries the principal, the facts it was decided on,
-the level and the destination.
+proof, not a flag: it carries the principal, the facts it was decided on
+(`facts.target` names what it grants) and the destination.
 
 | Call | Use it for |
 |---|---|
 | `authorize(principal, target, need)` | Preflight for one target. Returns a `FileGrant` or a `FileAccessDenied`. Authoritative for reads; advisory for writes. |
-| `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Locks the grants' Works, re-reads facts and each agent chain, and re-runs the policy at each grant's own destination. Returns `{ confirmed, refused }`; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`, not directly. |
+| `authorizeAt(principal, target, destination)` | Edit at an explicit destination, not the one the principal's mode picks. An undo reverses a write where it landed. |
+| `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Locks the Works the grants' facts name (`grantWorkIds`), reads facts once per grant, re-reads each agent chain, and re-runs the policy at each grant's own destination. A file whose owner or draft Work moved outside the locked set is refused, since locking it then would break the id order. Returns the refusals; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`, not directly. |
 | `listAccess(principal, documentIds)` | Lists (`ls`, `search`, recent documents, link resolution, draft review). One facts query for every row; a row the principal can't read is absent from the map, so drop it. |
 | `historyAccess(principal, documentId)` | Change-trail detail. Person term only, so a deleted document's captured evidence stays visible: `"available"`, `"deleted"` or `null`. |
 
@@ -52,7 +53,8 @@ Work owner) for creates: a create needs `edit` on the container.
 
 **Denials.** `reason` is the wire `FileAccessDenial`: `not_found`,
 `work_archived`, `agent_read_only`, `uploads_read_only`. Deleted reads as
-`not_found`. A denial carries `archivedWork`, `scheme` and the agent chain so
+`not_found`. A denial carries `level` (what the principal does have),
+`archivedWork`, the facts when the file was found, and the agent chain so
 model copy (`lib/file-access-denial-copy.ts`) can offer only calls the
 action policy allows. Over HTTP, `lib/file-access-http.ts` maps `not_found`
 to 404 and `work_archived` to 403.
@@ -78,9 +80,11 @@ wrapper over it. The grants travel by scope, not by parameter, so
 
 A write seam's transaction starts with `lockSeamWorks(db, ownWorkIds)`
 (`shared/work-lifecycle-lock.ts`). It locks the seam's own Works and the
-bound grants' Works in one id-ordered `FOR NO KEY UPDATE`, then confirms the
-grants once per transaction. The project and No Work can't be archived, so
-their files lock no Work row. The order is:
+bound grants' Works in one id-ordered `FOR NO KEY UPDATE`, reading each
+Work's lifecycle in that same select, then confirms the grants once per
+transaction and returns the lifecycles. The project and No Work can't be
+archived, so their files lock no Work row (`grantWorkIds`). The journal's
+methods enter through `enterJournalSeam`. The order is:
 
 1. In-process branch critical sections, when the seam has them.
 2. Work rows, in id order, then grant confirmation (`lockSeamWorks`).
@@ -97,11 +101,10 @@ reversal), and context storage (seam C: `lockContextNamespaces`,
 Seams keep their own locked lifecycle check (`requireLockedActiveWorks`)
 whether or not grants are bound; that check is all that guards a seam reached
 with no grant scope (a replay, a derived write, a lifecycle-owned write).
-Work after commit leaves the scope (`runOutsideEditConfirmation`;
+Work after commit leaves the scope (`runOutsideWrite`;
 `runAfterDrizzleCommit` callbacks already do), because re-confirming would
-see the write's own result. Auto-apply after an agent
-write is part of that write and carries the grants with
-`captureEditConfirmation`.
+see the write's own result. Nothing pushes a draft after an agent write
+(D59), so no after-commit step carries the grants.
 
 **A reply confirms once.** The thread-peer pool's save calls `confirmEdit`
 for every grant the reply wrote under and drops refused documents. It binds
@@ -118,7 +121,8 @@ outside the journal.
 
 ## Live rooms
 
-Admission asks `edit`, then `read`; a `read` room is admitted read-only and
+Admission asks `edit` once; a denial at `read` carries the facts, and that
+room is admitted read-only and
 its updates never reach the journal. Each frame on an edit room runs inside
 `runWithEditGrants`. Archive, unarchive, delete and restore of a Work
 publish `{ workId }` through the `FileAccessChanges` port (Postgres NOTIFY,
@@ -126,9 +130,17 @@ heard after commit). `lib/yjs-room-access.ts` indexes rooms by the Works
 their access depends on and closes them with 4409, so the client reconnects
 at its new level. Manuscript, kb and user rooms never close on a Work change.
 
+## Skills
+
+`skills://` isn't a context source and has no facts or grants. `skillLevel`
+(`domain/policy.ts`) is the pure rule: an agent reads a skill its own
+thread's binding preloads or offers as `model-invocable`, and never edits
+one (D58). `runtime/loop/skill-files.ts` reads the binding once per call and
+filters with it. Skill edits will need the same file and folder permissions.
+
 ## Tests and in-memory
 
-`createAllowAllFileAccess` grants everything; use it where access isn't the
-subject. `test-support/file-grants.ts` has the DB helpers.
+`createAllowAllFileAccess` grants and confirms everything; use it where
+access isn't the subject. `test-support/file-grants.ts` has the DB helpers.
 `domain/policy.test.ts` is the policy table; `file-access.db.test.ts` covers
 `confirmEdit`, the guard and container coverage.

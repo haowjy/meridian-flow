@@ -19,10 +19,9 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import { captureEditConfirmation } from "../../../shared/edit-confirmation.js";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { AutoBranchPushPort, BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
@@ -65,8 +64,6 @@ export type BranchAgentEditDiagnostics = {
     writeId: string | null;
   }): void;
   mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
-  autoPushUnapplied(payload: { workDraftBranchId: string; result: unknown }): void;
-  autoPushFailed(payload: { workDraftBranchId: string; cause: unknown }): void;
 };
 
 export type AfterCommit = (callback: () => void | Promise<void>) => void;
@@ -134,7 +131,6 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  branchPush?: AutoBranchPushPort;
   journalRows?: {
     listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
     listConcurrentJournalRows(
@@ -156,7 +152,6 @@ export function createBranchAgentEditCoordinator(input: {
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
-      let autoPushBranchId: string | null = null;
       let result: T;
       try {
         result = await input.branchCoordinator.withBranchTransient(
@@ -211,7 +206,6 @@ export function createBranchAgentEditCoordinator(input: {
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;
-              autoPushBranchId = workDraftBranchId;
               advanceConcurrentJournalWatermark(
                 concurrentJournalWatermarks,
                 input.threadId,
@@ -238,14 +232,6 @@ export function createBranchAgentEditCoordinator(input: {
       } catch (cause) {
         concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
         throw cause;
-      }
-      if (autoPushBranchId && input.branchPush) {
-        scheduleAutoPushAfterCommit({
-          workDraftBranchId: autoPushBranchId,
-          branchPush: input.branchPush,
-          diagnostics: input.diagnostics,
-          afterCommit: input.afterCommit,
-        });
       }
       return result;
     },
@@ -923,42 +909,5 @@ function advanceConcurrentJournalWatermark(
   }
   afterCommit(() => {
     watermarks.commitPending(threadId, documentId, attemptId);
-  });
-}
-
-function scheduleAutoPushAfterCommit(input: {
-  workDraftBranchId: string;
-  branchPush: AutoBranchPushPort;
-  diagnostics?: BranchAgentEditDiagnostics;
-  afterCommit: AfterCommit;
-}): void {
-  // Auto-apply finishes the agent's write, so it carries the write's grants;
-  // after-commit dispatch has left their scope.
-  const withWriteGrants = captureEditConfirmation();
-  input.afterCommit(() => {
-    void withWriteGrants(() =>
-      input.branchPush.pushAutoBranchAfterThreadPeerWrite({
-        workDraftBranchId: input.workDraftBranchId,
-      }),
-    )
-      .then((result) => {
-        if (
-          result.status === "pushed" ||
-          result.status === "already_pushed" ||
-          result.status === "skipped"
-        ) {
-          return;
-        }
-        input.diagnostics?.autoPushUnapplied({
-          workDraftBranchId: input.workDraftBranchId,
-          result,
-        });
-      })
-      .catch((cause: unknown) => {
-        input.diagnostics?.autoPushFailed({
-          workDraftBranchId: input.workDraftBranchId,
-          cause,
-        });
-      });
   });
 }

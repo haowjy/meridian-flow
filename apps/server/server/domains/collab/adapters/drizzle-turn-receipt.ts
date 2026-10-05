@@ -104,7 +104,6 @@ async function branchStates(
       upstreamBranchId: documentBranches.upstreamBranchId,
       workId: documentBranches.workId,
       threadId: documentBranches.threadId,
-      pushPolicy: documentBranches.pushPolicy,
       status: documentBranches.status,
       generation: documentBranches.generation,
       state: documentBranches.state,

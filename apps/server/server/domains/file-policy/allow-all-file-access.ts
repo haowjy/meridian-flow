@@ -1,15 +1,13 @@
 /**
  * A file-access service with no database behind it: every target belongs to
  * the person asking, nothing is archived or deleted. For the in-memory app
- * and tests where access isn't the subject. Skills follow the binding when
- * `skillFacts` is given, and none are visible otherwise.
+ * and tests where access isn't the subject.
  */
-import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { FileFacts, SkillFacts } from "./domain/types.js";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { FileFacts } from "./domain/types.js";
 import { createFileAccess, type FileAccess } from "./file-access.js";
 import type { FileFactsRequest } from "./ports/file-facts.js";
 
-const NO_SKILLS: SkillFacts = { load: [], available: [] };
 const OPEN_PROJECT = "00000000-0000-4000-8000-00000000a11a" as ProjectId;
 
 function openFacts(request: FileFactsRequest): FileFacts {
@@ -24,7 +22,6 @@ function openFacts(request: FileFactsRequest): FileFacts {
     ownerWork: null,
     deleted: false,
     scheme: target.kind === "container" ? target.scheme : "manuscript",
-    path: "",
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
     ...(draftWorkId
@@ -41,12 +38,9 @@ function openFacts(request: FileFactsRequest): FileFacts {
   };
 }
 
-export function createAllowAllFileAccess(
-  options: { skillFacts?(threadId: ThreadId): Promise<SkillFacts> } = {},
-): FileAccess {
+export function createAllowAllFileAccess(): FileAccess {
   return createFileAccess({
     facts: {
-      skillFacts: options.skillFacts ?? (async () => NO_SKILLS),
       async load(request) {
         return openFacts(request);
       },

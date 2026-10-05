@@ -79,7 +79,6 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
     upstreamBranchId: null,
     workId: WORK_ID,
     threadId: null,
-    pushPolicy: "manual",
     status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),

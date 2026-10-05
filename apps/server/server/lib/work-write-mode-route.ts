@@ -17,7 +17,6 @@ type WorkWriteModeServices = {
       id: WorkId;
       createdByUserId: UserId;
       aiWriteMode: AiWriteMode;
-      archivedAt: string | null;
     } | null>;
   };
   branchPush: {
@@ -37,7 +36,7 @@ export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServ
 /**
  * Switching to auto-apply with pending changes needs `pending` (D40): without
  * it the route answers `confirmation_required` so the client can ask. An
- * archived Work allows only `keep` (D30).
+ * archived Work refuses `apply` under its lock (D30).
  */
 export async function handleWorkWriteModeRequest(
   deps: WorkWriteModeServices,
@@ -77,17 +76,15 @@ export async function handleWorkWriteModeRequest(
       workId: input.workId,
       policy: aiWriteMode === "direct" ? "auto" : "manual",
       ...(pending ? { pending } : {}),
-      archived: work.archivedAt !== null,
       pushedByUserId: input.userId,
     })
     .catch((cause: unknown) => {
-      // Archived after the read above: Apply's push refuses under the Work lock.
+      // An archived Work's drafts are frozen: Apply's push refuses under the Work lock.
       if (cause instanceof WorkLifecycleUnavailableError && cause.state === "archived") {
         throwArchivedApply();
       }
       throw cause;
     });
-  if (policyResult.status === "refused") throwArchivedApply();
   if (policyResult.status === "confirmation_required") {
     return {
       aiWriteMode: work.aiWriteMode,

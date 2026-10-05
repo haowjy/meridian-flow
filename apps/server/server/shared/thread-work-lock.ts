@@ -3,7 +3,11 @@ import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { threads, threadWorks } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
-import { type LockedWorkLifecycle, lockWorkLifecycle } from "./work-lifecycle-lock.js";
+import {
+  type LockedWorkLifecycle,
+  lockWorkLifecycle,
+  lockWorksInIdOrder,
+} from "./work-lifecycle-lock.js";
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */
 export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
@@ -101,7 +105,9 @@ export async function lockThreadAndWorks(
     .from(threadWorks)
     .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)));
   const workIds = [...new Set([...additionalWorkIds, ...(primary ? [primary.workId] : [])])].sort();
-  const workStates = new Map<WorkId, LockedWorkLifecycle>();
-  for (const workId of workIds) workStates.set(workId, await lockWorkLifecycle(db, workId));
+  const locked = await lockWorksInIdOrder(db, workIds);
+  const workStates = new Map<WorkId, LockedWorkLifecycle>(
+    workIds.map((workId) => [workId, locked.get(workId)?.state ?? "missing"]),
+  );
   return { ...thread, primaryWorkId: primary?.workId ?? null, workStates };
 }

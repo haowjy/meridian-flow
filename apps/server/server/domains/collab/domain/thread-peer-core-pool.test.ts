@@ -1,17 +1,20 @@
 /** Pool routing per document (D19, D42), live undo routing, and read-version checks (D41). */
+
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
-import { confirmEveryGrant, testFileGrant } from "../../../test-support/file-grants.js";
+import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { testFileGrant } from "../../../test-support/file-grants.js";
+import type { FileDestination } from "../../file-policy/index.js";
 import {
   createFakeThreadPeerCores,
   inProcessResponseTransactions,
 } from "../test-support/thread-peer-pool-fakes.js";
-import { type AgentEditDestination, asLiveAgentEditCore } from "./agent-edit-cores.js";
+import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
-const live: AgentEditDestination = { kind: "live" };
-const draftA: AgentEditDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
+const live: FileDestination = { kind: "live" };
+const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 function createPool() {
   const { history, liveCore, threadCore } = createFakeThreadPeerCores();
   const pool = createThreadPeerCorePool({
@@ -24,13 +27,13 @@ function createPool() {
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
-    fileAccess: confirmEveryGrant,
+    fileAccess: createAllowAllFileAccess(),
     lockLiveDocuments: async () => {},
   });
   return { pool, liveCore, threadCore, pullThreadPeer: history.pullThreadPeer };
 }
 
-const context = (destination: AgentEditDestination, responseId?: string) => ({
+const context = (destination: FileDestination, responseId?: string) => ({
   sessionId: THREAD_ID,
   threadId: THREAD_ID,
   turnId: "turn-1",

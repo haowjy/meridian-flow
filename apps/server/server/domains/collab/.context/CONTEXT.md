@@ -38,7 +38,7 @@ The thread-peer pool is the only model read/write entry point. Each call
 carries the `FileGrant` the caller got from `domains/file-policy`; its
 destination routes the call. A write that commits now runs under
 `runWithEditGrants`; a reversal whose writes landed in the other journal gets
-a fresh `authorize` at that destination. A reply pins each document to its
+a fresh grant at that destination (`authorizeAt`). A reply pins each document to its
 first grant (reads follow the pin, except a `liveVersion` read, which is
 `version: "live"` and always reads live; results report the version read in
 `read.version`), may
@@ -52,6 +52,19 @@ after commit, so a rollback shows nothing. The save first runs one
 confirmed for the journal's no-grant guard. The pool
 also records each document's last read version per thread (`live` or
 `draft` of a Work); a write against another version returns `read_required`.
+
+## Write mode and drafts
+
+The Work's write mode decides only where new AI writes go. A draft write
+never pushes itself live (D59): a reply that saves into the draft after the
+writer switched the Work to Auto-apply waits there like a kept change, and
+the dock shows it. Switching to Auto-apply with pending changes needs a
+choice (`work-push-policy.ts`, D40): `apply` pushes each pending draft once,
+then sets the mode; `keep` sets only the mode. An archived Work's `apply`
+refuses at its first push, under the Work lock (D30). The branch
+`push_policy` column is still read by turn trail work
+(`adapters/drizzle-turn-trail-work.ts`) and nothing sets it to `auto` now, so
+that retry path never pushes.
 
 ## Pull and provisioning transactions
 

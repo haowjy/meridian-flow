@@ -68,10 +68,7 @@ import {
   admitFreshAuthorship,
   replicateFrozenIdentity,
 } from "../domain/document-mutation-policy.js";
-import type {
-  ApplicationBranchStore,
-  ManifestMutationResult,
-} from "../domain/ports/application-branch-store.js";
+import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -98,15 +95,6 @@ export function createDrizzleBranchStore(
       .limit(1);
     if (!row) throw new NoPrimaryWorkError(threadId);
     return row.workId;
-  }
-
-  async function workDraftPushPolicy(workId: WorkId): Promise<"manual" | "auto"> {
-    const [row] = await currentDrizzleDb(db)
-      .select({ aiWriteMode: works.aiWriteMode })
-      .from(works)
-      .where(eq(works.id, workId))
-      .limit(1);
-    return row?.aiWriteMode === "draft" ? "manual" : "auto";
   }
 
   function draftBaseForBranch(branchId: string) {
@@ -165,7 +153,6 @@ export function createDrizzleBranchStore(
       upstreamBranchId: row.upstreamBranchId,
       workId: row.workId,
       threadId: row.threadId,
-      pushPolicy: row.pushPolicy,
       status: row.status,
       generation: row.generation,
       state: row.state,
@@ -318,7 +305,6 @@ export function createDrizzleBranchStore(
       upstreamBranchId: null,
       workId: input.workId,
       threadId: null,
-      pushPolicy: await workDraftPushPolicy(input.workId),
       status: "active",
       ...seed,
       schemaVersion: await liveSchemaVersion(input.documentId),
@@ -376,7 +362,6 @@ export function createDrizzleBranchStore(
             upstreamBranchId: workDraft.branchId,
             workId,
             threadId: input.threadId,
-            pushPolicy: workDraft.pushPolicy,
             status: "active",
             ...(await replicatedSnapshotFrom(upstreamDoc)),
             schemaVersion: workDraft.schemaVersion,
@@ -641,7 +626,7 @@ export function createDrizzleBranchStore(
     documentId: DocumentId,
     present: boolean,
     view: { projectId: ProjectId; threadId: ThreadId },
-  ): Promise<ManifestMutationResult> {
+  ): Promise<void> {
     const manifest = await ensureProjectManifest({ projectId: view.projectId });
     try {
       const peer = await ensureThreadPeerBranch({
@@ -704,7 +689,7 @@ export function createDrizzleBranchStore(
     documentId: DocumentId,
     present: boolean,
     view: { projectId: ProjectId; workId: WorkId },
-  ): Promise<ManifestMutationResult> {
+  ): Promise<void> {
     const manifest = await ensureProjectManifest({ projectId: view.projectId });
     try {
       const work = await ensureWorkDraftBranch({
@@ -718,7 +703,7 @@ export function createDrizzleBranchStore(
           const doc = materializeBranch(branch, "" as ThreadId);
           try {
             const map = doc.getMap<{ present: true }>("documents");
-            if (present ? map.has(documentId) : !map.has(documentId)) return {};
+            if (present ? map.has(documentId) : !map.has(documentId)) return;
             const before = Y.encodeStateVector(doc);
             if (present) map.set(documentId, { present: true });
             else map.delete(documentId);
@@ -730,9 +715,7 @@ export function createDrizzleBranchStore(
                 return persistManifestMembership(branch, doc, updateData, documentId, present);
               },
             );
-            if (persisted) {
-              return { workDraftBranchId: branch.branchId, policy: branch.pushPolicy };
-            }
+            if (persisted) return;
           } finally {
             doc.destroy();
           }
@@ -752,10 +735,9 @@ export function createDrizzleBranchStore(
     threadId: ThreadId;
     peerBranchId: string;
     workDraftBranchId: string;
-  }): Promise<ManifestMutationResult> {
+  }): Promise<void> {
     for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      const committed = await commitManifestMembershipMutation(input);
-      if (committed) return committed;
+      if (await commitManifestMembershipMutation(input)) return;
     }
     throw new Error(
       `Manifest membership write for ${input.documentId} exhausted ${maxCasRetries} CAS retries`,
@@ -768,7 +750,7 @@ export function createDrizzleBranchStore(
     threadId: ThreadId;
     peerBranchId: string;
     workDraftBranchId: string;
-  }): Promise<ManifestMutationResult | null> {
+  }): Promise<boolean> {
     const peer = await getBranchSnapshot(input.peerBranchId);
     const work = await getBranchSnapshot(input.workDraftBranchId);
     const peerDoc = materializeBranch(peer, input.threadId);
@@ -776,10 +758,10 @@ export function createDrizzleBranchStore(
     try {
       const map = peerDoc.getMap<{ present: true }>("documents");
       if (input.present) {
-        if (map.has(input.documentId)) return {};
+        if (map.has(input.documentId)) return true;
         map.set(input.documentId, { present: true });
       } else {
-        if (!map.has(input.documentId)) return {};
+        if (!map.has(input.documentId)) return true;
         map.delete(input.documentId);
       }
 
@@ -831,10 +813,10 @@ export function createDrizzleBranchStore(
                 documentId: input.documentId,
               },
             });
-          return { workDraftBranchId: work.branchId, policy: work.pushPolicy };
+          return true;
         },
       ).catch((cause) => {
-        if (cause instanceof BranchMutationRollback) return null;
+        if (cause instanceof BranchMutationRollback) return false;
         throw cause;
       });
     } finally {
@@ -851,12 +833,9 @@ export function createDrizzleBranchStore(
     return mapBranch(row);
   }
 
-  async function mutateLiveManifest(
-    documentId: DocumentId,
-    present: boolean,
-  ): Promise<ManifestMutationResult> {
+  async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
     const projectId = await projectForDocument(documentId);
-    if (!projectId) return {};
+    if (!projectId) return;
     const { documentId: manifestDocumentId, doc } = await loadProjectManifest({ projectId });
     doc.destroy();
     await mutateLiveManifestDocument(manifestDocumentId, (manifestDoc) => {
@@ -864,7 +843,6 @@ export function createDrizzleBranchStore(
       if (present && !map.has(documentId)) map.set(documentId, { present: true });
       else if (!present && map.has(documentId)) map.delete(documentId);
     });
-    return {};
   }
 
   return {
@@ -1161,7 +1139,6 @@ function selectBranch(db: DrizzleDb) {
       upstreamBranchId: documentBranches.upstreamBranchId,
       workId: documentBranches.workId,
       threadId: documentBranches.threadId,
-      pushPolicy: documentBranches.pushPolicy,
       status: documentBranches.status,
       generation: documentBranches.generation,
       state: documentBranches.state,
@@ -1180,7 +1157,6 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     upstreamBranchId: row.upstreamBranchId,
     workId: row.workId,
     threadId: row.threadId,
-    pushPolicy: row.pushPolicy,
     status: row.status,
     generation: row.generation,
     state: row.state,

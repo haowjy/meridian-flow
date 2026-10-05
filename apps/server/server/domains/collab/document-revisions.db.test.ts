@@ -10,7 +10,7 @@ import {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -68,7 +68,6 @@ async function fixture(mode: "direct" | "draft") {
     branches: f.branchStore,
     branchCoordinator: f.branchCoordinator,
     branchPulls: f.branchPulls,
-    branchPush: f.branchPush,
     liveCoordinator: f.liveCoordinator,
     agentEdit: f.collab.agentEdit(),
     documents: f.runtime.markdownDocuments,
@@ -426,7 +425,7 @@ describe("document revisions (postgres and collab)", () => {
         await f.writerDelete();
       }
       await runInDrizzleTransaction(db, async () => {
-        await requireLockedActiveWork(db, WORK_ID);
+        await requireLockedActiveWorks(db, [WORK_ID]);
         await bounded(async () => {
           await f.effective.resolveManifestMembership({
             projectId: PROJECT_ID,

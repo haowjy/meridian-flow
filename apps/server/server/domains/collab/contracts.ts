@@ -17,13 +17,12 @@ import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type {
-  AgentEditDestination,
   RefusedResponseDocument,
   RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { AgentEditDestination, RefusedResponseDocument, RoutedWriteOutcome };
+export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type {
   SetWorkPushPolicyInput,
@@ -330,7 +329,11 @@ export type TurnLiveLineageAccess = {
 
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
-  pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
+  pushToLive(input: {
+    branchId: string;
+    pushedByUserId?: UserId;
+    resetPolicy?: "auto";
+  }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
   setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   markFailedResponseRollbackPending(input: {

@@ -7,7 +7,11 @@ import { createBranchPullService } from "../../domains/collab/domain/branch-pull
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
+  type FileAccessDenied,
+  type FileGrant,
+  isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
+import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import {
   admitWriterSync,
   type BranchHandshakeState,
@@ -132,24 +136,27 @@ describe("Yjs branch handshake route guard", () => {
       },
     });
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
-    const hocuspocus = createHocuspocus({
-      fileAccess: createAllowAllFileAccess(),
-      fileAccessChanges: createLocalFileAccessChanges(),
-      documentSync: {
-        bindHocuspocus: vi.fn(),
-        resolveBranchHocuspocusRoom: vi.fn(async () => ({
-          branchId: "branch_1",
-          documentId: "document-1",
-          workId: "work-1",
-          generation: 3,
-          schemaVersion: COLLAB_SCHEMA_VERSION,
-          status: "active",
-        })),
-        headSchemaVersion: vi.fn(async () => null),
-        flushBranchLivePull,
-      } as never,
-      eventSink: { emit() {} } as never,
-    });
+    const hocuspocus = createHocuspocus(
+      {
+        fileAccess: createAllowAllFileAccess(),
+        fileAccessChanges: createLocalFileAccessChanges(),
+        documentSync: {
+          bindHocuspocus: vi.fn(),
+          resolveBranchHocuspocusRoom: vi.fn(async () => ({
+            branchId: "branch_1",
+            documentId: "document-1",
+            workId: "work-1",
+            generation: 3,
+            schemaVersion: COLLAB_SCHEMA_VERSION,
+            status: "active",
+          })),
+          headSchemaVersion: vi.fn(async () => null),
+          flushBranchLivePull,
+        } as never,
+        eventSink: { emit() {} } as never,
+      },
+      createYjsRoomAccessIndex(),
+    );
 
     await expect(
       hocuspocus.configuration.onConnect?.({
@@ -547,7 +554,7 @@ describe("Yjs room access", () => {
         // An archived Work's file: readable, not editable.
         authorize: (async (principal, target, need) =>
           input.readOnly && need === "edit"
-            ? { denied: true, level: "read", reason: "work_archived", target, need }
+            ? archivedDenial(await allowAll.authorize(principal, target, "read"))
             : allowAll.authorize(principal, target, need)) as typeof allowAll.authorize,
       },
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -573,7 +580,7 @@ describe("Yjs room access", () => {
 
   it("admits a read-only room and keeps its updates out of the journal", async () => {
     const services = roomServices({ readOnly: true });
-    const hocuspocus = createHocuspocus(services);
+    const hocuspocus = createHocuspocus(services, createYjsRoomAccessIndex());
     const context = {
       userId: "user-1",
       clientSchemaVersion: COLLAB_SCHEMA_VERSION,
@@ -638,7 +645,7 @@ describe("Yjs room access", () => {
     // The Work is archived after admission's checks, before the room hears changes.
     services.fileAccess.authorize = (async (principal, target, need) => {
       if (archived && need === "edit") {
-        return { denied: true, level: "read", reason: "work_archived", target, need };
+        return archivedDenial(await allowAll(principal, target, "read"));
       }
       const decision = await allowAll(principal, target, need);
       if (need === "edit") archived = true;
@@ -652,7 +659,7 @@ describe("Yjs room access", () => {
     };
 
     await expect(
-      createHocuspocus(services).configuration.onConnect?.({
+      createHocuspocus(services, createYjsRoomAccessIndex()).configuration.onConnect?.({
         documentName: liveRoom,
         context,
         connectionConfig: connectionConfig(),
@@ -661,3 +668,18 @@ describe("Yjs room access", () => {
     expect(context.closeTransport).toHaveBeenCalledWith({ code: 4409, reason: "access-changed" });
   });
 });
+
+/** An archived Work's file, as the policy refuses an edit: readable, with its facts. */
+function archivedDenial(read: FileGrant | FileAccessDenied): FileAccessDenied {
+  if (isFileAccessDenied(read)) return read;
+  return {
+    denied: true,
+    target: read.facts.target,
+    reason: "work_archived",
+    level: "read",
+    archivedWork: null,
+    facts: read.facts,
+    destination: read.destination,
+    agentChain: null,
+  };
+}

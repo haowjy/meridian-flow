@@ -48,7 +48,6 @@ import type {
 import { workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  AgentEditDestination,
   CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
@@ -75,10 +74,10 @@ import {
   type AgentChain,
   type FileAccess,
   type FileAccessDenied,
+  type FileDestination,
   FileEditRefusedError,
   type FileGrant,
   type FileNeed,
-  type FileTarget,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
@@ -155,7 +154,7 @@ export interface ToolWiringDeps {
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "skillAccess">;
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess">;
   /** The calling thread's bound skills, read as files under `skills://` (D52). */
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
@@ -573,15 +572,6 @@ async function documentGrant<N extends FileNeed>(
     : grant;
 }
 
-/** Where a create or copy makes its file; null when the path names no Work. */
-function containerTarget(
-  deps: Pick<ToolWiringDeps, "works">,
-  context: ResolvedModelContextPort,
-  path: string,
-): Promise<FileTarget | null> {
-  return threadContainerTarget(deps.works, context.resolution, path);
-}
-
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
 function fileAccessDeniedError(
   command: DocumentCommandName,
@@ -672,7 +662,7 @@ function buildAgentWriteCommand(
 type ReadSelection = Pick<ReadToolInput, "in" | "around">;
 
 /** Writes report where they landed; a drafted write names its Work. */
-function withDestination(outcome: WriteOutcome, destination: AgentEditDestination): WriteOutcome {
+function withDestination(outcome: WriteOutcome, destination: FileDestination): WriteOutcome {
   if (outcome.isError) return outcome;
   return {
     ...outcome,
@@ -1146,7 +1136,7 @@ async function containerReadonly(
   context: ResolvedModelContextPort,
   path: string,
 ): Promise<boolean | undefined> {
-  const target = await containerTarget(deps, context, path);
+  const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
 }
@@ -1154,22 +1144,6 @@ async function containerReadonly(
 const SKILL_PART_READ = "skills:// files are read whole, without in, format or #heading.";
 const SKILL_WRITE = "Files under skills:// can only be read.";
 const SKILL_SEARCH = "search doesn't cover skills://. Use ls and read.";
-
-/**
- * Skill files are judged on the calling thread's own binding (D52); the
- * chain only names that thread, and no draft applies to them.
- */
-async function skillPrincipal(
-  deps: Pick<ToolWiringDeps, "threads" | "readAgentChain">,
-  threadId: string,
-): Promise<Principal | ToolErrorOutput> {
-  const thread = await deps.threads.findById(threadId);
-  if (!thread) return toolError({ message: `Thread not found: ${threadId}` });
-  return {
-    accountId: thread.userId as Principal["accountId"],
-    agent: { chain: await deps.readAgentChain(thread.id as ThreadId), draftWork: null },
-  };
-}
 
 /** `read` of a `skills://` file: the whole file as plain text under the shared header. */
 async function readSkill(
@@ -1186,9 +1160,7 @@ async function readSkill(
   ) {
     return writeToolError("read", SKILL_PART_READ, "invalid_write", { path });
   }
-  const principal = await skillPrincipal(deps, ctx.threadId);
-  if (isToolError(principal)) return writeToolError("read", principal.output.message);
-  const file = await readSkillFile(deps, principal, ctx.threadId, path);
+  const file = await readSkillFile(deps, ctx.threadId, path);
   if (file.kind === "binary") {
     return writeToolError(
       "read",
@@ -1209,19 +1181,17 @@ async function invokeSkill(
   threadId: string,
   name: string,
 ): Promise<SkillInvocation> {
-  const principal = await skillPrincipal(deps, threadId);
-  if (isToolError(principal)) return { ok: false, message: principal.output.message };
   const uri = skillMdUri(name);
   const parsed = parseSkillUri(uri);
   // A name is one folder: "a/b" or ".." must not reach another skill's file.
   const file =
     parsed?.skill === name && parsed.path === "SKILL.md"
-      ? await readSkillFile(deps, principal, threadId, uri)
+      ? await readSkillFile(deps, threadId, uri)
       : undefined;
   if (file?.kind === "text") {
     return { ok: true, text: `${skillFileHeader(file.skill, file.path)}\n\n${file.text}` };
   }
-  const visible = await visibleSkillNames(deps, principal, threadId);
+  const visible = await visibleSkillNames(deps, threadId);
   const missing = `Skill ${JSON.stringify(name)} isn't available.`;
   return {
     ok: false,
@@ -1286,7 +1256,9 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
-    const target = creates ? await containerTarget(deps, portOrError, parsed.path) : null;
+    const target = creates
+      ? await threadContainerTarget(deps.works, portOrError.resolution, parsed.path)
+      : null;
     const inContainer = async <T>(
       asPrincipal: Principal,
       operation: () => Promise<T>,
@@ -1634,11 +1606,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path, version } = input as LsToolInput;
-      if (path && isSkillsUri(path)) {
-        const principal = await skillPrincipal(deps, ctx.threadId);
-        if (isToolError(principal)) return principal;
-        return listSkillDir(deps, principal, ctx.threadId, path);
-      }
+      if (path && isSkillsUri(path)) return listSkillDir(deps, ctx.threadId, path);
       const listed = await listingContext(deps, ctx, version);
       if (isToolError(listed)) return listed;
       const { context, principal } = listed;
@@ -1666,7 +1634,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const listing = modelContextResults(entries.flat(), context);
       if (path) return listing;
       // The root names skills:// only when the agent can see a skill.
-      const skills = await listSkillDir(deps, principal, ctx.threadId, SKILLS_URI_ROOT);
+      const skills = await listSkillDir(deps, ctx.threadId, SKILLS_URI_ROOT);
       return skills.length > 0
         ? [...listing, { kind: "directory", uri: SKILLS_URI_ROOT, readonly: true }]
         : listing;

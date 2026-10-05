@@ -62,7 +62,7 @@
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
 - **Draft Apply settles the whole current branch**: every writer Apply and
-  auto-push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
+  Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
   document plus earlier selected branch rows, and recipient/change elevations
@@ -89,10 +89,11 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
-- **Only a finished turn auto-pushes**: the trail-work claim
-  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` when
-  its turn ended `error` or `cancelled`, so a failed reply's draft waits for
-  the writer's Apply. This depends on the read model never rewriting a failed
+- **Trail work retries only an `auto` branch**: the trail-work claim
+  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
+  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
+  `auto` since D59, so every claim settles `no_op` and drafts wait for the
+  writer's Apply. This depends on the read model never rewriting a failed
   turn's status (see the threads read-model projector).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the

@@ -11,14 +11,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
- * Where a model call reads or writes one document, as its grant says (D20):
- * the live document, or this thread's copy of a Work draft. The Work is part
- * of the version, so `work switch` changes it (D41). The slug only names the
- * Work in model-facing copy.
- */
-export type AgentEditDestination = FileDestination;
-
-/**
  * A write's context: the edit grant the caller got from the file policy. Its
  * destination routes the call, and the write seams confirm it (file-access §5).
  */
@@ -68,7 +60,7 @@ export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "co
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */
-  responseDestination(responseId: string, documentId: string): AgentEditDestination | undefined;
+  responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
     options?: ResponseTransactionOptions,
@@ -86,7 +78,7 @@ export function asThreadPeerAgentEditCore(
   return core as ThreadPeerAgentEditCore;
 }
 
-export function sameDestination(left: AgentEditDestination, right: AgentEditDestination): boolean {
+export function sameDestination(left: FileDestination, right: FileDestination): boolean {
   if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
   return left.workId === right.workId;
 }
