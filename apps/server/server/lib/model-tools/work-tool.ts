@@ -81,7 +81,6 @@ function updateReceipt({
     metadata: {
       workReceipt: {
         operation: "update",
-        category: "mutate",
         changed,
         workId: after.id,
         workName: after.name,
@@ -107,16 +106,16 @@ async function workBySlug(
 }
 
 /**
- * The Work a `switch` names. An unknown Work points to `work list` (D51), an
- * archived one can't be switched to by anyone, and the chat's current Work
- * needs no switch.
+ * Why a `switch` can't happen, or null when only approval stands in the way.
+ * An unknown Work points to `work list` (D51), an archived one can't be
+ * switched to by anyone, and the chat's current Work needs no switch.
  */
-async function resolveSwitchTarget(
+async function switchPrecheck(
   deps: ToolWiringDeps,
   projectId: string,
   threadId: ThreadId,
   slug: string | null | undefined,
-): Promise<{ work: Work } | { unchanged: { message: string } } | ToolErrorOutput> {
+): Promise<{ message: string } | ToolErrorOutput | null> {
   let work: Work;
   if (slug) {
     const found = await workBySlug(deps, projectId, slug);
@@ -143,8 +142,8 @@ async function resolveSwitchTarget(
   }
   const current = await deps.threadWorks.findPrimary(threadId);
   const currentId = current?.workId ?? (work.isNoWork ? work.id : null);
-  if (currentId === work.id) return { unchanged: { message: `This chat is already in ${named}.` } };
-  return { work };
+  if (currentId === work.id) return { message: `This chat is already in ${named}.` };
+  return null;
 }
 
 /**
@@ -232,7 +231,6 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
       metadata: {
         workReceipt: {
           operation: "create",
-          category: "mutate",
           changed: true,
           workId: work.id,
           workName: work.name,
@@ -277,7 +275,6 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
       metadata: {
         workReceipt: {
           operation: "delete",
-          category: "mutate",
           changed: transition.changed,
           workId: before.id,
           workName: before.name,
@@ -298,14 +295,13 @@ export function createWorkHandler(deps: ToolWiringDeps) {
 
     if (command.command === "switch") {
       // A switch that couldn't happen says why before the policy asks for approval (D37).
-      const target = await resolveSwitchTarget(
+      const precheck = await switchPrecheck(
         deps,
         thread.projectId,
         thread.id as ThreadId,
         command.work,
       );
-      if ("isError" in target) return target;
-      if ("unchanged" in target) return target.unchanged;
+      if (precheck) return precheck;
       // The model's switch is `ask` until the writer prompt lands (#601).
       return policyRefusal(command, "ask");
     }

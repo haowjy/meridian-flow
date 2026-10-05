@@ -9,7 +9,7 @@ const DOCUMENT_ID = "55555555-5555-4555-8555-555555555555";
 const URI = "manuscript://chapter.md";
 
 describe("reply save boundaries", () => {
-  // undo, redo and work switch share one boundary check; undo stands for them.
+  // undo and redo share one boundary check; undo stands for both.
   it("saves the reply's writes before an undo, which then runs in a fresh reply", async () => {
     const reversal = "undo";
     const events: string[] = [];

@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
-import { isReversibleWorkMutationReceipt } from "@meridian/contracts/works";
+import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
@@ -45,7 +45,7 @@ export function hasTurnEditsReceiptContent(
 ): boolean {
   return (
     hasTurnEditsReceiptDocuments(documents, changeTrail) ||
-    workReceipts.some(isReversibleWorkMutationReceipt)
+    workReceipts.some(isReversibleWorkReceipt)
   );
 }
 
@@ -90,8 +90,8 @@ export function TurnEditsReceipt({
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
-  // Undo on screen. Factual Work binding receipts never reach this card.
-  const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkMutationReceipt);
+  // Undo on screen.
+  const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
