@@ -23,8 +23,13 @@ export type DocumentDerivationStore = {
     page?: { after?: DocumentId; limit: number },
   ): Promise<DocumentId[]>;
 };
+export type DocumentDerivationResult =
+  | { status: "derived"; stateVector: Uint8Array }
+  | { status: "missing" }
+  | { status: "deferred" };
+
 export type DocumentDerivationService = {
-  derive(documentId: DocumentId, at?: Date): Promise<Uint8Array | null>;
+  derive(documentId: DocumentId, at?: Date): Promise<DocumentDerivationResult>;
   schedule(documentId: DocumentId): void;
   sweep(): Promise<number>;
   flush(scope: DerivationScope): Promise<void>;
