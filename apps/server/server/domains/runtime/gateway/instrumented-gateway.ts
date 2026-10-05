@@ -35,6 +35,21 @@ function classifyTerminalOutcome(
   return terminal.type === "end" ? "ok" : "error";
 }
 
+function providerStatusFrom(error: unknown): number | undefined {
+  try {
+    if (typeof error !== "object" || error === null || !("providerResponse" in error)) {
+      return undefined;
+    }
+    const response = error.providerResponse;
+    if (typeof response !== "object" || response === null || !("status" in response)) {
+      return undefined;
+    }
+    return typeof response.status === "number" ? response.status : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function errorCodeFrom(error: unknown): string | undefined {
   try {
     if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
@@ -115,6 +130,7 @@ function streamClosePayload(input: {
   result?: GenerateResult;
   outcome: Outcome;
   errorCode?: string;
+  providerStatus?: number;
 }): Record<string, unknown> {
   return {
     // Observation duration includes downstream consumption; provider timing is
@@ -135,12 +151,14 @@ function streamClosePayload(input: {
       : {}),
     outcome: input.outcome,
     ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+    // The provider's response body stays in dev capture (`thread context --call`).
+    ...(input.providerStatus === undefined ? {} : { providerStatus: input.providerStatus }),
   };
 }
 
 type StreamTerminal =
   | { type: "end"; at: number; result: GenerateResult }
-  | { type: "error"; at: number; errorCode?: string; cause?: unknown };
+  | { type: "error"; at: number; errorCode?: string; providerStatus?: number; cause?: unknown };
 
 function elapsedMs(startedAt: number, endedAt: number): number {
   return Math.max(0, Math.round(endedAt - startedAt));
@@ -165,11 +183,13 @@ function createStreamObservation(input: {
   function recordFailure(error: unknown): void {
     if (terminal !== undefined) return;
     const errorCode = errorCodeFrom(error);
+    const providerStatus = providerStatusFrom(error);
     terminal = {
       type: "error",
       at: performance.now(),
       cause: error,
       ...(errorCode ? { errorCode } : {}),
+      ...(providerStatus === undefined ? {} : { providerStatus }),
     };
   }
 
@@ -179,6 +199,7 @@ function createStreamObservation(input: {
     const terminalAt = terminal?.at ?? performance.now();
     const outcome = classifyTerminalOutcome(terminal ?? { type: "none" }, input.request.signal);
     const errorCode = terminal?.type === "error" ? terminal.errorCode : undefined;
+    const providerStatus = terminal?.type === "error" ? terminal.providerStatus : undefined;
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
@@ -189,6 +210,7 @@ function createStreamObservation(input: {
         result: terminal?.type === "end" ? terminal.result : undefined,
         outcome,
         errorCode,
+        providerStatus,
       }),
       route,
       { errorCode },
@@ -221,7 +243,13 @@ function createStreamObservation(input: {
           const endedAt = performance.now();
           terminal = { type: "end", result: event.result, at: endedAt };
         } else if (terminal === undefined && event.type === "error") {
-          terminal = { type: "error", errorCode: event.code, at: performance.now() };
+          const providerStatus = event.providerResponse?.status ?? undefined;
+          terminal = {
+            type: "error",
+            errorCode: event.code,
+            at: performance.now(),
+            ...(providerStatus === undefined ? {} : { providerStatus }),
+          };
         }
 
         if (input.verboseChunks) {
@@ -309,6 +337,7 @@ export function createInstrumentedGateway(
       } catch (error) {
         const terminalAt = performance.now();
         const errorCode = errorCodeFrom(error);
+        const providerStatus = providerStatusFrom(error);
         const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
         emitter.emit(
           "warn",
@@ -317,6 +346,7 @@ export function createInstrumentedGateway(
             gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
             outcome,
             ...(errorCode ? { errorCode } : {}),
+            ...(providerStatus === undefined ? {} : { providerStatus }),
           },
           route,
           { errorCode },

@@ -21,7 +21,7 @@ import type {
 } from "../../domain/index.js";
 import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { mapOpenAIResponsesError } from "./errors.js";
+import { mapOpenAIError } from "../openai-compatible/errors.js";
 import { toOpenAIResponsesParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
@@ -95,7 +95,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
           };
           return;
         }
-        const mapped = mapOpenAIResponsesError(err);
+        const mapped = mapOpenAIError(err);
         yield { type: "error", ...mapped };
       }
     },
