@@ -7,6 +7,17 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+/**
+ * - `send` → the writer's message was never admitted (failed first send).
+ * - `generation` → the message was admitted and the reply failed, with or
+ *   without partial output.
+ * - `retry` → a failed reply's Retry never reached the server; this is its
+ *   stand-in, and Retry re-sends the same request.
+ * - `provider-declined` → the AI provider turned the request down and the
+ *   server judged a retry futile.
+ */
+export type ErrorBlockKind = "send" | "generation" | "retry" | "provider-declined";
+
 export type ErrorBlockProps = {
   /**
    * Whether this error is current: no visible turn follows the errored one.
@@ -14,17 +25,8 @@ export type ErrorBlockProps = {
    * - `false` → quiet historical marker: single muted line, no background.
    */
   isLatest: boolean;
-  /**
-   * - `send` → the writer's message was never admitted (failed first send).
-   * - `generation` → the message was admitted and the reply failed, with or
-   *   without partial output.
-   * - `retry` → a failed reply's Retry never reached the server; this is its
-   *   stand-in, and Retry re-sends the same request.
-   * - `refused` → the AI provider turned the request down and the server
-   *   judged a retry futile; never offers Retry.
-   */
-  kind?: "send" | "generation" | "retry" | "refused";
-  /** Retry this turn. Omit to hide the control; ignored for `refused`. */
+  kind?: ErrorBlockKind;
+  /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
   /**
    * The server refused this turn's last Retry; the cause stays in diagnostics.
@@ -34,13 +36,13 @@ export type ErrorBlockProps = {
 };
 
 /** One quiet sentence per kind; reads on its own in history, no status prefix. */
-function copy(kind: ErrorBlockProps["kind"], current: boolean): string {
+function copy(kind: ErrorBlockKind, current: boolean): string {
   switch (kind) {
     case "send":
       return t`Couldn't send.`;
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
-    case "refused":
+    case "provider-declined":
       return current
         ? t`The AI provider turned this request down. Trying again won't help until that's fixed.`
         : t`The AI provider turned this request down.`;
@@ -67,7 +69,7 @@ export function ErrorBlock({
     return <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>;
   }
   return (
-    <ActiveError kind={kind} onRetry={kind === "refused" ? undefined : onRetry}>
+    <ActiveError kind={kind} onRetry={onRetry}>
       {retryRefused ? <RefusedNote /> : null}
     </ActiveError>
   );
@@ -86,7 +88,7 @@ function ActiveError({
   onRetry,
   children,
 }: {
-  kind: ErrorBlockProps["kind"];
+  kind: ErrorBlockKind;
   onRetry?: () => void;
   children: ReactNode;
 }) {

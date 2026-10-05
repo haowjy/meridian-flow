@@ -49,15 +49,15 @@ describe("ErrorBlock", () => {
     expect(historical).not.toContain('role="alert"');
   });
 
-  it("never offers Retry on a provider refusal; history keeps the first sentence", () => {
-    const current = renderToStaticMarkup(
-      <ErrorBlock isLatest kind="refused" onRetry={() => undefined} />,
-    );
+  it("says the provider declined; history keeps the first sentence", () => {
+    const current = renderToStaticMarkup(<ErrorBlock isLatest kind="provider-declined" />);
     expect(current).toContain(
       "The AI provider turned this request down. Trying again won&#x27;t help until that&#x27;s fixed.",
     );
     expect(current).not.toContain("<button");
-    const historical = renderToStaticMarkup(<ErrorBlock isLatest={false} kind="refused" />);
+    const historical = renderToStaticMarkup(
+      <ErrorBlock isLatest={false} kind="provider-declined" />,
+    );
     expect(historical).toContain("The AI provider turned this request down.");
     expect(historical).not.toContain("Trying again");
   });

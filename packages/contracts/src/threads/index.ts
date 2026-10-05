@@ -410,7 +410,7 @@ export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export {
-  isProviderRefusal,
+  isProviderDeclined,
   PROVIDER_ERROR_BODY_LIMIT,
   type ProviderErrorResponse,
   providerErrorResponse,
