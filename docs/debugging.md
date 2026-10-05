@@ -166,7 +166,7 @@ stream (OpenAI Responses `response.failed`). Network failures and timeouts
 have no provider response.
 
 Retry policy: the gateway retries network failures, failures with no response,
-429, and 5xx. Any other 4xx (402 out of balance, 404, 409, 413, 422) is the
+408, 429, and 5xx. Any other 4xx (402 out of balance, 404, 409, 413, 422) is the
 provider refusing the request, so it fails on the first attempt with
 `provider_error` (or the code it maps to: `auth_error`, `invalid_request`,
 `context_overflow`, `content_filtered`).
