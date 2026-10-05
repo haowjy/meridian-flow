@@ -221,14 +221,14 @@ import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createModelToolRegistrations,
+  createReferenceReader,
+} from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
-import {
-  createAgentEditResponseWriteLifecycle,
-  createReferenceReader,
-  createWiredCoreToolRegistrations,
-} from "./wired-core-tools.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -720,14 +720,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
-    transaction: ports.threadRepos.transaction,
     objectStore: ports.objectStore,
     fileAccess: ports.fileAccess,
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
   };
-  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
+  for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
   for (const registration of createInspectionToolRegistrations({

@@ -31,6 +31,7 @@ import {
 import { z } from "zod";
 import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
 import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
+import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
@@ -179,9 +180,13 @@ export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
  * The document tools' handlers and error formatter return agent-edit results,
  * except a `skills://` read, whose text is already the model's (D52).
  */
-function renderDocumentResult(result: unknown): string {
-  if (typeof result === "string") return result;
-  return renderAgentEditResult(result as AgentEditResultV1);
+/** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */
+function renderDocumentResult(tool: "read" | "write") {
+  return (result: unknown): string => {
+    if (typeof result === "string") return result;
+    if (isInvalidArgumentsResult(result)) return renderInvalidArguments(tool, result.issues);
+    return renderAgentEditResult(result as AgentEditResultV1);
+  };
 }
 
 /** Executor-owned failures in the document tools' own result protocol. */
@@ -214,7 +219,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
-      renderResult: renderDocumentResult,
+      renderResult: renderDocumentResult("read"),
     },
     {
       source: "core",
@@ -234,7 +239,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),
       ),
-      renderResult: renderDocumentResult,
+      renderResult: renderDocumentResult("write"),
     },
     {
       source: "core",

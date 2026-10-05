@@ -34,7 +34,12 @@ function allRegistrations(): ToolRegistration[] {
       tokenizer: async () => "anthropic",
     }),
     ...createSpawnToolRegistrations(),
-    ...createSkillToolRegistrations({ invoke: async () => ({ ok: true, text: "" }) }),
+    ...createSkillToolRegistrations({
+      agentRevisions: {
+        readThreadBinding: async () => undefined,
+        readSource: async () => undefined,
+      },
+    }),
   ];
 }
 

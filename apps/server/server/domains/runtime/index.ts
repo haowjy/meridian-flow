@@ -4,7 +4,6 @@ export type {
   MessageProvenance,
   OrchestratorEvent,
 } from "@meridian/contracts/threads";
-export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
@@ -137,13 +136,8 @@ export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.
 export {
   isSkillsUri,
   listSkillDir,
-  parseSkillUri,
-  readSkillFile,
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
-  skillFileHeader,
-  skillMdUri,
-  visibleSkillNames,
 } from "./loop/skill-files.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export { threadControlRequestSchema } from "./loop/thread-control-request.js";

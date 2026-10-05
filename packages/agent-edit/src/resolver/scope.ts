@@ -1,6 +1,7 @@
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { DocumentModel } from "../ports/model.js";
 import { locateBlockByHash } from "./hash-locator.js";
+import { headingSlugs, sectionEndIndex, sectionNotFoundMessage } from "./heading-sections.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
 
@@ -101,18 +102,6 @@ export function isHeading(model: DocumentModel, block: BlockRef): boolean {
 
 export function headingLevel(model: DocumentModel, block: BlockRef): number {
   return model.getHeadingLevel(block) ?? 1;
-}
-
-export function slugForHeadingText(text: string): string {
-  return (
-    text
-      .normalize("NFKD")
-      .toLowerCase()
-      .trim()
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
-      .replace(/^-+|-+$/g, "") || "section"
-  );
 }
 
 function resolveAround(ctx: ScopeContext, around: string): ScopeResult {
@@ -216,27 +205,19 @@ function blockIndexForHash(ctx: ScopeContext, hash: string): BlockIndexResult {
 function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
   const headings = headingSlugEntries(ctx);
   const found = headings.find((entry) => entry.slug === slug);
-  if (!found) {
-    return notFound(
-      `Section "#${slug}" was not found. A read with \`format: "outline"\` lists each heading's #slug.`,
-    );
-  }
+  if (!found) return notFound(sectionNotFoundMessage(slug));
   return sectionFromHeading(ctx, found.index);
 }
 
 function headingSlugEntries(
   ctx: ScopeContext,
 ): Array<{ slug: string; index: number; block: BlockRef }> {
-  const counts = new Map<string, number>();
-  const out: Array<{ slug: string; index: number; block: BlockRef }> = [];
+  const headings: Array<{ index: number; block: BlockRef }> = [];
   ctx.model.getBlocks(ctx.doc).forEach((block, index) => {
-    if (!isHeading(ctx.model, block)) return;
-    const base = slugForHeadingText(ctx.model.getText(block));
-    const seen = counts.get(base) ?? 0;
-    counts.set(base, seen + 1);
-    out.push({ slug: seen === 0 ? base : `${base}-${seen}`, index, block });
+    if (isHeading(ctx.model, block)) headings.push({ index, block });
   });
-  return out;
+  const slugs = headingSlugs(headings.map(({ block }) => ctx.model.getText(block)));
+  return headings.map((heading, position) => ({ ...heading, slug: slugs[position] as string }));
 }
 
 /**
@@ -255,20 +236,15 @@ export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string
 function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResult {
   const blocks = ctx.model.getBlocks(ctx.doc);
   const heading = blocks[headingIndex];
-  const level = headingLevel(ctx.model, heading);
-  let endIndex = blocks.length - 1;
-  for (let index = headingIndex + 1; index < blocks.length; index += 1) {
-    if (isHeading(ctx.model, blocks[index]) && headingLevel(ctx.model, blocks[index]) <= level) {
-      endIndex = index - 1;
-      break;
-    }
-  }
+  const endIndex = sectionEndIndex(blocks.length, headingIndex, (index) =>
+    ctx.model.getHeadingLevel(blocks[index] as BlockRef),
+  );
   return {
     ok: true,
     scope: {
       ...scopeFromIndexes("section", blocks, headingIndex, endIndex),
       heading,
-      headingLevel: level,
+      headingLevel: headingLevel(ctx.model, heading),
     },
   };
 }
