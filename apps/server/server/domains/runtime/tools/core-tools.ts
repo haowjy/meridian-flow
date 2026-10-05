@@ -34,6 +34,7 @@ import { documentHistorySummary, workHistorySummary } from "./history-summaries.
 import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
@@ -176,6 +177,10 @@ export const SearchToolInputSchema = z
       .min(1)
       .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
       .optional(),
+    verbose: z
+      .boolean()
+      .describe("Show each matching block in full. Leave it off unless you need it.")
+      .optional(),
     version: DocumentVersionSchema.optional(),
   })
   .strict();
@@ -302,6 +307,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: searchDocumentText,
       historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderSearchResult,
     },
     {
       source: "core",

@@ -97,7 +97,11 @@ export function planModelElisions(input: {
       if (refs !== undefined && changed.length === 0) continue;
       const uris = [...new Set(changed.flatMap((ref) => (ref.uri ? [ref.uri] : [])))];
       const replacement = policy.elide(
-        { input: toolInput, output: (result.content as JsonObject).output },
+        {
+          input: toolInput,
+          output: (result.content as JsonObject).output,
+          result: (result.content as JsonObject).result,
+        },
         changed,
         "stale",
       );

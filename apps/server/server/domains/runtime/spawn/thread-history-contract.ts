@@ -836,8 +836,8 @@ In progress
         metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
       });
       if (input.include?.includes("tool_results")) {
-        expect(text).toContain('"omitted":"read it for current text"');
-        expect(text).not.toContain('"matches"');
+        expect(text).toContain("[search passages omitted; read a file for its current text]");
+        expect(text).toContain("manuscript://chapter.md (1 match)");
       }
       for (const handle of ["1.1", "1.2", "1.3"])
         expect(output(await f.read({ expand: handle }))).not.toContain("COPY SENTINEL");
