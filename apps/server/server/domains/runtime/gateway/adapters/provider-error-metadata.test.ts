@@ -125,7 +125,7 @@ describe("provider HTTP failures", () => {
     }
   });
 
-  it("caps the stored body at 4 KiB", () => {
+  it("caps the stored body at 4,096 characters", () => {
     const html = `<html>${"x".repeat(10_000)}</html>`;
     const mapped = mapOpenAIError({ status: 502, message: "bad gateway", error: html });
     expect(mapped.providerResponse?.body).toHaveLength(4_096);

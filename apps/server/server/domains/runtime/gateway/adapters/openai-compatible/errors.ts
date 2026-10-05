@@ -7,6 +7,6 @@ const CONTEXT_OVERFLOW =
 export function mapOpenAIError(err: unknown): MappedProviderError {
   return mapProviderHttpError(err, {
     contextOverflow: CONTEXT_OVERFLOW,
-    contentFiltered: (lower) => lower.includes("content") && lower.includes("filter"),
+    contentFiltered: /content[\s\S]*filter|filter[\s\S]*content/,
   });
 }

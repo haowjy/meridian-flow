@@ -18,10 +18,10 @@ export type MappedProviderError = {
   providerResponse?: ProviderErrorResponse;
 };
 
+/** Both matched against the lowercased 400 message. */
 export type ProviderErrorPatterns = {
-  /** Matched against the lowercased 400 message. */
   contextOverflow: RegExp;
-  contentFiltered: (lowerMessage: string) => boolean;
+  contentFiltered: RegExp;
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -82,14 +82,10 @@ function providerResponseOf(err: unknown): ProviderErrorResponse | undefined {
       : typeof record(nested?.error)?.message === "string"
         ? String(record(nested?.error)?.message)
         : message;
-  let body = exactFailureBody(err);
-  if (body === undefined && parsed === undefined) body = message;
-  else if (body === undefined) body = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-  return providerErrorResponse({
-    status: status ?? null,
-    message: providerMessage,
-    rawBody: body ?? message,
-  });
+  const rawBody =
+    exactFailureBody(err) ??
+    (parsed === undefined ? message : typeof parsed === "string" ? parsed : JSON.stringify(parsed));
+  return providerErrorResponse({ status: status ?? null, message: providerMessage, rawBody });
 }
 
 export function mapProviderHttpError(
@@ -109,7 +105,7 @@ export function mapProviderHttpError(
       if (patterns.contextOverflow.test(lower)) {
         return { code: "context_overflow", message, retryable: false };
       }
-      if (patterns.contentFiltered(lower)) {
+      if (patterns.contentFiltered.test(lower)) {
         return { code: "content_filtered", message, retryable: false };
       }
       return { code: "invalid_request", message, retryable: false };
