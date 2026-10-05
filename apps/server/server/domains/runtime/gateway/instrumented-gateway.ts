@@ -61,6 +61,7 @@ function errorCodeFrom(error: unknown): string | undefined {
 
 interface CallEventMetadata {
   errorCode?: string;
+  providerStatus?: number;
   chunk?: { messageClass: StreamEvent["type"]; bytes?: number };
 }
 
@@ -89,6 +90,10 @@ function createCallEmitter(
           ...(route.provider ? { provider: route.provider } : {}),
           ...(route.model ? { model: route.model } : {}),
           ...(metadata?.errorCode ? { errorCode: metadata.errorCode } : {}),
+          // The provider's response body stays in dev capture (`thread context --call`).
+          ...(metadata?.providerStatus === undefined
+            ? {}
+            : { providerStatus: metadata.providerStatus }),
         };
         emitEvent(deps.sink, {
           level,
@@ -130,7 +135,6 @@ function streamClosePayload(input: {
   result?: GenerateResult;
   outcome: Outcome;
   errorCode?: string;
-  providerStatus?: number;
 }): Record<string, unknown> {
   return {
     // Observation duration includes downstream consumption; provider timing is
@@ -151,8 +155,6 @@ function streamClosePayload(input: {
       : {}),
     outcome: input.outcome,
     ...(input.errorCode ? { errorCode: input.errorCode } : {}),
-    // The provider's response body stays in dev capture (`thread context --call`).
-    ...(input.providerStatus === undefined ? {} : { providerStatus: input.providerStatus }),
   };
 }
 
@@ -210,10 +212,9 @@ function createStreamObservation(input: {
         result: terminal?.type === "end" ? terminal.result : undefined,
         outcome,
         errorCode,
-        providerStatus,
       }),
       route,
-      { errorCode },
+      { errorCode, providerStatus },
     );
   }
 
@@ -346,10 +347,9 @@ export function createInstrumentedGateway(
             gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
             outcome,
             ...(errorCode ? { errorCode } : {}),
-            ...(providerStatus === undefined ? {} : { providerStatus }),
           },
           route,
-          { errorCode },
+          { errorCode, providerStatus },
         );
         throw error;
       }

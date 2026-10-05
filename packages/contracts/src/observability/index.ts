@@ -33,6 +33,8 @@ export interface EventCorrelation {
   toolName?: string;
   toolCallId?: string;
   errorCode?: string;
+  /** HTTP status of a provider's failure answer; its text stays in dev capture. */
+  providerStatus?: number;
   documentId?: string;
   branchId?: string;
   branchGeneration?: number;

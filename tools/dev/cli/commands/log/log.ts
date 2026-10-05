@@ -44,35 +44,32 @@ export function sinceTimestamp(raw: string, now = Date.now()): string {
   return parsed.toISOString();
 }
 
-function providerStatusOf(event: EventRecord): number | undefined {
-  const status = (event.payload as { providerStatus?: unknown } | undefined)?.providerStatus;
-  return typeof status === "number" ? status : undefined;
-}
-
-/** Compact records drop payloads except a provider failure's status. */
 function compact(event: EventRecord, full: boolean): EventRecord {
   if (full) return event;
   const { payload: _payload, ...rest } = event;
-  const providerStatus = providerStatusOf(event);
-  return providerStatus === undefined ? rest : { ...rest, payload: { providerStatus } };
+  return rest;
 }
 
 function renderLine(event: EventRecord, full: boolean): string {
   const correlation = Object.entries(event.correlation ?? {})
-    .filter(([key]) => ["threadId", "turnId", "traceId", "toolName", "errorCode"].includes(key))
+    .filter(([key]) =>
+      [
+        "threadId",
+        "turnId",
+        "traceId",
+        "toolName",
+        "errorCode",
+        "providerStatus",
+        "gatewayCallId",
+      ].includes(key),
+    )
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
-  // A provider failure names its status and the call to open with `thread context --call`.
-  const providerStatus = providerStatusOf(event);
-  const provider =
-    providerStatus !== undefined
-      ? ` providerStatus=${providerStatus} gatewayCallId=${String(event.correlation?.gatewayCallId ?? "?")}`
-      : "";
   const payload =
     full && event.payload !== undefined
       ? ` ${truncate(oneLine(JSON.stringify(event.payload)), 400)}`
       : "";
-  return `${event.timestamp ?? "?"} ${(event.level ?? "?").padEnd(5)} ${event.source ?? "?"} ${event.name ?? "?"}${correlation ? ` ${correlation}` : ""}${provider}${payload}`;
+  return `${event.timestamp ?? "?"} ${(event.level ?? "?").padEnd(5)} ${event.source ?? "?"} ${event.name ?? "?"}${correlation ? ` ${correlation}` : ""}${payload}`;
 }
 
 export const logCommand: CommandSpec = {
