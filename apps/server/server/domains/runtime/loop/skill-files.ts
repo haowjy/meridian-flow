@@ -1,6 +1,6 @@
 /**
- * Skill files under `skills://` (D52) and the `skill` tool's load (D58): the
- * read-only folders of the skills an agent's own binding offers it. `skills://` is model-facing only; it is not a
+ * Skill files under `skills://` (D52): the read-only folders of the skills an
+ * agent's own binding offers it. `skills://` is model-facing only; it is not a
  * context scheme, so the writer's file tree, catalog and routes never see it.
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
@@ -22,7 +22,7 @@ export interface SkillFilesDeps {
 }
 
 /** A parsed `skills://` address: the root, or a path inside one skill's folder. */
-export type SkillUri = { skill: null } | { skill: string; path: string };
+type SkillUri = { skill: null } | { skill: string; path: string };
 
 export type SkillFileRead =
   | { kind: "text"; skill: string; path: string; text: string }
@@ -35,11 +35,6 @@ export interface SkillListEntry {
   readonly: true;
 }
 
-/** A skill's `SKILL.md` as the model reads it. */
-export function skillMdUri(slug: string): string {
-  return `${SKILLS_URI_ROOT}${slug}/SKILL.md`;
-}
-
 /**
  * The header over a skill file's text: its address, and the folder its
  * relative paths start from. Shared by `read`, `skill`, and preloaded or
@@ -50,6 +45,11 @@ export function skillFileHeader(skill: string, path: string): string {
   return `${folder}${path}\nPaths in this skill are relative to ${folder}.`;
 }
 
+/** A skill file's text as `read` and `skill` return it, under its header. */
+export function renderSkillFile(skill: string, path: string, text: string): string {
+  return `${skillFileHeader(skill, path)}\n\n${text}`;
+}
+
 export function isSkillsUri(path: string): boolean {
   return path.trim().startsWith(SKILLS_URI_ROOT);
 }
@@ -58,7 +58,7 @@ export function isSkillsUri(path: string): boolean {
  * Normalizes `skills://…`. Null for a path that leaves its skill's folder, so
  * the caller answers not found.
  */
-export function parseSkillUri(uri: string): SkillUri | null {
+function parseSkillUri(uri: string): SkillUri | null {
   const rest = uri.trim().slice(SKILLS_URI_ROOT.length);
   const segments = rest.split("/").filter((segment) => segment !== "" && segment !== ".");
   const [skill, ...path] = segments;
@@ -77,11 +77,32 @@ export async function readSkillFile(
 ): Promise<SkillFileRead> {
   const parsed = parseSkillUri(uri);
   if (!parsed?.skill || !parsed.path) return { kind: "not_found" };
-  const folder = await visibleSkillFolder(deps, threadId, parsed.skill);
-  const entry = folder?.files[`${folder.directory}/${parsed.path}`];
+  return readVisibleFile(deps, threadId, parsed.skill, parsed.path);
+}
+
+/**
+ * A visible skill's `SKILL.md`, by name. Names are the binding's folder
+ * names, so "a/b" or ".." matches none and never reaches another file.
+ */
+export async function readSkillMd(
+  deps: SkillFilesDeps,
+  threadId: string,
+  name: string,
+): Promise<SkillFileRead> {
+  return readVisibleFile(deps, threadId, name, "SKILL.md");
+}
+
+async function readVisibleFile(
+  deps: SkillFilesDeps,
+  threadId: string,
+  skill: string,
+  path: string,
+): Promise<SkillFileRead> {
+  const folder = await visibleSkillFolder(deps, threadId, skill);
+  const entry = folder?.files[`${folder.directory}/${path}`];
   if (entry === undefined) return { kind: "not_found" };
   if (typeof entry !== "string") return { kind: "binary" };
-  return { kind: "text", skill: parsed.skill, path: parsed.path, text: entry };
+  return { kind: "text", skill, path, text: entry };
 }
 
 /**

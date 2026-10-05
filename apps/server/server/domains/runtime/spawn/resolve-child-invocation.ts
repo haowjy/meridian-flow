@@ -10,11 +10,7 @@ import {
   type InvocationPatch,
   type ResolvedAgentConfiguration,
 } from "@meridian/contracts/agents";
-import {
-  type MeridianError,
-  meridianError,
-  meridianErrorFromSystem,
-} from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import {
   type AgentRevision,
   type AgentRevisionBinding,
@@ -22,8 +18,12 @@ import {
   type CompiledAgentDefinition,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
-import { toolsBeyondParent } from "../loop/permissions/invocation-authority.js";
-import { type InvalidArgumentIssue, renderInvalidArguments } from "../tools/invalid-arguments.js";
+import { toolsBeyondParent } from "../loop/permissions/tool-policy.js";
+import {
+  type InvalidArgumentIssue,
+  type InvalidArgumentsResult,
+  invalidArgumentsResult,
+} from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
 export interface ResolveChildInvocationDeps {
@@ -55,7 +55,9 @@ export type ResolveChildInvocationOutcome =
       defaultTitle: string;
       invocationOverlay: InvocationOverlay | null;
     }
-  | { ok: false; error: MeridianError };
+  | { ok: false; error: MeridianError }
+  /** An override the caller may not make: the spawn tool's `invalid_arguments` refusal. */
+  | { ok: false; invalidArguments: InvalidArgumentsResult };
 
 export async function resolveChildInvocation(
   input: ResolveChildInvocationInput,
@@ -114,7 +116,7 @@ export async function resolveChildInvocation(
       child: configuration,
       childName: resolvedSlug,
     });
-    if (raise) return { ok: false, error: spawnInvalidArguments([raise]) };
+    if (raise) return { ok: false, invalidArguments: invalidArgumentsResult([raise]) };
     let patched: ResolvedAgentConfiguration;
     try {
       patched = await applyInvocationPatch({
@@ -140,7 +142,7 @@ export async function resolveChildInvocation(
   if (extra.length) {
     return {
       ok: false,
-      error: spawnInvalidArguments([toolsBeyondParentIssue(resolvedSlug, extra)]),
+      invalidArguments: invalidArgumentsResult([toolsBeyondParentIssue(resolvedSlug, extra)]),
     };
   }
 
@@ -223,15 +225,4 @@ function toolsBeyondParentIssue(childName: string, tools: string[]): InvalidArgu
     path: "overrides.disallowed_tools",
     message: `${childName} has ${named} and you don't; add ${quoted.length === 1 ? "it" : "them"} here`,
   };
-}
-
-/** An `invalid_arguments` refusal carried on the spawn result; the spawn tool unwraps it. */
-function spawnInvalidArguments(issues: InvalidArgumentIssue[]): MeridianError {
-  return meridianError({
-    code: "invalid_arguments",
-    message: renderInvalidArguments("spawn", issues),
-    source: "tool",
-    retryable: false,
-    details: { issues },
-  });
 }

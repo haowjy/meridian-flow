@@ -1,4 +1,6 @@
 /** Renders and resolves the frozen model-facing Work context block. */
+
+import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
   isWorkArchived,
@@ -12,8 +14,7 @@ import {
   type ThreadWorksRepository,
   threadExecutionContext,
 } from "../../threads/index.js";
-import { actionPolicy } from "./permissions/action-policy.js";
-import type { AgentChain } from "./permissions/agent-chain.js";
+import { mayChangeWorks } from "./permissions/action-policy.js";
 
 export const WORK_CONTEXT_GOAL_LIMIT = 2_000;
 const GOAL_TRUNCATION_MARKER = "… [truncated]";
@@ -131,7 +132,7 @@ export function createWorkContextReader(deps: {
   threads: Pick<ThreadRepository, "findById">;
   works: Pick<WorkRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
 }): WorkContextReader {
   return {
     async renderForThread(threadId) {
@@ -147,8 +148,7 @@ export function createWorkContextReader(deps: {
       return {
         text: renderWorkContext({
           current,
-          mayUnarchive:
-            actionPolicy(await deps.readAgentChain(threadId), "work.unarchive") === "allow",
+          mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
         }),
         current: { projectId: thread.projectId, execution },
       };

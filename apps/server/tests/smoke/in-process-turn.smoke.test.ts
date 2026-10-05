@@ -20,7 +20,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../server/domains/threads/index.js";
-import { createWiredCoreToolRegistrations } from "../../server/lib/wired-core-tools.js";
+import { createModelToolRegistrations } from "../../server/lib/model-tools/index.js";
 import { testFileGrant } from "../../server/test-support/file-grants.js";
 
 const FILE_URI = "kb://notes.md";
@@ -89,7 +89,7 @@ describe("smoke: in-process turn", () => {
     expect(writeResult.ok).toBe(true);
 
     const toolRegistry = createToolRegistry({
-      registrations: createWiredCoreToolRegistrations({
+      registrations: createModelToolRegistrations({
         threads: repos.threads,
         works,
         workAuthorityResolver: {

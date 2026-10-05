@@ -249,9 +249,9 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([]);
   });
 
-  it("settles manual-policy turn work through a durable no-op", async () => {
+  it("settles turn work that no push completes through a durable no-op", async () => {
     const harness = createHarness();
-    await harness.seedDestructivePush("manual-policy-settlement");
+    await harness.seedDestructivePush("unpushed-settlement");
 
     await harness.pollTrails();
     expect(await harness.workRows()).toEqual([
@@ -282,90 +282,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ eventKind: "updated", version: 2 }),
       expect.objectContaining({ eventKind: "settled", version: 3 }),
     ]);
-  });
-
-  it("retries an auto-push without re-entering the shared branch mutex", async () => {
-    const harness = createHarness();
-    const branchId = await harness.seedDestructivePush("retry-shared-mutex");
-    await harness.setPushPolicy("auto");
-    harness.failNextTrailRetry();
-
-    await harness.pollTrails();
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "pending", attempts: 1 }),
-    ]);
-
-    harness.advanceTrailWorkTime(2_000);
-    await expect(harness.pollTrails()).resolves.toEqual(expect.any(Number));
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "complete", attempts: 2 }),
-    ]);
-    expect(await harness.branchGeneration(branchId)).toBe(2);
-
-    await harness.stageAnotherDestructiveEdit(branchId);
-    // A push outside trail work doesn't reset the branch.
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expect(await harness.branchGeneration(branchId)).toBe(2);
-  });
-
-  it("claims pending trail work only when its retry deadline arrives", async () => {
-    const harness = createHarness();
-    await harness.seedDestructivePush("retry-deadline");
-    await harness.setPushPolicy("auto");
-    await harness.deferTrailWork(2_000);
-
-    harness.advanceTrailWorkTime(1_999);
-    await harness.pollTrails();
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "pending", attempts: 0 }),
-    ]);
-
-    harness.advanceTrailWorkTime(1);
-    await harness.pollTrails();
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "complete", attempts: 1 }),
-    ]);
-  });
-
-  it("reclaims running trail work only after its lease expires", async () => {
-    const harness = createHarness();
-    await harness.seedDestructivePush("running-lease");
-    await harness.setPushPolicy("auto");
-    await harness.markTrailWorkRunning();
-
-    harness.advanceTrailWorkTime(30_000);
-    await harness.pollTrails();
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "running", attempts: 0 }),
-    ]);
-
-    harness.advanceTrailWorkTime(1);
-    await harness.pollTrails();
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "complete", attempts: 1 }),
-    ]);
-  });
-
-  it("fences exhausted auto-push work without falsely settling its trail", async () => {
-    const harness = createHarness();
-    await harness.seedDestructivePush("exhausted-auto-push");
-    await harness.setPushPolicy("auto");
-    harness.failAllTrailRetries();
-
-    for (const delay of [0, 2_000, 4_000, 8_000, 16_000]) {
-      harness.advanceTrailWorkTime(delay);
-      await harness.pollTrails();
-    }
-
-    expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "exhausted", attempts: 5 }),
-    ]);
-    expect(harness.exhaustionFences()).toEqual([{ threadId: THREAD_ID, documentId: ALPHA_ID }]);
-    expect(await harness.trailRowMembership()).toMatchObject({
-      shells: [expect.objectContaining({ state: "settling", settledAt: null })],
-      details: [],
-      outbox: [expect.objectContaining({ eventKind: "updated" })],
-    });
   });
 
   it("does not synthesize a shared trail from mixed journal ownership", async () => {
@@ -486,7 +402,7 @@ describe("change trail (postgres)", () => {
 
   it("reopens and re-settles a settled trail when branch work is redone", async () => {
     const harness = createHarness();
-    await harness.seedDestructivePush("redo-after-settled");
+    const branchId = await harness.seedDestructivePush("redo-after-settled");
 
     await harness.pollTrails();
     await harness.pollTrails();
@@ -500,7 +416,6 @@ describe("change trail (postgres)", () => {
     });
 
     await expect(harness.reverseTurn("undo")).resolves.toMatchObject({ status: "reversed" });
-    await harness.setPushPolicy("auto");
     await expect(harness.reverseTurn("redo")).resolves.toMatchObject({ status: "reconciled" });
 
     expect(await harness.workRows()).toEqual([
@@ -518,9 +433,11 @@ describe("change trail (postgres)", () => {
       ],
     );
 
+    // The redo waits in the draft (D59); applying it completes the trail work.
+    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
     await harness.pollTrails();
     expect(await harness.workRows()).toEqual([
-      expect.objectContaining({ state: "complete", attempts: 1 }),
+      expect.objectContaining({ state: "complete", attempts: 0 }),
     ]);
     expect((await harness.trailRowMembership()).shells).toEqual([
       expect.objectContaining({ state: "settling", version: 6, settledAt: null }),

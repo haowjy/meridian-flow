@@ -35,8 +35,10 @@ export {
 } from "./invalid-arguments.js";
 export {
   createSkillToolRegistrations,
-  type SkillInvocation,
-  SkillToolInputSchema,
+  readSkill,
+  refuseSkillSearch,
+  refuseSkillWrite,
+  skillsRootEntries,
 } from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,
