@@ -61,6 +61,18 @@ function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
   return Array.isArray(value) ? (value as unknown as Tool[]) : null;
 }
 
+/**
+ * A `/skill` after the bake offers `skill` (D64), which the frozen list can't
+ * know. Live policy adds it once the binding records an invocation, and
+ * invocations are never removed, so the list changes once and stays stable.
+ */
+function withInvokedSkillTool(baked: Tool[], live: Tool[]): Tool[] {
+  const isSkill = (tool: Tool) => tool.type === "function" && tool.name === "skill";
+  if (baked.some(isSkill)) return baked;
+  const skill = live.find(isSkill);
+  return skill ? [...baked, skill] : baked;
+}
+
 export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
@@ -188,7 +200,7 @@ export async function assembleNextTurnContext(
     );
     if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
     systemPrompt = bake.composedSystemPrompt;
-    tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
+    tools = withInvokedSkillTool(toolsFromBakedJson(bake.bakedTools) ?? tools, agentContext.tools);
   } else {
     const { bakeContent, bakedPrompt } = await composeLivePromptBake(input, agentContext);
     if (input.persistBake && input.bakeInitialPrompt) {
