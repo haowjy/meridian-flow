@@ -110,10 +110,9 @@ describe("skills:// at the model tools", () => {
     const loaded = await call("skill", { name: "story-review" });
     expect(loaded).toBe(await call("read", { path: "skills://story-review/SKILL.md" }));
     expect(loaded).toMatch(/^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative/);
-    expect(await call("skill", { name: "creative-writing-modes" })).toEqual({
-      message:
-        'Skill "creative-writing-modes" isn\'t available. Skills you can load: story-review, writing-principles.',
-    });
+    expect(await call("skill", { name: "creative-writing-modes" })).toBe(
+      'Skill "creative-writing-modes" isn\'t available. Skills you can load: story-review, writing-principles. (not_found)',
+    );
   });
 
   it("lists only the skills the binding offers", async () => {
