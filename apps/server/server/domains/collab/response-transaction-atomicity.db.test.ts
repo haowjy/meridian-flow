@@ -189,7 +189,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.autoPush(branchId);
+    await harness.push(branchId);
 
     const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
@@ -218,7 +218,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.autoPush(branchId);
+    await harness.push(branchId);
     await harness.pollTrails();
     await harness.pollTrails();
 
