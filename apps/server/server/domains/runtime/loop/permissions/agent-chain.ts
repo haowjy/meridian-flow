@@ -12,7 +12,7 @@ import type { ThreadRepository, ThreadWorksRepository } from "../../../threads/i
 
 export type { AgentChain, AgentLink };
 
-export interface AgentChainDeps {
+interface AgentChainDeps {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
@@ -42,6 +42,18 @@ export async function readAgentChain(
  */
 export function chainPermission(chain: readonly Pick<AgentLink, "permission">[]): AgentPermission {
   return chain.some((link) => link.permission === "read") ? "read" : "edit";
+}
+
+/**
+ * The chain's effective permission from the lighter lineage walk, which skips
+ * each link's Work. Turn assembly, the work context and the work tool need
+ * only this.
+ */
+export async function readChainPermission(
+  deps: Pick<AgentChainDeps, "threads" | "agentRevisions">,
+  threadId: ThreadId,
+): Promise<AgentPermission> {
+  return chainPermission(await readLineage(deps, threadId));
 }
 
 type LineageLink = Pick<AgentLink, "threadId" | "permission">;

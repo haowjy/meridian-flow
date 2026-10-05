@@ -11,7 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
-import { TOOL_CATALOG } from "../loop/permissions/project-tool-policy.js";
+import { TOOL_CATALOG } from "../loop/permissions/tool-policy.js";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";

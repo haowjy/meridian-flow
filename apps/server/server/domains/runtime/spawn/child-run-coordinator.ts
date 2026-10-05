@@ -21,6 +21,7 @@ import type {
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { threadReferenceBlock } from "../thread-reference.js";
+import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
@@ -38,6 +39,9 @@ import {
   type SpawnTranscript,
 } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
+
+/** A run's result, or the spawn tool's `invalid_arguments` refusal of an override. */
+export type ChildRunResult = SpawnResult | InvalidArgumentsResult;
 
 export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
@@ -106,7 +110,7 @@ export interface ChildRunCoordinatorDeps {
 }
 
 export interface ChildRunCoordinator {
-  runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<SpawnResult>;
+  runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<ChildRunResult>;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
@@ -115,7 +119,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function prepareSpawn(
     input: SpawnChildInput,
     background: boolean,
-  ): Promise<PreparedChild | SpawnResult> {
+  ): Promise<PreparedChild | ChildRunResult> {
     const depthError = assertSpawnDepthAllowed(input.budget, input.parentThread.spawnDepth);
     if (depthError) return { status: "error", error: depthError };
     const turnError = assertTurnBudget(input.budget);
@@ -152,7 +156,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       },
       deps,
     );
-    if (!resolution.ok) return { status: "error", error: resolution.error };
+    if (!resolution.ok) {
+      return "invalidArguments" in resolution
+        ? resolution.invalidArguments
+        : { status: "error", error: resolution.error };
+    }
     const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
@@ -267,11 +275,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function prepare(
     request: ChildRunRequest,
     background: boolean,
-  ): Promise<PreparedChild | SpawnResult> {
-    if (request.kind === "spawn") {
-      const outcome = await prepareSpawn(request, background);
-      return outcome;
-    }
+  ): Promise<PreparedChild | ChildRunResult> {
+    if (request.kind === "spawn") return prepareSpawn(request, background);
 
     const authorized = await authorizeThreadMessage({
       callerThread: request.parentThread,
@@ -399,7 +404,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function runChild(
     request: ChildRunRequest,
     options: ChildRunOptions,
-  ): Promise<SpawnResult> {
+  ): Promise<ChildRunResult> {
     const background = options.mode === "background";
     if (request.kind === "message" && background) {
       return sendBackgroundMessage(request);
@@ -408,15 +413,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const correlation = invocationCorrelation(request, background);
 
     const prepared = await prepare(request, background);
-    if ("status" in prepared) {
-      if (prepared.status === "error" && request.kind === "spawn") {
+    if ("status" in prepared || "issues" in prepared) {
+      const reason =
+        "issues" in prepared
+          ? renderInvalidArguments("spawn", prepared.issues)
+          : prepared.status === "error"
+            ? prepared.error.message
+            : null;
+      if (reason !== null && request.kind === "spawn") {
         await persistInvocationCard(
           options.transcript,
           unadmittedInvocationFailureProps({
             agent: request.agentSlug,
             name: request.name,
             correlation,
-            reason: prepared.error.message,
+            reason,
           }),
         );
       }

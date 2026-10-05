@@ -73,7 +73,11 @@ async function fixture(
   const gateway =
     gatewayOverride ??
     scriptedGateway({ onStream, usage: { inputTokens: 1000, outputTokens: 100 } });
-  const workContext = createWorkContextReader({ ...repos, works, readAgentChain: async () => [] });
+  const workContext = createWorkContextReader({
+    ...repos,
+    works,
+    readChainPermission: async () => "edit" as const,
+  });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const rig = createRuntimeHarness({
     repos,

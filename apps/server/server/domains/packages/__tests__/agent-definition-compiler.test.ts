@@ -119,20 +119,16 @@ describe("Agent definition compiler", () => {
     if (!result.ok) expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it("accepts read and write and rejects edit and the tool map, naming the replacement", () => {
+  it("accepts read and write, rejects edit in tools and the tool map, and ignores a denied edit", () => {
     expect(
-      compile({ tools: ["read", "write"], "disallowed-tools": ["Write"] }).definition.metadata,
-    ).toEqual({ tools: ["read", "write"], "disallowed-tools": ["write"] });
+      compile({ tools: ["read", "write"], "disallowed-tools": ["Write", "apply_patch"] }).definition
+        .metadata,
+    ).toEqual({ tools: ["read", "write"], "disallowed-tools": ["write", "edit"] });
     const diagnostics = (meta: Record<string, unknown>) => {
       const result = compileAgentDefinition({ body: "", meta });
       return result.ok ? [] : result.diagnostics.map(({ message }) => message);
     };
-    for (const meta of [
-      { tools: ["edit"] },
-      { tools: ["Edit(x)"] },
-      { tools: ["file_write"] },
-      { "disallowed-tools": ["apply_patch"] },
-    ]) {
+    for (const meta of [{ tools: ["edit"] }, { tools: ["Edit(x)"] }, { tools: ["file_write"] }]) {
       expect(diagnostics(meta), JSON.stringify(meta)).toEqual([
         '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.',
       ]);

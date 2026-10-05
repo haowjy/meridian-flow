@@ -1,11 +1,10 @@
-/** Delegation authority: a child never has a tool its parent lacks, and the agent chain reads every link. */
+/** The agent chain reads every link fresh, up to the root. */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import type { AgentRevisionBinding } from "../../../packages/index.js";
 import { readAgentChain } from "./agent-chain.js";
-import { toolsBeyondParent } from "./invocation-authority.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
   return {
@@ -16,14 +15,6 @@ function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentC
     ...input,
   };
 }
-
-describe("toolsBeyondParent", () => {
-  it("names the child's tools its parent lacks, never return_result", () => {
-    const parent = config({ "disallowed-tools": ["write", "spawn"] });
-    expect(toolsBeyondParent(parent, config())).toEqual(["write", "spawn"]);
-    expect(toolsBeyondParent(parent, config({ tools: ["read", "return_result"] }))).toEqual([]);
-  });
-});
 
 describe("readAgentChain", () => {
   it("returns each link's own permission and Work up to the root, read fresh per call", async () => {

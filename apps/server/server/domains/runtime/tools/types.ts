@@ -22,6 +22,7 @@ import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
 import type { DocumentTextPolicy } from "./document-text.js";
+import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
@@ -163,11 +164,12 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  * narrow suspend/resume seam the orchestrator owns.
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
-  spawn(input: SpawnToolArgs): Promise<SpawnResult>;
+  /** A run's result, or `invalid_arguments` for an override the caller may not make. */
+  spawn(input: SpawnToolArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 
 export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
-  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult>;
+  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
   threadReport(

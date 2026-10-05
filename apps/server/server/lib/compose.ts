@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -161,6 +162,7 @@ import {
   type RunStarter,
   type RunTurnPort,
   readAgentChain,
+  readChainPermission,
   readPendingInbox,
   requireWritableThread,
   sweepWakes,
@@ -307,6 +309,8 @@ export type ProductionAppPorts = {
   db: Database;
   /** A thread's delegation chain, read fresh (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  /** The chain's effective permission, from the lighter lineage walk. */
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
   /** The file policy every model read and write asks (file-access §1). */
   fileAccess: FileAccess;
   fileAccessChanges: PgFileAccessChanges;
@@ -629,6 +633,7 @@ export async function createProductionAppPorts(input: {
     notices,
     activeDocuments,
     readAgentChain: readChain,
+    readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
   };
 }
 
@@ -656,7 +661,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
-    readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
@@ -720,6 +725,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     fileAccess: ports.fileAccess,
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
   };
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);

@@ -119,7 +119,7 @@ export const toolAliases: Record<string, string> = {
 
 /**
  * `edit` was a capability; access is now `permission` and the document tool is
- * `write` (D12, D34). Old frontmatter fails with the replacement named.
+ * `write` (D12, D34). An allow-list naming it fails with the replacement named.
  */
 export const EDIT_IS_PERMISSION_ERROR =
   '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.';
@@ -128,27 +128,39 @@ const TOOL_LIST_ERROR =
   "Expected a list of tool names, e.g. [read, write]; deny tools with disallowed-tools.";
 
 /** One authoring tool name, alias-folded; Flow's support check rejects names outside its catalog. */
-export const toolReferenceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .transform((value, context) => {
-    const normalized = normalizeToolName(value);
-    if (!normalized) {
-      context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
-      return z.NEVER;
-    }
-    if (normalized.head === "edit") {
-      context.addIssue({ code: "custom", message: EDIT_IS_PERMISSION_ERROR });
-      return z.NEVER;
-    }
-    return normalized.name;
-  });
+function toolReference(rejectEdit: boolean) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value, context) => {
+      const normalized = normalizeToolName(value);
+      if (!normalized) {
+        context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
+        return z.NEVER;
+      }
+      if (rejectEdit && normalized.head === "edit") {
+        context.addIssue({ code: "custom", message: EDIT_IS_PERMISSION_ERROR });
+        return z.NEVER;
+      }
+      return normalized.name;
+    });
+}
 
-/** A tool list (`tools` allow-list or `disallowed-tools`); duplicates collapse after folding. */
-export const toolReferencesSchema = z
-  .array(toolReferenceSchema, { error: TOOL_LIST_ERROR })
-  .transform((values) => [...new Set(values)]);
+function toolList(rejectEdit: boolean) {
+  return z
+    .array(toolReference(rejectEdit), { error: TOOL_LIST_ERROR })
+    .transform((values) => [...new Set(values)]);
+}
+
+/** A `tools` allow-list; duplicates collapse after folding. */
+export const toolAllowListSchema = toolList(true);
+
+/**
+ * A `disallowed-tools` list. Flow ignores a name it doesn't have (D57), so
+ * `edit` (a normal Claude Code read-only profile's `Edit`) is ignored too.
+ */
+export const toolDenyListSchema = toolList(false);
 
 /** A retained skill reference resolved by binding preparation. */
 export const retainedSkillReferenceSchema = z.object({
@@ -180,7 +192,7 @@ export const invocationPatchSchema = z
     model: z.string().optional(),
     effort: agentEffortSchema.optional(),
     permission: agentPermissionSchema.optional(),
-    "disallowed-tools": toolReferencesSchema.optional(),
+    "disallowed-tools": z.array(z.string()).optional(),
     subagents: z.array(z.string()).optional(),
     skills: z
       .object({

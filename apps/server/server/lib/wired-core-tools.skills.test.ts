@@ -49,6 +49,7 @@ async function criticTools() {
     readAgentChain: async (threadId: string) => [
       { threadId, permission: "edit", threadWorkId: "work-1" },
     ],
+    readChainPermission: async () => "edit",
     fileAccess: createAllowAllFileAccess(),
     agentRevisions,
   } as unknown as ToolWiringDeps;

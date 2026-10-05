@@ -23,6 +23,7 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
+import type { AgentPermission } from "@meridian/contracts/agents";
 import {
   type AskUserToolInput,
   interruptResolvedPropsFromAnswer,
@@ -106,6 +107,7 @@ import {
   isSkillsUri,
   type LsToolInput,
   listSkillDir,
+  mayChangeWorks,
   parseSkillUri,
   type ReferenceReader,
   readSkillFile,
@@ -159,6 +161,8 @@ export interface ToolWiringDeps {
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  /** The chain's effective permission, for the action policy (D39). */
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
 }
 
 type ToolErrorOutput = { isError: true; output: MeridianError };
@@ -1399,8 +1403,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           : null;
       if (switchTarget && "isError" in switchTarget) return switchTarget;
       if (switchTarget && "unchanged" in switchTarget) return switchTarget.unchanged;
-      const chain = await deps.readAgentChain(thread.id as ThreadId);
-      const decision = actionPolicy(chain, `work.${command.command}`);
+      const permission = await deps.readChainPermission(thread.id as ThreadId);
+      const decision = actionPolicy(permission, `work.${command.command}`);
       if (decision !== "allow") {
         return toolError({
           code: "permission_denied",
@@ -1597,7 +1601,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             message: workLifecycleMessage(
               reason,
               "work" in command && command.work ? command.work : (error.workSlug ?? null),
-              actionPolicy(chain, "work.unarchive") === "allow",
+              mayChangeWorks(permission),
             ),
           });
         }

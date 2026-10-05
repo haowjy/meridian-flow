@@ -2,7 +2,7 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { actionPolicy } from "./action-policy.js";
-import type { AgentChain } from "./agent-chain.js";
+import { type AgentChain, chainPermission } from "./agent-chain.js";
 
 function chain(...permissions: AgentPermission[]): AgentChain {
   return permissions.map((permission, index) => ({
@@ -14,7 +14,7 @@ function chain(...permissions: AgentPermission[]): AgentChain {
 
 describe("actionPolicy", () => {
   it("denies Work changes to a default-edit child under a read parent", () => {
-    expect(actionPolicy(chain("edit", "read"), "work.archive")).toBe("deny");
-    expect(actionPolicy(chain("edit", "read"), "work.show")).toBe("allow");
+    expect(actionPolicy(chainPermission(chain("edit", "read")), "work.archive")).toBe("deny");
+    expect(actionPolicy(chainPermission(chain("edit", "read")), "work.show")).toBe("allow");
   });
 });
