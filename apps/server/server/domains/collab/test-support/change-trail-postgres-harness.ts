@@ -1698,7 +1698,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         2,
         true,
       ),
-    autoPush: (branchId: string) => realBranchPush.pushToLive({ branchId }),
+    push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,

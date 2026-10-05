@@ -44,8 +44,8 @@ describe("change trail (postgres)", () => {
     });
     const alpha = await warm.seedDestructivePush("s10-alpha", ALPHA_ID);
     const beta = await warm.seedDestructivePush("s10-beta", BETA_ID);
-    const alphaSettlement = warm.autoPush(alpha);
-    const betaSettlement = warm.autoPush(beta);
+    const alphaSettlement = warm.push(alpha);
+    const betaSettlement = warm.push(beta);
     await durableWritesCommitted;
 
     await warm.markTurnError();
@@ -127,7 +127,7 @@ describe("change trail (postgres)", () => {
       steps: [{ source: "agent", markdown: "The gate opened." }],
     });
 
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     await harness.markTurnError();
     await harness.pollTrails();
     await harness.pollTrails();
@@ -288,7 +288,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("shared-settlement");
     await harness.makeJournalOwnershipMixed();
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
 
     await harness.pollTrails();
     await harness.pollTrails();
@@ -317,7 +317,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("all-null-shared-settlement");
     await harness.makeJournalOwnershipNull();
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     expect(await harness.workRows()).toEqual([]);
 
     await harness.pollTrails();
@@ -341,7 +341,7 @@ describe("change trail (postgres)", () => {
     const alpha = await harness.seedDestructivePush("version-race-alpha", ALPHA_ID);
     const beta = await harness.seedDestructivePush("version-race-beta", BETA_ID);
 
-    await expect(Promise.all([harness.autoPush(alpha), harness.autoPush(beta)])).resolves.toEqual([
+    await expect(Promise.all([harness.push(alpha), harness.push(beta)])).resolves.toEqual([
       expect.objectContaining({ status: "pushed" }),
       expect.objectContaining({ status: "pushed" }),
     ]);
@@ -363,12 +363,12 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const first = await harness.seedDestructivePush("shared-record-reconcile-first", ALPHA_ID);
     await harness.makeJournalOwnershipNull();
-    await harness.autoPush(first);
+    await harness.push(first);
     await harness.pollTrails();
 
     const second = await harness.seedDestructivePush("shared-record-reconcile-second", BETA_ID);
     await harness.makeJournalOwnershipNull();
-    await expect(Promise.all([harness.autoPush(second), harness.pollTrails()])).resolves.toEqual([
+    await expect(Promise.all([harness.push(second), harness.pollTrails()])).resolves.toEqual([
       expect.objectContaining({ status: "pushed" }),
       expect.any(Number),
     ]);
@@ -386,13 +386,13 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("combined-lock-order");
     await harness.makeJournalOwnershipMixed();
-    await harness.autoPush(branchId);
+    await harness.push(branchId);
     await harness.stageAnotherDestructiveEdit(branchId);
     await harness.makeJournalOwnershipMixed();
 
     await expect(
       Promise.race([
-        Promise.all([harness.autoPush(branchId), harness.pollTrails()]),
+        Promise.all([harness.push(branchId), harness.pollTrails()]),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("aggregate lock-order deadlock")), 5_000),
         ),
@@ -434,7 +434,7 @@ describe("change trail (postgres)", () => {
     );
 
     // The redo waits in the draft (D59); applying it completes the trail work.
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     await harness.pollTrails();
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "complete", attempts: 0 }),
@@ -478,7 +478,7 @@ describe("change trail (postgres)", () => {
   it("rebuilds an errored turn trail from surviving durable content", async () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("error-rebuild");
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     expect((await harness.trailRowMembership()).details).toHaveLength(1);
 
     await harness.addLiveDependency();

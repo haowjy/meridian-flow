@@ -86,7 +86,7 @@ function pair(command: string, extra: JsonObject = {}, toolName = "write") {
 }
 
 describe("document text elisions", () => {
-  for (const command of ["read", "create", "insert", "replace", "delete", "undo", "redo"]) {
+  for (const command of ["read", "create", "insert", "replace", "remove", "undo", "redo"]) {
     it(`elides stale ${command} without changing pairing or reasoning`, () => {
       const blocks = pair(command);
       const before = JSON.stringify(blocks);
@@ -106,7 +106,7 @@ describe("document text elisions", () => {
     });
   }
   it("preserves fresh reads, duplicate reads and fresh writes", () => {
-    for (const command of ["read", "create", "replace", "delete", "undo", "redo"])
+    for (const command of ["read", "create", "replace", "remove", "undo", "redo"])
       expect(
         plan(pair(command), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
       ).toEqual([]);
@@ -274,7 +274,7 @@ it("freezes search content without borrowing unchanged nested output objects", (
   expect(JSON.stringify(elisions)).not.toContain("999");
 });
 
-it.each(["delete", "undo", "redo"])("does not freeze an unchanged %s input", (command) => {
+it.each(["remove", "undo", "redo"])("does not freeze an unchanged %s input", (command) => {
   const blocks = pair(command);
   (blocks[0].content as JsonObject).input = { command, path: evidence.uri, in: "b41" };
   const elisions = plan(blocks);
