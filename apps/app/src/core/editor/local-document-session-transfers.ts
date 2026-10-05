@@ -114,7 +114,6 @@ export class LocalDocumentSessionTransfers
   }
 
   async begin(input: {
-    projectId: ProjectId;
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;

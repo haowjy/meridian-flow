@@ -11,7 +11,6 @@ const queued = {
   handle: "p3",
   threadId: "child-1",
   agentSlug: "critic",
-  notifiesCaller: true,
 };
 
 const foreground = { ref: "p3", message: "Go", mode: "foreground" };

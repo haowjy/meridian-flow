@@ -14,8 +14,6 @@ import { stringInput, toolInputObject } from "./tool-command";
 export type QueuedThreadMessage = {
   /** The model-facing ref the message was sent to (`pN`). */
   handle: string;
-  /** The caller re-tasked its own child and will be told when that run finishes. */
-  notifiesCaller: boolean;
 };
 
 export type ThreadMessageRow =
@@ -38,7 +36,7 @@ export function parseQueuedThreadMessage(value: JsonValue | null): QueuedThreadM
   if (typeof value.handle !== "string" || value.handle.length === 0) return null;
   // A spawned background run carries `execution` and its own card.
   if ("execution" in value) return null;
-  return { handle: value.handle, notifiesCaller: value.notifiesCaller === true };
+  return { handle: value.handle };
 }
 
 function statusOf(value: JsonValue | null): unknown {

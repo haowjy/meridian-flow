@@ -15,7 +15,6 @@ import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn"
 import type {
   Block,
   CurrentToolCall,
-  JsonValue,
   OrchestratorEvent,
   Thread,
   Turn,

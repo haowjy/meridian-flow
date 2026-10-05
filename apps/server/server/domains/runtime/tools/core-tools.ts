@@ -143,13 +143,6 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
 ]);
 
 export type WorkCommand = z.output<typeof WorkCommandSchema>;
-export type WorkCommandCategory = "read" | "mutate" | "binding";
-
-export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
-  if (command.command === "list" || command.command === "show") return "read";
-  if (command.command === "switch") return "binding";
-  return "mutate";
-}
 
 export const LsToolInputSchema = z
   .object({
