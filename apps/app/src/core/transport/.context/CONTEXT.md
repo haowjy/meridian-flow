@@ -78,3 +78,34 @@ to `toSeq` before re-subscribing, so the next read asks for history the server
 can serve. The truncated catch-up that follows is skipped by the monotonic seq
 guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
 A gap burst coalesces into one resync rather than one per gap.
+
+## Shared connectivity hints
+
+`ConnectivityProvider` owns one `ConnectivityHints` instance above authenticated
+account and transport composition. The browser, clock, random source, and timer
+functions are injected. Browser listeners exist only while the provider is
+mounted. Connections receive the port through their existing factories/owners,
+including registry room restarts; new connections must subscribe instead of
+adding window listeners.
+
+Online, focus, visible visibility changes, pageshow, and a connection's success
+queue `retry-now`. A 50 ms burst window coalesces signals; each subscriber gets
+0–300 ms jitter and at least two seconds between retries. A signal during the
+cooldown schedules one deferred hint instead of losing recovery evidence.
+Success reports are transition-based and exclude the successful source.
+Offline cancels pending retries, resets the cooldown for the next network
+recovery, and immediately emits `suspect-offline`.
+
+Hints do not replace backoff or poll. Document and thread sockets leave healthy
+connections alone, fence terminal/destroyed owners, and take their normal close
+path immediately on offline, without waiting for a native close handshake.
+Hocuspocus `connect()` cancels its previous abortable retry; do not mutate its
+retry internals or call `disconnect()` for browser offline (that disables its
+normal reconnect loop).
+
+The resource replica retains its 30-second retry interval: failed HTTP work can
+remain pending without another browser event or socket success. Working-set
+pagehide and hidden-visibility flushes remain persistence signals. Local document
+peers and session wakeup retain their lifecycle listeners: cross-tab content
+recovery is not network recovery and must not inherit retry jitter, cooldowns,
+or unrelated server-connection successes.

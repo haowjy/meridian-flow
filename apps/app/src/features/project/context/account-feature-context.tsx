@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
+import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { PostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -39,13 +40,17 @@ export function AccountFeatureComposition({
   repairProjectCatalog: (projectId: string) => Promise<void>;
   children: React.ReactNode;
 }) {
+  const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId, repairProjectCatalog });
   desired.current = { accountId, repairProjectCatalog };
   const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
     () =>
-      new AccountFeatureLifetime(accountId, repairProjectCatalog, (error) =>
-        invalidationHandler.current(error),
+      new AccountFeatureLifetime(
+        accountId,
+        repairProjectCatalog,
+        (error) => invalidationHandler.current(error),
+        connectivityHints,
       ),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
@@ -65,8 +70,11 @@ export function AccountFeatureComposition({
       .then(() => {
         const next = desired.current;
         setLifetime(
-          new AccountFeatureLifetime(next.accountId, next.repairProjectCatalog, (error) =>
-            invalidationHandler.current(error),
+          new AccountFeatureLifetime(
+            next.accountId,
+            next.repairProjectCatalog,
+            (error) => invalidationHandler.current(error),
+            connectivityHints,
           ),
         );
       })
@@ -75,7 +83,7 @@ export function AccountFeatureComposition({
         transition.current = null;
       });
     transition.current = closing;
-  }, [accountId, lifetime]);
+  }, [accountId, lifetime, connectivityHints]);
 
   useInsertionEffect(
     () => () => {

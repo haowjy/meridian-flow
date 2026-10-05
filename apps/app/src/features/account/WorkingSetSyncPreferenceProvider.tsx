@@ -8,6 +8,7 @@
  * cannot move the driver or hide the switch once a local confirm exists.
  */
 import { createContext, useContext, useState } from "react";
+import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 
 import { configureWorkingSetSync } from "@/client/working-set";
 import {
@@ -57,10 +58,11 @@ function WorkingSetSyncPreferenceOwner({
   children: React.ReactNode;
 }) {
   const preference = useWorkingSetSyncPreference(serverValue);
+  const connectivityHints = useConnectivityHints();
   // Configure during render, ahead of the descendant project-route bootstrap's
   // hydration layout commit. The driver must already know its enabled state;
   // `configure` is idempotent for an unchanged account/value pair.
-  configureWorkingSetSync(accountId, preference.confirmed);
+  configureWorkingSetSync(accountId, preference.confirmed, connectivityHints);
   return (
     <WorkingSetSyncPreferenceContext.Provider value={preference}>
       {children}
