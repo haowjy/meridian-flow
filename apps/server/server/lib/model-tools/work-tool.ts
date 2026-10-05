@@ -20,9 +20,11 @@ import {
 } from "../../domains/projects/index.js";
 import {
   actionPolicy,
+  type ModelWork,
   mayChangeWorks,
   type ToolHandlerContext,
   type WorkCommand,
+  type WorkShowResult,
   workActionRefusal,
 } from "../../domains/runtime/index.js";
 import {
@@ -33,14 +35,10 @@ import {
 } from "./tool-context.js";
 
 /**
- * A Work as the model sees it. Write mode and pending changes use the
- * writer's words (draft mode, auto-apply), as the work context does.
+ * A Work as the handler returns it; `renderWorkResult` decides what the model
+ * reads. Write mode and pending changes use the writer's words (draft mode,
+ * auto-apply), as the work context does.
  */
-type ModelWork = Pick<
-  Work,
-  "slug" | "name" | "goal" | "status" | "archivedAt" | "createdAt" | "updatedAt" | "lastActivityAt"
-> & { writes: "draft mode" | "auto-apply"; pendingChangeCount?: Work["unpushedChangeCount"] };
-
 function modelWork(work: Work): ModelWork {
   const { slug, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
   return {
@@ -254,7 +252,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
       work: modelWork(work),
       recentThreads: threads.map(({ title, updatedAt, status }) => ({ title, updatedAt, status })),
       drafts: drafts.map(({ workId: _workId, ...draft }) => draft),
-    };
+    } satisfies WorkShowResult;
   }),
   update: onSelectedWork(async (deps, thread, work, command) =>
     updateReceipt(

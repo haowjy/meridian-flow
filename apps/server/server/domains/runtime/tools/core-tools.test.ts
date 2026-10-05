@@ -1,4 +1,5 @@
-/** Core tool contracts: Work input coverage, and the `ls` listing the model reads (D61). */
+/** Core tool contracts: Work input coverage, and the text the model reads of `ls` (D61), `work` and refusals (D65). */
+import { meridianErrorFromStructuredToolOutput } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +10,7 @@ import {
 import { type LsResult, sortLsEntries } from "./ls-result.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
+import type { ModelWork } from "./work-result.js";
 
 describe("WorkCommandSchema", () => {
   it("accepts a goal on create and update commands", () => {
@@ -66,19 +68,19 @@ const MIXED: LsResult = {
   ],
 };
 
-function lsExecutor(result: LsResult) {
-  const handlers = { ls: async () => result } as unknown as CoreToolHandlers;
+/** Runs one core tool whose handler returns `result`. */
+async function run(name: string, result: unknown, args: Record<string, unknown> = {}) {
+  const handler = async () => result;
+  const handlers = { [name]: handler } as unknown as CoreToolHandlers;
   return createToolExecutor(
     createToolRegistry({ registrations: createCoreToolRegistrations(handlers) }),
-  );
-}
-
-async function ls(result: LsResult, args: Record<string, unknown> = {}) {
-  return lsExecutor(result).executeTool(
-    { id: "call-1", name: "ls", arguments: args },
+  ).executeTool(
+    { id: "call-1", name, arguments: args },
     { threadId: "thread-1" as ThreadId, turnId: "turn-1" as TurnId, agentSlug: null },
   );
 }
+
+const ls = (result: LsResult, args: Record<string, unknown> = {}) => run("ls", result, args);
 
 describe("ls", () => {
   it("lists a folder as plain text, relative to its URI", async () => {
@@ -165,5 +167,102 @@ describe("ls", () => {
   it("keeps the typed listing beside the text through persistence", async () => {
     const persisted = JSON.parse(JSON.stringify(await ls(MIXED))) as { result: unknown };
     expect(persisted.result).toEqual(MIXED);
+  });
+});
+
+describe("refusals", () => {
+  it("reach the model as the message and code, with the typed error kept", async () => {
+    const error = meridianErrorFromStructuredToolOutput({
+      code: "not_found",
+      message: "No file or folder at kb://ghost.",
+      details: { code: "not_found", uri: "kb://ghost" },
+    });
+    const refused = await run("ls", { isError: true, output: error }, { path: "kb://ghost" });
+    expect(refused.output).toBe("No file or folder at kb://ghost. (not_found)");
+    expect(refused.result).toEqual(JSON.parse(JSON.stringify(error)));
+  });
+});
+
+const ARC: ModelWork = {
+  slug: "arc-1",
+  name: "Arc 1 rewrite",
+  goal: "Tighten the pacing of chapters 10 to 18 and fold the tournament into a single arc that ends on the duel.",
+  status: "Drafting",
+  archivedAt: null,
+  writes: "draft mode",
+  createdAt: "2026-09-01T08:00:00.000Z",
+  updatedAt: "2026-10-04T13:20:00.000Z",
+  lastActivityAt: "2026-10-05T07:45:00.000Z",
+  pendingChangeCount: 3,
+};
+
+describe("work", () => {
+  it("lists one line per Work, with dates only when verbose", async () => {
+    const quiet = {
+      ...ARC,
+      slug: "notes",
+      name: "Notes",
+      goal: null,
+      status: null,
+      writes: "auto-apply" as const,
+      pendingChangeCount: 0,
+    };
+    expect((await run("work", [ARC, quiet], { command: "list" })).output).toBe(
+      [
+        "@arc-1  Arc 1 rewrite (Drafting)  Tighten the pacing of chapters 10 to 18 and fold the…  draft mode  3 pending changes",
+        "@notes  Notes",
+      ].join("\n"),
+    );
+    expect((await run("work", [quiet], { command: "list", verbose: true })).output).toBe(
+      "@notes  Notes\n  created 2026-09-01 08:00 UTC, updated 2026-10-04 13:20 UTC, last activity 2026-10-05 07:45 UTC",
+    );
+  });
+
+  it("shows the Work, its goal in full, its recent chats and drafts", async () => {
+    const shown = {
+      work: ARC,
+      recentThreads: [
+        {
+          title: "Pacing pass on chapter 12",
+          updatedAt: "2026-10-05T07:45:00.000Z",
+          status: "idle",
+        },
+        { title: null, updatedAt: "2026-10-01T10:00:00.000Z", status: "archived" },
+      ],
+      drafts: [
+        { documentName: "Chapter 12", contextPath: "/chapter-12.md" },
+        { documentName: "Interlude", contextPath: "/interlude.md", createdDocument: true },
+      ],
+    };
+    expect((await run("work", shown, { command: "show", work: "arc-1" })).output).toBe(
+      [
+        "@arc-1  Arc 1 rewrite (Drafting)  draft mode  3 pending changes",
+        `Goal: ${ARC.goal}`,
+        "",
+        "Recent chats:",
+        "  Pacing pass on chapter 12",
+        "  Untitled chat (archived)",
+        "",
+        "Drafts:",
+        "  manuscript://chapter-12.md",
+        "  manuscript://interlude.md (new document)",
+      ].join("\n"),
+    );
+  });
+
+  it("says what a single-Work command did, then the Work line", async () => {
+    const created = {
+      ...ARC,
+      slug: "arc-2",
+      name: "Arc 2",
+      goal: null,
+      status: null,
+      writes: "auto-apply" as const,
+      pendingChangeCount: 0,
+    };
+    const result = await run("work", created, { command: "create", name: "Arc 2" });
+    expect(result.output).toBe("Created @arc-2.\n@arc-2  Arc 2");
+    // historySummary reads the typed value.
+    expect(result.result).toMatchObject({ slug: "arc-2" });
   });
 });
