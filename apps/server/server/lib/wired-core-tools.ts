@@ -115,7 +115,6 @@ import {
   type SkillFilesDeps,
   type SkillInvocation,
   skillFileHeader,
-  skillLoadHeader,
   skillMdUri,
   type ToolHandlerContext,
   type ToolRegistration,
@@ -1172,7 +1171,7 @@ async function skillPrincipal(
   };
 }
 
-/** `read` of a `skills://` file: the whole file as plain text, read-only. */
+/** `read` of a `skills://` file: the whole file as plain text under the shared header. */
 async function readSkill(
   deps: ToolWiringDeps,
   input: ReadToolInput,
@@ -1201,13 +1200,10 @@ async function readSkill(
   if (file.kind === "not_found") {
     return writeToolError("read", documentNotFoundMessage("read"), "document_not_found", { path });
   }
-  return `${skillFileHeader(file.uri)}\n\n${file.text}`;
+  return `${skillFileHeader(file.skill, file.path)}\n\n${file.text}`;
 }
 
-/**
- * `skill` (D58): `read`'s result for the skill's `SKILL.md`, with a line
- * pointing at `ls` for its other files; or the skills it could load instead.
- */
+/** `skill` (D58): `read`'s result for the skill's `SKILL.md`, or the skills it could load instead. */
 async function invokeSkill(
   deps: ToolWiringDeps,
   threadId: string,
@@ -1222,7 +1218,9 @@ async function invokeSkill(
     parsed?.skill === name && parsed.path === "SKILL.md"
       ? await readSkillFile(deps, principal, threadId, uri)
       : undefined;
-  if (file?.kind === "text") return { ok: true, text: `${skillLoadHeader(name)}\n\n${file.text}` };
+  if (file?.kind === "text") {
+    return { ok: true, text: `${skillFileHeader(file.skill, file.path)}\n\n${file.text}` };
+  }
   const visible = await visibleSkillNames(deps, principal, threadId);
   const missing = `Skill ${JSON.stringify(name)} isn't available.`;
   return {

@@ -24,7 +24,7 @@
  */
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem, skillBodyMetadata } from "../../threads/index.js";
-import { skillLoadHeader } from "./skill-files.js";
+import { skillFileHeader } from "./skill-files.js";
 
 /** One activated skill's loaded body, ready to render onto its hidden body turn. */
 export interface ActivatedSkillBody {
@@ -68,7 +68,7 @@ export function formatInvokedSkills(skills: readonly ActivatedSkillBody[]): stri
 function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
   return [
-    skill.readable ? skillLoadHeader(skill.slug) : `skill invoked: ${skill.slug}`,
+    skill.readable ? skillFileHeader(skill.slug, "SKILL.md") : `skill invoked: ${skill.slug}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
     skill.body,

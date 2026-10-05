@@ -142,7 +142,6 @@ export {
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
   skillFileHeader,
-  skillLoadHeader,
   skillMdUri,
   visibleSkillNames,
 } from "./loop/skill-files.js";

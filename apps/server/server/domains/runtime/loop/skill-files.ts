@@ -26,7 +26,7 @@ export interface SkillFilesDeps {
 export type SkillUri = { skill: null } | { skill: string; path: string };
 
 export type SkillFileRead =
-  | { kind: "text"; uri: string; text: string }
+  | { kind: "text"; skill: string; path: string; text: string }
   | { kind: "binary" }
   | { kind: "not_found" };
 
@@ -41,19 +41,14 @@ export function skillMdUri(slug: string): string {
   return `${SKILLS_URI_ROOT}${slug}/SKILL.md`;
 }
 
-/** The line heading a `skills://` file's text in a `read` result. */
-export function skillFileHeader(uri: string): string {
-  return `${uri} (read-only)`;
-}
-
 /**
- * The header of a loaded skill the model can read: `read`'s header for its
- * `SKILL.md`, plus where its other files are. Shared by the `skill` result and
- * preloaded or activated bodies (D58).
+ * The header over a skill file's text: its address, and the folder its
+ * relative paths start from. Shared by `read`, `skill`, and preloaded or
+ * activated bodies the model can read (D58).
  */
-export function skillLoadHeader(slug: string): string {
-  const folder = JSON.stringify(`${SKILLS_URI_ROOT}${slug}`);
-  return `${skillFileHeader(skillMdUri(slug))}\nFind this skill's other files with ls(${folder}).`;
+export function skillFileHeader(skill: string, path: string): string {
+  const folder = `${SKILLS_URI_ROOT}${skill}/`;
+  return `${folder}${path}\nPaths in this skill are relative to ${folder}.`;
 }
 
 export function isSkillsUri(path: string): boolean {
@@ -88,7 +83,7 @@ export async function readSkillFile(
   const entry = folder?.files[`${folder.directory}/${parsed.path}`];
   if (entry === undefined) return { kind: "not_found" };
   if (typeof entry !== "string") return { kind: "binary" };
-  return { kind: "text", uri: `${SKILLS_URI_ROOT}${parsed.skill}/${parsed.path}`, text: entry };
+  return { kind: "text", skill: parsed.skill, path: parsed.path, text: entry };
 }
 
 /**
