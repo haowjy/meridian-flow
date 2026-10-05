@@ -13,13 +13,8 @@ import type { RouteWorkResolution } from "./project-route";
 export type WorkCatalog = AddressCatalog<AddressableWork> & {
   creations: ReadonlyMap<string, WorkCreation>;
   isFetching: boolean;
-  /**
-   * The project's locked No Work row, once known. A No Work chat is bound to
-   * it and a No Work Scratch address carries it, but a route means No Work by
-   * naming no Work, so the row's id resolves to No Work (`none`): one Editor
-   * identity for No Work, however it was reached.
-   */
-  noWorkId?: string | null;
+  /** Locked row, or null before the snapshot arrives. */
+  noWork: AddressableWork | null;
 };
 type WorkNavigation = ReturnType<typeof createProjectNavigation>;
 
@@ -32,7 +27,7 @@ export function resolveRouteWork(
   if (selection.kind === "malformed")
     return { status: "unresolved", reason: "unavailable", workId: null };
   const workId = selection.id;
-  if (catalog.noWorkId && workId === catalog.noWorkId) return { status: "none" };
+  if (catalog.noWork?.id && workId === catalog.noWork?.id) return { status: "none" };
   const work = catalog.entries?.find((entry) => entry.id === workId);
   if (work) return { status: "present", workId, work };
   const creation = catalog.creations.get(workId);
@@ -63,7 +58,7 @@ export function useWorkCatalog(projectId: string): WorkCatalog {
     entries: works.works ?? NO_WORKS,
     creations: works.creations,
     isFetching: works.isFetching,
-    noWorkId: works.noWork?.id ?? null,
+    noWork: works.noWork,
   };
 }
 
@@ -91,7 +86,7 @@ export function useWorkRoute({
       : // No Work has no Work screen of its own; only content addresses name it.
         address.destination.kind === "work" &&
           selection.kind === "id" &&
-          selection.id === catalog.noWorkId
+          selection.id === catalog.noWork?.id
         ? { status: "unresolved", reason: "unavailable", workId: selection.id }
         : resolveRouteWork(selection, catalog);
 

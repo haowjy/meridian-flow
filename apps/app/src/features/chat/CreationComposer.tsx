@@ -62,11 +62,13 @@ export function CreationComposer({
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
-  const selected = workFromSnapshot(
-    works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
-    workId,
-  );
+  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
+  const selected = workId
+    ? workFromSnapshot(
+        works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
+        workId,
+      )
+    : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
@@ -133,6 +135,7 @@ export function CreationComposer({
             work={work}
             selectedWorkId={workId}
             works={works.works ?? []}
+            noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
             disabled={modePending}

@@ -269,8 +269,8 @@ export function ProjectView(props: ProjectViewProps) {
   // both go to null there, even though the current chat stays warm behind it.
   const displayedChatThread = displayedChatThreadId(props.chatDisplay);
   const chatThread = projectThreads?.find((thread) => thread.id === displayedChatThread);
-  const chatWork = chatThread
-    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
+  const chatWork = chatThread?.workId
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
   const chatWorkId = chatWork?.id ?? null;
   const editorRouteWork = props.editorRouteWork ?? props.routeWork;

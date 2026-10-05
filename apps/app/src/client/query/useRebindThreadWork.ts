@@ -58,12 +58,14 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
           { source: "confirmed", projectId, result: response },
           accountSignal,
         );
-        const work = workFromSnapshot(
-          client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
-            projectQueryKeys.works(projectId),
-          ),
-          targetWorkId,
-        );
+        const work = targetWorkId
+          ? workFromSnapshot(
+              client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
+                projectQueryKeys.works(projectId),
+              ),
+              targetWorkId,
+            )
+          : null;
         if (work) {
           return {
             kind: "confirmed",
@@ -82,7 +84,7 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
         },
         accountSignal,
       );
-      const currentWork = workFromSnapshot(fresh.catalog, fresh.workId);
+      const currentWork = fresh.workId ? workFromSnapshot(fresh.catalog, fresh.workId) : null;
       if (fresh.workId === targetWorkId) {
         if (response) {
           return {
