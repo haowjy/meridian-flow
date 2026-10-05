@@ -178,6 +178,7 @@ output without advancing certification; a later sweep retries them.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
+- [Collab domain visual explainer, end to end](collab-domain.html)
 
 ## Stored link occurrence primitives
 

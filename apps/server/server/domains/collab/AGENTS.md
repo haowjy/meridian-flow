@@ -42,5 +42,6 @@ editor UI or transport-shell policy.
   silently loses that index.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
+For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).
 Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).
