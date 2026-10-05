@@ -10,7 +10,6 @@ import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
 export interface SearchHit {
   uri: string;
-  version?: "draft" | "live";
   matches: { excerpt: string; blockHash?: string }[];
   matchCount: number;
   score?: number;
