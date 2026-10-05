@@ -4,10 +4,7 @@ export {
 } from "./adapters/asset-path-resolver.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
-export {
-  DrizzleContextDocumentStore,
-  updateDocumentProjectionById,
-} from "./adapters/context-fs/drizzle-store.js";
+export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
@@ -60,7 +57,7 @@ export type {
   ContextDocumentStore,
   ContextFolder,
   CreateBinaryDocumentInput,
-  UpsertDocumentInput,
+  CreateDocumentInput,
 } from "./ports/context-document-store.js";
 export type {
   BinaryFileEntry,

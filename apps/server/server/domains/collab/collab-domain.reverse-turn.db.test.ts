@@ -32,6 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsUpdates,
       documents,
       folders,
+      modelResponses,
       projects,
       pushLineage,
       pendingNotices,
@@ -187,6 +188,68 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => {
       await db.$client.end();
+    });
+
+    it("ContextFS cannot republish a stale write return over the certified projection", async () => {
+      const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
+      const { DrizzleContextDocumentStore } = await import(
+        "../context/adapters/context-fs/drizzle-store.js"
+      );
+      const { DrizzleContextTreeMutationStore } = await import(
+        "../context/adapters/context-fs/drizzle-tree-mutation-store.js"
+      );
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await db.insert(modelResponses).values({
+        id: TURN_ID,
+        turnId: TURN_ID,
+        sequence: 0,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 0,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      const context = new ContextFS({
+        scheme: "manuscript",
+        store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        documentCreation: collab,
+        documentSync: {
+          ...collab,
+          async writeDocument(input) {
+            const result = await collab.writeDocument(input);
+            // Reproduce the old publisher boundary without claiming a socket race:
+            // the returned serialization must never overwrite a certified cut.
+            return { ...result, markdown: "stale return value" };
+          },
+        },
+      });
+      try {
+        const created = await context.write("fresh.md", "Seed.");
+        expect(created.ok).toBe(true);
+        if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
+        await expect(
+          context.write("fresh.md", "Current café.", {
+            origin: {
+              type: "agent",
+              agentSlug: "writer",
+              turnId: TURN_ID as never,
+              threadId: THREAD_ID as never,
+            },
+          }),
+        ).resolves.toMatchObject({
+          ok: true,
+        });
+        const [row] = await db
+          .select()
+          .from(documents)
+          .where(eq(documents.id, created.value.documentId));
+        expect(row?.markdownProjection).toBe("Current café.\n");
+        expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
+      } finally {
+        await collab.documentDerivations.stop();
+      }
     });
 
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
