@@ -71,4 +71,33 @@ describe("instrumented gateway", () => {
       timing: TIMING,
     });
   });
+
+  it("logs the provider's status on stream.close but never its response text", async () => {
+    const sink = createInMemoryEventSink();
+    const failing: Gateway = {
+      ...testGateway(),
+      async *stream(): AsyncIterable<StreamEvent> {
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "402 Insufficient Balance",
+          retryable: false,
+          providerResponse: {
+            status: 402,
+            message: "Insufficient Balance",
+            body: '{"error":{"message":"Insufficient Balance"}}',
+          },
+        };
+      },
+    };
+    const instrumented = createInstrumentedGateway(failing, { sink, verbose: new Set() });
+
+    for await (const _event of instrumented.stream({ messages: [] })) {
+      // drain
+    }
+
+    const close = sink.events.find((event) => event.name === "stream.close");
+    expect(close?.payload).toMatchObject({ errorCode: "provider_error", providerStatus: 402 });
+    expect(JSON.stringify(close)).not.toContain("Insufficient Balance");
+  });
 });

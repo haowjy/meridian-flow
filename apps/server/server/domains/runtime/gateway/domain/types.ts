@@ -287,6 +287,17 @@ export type ErrorCode =
   | "provider_error";
 
 /**
+ * The provider's own failure response, kept as debug evidence. `message` is the
+ * provider's human text; `body` is the response body as received, capped at 4 KiB.
+ * Never enters event payloads or model context.
+ */
+export interface ProviderErrorResponse {
+  status: number | null;
+  message: string;
+  body: string;
+}
+
+/**
  * Stream event — the canonical event set that every adapter emits and the
  * orchestrator consumes. Each event is a complete, Meridian-typed value; the
  * generator produces them one-at-a-time so subscribers receive them as they
@@ -328,6 +339,8 @@ export type StreamEvent =
       message: string;
       retryable: boolean;
       retryAfterMs?: number;
+      /** Present when the provider answered; absent for network, timeout, and local failures. */
+      providerResponse?: ProviderErrorResponse;
     };
 
 /**
