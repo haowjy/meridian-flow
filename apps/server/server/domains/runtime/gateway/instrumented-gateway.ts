@@ -35,21 +35,6 @@ function classifyTerminalOutcome(
   return terminal.type === "end" ? "ok" : "error";
 }
 
-function providerStatusFrom(error: unknown): number | undefined {
-  try {
-    if (typeof error !== "object" || error === null || !("providerResponse" in error)) {
-      return undefined;
-    }
-    const response = error.providerResponse;
-    if (typeof response !== "object" || response === null || !("status" in response)) {
-      return undefined;
-    }
-    return typeof response.status === "number" ? response.status : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function errorCodeFrom(error: unknown): string | undefined {
   try {
     if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
@@ -185,13 +170,11 @@ function createStreamObservation(input: {
   function recordFailure(error: unknown): void {
     if (terminal !== undefined) return;
     const errorCode = errorCodeFrom(error);
-    const providerStatus = providerStatusFrom(error);
     terminal = {
       type: "error",
       at: performance.now(),
       cause: error,
       ...(errorCode ? { errorCode } : {}),
-      ...(providerStatus === undefined ? {} : { providerStatus }),
     };
   }
 
@@ -338,7 +321,6 @@ export function createInstrumentedGateway(
       } catch (error) {
         const terminalAt = performance.now();
         const errorCode = errorCodeFrom(error);
-        const providerStatus = providerStatusFrom(error);
         const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
         emitter.emit(
           "warn",
@@ -349,7 +331,7 @@ export function createInstrumentedGateway(
             ...(errorCode ? { errorCode } : {}),
           },
           route,
-          { errorCode, providerStatus },
+          { errorCode },
         );
         throw error;
       }
