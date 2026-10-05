@@ -49,14 +49,15 @@ runtime URI instruction, and, for subagent threads only, the mandatory closing
 report instruction (`SUBAGENT_GUIDANCE`) as the last layer. An empty or absent
 append adds nothing.
 
-Prompt bake lists the thread's own bound `skills.available` only, by
-`skills://<slug>/SKILL.md` URI with the description from the retained
-`SKILL.md`, dropping `model-invocable: false`; the model loads one with
-`read`. Subagent threads read their own binding the same way as primaries;
+Prompt bake lists the thread's own bound `skills.available` only, by slug
+(name when it differs) with the description from the retained `SKILL.md`,
+dropping `model-invocable: false`; the model loads one with the `skill` tool
+(D58). Subagent threads read their own binding the same way as primaries;
 nothing falls back to the parent's or the writer's skills. Account installs
 never join the prompt or `skills://`. `skills.load` bodies are baked into the
-first prompt (rendered like a slash activation) regardless of
-`model-invocable`, which only governs what `skills://` shows. The first-bake
+first prompt (rendered like a slash activation, headed by the shared skill-file
+header when the model can read the skill) regardless of `model-invocable`,
+which only governs what `skills://` shows. The first-bake
 CAS persists the Agent-available slugs (`[]` when the list is empty). Skills
 that join slash after freeze do not rewrite the prompt or its skill list, and
 display slugs do not guard freezing. Named spawn targets come from the

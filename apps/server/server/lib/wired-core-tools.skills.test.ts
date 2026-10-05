@@ -1,7 +1,8 @@
 /**
- * Skills as files at the wired model tools (D52), on the built-in launch
- * agents: Critic is offered `story-review` and `writing-principles`, so it reads
- * those folders under `skills://` and nothing else.
+ * Skills as files at the wired model tools (D52) and the `skill` tool (D58), on
+ * the built-in launch agents: Critic is offered `story-review` and
+ * `writing-principles`, so it loads and reads those folders under `skills://`
+ * and nothing else.
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -72,14 +73,27 @@ async function criticTools() {
 }
 
 describe("skills:// at the model tools", () => {
-  it("reads a bound skill's SKILL.md and a resource whole, read-only", async () => {
+  it("reads a bound skill's SKILL.md and a resource whole, under the skill header", async () => {
     const call = await criticTools();
     const skill = await call("read", { path: "skills://story-review/SKILL.md" });
-    expect(skill).toMatch(/^skills:\/\/story-review\/SKILL\.md \(read-only\)\n\n---\nname: /);
+    expect(skill).toMatch(
+      /^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n---\nname: /,
+    );
     const resource = await call("read", { path: "skills://story-review/resources/line-edit.md" });
     expect(resource).toMatch(
-      /^skills:\/\/story-review\/resources\/line-edit\.md \(read-only\)\n\n/,
+      /^skills:\/\/story-review\/resources\/line-edit\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n/,
     );
+  });
+
+  it("loads a bound skill exactly as read does, and refuses an unbound one", async () => {
+    const call = await criticTools();
+    const loaded = await call("skill", { name: "story-review" });
+    expect(loaded).toBe(await call("read", { path: "skills://story-review/SKILL.md" }));
+    expect(loaded).toMatch(/^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative/);
+    expect(await call("skill", { name: "creative-writing-modes" })).toEqual({
+      message:
+        'Skill "creative-writing-modes" isn\'t available. Skills you can load: story-review, writing-principles.',
+    });
   });
 
   it("lists only the skills the binding offers", async () => {

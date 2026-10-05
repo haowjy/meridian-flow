@@ -8,6 +8,7 @@ import { projectToolPolicy, TOOL_CATALOG } from "../loop/permissions/project-too
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createInspectionToolRegistrations } from "./inspection-tools.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 import type { ToolRegistration } from "./types.js";
@@ -30,6 +31,7 @@ function allRegistrations(): ToolRegistration[] {
       tokenizer: async () => "anthropic",
     }),
     ...createSpawnToolRegistrations(),
+    ...createSkillToolRegistrations({ invoke: async () => ({ ok: true, text: "" }) }),
   ];
 }
 
@@ -177,8 +179,9 @@ describe("model tool schemas", () => {
         "thread_report",
         "spawn",
         "thread_message",
+        "skill",
       ]
     `);
-    expect(characters).toMatchInlineSnapshot(`17683`);
+    expect(characters).toMatchInlineSnapshot(`18001`);
   });
 });
