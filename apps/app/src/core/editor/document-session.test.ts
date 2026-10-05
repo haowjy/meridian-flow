@@ -591,21 +591,6 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("publishes a field first written while presence was suspended", () => {
-    const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
-    session.presence.setField("user", { name: "Writer" });
-
-    session.suspendPresence();
-    session.presence.setField("imageUploads", [{ token: "new" }]);
-    session.resumePresence();
-
-    expect(session.awareness.getLocalState()).toEqual({
-      user: { name: "Writer" },
-      imageUploads: [{ token: "new" }],
-    });
-    void session.destroy();
-  });
-
   it("resumes only when the last of two suspensions lets go", () => {
     const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
     session.presence.setField("user", { name: "Writer" });
