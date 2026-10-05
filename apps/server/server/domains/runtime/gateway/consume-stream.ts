@@ -7,14 +7,13 @@
  * streaming deltas. It iterates the full stream, discarding intermediate
  * deltas, and either returns the final GenerateResult or throws on error.
  */
-import type { GenerateResult, ProviderErrorResponse, StreamEvent } from "./domain/index.js";
+import type { GenerateResult, StreamEvent } from "./domain/index.js";
 
 export class GatewayStreamError extends Error {
   constructor(
     readonly code: string,
     message: string,
     readonly retryable: boolean,
-    readonly providerResponse?: ProviderErrorResponse,
   ) {
     super(message);
     this.name = "GatewayStreamError";
@@ -39,12 +38,7 @@ export async function consumeStream(events: AsyncIterable<StreamEvent>): Promise
       result = event.result;
     }
     if (event.type === "error") {
-      throw new GatewayStreamError(
-        event.code,
-        event.message,
-        event.retryable,
-        event.providerResponse,
-      );
+      throw new GatewayStreamError(event.code, event.message, event.retryable);
     }
   }
 
