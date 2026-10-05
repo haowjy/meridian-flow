@@ -89,6 +89,20 @@ first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
+A cached session is adopted into the registry at the document's current
+admission generation, which advances on any project mutation. Its persistence
+incarnation keeps the generation it was captured at, exactly as a live `admit`
+reuses it, so adoption must accept an older bindable incarnation (only a newer
+one is a foreign lineage). Refusing it strands the cached session `detached`:
+local edits never reach the server and the pill stays silent. When adoption
+itself fails (authority unreachable or the handoff errors), the adopter reports
+it to the session, which records the failure only while it is `detached` with no
+transport. The snapshot's `adoptionStalled` is derived from that: true only
+while `detached`, cleared by attaching a transport or a successful adoption,
+and never alongside a terminal state. `SyncStatus` shows "Saved locally
+(offline)" for it; elapsed detached time alone shows nothing, because a session
+merely awaiting its transport is healthy.
+
 ## Unfiled materialization and recovery
 
 A new document is an account resource exposed to its creating project before it
