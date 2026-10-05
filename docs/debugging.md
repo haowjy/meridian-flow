@@ -26,6 +26,11 @@ Start from your symptom in [Strategies](#strategies), or scan the
   records carry the gateway error and correlation. Pivot to
   `?gatewayCallId=<id>` for the call's full lifecycle, then expand the call in
   the LLM Calls panel if you need request-level detail.
+- **A provider refused or failed a call** (out of balance, bad key, unknown
+  model). Start with `./mf thread view <id>`: the failed reply shows the
+  provider's HTTP status and message under its failure reason, then the
+  `./mf thread context <id> --call <gatewayCallId>` command that opens the
+  provider's response body (see [Provider Failures](#provider-failures)).
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
@@ -78,6 +83,9 @@ Contract:
   result can name the run's first turn with a null `finalText` instead of the
   reply that answered: read the answer with `./mf thread view`
   ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+- `thread view` prints a failed reply's provider status and message, and the
+  `thread context --call` command for its response body
+  ([Provider Failures](#provider-failures)).
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
@@ -117,6 +125,51 @@ jq -c 'select(.name == "meridian.subagent.activity")' run.ndjson   # one custom 
 
 Replays joined mid-message (`events --since`, `tail --since`) mark that
 message `partial: true`, since its text is only the tail after the cursor.
+
+## Provider Failures
+
+When a provider answers a model call with an error, three places keep it:
+
+```bash
+./mf thread view <id>                                    # status and message on the failed reply
+./mf thread view <id> --turn <turnId> --full             # the stored message untruncated
+./mf thread context <id> --call <gatewayCallId>          # the provider's response body beside the request
+./mf thread context <id> --call <gatewayCallId> --view raw   # status and body exactly as received
+./mf log --thread <id> --level warn                      # providerStatus=402 gatewayCallId=… on stream.close and turn.error
+```
+
+```text
+[assistant] 9475094e-… error/error in=0 out=0
+  error: This response failed.
+  failure reason: provider_error
+  provider error (402): Insufficient Balance
+  provider response: ./mf thread context f8e3ae21-… --call 142f1f34-…
+```
+
+- **The failed reply** keeps `metadata.providerError`: `{ status, message,
+  gatewayCallId }`, with the provider's message capped at 1,000 characters.
+  It is owner-scoped like the transcript and survives restarts. `thread view`
+  truncates the message to 300 characters; `--full` prints all of it.
+  `turn.error` stays the writer-facing copy.
+- **The capture record** for that call holds `providerError: { status, body }`,
+  the response body text exactly as the provider sent it, capped at 4 KiB.
+  Provider SDK clients use `providerFetch`, which keeps a failed response's
+  text before the SDK parses it. This lives with the captured request: the
+  debug gate must be open, it is in memory only, and a restart or eviction
+  loses it.
+- **Server events** carry only `providerStatus` (on `stream.close` and
+  `turn.error`) and `gatewayCallId`. Provider text never enters `EventSink`,
+  JSONL, or model context.
+
+`status` is null when the provider reported the failure inside a successful
+stream (OpenAI Responses `response.failed`). Network failures and timeouts
+have no provider response.
+
+Retry policy: the gateway retries network failures, failures with no response,
+429, and 5xx. Any other 4xx (402 out of balance, 404, 409, 413, 422) is the
+provider refusing the request, so it fails on the first attempt with
+`provider_error` (or the code it maps to: `auth_error`, `invalid_request`,
+`context_overflow`, `content_filtered`).
 
 ## Debug Gate
 
@@ -223,7 +276,9 @@ with the debug gate (see [Debug Gate](#debug-gate)), lives only in process memor
 2 MiB per request, and 16 MiB total. Oversized requests keep metadata and a
 digest but omit their body. A server restart clears the ring. Request content
 never enters `EventSink`, the event journal, thread snapshots, or JSONL logs.
-Production can never enable this capture. The Readable lens contains
+Production can never enable this capture. A call
+that failed with a provider response also carries that response
+([Provider Failures](#provider-failures)). The Readable lens contains
 writer Markdown within explicit message boundaries and limits each projected
 part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 
@@ -242,7 +297,8 @@ jar:
 
 Filters are `--event`, `--trace`, `--thread`, `--turn`, `--document`,
 `--error-code`, `--source`, `--name`, `--level`, `--since` (duration or ISO
-time), and `--limit` (default 50). Compact output omits payloads; `--full`
+time), and `--limit` (default 50). Compact output omits payloads except a
+provider failure's `providerStatus`, printed with its `gatewayCallId`; `--full`
 includes the sanitized records. JSON output includes dropped record/byte counts.
 Failures exit nonzero with a hint.
 
