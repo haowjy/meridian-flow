@@ -29,7 +29,7 @@ export interface AvailableSkillListing {
   description: string;
 }
 
-export class SkillUnavailableError extends Error {
+class SkillUnavailableError extends Error {
   readonly name = "SkillUnavailableError";
 
   constructor(slug: string) {
