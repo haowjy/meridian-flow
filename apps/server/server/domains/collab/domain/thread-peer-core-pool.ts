@@ -2,18 +2,14 @@
 import {
   type AgentEditCodec,
   type AgentEditCore,
-  commandSelection,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
-  isWriteErrorStatus,
   modelResult,
   parseDocumentAddress,
-  parseWriteHandle,
   type ReadCommand,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  type ReversalSelection,
   type ReversalStore,
   type SemanticProvenanceWriter,
   splitDocumentFile,
@@ -29,9 +25,7 @@ import {
   type FileAccess,
   type FileAccessDenied,
   type FileDestination,
-  FileEditRefusedError,
   type FileGrant,
-  isFileAccessDenied,
   markReplyConfirmed,
   runWithEditGrants,
   targetDocumentId,
@@ -58,18 +52,18 @@ import {
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { BranchJournalReadStore } from "./branch-push-contracts.js";
-import {
-  type BranchReversalHistoryReader,
-  buildBranchReversalState,
-  resolveBranchReversalScope,
-} from "./branch-reversal-history.js";
+import type { BranchReversalHistoryReader } from "./branch-reversal-history.js";
 import { documentRevision } from "./document-revision.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
 } from "./response-transaction.js";
-import { type ReversalRoute, type ReversalSide, splitReversal } from "./reversal-routing.js";
+import {
+  createThreadPeerReversals,
+  isReversalCommand,
+  type ReversalCommand,
+} from "./thread-peer-reversals.js";
 
 export type ResponseTransactionHooks = {
   enlist(participant: ResponseCommitParticipant): boolean;
@@ -112,7 +106,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
@@ -226,7 +220,7 @@ export function createThreadPeerCorePool(input: {
    * Confirms grants under lock: at a seam for a write that commits now, once at
    * a reply's save. Authorizes a reversal at the destination its write landed in.
    */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   maxThreadCores?: number;
@@ -252,69 +246,6 @@ export function createThreadPeerCorePool(input: {
     cores.set(id, core);
     await evictIdleCores();
     return core;
-  }
-
-  /**
-   * Where each write an undo or redo selects landed: the thread's Work draft or
-   * live. Only a thread with drafted history on the document splits.
-   */
-  async function reversalRoutes(
-    documentId: DocumentId,
-    threadId: string | undefined,
-    direction: "undo" | "redo",
-    selection: ReversalSelection,
-  ): Promise<Map<ReversalSide, ReversalRoute>> {
-    const scope = threadId
-      ? await resolveBranchReversalScope({
-          documentId,
-          threadId: threadId as ThreadId,
-          ...input.reversalHistory,
-        })
-      : null;
-    if (!threadId || !scope) return new Map([["live", { selection, handles: [] }]]);
-    const drafted = buildBranchReversalState(threadId as ThreadId, scope.rows);
-    const [active, reversals] = await Promise.all([
-      input.liveHistory.activeWriteSummary(documentId, threadId),
-      input.liveHistory.readReversals(documentId, { threadId }),
-    ]);
-    return splitReversal({
-      direction,
-      selection,
-      live: { active, reversals },
-      draft: { active: drafted.activeWrites, reversals: drafted.reversals },
-    });
-  }
-
-  function reversalCore(side: ReversalSide, threadId: string | undefined) {
-    return side === "live" ? input.liveUtilityCore : coreFor(threadId);
-  }
-
-  /** The core holding the write a plain undo or redo would reverse. */
-  async function latestReversalCore(docId: string, threadId: string, direction: "undo" | "redo") {
-    const routes = await reversalRoutes(docId as DocumentId, threadId, direction, {
-      kind: "latest",
-    });
-    const [side] = routes.keys();
-    return reversalCore(side ?? "live", threadId);
-  }
-
-  /**
-   * A reversal's grant at the destination its writes landed in. The call's
-   * grant names where new writes go, which a mode switch since may have moved.
-   */
-  async function reversalGrant(
-    grant: FileGrant<"edit">,
-    side: ReversalSide,
-  ): Promise<FileGrant<"edit"> | FileAccessDenied> {
-    const agent = grant.principal.agent;
-    const caller = agent?.chain[0];
-    if (grant.destination.kind === side || !agent || !caller) return grant;
-    const draftWork = side === "draft" ? { id: caller.threadWorkId, slug: null } : null;
-    return input.fileAccess.authorize(
-      { ...grant.principal, agent: { ...agent, draftWork } },
-      grant.facts.target,
-      "edit",
-    );
   }
 
   async function evictIdleCores(): Promise<void> {
@@ -450,7 +381,9 @@ export function createThreadPeerCorePool(input: {
     routed: RoutedWriteContext,
   ): Promise<RoutedWriteOutcome> {
     const { grant, ...context } = routed;
-    if (isReversalCommand(command)) return reverse(command, context, grant);
+    if (isReversalCommand(command)) {
+      return reversals.reverse(command, context, grant, documentIdFromCommand(command));
+    }
     const documentId = documentIdFromCommand(command);
     const record = context.responseId
       ? responseFor(context.responseId, context.threadId)
@@ -482,42 +415,6 @@ export function createThreadPeerCorePool(input: {
     return outcome;
   }
 
-  /**
-   * History decides where a reversal goes, not the current destination: each
-   * selected write reverses where it landed. A journal whose grant is refused
-   * keeps its writes; the rest still reverse, and the result names the kept ones.
-   */
-  async function reverse(
-    command: ReversalCommand,
-    context: WriteContext,
-    grant: FileGrant<"edit">,
-  ): Promise<RoutedWriteOutcome> {
-    const documentId = documentIdFromCommand(command);
-    if (!documentId) return reverseIn(input.liveUtilityCore, command, null, context, grant);
-    const routes = await reversalRoutes(
-      documentId,
-      context.threadId,
-      command.command,
-      commandSelection(command),
-    );
-    const outcomes: WriteOutcome[] = [];
-    const refused: { writeIds: string[]; denial: FileAccessDenied }[] = [];
-    for (const [side, route] of routes) {
-      const sideGrant = await reversalGrant(grant, side);
-      try {
-        if (isFileAccessDenied(sideGrant)) throw new FileEditRefusedError([sideGrant]);
-        const sideCommand =
-          route.selection.kind === "last" ? { ...command, last: route.selection.count } : command;
-        const core = await reversalCore(side, context.threadId);
-        outcomes.push(await reverseIn(core, sideCommand, documentId, context, sideGrant));
-      } catch (cause) {
-        if (!(cause instanceof FileEditRefusedError)) throw cause;
-        refused.push(...cause.refused.map((denial) => ({ writeIds: route.handles, denial })));
-      }
-    }
-    return mergeReversals(command.command, outcomes, refused);
-  }
-
   async function reverseIn(
     core: AgentEditCore,
     command: ReversalCommand,
@@ -544,6 +441,15 @@ export function createThreadPeerCorePool(input: {
     }
     return outcome;
   }
+
+  const reversals = createThreadPeerReversals({
+    liveUtilityCore: input.liveUtilityCore,
+    coreFor,
+    reversalHistory: input.reversalHistory,
+    liveHistory: input.liveHistory,
+    fileAccess: input.fileAccess,
+    reverseIn,
+  });
 
   /**
    * Lock once per reply (file-access §5.2): every grant the reply wrote under,
@@ -702,27 +608,9 @@ export function createThreadPeerCorePool(input: {
         input.responseTransactionSettlement,
       );
     },
-    async getAvailability(docId, threadId) {
-      const [undoCore, redoCore] = await Promise.all([
-        latestReversalCore(docId, threadId, "undo"),
-        latestReversalCore(docId, threadId, "redo"),
-      ]);
-      const undo = await undoCore.getAvailability(docId, threadId);
-      const redo = redoCore === undoCore ? undo : await redoCore.getAvailability(docId, threadId);
-      return {
-        undo: undo.undo,
-        redo: redo.redo,
-        ...(undo.undoWriteId ? { undoWriteId: undo.undoWriteId } : {}),
-        ...(undo.undoTarget ? { undoTarget: undo.undoTarget } : {}),
-        ...(redo.redoWriteId ? { redoWriteId: redo.redoWriteId } : {}),
-      };
-    },
-    async undo(docId, threadId) {
-      return (await latestReversalCore(docId, threadId, "undo")).undo(docId, threadId);
-    },
-    async redo(docId, threadId) {
-      return (await latestReversalCore(docId, threadId, "redo")).redo(docId, threadId);
-    },
+    getAvailability: reversals.getAvailability,
+    undo: reversals.undo,
+    redo: reversals.redo,
     reverse(inputReverse) {
       return input.liveUtilityCore.reverse(inputReverse);
     },
@@ -850,60 +738,4 @@ function versionPhrase(destination: FileDestination, preposition: "in" | "to"): 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
-}
-
-type ReversalCommand = Extract<WriteCommand, { command: "undo" | "redo" }>;
-
-function isReversalCommand(command: WriteCommand): command is ReversalCommand {
-  return command.command === "undo" || command.command === "redo";
-}
-
-/**
- * One result for a reversal that ran in both journals, or was refused in one.
- * Anything reversed makes it `partial` unless every part reversed; with
- * nothing reversed, an error from either part is the result, and a refusal
- * alone is thrown as the refusal it is.
- */
-function mergeReversals(
-  direction: "undo" | "redo",
-  outcomes: readonly WriteOutcome[],
-  refused: { writeIds: string[]; denial: FileAccessDenied }[],
-): RoutedWriteOutcome {
-  const noop = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
-  const effective = outcomes.filter((outcome) => outcome.status !== noop);
-  const [first] = effective.length > 0 ? effective : outcomes;
-  if (!first) throw new FileEditRefusedError(refused.map(({ denial }) => denial));
-  if (refused.length === 0 && effective.length <= 1) return first;
-  const reversed = effective.filter(
-    (outcome) => outcome.status === "reversed" || outcome.status === "reconciled",
-  );
-  if (reversed.length === 0) {
-    if (effective.length === 0) throw new FileEditRefusedError(refused.map(({ denial }) => denial));
-    return first;
-  }
-  const whole = reversed.length === effective.length && refused.length === 0;
-  const status = !whole
-    ? "partial"
-    : reversed.some((outcome) => outcome.status === "reconciled")
-      ? "reconciled"
-      : "reversed";
-  const results = effective.map((outcome) => outcome.result);
-  const messages = results.flatMap((result) => (result.message ? [result.message] : []));
-  const blocks = results.flatMap((result) => result.blocks ?? []);
-  const writes = reversed
-    .flatMap((outcome) => outcome.result.reversal?.writes ?? [])
-    .sort((left, right) => (parseWriteHandle(left) ?? 0) - (parseWriteHandle(right) ?? 0));
-  return {
-    ...first,
-    status,
-    isError: isWriteErrorStatus(status),
-    result: {
-      ...first.result,
-      status,
-      reversal: { direction, writes },
-      ...(blocks.length > 0 ? { blocks } : {}),
-      ...(messages.length > 0 ? { message: messages.join(" ") } : {}),
-    },
-    ...(refused.length > 0 ? { refusedWrites: refused } : {}),
-  } as RoutedWriteOutcome;
 }
