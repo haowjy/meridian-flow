@@ -144,4 +144,23 @@ describe("a delete row's Restore", () => {
     expect(host.textContent).not.toContain("Restored");
     expect(restoreButton()).not.toBeNull();
   });
+
+  it("rolls back a 409 it doesn't know and asks to try again", async () => {
+    serve({
+      status: 409,
+      body: { status: 409, message: "The document changed under the request" },
+      restores: false,
+    });
+    await renderRow();
+
+    await act(async () => restoreButton()?.click());
+
+    await vi.waitFor(() =>
+      expect(host.querySelector("[data-restore-note]")?.textContent).toBe(
+        "Couldn't restore it. Try again.",
+      ),
+    );
+    expect(host.textContent).not.toContain("Restored");
+    expect(restoreButton()).not.toBeNull();
+  });
 });

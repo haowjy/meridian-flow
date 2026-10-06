@@ -386,7 +386,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect((await documentRow(DOC_ID))?.deletedAt).toBeNull();
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
-      await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
+      await expect(restore()).resolves.toEqual({ status: "not_applied" });
     });
 
     it("the writer's turn undo puts back the turn's move and delete, and redo makes them again", async () => {

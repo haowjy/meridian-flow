@@ -4,25 +4,30 @@ import {
   type RestoreAgentDeleteResponse,
 } from "@meridian/contracts/protocol";
 
-import { httpErrorStatus, postJson } from "./http-client";
+import { postJson } from "./http-client";
 
-/** What a restore came to. `already_restored` is the route's 404: no delete of that document is still applied in that turn. */
-export type RestoreDeleteOutcome = RestoreAgentDeleteResponse["status"] | "already_restored";
+/** What a restore came to, as the route answers it. */
+export type RestoreDeleteOutcome = RestoreAgentDeleteResponse["status"];
+
+const REFUSALS: ReadonlySet<unknown> = new Set<RestoreDeleteOutcome>([
+  "location_taken",
+  "folder_missing",
+  "not_applied",
+]);
 
 export async function restoreAgentDelete(
   threadId: string,
   input: { turnId: string; documentId: string },
 ): Promise<RestoreDeleteOutcome> {
-  try {
-    const response = await postJson<RestoreAgentDeleteResponse>(
-      apiThreadTurnRestoreDeletePath(threadId, input.turnId),
-      { documentId: input.documentId },
-      // The two refusals answer 409 with the same typed body as success.
-      { acceptErrorResponse: (status) => status === 409 },
-    );
-    return response.status;
-  } catch (error) {
-    if (httpErrorStatus(error) === 404) return "already_restored";
-    throw error;
-  }
+  const response = await postJson<RestoreAgentDeleteResponse>(
+    apiThreadTurnRestoreDeletePath(threadId, input.turnId),
+    { documentId: input.documentId },
+    // The route's refusals answer 409 with a typed body. Any other 409 (a
+    // context conflict passed through) or 404 is a failed request.
+    {
+      acceptErrorResponse: (status, payload) =>
+        status === 409 && REFUSALS.has((payload as { status?: unknown } | null)?.status),
+    },
+  );
+  return response.status;
 }

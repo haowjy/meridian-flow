@@ -159,12 +159,12 @@ export async function restoreAgentDelete(
   const documentId = requireRequestId(input.documentId, "documentId");
   const tree = await writerNamespaceTree(deps, threadId, input.userId);
   const change = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
-  if (!change) throw createError({ statusCode: 404, message: "No delete to restore" });
+  if (!change) return { status: "not_applied" };
   const restored = await deps.namespaceChanges.reverse(tree, change, "undo");
   if (restored.ok) return { status: "restored", documentId, uri: change.fromUri };
   switch (restored.error.code) {
     case "claimed":
-      throw createError({ statusCode: 404, message: "No delete to restore" });
+      return { status: "not_applied" };
     case "conflict":
       return { status: "location_taken", uri: change.fromUri };
     case "not_found":

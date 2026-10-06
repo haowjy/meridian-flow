@@ -3,9 +3,9 @@
  * in a turn.
  *
  * Optimistic: the turn's lineage marks the delete reversed at once, so its row
- * reads as restored before the server answers. A refusal or a lost request
- * puts the delete back to applied; `already_restored` keeps it reversed,
- * because that is what the 404 means.
+ * reads as restored before the server answers. A refusal or a failed request
+ * puts the delete back to applied; `not_applied` keeps it reversed, because
+ * nothing in the turn is left to restore.
  */
 import type { ListTurnLiveLineageResponse } from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
