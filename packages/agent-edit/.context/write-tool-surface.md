@@ -2,15 +2,18 @@
 
 ## Tool surface
 
-`write()` returns host metadata plus one canonical model result:
-`WriteOutcome { command, status, isError, text, result }` (`src/tool/types.ts`).
-`result` is the versioned `meridian.agent-edit.v1` JSON envelope and is the only
-representation sent to the LLM. `text` is host-facing diagnostic text, not a
-second model protocol. Block groups carry shared semantics as
+`read()` and `write()` return host metadata plus one typed result:
+`WriteOutcome { command, status, isError, result, … }` (`src/tool/types.ts`).
+`result` is the versioned `meridian.agent-edit.v1` envelope. The model never
+sees it as JSON: `renderAgentEditResult` (`src/tool/result-text.ts`) is the
+only path to the model's text (a status line, notes, the message, then
+`hash|text` blocks), and hosts keep `result` beside that text for history,
+the app and code mode. Nothing parses the text back, and there is no second
+text field. Block groups carry shared semantics as
 `{ extent, relation, items: [{ hash, body }] }`, so multiline bodies cannot
 collide with adjacent blocks without repeating metadata on every item. The only
 group kinds are full `document`, `changed`, or `swept` bodies and prefix
-`context`; concurrent bodies and tombstones live under `concurrent.runs`, where
+`context` or `copied`; concurrent bodies and tombstones live under `concurrent.runs`, where
 their placement already conveys the concurrent relation. Full and outline reads
 derive diagnostic text and typed items from one batch serialization. Hashes are
 model/tool targeting tokens: expose them in tool arguments and results, never as
@@ -19,7 +22,7 @@ protocol detail.
 
 The result lifecycle is discriminated: `status: "success"` requires
 `phase: "staged" | "committed"`, while every non-success status excludes
-`phase`. Hosts must use the exported `isAgentEditResult` guard when recognizing
+`phase`. Hosts must use the exported `isAgentEditResultEnvelope` guard when recognizing
 persisted results rather than inferring validity from the schema string alone.
 `idempotency` is provided by `tool_use_id`, but provider tool ids are
 response-local: cache and durable attempt ids scope them by `responseId`, or by
@@ -29,14 +32,15 @@ new write.
 
 ### Response commit lifecycle
 
-Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `delete` apply to
+Passing `WriteContext.responseId` makes `create` / `insert` / `replace` / `remove` apply to
 the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
 receipts recomputed against the settled projection for host publication. Without
 a response id, the same command path appends and projects immediately. Undo/redo
-never buffer: a tool reversal first commits any buffered writes for that response
-so durable order matches tool order.
+never buffer, and they never save buffered writes either: the host treats a
+`write` `undo` or `redo` as a save boundary and commits the reply before it, so
+buffered writes at a reversal are an invariant error (`internal_error`).
 
 Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 
@@ -106,6 +110,27 @@ the server response owner.
 
 ### Tool concerns
 
+**One selector rule.** `tool/selector-rules.ts` owns which selectors `read`,
+`insert`, `replace` and `remove` accept together: one of `in`, `around` or a
+`#fragment`; `around` and `all` only with `find`; insert positions with
+`after`, `before` or `find`; `remove` takes exactly one of `in` or a fragment.
+The command schemas run it in `superRefine`, so hosts refuse a bad combination
+before dispatch and the resolver never re-checks it. Field descriptions state
+each rule, because refinements don't export to JSON Schema.
+
+**Copies are nodes, not markup (D23, D24).** `insert`/`replace` take exactly
+one of `content` or `from`, and `copy` creates a document from another. The engine
+never reads the source: the host reads it with `WriteContext.includeNodes`
+(the read returns `WriteOutcome.nodes`) and passes the blocks back as
+`copiedNodes`. They are inserted as ProseMirror nodes, so blank paragraphs and
+whitespace survive and every copy gets a fresh hash; a `replace` with `from`
+reuses none of the replaced blocks. `copy` runs through `create`, so it stages,
+rolls back and undoes like one. `tool/copy-rules.ts` holds the `from` rules.
+A copy's receipt is bounded (`tool/copy-receipt.ts`): `copied: { from, blocks }`
+plus, for a block copy, the first and last new block as a short `copied`
+prefix group. The staged write keeps the summary so the settled receipt says
+the same. An undo that leaves the document empty notes that it still exists.
+
 `tool/interaction-mode.ts` is the sole owner of `mutationMode` and
 `interactionContextForAttempt`. The mode (`"threadPeer"` plus
 `branchGeneration`, or `"live"`) is required end-to-end.
@@ -138,10 +163,9 @@ accidental UUID interpolation fails loudly.
   envelope. The seam stays clean through pure resolvers, stable `ResolvedEdit`,
   and a version-agnostic apply layer; no command-contract pinning is needed until
   a second command version exists.
-- **Read auto-budget/truncation is not implemented.** `format: "auto"` resolves
-  to full; outline requires explicit selection and falls back to full selected
-  content when no headings exist. Read results do not report changes since an
-  earlier read; `write(command: "diff")` queries the current turn's mutation trail.
+- **Read auto-budget/truncation is not implemented.** Outline requires explicit
+  selection and falls back to full selected content (reported as `full`) when no
+  headings exist. Read results do not report changes since an earlier read.
   These limitations are tracked in [#523](https://github.com/haowjy/meridian-flow/issues/523).
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
@@ -167,4 +191,4 @@ idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 Undo/redo use the same versioned result envelope as writes, with typed reversal
 metadata and block records.
 
-Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`from` + `to`), newest N (`last`), or all (`all`). The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.
+Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N writes (`last`; for redo, the N handles undone most recently), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). Undo plans a selection at once; redo plans one undo group at a time, oldest undo first, and keeps going for `since`/`to`, `last`, `all` and turn selections. A reversal is `reconciled` only when its result differs from the text just before the reversed writes (undo) or the reversed undo (redo); a sweep alone doesn't make it reconciled. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

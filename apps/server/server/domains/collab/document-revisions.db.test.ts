@@ -1,24 +1,25 @@
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
-import { toDocHandle } from "@meridian/agent-edit/integration";
+import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
-import { threadExecutionContext } from "../threads/index.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
@@ -38,10 +39,15 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 
 beforeEach(resetDatabase);
+const harnesses: Array<ReturnType<typeof createHarness>> = [];
+afterEach(() => {
+  for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+});
 afterAll(closeDatabase);
 
 async function fixture(mode: "direct" | "draft") {
   const harness = createHarness();
+  harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
   await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
@@ -62,7 +68,6 @@ async function fixture(mode: "direct" | "draft") {
     branches: f.branchStore,
     branchCoordinator: f.branchCoordinator,
     branchPulls: f.branchPulls,
-    branchPush: f.branchPush,
     liveCoordinator: f.liveCoordinator,
     agentEdit: f.collab.agentEdit(),
     documents: f.runtime.markdownDocuments,
@@ -75,17 +80,24 @@ async function fixture(mode: "direct" | "draft") {
     documents: effective,
     works: createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
     threadWorks: createDrizzleThreadWorksRepository(db),
   });
-  const core = mode === "direct" ? f.runtime.liveUtilityCore : f.collab.agentEdit();
-  const context = { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: TURN_ID };
+  const core = f.collab.agentEdit();
+  const context = {
+    threadId: THREAD_ID,
+    sessionId: THREAD_ID,
+    turnId: TURN_ID,
+    grant: testFileGrant(
+      mode === "direct"
+        ? { kind: "live" }
+        : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+    ),
+  };
   const read = (responseId?: string) =>
-    core.write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-      { ...context, responseId },
-    );
+    core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
   async function writerDelete() {
@@ -123,7 +135,7 @@ async function fixture(mode: "direct" | "draft") {
       },
       { ...context, responseId, createdDocument: false },
     );
-    expect(outcome.isError, outcome.text).toBe(false);
+    expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
   return { ...f, core, read, current, stage, writerDelete, revisions, effective };
@@ -180,11 +192,7 @@ describe("document revisions (postgres and collab)", () => {
     const receipts: Array<string | null> = [];
     await f.collab.finalizeResponseCommit(
       responseId,
-      {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        execution: threadExecutionContext({ id: WORK_ID, slug: null, aiWriteMode: "direct" }),
-      },
+      { threadId: THREAD_ID, turnId: TURN_ID },
       async (result) => {
         if (result.status === "committed")
           receipts.push(
@@ -199,22 +207,15 @@ describe("document revisions (postgres and collab)", () => {
     const f = await fixture("direct");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
-    const original = f.liveCoordinator.withDocument.bind(f.liveCoordinator);
     let injected = false;
-    f.liveCoordinator.withDocument = (id, callback, options) =>
-      original(
-        id,
-        async (doc) => {
-          const result = await callback(doc);
-          if (!injected && result && typeof result === "object" && "revision" in result) {
-            injected = true;
-            await f.writerDelete();
-          }
-          return result;
-        },
-        options,
-      );
-    const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893");
+    // The live apply runs on a private copy inside the save transaction (D42);
+    // a writer edit after it and before commit must not move the receipt.
+    const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893", {
+      beforeTransactionCommit: async () => {
+        injected = true;
+        await f.writerDelete();
+      },
+    });
     expect(injected).toBe(true);
     const receipt = committed.documents[0]?.receipts[0];
     expect(receipt?.revision).toMatch(/^y1:/);
@@ -323,6 +324,7 @@ describe("document revisions (postgres and collab)", () => {
       const hit = await f.effective.readEffectiveHashlines({
         documentId: ALPHA_ID,
         threadId: THREAD_ID,
+        destination: "draft",
       });
       if (!hit.ok) throw new Error("Search failed");
       await f.writerDelete();
@@ -371,7 +373,7 @@ describe("document revisions (postgres and collab)", () => {
     await rolledBack;
     await f.branchPulls.flushLivePull(ALPHA_ID);
     expect(observed).toBe(1);
-    expect((await f.read()).text).not.toContain("Opening paragraph");
+    expect(renderAgentEditResult((await f.read()).result)).not.toContain("Opening paragraph");
   });
 
   it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
@@ -423,7 +425,7 @@ describe("document revisions (postgres and collab)", () => {
         await f.writerDelete();
       }
       await runInDrizzleTransaction(db, async () => {
-        await requireLockedActiveWork(db, WORK_ID);
+        await requireLockedActiveWorks(db, [WORK_ID]);
         await bounded(async () => {
           await f.effective.resolveManifestMembership({
             projectId: PROJECT_ID,
@@ -482,6 +484,20 @@ describe("document revisions (postgres and collab)", () => {
     await f.branchPulls.flushLivePull(ALPHA_ID);
     expect(blocks).toBe(1);
     expect(await f.current()).not.toBe(before);
+  });
+
+  it("concurrent live pulls for more documents than pooled connections all finish", async () => {
+    const f = await fixture("draft");
+    // The harness pool holds 4 connections. A pull that takes its live snapshot
+    // while holding its root transaction needs a second one, so 8 at once
+    // would hold every connection and wait forever.
+    const documentIds = [
+      ALPHA_ID,
+      ...Array.from({ length: 7 }, () => crypto.randomUUID() as typeof ALPHA_ID),
+    ];
+    await bounded(() =>
+      Promise.all(documentIds.map((documentId) => f.branchPulls.flushLivePull(documentId))),
+    );
   });
 
   it("publishes a root-committed pull even when its caller response aborts", async () => {

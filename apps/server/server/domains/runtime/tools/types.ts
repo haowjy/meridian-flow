@@ -19,8 +19,10 @@ import type {
   SpawnResult,
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
 import type { DocumentTextPolicy } from "./document-text.js";
+import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
@@ -104,6 +106,12 @@ export interface ToolExecutionResult {
   metadata?: JsonObject;
   /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
   returnResult?: ReturnResultOutcome;
+  /**
+   * The tool's typed result, always set. `output` is its rendering when the
+   * registration has `renderResult`, and the value itself otherwise. Readers
+   * use this, never `output`, which may be text.
+   */
+  result: JsonValue;
 }
 
 /**
@@ -156,16 +164,17 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  * narrow suspend/resume seam the orchestrator owns.
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
-  spawn(input: SpawnToolArgs): Promise<SpawnResult>;
+  /** A run's result, or `invalid_arguments` for an override the caller may not make. */
+  spawn(input: SpawnToolArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 
 export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
-  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult>;
+  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
   threadReport(
     input: ThreadReportArgs,
-  ): Promise<import("@meridian/contracts/spawn").ThreadReportResult>;
+  ): Promise<import("@meridian/contracts/spawn").ModelThreadReportResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
@@ -190,12 +199,9 @@ export interface InterruptToolHandlerContext extends ToolHandlerContext {
 /**
  * The core tool-handler type signature.
  *
- * `input` is typed as `unknown` rather than `Record<string, unknown>`
- * because the executor does not re-parse or validate the model's arguments
- * before passing them through — the handler is responsible for casting and
- * validating its own input. This is a pragmatic choice: the model's JSON
- * output is already parsed at the orchestrator layer, and per-tool JSON
- * Schema validation is deferred to individual handler implementations.
+ * When the registration declares `input`, the executor has already parsed the
+ * model's arguments with it: `input` is that schema's output and the handler
+ * may cast to it. Registrations without `input` still receive raw arguments.
  *
  * The return type is `Promise<unknown>` — handlers are async by convention
  * (most do I/O), and the executor normalizes whatever they return through
@@ -239,13 +245,28 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
  */
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
-  historyPreview?: (input: JsonObject, output?: JsonValue) => string;
+  /**
+   * What follows a finished call's `→` in `thread_history` (D48), from its typed
+   * result; the line already quotes the arguments. Absent or undefined: no arrow.
+   */
+  historySummary?: (input: JsonObject, result: JsonValue) => string | undefined;
+  /**
+   * How `thread_history` shows a call by default. A `routine` call (inspection)
+   * is hidden and counted; any other call is one receipt line. Errors always show.
+   */
+  historyKind?: "routine" | ((input: JsonObject) => "routine" | "receipt");
   /**
    * Provenance of the registration, used for collision policy. Skill
    * resolution must never bind a package skill slug to a non-skill tool.
    */
   source: "core" | "spawn" | "skill";
   definition: FunctionTool;
+  /**
+   * The tool's one input contract. `definition.inputSchema` is its
+   * `modelToolSchema` projection, and the executor parses every call with it
+   * before dispatch: invalid values and unknown keys never reach the handler.
+   */
+  input: z.ZodType;
   advertise?: boolean;
   execution:
     | {
@@ -264,6 +285,13 @@ export interface ToolRegistration {
   capability?: "interrupt" | "spawn" | "thread_message" | "thread_report" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
+  /**
+   * Renders the handler's typed result into the text the model sees (D43, D65),
+   * given the call's parsed input (`{}` when it didn't parse). The executor
+   * stores the typed result beside the text. A refusal (`MeridianError`) never
+   * reaches it: the executor renders refusals itself.
+   */
+  renderResult?: (result: JsonValue, input: JsonObject) => string;
 }
 
 export interface ToolExecutionError {

@@ -61,12 +61,6 @@ export type {
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
-  TurnDiffChange,
-  TurnDiffQuery,
-  TurnDiffResult,
-  TurnDiffTrailState,
-} from "./ports/turn-diff-query.js";
-export type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
@@ -106,7 +100,9 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
+export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type {
   PersistUndoWatermarkRecord,

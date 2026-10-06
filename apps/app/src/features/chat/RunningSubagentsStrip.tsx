@@ -13,7 +13,7 @@ export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
   if (!children.length) return null;
   const first = children[0];
   if (!first) return null;
-  const aggregate = { ...first, agentName: "Subagent", description: null };
+  const aggregate = { ...first, agentName: "Subagent", name: null };
   const single = children.length === 1 ? children[0] : undefined;
   return (
     <section
@@ -38,8 +38,8 @@ export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
               <>
                 <SubagentIdentity
                   run={aggregate}
-                  showDescription={false}
-                  name={<Trans>{children.length} subagents</Trans>}
+                  showName={false}
+                  agentLabel={<Trans>{children.length} subagents</Trans>}
                 />
                 <span className="truncate text-xs text-muted-foreground">
                   <Trans>{children.length} running</Trans>

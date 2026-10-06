@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import {
   createDrizzleProjectWorkRepository,
   deleteWorkTransition,
@@ -38,12 +39,14 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const workContext = createWorkContextReader({
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
+      readChainPermission: async () => "edit" as const,
     });
     const eventWriter = createDrizzleEventJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);
@@ -169,6 +172,34 @@ else
       await expect(delivery().selectPending(otherThreadId)).resolves.toEqual([]);
     });
 
+    it("skips the thread whose own call changed the Work and refreshes the rest", async () => {
+      const siblingThreadId = "00000000-0000-4000-8000-000000000480" as typeof ids.threadId;
+      await db.insert(schema.threads).values({
+        id: siblingThreadId,
+        rootThreadId: siblingThreadId,
+        projectId: ids.projectId,
+        createdByUserId: ids.userId,
+        title: "Sibling Work thread",
+        kind: "primary",
+        status: "idle",
+      });
+      await repos.threadWorks.addMembership(siblingThreadId, ids.workId, true);
+      const notices = delivery();
+
+      await updateWorkTransition(
+        { works, workContextNotices: notices },
+        ids.workId,
+        { status: "Drafting" },
+        { originThreadId: ids.threadId },
+      );
+      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true, {
+        originThreadId: ids.threadId,
+      });
+
+      await expect(notices.selectPending(ids.threadId)).resolves.toEqual([]);
+      await expect(notices.selectPending(siblingThreadId)).resolves.toHaveLength(2);
+    });
+
     it("publishes archive and unarchive context refreshes", async () => {
       const notices = delivery();
       await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true);
@@ -176,7 +207,7 @@ else
       await notices.materializeIdle(ids.threadId);
       const archived = await updates();
       const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
-      expect(archivedBlocks[0]?.textContent).toContain("archived: this Work is read-only");
+      expect(archivedBlocks[0]?.textContent).toContain("writes: archived in auto-apply.");
 
       await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
       await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);

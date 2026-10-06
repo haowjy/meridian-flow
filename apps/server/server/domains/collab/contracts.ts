@@ -13,11 +13,21 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
-import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
+import type {
+  RefusedResponseDocument,
+  RoutedWriteOutcome,
+  ThreadPeerAgentEditCore,
+} from "./domain/agent-edit-cores.js";
+
+export type { RefusedResponseDocument, RoutedWriteOutcome };
+
+import type {
+  SetWorkPushPolicyInput,
+  SetWorkPushPolicyResult,
+} from "./domain/branch-push-contracts.js";
 import type {
   ActiveDraft,
   DraftApplyResult,
@@ -25,6 +35,9 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+
+export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
+
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
@@ -101,6 +114,8 @@ export type CollabTransport = {
   ): Promise<{
     branchId: string;
     documentId: DocumentId;
+    /** The Work whose draft the room is; its lifecycle caps the room's access. */
+    workId: WorkId;
     generation: number;
     schemaVersion: CollabSchemaVersion;
     status: "active";
@@ -150,8 +165,8 @@ export type CollabTransport = {
 };
 
 export type AgentEditAccess = {
-  /** Selects live or Work-draft mutation from the caller's frozen execution context. */
-  agentEdit(context?: ThreadExecutionContext): LiveAgentEditCore | ThreadPeerAgentEditCore;
+  /** The one model read/write entry point; each call names its destination. */
+  agentEdit(): ThreadPeerAgentEditCore;
 };
 
 export type ReverseThreadContextInput = {
@@ -243,6 +258,8 @@ export type ResponseWriteCommitFinalizeResult =
       status: "committed";
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
+      /** Documents the save left out (D29); their writes were not saved. */
+      refused: RefusedResponseDocument[];
       awarenessDegraded?: boolean;
     }
   | DraftClosedFinalizeResult;
@@ -254,12 +271,12 @@ export type ResponseWriteRollbackFinalizeResult = {
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseId: string,
-    ctx: { threadId: ThreadId; turnId: TurnId; execution?: ThreadExecutionContext },
+    ctx: { threadId: ThreadId; turnId: TurnId },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
     responseId: string,
-    ctx: { threadId: ThreadId; turnId: TurnId; execution?: ThreadExecutionContext },
+    ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
 
@@ -317,12 +334,7 @@ export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
-  setWorkPushPolicy(input: {
-    workId: WorkId;
-    policy: "manual" | "auto";
-    confirmedPush?: boolean;
-    pushedByUserId?: UserId;
-  }): Promise<unknown>;
+  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   markFailedResponseRollbackPending(input: {
     branchId: string;
     threadId: ThreadId;
@@ -334,6 +346,8 @@ export type BranchPeerShadowAccess = {
   readEffectiveRevision(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
+    /** The version the caller's writes change; `live` never touches a draft (D40). */
+    destination: "live" | "draft";
   }): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
@@ -341,11 +355,15 @@ export type BranchPeerShadowAccess = {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;
+    /** The version the caller's writes change; `live` never touches a draft (D40). */
+    destination: "live" | "draft";
   }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveHashlines(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;
+    /** The version the caller's writes change; `live` never touches a draft (D40). */
+    destination: "live" | "draft";
   }): Promise<Result<VersionedDocumentRead<string[]>, SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
@@ -374,7 +392,14 @@ export type DocumentAttribution = {
   }>;
 };
 
+/** Background work the domain schedules itself, stopped when the app shuts down. */
+export type CollabLifecycle = {
+  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
+  dispose(): void;
+};
+
 export type CollabDomain = CollabTransport &
+  CollabLifecycle &
   DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &

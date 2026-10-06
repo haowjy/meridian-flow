@@ -380,6 +380,25 @@ export function isPromptEpochMetadata(metadata: Turn["metadata"]): boolean {
 }
 
 /** Classifies stored turns once so compaction and history inspection share the same rules. */
+/** Metadata kinds that make a user or assistant turn a system message rather than conversation. */
+export const SYSTEM_TURN_KINDS = ["system_update", "derivation_seed", "subagent_update"] as const;
+
+/**
+ * A conversation turn: a writer request, an agent request, or an assistant
+ * reply. History numbers only these. The rule reads role, origin and
+ * `metadata.kind` alone so a repository can count it in one query.
+ */
+export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
+  const kind =
+    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+      ? (turn.metadata as { kind?: unknown }).kind
+      : undefined;
+  if ((SYSTEM_TURN_KINDS as readonly unknown[]).includes(kind)) return false;
+  if (turn.role === "user")
+    return turn.origin === "writer" || (turn.origin === "system" && kind === "inbox_message");
+  return turn.role === "assistant" && turn.origin === "assistant";
+}
+
 export function classifyHistoryItem(
   turn: Pick<Turn, "role" | "origin" | "metadata">,
 ): HistoryItemClass {

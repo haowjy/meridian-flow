@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   const workId = typeof query.workId === "string" ? query.workId : null;
   const response = await handleContextReadRequest(
     {
+      fileAccess: app.fileAccess,
       projectRepo: app.projectRepo,
       workRepo: app.workRepo,
       contextPorts: app.contextPorts,

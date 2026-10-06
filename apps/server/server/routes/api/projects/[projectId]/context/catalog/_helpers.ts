@@ -24,7 +24,7 @@ export async function resolveCatalogRoute(event: H3Event) {
   } else {
     throw createError({ statusCode: 400, message: `Unsupported catalog scope: ${kind}` });
   }
-  return { app, query, scope };
+  return { app, query, scope, userId: user.userId };
 }
 
 export function optionalPositiveSafeIntegerQuery(

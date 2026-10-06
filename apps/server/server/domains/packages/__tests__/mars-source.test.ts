@@ -42,7 +42,8 @@ describe("Agent source fidelity", () => {
     const meta = {
       name: "critic",
       skills: { load: ["voice"], available: ["continuity"] },
-      tools: { allowed: [], denied: ["edit"] },
+      tools: ["read", "write"],
+      "disallowed-tools": ["spawn"],
       subagents: [],
     };
     const body = "Review the chapter.\n";

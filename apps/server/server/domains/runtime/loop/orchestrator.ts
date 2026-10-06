@@ -34,7 +34,7 @@
  *   | tool.executing          | Tool dispatch begins                        |
  *   | tool.output_delta       | Best-effort live stdout/stderr chunk        |
  *   | tool.result             | Tool execution completes                    |
- *   | permission.denied       | Tool blocked by PermissionGate              |
+ *   | permission.denied       | Tool outside the agent's tool policy        |
  *   | model.response_received | A model response is recorded                |
  *   | usage                   | Cumulative token/cost tick                  |
  *   | turn.completed          | Turn finishes successfully                  |
@@ -45,12 +45,14 @@
  */
 
 import {
+  type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   isAgentEditResultEnvelope,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
+  renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
 import {
   type MeridianError,
@@ -58,11 +60,16 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type {
+  DocumentRevisionEvidence,
+  PermissionDeniedReason,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
+  JsonObject,
+  JsonValue,
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
@@ -99,6 +106,7 @@ import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
+import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
@@ -139,13 +147,13 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
+import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
-import type { RunClaim, ThreadPhase } from "./ports.js";
+import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
@@ -220,7 +228,7 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
+    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
@@ -266,6 +274,8 @@ type ResponseWriteCommitOutcome =
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** Documents the save left out; their writes did not land (D29). */
+      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -391,27 +401,29 @@ async function admitRunExecution(
   input: RunLoopInput,
   thread: Thread,
   executionTurnId: TurnId,
+  adopted: readonly InboxMessage[] = [],
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
   }
   if (thread.kind === "subagent") {
     if (!thread.ref) throw new Error("Subagent thread has no project handle");
-    const correlation = input.executionReport?.correlation ?? {
-      callerThreadId: null,
-      callerTurnId: null,
-      toolCallId: null,
-      cardBlockId: null,
-      origin: "thread_run" as const,
-      deliveryMode: "none" as const,
-    };
+    const correlation = input.executionReport?.correlation ??
+      parentRetaskCorrelation(thread, adopted) ?? {
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+        origin: "thread_run" as const,
+        deliveryMode: "none" as const,
+      };
     await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
       executionTurnId,
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
-      description: input.executionReport?.description ?? null,
+      name: input.executionReport?.name ?? null,
     });
   }
 }
@@ -685,7 +697,13 @@ async function runDrainTurn(
             {
               afterEvents: async () => {
                 if (selection.outstanding.length > 0 || input.replyTurnId)
-                  await admitRunExecution(deps, input, setupThread, reservedTurn.id);
+                  await admitRunExecution(
+                    deps,
+                    input,
+                    setupThread,
+                    reservedTurn.id,
+                    selection.outstanding,
+                  );
               },
             },
           );
@@ -806,13 +824,13 @@ async function reconcileOrphanedPendingWrites(
   for (const block of blocks) {
     if (block.blockType !== "tool_result") continue;
     const content = block.content as {
-      output?: unknown;
+      result?: unknown;
       metadata?: { stagedWrite?: unknown };
     } | null;
-    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.output)) {
+    if (content?.metadata?.stagedWrite !== true || !isAgentEditResultEnvelope(content.result)) {
       continue;
     }
-    if (content.output.phase !== "staged") continue;
+    if (content.result.phase !== "staged") continue;
     await persistUncommittedWriteResult({
       deps,
       threadId,
@@ -1020,19 +1038,11 @@ async function persistToolRejection(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  decision: {
-    allowed: false;
-    kind: "permission_denied" | "invalid_arguments";
-    category: Extract<OrchestratorEvent, { type: "permission.denied" }>["category"];
-    reason: string;
-  };
+  reason: string;
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionOutput = {
-    error: input.decision.kind,
-    reason: input.decision.reason,
-  };
+  const rejectionResult: JsonObject = { error: "permission_denied", reason: input.reason };
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1040,7 +1050,8 @@ async function persistToolRejection(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: rejectionOutput,
+        output: rejectionResult,
+        result: rejectionResult,
         isError: true,
       },
       status: "complete",
@@ -1049,21 +1060,18 @@ async function persistToolRejection(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        ...(input.decision.kind === "permission_denied"
-          ? [
-              {
-                type: "permission.denied" as const,
-                toolCallId: input.call.id,
-                toolName: input.call.name,
-                category: input.decision.category,
-                reason: input.decision.reason,
-              },
-            ]
-          : []),
+        {
+          type: "permission.denied" as const,
+          toolCallId: input.call.id,
+          toolName: input.call.name,
+          category: "tool_denied" as const,
+          reason: input.reason,
+        },
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: rejectionOutput,
+          output: rejectionResult,
+          result: rejectionResult,
           isError: true,
         },
       ],
@@ -1075,21 +1083,39 @@ async function persistToolRejection(input: {
   };
 }
 
+/** A staged write block's typed result, kept beside its rendered text. */
+function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
+  const result = (block.content as { result?: unknown } | null)?.result;
+  return isAgentEditResultEnvelope(result) ? (result as AgentEditResultV1) : undefined;
+}
+
+/** A write's tool-result fields: the model's text and the typed result beside it (D43). */
+function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
+  return { output: renderAgentEditResult(result), result: toJsonValue(result) };
+}
+
 async function persistUncommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
   text: string;
+  status?: "internal_error" | "invalid_write";
+  /** A file-policy refusal at the save: `permission_denied` with this reason. */
+  reason?: PermissionDeniedReason;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
-  const priorOutput = (input.block.content as { output?: unknown } | null)?.output;
+  const staged = stagedWriteResult(input.block);
   const message = ["Write did not land.", input.text].join("\n\n");
-  const output = toJsonValue(
+  const { output, result } = writeResultContent(
     modelResult({
-      command: isAgentEditResultEnvelope(priorOutput) ? priorOutput.command : "unknown",
-      status: "internal_error",
-      payload: { message },
+      command: staged?.command ?? "unknown",
+      status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
+      payload: {
+        ...(staged?.path ? { path: staged.path } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+        message,
+      },
     }),
   );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1099,7 +1125,7 @@ async function persistUncommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: { toolCallId, output, isError: true },
+      content: { toolCallId, output, result, isError: true },
       provider: input.block.provider,
       status: "complete",
     });
@@ -1107,7 +1133,7 @@ async function persistUncommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, isError: true },
+        { type: "tool.result", toolCallId, output, result, isError: true },
       ],
     };
   });
@@ -1118,7 +1144,7 @@ async function persistCommittedWriteResult(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   block: Block;
-  output: unknown;
+  result: AgentEditResultV1;
   documentRevision: DocumentRevisionEvidence;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
@@ -1128,6 +1154,14 @@ async function persistCommittedWriteResult(input: {
   const metadata = { ...content?.metadata };
   metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
+  // The settled receipt describes the same document and destination the staged result named.
+  const staged = stagedWriteResult(input.block);
+  const { output, result } = writeResultContent({
+    ...input.result,
+    ...(staged?.path ? { path: staged.path } : {}),
+    ...(staged?.destination ? { destination: staged.destination } : {}),
+    ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
+  });
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       id: input.block.id,
@@ -1135,7 +1169,7 @@ async function persistCommittedWriteResult(input: {
       responseId: input.block.responseId,
       blockType: "tool_result",
       sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output: input.output, metadata }),
+      content: toJsonValue({ toolCallId, output, result, metadata }),
       provider: input.block.provider,
       status: "complete",
     });
@@ -1143,7 +1177,7 @@ async function persistCommittedWriteResult(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output: toJsonValue(input.output) },
+        { type: "tool.result", toolCallId, output, result },
       ],
     };
   });
@@ -1313,7 +1347,7 @@ type BuiltGenerateRequest = {
   agentSlug: string | null;
   thread: Thread;
   resolvedModel: AssembledNextTurnContext["resolvedModel"];
-  permissionGate: PermissionGate;
+  policy: ToolPolicy;
 };
 
 function buildGenerateRequestFromAssembled(input: {
@@ -1326,10 +1360,7 @@ function buildGenerateRequestFromAssembled(input: {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
     resolvedModel: assembled.resolvedModel,
-    permissionGate: permissionGateFromToolPolicy(
-      assembled.policy,
-      assembled.thread.kind === "subagent" ? ["return_result"] : [],
-    ),
+    policy: assembled.policy,
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -1337,7 +1368,19 @@ function buildGenerateRequestFromAssembled(input: {
   };
 }
 
-/** Staged edits belong to a response scope, which rotates at a Work switch. */
+/**
+ * A call that must see the reply's writes saved first. An undo or redo
+ * reverses saved history, so it can't reach a write still staged in this reply.
+ */
+function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
+  const args = call.arguments;
+  if (call.name !== "write" || !args || typeof args !== "object" || !("command" in args)) {
+    return false;
+  }
+  return args.command === "undo" || args.command === "redo";
+}
+
+/** Staged edits belong to a response scope, which rotates at a save boundary. */
 function createResponseScope(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -1390,9 +1433,21 @@ function createResponseScope(input: {
         { threadId, turnId },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
+            const refusal =
+              settled.status === "committed"
+                ? settled.refused.find((refused) => refused.documentId === documentId)
+                : undefined;
             for (const write of blocks) {
-              const result =
-                settled.status === "committed"
+              const result = refusal
+                ? await persistUncommittedWriteResult({
+                    deps,
+                    threadId,
+                    block: write.block,
+                    status: "invalid_write",
+                    ...(refusal.reason ? { reason: refusal.reason } : {}),
+                    text: refusal.message,
+                  })
+                : settled.status === "committed"
                   ? await persistCommittedWriteResult({
                       deps,
                       threadId,
@@ -1403,7 +1458,7 @@ function createResponseScope(input: {
                         revision: settledReceipt(settled.receipts, documentId, write.settlementId)
                           .revision,
                       },
-                      output: settledReceipt(settled.receipts, documentId, write.settlementId)
+                      result: settledReceipt(settled.receipts, documentId, write.settlementId)
                         .result,
                     })
                   : await persistUncommittedWriteResult({
@@ -1438,23 +1493,13 @@ function createResponseScope(input: {
         const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
         const block = writes.get(documentId)?.at(-1)?.block;
         if (!block) continue;
-        const content = block.content as {
-          toolCallId?: string;
-          output?: unknown;
-          isError?: boolean;
-        } | null;
-        if (!content?.output) continue;
+        const content = block.content as JsonObject | null;
+        const staged = stagedWriteResult(block);
+        if (!content || !staged) continue;
 
-        const output = content.output;
-        if (!isAgentEditResultEnvelope(output)) continue;
-
-        const updatedOutput = {
-          ...output,
-          concurrent: modelConcurrentResult(boundedEdits),
-        };
         const updatedContent = {
           ...content,
-          output: updatedOutput,
+          ...writeResultContent({ ...staged, concurrent: modelConcurrentResult(boundedEdits) }),
         };
         const updatedBlockRow = contentForBlockInput({
           id: block.id,
@@ -1586,13 +1631,13 @@ async function executeLoop({
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
       continueTask:
         continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
-      admit: async (turn) => {
+      admit: async (turn, adopted) => {
         if (
           thread.kind === "subagent" &&
           (!executionSelector ||
             !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
         ) {
-          await admitRunExecution(deps, input, thread, turn.id);
+          await admitRunExecution(deps, input, thread, turn.id, adopted);
           executionSelector = turn.id;
         }
       },
@@ -2171,14 +2216,7 @@ async function executeLoop({
               return cancelExit();
             }
 
-            if (
-              call.name === "work" &&
-              call.arguments &&
-              typeof call.arguments === "object" &&
-              "command" in call.arguments &&
-              call.arguments.command === "switch" &&
-              scope.hasWrites
-            ) {
+            if (scope.hasWrites && isSaveBoundary(call)) {
               const boundary = await scope.commit();
 
               if (boundary.status === "draft_closed") {
@@ -2189,14 +2227,13 @@ async function executeLoop({
 
             // If denied, we still persist a tool_result block (with isError: true)
             // so the model sees the rejection in the next turn's context build.
-            const decision = built.permissionGate.check(call.name, call.arguments);
-            if (!decision.allowed) {
+            if (!built.policy.has(call.name)) {
               const persistedRejection = await persistToolRejection({
                 deps,
                 threadId: input.threadId,
                 turn: currentTurn,
                 call,
-                decision: { ...decision, category: "tool_denied" },
+                reason: missingToolRefusal(call.name),
                 blockSeq,
               });
               blockSeq = persistedRejection.nextBlockSeq;

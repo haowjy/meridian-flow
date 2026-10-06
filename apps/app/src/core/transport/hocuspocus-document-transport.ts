@@ -12,10 +12,18 @@
  * receive path rather than provider events: the provider emits its outgoing
  * message before the socket decides to queue it, and queued messages can be
  * dropped, so only the socket knows what actually reached the wire.
+ *
+ * The transport also owns the room's access scope. The server names it on every
+ * (re)connect through Hocuspocus's authenticated message; a 4409
+ * `access-changed` close freezes the room until the reconnect names the new
+ * scope. Local edits still unacknowledged at that close were refused, and a
+ * reconnect would replay them from this Y.Doc, so the transport resets instead
+ * and the owner rebuilds the room from the server's state.
  */
 import {
   HocuspocusProvider,
   HocuspocusProviderWebsocket,
+  type onAuthenticatedParameters,
   type onAuthenticationFailedParameters,
   type onCloseParameters,
   type onStatelessParameters,
@@ -33,6 +41,7 @@ import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type {
+  DocumentSessionAccess,
   DocumentSessionConnectionState,
   DocumentSessionResetReason,
   DocumentSessionTransportProvider,
@@ -174,9 +183,11 @@ export function createHocuspocusDocumentTransport({
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
+  const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
+    if (acknowledged) localEditsPending = false;
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
   const websocket = new RoomScopedHocuspocusWebsocket(
@@ -187,6 +198,10 @@ export function createHocuspocusDocumentTransport({
     acknowledgement,
   );
   let currentState = mapStatus(websocket.status);
+  // Only the server names a scope; until it does, the session keeps its own.
+  let currentAccess: DocumentSessionAccess | null = null;
+  // A local update the server has not yet acknowledged.
+  let localEditsPending = false;
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -197,6 +212,12 @@ export function createHocuspocusDocumentTransport({
   function publish(state: DocumentSessionConnectionState): void {
     currentState = state;
     for (const listener of listeners) listener(state);
+  }
+
+  function publishAccess(access: DocumentSessionAccess): void {
+    if (access === currentAccess) return;
+    currentAccess = access;
+    for (const listener of accessListeners) listener(access);
   }
 
   function publishTerminal(state: DocumentSessionConnectionState): void {
@@ -222,6 +243,15 @@ export function createHocuspocusDocumentTransport({
     publish({ kind: "connected" });
   }
 
+  function handleDocumentUpdate(_update: Uint8Array, origin: unknown): void {
+    if (origin !== provider) localEditsPending = true;
+  }
+
+  function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
+    if (terminal || destroyed) return;
+    publishAccess(scope === "readonly" ? "read" : "edit");
+  }
+
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
     if (destroyed) return;
     publishTerminal(terminalState(reason));
@@ -229,6 +259,13 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
+    if (event.code === WS_CLOSE.ACCESS_CHANGED.code) {
+      // Frozen until the reconnect's authenticated message names the new scope.
+      publishAccess("read");
+      if (localEditsPending)
+        publishTerminal(resetState(WS_CLOSE.ACCESS_CHANGED.reason, event.code));
+      return;
+    }
     const state = classifyDocumentTransportClose(roomName, event);
     if (state) publishTerminal(state);
   }
@@ -246,6 +283,7 @@ export function createHocuspocusDocumentTransport({
     websocketProvider: websocket,
     onStatus: handleStatus,
     onSynced: handleSynced,
+    onAuthenticated: handleAuthenticated,
     onAuthenticationFailed: handleAuthenticationFailed,
     onClose: handleClose,
     onStateless: handleStateless,
@@ -253,6 +291,8 @@ export function createHocuspocusDocumentTransport({
   if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
     notifyYjsRoomAttached(roomName, document.clientID);
   }
+
+  document.on("update", handleDocumentUpdate);
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
@@ -278,6 +318,13 @@ export function createHocuspocusDocumentTransport({
         listeners.delete(listener);
       };
     },
+    subscribeAccess(listener) {
+      accessListeners.add(listener);
+      if (currentAccess) listener(currentAccess);
+      return () => {
+        accessListeners.delete(listener);
+      };
+    },
     subscribeChangeEvents(listener) {
       changeEventListeners.add(listener);
       return () => changeEventListeners.delete(listener);
@@ -285,10 +332,12 @@ export function createHocuspocusDocumentTransport({
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      document.off("update", handleDocumentUpdate);
       acknowledgement.endConnection();
       provider.destroy();
       websocket.destroy();
       listeners.clear();
+      accessListeners.clear();
       acknowledgementListeners.clear();
       changeEventListeners.clear();
     },

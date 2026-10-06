@@ -78,7 +78,6 @@ describe("thread report wire contract", () => {
   it("parses the compact model tool result", () => {
     const result = parseThreadReportResult({
       ref: "p4",
-      run: 1,
       outcome: "succeeded",
       summary: "The outline is ready.",
     });
@@ -89,6 +88,19 @@ describe("thread report wire contract", () => {
       outcome: "succeeded",
       reason: null,
     });
+  });
+
+  it("parses a report from a previous run while the child runs again", () => {
+    const result = parseThreadReportResult({
+      ref: "p4",
+      outcome: "failed",
+      summary: "Stopped at the gate.",
+      partial: true,
+      running: true,
+      message: "p4 is running again; this report is from its previous run.",
+    });
+    expect(result).toMatchObject({ running: true, partial: true });
+    expect(toReportContentValue(result)).toMatchObject({ partial: true, outcome: "failed" });
   });
 });
 

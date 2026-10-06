@@ -152,7 +152,7 @@ describe("interrupt cancel", () => {
       async executeTool(call) {
         toolStarted.open();
         await releaseTool.promise;
-        return { toolCallId: call.id, output: { ok: true } };
+        return { toolCallId: call.id, output: { ok: true }, result: { ok: true } };
       },
     };
     const rig = await runtimeScenario({

@@ -4,10 +4,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ASK_USER_TOOL_INPUT_SCHEMA,
+  askUserToolInputSchema,
   buildInvocationCardContent,
   normalizeInterruptAnswerValue,
-  parseAskUserToolInput,
   parseInvocationCard,
 } from "./index.js";
 
@@ -22,28 +21,33 @@ describe("normalizeInterruptAnswerValue", () => {
 });
 
 describe("ask_user component contract", () => {
-  it("parses the server tool input and shares the kind enum with the JSON schema", () => {
-    expect(ASK_USER_TOOL_INPUT_SCHEMA.properties.kind.enum).toEqual(["choice", "free-text"]);
+  it("parses snake_case tool input into the camelCase ask input", () => {
     expect(
-      parseAskUserToolInput({
+      askUserToolInputSchema.parse({
         question: "Proceed?",
         kind: "choice",
         options: [{ value: "yes", label: "Yes" }],
         recommended: null,
-        requiresHuman: true,
-        timeoutMs: 12.9,
+        requires_human: true,
+        timeout_ms: 12,
       }),
     ).toEqual({
-      ok: true,
-      value: {
-        question: "Proceed?",
-        kind: "choice",
-        options: [{ value: "yes", label: "Yes" }],
-        recommended: null,
-        requiresHuman: true,
-        timeoutMs: 12,
-      },
+      question: "Proceed?",
+      kind: "choice",
+      options: [{ value: "yes", label: "Yes" }],
+      recommended: null,
+      requiresHuman: true,
+      timeoutMs: 12,
     });
+  });
+
+  it.each([
+    { question: "Q", kind: "free-text", timeout_ms: 1.5 },
+    { question: "Q", kind: "free-text", requires_human: "yes" },
+    { question: "Q", kind: "free-text", requiresHuman: true },
+    { question: "Q", kind: "choice" },
+  ])("refuses input it used to coerce or default: %j", (input) => {
+    expect(askUserToolInputSchema.safeParse(input).success).toBe(false);
   });
 });
 

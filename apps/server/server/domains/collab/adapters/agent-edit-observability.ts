@@ -75,24 +75,6 @@ export function createBranchAgentEditDiagnostics(
         payload,
       });
     },
-    autoPushUnapplied(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.branch_auto_push",
-        name: "auto_push.unapplied",
-        payload,
-      });
-    },
-    autoPushFailed({ workDraftBranchId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.branch_auto_push",
-        name: "auto_push.failed",
-        payload: { workDraftBranchId, ...unknownToEventPayload(cause) },
-      });
-    },
   };
 }
 

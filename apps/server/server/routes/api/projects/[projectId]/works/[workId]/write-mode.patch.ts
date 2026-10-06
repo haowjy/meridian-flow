@@ -14,13 +14,13 @@ export default defineEventHandler(async (event) => {
   const workId = getRouterParam(event, "workId") ?? "";
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
 
-  const body = (await readBody<{ aiWriteMode?: unknown; confirmedPush?: unknown }>(event)) ?? {};
+  const body = (await readBody<{ aiWriteMode?: unknown; pending?: unknown }>(event)) ?? {};
   const result = await handleWorkWriteModeRequest(selectWorkWriteModeServices(app), {
     projectId,
     workId,
     userId: user.userId,
     aiWriteMode: body.aiWriteMode,
-    confirmedPush: body.confirmedPush === true,
+    pending: body.pending,
   });
 
   return serializeTransport(result);

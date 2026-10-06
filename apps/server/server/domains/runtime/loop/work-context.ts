@@ -1,4 +1,6 @@
 /** Renders and resolves the frozen model-facing Work context block. */
+
+import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
   isWorkArchived,
@@ -12,6 +14,7 @@ import {
   type ThreadWorksRepository,
   threadExecutionContext,
 } from "../../threads/index.js";
+import { mayChangeWorks } from "./permissions/action-policy.js";
 
 export const WORK_CONTEXT_GOAL_LIMIT = 2_000;
 const GOAL_TRUNCATION_MARKER = "… [truncated]";
@@ -63,21 +66,51 @@ function currentWorkLines(
   if (status === null && goal === null && !isWorkArchived(work))
     return [`${identity} (goal: none)`];
   const lines = [identity];
-  if (isWorkArchived(work)) {
-    lines.push("  archived: this Work is read-only; use work unarchive before changing it.");
-  }
   if (status !== null) lines.push(`  status: ${status}`);
   if (goal === null) lines.push("  goal: none");
   else lines.push("  goal: |", ...goal.split("\n").map((line) => `    ${line}`));
   return lines;
 }
 
+/**
+ * Where this Work's AI writes land (D9, D40). An archived Work freezes its own
+ * scratch and draft (D29, D30); only an agent the action policy lets unarchive
+ * is offered that, and only draft mode has auto-apply as a way out (D31).
+ */
+function writeModeLines(
+  work: Pick<Work, "archivedAt" | "aiWriteMode">,
+  mayUnarchive: boolean,
+): string[] {
+  if (isWorkArchived(work)) {
+    if (!mayUnarchive) {
+      return [
+        "  writes: archived. This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",
+      ];
+    }
+    if (work.aiWriteMode === "direct") {
+      return [
+        "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
+      ];
+    }
+    return [
+      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+    ];
+  }
+  if (work.aiWriteMode === "direct")
+    return ["  writes: auto-apply. Your changes go live right away."];
+  return [
+    "  writes: draft mode. Your changes wait in this Work's draft, except scratch:// changes, which go live.",
+    "  The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
+  ];
+}
+
 function currentLines(
   work: Pick<Work, "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork">,
+  mayUnarchive: boolean,
 ): string[] {
-  if (work.isNoWork) return [`current: none (${work.aiWriteMode} writes)`];
-  const [identity, ...goalLines] = currentWorkLines(work);
-  return [`current: ${identity}`, ...goalLines];
+  if (work.isNoWork) return ["current: none", ...writeModeLines(work, mayUnarchive)];
+  const [identity, ...detailLines] = currentWorkLines(work);
+  return [`current: ${identity}`, ...writeModeLines(work, mayUnarchive), ...detailLines];
 }
 
 export function renderWorkContext(input: {
@@ -85,14 +118,21 @@ export function renderWorkContext(input: {
     Work,
     "slug" | "name" | "goal" | "status" | "archivedAt" | "aiWriteMode" | "isNoWork"
   >;
+  /** Whether the thread's agent chain may unarchive (D39). */
+  mayUnarchive: boolean;
 }): string {
-  return ["<work_context>", ...currentLines(input.current), "</work_context>"].join("\n");
+  return [
+    "<work_context>",
+    ...currentLines(input.current, input.mayUnarchive),
+    "</work_context>",
+  ].join("\n");
 }
 
 export function createWorkContextReader(deps: {
   threads: Pick<ThreadRepository, "findById">;
   works: Pick<WorkRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
 }): WorkContextReader {
   return {
     async renderForThread(threadId) {
@@ -106,7 +146,10 @@ export function createWorkContextReader(deps: {
       }
       const execution: ThreadExecutionContext = threadExecutionContext(current);
       return {
-        text: renderWorkContext({ current }),
+        text: renderWorkContext({
+          current,
+          mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
+        }),
         current: { projectId: thread.projectId, execution },
       };
     },

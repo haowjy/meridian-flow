@@ -9,7 +9,7 @@ import type { DeleteContextEntryRequest } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
-import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
+import { contextErrorToHttp, documentTarget, resolveContextRoute, toUri } from "./_helpers.js";
 
 function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (!raw || typeof raw !== "object")
@@ -41,14 +41,18 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, authority, port } = await resolveContextRoute(event);
+  const { userId, scheme, authority, port, container, edit } = await resolveContextRoute(event);
   const body = parseBody(await readBody(event));
   const uri = toUri(scheme, body.path, authority);
-  const result = await port.delete(uri, {
-    origin: { type: "human", userId },
-    expected: body.expected,
-    operationId: body.operationId,
-  });
+  const target =
+    body.expected.kind === "file" ? documentTarget(body.expected.documentId) : container;
+  const result = await edit([target], () =>
+    port.delete(uri, {
+      origin: { type: "human", userId },
+      expected: body.expected,
+      operationId: body.operationId,
+    }),
+  );
   if (!result.ok) contextErrorToHttp(result.error);
   return result.value;
 });

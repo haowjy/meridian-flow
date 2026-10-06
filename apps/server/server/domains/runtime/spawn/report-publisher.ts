@@ -88,7 +88,7 @@ export function createReportPublisher(deps: {
                   invocationCardProps({
                     agent: report.agentSlug ?? undefined,
                     agentName,
-                    description: report.description ?? undefined,
+                    name: report.name ?? undefined,
                     correlation: {
                       parentTurnId: report.callerTurnId,
                       toolCallId: report.toolCallId,

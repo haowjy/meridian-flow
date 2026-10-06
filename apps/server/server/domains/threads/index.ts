@@ -64,11 +64,7 @@ export {
   ThreadConversationContextError,
   type ThreadConversationContextErrorCode,
 } from "./domain/thread-conversation-context.js";
-export {
-  requireWorkDraftOwner,
-  threadExecutionContext,
-  WorkRequiredError,
-} from "./domain/thread-execution-context.js";
+export { threadExecutionContext } from "./domain/thread-execution-context.js";
 export {
   type ThreadTrashState,
   type ThreadTrashTransition,
@@ -76,11 +72,12 @@ export {
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
+  countConversationTurnsBefore,
   cursorAfter,
   InvalidTranscriptCursorError,
-  readTranscriptItem,
   readTranscriptPage,
   readTranscriptPageForProjection,
+  readTranscriptTurn,
   resolveTranscriptSpans,
   type TranscriptOrder,
   type TranscriptOwner,
@@ -132,6 +129,7 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
+  isConversationTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   noticesMetadata,

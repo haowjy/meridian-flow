@@ -26,7 +26,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   preferredSuccessorTurnId?: TurnId;
   signal?: AbortSignal;
   continueTask?: boolean;
-  admit?: (turn: Turn) => Promise<void>;
+  /** Admits the run's execution; `adopted` are the outstanding messages it now answers. */
+  admit?: (turn: Turn, adopted: readonly InboxMessage[]) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
   prepareCurrent?: () => Promise<TCurrent>;
   /** Completes a placeholder in the same transaction as late adoption and reservation. */

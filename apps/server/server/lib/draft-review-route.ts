@@ -9,17 +9,16 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type { FileGrant, FileNeed } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
+import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
 type DraftRouteServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
   works: Pick<AppServices["workRepo"], "findById">;
-  documentAccess: Pick<
-    AppServices["documentAccess"],
-    "canAccessDocument" | "canAccessProjectDocument"
-  >;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "listAccess">;
   documentSync: Pick<AppServices["documentSync"], "draftReview">;
 };
 
@@ -27,14 +26,14 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
   return {
     projects: app.projectRepo,
     works: app.workRepo,
-    documentAccess: app.documentAccess,
+    fileAccess: app.fileAccess,
     documentSync: app.documentSync,
   };
 }
 
 export async function requireDraftWorkAccess(
   deps: DraftRouteServices,
-  input: { projectId: ProjectId; workId: WorkId; documentId?: DocumentId; userId: UserId },
+  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
 ): Promise<void> {
   const project = await deps.projects.findById(input.projectId);
   if (!project || project.userId !== input.userId || project.deletedAt) {
@@ -44,15 +43,34 @@ export async function requireDraftWorkAccess(
   if (!work || work.projectId !== input.projectId) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
-  if (input.documentId) {
-    const [hasDocumentAccess, isProjectDocument] = await Promise.all([
-      deps.documentAccess.canAccessDocument(input.userId, input.documentId),
-      deps.documentAccess.canAccessProjectDocument(input.userId, input.documentId, input.projectId),
-    ]);
-    if (!hasDocumentAccess || !isProjectDocument) {
-      throw createError({ statusCode: 404, message: "Draft not found" });
-    }
+}
+
+/**
+ * The writer's grant on one draft (file-access §2, §4): preview reads it;
+ * Discard edits it; Apply edits it and the live document, so an archived
+ * Work's frozen draft can't be applied (D30).
+ */
+async function draftGrants<N extends FileNeed>(
+  deps: DraftRouteServices,
+  input: { projectId: ProjectId; workId: WorkId; documentId: DocumentId; userId: UserId },
+  need: N,
+  options: { live?: boolean } = {},
+): Promise<FileGrant<N>[]> {
+  await requireDraftWorkAccess(deps, input);
+  const draft = await requireFileGrant(
+    deps.fileAccess,
+    input.userId,
+    { kind: "draft", documentId: input.documentId, workId: input.workId },
+    need,
+  );
+  if (draft.facts.projectId !== input.projectId) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
   }
+  if (!options.live) return [draft];
+  return [
+    draft,
+    await requireFileGrant(deps.fileAccess, input.userId, documentTarget(input.documentId), need),
+  ];
 }
 
 export async function handleWorkDraftListRequest(
@@ -84,7 +102,7 @@ export async function handleWorkDraftPreviewRequest(
     userId: UserId;
   },
 ): Promise<DraftPreviewResponse> {
-  await requireDraftWorkAccess(deps, input);
+  await draftGrants(deps, input, "read");
   const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
   if (preview.status === "gone") return preview;
 
@@ -118,8 +136,10 @@ export async function handleApplyWorkDraftRequest(
     signal?: AbortSignal;
   },
 ): Promise<DraftApplyResponse> {
-  await requireDraftWorkAccess(deps, input);
-  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
+  const grants = await draftGrants(deps, input, "edit", { live: true });
+  const result = await withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input)),
+  );
   if (result.status === "applied") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
@@ -135,8 +155,10 @@ export async function handleDiscardWorkDraftRequest(
     operationIds?: string[];
   },
 ): Promise<DraftDiscardResponse> {
-  await requireDraftWorkAccess(deps, input);
-  return callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input));
+  const grants = await draftGrants(deps, input, "edit");
+  return withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input)),
+  );
 }
 
 function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
@@ -165,28 +187,16 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
+/** The drafts whose documents the writer can still read (file-access §6). */
 async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
   deps: DraftRouteServices,
-  input: {
-    drafts: T[];
-    projectId: ProjectId;
-    userId: UserId;
-  },
+  input: { drafts: T[]; projectId: ProjectId; userId: UserId },
 ): Promise<T[]> {
-  const checks: Array<T | null> = await Promise.all(
-    input.drafts.map(async (draft): Promise<T | null> => {
-      const [hasDocumentAccess, isProjectDocument] = await Promise.all([
-        deps.documentAccess.canAccessDocument(input.userId, draft.documentId),
-        deps.documentAccess.canAccessProjectDocument(
-          input.userId,
-          draft.documentId,
-          input.projectId,
-        ),
-      ]);
-      return hasDocumentAccess && isProjectDocument ? draft : null;
-    }),
+  const access = await deps.fileAccess.listAccess(
+    { accountId: input.userId },
+    input.drafts.map((draft) => draft.documentId),
   );
-  return checks.filter((draft): draft is T => draft !== null);
+  return input.drafts.filter((draft) => access.has(draft.documentId));
 }
 
 function serializeThreadDraft(

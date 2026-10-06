@@ -1,7 +1,8 @@
 /** Postgres-backed coverage for work-scoped untitled creation and manifest repair. */
 
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
@@ -18,7 +19,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../../domains/collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
@@ -66,12 +66,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { ...bootstrap, workId };
     }
 
+    const collabs: Array<{ dispose(): void }> = [];
+    afterEach(() => {
+      for (const collab of collabs.splice(0)) collab.dispose();
+    });
+
     function createBoundCollab() {
       const collab = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -80,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             collab.storeHocuspocusDocument(documentName, document),
         }),
       );
+      collabs.push(collab);
       return collab;
     }
 
