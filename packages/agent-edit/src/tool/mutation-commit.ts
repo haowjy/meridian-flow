@@ -603,6 +603,12 @@ async function concurrentUpdatesSince(
       empty.destroy();
     }
   }
+  // Nothing past the baseline leaves no row to attribute, so skip the journal read.
+  if (
+    !effectiveYjsUpdate(baselineDoc, Y.encodeStateAsUpdate(doc, Y.encodeStateVector(baselineDoc)))
+  ) {
+    return [];
+  }
   // Journaled changes keep the origin their row records, so the model's own writes and the
   // link updater's rewrites (#694) aren't reported as a person's; the rest of the delta
   // (a person's edit not journaled yet) has none to read, so it counts as theirs.
