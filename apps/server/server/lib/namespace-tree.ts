@@ -6,11 +6,22 @@
 import type { NamespaceTree } from "../domains/collab/index.js";
 import type { ContextError, ContextPort } from "../domains/context/ports/context-port.js";
 
-export function namespaceTree(port: ContextPort): NamespaceTree<ContextError> {
+export function namespaceTree(
+  port: ContextPort,
+  options: { linksSettled?: boolean } = {},
+): NamespaceTree<ContextError> {
   return {
     move: (fromUri, toUri, documentId) =>
-      port.commitWriterLocation(fromUri, toUri, { expected: { kind: "file", nodeId: documentId } }),
+      port.commitWriterLocation(fromUri, toUri, {
+        expected: { kind: "file", nodeId: documentId },
+        linksSettled: options.linksSettled,
+      }),
     delete: (uri, documentId) => port.delete(uri, { expected: { kind: "file", documentId } }),
     restore: (uri, documentId) => port.restore(uri, { documentId }),
+    async settleLinks(uris) {
+      await port.settleLinks(uris);
+      return namespaceTree(port, { linksSettled: true });
+    },
+    lock: (uris) => port.lockTree(uris),
   };
 }

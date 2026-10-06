@@ -125,9 +125,9 @@ export class ContextTreeMover {
   async commitWriterLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
-    expected?: ContextLocationOptions["expected"],
-    operationId?: string,
+    options: Pick<ContextLocationOptions, "expected" | "operationId" | "linksSettled"> = {},
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    const { expected, operationId } = options;
     if (operationId) {
       if (!this.receipts || !expected)
         return Err({ code: "invalid_operation", uri: source.canonical });
@@ -139,7 +139,8 @@ export class ContextTreeMover {
           destinationUri: destination.canonical,
           expected,
         },
-        () => this.commitWriterLocation(source, destination, expected),
+        () =>
+          this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
       );
     }
     return this.changeLocation(source, destination, {
@@ -147,7 +148,41 @@ export class ContextTreeMover {
       graduateProvisionalName: true,
       expected,
       overwrite: false,
+      linksSettled: options.linksSettled === true,
     });
+  }
+
+  /**
+   * Brings link derivations up to date for moves out of these sources, on its
+   * own connection. A caller making several moves in one transaction calls it
+   * once before, so no move waits on a flush while the transaction holds locks.
+   */
+  async settleLinks(sources: readonly ContextTreeDispatch[]): Promise<void> {
+    const flushed = new Set<string>();
+    for (const source of sources) {
+      const scope = source.scheme === "user" ? "user" : "project";
+      if (flushed.has(scope)) continue;
+      flushed.add(scope);
+      await this.moveLinks?.flush(source);
+    }
+  }
+
+  /**
+   * Takes the locks a move, delete or restore at each target takes first
+   * (their Works, then their namespaces), in the caller's transaction, so a
+   * caller that locks documents before changing the tree keeps the seam order.
+   */
+  async lock(targets: readonly ContextTreeDispatch[]): Promise<Result<void, ContextError>> {
+    const uri = targets[0]?.canonical ?? "";
+    return this.commandExecutor
+      .run(
+        async (): Promise<Result<void, ContextError>> => Ok(undefined),
+        targets.map((target) => ({
+          scheme: target.scheme,
+          workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+        })),
+      )
+      .catch((error) => lifecycleCommandFailure(error, uri));
   }
 
   private async changeLocation(
@@ -160,9 +195,10 @@ export class ContextTreeMover {
           overwrite: false;
           graduateProvisionalName: true;
           expected?: ContextLocationOptions["expected"];
+          linksSettled: boolean;
         },
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    await this.moveLinks?.flush(source);
+    if (policy.target === "container" || !policy.linksSettled) await this.moveLinks?.flush(source);
     return this.commandExecutor
       .run(
         async () => {

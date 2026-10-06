@@ -124,9 +124,20 @@ export async function writerNamespaceTree(
   userId: UserId,
 ): Promise<NamespaceTree<ContextError>> {
   const { resolution } = await resolveThreadContextPort(deps, threadId, userId);
-  const tree = namespaceTree(
-    contextPortForThread(deps.contextPorts, resolution, { liveWrites: true }),
+  return writerTree(
+    deps,
+    resolution,
+    userId,
+    namespaceTree(contextPortForThread(deps.contextPorts, resolution, { liveWrites: true })),
   );
+}
+
+function writerTree(
+  deps: ThreadContextRouteDeps,
+  resolution: Awaited<ReturnType<typeof resolveThreadContextPort>>["resolution"],
+  userId: UserId,
+  tree: NamespaceTree<ContextError>,
+): NamespaceTree<ContextError> {
   const inFolder = async (
     uri: string,
     operation: () => Promise<Result<unknown, ContextError>>,
@@ -142,6 +153,8 @@ export async function writerNamespaceTree(
     move: (from, to, documentId) => inFolder(to, () => tree.move(from, to, documentId)),
     delete: (uri, documentId) => inFolder(uri, () => tree.delete(uri, documentId)),
     restore: (uri, documentId) => inFolder(uri, () => tree.restore(uri, documentId)),
+    settleLinks: async (uris) => writerTree(deps, resolution, userId, await tree.settleLinks(uris)),
+    lock: (uris) => tree.lock(uris),
   };
 }
 

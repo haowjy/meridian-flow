@@ -512,12 +512,26 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!destination.ok) return destination;
       const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
-      return treeMover.commitWriterLocation(
-        source.value,
-        destination.value,
-        options?.expected,
-        options?.operationId,
-      );
+      return treeMover.commitWriterLocation(source.value, destination.value, options);
+    },
+
+    async settleLinks(uris) {
+      const sources: Dispatch[] = [];
+      for (const uri of uris) {
+        const r = await resolve(uri);
+        if (r.ok) sources.push(r.value);
+      }
+      await treeMover.settleLinks(sources);
+    },
+
+    async lockTree(uris) {
+      const targets: Dispatch[] = [];
+      for (const uri of uris) {
+        const r = await resolveMutation(uri);
+        if (!r.ok) return r;
+        targets.push(r.value);
+      }
+      return targets.length === 0 ? Ok(undefined) : treeMover.lock(targets);
     },
 
     async delete(

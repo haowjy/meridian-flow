@@ -224,6 +224,8 @@ export interface ContextWriteOptions {
 export interface ContextLocationOptions extends ContextWriteOptions {
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
+  /** The caller ran `settleLinks` for this source before its transaction, so the move doesn't flush. */
+  linksSettled?: boolean;
 }
 
 export interface ContextMoveOptions extends ContextWriteOptions {
@@ -318,6 +320,21 @@ export interface ContextPort {
     destinationUri: string,
     options?: ContextLocationOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /**
+   * Brings link derivations up to date for moves out of these URIs, on its own
+   * connection. Call it before a transaction that makes several moves, and
+   * pass `linksSettled` to each, so no move flushes while that transaction
+   * holds locks.
+   */
+  settleLinks(uris: readonly string[]): Promise<void>;
+
+  /**
+   * Takes the locks a move, delete or restore at each URI takes first (their
+   * Works, then their namespaces) in the caller's transaction, so a caller
+   * that locks documents before changing the tree keeps the seam's order.
+   */
+  lockTree(uris: readonly string[]): Promise<Result<void, ContextError>>;
 
   /** Delete only the initiating file identity or folder kind at this URI. */
   delete(

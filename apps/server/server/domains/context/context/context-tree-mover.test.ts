@@ -69,8 +69,7 @@ describe("ContextTreeMover result-aware command ownership", () => {
         : dispatch({ canonical: `manuscript://${path}`, path, token: null });
     await expect(
       mover.commitWriterLocation(source, destination, {
-        kind: "file",
-        nodeId: "original-document",
+        expected: { kind: "file", nodeId: "original-document" },
       }),
     ).resolves.toEqual(Err({ code: "stale_source", uri: "manuscript://draft.md" }));
   });

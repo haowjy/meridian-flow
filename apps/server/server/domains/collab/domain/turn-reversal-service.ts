@@ -76,9 +76,11 @@ type TurnNamespace = { tree: NamespaceTree<{ code: string }>; changes: Namespace
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
   /**
    * A turn's changes that leave the document in place go before its content
-   * writes, so content is reversed on a live document and no move flushes
-   * links while this transaction holds a document's lock; ones that remove
-   * the document go after. Undo walks the turn back newest first.
+   * writes, so content is reversed on a live document; ones that remove the
+   * document go after. Undo walks the turn back newest first. The tree's
+   * links were settled before the transaction and its locks taken first in
+   * it (`lockTurnTree`), so no move flushes under the transaction's locks and
+   * a delete after content keeps the seam's lock order.
    */
   const applyNamespace = async (
     command: { threadId: string; turnId: string; direction: "undo" | "redo" },
@@ -101,8 +103,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         ? { ok: false as const, error: { code: "dependent" } }
         : await input.namespaceChanges.reverse(namespace.tree, change, direction);
       if (!applied.ok) {
-        const status =
-          applied.error.code === "permission_denied" ? "permission_denied" : "cant_undo_dependent";
+        const status = turnRefusalStatus(applied.error.code);
         throw new CrossScopeReversalRefused({ status, documents: [{ uri, status }] });
       }
       documents.push({ uri, status: "reversed" });
@@ -117,6 +118,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     const atomic = input.atomic ?? (async <T>(operation: () => Promise<T>) => operation());
     try {
       return await atomic(async () => {
+        await lockTurnTree(command.direction, namespace);
         const placed = await applyNamespace(command, namespace, false);
         const statuses =
           command.direction === "undo" ? (["active"] as const) : (["discarded"] as const);
@@ -229,7 +231,16 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         );
         const namespace =
           changes.length > 0
-            ? { tree: await input.threadContext.namespaceTree(command), changes }
+            ? {
+                tree: await (await input.threadContext.namespaceTree(command)).settleLinks(
+                  changes.flatMap((change) =>
+                    change.kind === "move"
+                      ? [command.direction === "undo" ? change.toUri : change.fromUri]
+                      : [],
+                  ),
+                ),
+                changes,
+              }
             : undefined;
         let reversed: ReversalOutcome = {
           status: aggregateStatus(command.direction, []),
@@ -320,6 +331,29 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
   };
 }
 
+/** Every location the turn's changes touch, locked before any document is. */
+async function lockTurnTree(
+  direction: "undo" | "redo",
+  namespace: TurnNamespace | undefined,
+): Promise<void> {
+  if (!namespace) return;
+  const uris = new Set(
+    namespace.changes.flatMap((change) =>
+      change.kind === "move" ? [change.fromUri, change.toUri] : [change.fromUri],
+    ),
+  );
+  const locked = await namespace.tree.lock([...uris]);
+  if (locked.ok) return;
+  const status = turnRefusalStatus(locked.error.code);
+  throw new CrossScopeReversalRefused({
+    status,
+    documents: namespace.changes.map((change) => ({
+      uri: locationAfter(change, direction),
+      status,
+    })),
+  });
+}
+
 /**
  * The writer's edit grant on each document a reversal would change. A file
  * the writer can't see is left out, as before; one they can't edit (its Work
@@ -358,6 +392,13 @@ async function laterHandleApplied(
     history.content.some((handle) => handle.status === "active" && handle.wId >= create.wId) ||
     history.namespace.some((change) => change.status === "active" && change.wId > create.wId)
   );
+}
+
+/** Why a turn's create, move or delete couldn't go back or again, as the writer's receipt reads it. */
+function turnRefusalStatus(code: string): "permission_denied" | "cant_undo_dependent" {
+  return code === "permission_denied" || code === "context_unavailable"
+    ? "permission_denied"
+    : "cant_undo_dependent";
 }
 
 class CrossScopeReversalRefused extends Error {

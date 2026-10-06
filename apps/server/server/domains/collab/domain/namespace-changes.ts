@@ -21,6 +21,17 @@ export interface NamespaceTree<E> {
   move(fromUri: string, toUri: string, documentId: string): Promise<Result<unknown, E>>;
   delete(uri: string, documentId: string): Promise<Result<unknown, E>>;
   restore(uri: string, documentId: string): Promise<Result<unknown, E>>;
+  /**
+   * For several changes in one transaction: flushes link derivations for
+   * moves out of `uris` now, before it, and returns the tree with moves that
+   * don't flush again, so none waits on a flush while the transaction holds locks.
+   */
+  settleLinks(uris: readonly string[]): Promise<NamespaceTree<E>>;
+  /**
+   * Takes the tree's locks for changes at `uris` in the caller's
+   * transaction, before it locks any document, to keep the seam's lock order.
+   */
+  lock(uris: readonly string[]): Promise<Result<unknown, E>>;
 }
 
 /** Another undo, redo or restore already moved the change on. */
