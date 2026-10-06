@@ -17,6 +17,7 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
@@ -73,6 +74,8 @@ function mapWork(row: WorkRow): Work {
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
   projectionMutation: WorkProjectionMutation;
+  /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
+  fileAccessChanges: Pick<FileAccessChanges, "publish">;
   now?: () => Date;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
@@ -160,12 +163,12 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               projectId: input.projectId,
               createdByUserId:
                 project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-              name: input.name.trim(),
+              name: input.name,
               slug: nextWorkSlug(
                 input.name,
                 existingSlugs.map(({ slug }) => slug),
               ),
-              goal: input.goal,
+              goal: input.goal ?? null,
             })
             .returning();
         } catch (cause) {
@@ -269,7 +272,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       await requireUnlocked(id);
       const patch: Partial<typeof works.$inferInsert> = {};
-      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.name !== undefined) patch.name = input.name;
       if (input.goal !== undefined) patch.goal = input.goal;
       if (input.status !== undefined) patch.status = input.status;
       try {
@@ -284,12 +287,16 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async archive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt !== null) return existing;
-      return updateWork(id, { archivedAt: new Date() });
+      const archived = await updateWork(id, { archivedAt: new Date() });
+      await deps.fileAccessChanges.publish({ workId: id });
+      return archived;
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt === null) return existing;
-      return updateWork(id, { archivedAt: null });
+      const unarchived = await updateWork(id, { archivedAt: null });
+      await deps.fileAccessChanges.publish({ workId: id });
+      return unarchived;
     },
     async softDelete(id: WorkId) {
       return runInDrizzleTransaction(db, async () => {
@@ -318,6 +325,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
         await projectionMutation.publishWorks([id]);
+        await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
         return { before, after, threadIds: deletedThreadIds };
       });
@@ -349,6 +357,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             at: restoredAt,
           });
           await projectionMutation.publishWorks([row.id]);
+          await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {

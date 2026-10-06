@@ -306,7 +306,7 @@ end-to-end as one suite.
 
   ```bash
   ./mf doc put manuscript://rp10.md --text 'RP10_OLD_SENTINEL' --json
-  ./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"write","args":{"command":"read","path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
+  ./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
   ./mf doc put manuscript://rp10.md --text 'RP10_NEW_SENTINEL' --overwrite --json
   ./mf mock script '[{"text":"Earlier planning context."}]' --json
   compact
@@ -332,7 +332,7 @@ end-to-end as one suite.
 - **Steps:** seed a distinctive source sentinel, then script a foreground spawn:
 
   ```bash
-  ./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","description":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."},{"text":"Parent answer."}]' --json
+  ./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","name":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."},{"text":"Parent answer."}]' --json
   ./mf thread view "$T" --json
   ./mf thread context "$CHILD" --all --view raw --json
   ```
@@ -342,7 +342,7 @@ end-to-end as one suite.
   lists before/after. For inspection set `REF` to the source chat's public ref:
 
   ```bash
-  ./mf thread send "$T" 'Inspect history' --mock "[{\"toolCalls\":[{\"name\":\"thread_ls\",\"args\":{\"depth\":1}},{\"name\":\"thread_ls\",\"args\":{\"depth\":2}},{\"name\":\"thread_ls\",\"args\":{\"depth\":3}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"newest_first\",\"limit\":200}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"oldest_first\",\"limit\":200,\"include\":[\"tool_args\",\"tool_results\",\"system_messages\",\"system_prompt\"]}}]},{\"text\":\"Inspection complete.\"}]" --json
+  ./mf thread send "$T" 'Inspect history' --mock "[{\"toolCalls\":[{\"name\":\"thread_ls\",\"args\":{\"depth\":1}},{\"name\":\"thread_ls\",\"args\":{\"depth\":2}},{\"name\":\"thread_ls\",\"args\":{\"depth\":3}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"newest_first\",\"limit\":200}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"oldest_first\",\"limit\":200,\"include\":[\"tool_results\",\"system_messages\",\"system_prompt\"]}}]},{\"text\":\"Inspection complete.\"}]" --json
   ```
 
   Follow returned cursors where the history exceeds one page. Repeat on the

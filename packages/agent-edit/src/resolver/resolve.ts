@@ -24,12 +24,17 @@ import {
   type ScopeFailure,
 } from "./scope.js";
 
-export type WriteCommandName = "insert" | "replace" | "delete";
+export type WriteCommandName = "insert" | "replace" | "remove";
 
 export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
+  /**
+   * Blocks copied from another document (D23). They take the place of
+   * `content` and are inserted as nodes, never through markup.
+   */
+  blocks?: readonly Block[];
   after?: string;
   before?: string;
   find?: string;
@@ -69,11 +74,8 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  if (params.command !== "delete" && params.content === undefined) {
-    return error("invalid_write", "content is required");
-  }
-  const normalized = normalizeParams(params);
   const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
+  const normalized = normalizeParams(concreteCtx, params);
   const contentCheck = validateContent(concreteCtx, normalized);
   if (!contentCheck.ok) return contentCheck;
 
@@ -85,8 +87,8 @@ export function resolveWrite(
     case "replace":
       resolved = resolveReplace(concreteCtx, normalized, contentCheck.parsed);
       break;
-    case "delete":
-      resolved = resolveDelete(concreteCtx, normalized);
+    case "remove":
+      resolved = resolveRemove(concreteCtx, normalized);
       break;
   }
   if (!resolved.ok) return resolved;
@@ -100,27 +102,11 @@ function resolveInsert(
   params: NormalizedParams,
   parsed: ParsedContent,
 ): ResolveWriteResultWithoutIr {
-  if (params.content.length === 0)
-    return error("invalid_write", "insert requires non-empty content");
-  if (params.after && params.before)
-    return error("invalid_write", "`after` and `before` are mutually exclusive");
-  if ((params.after || params.before) && params.find) {
-    return error(
-      "invalid_write",
-      "Use either block targeting (`after`/`before`) or text targeting (`find`), not both",
-    );
-  }
-  if (params.in !== undefined && !params.find) {
-    return error(
-      "invalid_write",
-      "`in` scopes a find-based insert; use `after` or `before` for block positioning",
-    );
-  }
-
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
+    if (params.blocks) return error("invalid_write", COPY_WITH_FIND_MESSAGE);
     const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
       allowSlugFallback: false,
     });
@@ -132,17 +118,37 @@ function resolveInsert(
 
   const lowered = lowerInsertPosition(ctx, params);
   if (!lowered.ok) return lowered;
+  return { ok: true, edits: [insertEdit(params, lowered.after)] };
+}
+
+const COPY_WITH_FIND_MESSAGE = "from copies whole blocks, so it can't be combined with find";
+
+function insertEdit(params: NormalizedParams, after: BlockRef | undefined): ResolvedEdit {
+  return {
+    documentId: params.documentAddress.documentId,
+    file: params.documentAddress.filePath,
+    kind: "insert",
+    ...(after ? { after } : {}),
+    newText: params.content,
+    ...(params.blocks ? { blocks: params.blocks } : {}),
+  };
+}
+
+/**
+ * Copied blocks replace the scope whole: they go in after the block before it,
+ * then the scope's blocks go. No old block is reused, so every copy gets a
+ * fresh hash and none of the replaced text survives under a copied block.
+ */
+function replaceScopeWithCopies(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  scope: BlockScope,
+): ResolveWriteResultWithoutIr {
+  const anchor =
+    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   return {
     ok: true,
-    edits: [
-      {
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "insert",
-        ...(lowered.after ? { after: lowered.after } : {}),
-        newText: params.content,
-      },
-    ],
+    edits: [insertEdit(params, anchor), ...deleteEdits(params, scope)],
   };
 }
 
@@ -151,16 +157,11 @@ function resolveReplace(
   params: NormalizedParams,
   parsed: ParsedContent,
 ): ResolveWriteResultWithoutIr {
-  if (params.after || params.before) {
-    return error(
-      "invalid_write",
-      "replace does not accept `after` or `before`; use `in` or `find`",
-    );
-  }
   const sectionCheck = validateSectionContent(ctx, params, parsed);
   if (!sectionCheck.ok) return sectionCheck;
 
   if (params.find !== undefined) {
+    if (params.blocks) return error("invalid_write", COPY_WITH_FIND_MESSAGE);
     const scope = resolveSearchScope(ctx, params.in ?? fragmentScope(params), params.around, {
       allowSlugFallback: false,
     });
@@ -170,27 +171,29 @@ function resolveReplace(
     return lowerFindMatches(ctx, params, found.matches, "replace");
   }
 
-  if (params.around !== undefined) {
-    return error("invalid_write", "`around` only scopes find-based replace commands");
-  }
   const target = params.in ?? fragmentScope(params);
-  if (target === undefined) return error("invalid_write", "replace without `find` requires `in`");
+  if (target === undefined) {
+    return error("invalid_write", "replace needs `in`, `find` or a #heading-slug in path");
+  }
   const scope = resolveScope(ctx, target, { allowSlugFallback: false });
   if (!scope.ok) return scopeError(scope);
+  if (params.blocks) {
+    if (params.blocks.length === 0) return error("invalid_write", "from selected no blocks");
+    return replaceScopeWithCopies(ctx, params, scope.scope);
+  }
   if (params.content.length === 0) {
-    return error("invalid_write", "Use the delete command to remove a block scope");
+    return error("invalid_write", "Use `remove` to remove blocks");
   }
   return replaceScope(ctx, params, scope.scope, parsed);
 }
 
-function resolveDelete(
+function resolveRemove(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteResultWithoutIr {
-  if (params.documentAddress.fragment !== undefined) {
-    return error("invalid_write", "delete uses `in` for its block scope; remove the file fragment");
-  }
-  const scope = resolveScope(ctx, params.in, { allowSlugFallback: false });
+  const scope = resolveScope(ctx, params.in ?? fragmentScope(params), {
+    allowSlugFallback: false,
+  });
   if (!scope.ok) return scopeError(scope);
   return deleteScope(params, scope.scope);
 }
@@ -199,22 +202,26 @@ interface ConcreteResolveContext extends ResolveWriteContext {
   doc: DocHandle;
 }
 
-function normalizeParams(params: ResolveWriteParams): NormalizedParams {
-  return { ...params, content: params.content ?? "" };
+function normalizeParams(
+  ctx: ConcreteResolveContext,
+  params: ResolveWriteParams,
+): NormalizedParams {
+  // Copied blocks are described by their markup only for the semantic IR.
+  const content = params.blocks
+    ? serializeReplacementBlocks(ctx, [...params.blocks])
+    : (params.content ?? "");
+  return { ...params, content };
 }
 
 function validateContent(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
-  if (params.find === "") return error("invalid_write", "`find` must not be empty");
-  if (params.command === "insert" && params.content.length === 0) {
-    return error("invalid_write", "insert requires non-empty content");
-  }
+  if (params.blocks) return { ok: true, parsed: { blocks: [...params.blocks] } };
   if (params.command === "replace" && params.content.length === 0) {
     return { ok: true, parsed: { blocks: [] } };
   }
-  if (params.command === "delete") return { ok: true, parsed: { blocks: [] } };
+  if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {
@@ -268,15 +275,16 @@ function lowerInsertPosition(
 }
 
 function deleteScope(params: NormalizedParams, scope: BlockScope): ResolveWriteResultWithoutIr {
-  return {
-    ok: true,
-    edits: scope.blocks.map((element) => ({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "delete",
-      block: element,
-    })),
-  };
+  return { ok: true, edits: deleteEdits(params, scope) };
+}
+
+function deleteEdits(params: NormalizedParams, scope: BlockScope): ResolvedEdit[] {
+  return scope.blocks.map((element) => ({
+    documentId: params.documentAddress.documentId,
+    file: params.documentAddress.filePath,
+    kind: "delete",
+    block: element,
+  }));
 }
 
 interface FindMatchGroup {
@@ -716,7 +724,12 @@ function revisionOf(ctx: ConcreteResolveContext): string {
 }
 
 function scopeError(result: ScopeFailure): ResolveWriteResultWithoutIr {
-  return error(result.code === "ambiguous" ? "ambiguous_match" : result.code, result.message);
+  if (result.code === "ambiguous") return error("ambiguous_match", result.message);
+  return error(
+    result.code,
+    result.message,
+    result.documentBlocks === undefined ? undefined : { documentBlocks: result.documentBlocks },
+  );
 }
 
 function findError(

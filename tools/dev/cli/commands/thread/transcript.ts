@@ -1,7 +1,14 @@
 /** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
 import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
-import { type Block, blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
+import {
+  type Block,
+  blockPlainText,
+  type ProviderErrorResponse,
+  replyProviderError,
+  type Thread,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { oneLine, truncate } from "../../core/output";
 
 export type TranscriptLimits = { full: boolean };
@@ -22,6 +29,8 @@ export type CompactTurn = {
   model: string | null;
   error: string | null;
   failureReason?: string;
+  /** The provider's own answer on a failed reply. */
+  providerError?: ProviderErrorResponse;
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
@@ -117,6 +126,20 @@ export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlo
   }
 }
 
+const PROVIDER_MESSAGE_LIMIT = 300;
+
+function providerErrorView(
+  metadata: Turn["metadata"],
+  limits: TranscriptLimits,
+): Pick<CompactTurn, "providerError"> {
+  const error = replyProviderError(metadata);
+  if (!error) return {};
+  if (limits.full) return { providerError: error };
+  return {
+    providerError: { ...error, message: truncate(oneLine(error.message), PROVIDER_MESSAGE_LIMIT) },
+  };
+}
+
 export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
   const metadata = asRecord(turn.metadata);
   const summaryBlock = turn.blocks.find(
@@ -163,6 +186,9 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
     error: turn.error,
     ...(turn.role === "assistant" && turn.status === "error" && typeof metadata.reason === "string"
       ? { failureReason: metadata.reason }
+      : {}),
+    ...(turn.role === "assistant" && turn.status === "error"
+      ? providerErrorView(turn.metadata, limits)
       : {}),
     ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
       ? { compactionMetadata }
@@ -264,6 +290,10 @@ export function renderThreadView(view: ThreadView): string {
     if (turn.error) lines.push(`  error: ${turn.error}`);
     if (turn.role === "assistant" && turn.status === "error" && turn.failureReason)
       lines.push(`  failure reason: ${turn.failureReason}`);
+    if (turn.providerError) {
+      const status = turn.providerError.status ?? "in-stream";
+      lines.push(`  provider error (${status}): ${turn.providerError.message}`);
+    }
     if (turn.role === "compaction" && turn.compactionMetadata?.instructions)
       lines.push(`  instructions: ${turn.compactionMetadata.instructions}`);
     if (

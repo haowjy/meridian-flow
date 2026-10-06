@@ -1,5 +1,5 @@
 /** Agent-edit host diagnostics expose safe identifiers without leaking failure text. */
-import type { WriteCommandName } from "@meridian/agent-edit/integration";
+import type { DocumentCommandName } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createAgentEditObservabilityOptions } from "./agent-edit-observability.js";
@@ -42,13 +42,12 @@ describe("agent-edit unexpected write diagnostics", () => {
     expect(JSON.stringify(sink.events[0])).not.toContain("private writer prose");
   });
 
-  it.each<WriteCommandName>([
+  it.each<DocumentCommandName>([
     "create",
     "read",
-    "diff",
     "insert",
     "replace",
-    "delete",
+    "remove",
     "undo",
     "redo",
   ])("preserves the bounded %s command as safe evidence", (command) => {

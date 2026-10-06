@@ -13,6 +13,7 @@ import {
   contextPortForProjectBrowse,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
+import type { FileAccess } from "../domains/file-policy/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
 import {
   type ProjectRepository,
@@ -22,8 +23,10 @@ import {
 } from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
+import { documentTarget, requireFileGrant } from "./file-access-http.js";
 
 export interface ContextReadRouteDeps {
+  fileAccess: Pick<FileAccess, "authorize">;
   projectRepo: ProjectRepository;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
@@ -138,6 +141,14 @@ export async function handleContextReadRequest(
   if (!port) throw createError({ statusCode: 404, message: "Work not found" });
   const ref = await port.stat(path.uri);
   if (!ref.ok) contextErrorToHttp(ref.error);
+  if (ref.value.documentId) {
+    await requireFileGrant(
+      deps.fileAccess,
+      input.userId,
+      documentTarget(ref.value.documentId),
+      "read",
+    );
+  }
   if (ref.value.kind === "tracked") {
     const read = await port.read(path.uri);
     if (!read.ok) contextErrorToHttp(read.error);

@@ -1,5 +1,6 @@
 import type { ListThreadRecentDocumentsResponse } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -23,7 +24,16 @@ export default defineEventHandler(async (event): Promise<ListThreadRecentDocumen
     parseLimit(getQuery(event).limit),
   );
   const rows = await app.uploadIdentity.lookupDocuments(touches.map((touch) => touch.documentId));
-  const byId = new Map(rows.map((row) => [row.documentId, row]));
+  // Lists drop what the writer can't read (file-access §6).
+  const access = await app.fileAccess.listAccess(
+    { accountId: user.userId as UserId },
+    rows.map((row) => row.documentId as DocumentId),
+  );
+  const byId = new Map(
+    rows
+      .filter((row) => access.has(row.documentId as DocumentId))
+      .map((row) => [row.documentId, row]),
+  );
   return {
     documents: touches.flatMap((touch) => {
       const row = byId.get(touch.documentId);

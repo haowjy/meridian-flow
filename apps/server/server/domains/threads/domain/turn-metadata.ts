@@ -1,7 +1,12 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
-import type { JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
+import type {
+  JsonObject,
+  JsonValue,
+  ProviderErrorResponse,
+  Turn,
+} from "@meridian/contracts/threads";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -285,6 +290,40 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
   };
 }
 
+/** Cap on the provider message kept on a failed reply. */
+const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
+
+/**
+ * Failed-reply metadata: the terminal reason, the gateway's retry verdict when the
+ * failure carried one, and the provider's status and capped message when it answered.
+ */
+export function replyFailureMetadata(
+  metadata: JsonValue | null | undefined,
+  failure: { reason: string; retryable?: boolean; providerError?: ProviderErrorResponse },
+): JsonObject {
+  const previous =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as JsonObject)
+      : {};
+  const preserved = { ...previous };
+  delete preserved.retryable;
+  delete preserved.providerError;
+  const { providerError } = failure;
+  return {
+    ...preserved,
+    reason: failure.reason,
+    ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+    ...(providerError
+      ? {
+          providerError: {
+            status: providerError.status,
+            message: providerError.message.slice(0, REPLY_PROVIDER_MESSAGE_LIMIT),
+          },
+        }
+      : {}),
+  };
+}
+
 /** Replace failure fields without disturbing the placeholder's control metadata. */
 export function compactionFailureMetadata(
   metadata: JsonValue | null | undefined,
@@ -341,6 +380,25 @@ export function isPromptEpochMetadata(metadata: Turn["metadata"]): boolean {
 }
 
 /** Classifies stored turns once so compaction and history inspection share the same rules. */
+/** Metadata kinds that make a user or assistant turn a system message rather than conversation. */
+export const SYSTEM_TURN_KINDS = ["system_update", "derivation_seed", "subagent_update"] as const;
+
+/**
+ * A conversation turn: a writer request, an agent request, or an assistant
+ * reply. History numbers only these. The rule reads role, origin and
+ * `metadata.kind` alone so a repository can count it in one query.
+ */
+export function isConversationTurn(turn: Pick<Turn, "role" | "origin" | "metadata">): boolean {
+  const kind =
+    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+      ? (turn.metadata as { kind?: unknown }).kind
+      : undefined;
+  if ((SYSTEM_TURN_KINDS as readonly unknown[]).includes(kind)) return false;
+  if (turn.role === "user")
+    return turn.origin === "writer" || (turn.origin === "system" && kind === "inbox_message");
+  return turn.role === "assistant" && turn.origin === "assistant";
+}
+
 export function classifyHistoryItem(
   turn: Pick<Turn, "role" | "origin" | "metadata">,
 ): HistoryItemClass {

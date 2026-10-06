@@ -23,9 +23,10 @@ runtime shapes, and observability records.
   project-relative `assetPath`. Signed URLs are expiring render details and
   never belong in a field a document persists.
 - Agent execution knobs are canonical in `agents/execution-knobs.ts`: the
-  resolved configuration shape, each closed value set (effort, tool policy), the
-  tool-name alias fold, and the presence-sensitive patch schema are declared
-  once. The compiler, resolver, invocation patch, and effort provider mapping
+  resolved configuration shape, each closed value set (effort, permission), the
+  tool-list schema and its alias fold, and the presence-sensitive patch schema
+  are declared once. Tool lists are arrays of real tool names; `edit` is
+  permission, never a tool. The compiler, resolver, invocation patch, and effort provider mapping
   are projections; do not re-declare an effort set or tool alias map.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.

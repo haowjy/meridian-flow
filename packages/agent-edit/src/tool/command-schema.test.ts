@@ -1,92 +1,59 @@
-// Write-command schema parity checks for the public package boundary.
+// Read and write command schemas: the cross-field selector rules, one row each.
 import { describe, expect, it } from "vitest";
 
-import { WriteCommandSchema } from "./command-schema.js";
+import {
+  ReadCommandSchema,
+  ReadToolInputSchema,
+  WriteCommandSchema,
+  WriteToolInputSchema,
+} from "./command-schema.js";
 
-const validCommands = [
-  { command: "create", file: "chapter.md" },
-  { command: "create", file: "chapter.md", content: "# Chapter", overwrite: true },
-  { command: "read", file: "chapter.md" },
-  {
-    command: "read",
-    file: "chapter.md#scene",
-    in: "a1b2..c3d4",
-    around: "a1b2",
-    format: "outline",
-  },
-  { command: "read", file: "chapter.md", in: 2 },
-  { command: "read", file: "chapter.md", in: [1, "c3d4"] },
-  { command: "insert", file: "chapter.md", content: "New paragraph.", after: "a1b2" },
-  { command: "insert", file: "chapter.md", content: "New paragraph.", before: "c3d4" },
-  {
-    command: "insert",
-    file: "chapter.md",
-    content: "New paragraph.",
-    find: "Alpha",
-    in: [1, 3],
-    around: "a1b2",
-    all: true,
-  },
-  { command: "replace", file: "chapter.md", content: "", in: 1 },
-  { command: "delete", file: "chapter.md", in: "a1b2" },
-  { command: "delete", file: "chapter.md", in: [1, "c3d4"] },
-  {
-    command: "replace",
-    file: "chapter.md",
-    content: "Beta",
-    find: "Alpha",
-    in: ["a1b2", "c3d4"],
-    around: "a1b2",
-    all: true,
-  },
-  { command: "undo", file: "chapter.md" },
-  { command: "undo", file: "chapter.md", to: "w3", from: "w1", last: 2, all: true },
-  { command: "redo", file: "chapter.md", to: "w3" },
-  { command: "redo", file: "chapter.md", from: "w1" },
-  { command: "redo", file: "chapter.md", last: 1 },
-  { command: "redo", file: "chapter.md", all: true },
-  { command: "read", file: "chapter.md", documentId: "doc-1", tool_use_id: "call-1" },
+const validWrites = [
+  { command: "replace", file: "chapter.md#scene", content: "Beta" },
+  { command: "remove", file: "chapter.md", in: [1, "c3d4"] },
+  { command: "undo", file: "chapter.md", since: "w1", to: "w3" },
+  { command: "replace", file: "chapter.md", in: [2, 4], from: { path: "kb://lin.md", in: "a1b2" } },
+  { command: "copy", file: "duel.md", from: { path: "ch11#the-midnight-duel" } },
 ] satisfies unknown[];
 
-const intendedTightenings = [
-  ["extra key", { command: "read", file: "chapter.md", extra: true }],
-  ["insert extra key", { command: "insert", file: "chapter.md", content: "Beta", extra: true }],
-  ["old read spelling", { command: ["vi", "ew"].join(""), file: "chapter.md" }],
-  ["read with content", { command: "read", file: "chapter.md", content: "ignored before" }],
+/** Each rule the schema refuses, with the argument the issue lands on. */
+const selectorRules = [
+  ["read in + #fragment", { file: "c.md#s", in: 1 }, "in"],
   [
-    "replace with after",
-    { command: "replace", file: "chapter.md", content: "Beta", after: "a1b2" },
+    "insert after + before",
+    { command: "insert", file: "c.md", content: "x", after: "a", before: "b" },
+    "before",
+  ],
+  ["remove with no selector", { command: "remove", file: "c.md" }, "file"],
+  [
+    "insert with content and from",
+    { command: "insert", file: "c.md", content: "x", from: { path: "a" } },
+    "from",
   ],
   [
-    "replace with before",
-    { command: "replace", file: "chapter.md", content: "Beta", before: "a1b2" },
+    "from.in with a #fragment",
+    { command: "insert", file: "c.md", from: { path: "a#s", in: 1 } },
+    "from.in",
   ],
-  [
-    "insert with undo selector",
-    { command: "insert", file: "chapter.md", content: "Beta", to: "w1" },
-  ],
-  ["undo with content", { command: "undo", file: "chapter.md", content: "ignored before" }],
-  ["create with find", { command: "create", file: "chapter.md", find: "ignored before" }],
-  ["delete with content", { command: "delete", file: "chapter.md", in: 1, content: "" }],
-  ["delete without scope", { command: "delete", file: "chapter.md" }],
-] satisfies Array<[string, unknown]>;
+  ["since without to", { command: "undo", file: "c.md", since: "w1" }, "since"],
+  ["since after to", { command: "redo", file: "c.md", since: "w4", to: "w2" }, "since"],
+  ["last with all", { command: "undo", file: "c.md", last: 2, all: true }, "all"],
+] as const;
 
-describe("WriteCommandSchema", () => {
-  it("accepts representative commands that the write tool supports", () => {
-    for (const command of validCommands) {
-      expect(WriteCommandSchema.parse(command)).toMatchObject(command);
-    }
-  });
-  it("accepts a pathless turn diff with optional document narrowing", () => {
-    expect(WriteCommandSchema.parse({ command: "diff", document_id: "document-1" })).toEqual({
-      command: "diff",
-      document_id: "document-1",
-    });
+describe("command schemas", () => {
+  it("accepts the PR's new selector shapes", () => {
+    for (const command of validWrites) expect(WriteCommandSchema.parse(command)).toEqual(command);
   });
 
-  it("rejects only the intended strict-schema tightenings", () => {
-    for (const [, command] of intendedTightenings) {
-      expect(WriteCommandSchema.safeParse(command).success).toBe(false);
-    }
+  it.each(selectorRules)("refuses %s", (_label, input, field) => {
+    const schema = "command" in input ? WriteCommandSchema : ReadCommandSchema;
+    const parsed = schema.safeParse(input);
+    expect(parsed.error?.issues.map((issue) => issue.path.join("."))).toContain(field);
+  });
+
+  it("names the document `path` on the model-facing inputs and refuses host fields", () => {
+    const parsed = WriteToolInputSchema.safeParse({ command: "remove", path: "c.md" });
+    expect(parsed.error?.issues.map((issue) => issue.path)).toEqual([["path"]]);
+    expect(ReadToolInputSchema.safeParse({ path: "c.md", documentId: "d" }).success).toBe(false);
   });
 });

@@ -3,7 +3,6 @@ import type { Work } from "@meridian/contracts/works";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useSelectedWorkWriteModeToolbarControl } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
 export function ChatComposerToolbar({
@@ -18,14 +17,9 @@ export function ChatComposerToolbar({
   agentName: string;
 }) {
   const agent = useComposerAgentToolbarControl({ mode: "readonly", name: agentName });
-  const { openAiDraft } = useAiDraftLauncher();
   const writeMode = useSelectedWorkWriteModeToolbarControl({
     projectId,
     work,
-    openDraftReview: (group, draftId) => {
-      if (!group.contextPath) return;
-      openAiDraft({ ...group, workId: work.id, draftId, contextPath: group.contextPath });
-    },
   });
   const workControl = useComposerWorkToolbarControl({ projectId, threadId, work });
   const model = createComposerToolbarModel([agent, writeMode, workControl]);

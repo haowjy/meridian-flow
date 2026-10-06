@@ -25,6 +25,7 @@
  *   `prompt_cache_key` routing hint, or nothing at all).
  */
 import type { Usage } from "@meridian/contracts/runtime";
+import type { ProviderErrorResponse } from "@meridian/contracts/threads";
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;
 
@@ -286,6 +287,8 @@ export type ErrorCode =
   | "context_overflow"
   | "provider_error";
 
+export type { ProviderErrorResponse } from "@meridian/contracts/threads";
+
 /**
  * Stream event — the canonical event set that every adapter emits and the
  * orchestrator consumes. Each event is a complete, Meridian-typed value; the
@@ -328,6 +331,8 @@ export type StreamEvent =
       message: string;
       retryable: boolean;
       retryAfterMs?: number;
+      /** Present when the provider answered; absent for network, timeout, and local failures. */
+      providerError?: ProviderErrorResponse;
     };
 
 /**

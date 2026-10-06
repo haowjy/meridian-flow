@@ -3,14 +3,17 @@ import * as Y from "yjs";
 
 import { snapshotBlocks } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
-import { toDocHandle } from "../handles.js";
+import type { AppliedEditSummary } from "../apply/types.js";
+import type { Block } from "../codec-types.js";
+import { type BlockRef, toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
-import type { DocumentRenderer } from "./document-renderer.js";
+import { copyEdgeLines, copySummary } from "./copy-receipt.js";
+import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
@@ -20,9 +23,14 @@ import {
   type PreparedMutation,
 } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
-import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
+import {
+  formatApplySuccess,
+  isDocumentEmpty,
+  status,
+  truncateCreateEcho,
+} from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
+import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
   errorResponse,
@@ -68,8 +76,14 @@ export function createWriteCommands(deps: {
 
   return { read, create, mutate };
 
+  function emptiedDocument(runtime: { doc: Y.Doc }): { documentEmpty?: true } {
+    return isDocumentEmpty(options.model, options.codec, toDocHandle(runtime.doc))
+      ? { documentEmpty: true }
+      : {};
+  }
+
   async function read(
-    command: Extract<WriteCommand, { command: "read" }>,
+    command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -84,8 +98,7 @@ export function createWriteCommands(deps: {
       session,
       address.documentId,
       runtime,
-      command.command,
-      { filePath: address.filePath },
+      "read",
     );
     if (isInternalWriteResult(restored)) {
       if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
@@ -97,22 +110,46 @@ export function createWriteCommands(deps: {
     markSynced(session, address.documentId, runtime);
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
-    if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
+    if (!selection.ok)
+      return errorResponse(
+        selection.code,
+        selection.message,
+        address.filePath,
+        selection.documentBlocks,
+      );
     return {
       ...readSuccess(
         renderer.renderRead(
           toDocHandle(runtime.doc),
           selection.blocks,
-          address.filePath,
           command.format === "outline" ? "outline" : "full",
         ),
       ),
       revision: options.documentRevision?.(runtime.doc) ?? null,
+      ...(context.includeNodes ? { nodes: selectedNodes(runtime.doc, selection.blocks) } : {}),
     };
   }
 
+  /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
+  function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
+    const handle = toDocHandle(doc);
+    const nodes = options.model.projectBlocks(handle);
+    const indexByBlock = new Map(
+      options.model.getBlocks(handle).map((block, index) => [block, index]),
+    );
+    return selected.flatMap((block) => {
+      const index = indexByBlock.get(block);
+      const node = index === undefined ? undefined : nodes[index];
+      return node ? [node] : [];
+    });
+  }
+
+  /**
+   * `create`, and `copy`, which is a create whose content is the source's
+   * blocks as nodes (D24): same write handle, rollback, undo and drafting.
+   */
   async function create(
-    command: Extract<WriteCommand, { command: "create" }>,
+    command: Extract<WriteCommand, { command: "create" | "copy" }>,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -121,8 +158,13 @@ export function createWriteCommands(deps: {
     const actor = mutationActor(session, address.documentId, context);
     const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
-      return status("invalid_write", "create does not accept a #fragment in file.");
+      return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
+    const copiedNodes = command.command === "copy" ? context.copiedNodes : undefined;
+    if (command.command === "copy" && !copiedNodes) {
+      return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
+    }
+    const content = command.command === "create" ? (command.content ?? "") : "";
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -137,7 +179,9 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const parsed = renderer.parseForCommand(command.content ?? "");
+    const parsed: ParseForCommandResult = copiedNodes
+      ? { ok: true, parsed: { blocks: [...copiedNodes] } }
+      : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
@@ -160,7 +204,6 @@ export function createWriteCommands(deps: {
       options.coordinator,
       address.documentId,
       command.command,
-      address.filePath,
       (liveDoc) =>
         options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
           ? status(
@@ -181,7 +224,6 @@ export function createWriteCommands(deps: {
         address.documentId,
         runtime,
         command.command,
-        { filePath: address.filePath },
       );
       if (isInternalWriteResult(restored)) return restored;
     }
@@ -212,26 +254,32 @@ export function createWriteCommands(deps: {
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     let touchedHashes = new Set<string>();
     let deletedHashes = new Set<string>();
+    let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwriting && existingBlocks.length > 0) {
-      const replacement = command.content ?? "";
+      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-        replacement.length === 0
+        empty
           ? {
-              command: "delete",
+              command: "remove",
               documentAddress: address,
               in: [1, existingBlocks.length],
             }
           : {
               command: "replace",
               documentAddress: address,
-              content: replacement,
+              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
               in: [1, existingBlocks.length],
             },
       );
       if (!resolved.ok) {
-        return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
+        return errorResponse(
+          resolved.error.code,
+          resolved.error.message,
+          address.filePath,
+          documentBlocksDetail(resolved.error.details),
+        );
       }
       validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       semanticEditIr = resolved.ir;
@@ -250,11 +298,19 @@ export function createWriteCommands(deps: {
       writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
       touchedHashes = new Set(applied.changedBlocks ?? []);
       deletedHashes = new Set(applied.deletedBlocks ?? []);
+      insertedHashes = insertedBlockIds(applied.appliedEdits);
     } else {
       runtime.doc.transact(() => {
-        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
+        insertedHashes = options.model
+          .insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed)
+          .map((block) => options.model.getBlockId(block));
       }, origin);
     }
+    const copied = copiedNodes
+      ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
+          edges: false,
+        })
+      : undefined;
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
@@ -280,6 +336,7 @@ export function createWriteCommands(deps: {
           deletedHashes,
           preOwnSnapshot: preWriteSnapshot,
           ...(semanticEditIr ? { semanticEditIr } : {}),
+          ...(copied ? { copied } : {}),
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -300,6 +357,7 @@ export function createWriteCommands(deps: {
         deletedHashes,
       });
       return formatApplySuccess({
+        ...emptiedDocument(runtime),
         phase: "staged",
         writeId: writeIdentity.handle,
         settlementId: writeIdentity.durableId,
@@ -313,6 +371,7 @@ export function createWriteCommands(deps: {
                 },
               ],
         concurrentEdits: summary.concurrentEdits,
+        ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
       });
     }
 
@@ -361,6 +420,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: committed.ok ? committed.revision : null,
       writeId: writeIdentity.handle,
@@ -378,11 +438,12 @@ export function createWriteCommands(deps: {
         : {}),
       ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
       ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
     });
   }
 
   async function mutate(
-    command: Extract<WriteCommand, { command: "insert" | "replace" | "delete" }>,
+    command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -398,13 +459,7 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
-    let synced = await requireSynced(
-      session,
-      address.documentId,
-      command.command,
-      runtime,
-      address.filePath,
-    );
+    let synced = await requireSynced(session, address.documentId, command.command, runtime);
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(
@@ -417,12 +472,28 @@ export function createWriteCommands(deps: {
       synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
+    const from = command.command === "remove" ? undefined : command.from;
+    const copiedNodes = from ? context.copiedNodes : undefined;
+    if (from && !copiedNodes) return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
+    if (copiedNodes?.length === 0) {
+      return status("invalid_write", `from selected no blocks in ${from?.path}.`);
+    }
+    const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const resolved = resolveWrite(
       { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-      { ...command, documentAddress: address },
+      {
+        ...selectors,
+        documentAddress: address,
+        ...(copiedNodes ? { blocks: copiedNodes } : {}),
+      },
     );
     if (!resolved.ok) {
-      return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
+      return errorResponse(
+        resolved.error.code,
+        resolved.error.message,
+        address.filePath,
+        documentBlocksDetail(resolved.error.details),
+      );
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
 
@@ -458,6 +529,22 @@ export function createWriteCommands(deps: {
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
     }
     writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
+    const copied =
+      from && copiedNodes
+        ? copySummary(from.path, insertedBlockIds(applied.appliedEdits), { edges: true })
+        : undefined;
+    const copiedEcho = () =>
+      copied
+        ? {
+            copied: {
+              summary: copied,
+              edges: copyEdgeLines(
+                copied,
+                snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec),
+              ),
+            },
+          }
+        : {};
 
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
@@ -484,12 +571,14 @@ export function createWriteCommands(deps: {
           concurrent,
         );
         const result = formatApplySuccess({
+          ...emptiedDocument(runtime),
           phase: "staged",
           writeId: writeIdentity.handle,
           settlementId: writeIdentity.durableId,
           echo: summary.echo,
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
+          ...copiedEcho(),
         });
         const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
@@ -510,6 +599,7 @@ export function createWriteCommands(deps: {
           deletedHashes: new Set(applied.deletedBlocks ?? []),
           preOwnSnapshot,
           semanticEditIr: resolved.ir,
+          ...(copied ? { copied } : {}),
           ...(interactionContext ? { interactionContext } : {}),
         });
         if (rejected) {
@@ -581,6 +671,7 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      ...emptiedDocument(runtime),
       phase: "committed",
       revision: syncedMutation.revision,
       writeId: writeIdentity.handle,
@@ -589,6 +680,7 @@ export function createWriteCommands(deps: {
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
       ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
+      ...copiedEcho(),
     });
   }
 
@@ -704,8 +796,19 @@ export function createWriteCommands(deps: {
   }
 }
 
+const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
+
+/** Hashes of the blocks the edits inserted, in document order of insertion. */
+function insertedBlockIds(applied: readonly AppliedEditSummary[] | undefined): string[] {
+  return (applied ?? []).filter((edit) => edit.kind === "insert").flatMap((edit) => edit.blockIds);
+}
+
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });
   Y.applyUpdate(restored, snapshot, { type: "system" });
   runtime.doc = restored;
+}
+
+function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
+  return typeof details?.documentBlocks === "number" ? details.documentBlocks : undefined;
 }

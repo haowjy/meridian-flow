@@ -100,7 +100,7 @@ function backgroundEvents(): OrchestratorEvent[] {
       parentTurnId: PARENT_TURN_ID,
       childThreadId: "child-1",
       agentSlug: "code-reviewer",
-      description: "Review the chapter",
+      name: "Review the chapter",
     },
     {
       type: "agent.run_completed",
@@ -321,7 +321,7 @@ describe("thread event hub committed invalidations", () => {
         parentTurnId: PARENT_TURN_ID,
         childThreadId: `background-${i}`,
         agentSlug: "reviewer",
-        description: "No live projection",
+        name: "No live projection",
       });
     }
 

@@ -64,8 +64,8 @@ function createCore(
   return Object.freeze({
     accountId,
     registry,
-    localReservation: registry,
-    localAdoption: registry,
+    localReservation: registry.localTransfers,
+    localAdoption: registry.localTransfers,
     localConstruction: registry,
     connectLocalResources: (port: LocalResourceLifetimePort) =>
       registry.connectLocalResources(port),
@@ -96,7 +96,8 @@ export function createAccountDocumentSessionRuntime(
         property === "release" ||
         property === "releaseBranchRooms" ||
         property === "revokeDocument" ||
-        property === "revokeAccess"
+        property === "revokeAccess" ||
+        property === "whenRefusedRoomDropped"
       ) {
         return value.bind(target);
       }

@@ -71,7 +71,7 @@ describe("subagent runs from saved turns", () => {
     const runs = indexSubagentRuns(buildSubagentRuns([], [launch, notice] as unknown as Turn[]));
 
     expect(runs.byRef.get("p7")).toMatchObject({
-      description: "Glass tide scene",
+      name: "Glass tide scene",
       originTurnId: "turn-launch",
       startedAt: "2026-09-27T00:00:00Z",
       deliveryMode: "background_notification",

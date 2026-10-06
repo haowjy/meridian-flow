@@ -10,12 +10,12 @@ as upstream. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
-Work draft capture, redo, and Apply require an active Work under the shared
-lifecycle row lock before durable mutation. Archive preserves captured evidence
-and permits no new capture or Apply. Full Discard
-(`adapters/drizzle-work-draft-discard.ts`) also requires an active Work;
-selective Discard (`discardSelected` in `domain/branch-review-operations.ts`)
-does not check Work lifecycle. Replaying
+Work draft capture, redo, Apply and Discard require an active Work under the
+shared lifecycle row lock before durable mutation, and take the row through
+`lockSeamWorks` so bound edit grants are confirmed first
+([file policy](../../file-policy/.context/CONTEXT.md)). An archived Work's
+drafts are frozen: captured evidence stays, and nothing writes, applies or
+discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
 new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset
@@ -154,8 +154,7 @@ manifest operations; the aggregate commits them together. Repair uses the same
 boundary so a row cannot become visible before its Yjs authority is usable.
 Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
 after the enclosing Drizzle transaction commits. Work/thread manifest mutations
-persist their branch state inside that transaction and defer the automatic live
-push until commit.
+persist their branch state inside that transaction; they never push live (D59).
 
 ## Durable records
 

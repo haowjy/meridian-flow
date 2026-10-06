@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -60,6 +61,18 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import {
+  type AgentChain,
+  createAllowAllFileAccess,
+  createDrizzleFileFacts,
+  createFileAccess,
+  createLocalFileAccessChanges,
+  createOwnerFileGrants,
+  createPgFileAccessChanges,
+  type FileAccess,
+  type FileAccessChanges,
+  type PgFileAccessChanges,
+} from "../domains/file-policy/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -138,7 +151,6 @@ import {
   createPrefixCacheStateService,
   createReportPublisher,
   createRunStarter,
-  createSkillToolRegistrations,
   createSpawnToolRegistrations,
   createSubagentActivityRefresher,
   createToolExecutor,
@@ -152,6 +164,8 @@ import {
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
+  readAgentChain,
+  readChainPermission,
   readPendingInbox,
   requireWritableThread,
   sweepWakes,
@@ -163,9 +177,7 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  loadModelSkillBody,
   resolveThreadUserInvocableSkills,
-  SkillUnavailableError,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import {
@@ -211,16 +223,15 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
-import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createModelToolRegistrations,
+  createReferenceReader,
+} from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
-import {
-  createAgentEditResponseWriteLifecycle,
-  createReferenceReader,
-  createWiredCoreToolRegistrations,
-} from "./wired-core-tools.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -285,7 +296,10 @@ export type AppServices = {
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
   results: ResultRepository;
-  documentAccess: DocumentAccessPort;
+  /** The file policy every route and model call asks (file-access §1). */
+  fileAccess: FileAccess;
+  /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
+  fileAccessChanges: FileAccessChanges;
   notices: NoticePort;
   changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
   changeTrailDelivery: ReturnType<typeof createChangeTrailWorker>;
@@ -297,6 +311,13 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** A thread's delegation chain, read fresh (file-access §8). */
+  readAgentChain(threadId: ThreadId): Promise<AgentChain>;
+  /** The chain's effective permission, from the lighter lineage walk. */
+  readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
+  /** The file policy every model read and write asks (file-access §1). */
+  fileAccess: FileAccess;
+  fileAccessChanges: PgFileAccessChanges;
   gateway: Gateway;
   summarizerConfig: { model: string };
   threadRepos: InternalThreadRepositories;
@@ -336,7 +357,6 @@ export type ProductionAppPorts = {
   figureAssets: FigureAssetService;
   results: ResultRepository;
   promotionService: PromotionService;
-  documentAccess: DocumentAccessPort;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
@@ -435,7 +455,6 @@ export async function createProductionAppPorts(input: {
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
-  const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db);
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
@@ -449,10 +468,22 @@ export async function createProductionAppPorts(input: {
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
+  const agentRevisions = createDrizzleAgentRevisionStore(db);
+  const chainDeps = {
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+    agentRevisions,
+  };
+  const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
+  const fileAccess = createFileAccess({
+    facts: createDrizzleFileFacts(db),
+    grants: createOwnerFileGrants(),
+    readAgentChain: readChain,
+  });
   const documentSync = createCollabDomain({
     db,
+    fileAccess,
     assetPathResolver,
-    documentAccess,
     eventSink,
     notices,
     workAuthorityResolver,
@@ -470,6 +501,7 @@ export async function createProductionAppPorts(input: {
         readThreadContextDocument(
           {
             contextPorts,
+            fileAccess,
             threads: threadRepos.threads,
             threadWorks: threadRepos.threadWorks,
             works: workRepo,
@@ -518,7 +550,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     assetPaths: assetPathResolver,
   });
-  const agentRevisions = createDrizzleAgentRevisionStore(db);
   await seedGeneralAgent(agentRevisions, defaultModel);
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,
@@ -535,9 +566,11 @@ export async function createProductionAppPorts(input: {
     documents: documentSync,
     catalogLifecycle: contextCatalog,
   });
+  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
     projectionMutation: workProjectionMutation,
+    fileAccessChanges,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -568,6 +601,8 @@ export async function createProductionAppPorts(input: {
     statusReader,
     gateway,
     summarizerConfig: { model: summarizerModel },
+    fileAccess,
+    fileAccessChanges,
     threadRepos,
     journalReader,
     journalWriter,
@@ -612,9 +647,10 @@ export async function createProductionAppPorts(input: {
     figureAssets,
     results,
     promotionService,
-    documentAccess,
     notices,
     activeDocuments,
+    readAgentChain: readChain,
+    readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
   };
 }
 
@@ -628,12 +664,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
   });
-  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
+  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.fileAccess);
   const changeTrailDelivery = createChangeTrailWorker({
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
@@ -641,6 +676,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
+    readChainPermission: ports.readChainPermission,
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
@@ -685,8 +721,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    threadWorks: ports.threadRepos.threadWorks,
-    works: ports.workRepo,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
@@ -701,9 +735,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
-    transaction: ports.threadRepos.transaction,
+    objectStore: ports.objectStore,
+    fileAccess: ports.fileAccess,
+    agentRevisions: ports.agentRevisions,
+    readAgentChain: ports.readAgentChain,
+    readChainPermission: ports.readChainPermission,
   };
-  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
+  for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
   for (const registration of createInspectionToolRegistrations({
@@ -724,19 +762,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
-    toolRegistry.register(registration);
-  }
-  for (const registration of createSkillToolRegistrations({
-    async loadBody(threadId, slug) {
-      const thread = await ports.threadRepos.threads.findById(threadId as never);
-      if (!thread) throw new SkillUnavailableError(slug);
-      return loadModelSkillBody({
-        thread,
-        slug,
-        agentRevisions: ports.agentRevisions,
-      });
-    },
-  })) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry);
@@ -807,6 +832,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
+    fileAccess: ports.fileAccess,
     identities: ports.uploadIdentity,
     availability: ports.projectContextAvailability,
     objects: ports.objectStore,
@@ -1042,13 +1068,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
     results: ports.results,
-    documentAccess: ports.documentAccess,
+    fileAccess: ports.fileAccess,
+    fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
+      ports.documentSync.dispose();
       await ports.linkUpdates.stop();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
@@ -1566,24 +1594,8 @@ export function createInMemoryAppServices(): AppServices {
         return [];
       },
     },
-    documentAccess: {
-      async documentAccessState() {
-        return "available";
-      },
-      async lockDocumentAccessState() {
-        return "available";
-      },
-      async canAccessDocument() {
-        return true;
-      },
-      async canAccessProjectDocument() {
-        return true;
-      },
-      async requireOwnedDocument() {},
-      async projectIdForDocument() {
-        return null;
-      },
-    },
+    fileAccess: createAllowAllFileAccess(),
+    fileAccessChanges: createLocalFileAccessChanges(),
     notices,
     modelRequestDebug,
     mockModelScript: null,

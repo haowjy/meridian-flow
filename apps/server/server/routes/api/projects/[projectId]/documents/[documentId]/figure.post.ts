@@ -8,6 +8,12 @@ import {
 } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
+import {
+  containerTarget,
+  documentTarget,
+  requireFileGrant,
+  withEditGrants,
+} from "../../../../../../lib/file-access-http.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
 function formText(
@@ -34,17 +40,29 @@ export default defineEventHandler(async (event) => {
   const parts = await readMultipartFormData(event);
   const file = parts?.find((part) => part.name === "file" && part.filename);
   if (!file) throw createError({ statusCode: 400, message: "multipart field 'file' is required" });
-  const result = await app.figureAssets.uploadFigure({
-    projectId,
-    userId: user.userId,
-    hostDocumentId: documentId,
-    bytes: file.data,
-    mimeType: file.type || "application/octet-stream",
-    filename: file.filename,
-    alt: formText(parts, "alt"),
-    label: formText(parts, "label"),
-    caption: formText(parts, "caption"),
-  });
+  // Figures land in manuscript://assets, so the upload edits the host and that folder (§2).
+  const grants = [
+    await requireFileGrant(app.fileAccess, user.userId, documentTarget(documentId), "edit"),
+    await requireFileGrant(
+      app.fileAccess,
+      user.userId,
+      await containerTarget(app.workRepo, { projectId, scheme: "manuscript", workId: null }),
+      "edit",
+    ),
+  ];
+  const result = await withEditGrants(app.fileAccess, grants, () =>
+    app.figureAssets.uploadFigure({
+      projectId,
+      userId: user.userId,
+      hostDocumentId: documentId,
+      bytes: file.data,
+      mimeType: file.type || "application/octet-stream",
+      filename: file.filename,
+      alt: formText(parts, "alt"),
+      label: formText(parts, "label"),
+      caption: formText(parts, "caption"),
+    }),
+  );
   if (!result.ok) throw toHttpError(result.error);
   setResponseStatus(event, 201);
   return serializeTransport(result.value);

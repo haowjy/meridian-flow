@@ -201,16 +201,20 @@ What the model receives for five common deliveries, so "durable
    i.e. `{ kind: "system_update", section: "skill_body" }`) chained
    immediately after it -- never a block on the writer's own turn, so
    `UserTurn.tsx`'s `projectUserTurn` (which concatenates every text block of
-   a user turn) never renders it. Its block text is:
+   a user turn) never renders it. Its block text, for a packaged skill, carries
+   the same header as `skill()`:
    ```
    <system_update>
-   skill invoked: writing-principles
+   skills://writing-principles/SKILL.md
+   Paths in this skill are relative to skills://writing-principles/.
 
    description: Craft rules for revision
 
    Show, do not tell.
    </system_update>
    ```
+   An account-install skill has no files, so its first line is
+   `skill invoked: <slug>` instead (`loop/activated-skills.ts`).
 
 Every one of these five is either a `system`-role turn with no custom block
 (2, 4, 5) or a `user`-role turn carrying one of the specific hidden-metadata

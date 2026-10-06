@@ -1,6 +1,7 @@
 /** PostgreSQL contract for project bootstrap with locked No Work. */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
@@ -16,7 +17,6 @@ else
     );
     const { eq } = await import("drizzle-orm");
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -36,10 +36,10 @@ else
     });
     function collab() {
       const domain = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -52,10 +52,10 @@ else
     }
     function boundCollab() {
       const domain = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },

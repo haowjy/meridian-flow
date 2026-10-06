@@ -2,11 +2,12 @@
 
 import type { JsonValue } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
+import { z } from "zod";
 import type { ModelInfo, Tool } from "../gateway/index.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "../loop/__tests__/scripted-summarizer.js";
 import { createInertGateway } from "../loop/__tests__/test-gateway.js";
-import { writeDocumentText } from "../tools/document-text.js";
+import { readDocumentText } from "../tools/document-text.js";
 import { createToolRegistry } from "../tools/index.js";
 import { generateHandoffBrief } from "./brief-request.js";
 
@@ -49,9 +50,10 @@ async function prepareBrief(input: {
     registrations: [
       {
         source: "core",
-        definition: { type: "function", name: "write", description: "Write", inputSchema: {} },
+        definition: { type: "function", name: "read", description: "Read", inputSchema: {} },
+        input: z.unknown(),
         execution: { type: "server", handler: async () => ({}) },
-        documentText: writeDocumentText,
+        documentText: readDocumentText,
       },
     ],
   });
@@ -103,8 +105,8 @@ async function prepareBrief(input: {
     sequence: 0,
     content: {
       toolCallId: "chapter-read",
-      toolName: "write",
-      input: { command: "read", path: "manuscript://chapter-12.md" },
+      toolName: "read",
+      input: { path: "manuscript://chapter-12.md" },
     },
     status: "complete",
   });

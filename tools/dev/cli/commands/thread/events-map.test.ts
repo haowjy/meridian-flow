@@ -68,6 +68,33 @@ describe("RunEventMapper", () => {
     ]);
   });
 
+  it("names the call on its error and on its settled result", () => {
+    const events = mapAll([
+      { type: "TOOL_CALL_START", toolCallId: "c1", toolCallName: "write" } as AGUIEvent,
+      { type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"command":"insert"}' } as AGUIEvent,
+      { type: "TOOL_CALL_END", toolCallId: "c1" } as AGUIEvent,
+      { type: "TOOL_CALL_RESULT", toolCallId: "c1", content: "status: success" } as AGUIEvent,
+      // A staged write's receipt settles at the end of the reply and replaces its result.
+      { type: "TOOL_CALL_RESULT", toolCallId: "c1", content: "status: settled" } as AGUIEvent,
+      {
+        type: "CUSTOM",
+        name: "meridian.tool.result_error",
+        value: { toolCallId: "c1", isError: true },
+      } as AGUIEvent,
+    ]);
+    expect(events.slice(1)).toMatchObject([
+      { type: "tool.completed", name: "write", args: '{"command":"insert"}' },
+      {
+        type: "tool.completed",
+        name: "write",
+        args: '{"command":"insert"}',
+        result: "status: settled",
+        settled: true,
+      },
+      { type: "tool.errored", toolCallId: "c1", name: "write" },
+    ]);
+  });
+
   it("shows the raw diagnostic cause and reason carried by a run error", () => {
     const mapper = new RunEventMapper();
     const [failed] = mapper.map({

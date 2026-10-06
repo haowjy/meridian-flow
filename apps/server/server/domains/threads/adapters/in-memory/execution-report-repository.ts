@@ -128,9 +128,10 @@ export function createInMemoryExecutionReportRepository(
         }
       }
       return [...latest.values()].map(
-        ({ childThreadId, deliveryMode, admittedAt, terminalAt }) => ({
+        ({ childThreadId, deliveryMode, callerThreadId, admittedAt, terminalAt }) => ({
           childThreadId,
           deliveryMode,
+          callerThreadId,
           admittedAt,
           terminalAt,
         }),

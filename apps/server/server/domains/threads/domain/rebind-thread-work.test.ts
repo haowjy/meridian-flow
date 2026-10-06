@@ -70,18 +70,13 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
 }
 
 describe("rebindThreadWork", () => {
-  it("rebinds named Work to No Work with a null slug receipt", async () => {
+  it("rebinds named Work to No Work with a null slug", async () => {
     const h = fixture(SOURCE_ID);
     const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
     expect(result).toMatchObject({
       changed: true,
       before: { workId: SOURCE_ID, name: "Source", slug: expect.any(String) },
       after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
-      receipt: {
-        before: { workId: SOURCE_ID },
-        after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
-        inverse: null,
-      },
     });
     expect(h.threadChanged).toHaveBeenCalledTimes(1);
   });

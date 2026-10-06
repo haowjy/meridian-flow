@@ -22,6 +22,42 @@ socket. `CollabSchemaWebSocket` formats the current version through
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
 
+## Access scope and 4409
+
+The server names a room's scope in Hocuspocus's authenticated message on every
+(re)connect. The transport publishes only what the server names through
+`subscribeAccess` (the last named scope on subscribe, nothing before the
+first), and `DocumentSession` carries it as `snapshot.access`: `null` until
+the server names one, then the last named scope, kept across drops and
+transport restarts. An unnamed room is writable (local-first). Access is not a
+connection state: a read-only room that drops offline stays read-only.
+
+`null` is what lets a named `edit` count. The Editor host's `readOnly` comes
+from its Works catalog, which can predate the room's first connect (a tab
+that loaded while the Work was archived and whose room connected after the
+unarchive). The host's `RoomScopeCatalogCheck`
+(`features/project/context/ContextEditorMountHost.tsx`) watches each named
+scope, and each activation, against its `readOnly` and refreshes its Works
+catalog when they disagree. Its own changes to `readOnly` never ask, so the
+tab that archives fetches nothing extra.
+
+A 4409 `access-changed` close (a Work archived, unarchived, deleted or
+restored) is not terminal. The transport freezes the room (`read`) and lets
+Hocuspocus reconnect with the same Y.Doc; the new authenticated scope then
+switches the mounted editor in place. The one exception is a close that lands
+while local updates are still unacknowledged: the server refused them, and a
+reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
+resets with reason `access-changed` instead of reconnecting, and
+`DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
+session. A branch (draft review) room rebuilds through
+`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+live room (scratch) goes through the registry's `dropRefusedRoom`, which
+revokes each lease's access: the session is torn down and its IndexedDB copy,
+which still holds the refused edits, is cleared. Editor hosts unbind at once
+(`useRefusedEditsReopen`) and reopen when the drop settles, so the editor
+loads the server's state. A drop that fails leaves the refused session bound
+read-only rather than reopening again.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with

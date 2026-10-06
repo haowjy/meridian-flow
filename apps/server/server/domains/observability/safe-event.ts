@@ -51,7 +51,7 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
 ]);
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
-  command: new Set(["create", "delete", "diff", "insert", "read", "redo", "replace", "undo"]),
+  command: new Set(["copy", "create", "insert", "read", "redo", "remove", "replace", "undo"]),
   direction: new Set(["redo", "undo"]),
   finishReason: new Set(["end_turn", "error", "max_tokens", "stop_sequence", "tool_use"]),
   kind: new Set([
@@ -78,6 +78,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
   status: new Set([
     "active",
+    "binary_file",
     "cant_undo_dependent",
     "closed",
     "committed",
@@ -87,6 +88,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "not_found",
     "nothing_to_redo",
     "nothing_to_undo",
+    "permission_denied",
     "reconciled",
     "redone",
     "reversed",

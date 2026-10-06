@@ -2,6 +2,7 @@
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   CompactionMetadataCodec,
@@ -12,7 +13,7 @@ import {
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
-import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
+import { readDocumentText, searchDocumentText, writeDocumentText } from "../tools/document-text.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
@@ -170,12 +171,14 @@ else
 
     async function documentTail(rig: Awaited<ReturnType<typeof fixture>>, allKinds = false) {
       for (const [name, documentText] of [
+        ["read", readDocumentText],
         ["write", writeDocumentText],
         ["search", searchDocumentText],
       ] as const)
         rig.deps.toolRegistry.register({
           source: "core",
           definition: { type: "function", name, description: name, inputSchema: {} },
+          input: z.unknown(),
           execution: { type: "server", handler: async () => null },
           documentText,
         });
@@ -187,7 +190,6 @@ else
             { id: "stale-write", command: "replace", revision: "old" },
             { id: "fresh-write", command: "replace", revision: "new" },
             { id: "search", command: "search", revision: "old" },
-            { id: "diff", command: "diff", revision: null },
             { id: "failed-write", command: "replace", revision: "old" },
           ]
         : [{ id: "stale-read", command: "read", revision: "old" }];
@@ -196,7 +198,7 @@ else
       for (const record of records) {
         const uri = "manuscript://chapter.md";
         const isSearch = record.command === "search";
-        const toolName = isSearch ? "search" : "write";
+        const toolName = isSearch ? "search" : record.command === "read" ? "read" : "write";
         const staleText = `${record.id.toUpperCase()} TEXT`;
         await rig.repos.blocks.create({
           turnId: answer.id,
@@ -209,7 +211,7 @@ else
             input: isSearch
               ? { pattern: "dragon" }
               : {
-                  command: record.command,
+                  ...(record.command === "read" ? {} : { command: record.command }),
                   path: uri,
                   ...(record.command === "replace"
                     ? { content: staleText, find: staleText, in: "b41" }
@@ -247,7 +249,7 @@ else
                 documentRevisions: [
                   {
                     documentId: "chapter",
-                    uri: record.command === "diff" ? null : uri,
+                    uri,
                     revision: record.revision,
                   },
                   ...(isSearch
@@ -325,7 +327,7 @@ else
         metadata: { elisions: expect.any(Array) },
       });
       expect(c!.promptBakeId).not.toBeNull();
-      expect((c!.metadata as JsonObject).elisions).toHaveLength(6);
+      expect((c!.metadata as JsonObject).elisions).toHaveLength(5);
       const first = rig.gateway.requests[0];
       const before = rig.summarizer.calls[0].requestInHand!;
       expect(first.messages[0]).toEqual(before.messages[0]);
@@ -339,7 +341,6 @@ else
         "STALE-WRITE TEXT",
         "STALE SEARCH TEXT",
         "STALE REFERENCE TEXT",
-        "DIFF TEXT",
       ])
         expect(bytes).not.toContain(text);
       for (const text of [
@@ -361,6 +362,7 @@ else
         turns: turns.filter((t) => t.position <= c!.position),
         blocks: blocks.filter((b) => turns.find((t) => t.id === b.turnId)!.position <= c!.position),
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.repos.threads,
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,
@@ -400,7 +402,6 @@ else
       const retained = JSON.stringify(rig.summarizer.calls[1].retainedMessages);
       expect(retained).toContain("Cleared at compaction");
       expect(retained).not.toContain("STALE-READ TEXT");
-      expect(retained).not.toContain("DIFF TEXT");
       const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
@@ -550,6 +551,7 @@ else
           (block) => block.turnId !== turns.at(-1)?.id,
         ),
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.repos.threads,
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,
@@ -1201,6 +1203,7 @@ else
           (block) => block.turnId !== turns.at(-1)?.id,
         ),
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.repos.threads,
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,
@@ -1492,6 +1495,7 @@ else
             (block) => block.turnId !== tail[3].id,
           ),
           agentRevisions: rig.deps.agentRevisions,
+          threads: rig.repos.threads,
           toolRegistry: rig.deps.toolRegistry,
           baseTools: [],
           gateway: rig.deps.gateway,
@@ -2082,7 +2086,8 @@ else
               toolCallId: "last-tool",
               output: {
                 error: "permission_denied",
-                reason: 'Tool "unavailable_probe_tool" is not enabled.',
+                reason:
+                  'This agent has no "unavailable_probe_tool" tool. Tell the user you can\'t do this here.',
               },
               isError: true,
             },
@@ -2111,6 +2116,7 @@ else
           (block) => block.turnId !== tail[2].id,
         ),
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.repos.threads,
         toolRegistry: rig.deps.toolRegistry,
         baseTools: [],
         gateway: rig.deps.gateway,

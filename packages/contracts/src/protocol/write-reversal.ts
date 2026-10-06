@@ -7,6 +7,9 @@ export type WriteErrorStatus =
   | "document_not_found"
   | "partial_failure"
   | "cant_undo_dependent"
+  | "read_required"
+  | "binary_file"
+  | "permission_denied"
   | "internal_error";
 
 export type UndoRedoOutcome =
