@@ -1,4 +1,5 @@
 /** Native socket boundary for real Hocuspocus document-provider tests. */
+import { MessageType } from "@hocuspocus/provider";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { writeSyncStep1, writeSyncStep2 } from "y-protocols/sync";
@@ -49,6 +50,12 @@ export class DocumentSocketHarness {
   open() {
     this.readyState = 1;
     this.dispatch("open", {});
+  }
+
+  /** Settle Hocuspocus's connection attempt with the first server frame. */
+  connected() {
+    this.open();
+    this.dispatch("message", { data: new Uint8Array([MessageType.Ping]).buffer });
   }
 
   deliverClose(code = 1006, reason = "") {
