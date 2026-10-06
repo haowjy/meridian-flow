@@ -6,7 +6,6 @@ import { expect, it, vi } from "vitest";
 import { getProjectContextRead } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { resolveEditorWorkScope } from "../editor-work-scope";
 import { openContextRouteSearch } from "../routing/project-route";
 import { ContextViewerBareHost, ContextViewerHost } from "./ContextViewerHost";
 import { contextTabFromFile } from "./context-tab-from-file";
@@ -18,12 +17,13 @@ vi.mock("@/client/api/projects-api", async (original) => ({
 }));
 
 it("reads an explicit no-Work image without inheriting the selected chat Work", async () => {
-  const search = openContextRouteSearch({}, { scheme: "uploads", path: "/Map.png", workId: null });
-  expect(search.work).toBe("none");
-  const scope = resolveEditorWorkScope({ status: "none" });
-  expect(scope).toEqual({ status: "ready", workId: null, source: "route" });
-  if (scope.status !== "ready") throw new Error("expected resolved scope");
-  expect(contextCatalogScope("project", "uploads", scope.workId)).toBeNull();
+  const search = openContextRouteSearch(
+    {},
+    { scheme: "uploads", path: "/Map.png", workId: "no-work" },
+  );
+  expect(search.work).toBe("no-work");
+  const scope = { status: "ready", workId: "no-work" } as const;
+  expect(contextCatalogScope("project", "uploads", scope.workId)).not.toBeNull();
   const tab = contextTabFromFile(
     "uploads",
     {
@@ -62,12 +62,9 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
-      expect(getProjectContextRead).toHaveBeenCalledWith(
-        "project",
-        "uploads",
-        "/Map.png",
-        undefined,
-      );
+      expect(getProjectContextRead).toHaveBeenCalledWith("project", "uploads", "/Map.png", {
+        workId: "no-work",
+      });
       expect(document.querySelector('img[alt="Map.png"]')?.getAttribute("src")).toBe(
         "/signed-map.png",
       );

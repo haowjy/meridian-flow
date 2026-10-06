@@ -217,7 +217,7 @@ export function useThreadHandoff(
         return createProjectThread(creation.projectId, {
           id: threadId,
           title: creation.title,
-          workId: creation.workId ?? null,
+          workId: creation.workId,
           agentSelection: creation.agentSelection,
         });
       })

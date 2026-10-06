@@ -39,7 +39,7 @@ vi.mock("@/client/api/projects-api", () => ({
 const PROJECT_ID = WORK.projectId;
 
 const CODA = { ...WORK, id: "00000000-0000-4000-8000-000000000002", name: "Coda" } as Work;
-const NO_ROUTE_WORK: RouteWorkResolution = { status: "none" };
+const NO_ROUTE_WORK: RouteWorkResolution = { status: "absent" };
 
 function CollectionHarness({
   initialView = "active",
@@ -79,7 +79,7 @@ function BandHarness({
 }) {
   const work = useWorks(PROJECT_ID).works?.find((entry) => entry.id === workId);
   const routeWork = (
-    work ? { status: "present", workId, work } : { status: "none" }
+    work ? { status: "present", workId, work } : { status: "absent" }
   ) as RouteWorkResolution;
   const chrome = useWorkChrome(PROJECT_ID, routeWork, null, routeCommands, deletion, "tab");
   return <header data-testid="band">{chrome.notice}</header>;

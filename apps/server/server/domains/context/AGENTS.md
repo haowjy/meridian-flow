@@ -60,8 +60,8 @@ classification, collision, persistence, and deletion decisions to `UploadIntake`
 Composer reference removal never calls the separate upload-delete route.
 
 Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
-previous paths pointing directly to stable document IDs. This does not change
-link resolution. Every successful namespace claim consumes the exact old
+previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
+Editor links use exact holder/href redirects instead. Every successful namespace claim consumes the exact old
 alias in the same transaction; source provisioning and hidden manifests are not
 path claims.
 
@@ -81,4 +81,18 @@ Internal document links resolve through the same domain at
 `POST /api/projects/[projectId]/links/resolve`. The route accepts a scheme or
 relative target (a standard Markdown link's destination; there are no
 wikilinks), resolves it through `resolveDocumentHref`, and returns the one
-document at that address or `{ document: null }`.
+document at that address or `{ document: null }`. Pending holder/href redirects
+win over the address, including an unavailable target that must not fall through.
+Moves flush durable link derivation before namespace locking, then lock all mutated
+document rows (moved identities and any overwrite victim), sorted,
+`FOR NO KEY UPDATE` before redirect rows. Never use `FOR UPDATE`
+for those document locks: journal FK inserts must remain compatible.
+
+Move redirects are consumed by `links/link-update-worker.ts` through collab atomic
+maintenance. Post-commit kicks and the recovery sweep share one worker. It skips
+archived/deleted Work holders and defers the whole holder batch when any target
+is unavailable (without backoff). A target moved out of a project holder's reach
+has its redirect dropped without changing the old href or counting the holder in
+the move receipt. Moved holders always respell relative links; a holder moved into
+`user://` uses contextual full project URIs, not relative personal paths. It retries
+failures with backoff, and credits the newest consumed mover without holder permission checks.

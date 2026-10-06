@@ -216,6 +216,10 @@ msgstr "{count, plural, one {# match} other {# matches}}"
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
+#: src/features/project/context/LinkUpdateNote.tsx
+#~ msgid "{count, plural, one {Updated # link} other {Updated # links}}"
+#~ msgstr "{count, plural, one {Updated # link} other {Updated # links}}"
+
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"
@@ -243,6 +247,10 @@ msgstr "{full}, summary"
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
+
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -1237,6 +1245,10 @@ msgstr "Couldn't rename this document. Try again."
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't rename this folder. Try again."
+msgstr "Couldn't rename this folder. Try again."
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
@@ -3606,8 +3618,8 @@ msgid "That location does not exist"
 msgstr "That location does not exist"
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "That name is already in use."
-msgstr "That name is already in use."
+#~ msgid "That name is already in use."
+#~ msgstr "That name is already in use."
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
@@ -3668,8 +3680,8 @@ msgid "The header row stays first."
 msgstr "The header row stays first."
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "The location changed. Try again."
-msgstr "The location changed. Try again."
+#~ msgid "The location changed. Try again."
+#~ msgstr "The location changed. Try again."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -3896,6 +3908,10 @@ msgstr "This filename contains unsupported characters. Rename the file and attac
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder is empty."
 msgstr "This folder is empty."
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "This folder is unavailable. Refresh and try again."
+msgstr "This folder is unavailable. Refresh and try again."
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder no longer exists."

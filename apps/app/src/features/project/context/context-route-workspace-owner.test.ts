@@ -42,7 +42,7 @@ describe("resolveWorkspaceRoute", () => {
       resolveWorkspaceRoute({
         tabs: [local("n")],
         selectedDocumentId: "n",
-        locator: { scheme: "unfiled", path: "", workId: null },
+        locator: { scheme: "unfiled", path: "", workId: "no-work" },
       }),
     ).toMatchObject({ kind: "owner", tab: { documentId: "n" } });
   });

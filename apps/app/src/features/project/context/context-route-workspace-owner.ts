@@ -3,7 +3,7 @@
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
-import type { ContextRouteIdentity } from "./context-removal-planner";
+import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
 export type WorkspaceRouteResolution =
@@ -51,19 +51,12 @@ export function resolveWorkspaceRoute({
   if (
     selected?.kind === "tracked" &&
     selected.origin === "local-resource" &&
-    (!isWorkScopedProjectContextScheme(selected.scheme) ||
-      (selected.workId ?? null) === locator.workId)
+    (!isWorkScopedProjectContextScheme(selected.scheme) || selected.workId === locator.workId)
   ) {
     return {
       kind: "materialized-local",
       tab: selected,
-      target: {
-        scheme: selected.scheme,
-        path: selected.path,
-        workId: isWorkScopedProjectContextScheme(selected.scheme)
-          ? (selected.workId ?? null)
-          : locator.workId,
-      },
+      target: routeTargetForTab(selected, locator.workId),
     };
   }
   return { kind: "unowned" };
