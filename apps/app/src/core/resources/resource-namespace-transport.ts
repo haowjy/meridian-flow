@@ -1,5 +1,6 @@
 /** Account-fenced document namespace transport; durable ownership and retry scheduling stay upstream. */
 import type { NamespaceRequest, ResourceNamespaceTransport } from "@meridian/resource-replica";
+import { httpErrorStatus } from "@/client/api/http-client";
 import {
   createUntitledContextDocument,
   deleteContextEntry,
@@ -42,16 +43,24 @@ export function createResourceNamespaceTransport(
         requireOpen();
         return { kind: "create" as const, result };
       }
-      if (request.kind === "move") {
-        await moveContextEntry(projectId, request.scheme, request.body, { signal: epoch });
-      } else {
-        await deleteContextEntry(
-          projectId,
-          request.scheme,
-          request.body,
-          contextRequestOptionsForScheme(request.scheme, request.workId),
-          { signal: epoch },
-        );
+      try {
+        if (request.kind === "move") {
+          await moveContextEntry(projectId, request.scheme, request.body, { signal: epoch });
+        } else {
+          await deleteContextEntry(
+            projectId,
+            request.scheme,
+            request.body,
+            contextRequestOptionsForScheme(request.scheme, request.workId),
+            { signal: epoch },
+          );
+        }
+      } catch (error) {
+        // Only a persisted receipt proves rejection. Offline/timeouts retain replay.
+        if (httpErrorStatus(error) === undefined) throw error;
+        const outcome = await readOutcome(projectId, request);
+        if (outcome) return outcome;
+        throw error;
       }
       // A missing receipt remains uncertainty; never synthesize one from UI metadata.
       return readOutcome(projectId, request);
