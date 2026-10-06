@@ -93,9 +93,13 @@ policy-free.
   runtime and the app's interrupt card remain; re-enabling is that one line.
 - Documents have two tools (D1): `read({ path, in?, around?, format?,
   version? })` never changes a document, and every `write` command (`create`,
-  `copy`, `insert`, `replace`, `remove`, `undo`, `redo`) does. There is no
-  `diff` and no whole-document delete; old `write({ command: "read" })` rows
-  render through the generic fallback and nothing accepts them as input.
+  `copy`, `insert`, `replace`, `remove`, `move`, `delete`, `undo`, `redo`)
+  does. `move({ from: { path }, path })` and `delete({ path })` act on a whole
+  document; the host runs them (`lib/model-tools/namespace-commands.ts`) and
+  the engine never sees them. Each commits when called and takes a write
+  handle on the document's `w_id` sequence; links follow a move. There is no
+  `diff`; old `write({ command: "read" })` rows render through the generic
+  fallback and nothing accepts them as input.
   `version` (also on `search` and `ls`) defaults to the version this thread's
   writes change; each document's destination comes from
   `domains/file-policy` (`scratch://` and `uploads://` are never drafted). Both parse their zod `input` in the

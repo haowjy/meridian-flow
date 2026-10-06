@@ -118,6 +118,15 @@ The command schemas run it in `superRefine`, so hosts refuse a bad combination
 before dispatch and the resolver never re-checks it. Field descriptions state
 each rule, because refinements don't export to JSON Schema.
 
+**`move` and `delete` are tool input only (D25, D38).** `WriteToolInputSchema`
+carries them; `WriteCommandSchema`, the engine's input, does not, because they
+change where a whole document lives, which the host owns. Their write handles
+share the document's `w_id` sequence, so an `undo` or `redo` that reaches them
+is split by the host: the engine gets exactly the content handles it chose, as
+a `handles` selection (`ReversalSelection`). A link updater's rewrite reaches
+concurrent attribution with its own `link-update` origin and is reported as
+nobody's edit.
+
 **Copies are nodes, not markup (D23, D24).** `insert`/`replace` take exactly
 one of `content` or `from`, and `copy` creates a document from another. The engine
 never reads the source: the host reads it with `WriteContext.includeNodes`

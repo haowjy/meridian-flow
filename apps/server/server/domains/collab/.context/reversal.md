@@ -45,6 +45,30 @@ stable reversal-result identity.
   drafted write in an archived Work is refused with `work_archived` while live
   parts of the same call still reverse; `mergeReversals` makes a mixed result
   `partial` and names the kept handles.
+- **Creates, moves and deletes are write handles too** (D66):
+  `agent_namespace_changes` holds the model's live creates (a `create` or
+  `copy` shares its content write's handle), moves and deletes, on the
+  document's `w_id` counter (`adapters/write-ordinals.ts`) shared with content
+  writes, and records the draft branch each landed in (null for live). The
+  model's walk (`lib/model-tools/namespace-reversal*.ts`) orders both kinds,
+  drafted content handles included, and reverses each change where it
+  landed, under a grant there, whatever the thread's mode is now.
+- **One reversal step for a create, move or delete**:
+  `createNamespaceChanges` (`domain/namespace-changes.ts`) claims the row,
+  changes the tree and flips its status in one transaction, and `commit`
+  records a new change in the transaction that makes it. The model's `undo`
+  and `redo`, reply rollback, the writer's restore of a delete
+  (`POST …/turns/:turnId/restore-delete`) and turn undo all take it. Rollback
+  tries every change of the reply, logs `response_rollback.failed` for one
+  that stays, and forgets every handle of the reply.
+- **Turn undo settles links before its transaction**: the tree's link
+  derivations flush once before `atomic(...)` and every move in it skips its
+  own flush, so no move waits on a flush under the turn's locks. Inside, the
+  turn takes its tree locks first, then reverses the changes that leave the
+  document in place, then content, then the ones that remove it (an undone
+  create, a redone delete), keeping the seam's namespace-then-document order.
+  A refused change is `location_taken`, `folder_missing`,
+  `permission_denied` or `cant_undo_dependent`.
 - **Work-draft write-command reversal is branch-scoped**: for the drafted part of
   a selection, `write(command="undo"|"redo")`
   reconstructs and stages reversals exclusively from those rows. The staged
