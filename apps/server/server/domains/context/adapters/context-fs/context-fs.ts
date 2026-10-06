@@ -980,7 +980,13 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
     if (prepared.source.kind === "file") {
       const source = prepared.source;
-      if (!(await this.isVisibleDocument(source.nodeId))) {
+      // Only this source's own view can hide the file. A file moved in from
+      // another source (user:// into kb://) was checked by that source's
+      // adapter in this transaction, and never sits in this one's manifest.
+      if (
+        source.sourceId === (await this.store.contextSourceId()) &&
+        !(await this.isVisibleDocument(source.nodeId))
+      ) {
         return Err({ code: "invalid_operation" });
       }
       const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
