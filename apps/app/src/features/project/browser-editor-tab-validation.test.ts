@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({ availability: vi.fn() }));
 const resources = {
   readProjection: vi.fn<() => Promise<ResourceProjectionSnapshot>>(async () => ({
     records: [],
+    folders: [],
     catalogs: [],
   })),
 };
@@ -16,7 +17,9 @@ vi.mock("@/client/query/project-context-availability", () => ({
 
 beforeEach(() => {
   mocks.availability.mockReset();
-  resources.readProjection.mockReset().mockResolvedValue({ records: [], catalogs: [] });
+  resources.readProjection
+    .mockReset()
+    .mockResolvedValue({ records: [], folders: [], catalogs: [] });
   useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
 });
 
@@ -160,7 +163,7 @@ describe("device-local tab validation", () => {
     useContextTabsStore.setState({
       byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
     });
-    resources.readProjection.mockResolvedValue({ records: [foreign], catalogs: [] });
+    resources.readProjection.mockResolvedValue({ records: [foreign], folders: [], catalogs: [] });
 
     await validate();
 
@@ -189,6 +192,7 @@ describe("device-local tab validation", () => {
     });
     resources.readProjection.mockResolvedValue({
       records: [localPlacement()],
+      folders: [],
       catalogs: [],
     });
 

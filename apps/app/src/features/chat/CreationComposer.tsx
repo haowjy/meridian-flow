@@ -33,7 +33,7 @@ export function CreationComposer({
    */
   newChatFocusRequestId?: number | null;
   /** Explicit Work scope carried by a context-specific New chat action. */
-  newChatWorkId?: string | null;
+  newChatWorkId?: string;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
@@ -62,16 +62,18 @@ export function CreationComposer({
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
-  const selected = workFromSnapshot(
-    works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
-    workId,
-  );
+  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
+  const selected = workId
+    ? workFromSnapshot(
+        works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
+        workId,
+      )
+    : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenProjectDocument(projectId);
-  const context = agent ? { workId, agent } : undefined;
+  const context = agent && workId ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(
@@ -133,11 +135,12 @@ export function CreationComposer({
             work={work}
             selectedWorkId={workId}
             works={works.works ?? []}
+            noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
             disabled={modePending}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected?.id ?? null })}
+            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
             onRetryWorks={works.refetch}
             onModePendingChange={setModePending}
           />

@@ -49,7 +49,7 @@ export type SendProjectChatArgs = {
   submissionId: string;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
-  workId: string | null;
+  workId: string;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
   now?: number;

@@ -4,17 +4,18 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 
 ## Link navigation versus editor admission
 
-Resolved No Work survives routing in browser-entry state without an empty query parameter. Work-capable tabs without a
-`workId` belong to No Work; viewer reads and route matching must not inherit the
-host Chat Work. Nullable authority is ready for Context bootstrap and removal
-host registration, not a loading/missing-Work state. No-Work server tabs use
-route selection; the selected-tab map uses the empty-string key for shared project scope.
+The ready Editor Work and Work-scoped tabs carry their Work row id, including
+No Work. Viewer reads and route matching use that ownership, never the host
+Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
+removal host. The selected-tab map is keyed by Work row id; project-scoped
+files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` opens both tracked editors and existing
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
 Editor-eligible project binary/custom metadata still opens a viewer tab and route.
-Scratch/Uploads instead route to the deferred-viewing notice without opening a tab. The resolved file's
+Scratch documents open Editor tabs owned by their resolved Work (including No Work).
+Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
@@ -90,8 +91,8 @@ tab records once it is in front of the writer, including a local draft. That
 write lands in the account recents continuity record before the POST. A filed
 document navigates by its readable address. A local draft reopens through the
 empty-path local address (the same history pointer a new document uses), not a
-fabricated path. Scratch and uploads are not
-Editor tabs, so they are not recorded.
+fabricated path. Scratch documents participate in Editor recents; Uploads do not
+open Editor tabs and are not recorded.
 
 ## Reference pages
 

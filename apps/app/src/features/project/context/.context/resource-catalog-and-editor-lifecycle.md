@@ -126,15 +126,15 @@ opened as blank documents.
 
 ## Editor versus chat resources
 
-Editor tree and tabs admit project documents only. Scratch/Uploads remain valid
-storage and reference/tool schemes; direct resource URLs show an explicit
-viewing-not-available state. Persisted resource tab entries are removed without
-deleting resource documents or durable local content. The deferred chat-launched pane
-overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
+Editor trees list project document schemes; Scratch documents also open in
+Editor tabs through links and Work Files, with resolved Work ownership.
+No Work has no Scratch tree. Uploads remain storage and reference/tool resources;
+their direct URLs show the viewing-not-available state. The deferred chat-launched
+pane overlay is recorded in [TODO](TODO.md).
 
-Eligibility is enforced at every live workspace transition, including
-bootstrap, adoption and availability updates. Hiding a resource row alone is
-insufficient: a hidden tab must not remain eligible for close fallback.
+Eligibility is enforced at live workspace transitions, including bootstrap,
+adoption and availability updates. Hiding a row alone must not leave an
+ineligible tab available for close fallback.
 
 Every editable tab keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed tabs resolve through their stable resource handle before and after

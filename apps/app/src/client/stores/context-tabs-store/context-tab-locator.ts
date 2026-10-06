@@ -8,7 +8,7 @@ export function serverContextTabLocatorKey(
   tab: Pick<ServerContextTab, "scheme" | "path" | "workId">,
 ): string {
   return isWorkScopedProjectContextScheme(tab.scheme)
-    ? `${tab.scheme}:${tab.workId ?? ""}:${tab.path}`
+    ? `${tab.scheme}:${tab.workId}:${tab.path}`
     : `${tab.scheme}:${tab.path}`;
 }
 
