@@ -15,6 +15,12 @@ export type MobileDocumentRoute = Readonly<{
   path: string | null;
   tab: ServerContextTab | null;
   catalogResolved: boolean;
+  /**
+   * The readable address has not admitted its document yet. Its verdict is the only
+   * evidence for or against the document; a catalog that lacks it, such as a pending
+   * new-document draft's, proves nothing until the address settles.
+   */
+  addressPending: boolean;
   isError: boolean;
   isFetching: boolean;
 }>;
@@ -36,6 +42,7 @@ export function resolveMobileDocumentRoute(input: {
    * is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
+  addressPending?: boolean;
   catalog: CatalogContextView | null;
   isError: boolean;
   isFetching: boolean;
@@ -48,6 +55,7 @@ export function resolveMobileDocumentRoute(input: {
       path: input.path,
       tab: null,
       catalogResolved: false,
+      addressPending: false,
       isError: false,
       isFetching: false,
     };
@@ -68,6 +76,7 @@ export function resolveMobileDocumentRoute(input: {
     tab:
       resolved?.kind === "new" ? null : (resolved ?? draftOnlyTab(input, input.scheme, input.path)),
     catalogResolved: input.catalog !== null,
+    addressPending: input.addressPending === true,
     isError: input.isError,
     isFetching: input.isFetching,
   };
@@ -101,6 +110,7 @@ export function useMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  addressPending?: boolean;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
@@ -127,6 +137,7 @@ export function useMobileDocumentRoute(input: {
         workId: input.workId,
         boundDocumentId,
         workspaceTabs,
+        addressPending: input.addressPending,
         catalog,
         isError,
         isFetching,
@@ -135,6 +146,7 @@ export function useMobileDocumentRoute(input: {
       boundDocumentId,
       workspaceTabs,
       catalog,
+      input.addressPending,
       input.enabled,
       input.path,
       input.scheme,

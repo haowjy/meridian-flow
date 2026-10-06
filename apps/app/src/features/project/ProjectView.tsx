@@ -414,6 +414,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.editorWorkId,
+    addressPending: props.routeIssues?.editor === "loading",
   });
   const priorMobile = useRef<{
     projectId: string;

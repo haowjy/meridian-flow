@@ -5,9 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { useContextTabsStore } from "@/client/stores";
+import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalRoutePort } from "../context/context-removal-coordinator";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { identityCommitRoute } from "../context/use-identity-commit";
 import { useOpenContextRoute } from "./ProjectNavigationContext";
 import { ReadableProjectRoute } from "./ReadableProjectRoute";
@@ -262,5 +263,39 @@ it("does not let a launch's prepared tab move the document's open tab back to th
       path: "/renamed.md",
     });
     expect(tabs.find((tab) => tab.documentId === "document-b")).toMatchObject({ path: "/a.md" });
+  });
+});
+
+it("installs a cold review launch's tab at the route's own path spelling", async () => {
+  // A deep link to a pending new-document draft: the address names the document, but no
+  // tab exists yet. The address spells its path without a leading slash; the installed
+  // tab must still match the route (`/path`), or nothing owns the route and a document
+  // host rejects it.
+  await withRoute("manuscript/new-draft.md?work=", "document-n", "/new-draft.md", async () => {
+    useContextTabsStore.setState({ byProject: {} });
+    await open(
+      { documentId: "document-n", scheme: "manuscript", path: "/new-draft.md", workId },
+      {
+        draftId: "draft-n",
+        replaceIfSameDocument: true,
+        tab: {
+          kind: "tracked",
+          documentId: "document-n",
+          scheme: "manuscript",
+          path: "/new-draft.md",
+          name: "new-draft.md",
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+          draftOnly: true,
+          reviewWorkId: workId,
+        },
+      },
+    );
+    const { tabs } = getContextTabs(projectId);
+    const route = { scheme: "manuscript" as const, path: "/new-draft.md", workId };
+    expect(
+      resolveWorkspaceRoute({ tabs, selectedDocumentId: undefined, locator: route }),
+    ).toMatchObject({ kind: "owner" });
   });
 });

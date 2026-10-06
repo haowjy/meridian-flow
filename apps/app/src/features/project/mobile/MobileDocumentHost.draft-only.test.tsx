@@ -27,6 +27,7 @@ const selection = vi.hoisted(() => ({
 }));
 
 vi.mock("../context/use-live-document-binding", () => ({ useLiveDocumentBinding: live.binding }));
+vi.mock("../context/use-refused-edits-reopen", () => ({ useRefusedEditsReopen: () => null }));
 vi.mock("../context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => coordinator,
 }));
@@ -81,6 +82,7 @@ describe("MobileDocumentHost draft-only review", () => {
           path: "/new-chapter.md",
           tab: draftTab,
           catalogResolved: true,
+          addressPending: false,
           isError: false,
           isFetching: false,
         }}
@@ -100,5 +102,40 @@ describe("MobileDocumentHost draft-only review", () => {
         expect(coordinator.activate).not.toHaveBeenCalled();
       },
     );
+  });
+
+  const unadmitted = (addressPending: boolean) => (
+    <MobileDocumentHost
+      projectId="project-a"
+      editorWorkId="work-a"
+      route={{
+        requested: true,
+        scheme: "manuscript",
+        path: "/new-chapter.md",
+        tab: null,
+        // The live catalog settled without the document, as it does for any pending draft.
+        catalogResolved: true,
+        addressPending,
+        isError: false,
+        isFetching: false,
+      }}
+    />
+  );
+
+  it("does not reject the route while the address has not admitted its document", async () => {
+    coordinator.rejectRouteCandidate.mockClear();
+    await withReactRoot(unadmitted(true), async () => {
+      await act(async () => undefined);
+      expect(coordinator.rejectRouteCandidate).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain("Couldn't open this document.");
+    });
+  });
+
+  it("rejects an absent document once the address has settled", async () => {
+    coordinator.rejectRouteCandidate.mockClear();
+    await withReactRoot(unadmitted(false), async () => {
+      await act(async () => undefined);
+      expect(coordinator.rejectRouteCandidate).toHaveBeenCalledWith("project-a", 3);
+    });
   });
 });

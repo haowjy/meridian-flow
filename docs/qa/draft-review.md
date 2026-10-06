@@ -101,6 +101,20 @@ for ~200ms).
    must not warn about phantom pending changes (and must be disabled until
    the drafts query has settled).
 
+## Probe E — cold load and reload of a draft-only review
+
+1. Leave a pending new-document draft unapplied. Open its review, copy the
+   address (`/editor/manuscript/<name>.md?work=…&draft=…`), and open it in a
+   fresh tab, then reload. Run it at desktop width and as a phone (390px wide,
+   coarse pointer).
+   PASS: the document opens in review at the same URL with `?draft=` kept,
+   and no other document shows at any point. Record the history writes with a
+   `history.replaceState` wrapper installed before first load: there must be
+   none beyond the router's own startup write. FAIL: the address ends on
+   another open document with `?draft=` dropped (a tab at a path spelling the
+   route does not match, or a phone host rejecting the route before the
+   address admitted it).
+
 ## History
 
 - 2026-07-07 — #151 combined quality-fixes probe (disposition lock, bulk pump
