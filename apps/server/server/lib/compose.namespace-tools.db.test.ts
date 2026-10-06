@@ -469,6 +469,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect((await documentRow(DOC_ID))?.deletedAt).toBeNull();
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
+      const { call } = await script.begin();
+      expect(text(await call("ls", { path: "manuscript://" }))).toContain("chapter.md");
       await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
     });
 

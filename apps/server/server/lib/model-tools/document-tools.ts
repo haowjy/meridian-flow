@@ -374,7 +374,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       }
       const staged = {
         responseId,
-        port: context.port,
+        // Discarded through the view it was made in: a live create (scratch in a draft-mode
+        // Work, say) through the live port, never a draft-mode thread's port (D66 hazards);
+        // a drafted create through the draft port, which removes it from that draft's manifest.
+        port: outcome.result.destination === "live" ? context.livePort() : context.port,
         path: parsed.path,
         documentId: address.documentId,
       };

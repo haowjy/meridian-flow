@@ -665,7 +665,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       throw new Error("Restoring a file requires catalog generation authority");
     }
     const catalogMutations = this.catalogMutations;
-    return this.withMutationTransaction(async (events) => {
+    return this.withMutationTransaction(async () => {
       await lockContextSources(this.db, [command.sourceId]);
       const tx = currentDrizzleDb(this.db);
       const [row] = await tx
@@ -719,7 +719,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         .update(documents)
         .set({ deletedAt: null, deletedByWorkId: null, updatedAt: now })
         .where(eq(documents.id, command.documentId as never));
-      events.push({ method: "documentCreated", documentId: command.documentId });
+      // The manifest key comes back in this transaction, so a restored row is never live but
+      // unlisted (its editor room would refuse it). Only a live-view port restores (D66).
+      await this.membershipObserver?.documentCreated(command.documentId);
       const availabilityGeneration = await catalogMutations.refreshSources(
         [command.sourceId],
         [command.documentId],
