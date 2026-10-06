@@ -95,12 +95,6 @@ export type EditorViewProps = {
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
-  /**
-   * Host route context, retained for draft navigation. Links never read this:
-   * their scope comes from the holder's resource location or No Work.
-   * Changing route context never remounts the editor.
-   */
-  workId?: string | null;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
   /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */

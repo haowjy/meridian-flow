@@ -1,32 +1,22 @@
-/** No Work link creation uses local admission, not a server acknowledgement. */
+/** What a link can create, and that Create commits locally without waiting on the server. */
 
-import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { linkAheadAddress } from "@/core/editor/links";
-import { ProjectDocumentNavigationAdapter } from "@/features/project/context/open-project-document";
-import { useIdentityCommit } from "@/features/project/context/use-identity-commit";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { linkCreationTarget } from "./use-create-linked-document";
+import {
+  type CreateLinkedDocument,
+  linkCreationTarget,
+  useCreateLinkedDocument,
+} from "./use-create-linked-document";
 
 const resources = vi.hoisted(() => ({
   reserveDocument: vi.fn(async () => ({
     key: { handle: "resource" },
     content: { kind: "opened", handle: { documentId: "document", release() {} } },
   })),
-  setLocation: vi.fn(
-    async (
-      _project: string,
-      _key: { handle: string },
-      _destination: import("@meridian/resource-replica").ResourceDestination,
-    ) => ({ isLatest: true }),
-  ),
+  setLocation: vi.fn(async () => ({ isLatest: true })),
   deleteDocument: vi.fn(),
-}));
-// A server response that never arrives: local creation must not depend on it.
-vi.mock("@/client/api/projects-api", () => ({ createContextEntry: () => new Promise(() => {}) }));
-vi.mock("@/client/query/useWorks", () => ({
-  useWorks: () => ({ works: [], noWork: { id: "123e4567-e89b-42d3-a456-426614174000" } }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountResourceReplica: () => resources,
@@ -47,79 +37,46 @@ it("plans Create for a manuscript address and none for Scratch, whatever its Wor
   expect(linkAheadAddress("scratch://@live/notes/a.md", "Ch 2")).toBe("manuscript://Ch 2.md");
 });
 
-it("keeps the locked No Work row in the destination after an Editor identity rename", async () => {
-  let rename!: ReturnType<typeof useIdentityCommit>;
-  const committed = vi.fn();
-  resources.setLocation.mockResolvedValue({ isLatest: true });
+it("creates a manuscript document from local commits alone, with no server call", async () => {
+  let creation!: CreateLinkedDocument;
   function Probe() {
-    rename = useIdentityCommit({
-      projectId: "project",
-      editorWorkId: "123e4567-e89b-42d3-a456-426614174000",
-      tab: {
-        kind: "tracked",
-        documentId: "document",
-        resourceHandle: "resource",
-        scheme: "scratch",
-        workId: "123e4567-e89b-42d3-a456-426614174000",
-        path: "/before.md",
-        name: "before.md",
-        editable: true,
-        filetype: "markdown",
-        schemaType: "document",
-      },
-      onCommitted: committed,
-    });
+    creation = useCreateLinkedDocument("project");
     return null;
   }
   await withReactRoot(<Probe />, async () => {
+    const target = linkCreationTarget("manuscript://notes/scene.md");
+    if (!target) throw new Error("Missing target");
+    let documentId: string | null = null;
     await act(async () => {
-      await rename({
-        destination: {
-          scheme: "scratch",
-          folderPath: "",
-          workId: "123e4567-e89b-42d3-a456-426614174000",
-        },
-        name: "after.md",
-      });
+      documentId = await creation.create(target);
     });
-    expect(committed).toHaveBeenCalledWith(
-      "document",
-      expect.objectContaining({
-        routeWorkId: "123e4567-e89b-42d3-a456-426614174000",
-        path: "/after.md",
-      }),
-      { isLatest: true },
+    expect(documentId).toBe("document");
+    expect(resources.setLocation).toHaveBeenCalledWith(
+      "project",
+      { handle: "resource" },
+      { scheme: "manuscript", folderPath: "notes", name: "scene.md", workId: null },
     );
+    expect(creation.failed).toBe(false);
   });
 });
 
-it("settles an Uploads background open without admitting an Editor tab", async () => {
-  const document: CatalogFileEntry = {
-    kind: "file",
-    entryId: "upload",
-    scope: { kind: "work", projectId: "project", workId: "work" },
-    sourceId: "uploads",
-    parentId: "uploads",
-    name: "map.png",
-    aliases: [],
-    path: ["map.png"],
-    uri: "uploads://@work/map.png",
-    provisionalName: false,
-    editable: false,
-    disposition: "binary",
-    fileType: "image",
-    mimeType: "image/png",
-  };
-  const result = { kind: "not-editable" as const, document };
-  const openTab = vi.fn(() => ({ kind: "ineligible" as const }));
-  const adapter = new ProjectDocumentNavigationAdapter({
-    opener: { open: async () => result },
-    openTab,
-    openRoute: null,
+it("discards a reservation that never reached its address and reports the failure", async () => {
+  let creation!: CreateLinkedDocument;
+  function Probe() {
+    creation = useCreateLinkedDocument("project");
+    return null;
+  }
+  resources.setLocation.mockRejectedValueOnce(new Error("refused"));
+  resources.deleteDocument.mockResolvedValue(undefined);
+  await withReactRoot(<Probe />, async () => {
+    const target = linkCreationTarget("manuscript://scene.md");
+    if (!target) throw new Error("Missing target");
+    let documentId: string | null = "unset";
+    await act(async () => {
+      documentId = await creation.create(target);
+    });
+    expect(documentId).toBeNull();
+    expect(resources.deleteDocument).toHaveBeenCalledWith("project", { handle: "resource" });
+    expect(creation.failed).toBe(true);
   });
-
-  expect(await adapter.open("project", { documentId: "upload", disposition: "background" })).toBe(
-    result,
-  );
-  expect(openTab).not.toHaveBeenCalled();
 });

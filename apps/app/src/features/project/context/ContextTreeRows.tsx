@@ -367,7 +367,6 @@ function CreateRow({
   const env = useTreeEnv();
   const form = useCreateEntryForm({
     projectId: env.projectId,
-    workId: env.workId,
     scheme: env.scheme,
     kind,
     parent,

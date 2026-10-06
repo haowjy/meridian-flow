@@ -14,6 +14,7 @@ import type {
   DocumentSessionSnapshot,
   SchemaFence,
 } from "@/core/editor/document-session";
+import { getLinkSurface } from "@/core/editor/links";
 import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
@@ -25,6 +26,7 @@ import { type EditorScope, useEditorScope } from "./editor-scope";
 const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
 const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
 let holderScheme = "manuscript";
+let holderProjectionReady = true;
 let observedScope: EditorScope;
 let indexedWorkId: string | null;
 let referenceWorkId: string | null;
@@ -158,36 +160,48 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useOptionalAccountResourceReplica: () => null,
   useAccountResourceProjection: () => ({
     snapshot: null,
-    records: [
-      {
-        resource: {
-          identity: { documentId: "holder" },
-          aliases: {},
-          lifecycle: { kind: "acknowledged" },
-          obligations: {},
-          canonical: {
-            scheme: holderScheme,
-            path: "/holder.md",
-            name: "holder.md",
-            workId: holderScheme === "scratch" || holderScheme === "uploads" ? namedWork.id : null,
-            workSlug: "named",
+    records: holderProjectionReady
+      ? [
+          {
+            resource: {
+              identity: { documentId: "holder" },
+              aliases: {},
+              lifecycle: { kind: "acknowledged" },
+              obligations: {},
+              canonical: {
+                scheme: holderScheme,
+                path: "/holder.md",
+                name: "holder.md",
+                workId:
+                  holderScheme === "scratch" || holderScheme === "uploads" ? namedWork.id : null,
+                workSlug: "named",
+              },
+            },
+            intents: [],
           },
-        },
-        intents: [],
-      },
-    ],
+        ]
+      : [],
     error: null,
   }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
-vi.mock("./surfaces/link", () => ({
-  ProjectLinkRuntime: () => {
-    observedScope = useEditorScope();
-    return null;
-  },
+// The real runtime and follower, with only the scope it reads observed.
+vi.mock("./surfaces/link", async () => {
+  const { ProjectLinkRuntime: Runtime } = await import("./surfaces/link/ProjectLinkRuntime");
+  return {
+    ProjectLinkRuntime: (props: React.ComponentProps<typeof Runtime>) => {
+      observedScope = useEditorScope();
+      return <Runtime {...props} />;
+    },
+  };
+});
+const openDocument = vi.hoisted(() => vi.fn());
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useOpenProjectDocument: () => openDocument,
 }));
-vi.mock("@/features/links", () => ({
+vi.mock("@/features/links", async () => ({
+  useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
   useLinkableDocuments: (scope: EditorScope) => {
     indexedWorkId = scope.workId;
     return { documents: [], revision: "", complete: false };
@@ -418,11 +432,11 @@ describe("holder-owned Editor link scope", () => {
     "unfiled",
     "scratch",
     "uploads",
-  ])("%s links ignore the Editor route Work for resolution", async (scheme) => {
+  ])("%s links use the holder's Work", async (scheme) => {
     holderScheme = scheme;
     const expectedWork = scheme === "scratch" || scheme === "uploads" ? namedWork : noWork;
     await withReactRoot(
-      <Harness initial={{ documentId: "holder", projectId: "project-1", workId: namedWork.id }} />,
+      <Harness initial={{ documentId: "holder", projectId: "project-1" }} />,
       async () => {
         expect(observedScope.workId).toBe(expectedWork.id);
         expect(indexedWorkId).toBe(expectedWork.id);
@@ -443,12 +457,64 @@ describe("holder-owned Editor link scope", () => {
           "project-1",
           expect.objectContaining({ workId: expectedWork.id }),
         );
-        await act(async () => applyProps({ workId: null }));
-        expect(observedScope.workId).toBe(expectedWork.id);
-        expect(indexedWorkId).toBe(expectedWork.id);
-        expect(referenceWorkId).toBe(expectedWork.id);
       },
     );
     holderScheme = "manuscript";
+  });
+
+  describe("a follow while the holder's resource record is still arriving", () => {
+    const target = { kind: "scheme" as const, uri: "manuscript://existing.md" };
+    const existing = {
+      documentId: "target",
+      title: "Existing",
+      scheme: "manuscript" as const,
+      path: "existing.md",
+      uri: "manuscript://existing.md",
+      workId: null,
+    };
+    const hydrate = async (
+      follow: (surface: NonNullable<ReturnType<typeof getLinkSurface>>) => void,
+    ) => {
+      holderProjectionReady = false;
+      try {
+        await withReactRoot(
+          <Harness initial={{ documentId: "holder", projectId: "project-1" }} />,
+          async () => {
+            vi.mocked(resolveDocumentLink).mockClear();
+            openDocument.mockClear();
+            vi.mocked(resolveDocumentLink).mockResolvedValue({ document: existing });
+            const surface = getLinkSurface(mountedEditor());
+            if (!surface?.navigator) throw new Error("No link navigator");
+            await act(async () => {
+              surface.navigator?.({ target, disposition: "current" });
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            });
+            // Asked of nobody yet, but the writer is told it is being checked.
+            expect(surface.state.follow?.state).toBe("checking");
+            expect(resolveDocumentLink).not.toHaveBeenCalled();
+            follow(surface);
+            await act(async () => {
+              holderProjectionReady = true;
+              applyProps({});
+            });
+          },
+        );
+      } finally {
+        holderProjectionReady = true;
+      }
+    };
+
+    it("opens once when the holder's Work arrives", async () => {
+      await hydrate(() => {});
+      expect(resolveDocumentLink).toHaveBeenCalledTimes(1);
+      expect(openDocument).toHaveBeenCalledTimes(1);
+      expect(openDocument).toHaveBeenCalledWith(expect.objectContaining({ documentId: "target" }));
+    });
+
+    it("opens nothing after the writer dismissed the wait", async () => {
+      await hydrate((surface) => act(() => surface.dismissFollow()));
+      expect(resolveDocumentLink).not.toHaveBeenCalled();
+      expect(openDocument).not.toHaveBeenCalled();
+    });
   });
 });

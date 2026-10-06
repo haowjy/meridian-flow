@@ -124,7 +124,6 @@ export function MobileProject(props: MobileProjectProps) {
                     scheme: props.activeContextScheme,
                     kind,
                     parentPath: props.activeContextFolder ?? "",
-                    workId: props.editorWorkId,
                   });
                 })
               : undefined
@@ -290,7 +289,6 @@ function renderActiveView(
                       kind: creating.kind,
                       scheme: creating.scheme,
                       parentPath: creating.parentPath,
-                      workId: creating.workId,
                     }
                   : null
               }

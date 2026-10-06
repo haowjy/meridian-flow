@@ -180,7 +180,6 @@ export function ContextViewer({
           >
             <ContextEditorMountHost
               projectId={projectId}
-              workId={editorWorkId}
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
