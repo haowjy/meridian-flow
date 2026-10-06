@@ -1,40 +1,33 @@
 /**
- * The model's moves and deletes of whole documents, kept as write handles.
- * They have no Yjs update; undo needs where the document was.
+ * The model's creates, moves and deletes of whole documents, kept as write
+ * handles. They have no Yjs update; undo and redo need where the document was.
  */
-export type AgentNamespaceChangeInput = {
+
+/** A change as it acts on the tree: enough to apply it either way. */
+export type NamespaceChangeShape =
+  | { kind: "create"; fromUri: string }
+  | { kind: "move"; fromUri: string; toUri: string }
+  | { kind: "delete"; fromUri: string };
+
+export type NamespaceChangeOwner = {
   documentId: string;
   threadId: string;
   turnId: string | null;
   responseId: string | null;
-  /** Where the document was: a move's old location, or the deleted document's path. */
-  fromUri: string;
-} & ({ kind: "move"; toUri: string } | { kind: "delete" });
-
-export type AgentNamespaceChange = {
-  id: number;
-  /** The write handle, such as `w3`, on the same sequence as the document's content writes. */
-  handle: string;
 };
 
 export type NamespaceChangeStatus = "active" | "reversed";
 
-/** A recorded move or delete, as undo and redo plan it. */
-export type NamespaceChangeRecord = {
+/** A recorded change, as undo and redo plan it. */
+export type NamespaceChangeRecord = NamespaceChangeShape & {
   id: number;
   documentId: string;
+  /** The write handle's ordinal (`w3`), on the same sequence as the document's content writes. */
   wId: number;
   turnId: string | null;
-  fromUri: string;
   status: NamespaceChangeStatus;
   reversedAt: Date | null;
-} & ({ kind: "move"; toUri: string } | { kind: "delete" });
-
-/**
- * A copied document an undo deleted (an active `discard`): `wId` is the
- * content write that copied it, whose redo brings it back.
- */
-export type DiscardedCopy = { id: number; documentId: string; wId: number; fromUri: string };
+};
 
 /** One content write handle on the document, by its rows in `agent_edit_mutations`. */
 export type ContentWriteHandle = {
@@ -47,21 +40,27 @@ export type ContentWriteHandle = {
 export type WriteHandleHistory = {
   namespace: NamespaceChangeRecord[];
   content: ContentWriteHandle[];
-  discardedCopy: DiscardedCopy | null;
-  /** The document is soft-deleted. */
-  deleted: boolean;
-  /** The document was made by a copy (`metadata.copiedFrom`). */
-  copied: boolean;
 };
 
-export interface AgentNamespaceChanges {
-  record(change: AgentNamespaceChangeInput): Promise<AgentNamespaceChange>;
-  /** Forgets a change its reply's rollback reversed, so no handle names it. */
-  discard(id: number): Promise<void>;
+export interface AgentNamespaceChangeStore {
+  /** Records a move or delete on a new handle. */
+  record(
+    change: NamespaceChangeOwner & Exclude<NamespaceChangeShape, { kind: "create" }>,
+  ): Promise<NamespaceChangeRecord>;
+  /** Records a create on the handle of the content write that made the document. */
+  recordCreate(change: NamespaceChangeOwner & { wId: number; fromUri: string }): Promise<number>;
+  /** Forgets changes whose reply rolled back, so no handle names them. */
+  discard(ids: readonly number[]): Promise<void>;
   history(documentId: string, threadId: string): Promise<WriteHandleHistory>;
+  /** The turn's changes in `status`, every document, by handle. */
+  forTurn(
+    threadId: string,
+    turnId: string,
+    status: NamespaceChangeStatus,
+  ): Promise<NamespaceChangeRecord[]>;
   /**
-   * The document this thread deleted from `uri` and can bring back: its
-   * active delete, or a copy an undo discarded. Newest first; null if none.
+   * The document this thread removed from `uri`, by an active delete or an
+   * undone create. Newest first; null if none.
    */
   findDeletedAt(
     threadId: string,
@@ -78,13 +77,4 @@ export interface AgentNamespaceChanges {
    * undo, redo or restore acts on it. False if it wasn't at `from`.
    */
   transition(id: number, from: NamespaceChangeStatus): Promise<boolean>;
-  /** Notes that an undo deleted the document content write `wId` copied in. */
-  recordDiscardedCopy(input: {
-    documentId: string;
-    threadId: string;
-    wId: number;
-    fromUri: string;
-  }): Promise<void>;
-  /** Forgets a discarded copy once a redo brought it back. */
-  forgetDiscardedCopy(id: number): Promise<void>;
 }

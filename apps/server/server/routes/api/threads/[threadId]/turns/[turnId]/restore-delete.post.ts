@@ -5,13 +5,29 @@
  * folder is gone.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from "nitro/h3";
+import {
+  createError,
+  defineEventHandler,
+  getRouterParam,
+  readBody,
+  setResponseStatus,
+} from "nitro/h3";
+import { z } from "zod";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { restoreAgentDelete } from "../../../../../../lib/thread-context-route.js";
 
+const restoreBodySchema = z.object({
+  documentId: z
+    .string({ error: "documentId must be a non-empty string" })
+    .min(1, "documentId must be a non-empty string"),
+});
+
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const body = (await readBody<{ documentId?: unknown }>(event)) ?? {};
+  const parsed = restoreBodySchema.safeParse(await readBody(event));
+  if (!parsed.success) {
+    throw createError({ statusCode: 400, message: parsed.error.issues[0]?.message });
+  }
   const result = await restoreAgentDelete(
     {
       contextPorts: app.contextPorts,
@@ -20,12 +36,12 @@ export default defineEventHandler(async (event) => {
       threadWorks: app.threadRepos.threadWorks,
       works: app.workRepo,
       workAuthorityResolver: app.workAuthorityResolver,
-      namespaceChanges: app.namespaceChanges,
+      namespaceChanges: app.documentSync.namespaceChanges,
     },
     {
       threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
       turnId: getRouterParam(event, "turnId") ?? "",
-      documentId: typeof body.documentId === "string" ? body.documentId : "",
+      documentId: parsed.data.documentId,
       userId: user.userId,
     },
   );

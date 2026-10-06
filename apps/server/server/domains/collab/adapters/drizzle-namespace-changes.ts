@@ -1,13 +1,13 @@
-/** Drizzle store for the model's moves and deletes of whole documents (`agent_namespace_changes`). */
-import { writeHandle } from "@meridian/agent-edit/integration";
+/** Drizzle store for the model's creates, moves and deletes of whole documents (`agent_namespace_changes`). */
 import type { ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { agentEditMutations, agentNamespaceChanges, documents } from "@meridian/database/schema";
-import { and, asc, desc, eq, inArray, isNotNull, max, sql } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { and, asc, desc, eq, inArray, isNotNull, max, or, sql } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type {
-  AgentNamespaceChanges,
+  AgentNamespaceChangeStore,
+  NamespaceChangeOwner,
   NamespaceChangeRecord,
 } from "../domain/ports/agent-namespace-changes.js";
 import { reserveWriteOrdinal } from "./write-ordinals.js";
@@ -24,44 +24,58 @@ function toRecord(row: Row): NamespaceChangeRecord {
     status: row.status,
     reversedAt: row.reversedAt,
   };
-  if (row.kind === "move" && row.toUri !== null) return { ...base, kind: "move", toUri: row.toUri };
-  if (row.kind === "delete") return { ...base, kind: "delete" };
-  throw new Error(`Namespace change ${row.id} is not a handle (${row.kind})`);
+  if (row.kind !== "move") return { ...base, kind: row.kind };
+  if (row.toUri === null) throw new Error(`Move ${row.id} has no destination`);
+  return { ...base, kind: "move", toUri: row.toUri };
 }
 
-export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespaceChanges {
+function owner(change: NamespaceChangeOwner) {
   return {
-    record(change) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db);
-        const wId = await reserveWriteOrdinal(tx, change);
-        const [row] = await tx
-          .insert(agentNamespaceChanges)
-          .values({
-            wId,
-            documentId: change.documentId as DocumentId,
-            threadId: change.threadId as ThreadId,
-            turnId: change.turnId as TurnId | null,
-            responseId: change.responseId as ModelResponseId | null,
-            kind: change.kind,
-            fromUri: change.fromUri,
-            toUri: change.kind === "move" ? change.toUri : null,
-          })
-          .returning({ id: agentNamespaceChanges.id });
-        if (!row) throw new Error("Failed to record the namespace change");
-        return { id: row.id, handle: writeHandle(wId) };
-      });
+    documentId: change.documentId as DocumentId,
+    threadId: change.threadId as ThreadId,
+    turnId: change.turnId as TurnId | null,
+    responseId: change.responseId as ModelResponseId | null,
+  };
+}
+
+export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespaceChangeStore {
+  return {
+    async record(change) {
+      const tx = currentDrizzleDb(db);
+      const wId = await reserveWriteOrdinal(tx, change);
+      const [row] = await tx
+        .insert(agentNamespaceChanges)
+        .values({
+          ...owner(change),
+          wId,
+          kind: change.kind,
+          fromUri: change.fromUri,
+          toUri: change.kind === "move" ? change.toUri : null,
+        })
+        .returning();
+      if (!row) throw new Error("Failed to record the namespace change");
+      return toRecord(row);
     },
 
-    async discard(id) {
+    async recordCreate(change) {
+      const [row] = await currentDrizzleDb(db)
+        .insert(agentNamespaceChanges)
+        .values({ ...owner(change), wId: change.wId, kind: "create", fromUri: change.fromUri })
+        .returning({ id: agentNamespaceChanges.id });
+      if (!row) throw new Error("Failed to record the create");
+      return row.id;
+    },
+
+    async discard(ids) {
+      if (ids.length === 0) return;
       await currentDrizzleDb(db)
         .delete(agentNamespaceChanges)
-        .where(eq(agentNamespaceChanges.id, id));
+        .where(inArray(agentNamespaceChanges.id, [...ids]));
     },
 
     async history(documentId, threadId) {
       const tx = currentDrizzleDb(db);
-      const [rows, content, [document]] = await Promise.all([
+      const [rows, content] = await Promise.all([
         tx
           .select()
           .from(agentNamespaceChanges)
@@ -88,33 +102,30 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
           )
           .groupBy(agentEditMutations.wId)
           .orderBy(asc(agentEditMutations.wId)),
-        tx
-          .select({
-            deleted: sql<boolean>`${documents.deletedAt} IS NOT NULL`,
-            copied: sql<boolean>`(${documents.metadata} -> 'copiedFrom') IS NOT NULL`,
-          })
-          .from(documents)
-          .where(eq(documents.id, documentId as DocumentId)),
       ]);
-      const discard = rows.find((row) => row.kind === "discard" && row.status === "active");
       return {
-        namespace: rows.filter((row) => row.kind !== "discard").map(toRecord),
+        namespace: rows.map(toRecord),
         content: content.map((handle) => ({
           wId: handle.wId,
           status: handle.status === "reversed" ? "reversed" : "active",
           reversedAt: handle.reversedAt,
         })),
-        discardedCopy: discard
-          ? {
-              id: discard.id,
-              documentId: discard.documentId,
-              wId: discard.wId,
-              fromUri: discard.fromUri,
-            }
-          : null,
-        deleted: document?.deleted ?? true,
-        copied: document?.copied ?? false,
       };
+    },
+
+    async forTurn(threadId, turnId, status) {
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(agentNamespaceChanges)
+        .where(
+          and(
+            eq(agentNamespaceChanges.threadId, threadId as ThreadId),
+            eq(agentNamespaceChanges.turnId, turnId as TurnId),
+            eq(agentNamespaceChanges.status, status),
+          ),
+        )
+        .orderBy(asc(agentNamespaceChanges.id));
+      return rows.map(toRecord);
     },
 
     async findDeletedAt(threadId, uri) {
@@ -129,8 +140,16 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
           and(
             eq(agentNamespaceChanges.threadId, threadId as ThreadId),
             eq(agentNamespaceChanges.fromUri, uri),
-            eq(agentNamespaceChanges.status, "active"),
-            inArray(agentNamespaceChanges.kind, ["delete", "discard"]),
+            or(
+              and(
+                eq(agentNamespaceChanges.kind, "delete"),
+                eq(agentNamespaceChanges.status, "active"),
+              ),
+              and(
+                eq(agentNamespaceChanges.kind, "create"),
+                eq(agentNamespaceChanges.status, "reversed"),
+              ),
+            ),
             isNotNull(documents.deletedAt),
           ),
         )
@@ -168,24 +187,6 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
         .where(and(eq(agentNamespaceChanges.id, id), eq(agentNamespaceChanges.status, from)))
         .returning({ id: agentNamespaceChanges.id });
       return claimed.length > 0;
-    },
-
-    async recordDiscardedCopy(input) {
-      await currentDrizzleDb(db)
-        .insert(agentNamespaceChanges)
-        .values({
-          wId: input.wId,
-          documentId: input.documentId as DocumentId,
-          threadId: input.threadId as ThreadId,
-          kind: "discard",
-          fromUri: input.fromUri,
-        });
-    },
-
-    async forgetDiscardedCopy(id) {
-      await currentDrizzleDb(db)
-        .delete(agentNamespaceChanges)
-        .where(and(eq(agentNamespaceChanges.id, id), eq(agentNamespaceChanges.kind, "discard")));
     },
   };
 }

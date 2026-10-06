@@ -91,6 +91,10 @@ const { createResponseBranchFinalization, createResponseWriteFinalizer } = await
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
 const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
+const { createNamespaceChanges } = await import("../domain/namespace-changes.js");
+const { createDrizzleAgentNamespaceChanges } = await import(
+  "../adapters/drizzle-namespace-changes.js"
+);
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
@@ -572,6 +576,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
+    namespaceChanges: createNamespaceChanges({
+      store: createDrizzleAgentNamespaceChanges(db),
+      atomic: (operation) => runInDrizzleTransaction(db, operation),
+    }),
     fileAccess: createAllowAllFileAccess(),
     atomic: (operation) => runInDrizzleTransaction(db, operation),
     live: {

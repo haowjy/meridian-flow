@@ -648,10 +648,10 @@ export const pendingNotices = pgTable(
 );
 
 /**
- * The model's moves and deletes of whole documents: write handles with no Yjs
- * update. `w_id` comes from the same per-(document, thread) counter as
- * `agent_edit_mutations`, so one document's handles form one sequence. Undo
- * needs the old location of a move and where a deleted document was.
+ * The model's creates, moves and deletes of whole documents: write handles
+ * with no Yjs update. `w_id` comes from the same per-(document, thread)
+ * counter as `agent_edit_mutations`, so one document's handles form one
+ * sequence; a create shares the `w_id` of the content write that made it.
  */
 export const agentNamespaceChanges = pgTable(
   "agent_namespace_changes",
@@ -672,13 +672,9 @@ export const agentNamespaceChanges = pgTable(
     responseId: uuid("response_id")
       .$type<ModelResponseId>()
       .references(() => modelResponses.id, { onDelete: "cascade" }),
-    /**
-     * `move` and `delete` are the model's handles. `discard` is no handle: an
-     * undo of the write that copied the document in (its `w_id`) deleted it,
-     * and a redo of that write brings it back.
-     */
-    kind: text("kind").$type<"move" | "delete" | "discard">().notNull(),
-    /** Where the document was: a move's old location, or the deleted document's path. */
+    /** Undoing a `create` deletes the document; undoing a `delete` restores it. */
+    kind: text("kind").$type<"create" | "move" | "delete">().notNull(),
+    /** A move's old location, or where the document was created or deleted. */
     fromUri: text("from_uri").notNull(),
     /** A move's new location. */
     toUri: text("to_uri"),
@@ -693,10 +689,7 @@ export const agentNamespaceChanges = pgTable(
       table.wId,
     ),
     index("agent_namespace_changes_thread_turn").on(table.threadId, table.turnId),
-    check(
-      "agent_namespace_changes_kind_valid",
-      sql`${table.kind} IN ('move', 'delete', 'discard')`,
-    ),
+    check("agent_namespace_changes_kind_valid", sql`${table.kind} IN ('create', 'move', 'delete')`),
     check(
       "agent_namespace_changes_move_target",
       sql`(${table.kind} = 'move') = (${table.toUri} IS NOT NULL)`,

@@ -35,6 +35,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { NamespaceChanges } from "./domain/namespace-changes.js";
 
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
@@ -398,6 +399,9 @@ export type CollabLifecycle = {
   dispose(): void;
 };
 
+/** The model's creates, moves and deletes as write handles, and the step that reverses one. */
+export type NamespaceChangeAccess = { namespaceChanges: NamespaceChanges };
+
 export type CollabDomain = CollabTransport &
   CollabLifecycle &
   DocumentAuthorityHeads &
@@ -412,7 +416,8 @@ export type CollabDomain = CollabTransport &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts &
-  DocumentCreationAggregate;
+  DocumentCreationAggregate &
+  NamespaceChangeAccess;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
 export type {

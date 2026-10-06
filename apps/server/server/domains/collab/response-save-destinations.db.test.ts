@@ -125,6 +125,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           resolveContextDocument: async () => {
             throw new Error("Turn reversals here name no document");
           },
+          namespaceTree: async () => {
+            throw new Error("Turn reversals here change no tree");
+          },
         },
         ...options,
       });

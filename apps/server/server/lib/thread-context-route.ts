@@ -1,18 +1,25 @@
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { AgentNamespaceChanges } from "../domains/collab/index.js";
+import type { NamespaceChanges, NamespaceTree } from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
+import type { ContextError } from "../domains/context/ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
-import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
+import {
+  type FileAccess,
+  type FileTarget,
+  isFileAccessDenied,
+  runWithEditGrants,
+} from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../domains/projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
+import { Err, type Result } from "../shared/result.js";
 import { contextErrorToHttp } from "./context-error-http.js";
 import { requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { documentTarget, threadContainerTarget } from "./file-targets.js";
-import { applyNamespaceChange } from "./model-tools/namespace-commands.js";
+import { namespaceTree } from "./namespace-tree.js";
 import { requireRequestId } from "./request-id.js";
 
 export interface ThreadContextRouteDeps {
@@ -106,6 +113,37 @@ export async function writeThreadContextDocument(
   };
 }
 
+/**
+ * The thread's live tree for the writer's undo of the agent's creates, moves
+ * and deletes: each change needs the writer's edit on the folder it lands in.
+ */
+export async function writerNamespaceTree(
+  deps: ThreadContextRouteDeps,
+  threadId: ThreadId,
+  userId: UserId,
+): Promise<NamespaceTree<ContextError>> {
+  const { resolution } = await resolveThreadContextPort(deps, threadId, userId);
+  const tree = namespaceTree(
+    contextPortForThread(deps.contextPorts, resolution, { liveWrites: true }),
+  );
+  const inFolder = async (
+    uri: string,
+    operation: () => Promise<Result<unknown, ContextError>>,
+  ): Promise<Result<unknown, ContextError>> => {
+    const folder = await threadContainerTarget(deps.works, resolution, uri);
+    if (!folder) return operation();
+    const grant = await deps.fileAccess.authorize({ accountId: userId }, folder, "edit");
+    if (isFileAccessDenied(grant)) return Err({ code: "permission_denied", uri });
+    const run = await runWithEditGrants(deps.fileAccess, [grant], operation);
+    return run.ok ? run.value : Err({ code: "permission_denied", uri });
+  };
+  return {
+    move: (from, to, documentId) => inFolder(to, () => tree.move(from, to, documentId)),
+    delete: (uri, documentId) => inFolder(uri, () => tree.delete(uri, documentId)),
+    restore: (uri, documentId) => inFolder(uri, () => tree.restore(uri, documentId)),
+  };
+}
+
 export type RestoreAgentDeleteResult =
   | { status: "restored"; documentId: string; uri: string }
   /** Another file took its place. */
@@ -115,43 +153,29 @@ export type RestoreAgentDeleteResult =
 
 /**
  * The writer brings back a document the agent deleted live in this turn, from
- * the turn's delete receipt (D66). The same restore the model's `undo` makes,
- * through the thread's live port; it needs edit on the folder the document
- * returns to. The delete's handle goes with it, so the model's `redo` can't
- * delete the document again.
+ * the turn's delete receipt (D66): the delete's undo, as the model's `undo`
+ * makes it, so the model's `redo` may delete the document again.
  */
 export async function restoreAgentDelete(
-  deps: ThreadContextRouteDeps & { namespaceChanges: AgentNamespaceChanges },
+  deps: ThreadContextRouteDeps & { namespaceChanges: NamespaceChanges },
   input: { threadId: ThreadId; turnId: string; documentId: string; userId: UserId },
 ): Promise<RestoreAgentDeleteResult> {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId");
   const documentId = requireRequestId(input.documentId, "documentId");
-  const context = await resolveThreadContextPort(deps, threadId, input.userId);
+  const tree = await writerNamespaceTree(deps, threadId, input.userId);
   const change = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
   if (!change) throw createError({ statusCode: 404, message: "No delete to restore" });
-  const container = await threadContainerTarget(deps.works, context.resolution, change.fromUri);
-  if (!container) throw createError({ statusCode: 404, message: "No delete to restore" });
-  const grant = await requireFileGrant(deps.fileAccess, input.userId, container, "edit");
-  if (!(await deps.namespaceChanges.transition(change.id, "active"))) {
-    throw createError({ statusCode: 404, message: "No delete to restore" });
+  const restored = await deps.namespaceChanges.reverse(tree, change, "undo");
+  if (restored.ok) return { status: "restored", documentId, uri: change.fromUri };
+  switch (restored.error.code) {
+    case "claimed":
+      throw createError({ statusCode: 404, message: "No delete to restore" });
+    case "conflict":
+      return { status: "location_taken", uri: change.fromUri };
+    case "not_found":
+      return { status: "folder_missing", uri: change.fromUri };
+    default:
+      return contextErrorToHttp(restored.error);
   }
-  const port = contextPortForThread(deps.contextPorts, context.resolution, { liveWrites: true });
-  let restored: Awaited<ReturnType<typeof applyNamespaceChange>>;
-  try {
-    restored = await withEditGrants(deps.fileAccess, [grant], () =>
-      applyNamespaceChange(port, documentId, change, "undo"),
-    );
-  } catch (cause) {
-    await deps.namespaceChanges.transition(change.id, "reversed");
-    throw cause;
-  }
-  if (restored.ok) {
-    await deps.namespaceChanges.discard(change.id);
-    return { status: "restored", documentId, uri: change.fromUri };
-  }
-  await deps.namespaceChanges.transition(change.id, "reversed");
-  if (restored.error.code === "conflict") return { status: "location_taken", uri: change.fromUri };
-  if (restored.error.code === "not_found") return { status: "folder_missing", uri: change.fromUri };
-  contextErrorToHttp(restored.error);
 }

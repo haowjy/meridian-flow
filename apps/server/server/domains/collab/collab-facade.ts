@@ -11,6 +11,7 @@ import type {
   DocumentCheckpoints,
   DocumentProjectionRefresher,
   MarkdownDocumentStore,
+  NamespaceChangeAccess,
   ResponseWriteFinalizer,
   TurnLiveLineageAccess,
   TurnReversalAccess,
@@ -34,6 +35,7 @@ export type CollabFacadeServices = {
   branchPeers: BranchPeerShadowAccess;
   drafts: CollabDrafts;
   documentCreation: DocumentCreationAggregate;
+  namespace: NamespaceChangeAccess;
 };
 
 export function createCollabFacade(services: CollabFacadeServices): CollabDomain {
@@ -53,5 +55,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.branchPeers,
     ...services.drafts,
     ...services.documentCreation,
+    ...services.namespace,
   };
 }

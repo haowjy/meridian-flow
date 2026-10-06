@@ -21,10 +21,8 @@ import {
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import {
-  type AgentNamespaceChanges,
   type CollabDomain,
   createCollabDomain,
-  createDrizzleAgentNamespaceChanges,
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
@@ -234,7 +232,7 @@ import {
 } from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
+import { readThreadContextDocument, writerNamespaceTree } from "./thread-context-route.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -292,8 +290,6 @@ export type AppServices = {
   toolExecutor: ToolExecutor;
   /** Each model reply's save and rollback of the writes its tool calls staged. */
   responseWrites: AgentEditResponseWriteLifecycle;
-  /** The model's moves and deletes, for the writer's restore of a delete. */
-  namespaceChanges: AgentNamespaceChanges;
   modelRequestDebug: ModelRequestDebugStore;
   /** Dev-only scripted replies for the in-process mock model; null with real providers. */
   mockModelScript: MockScriptQueue | null;
@@ -487,6 +483,15 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
+  // The context ports are built after the collab domain, which they wrap.
+  const threadContextDeps = () => ({
+    contextPorts,
+    fileAccess,
+    threads: threadRepos.threads,
+    threadWorks: threadRepos.threadWorks,
+    works: workRepo,
+    workAuthorityResolver,
+  });
   const documentSync = createCollabDomain({
     db,
     fileAccess,
@@ -505,17 +510,9 @@ export async function createProductionAppPorts(input: {
         return { projectId: thread.projectId };
       },
       resolveContextDocument: (input) =>
-        readThreadContextDocument(
-          {
-            contextPorts,
-            fileAccess,
-            threads: threadRepos.threads,
-            threadWorks: threadRepos.threadWorks,
-            works: workRepo,
-            workAuthorityResolver,
-          },
-          input as never,
-        ),
+        readThreadContextDocument(threadContextDeps(), input as never),
+      namespaceTree: (input) =>
+        writerNamespaceTree(threadContextDeps(), input.threadId as never, input.userId as never),
     },
   });
   const results = createDrizzleResultRepository(db);
@@ -726,17 +723,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
-  const namespaceChanges = createDrizzleAgentNamespaceChanges(ports.db);
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
-    namespaceChanges,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
     responseWrites,
-    namespaceChanges,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
@@ -1071,7 +1065,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     toolExecutor,
     responseWrites,
-    namespaceChanges,
     modelRequestDebug: ports.modelRequestDebug,
     mockModelScript: ports.mockModelScript,
     objectStore: ports.objectStore,
@@ -1552,42 +1545,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory tool executor is not implemented");
       },
     },
-    responseWrites: {
-      trackStagedCreate() {},
-      trackStagedNamespaceChange() {},
-      async commitResponse() {
-        throw new Error("in-memory response writes are not implemented");
-      },
-      async rollbackResponse() {
-        throw new Error("in-memory response writes are not implemented");
-      },
-    },
-    namespaceChanges: {
-      async record() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async discard() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async history() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async findDeletedAt() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async findTurnDelete() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async transition() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async recordDiscardedCopy() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-      async forgetDiscardedCopy() {
-        throw new Error("in-memory namespace changes are not implemented");
-      },
-    },
+    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     objectStore: {
       async put() {
         throw new Error("in-memory object store is not implemented");

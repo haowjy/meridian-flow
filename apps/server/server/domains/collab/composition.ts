@@ -10,6 +10,7 @@ import {
   deferUntilDrizzleRollback,
   isInDrizzleTransaction,
   runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
@@ -55,6 +56,7 @@ import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-documen
 import { createDrizzleDocumentLinkRewrite } from "./adapters/drizzle-document-link-rewrite.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
+import { createDrizzleAgentNamespaceChanges } from "./adapters/drizzle-namespace-changes.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -88,6 +90,7 @@ import {
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { createNamespaceChanges } from "./domain/namespace-changes.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -449,6 +452,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     receiptStore: createDrizzleTurnReceiptStore(deps.db),
     resolveDocumentUri: documentUriResolver,
   });
+  const namespaceChanges = createNamespaceChanges({
+    store: createDrizzleAgentNamespaceChanges(deps.db),
+    atomic: (operation) => runInDrizzleSavepoint(deps.db, operation),
+  });
   const turnReversal = createTurnReversalService({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     live: {
@@ -468,6 +475,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
+    namespaceChanges,
   });
   return createCollabFacade({
     lifecycle: { dispose: () => branchPulls.cancelScheduledPulls() },
@@ -540,5 +548,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPeers,
     drafts,
     documentCreation,
+    namespace: { namespaceChanges },
   });
 }

@@ -10,12 +10,9 @@ import {
   documentNotFoundMessage,
   modelResult,
   splitDocumentFile,
+  writeHandle,
 } from "@meridian/agent-edit/integration";
-import type {
-  ContextError,
-  ContextPort,
-  FileRef,
-} from "../../domains/context/ports/context-port.js";
+import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
 import {
   type FileDestination,
   type FileGrant,
@@ -23,7 +20,7 @@ import {
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
-import type { Result } from "../../shared/result.js";
+import { Err, Ok, type Result } from "../../shared/result.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import {
@@ -134,73 +131,43 @@ export async function underGrants<T>(
     : fileAccessDeniedError(command, firstRefusal(result.refusal), path);
 }
 
-/** A recorded move or delete, enough to apply it either way. */
-export type NamespaceChangeShape =
-  | { kind: "move"; fromUri: string; toUri: string }
-  | { kind: "delete"; fromUri: string };
+type Committed = Result<
+  { kind: "move"; fromUri: string; toUri: string } | { kind: "delete"; fromUri: string },
+  WriteToolErrorOutput
+>;
 
-/**
- * Applies a move or delete (`redo`) or puts the document back (`undo`), on a
- * live port: a move goes through `ContextTreeMover` so links follow (#694),
- * and an undone delete is restored where it was.
- */
-export function applyNamespaceChange(
-  port: ContextPort,
-  documentId: string,
-  change: NamespaceChangeShape,
-  direction: "undo" | "redo",
-): Promise<Result<unknown, ContextError>> {
-  if (change.kind === "move") {
-    const [from, to] =
-      direction === "undo" ? [change.toUri, change.fromUri] : [change.fromUri, change.toUri];
-    return port.commitWriterLocation(from, to, { expected: { kind: "file", nodeId: documentId } });
-  }
-  return direction === "undo"
-    ? port.restore(change.fromUri, { documentId })
-    : port.delete(change.fromUri, { expected: { kind: "file", documentId } });
-}
-
-type Committed = NamespaceChangeShape;
-
+/** The move itself, to the exact path; the change records where it landed. */
 async function commitMove(
-  deps: ToolWiringDeps,
   call: ToolCall,
   input: MoveInput,
   source: FileRef & { documentId: string },
-  grants: FileGrant<"edit">[],
-): Promise<Committed | WriteToolErrorOutput> {
+): Promise<Committed> {
   const port = call.context.livePort();
-  const moved = await underGrants(deps, input.command, input.from.path, grants, () =>
-    port.commitWriterLocation(source.uri, input.path, {
-      expected: { kind: "file", nodeId: source.documentId },
-    }),
-  );
-  if (isToolError(moved)) return moved;
-  if (!moved.ok) return writeToolError(input.command, namespaceErrorMessage(input, moved.error));
+  const moved = await port.commitWriterLocation(source.uri, input.path, {
+    expected: { kind: "file", nodeId: source.documentId },
+  });
+  if (!moved.ok)
+    return Err(writeToolError(input.command, namespaceErrorMessage(input, moved.error)));
   const landed = await port.stat(input.path);
-  if (!landed.ok) return writeToolError(input.command, contextErrorMessage(landed.error));
+  if (!landed.ok) return Err(writeToolError(input.command, contextErrorMessage(landed.error)));
   if (landed.value.uri === source.uri) {
-    return writeToolError(input.command, `The document is already at ${input.path}.`);
+    return Err(writeToolError(input.command, `The document is already at ${input.path}.`));
   }
-  return { kind: "move", fromUri: source.uri, toUri: landed.value.uri };
+  return Ok({ kind: "move", fromUri: source.uri, toUri: landed.value.uri });
 }
 
 async function commitDelete(
-  deps: ToolWiringDeps,
   call: ToolCall,
   input: DeleteInput,
   source: FileRef & { documentId: string },
-  grants: FileGrant<"edit">[],
-): Promise<Committed | WriteToolErrorOutput> {
-  const deleted = await underGrants(deps, input.command, input.path, grants, () =>
-    call.context
-      .livePort()
-      .delete(source.uri, { expected: { kind: "file", documentId: source.documentId } }),
-  );
-  if (isToolError(deleted)) return deleted;
-  if (!deleted.ok)
-    return writeToolError(input.command, namespaceErrorMessage(input, deleted.error));
-  return { kind: "delete", fromUri: source.uri };
+): Promise<Committed> {
+  const deleted = await call.context
+    .livePort()
+    .delete(source.uri, { expected: { kind: "file", documentId: source.documentId } });
+  if (!deleted.ok) {
+    return Err(writeToolError(input.command, namespaceErrorMessage(input, deleted.error)));
+  }
+  return Ok({ kind: "delete", fromUri: source.uri });
 }
 
 /**
@@ -246,32 +213,28 @@ export async function runNamespaceCommand(
   });
   if (stale) return { isError: true, output: stale.result };
 
-  const committed =
-    input.command === "move"
-      ? await commitMove(deps, call, input, source, grants)
-      : await commitDelete(deps, call, input, source, grants);
+  const committed = await underGrants(deps, input.command, sourcePath(input), grants, () =>
+    deps.documentSync.namespaceChanges.commit(
+      {
+        documentId: source.documentId,
+        threadId: ctx.threadId,
+        turnId: ctx.turnId ?? null,
+        responseId: ctx.responseId ?? null,
+      },
+      () =>
+        input.command === "move"
+          ? commitMove(call, input, source)
+          : commitDelete(call, input, source),
+    ),
+  );
   if (isToolError(committed)) return committed;
-
-  let record: Awaited<ReturnType<ToolWiringDeps["namespaceChanges"]["record"]>>;
-  try {
-    record = await deps.namespaceChanges.record({
-      documentId: source.documentId,
-      threadId: ctx.threadId,
-      turnId: ctx.turnId ?? null,
-      responseId: ctx.responseId ?? null,
-      ...committed,
-    });
-  } catch (cause) {
-    await applyNamespaceChange(call.context.livePort(), source.documentId, committed, "undo");
-    throw cause;
-  }
+  if (!committed.ok) return committed.error;
+  const change = committed.value;
   if (ctx.responseId !== undefined) {
     deps.responseWrites.trackStagedNamespaceChange({
       responseId: ctx.responseId,
       port: call.context.livePort(),
-      documentId: source.documentId,
-      recordId: record.id,
-      ...committed,
+      change,
     });
   }
   recordTouchInBackground(deps, source.documentId, ctx);
@@ -283,7 +246,7 @@ export async function runNamespaceCommand(
       payload: {
         path: input.path,
         destination: "live",
-        write: { id: record.handle },
+        write: { id: writeHandle(change.wId) },
         namespace:
           input.command === "move" ? { kind: "moved", from: input.from.path } : { kind: "deleted" },
       },

@@ -1,134 +1,164 @@
 /**
- * Which handles an `undo` or `redo` selects when a document has moves or
- * deletes as well as content writes. Both kinds share one `w_id` sequence per
- * document and thread, so `last: N` and the handle selectors count them
- * together: undo by `w_id`, redo by when each was undone. The content part
- * goes to the engine as a selector of its own.
+ * Which handles an `undo` or `redo` selects when a document has creates,
+ * moves or deletes as well as content writes, and the order to act on them.
+ * Both kinds share one `w_id` sequence per document and thread, so the
+ * engine's own selector picks from both: undo by `w_id`, redo by when each
+ * was undone. The walk goes newest first on undo and oldest first on redo; a
+ * create shares its content write's handle and goes after it on undo, before
+ * it on redo. Consecutive content writes go to the engine as one step.
  */
-import { parseWriteHandle, writeHandle } from "@meridian/agent-edit/integration";
-import type {
-  NamespaceChangeRecord,
-  WriteHandleHistory,
-} from "../../domains/collab/domain/ports/agent-namespace-changes.js";
+import {
+  type ReversalSelection,
+  selectByHandle,
+  writeHandle,
+} from "@meridian/agent-edit/integration";
+import {
+  liveAfter,
+  type NamespaceChangeRecord,
+  type WriteHandleHistory,
+} from "../../domains/collab/index.js";
 
-/** The selector fields `undo` and `redo` take; none means the latest. */
-export type ReversalFields = { to?: string; since?: string; last?: number; all?: boolean };
+export type ReversalStep =
+  | { kind: "content"; handles: string[] }
+  | { kind: "namespace"; change: NamespaceChangeRecord };
 
-export type NamespaceReversalPlan =
-  | {
-      ok: true;
-      /** In the order to act on: undo newest first, redo oldest first. */
-      namespace: NamespaceChangeRecord[];
-      /** The engine's selector for the content writes, or null when none are selected. */
-      content: ReversalFields | null;
-    }
+export type ReversalWalk =
+  | { ok: true; steps: ReversalStep[] }
   | { ok: false; status: "invalid_write" | "cant_undo_dependent"; message: string };
 
-type Entry =
-  | { kind: "namespace"; wId: number; at: number; change: NamespaceChangeRecord }
-  | { kind: "content"; wId: number; at: number };
+type Entry = { handle: string; wId: number; at: number; change?: NamespaceChangeRecord };
 
-export function planNamespaceReversal(
-  direction: "undo" | "redo",
-  fields: ReversalFields,
-  history: WriteHandleHistory,
-): NamespaceReversalPlan {
-  const status = direction === "undo" ? "active" : "reversed";
-  const changes = history.namespace.filter((change) => change.status === status);
-  const unchanged = { ok: true as const, namespace: [], content: fields };
-  if (changes.length === 0) return unchanged;
-
-  const contents = history.content.filter((handle) => handle.status === status);
+export function planReversalWalk(input: {
+  direction: "undo" | "redo";
+  selection: ReversalSelection;
+  history: WriteHandleHistory;
+  /** Whether the document exists now, and the path the model named it by. */
+  live: boolean;
+  path: string;
+}): ReversalWalk {
+  const { direction, history } = input;
+  const undo = direction === "undo";
+  const status = undo ? "active" : "reversed";
   // Undo takes the newest writes; redo the most recently undone.
-  const at = (wId: number, reversedAt: Date | null) =>
-    direction === "undo" ? wId : (reversedAt?.getTime() ?? 0);
+  const at = (wId: number, reversedAt: Date | null) => (undo ? wId : (reversedAt?.getTime() ?? 0));
   const entries: Entry[] = [
-    ...changes.map((change) => ({
-      kind: "namespace" as const,
-      wId: change.wId,
-      at: at(change.wId, change.reversedAt),
-      change,
-    })),
-    ...contents.map((handle) => ({
-      kind: "content" as const,
-      wId: handle.wId,
-      at: at(handle.wId, handle.reversedAt),
-    })),
-  ].sort((left, right) => left.at - right.at || left.wId - right.wId);
+    ...history.content
+      .filter((handle) => handle.status === status)
+      .map((handle) => ({
+        handle: writeHandle(handle.wId),
+        wId: handle.wId,
+        at: at(handle.wId, handle.reversedAt),
+      })),
+    ...history.namespace
+      .filter((change) => change.status === status)
+      .map((change) => ({
+        handle: writeHandle(change.wId),
+        wId: change.wId,
+        at: at(change.wId, change.reversedAt),
+        change,
+      })),
+  ];
 
-  const selected = select(entries, fields);
-  if (!selected.ok) return selected;
-  const namespace = selected.entries.flatMap((entry) =>
-    entry.kind === "namespace" ? [entry.change] : [],
+  const byHandle = new Map<
+    string,
+    { handle: string; turnId: null; createdSeq: number; at: number }
+  >();
+  for (const entry of entries) {
+    const seen = byHandle.get(entry.handle);
+    byHandle.set(entry.handle, {
+      handle: entry.handle,
+      turnId: null,
+      createdSeq: entry.wId,
+      at: Math.max(seen?.at ?? entry.at, entry.at),
+    });
+  }
+  const ordered = [...byHandle.values()].sort(
+    (left, right) => left.at - right.at || left.createdSeq - right.createdSeq,
   );
-  if (namespace.length === 0) return unchanged;
-  const contentCount = selected.entries.length - namespace.length;
-  const refusal = dependencyRefusal(direction, namespace, changes);
+  const selected = selectByHandle(ordered, input.selection);
+  if (!selected.ok) return selected;
+  const chosen = new Set(selected.items.map((item) => item.handle));
+  const picked = entries.filter((entry) => chosen.has(entry.handle));
+
+  const refusal = dependencyRefusal(direction, picked, entries, chosen);
   if (refusal) return { ok: false, status: "cant_undo_dependent", message: refusal };
 
-  namespace.sort((left, right) =>
-    direction === "undo" ? right.wId - left.wId : left.wId - right.wId,
-  );
-  if (contentCount === 0) return { ok: true, namespace, content: null };
-  return {
-    ok: true,
-    namespace,
-    // A selector by handle names the same writes to the engine; a count counts only its own.
-    content: fields.last !== undefined ? { last: contentCount } : fields,
-  };
+  // A create ranks just under its content write: after it on undo, before it on redo.
+  const rank = (entry: Entry) => entry.wId * 2 + (entry.change ? 0 : 1);
+  picked.sort((left, right) => (undo ? rank(right) - rank(left) : rank(left) - rank(right)));
+
+  const steps: ReversalStep[] = [];
+  let live = input.live;
+  for (const entry of picked) {
+    if (entry.change) {
+      steps.push({ kind: "namespace", change: entry.change });
+      live = liveAfter(entry.change, direction);
+      continue;
+    }
+    if (!live) {
+      return { ok: false, status: "invalid_write", message: deletedRefusal(input) };
+    }
+    const last = steps.at(-1);
+    if (last?.kind === "content") last.handles.push(entry.handle);
+    else steps.push({ kind: "content", handles: [entry.handle] });
+  }
+  return { ok: true, steps };
 }
 
-function select(
-  entries: readonly Entry[],
-  fields: ReversalFields,
-): { ok: true; entries: Entry[] } | Extract<NamespaceReversalPlan, { ok: false }> {
-  if (fields.all) return { ok: true, entries: [...entries] };
-  if (fields.last !== undefined) return { ok: true, entries: entries.slice(-fields.last) };
-  if (fields.to !== undefined && fields.since !== undefined) {
-    const since = parseWriteHandle(fields.since);
-    const to = parseWriteHandle(fields.to);
-    if (since === undefined || to === undefined || since > to) {
-      return { ok: false, status: "invalid_write", message: "Invalid write range" };
-    }
-    return {
-      ok: true,
-      entries: entries.filter((entry) => entry.wId >= since && entry.wId <= to),
-    };
-  }
-  if (fields.to !== undefined) {
-    const to = parseWriteHandle(fields.to);
-    return { ok: true, entries: entries.filter((entry) => entry.wId === to) };
-  }
-  return { ok: true, entries: entries.slice(-1) };
+/** A deleted document's content writes wait for the change that removed it. */
+function deletedRefusal(input: {
+  direction: "undo" | "redo";
+  history: WriteHandleHistory;
+  path: string;
+}): string {
+  const remover = [...input.history.namespace]
+    .reverse()
+    .find(
+      (change) =>
+        (change.kind === "delete" && change.status === "active") ||
+        (change.kind === "create" && change.status === "reversed"),
+    );
+  const done = input.direction === "undo" ? "undone" : "redone";
+  const first = !remover
+    ? "Undo the delete first."
+    : `${remover.kind === "delete" ? "Undo" : "Redo"} ${writeHandle(remover.wId)} first.`;
+  return `${input.path} is deleted, so its other writes can't be ${done}. ${first}`;
 }
 
 /**
- * A move or delete reverses from where the next one left the document, so
- * undo takes the later ones with it and redo the earlier ones.
+ * Creates, moves and deletes are a stack: one reverses from where the next
+ * left the document, so undo takes the later ones with it and redo the
+ * earlier ones. Undoing a create deletes the document, so it takes every
+ * later write too.
  */
 function dependencyRefusal(
   direction: "undo" | "redo",
-  selected: readonly NamespaceChangeRecord[],
-  candidates: readonly NamespaceChangeRecord[],
+  picked: readonly Entry[],
+  candidates: readonly Entry[],
+  chosen: ReadonlySet<string>,
 ): string | undefined {
-  const chosen = new Set(selected.map((change) => change.id));
-  const edge =
-    direction === "undo"
-      ? Math.min(...selected.map((change) => change.wId))
-      : Math.max(...selected.map((change) => change.wId));
-  const blocking = candidates
-    .filter((change) => !chosen.has(change.id))
-    .filter((change) => (direction === "undo" ? change.wId > edge : change.wId < edge))
-    .map((change) => change.wId);
+  const changes = picked.filter((entry) => entry.change);
+  if (changes.length === 0) return undefined;
+  const undo = direction === "undo";
+  const wIds = changes.map((entry) => entry.wId);
+  const edge = undo ? Math.min(...wIds) : Math.max(...wIds);
+  const create = undo && changes.some((entry) => entry.change?.kind === "create");
+  const blocking = [
+    ...new Set(
+      candidates
+        .filter((entry) => !chosen.has(entry.handle))
+        .filter((entry) => (undo ? entry.wId > edge : entry.wId < edge))
+        .filter((entry) => entry.change || create)
+        .map((entry) => entry.wId),
+    ),
+  ];
   if (blocking.length === 0) return undefined;
-  const handles = (wIds: readonly number[]) =>
-    [...wIds].sort((left, right) => left - right).map(writeHandle);
-  const picked = handles(selected.map((change) => change.wId));
-  const blockers = handles(blocking);
-  const all = [...selected.map((change) => change.wId), ...blocking];
+  const handles = (ids: readonly number[]) =>
+    [...new Set(ids)].sort((left, right) => left - right).map(writeHandle);
+  const list = (ids: readonly number[]) => handles(ids).join(", ");
+  const all = [...wIds, ...blocking];
   const range = `${writeHandle(Math.min(...all))}..${writeHandle(Math.max(...all))}`;
-  const list = (items: string[]) => items.join(", ");
-  return direction === "undo"
-    ? `Can't undo ${list(picked)} on its own — ${list(blockers)} moved or deleted the document after it. Undo ${list(blockers)} first, or undo the range ${range}.`
-    : `Can't redo ${list(picked)} on its own — ${list(blockers)}, undone too, came before it. Redo ${list(blockers)} first, or redo the range ${range}.`;
+  return undo
+    ? `Can't undo ${list(wIds)} on its own — ${list(blocking)} changed the document after it. Undo ${list(blocking)} first, or undo the range ${range}.`
+    : `Can't redo ${list(wIds)} on its own — ${list(blocking)}, undone too, came before it. Redo ${list(blocking)} first, or redo the range ${range}.`;
 }

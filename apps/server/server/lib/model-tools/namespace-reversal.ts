@@ -1,37 +1,37 @@
 /**
  * `write`'s `undo` and `redo` across both kinds of write handle (D66). A
- * document's moves and deletes go back, or again, through the same live
- * calls the commands made, so links follow a move back (#694) and an undone
- * delete is restored; its content writes go to the engine. An undo that
- * reverses the copy that made a document deletes the copy, and the redo of
- * that copy brings it back. A document with neither runs as before.
+ * document's creates, moves and deletes go back, or again, through the
+ * collab domain's namespace step on the thread's live tree, so links follow
+ * a move back (#694), an undone delete is restored and an undone create is
+ * deleted; its content writes go to the engine as the exact handles the walk
+ * chose. A document with none of them runs as before.
  */
 import type {
   AgentEditResultV1,
+  ReversalSelection,
   WriteOutcome,
   WriteToolInput,
 } from "@meridian/agent-edit/integration";
 import { modelResult, splitDocumentFile, writeHandle } from "@meridian/agent-edit/integration";
-import type {
-  NamespaceChangeRecord,
-  WriteHandleHistory,
-} from "../../domains/collab/domain/ports/agent-namespace-changes.js";
-import type { ContextError, ContextPort } from "../../domains/context/ports/context-port.js";
+import {
+  type ChangeClaimed,
+  liveAfter,
+  locationAfter,
+  type NamespaceChangeRecord,
+} from "../../domains/collab/index.js";
+import type { ContextError } from "../../domains/context/ports/context-port.js";
 import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { namespaceTree } from "../namespace-tree.js";
 import { documentGrant } from "./file-access.js";
-import {
-  applyNamespaceChange,
-  containerGrant,
-  draftRefusal,
-  underGrants,
-} from "./namespace-commands.js";
-import { planNamespaceReversal, type ReversalFields } from "./namespace-reversal-plan.js";
+import { containerGrant, draftRefusal, underGrants } from "./namespace-commands.js";
+import { planReversalWalk } from "./namespace-reversal-plan.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
   isToolError,
   type ResolvedDocumentAddress,
+  recordTouchInBackground,
   type ToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
@@ -45,56 +45,46 @@ type ContentOutcome = (WriteOutcome & { isError: false }) | WriteToolErrorOutput
 /** The engine's half: where a path is, and an undo or redo of the document's content writes. */
 export interface ContentReversal {
   resolve(path: string): Promise<ResolvedDocumentAddress | WriteToolErrorOutput>;
-  run(address: ResolvedDocumentAddress, fields: ReversalFields): Promise<ContentOutcome>;
+  /** Exactly `handles`, or the model's own selector when omitted. */
+  run(address: ResolvedDocumentAddress, handles?: readonly string[]): Promise<ContentOutcome>;
 }
 
-/** Where the document is as the reversal goes: live at `uri`, or deleted from it. */
+/** Where the document is as the walk goes: live at `uri`, or deleted from it. */
 type Location = { live: boolean; uri: string };
 
-function selectorFields(input: ReversalInput): ReversalFields {
-  return {
-    ...(input.to !== undefined ? { to: input.to } : {}),
-    ...(input.since !== undefined ? { since: input.since } : {}),
-    ...(input.last !== undefined ? { last: input.last } : {}),
-    ...(input.all !== undefined ? { all: input.all } : {}),
-  };
+/** The model's selector, as the engine reads it. */
+function modelSelection(input: ReversalInput): ReversalSelection {
+  if (input.all) return { kind: "all" };
+  if (input.last !== undefined) return { kind: "last", count: input.last };
+  if (input.to === undefined) return { kind: "latest" };
+  if (input.since === undefined) return { kind: "single", to: input.to };
+  return { kind: "range", since: input.since, to: input.to };
 }
-
-const verb = (direction: Direction) => (direction === "undo" ? "undo" : "redo");
 
 function changeErrorMessage(
   direction: Direction,
   change: NamespaceChangeRecord,
-  destination: string,
-  error: ContextError,
+  error: ContextError | ChangeClaimed,
 ): string {
-  const lead = `Can't ${verb(direction)} ${writeHandle(change.wId)}`;
+  const handle = writeHandle(change.wId);
+  if (error.code === "claimed") {
+    return `${handle} was already ${direction === "undo" ? "undone" : "redone"}.`;
+  }
+  const lead = `Can't ${direction} ${handle}`;
+  const restoring = change.kind !== "move" && liveAfter(change, direction);
   switch (error.code) {
     case "conflict":
-      return `${lead}: ${destination} already exists. Move or rename that document first.`;
+      return `${lead}: ${locationAfter(change, direction)} already exists. Move or rename that document first.`;
     case "not_found":
-      return change.kind === "delete" && direction === "undo"
+      return restoring
         ? `${lead}: the folder it was in is gone.`
-        : `${lead}: the document is no longer where ${writeHandle(change.wId)} left it.`;
+        : `${lead}: the document is no longer where ${handle} left it.`;
     case "stale_source":
     case "stale_target":
-      return `${lead}: the document is no longer where ${writeHandle(change.wId)} left it.`;
+      return `${lead}: the document is no longer where ${handle} left it.`;
     default:
       return `${lead}: ${contextErrorMessage(error)}`;
   }
-}
-
-/** Where a change sends the document: the folder it needs edit on. */
-function changeDestination(direction: Direction, change: NamespaceChangeRecord): string | null {
-  if (change.kind === "move") return direction === "undo" ? change.fromUri : change.toUri;
-  return direction === "undo" ? change.fromUri : null;
-}
-
-function nextLocation(direction: Direction, change: NamespaceChangeRecord): Location {
-  if (change.kind === "move") {
-    return { live: true, uri: direction === "undo" ? change.fromUri : change.toUri };
-  }
-  return { live: direction === "undo", uri: change.fromUri };
 }
 
 function namespaceFact(start: Location, end: Location): AgentEditResultV1["namespace"] {
@@ -109,28 +99,6 @@ function withNote<T extends { isError: true; output: AgentEditResultV1 }>(error:
   return { ...error, output: { ...error.output, message } };
 }
 
-async function isEmptyDocument(port: ContextPort, uri: string): Promise<boolean> {
-  const read = await port.read(uri);
-  return read.ok && read.value.content.trim() === "";
-}
-
-/**
- * The undo just reversed the copy that made this document, and nothing this
- * thread wrote into it since: the copy goes. The copy is the thread's first
- * content write on a document it copied in.
- */
-function undidTheCopy(history: WriteHandleHistory, reversed: readonly string[]): number | null {
-  if (!history.copied) return null;
-  const first = history.content[0];
-  if (!first) return null;
-  const undone = new Set(reversed);
-  if (!undone.has(writeHandle(first.wId))) return null;
-  const left = history.content.filter(
-    (handle) => handle.status === "active" && !undone.has(writeHandle(handle.wId)),
-  );
-  return left.length === 0 ? first.wId : null;
-}
-
 export async function runReversal(
   deps: ToolWiringDeps,
   call: ToolCall,
@@ -139,14 +107,14 @@ export async function runReversal(
   content: ContentReversal,
 ) {
   const direction = input.command;
-  const fields = selectorFields(input);
+  const changes = deps.documentSync.namespaceChanges;
   const resolved = await content.resolve(input.path);
   let documentId: string;
   let start: Location;
   if (isToolError(resolved)) {
-    // A deleted document has no path to resolve; this thread's delete or discarded copy names it.
+    // A deleted document has no path to resolve; this thread's delete or undone create names it.
     if (resolved.output.status !== "document_not_found") return resolved;
-    const deleted = await deps.namespaceChanges.findDeletedAt(
+    const deleted = await changes.findDeletedAt(
       ctx.threadId,
       splitDocumentFile(input.path).filePath,
     );
@@ -158,29 +126,32 @@ export async function runReversal(
     start = { live: true, uri: resolved.uri };
   }
 
-  const history = await deps.namespaceChanges.history(documentId, ctx.threadId);
-  if (!isToolError(resolved) && history.namespace.length === 0 && !history.copied) {
-    return finishContent(deps, ctx, resolved, await content.run(resolved, fields));
+  const history = await changes.history(documentId, ctx.threadId);
+  if (!isToolError(resolved) && history.namespace.length === 0) {
+    return finishContent(deps, ctx, resolved, await content.run(resolved));
   }
-
-  const plan = planNamespaceReversal(direction, fields, history);
-  if (!plan.ok) return writeToolError(direction, plan.message, plan.status, { path: input.path });
-  const restoreCopy =
-    direction === "redo" && !start.live && history.discardedCopy !== null && plan.content !== null
-      ? history.discardedCopy
-      : null;
-  const undeletes = direction === "undo" && plan.namespace[0]?.kind === "delete";
-  if (!start.live && !restoreCopy && !undeletes) {
-    const blocker = history.namespace.find(
-      (change) => change.kind === "delete" && change.status === "active",
-    );
-    const handle = blocker ? writeHandle(blocker.wId) : "the delete";
-    return writeToolError(
-      direction,
-      `${input.path} is deleted, so its other writes can't be ${direction === "undo" ? "undone" : "redone"}. Undo ${handle} first.`,
-      "invalid_write",
-      { path: input.path },
-    );
+  const walk = planReversalWalk({
+    direction,
+    selection: modelSelection(input),
+    history,
+    live: start.live,
+    path: input.path,
+  });
+  if (!walk.ok) return writeToolError(direction, walk.message, walk.status, { path: input.path });
+  if (!walk.steps.some((step) => step.kind === "namespace")) {
+    if (isToolError(resolved)) {
+      return {
+        output: modelResult({
+          command: direction,
+          status: direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
+          payload: { path: input.path },
+        }),
+      };
+    }
+    // Nothing selected runs the model's own selector, so the engine says why.
+    const handles = walk.steps.flatMap((step) => (step.kind === "content" ? step.handles : []));
+    const outcome = await content.run(resolved, handles.length > 0 ? handles : undefined);
+    return finishContent(deps, ctx, resolved, outcome);
   }
 
   // Edit on the document if it's there, and on every folder a change puts it in.
@@ -197,160 +168,84 @@ export async function runReversal(
     grants.push(grant);
   }
   const destinations = new Set(
-    plan.namespace.flatMap((change) => changeDestination(direction, change) ?? []),
+    walk.steps.flatMap((step) =>
+      step.kind === "namespace" && liveAfter(step.change, direction)
+        ? [locationAfter(step.change, direction)]
+        : [],
+    ),
   );
-  if (restoreCopy) destinations.add(restoreCopy.fromUri);
   for (const uri of destinations) {
     const grant = await containerGrant(deps, call, direction, uri);
     if (isToolError(grant)) return grant;
     if (grant) grants.push(grant);
   }
-  if (plan.namespace.length > 0 || restoreCopy) {
-    const refused = draftRefusal(
-      direction,
-      direction === "undo" ? "Undoing moves and deletes" : "Redoing moves and deletes",
-      grants.map((grant) => grant.destination),
-    );
-    if (refused) return refused;
-  }
+  const refused = draftRefusal(
+    direction,
+    direction === "undo"
+      ? "Undoing creates, moves and deletes"
+      : "Redoing creates, moves and deletes",
+    grants.map((grant) => grant.destination),
+  );
+  if (refused) return refused;
 
-  const port = call.context.livePort();
+  const tree = namespaceTree(call.context.livePort());
   let location = start;
+  let last: {
+    outcome: WriteOutcome & { isError: false };
+    address: ResolvedDocumentAddress;
+  } | null = null;
   const done: string[] = [];
   const doneNote = () =>
     done.length === 0 ? "" : `${direction === "undo" ? "Undone" : "Redone"}: ${done.join(", ")}.`;
 
-  const applyChanges = async (): Promise<WriteToolErrorOutput | null> => {
-    for (const change of plan.namespace) {
-      const handle = writeHandle(change.wId);
-      const from = direction === "undo" ? "active" : "reversed";
-      if (!(await deps.namespaceChanges.transition(change.id, from))) {
-        return withNote(
-          writeToolError(
-            direction,
-            `${handle} was already ${direction === "undo" ? "undone" : "redone"}.`,
-          ),
-          doneNote(),
-        );
-      }
-      const applied = await applyNamespaceChange(port, documentId, change, direction);
-      if (!applied.ok) {
-        await deps.namespaceChanges.transition(
-          change.id,
-          from === "active" ? "reversed" : "active",
-        );
-        const destination = changeDestination(direction, change) ?? change.fromUri;
-        return withNote(
-          writeToolError(
-            direction,
-            changeErrorMessage(direction, change, destination, applied.error),
-          ),
-          doneNote(),
-        );
-      }
-      done.push(handle);
-      location = nextLocation(direction, change);
-    }
-    return null;
-  };
-
-  // Undo walks back newest first, so the namespace part goes before the content; redo after it.
-  if (direction === "undo") {
-    const failed = await underGrants(deps, direction, input.path, grants, applyChanges);
-    if (failed) return failed;
-  } else if (restoreCopy) {
-    const restored = await underGrants(deps, direction, input.path, grants, () =>
-      port.restore(restoreCopy.fromUri, { documentId }),
-    );
-    if (isToolError(restored)) return restored;
-    if (!restored.ok) {
-      return writeToolError(
-        direction,
-        restored.error.code === "conflict"
-          ? `Can't redo ${writeHandle(restoreCopy.wId)}: ${restoreCopy.fromUri} already exists. Move or rename that document first.`
-          : `Can't redo ${writeHandle(restoreCopy.wId)}: ${contextErrorMessage(restored.error)}`,
+  for (const step of walk.steps) {
+    if (step.kind === "namespace") {
+      const { change } = step;
+      const applied = await underGrants(deps, direction, input.path, grants, () =>
+        changes.reverse(tree, change, direction),
       );
-    }
-    location = { live: true, uri: restoreCopy.fromUri };
-  }
-
-  let outcome: ContentOutcome | null = null;
-  let address: ResolvedDocumentAddress | null = null;
-  if (plan.content) {
-    const at = await content.resolve(location.uri);
-    if (isToolError(at)) return withNote(at, doneNote());
-    address = at;
-    outcome = await content.run(at, plan.content);
-    if (restoreCopy) {
-      const redone = isToolError(outcome) ? undefined : outcome.result.reversal?.writes;
-      if (!redone?.includes(writeHandle(restoreCopy.wId))) {
-        // The copy's own write didn't come back, so neither does the copy.
-        await port.delete(location.uri, { expected: { kind: "file", documentId } });
-        location = start;
-      } else {
-        await deps.namespaceChanges.forgetDiscardedCopy(restoreCopy.id);
+      if (isToolError(applied)) return withNote(applied, doneNote());
+      if (!applied.ok) {
+        return withNote(
+          writeToolError(direction, changeErrorMessage(direction, change, applied.error)),
+          doneNote(),
+        );
       }
+      done.push(writeHandle(change.wId));
+      location = { live: liveAfter(change, direction), uri: locationAfter(change, direction) };
+      continue;
     }
+    const address = await content.resolve(location.uri);
+    if (isToolError(address)) return withNote(address, doneNote());
+    const outcome = await content.run(address, step.handles);
     if (isToolError(outcome)) return withNote(outcome, doneNote());
     done.push(...(outcome.result.reversal?.writes ?? []));
-    if (location.live) {
-      await deps.documentSync.refreshDocumentProjection({ documentId, threadId: ctx.threadId });
-    }
+    last = { outcome, address };
   }
 
-  if (direction === "redo") {
-    const failed = await underGrants(deps, direction, input.path, grants, applyChanges);
-    if (failed) return failed;
+  if (location.live && last) {
+    await deps.documentSync.refreshDocumentProjection({ documentId, threadId: ctx.threadId });
   }
-
-  // A copy in a draft stays: deleting it is a draft change, which comes later.
-  let discarded = false;
-  const live = grants.every((grant) => grant.destination.kind === "live");
-  const copyWrite =
-    direction === "undo" && outcome && !isToolError(outcome) && location.live && live
-      ? undidTheCopy(history, outcome.result.reversal?.writes ?? [])
-      : null;
-  if (copyWrite !== null && (await isEmptyDocument(port, location.uri))) {
-    const deleted = await underGrants(deps, direction, input.path, grants, () =>
-      port.delete(location.uri, { expected: { kind: "file", documentId } }),
-    );
-    if (!isToolError(deleted) && deleted.ok) {
-      await deps.namespaceChanges.recordDiscardedCopy({
-        documentId,
-        threadId: ctx.threadId,
-        wId: copyWrite,
-        fromUri: location.uri,
-      });
-      location = { live: false, uri: location.uri };
-      discarded = true;
-    }
-  }
-
+  recordTouchInBackground(deps, documentId, ctx);
   const writes = [...new Set(done)].sort(
     (left, right) => Number(left.slice(1)) - Number(right.slice(1)),
   );
   const fact = namespaceFact(start, location);
-  const path = location.uri === start.uri ? input.path : location.uri;
   const payload = {
-    path,
+    path: location.uri === start.uri ? input.path : location.uri,
     reversal: { direction, writes },
     ...(fact ? { namespace: fact } : {}),
   };
-  if (outcome && !isToolError(outcome) && address) {
-    // The engine's note that an undone copy is empty no longer holds once the copy is gone.
-    const { message: _message, ...base } = outcome.result;
-    const result = { ...(discarded ? base : outcome.result), ...payload };
+  if (location.live && last) {
     return {
-      output: result,
-      ...(location.live ? { metadata: documentRevisionMetadata(address, outcome.revision) } : {}),
+      output: { ...last.outcome.result, ...payload },
+      metadata: documentRevisionMetadata(last.address, last.outcome.revision),
     };
   }
-  return {
-    output: modelResult({ command: direction, status: "reversed", payload }),
-  };
+  return { output: modelResult({ command: direction, status: "reversed", payload }) };
 }
 
-/** A reversal with no move, delete or copy to account for: the engine's result as it is. */
+/** A reversal of content writes alone: the engine's result as it is. */
 async function finishContent(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,
@@ -362,8 +257,6 @@ async function finishContent(
     documentId: address.documentId,
     threadId: ctx.threadId,
   });
-  return {
-    output: outcome.result,
-    metadata: documentRevisionMetadata(address, outcome.revision),
-  };
+  recordTouchInBackground(deps, address.documentId, ctx);
+  return { output: outcome.result, metadata: documentRevisionMetadata(address, outcome.revision) };
 }

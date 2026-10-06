@@ -13,6 +13,7 @@ import type {
 import {
   documentNotFoundMessage,
   formatDocumentFile,
+  parseWriteHandle,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
@@ -179,6 +180,7 @@ async function writeUnderGrant(
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
+  reversalHandles?: readonly string[],
 ): Promise<(WriteOutcome & { isError: false }) | WriteToolErrorOutput> {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
@@ -195,6 +197,7 @@ async function writeUnderGrant(
         createdDocument: address.created === true,
         grant,
         ...(copied ? { copiedNodes: copied.nodes } : {}),
+        ...(reversalHandles ? { reversalHandles } : {}),
       });
   } catch (cause) {
     if (!(cause instanceof FileEditRefusedError)) throw cause;
@@ -238,6 +241,29 @@ export function createReadHandler(deps: ToolWiringDeps) {
   };
 }
 
+/**
+ * A live create or copy is a handle of its own on the content write that made
+ * the document, so undoing that write deletes the document (D66). A draft
+ * can't hold a delete yet, so a drafted create keeps none.
+ */
+async function recordCreate(
+  deps: ToolWiringDeps,
+  ctx: ToolHandlerContext,
+  address: ResolvedDocumentAddress,
+  outcome: WriteOutcome & { isError: false },
+): Promise<number | undefined> {
+  const wId = outcome.writeId ? parseWriteHandle(outcome.writeId) : undefined;
+  if (wId === undefined || outcome.result.destination !== "live") return undefined;
+  return deps.documentSync.namespaceChanges.recordCreate({
+    documentId: address.documentId,
+    threadId: ctx.threadId,
+    turnId: ctx.turnId ?? null,
+    responseId: ctx.responseId ?? null,
+    wId,
+    fromUri: address.uri,
+  });
+}
+
 export function createWriteHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
     const parsed = input as WriteToolInput;
@@ -252,15 +278,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       const command = parsed.command;
       return runReversal(deps, call, parsed, ctx, {
         resolve: (path) => resolveDocumentAddress(context, command, path),
-        run: (address, fields) =>
-          writeUnderGrant(
-            deps,
-            principal,
-            { command, path: parsed.path, ...fields },
-            address,
-            undefined,
-            ctx,
-          ),
+        run: (address, handles) =>
+          writeUnderGrant(deps, principal, parsed, address, undefined, ctx, handles),
       });
     }
     const creates = parsed.command === "create" || parsed.command === "copy";
@@ -353,12 +372,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       if (responseId === undefined) {
         return writeToolError(parsed.command, "Missing staged response id", "internal_error");
       }
-      deps.responseWrites.trackStagedCreate({
+      const staged = {
         responseId,
         port: context.port,
         path: parsed.path,
         documentId: address.documentId,
-      });
+      };
+      // Tracked before its handle is recorded, so a failed record still discards the document.
+      deps.responseWrites.trackStagedCreate(staged);
+      Object.assign(staged, { createId: await recordCreate(deps, ctx, address, outcome) });
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);

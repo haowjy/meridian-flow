@@ -1,7 +1,7 @@
 /**
  * The reply's write lifecycle (D42): staged creates to discard, moves and
  * deletes to reverse, the commit that saves every staged write in one
- * transaction, and the rollback.
+ * transaction, and the rollback. Rollback alone forgets handles.
  */
 import type {
   ConcurrentEditInfo,
@@ -9,7 +9,7 @@ import type {
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
-import type { AgentNamespaceChanges } from "../../domains/collab/index.js";
+import type { NamespaceChangeRecord } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -18,7 +18,7 @@ import {
   isPermissionDenial,
   permissionDeniedMessage,
 } from "../file-access-denial-copy.js";
-import { applyNamespaceChange, type NamespaceChangeShape } from "./namespace-commands.js";
+import { namespaceTree } from "../namespace-tree.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 
 type StagedCreateCleanup = {
@@ -27,6 +27,8 @@ type StagedCreateCleanup = {
   /** Where the document is now: a move in the same reply carries it along. */
   path: string;
   documentId: string;
+  /** The create's handle, forgotten with the document; none in a draft. */
+  createId?: number;
 };
 
 /**
@@ -36,10 +38,8 @@ type StagedCreateCleanup = {
 export type StagedNamespaceChange = {
   responseId: string;
   port: ContextPort;
-  documentId: string;
-  /** The change's handle record, forgotten once the change is reversed. */
-  recordId: number;
-} & NamespaceChangeShape;
+  change: NamespaceChangeRecord;
+};
 
 export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
@@ -90,8 +90,9 @@ export async function deleteCreatedTrackedDocument(input: {
 }
 
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync"> & { namespaceChanges: AgentNamespaceChanges },
+  deps: Pick<ToolWiringDeps, "documentSync">,
 ): AgentEditResponseWriteLifecycle {
+  const { namespaceChanges } = deps.documentSync;
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
   const stagedNamespaceChanges = new Map<string, StagedNamespaceChange[]>();
 
@@ -104,17 +105,17 @@ export function createAgentEditResponseWriteLifecycle(
 
   /** Newest first, so a document moved twice in one reply walks back to where it began. */
   async function reverseStagedNamespaceChanges(responseId: string): Promise<void> {
-    const changes = stagedNamespaceChanges.get(responseId) ?? [];
-    for (const change of [...changes].reverse()) {
+    const staged = stagedNamespaceChanges.get(responseId) ?? [];
+    for (const { port, change } of [...staged].reverse()) {
+      const reversed = await namespaceChanges.reverse(namespaceTree(port), change, "undo");
       // The writer may have restored a delete already; only a change still in effect goes back.
-      if (await deps.namespaceChanges.transition(change.recordId, "active")) {
-        const reversed = await applyNamespaceChange(change.port, change.documentId, change, "undo");
-        if (!reversed.ok) throw new Error(contextErrorMessage(reversed.error));
-        if (change.kind === "move")
-          relocateStagedCreate(responseId, change.documentId, change.fromUri);
+      if (!reversed.ok && reversed.error.code !== "claimed") {
+        throw new Error(contextErrorMessage(reversed.error));
       }
-      await deps.namespaceChanges.discard(change.recordId);
+      if (change.kind === "move")
+        relocateStagedCreate(responseId, change.documentId, change.fromUri);
     }
+    await namespaceChanges.discard(staged.map(({ change }) => change.id));
   }
 
   async function cleanupDiscardedStagedCreates(
@@ -123,10 +124,15 @@ export function createAgentEditResponseWriteLifecycle(
   ): Promise<void> {
     const records = stagedCreates.get(responseId) ?? [];
     const discarded = new Set(discardedDocumentIds);
-    // A discarded document's moves and deletes go with it; no handle names them.
-    for (const change of stagedNamespaceChanges.get(responseId) ?? []) {
-      if (discarded.has(change.documentId)) await deps.namespaceChanges.discard(change.recordId);
-    }
+    // A discarded document's handles go with it.
+    await namespaceChanges.discard([
+      ...records.flatMap((record) =>
+        discarded.has(record.documentId) && record.createId !== undefined ? [record.createId] : [],
+      ),
+      ...(stagedNamespaceChanges.get(responseId) ?? []).flatMap(({ change }) =>
+        discarded.has(change.documentId) ? [change.id] : [],
+      ),
+    ]);
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
       await deleteCreatedTrackedDocument(record);
@@ -147,8 +153,9 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     trackStagedNamespaceChange(input: StagedNamespaceChange): void {
-      if (input.kind === "move")
-        relocateStagedCreate(input.responseId, input.documentId, input.toUri);
+      const { change } = input;
+      if (change.kind === "move")
+        relocateStagedCreate(input.responseId, change.documentId, change.toUri);
       const changes = stagedNamespaceChanges.get(input.responseId) ?? [];
       changes.push(input);
       stagedNamespaceChanges.set(input.responseId, changes);

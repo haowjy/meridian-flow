@@ -1,5 +1,5 @@
 {
-  "id": "f1a37646-5b23-451c-929a-16ab78ffdb62",
+  "id": "f71f9f0d-2979-4097-8be3-d10384348a79",
   "prevId": "dcb01017-9977-499e-ab5d-884eefefa0be",
   "version": "7",
   "dialect": "postgresql",
@@ -7510,7 +7510,7 @@
       "checkConstraints": {
         "agent_namespace_changes_kind_valid": {
           "name": "agent_namespace_changes_kind_valid",
-          "value": "\"agent_namespace_changes\".\"kind\" IN ('move', 'delete', 'discard')"
+          "value": "\"agent_namespace_changes\".\"kind\" IN ('create', 'move', 'delete')"
         },
         "agent_namespace_changes_move_target": {
           "name": "agent_namespace_changes_move_target",

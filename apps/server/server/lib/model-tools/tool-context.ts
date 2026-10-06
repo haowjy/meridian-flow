@@ -22,9 +22,9 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  AgentNamespaceChanges,
   CollabDrafts,
   DocumentProjectionRefresher,
+  NamespaceChangeAccess,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
 import {
@@ -63,13 +63,14 @@ import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
+  documentSync: AgentEditAccess &
+    DocumentProjectionRefresher &
+    ResponseWriteFinalizer &
+    NamespaceChangeAccess;
   responseWrites: Pick<
     AgentEditResponseWriteLifecycle,
     "trackStagedCreate" | "trackStagedNamespaceChange"
   >;
-  /** Handles for the model's moves and deletes (`write` `move` and `delete`). */
-  namespaceChanges: AgentNamespaceChanges;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: WorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;

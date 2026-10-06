@@ -19,6 +19,13 @@ import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchStore } from "./branch-coordinator.js";
 import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-contracts.js";
 import {
+  liveAfter,
+  locationAfter,
+  type NamespaceChanges,
+  type NamespaceTree,
+} from "./namespace-changes.js";
+import type { NamespaceChangeRecord } from "./ports/agent-namespace-changes.js";
+import {
   aggregateStatus,
   documentReversalOutcome,
   documentReversalResult,
@@ -37,6 +44,11 @@ export type ThreadContextReversalResolver = {
     userId: string;
     uri: string;
   }): Promise<{ documentId?: string | null; uri: string }>;
+  /** The thread's live tree, acting with the writer's edit grant on each folder it touches. */
+  namespaceTree(input: {
+    threadId: string;
+    userId: string;
+  }): Promise<NamespaceTree<{ code: string }>>;
 };
 
 export type TurnReversalServiceDeps = {
@@ -55,15 +67,57 @@ export type TurnReversalServiceDeps = {
   /** The writer's edit grant on each document, confirmed by the seams the reversal reaches. */
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   threadContext: ThreadContextReversalResolver;
+  namespaceChanges: NamespaceChanges;
 };
 
+/** A turn's creates, moves and deletes, and the tree they go back or again through. */
+type TurnNamespace = { tree: NamespaceTree<{ code: string }>; changes: NamespaceChangeRecord[] };
+
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
+  /**
+   * A turn's changes that leave the document in place go before its content
+   * writes, so content is reversed on a live document and no move flushes
+   * links while this transaction holds a document's lock; ones that remove
+   * the document go after. Undo walks the turn back newest first.
+   */
+  const applyNamespace = async (
+    command: { threadId: string; turnId: string; direction: "undo" | "redo" },
+    namespace: TurnNamespace | undefined,
+    removing: boolean,
+  ): Promise<DocumentReversalResult[]> => {
+    if (!namespace) return [];
+    const { direction } = command;
+    const changes = namespace.changes
+      .filter((change) => !liveAfter(change, direction) === removing)
+      .sort((left, right) => (direction === "undo" ? right.id - left.id : left.id - right.id));
+    const documents: DocumentReversalResult[] = [];
+    for (const change of changes) {
+      const uri = locationAfter(change, direction);
+      const blocked =
+        direction === "undo" &&
+        change.kind === "create" &&
+        (await laterHandleApplied(input.namespaceChanges, command.threadId, change));
+      const applied = blocked
+        ? { ok: false as const, error: { code: "dependent" } }
+        : await input.namespaceChanges.reverse(namespace.tree, change, direction);
+      if (!applied.ok) {
+        const status =
+          applied.error.code === "permission_denied" ? "permission_denied" : "cant_undo_dependent";
+        throw new CrossScopeReversalRefused({ status, documents: [{ uri, status }] });
+      }
+      documents.push({ uri, status: "reversed" });
+    }
+    return documents;
+  };
+
   const reverseTurnAcrossScopes = async (
     command: Parameters<TurnReversalAccess["reverseTurn"]>[0],
+    namespace?: TurnNamespace,
   ): Promise<ReversalOutcome> => {
     const atomic = input.atomic ?? (async <T>(operation: () => Promise<T>) => operation());
     try {
       return await atomic(async () => {
+        const placed = await applyNamespace(command, namespace, false);
         const statuses =
           command.direction === "undo" ? (["active"] as const) : (["discarded"] as const);
         const rows = await input.branchJournal.listJournalRowsForTurn({
@@ -132,9 +186,12 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           ...command,
           documentIds: liveDocumentIds,
         });
+        const removed = await applyNamespace(command, namespace, true);
         const documents = mergeDocumentScopeResults(command.direction, [
+          ...placed,
           ...liveOutcome.documents,
           ...branchDocuments,
+          ...removed,
         ]);
         const outcome = {
           status: aggregateStatus(command.direction, documents),
@@ -165,19 +222,31 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
           ...new Set(lineage.map((entry) => entry.documentId)),
         ]);
         const denied = refused.map((denial) => targetDocumentId(denial.target));
+        const changes = await input.namespaceChanges.forTurn(
+          command.threadId,
+          command.turnId,
+          command.direction === "undo" ? "active" : "reversed",
+        );
+        const namespace =
+          changes.length > 0
+            ? { tree: await input.threadContext.namespaceTree(command), changes }
+            : undefined;
         let reversed: ReversalOutcome = {
           status: aggregateStatus(command.direction, []),
           documents: [],
         };
-        if (grants.length > 0) {
+        if (grants.length > 0 || namespace) {
           const run = await runWithEditGrants(input.fileAccess, grants, () =>
-            reverseTurnAcrossScopes({
-              threadId: command.threadId,
-              turnId: command.turnId,
-              direction: command.direction,
-              actor: { type: "user", userId: command.userId },
-              documentIds: grants.map((grant) => targetDocumentId(grant.facts.target)),
-            }),
+            reverseTurnAcrossScopes(
+              {
+                threadId: command.threadId,
+                turnId: command.turnId,
+                direction: command.direction,
+                actor: { type: "user", userId: command.userId },
+                documentIds: grants.map((grant) => targetDocumentId(grant.facts.target)),
+              },
+              namespace,
+            ),
           );
           // A seam refused under its locks (archived meanwhile): nothing was reversed.
           if (run.ok) reversed = run.value;
@@ -273,6 +342,22 @@ async function writerGrants(
     else if (grant.reason !== "not_found") refused.push(grant);
   }
   return { grants, refused };
+}
+
+/**
+ * Undoing a create deletes the document, so it waits for every later handle
+ * this thread still has applied on it, the creating write included.
+ */
+async function laterHandleApplied(
+  namespaceChanges: Pick<NamespaceChanges, "history">,
+  threadId: string,
+  create: NamespaceChangeRecord,
+): Promise<boolean> {
+  const history = await namespaceChanges.history(create.documentId, threadId);
+  return (
+    history.content.some((handle) => handle.status === "active" && handle.wId >= create.wId) ||
+    history.namespace.some((change) => change.status === "active" && change.wId > create.wId)
+  );
 }
 
 class CrossScopeReversalRefused extends Error {

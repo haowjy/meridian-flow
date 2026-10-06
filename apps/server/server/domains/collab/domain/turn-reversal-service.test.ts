@@ -2,7 +2,11 @@ import { modelResult, type ReversalStore } from "@meridian/agent-edit/integratio
 import { describe, expect, it, vi } from "vitest";
 import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
 import { ReverseThreadContextError } from "../contracts.js";
+import type { NamespaceChanges } from "./namespace-changes.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
+
+/** A thread with no creates, moves or deletes in any turn. */
+const NO_NAMESPACE_CHANGES = { forTurn: async () => [] } as unknown as NamespaceChanges;
 
 function createService(input: {
   agentReverse?: ReturnType<typeof vi.fn>;
@@ -50,7 +54,9 @@ function createService(input: {
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
+      namespaceTree: vi.fn(),
     },
+    namespaceChanges: NO_NAMESPACE_CHANGES,
   });
   return {
     service,
@@ -172,7 +178,9 @@ describe("cross-scope reversal", () => {
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
+        namespaceTree: vi.fn(),
       },
+      namespaceChanges: NO_NAMESPACE_CHANGES,
     });
 
     await expect(
@@ -243,7 +251,9 @@ describe("cross-scope reversal", () => {
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
+        namespaceTree: vi.fn(),
       },
+      namespaceChanges: NO_NAMESPACE_CHANGES,
     });
 
     await expect(

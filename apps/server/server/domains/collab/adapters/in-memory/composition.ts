@@ -238,7 +238,23 @@ export function createInMemoryCollabDomain(): CollabDomain {
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
     documentCreation,
+    namespace: {
+      namespaceChanges: {
+        recordCreate: durableOnly,
+        discard: durableOnly,
+        history: durableOnly,
+        forTurn: durableOnly,
+        findDeletedAt: durableOnly,
+        findTurnDelete: durableOnly,
+        commit: durableOnly,
+        reverse: durableOnly,
+      },
+    },
   });
+}
+
+async function durableOnly(): Promise<never> {
+  throw new Error("Namespace changes require durable transactions");
 }
 
 const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {

@@ -28,6 +28,9 @@ export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
     async resolveContextDocument() {
       return threadContextReversalUnsupported();
     },
+    async namespaceTree() {
+      return threadContextReversalUnsupported();
+    },
   },
 } satisfies Pick<
   TurnReversalServiceDeps,

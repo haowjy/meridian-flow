@@ -2,8 +2,8 @@
  * Production-composed `write` `move` and `delete` on live documents: identity,
  * content and links follow a move, a delete leaves `ls` and `read`, uploads
  * and a stale read are refused, and a rolled-back reply puts both back (D66).
- * `undo` and `redo` count them with content writes, an undone copy goes, and
- * the writer restores an agent's delete from its turn.
+ * `undo` and `redo` count them with content writes, an undone create goes, and
+ * the writer restores an agent's delete or undoes its whole turn.
  */
 
 import { eq } from "drizzle-orm";
@@ -40,7 +40,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const CHAPTER = "manuscript://chapter.md";
     const RENAMED = "manuscript://renamed.md";
     const HOLDER = "manuscript://holder.md";
-    const COPY = "manuscript://copy.md";
+    const FRESH = "manuscript://fresh.md";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
@@ -316,35 +316,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
     });
 
-    it("undo of a copy leaves no document, and redo brings it back", async () => {
+    it("undo of a create leaves no document, and redo brings it back", async () => {
       const { script } = await start();
       await script.reply(async (call) => {
-        await call("write", { command: "copy", from: { path: CHAPTER }, path: COPY });
+        await call("write", { command: "create", path: FRESH, content: "Fresh." });
       });
-      const [copy] = await db
+      const [fresh] = await db
         .select()
         .from(schema.documents)
-        .where(eq(schema.documents.name, "copy"));
-      if (!copy) throw new Error("copy missing");
+        .where(eq(schema.documents.name, "fresh"));
+      if (!fresh) throw new Error("create missing");
 
       const undo = await script.begin();
-      const undone = await undo.call("write", { command: "undo", path: COPY });
-      expect(text(undone)).toMatch(
-        /^status: reversed; path: manuscript:\/\/copy\.md; deleted; undo: w1$/m,
-      );
+      const undone = await undo.call("write", { command: "undo", path: FRESH });
+      expect(text(undone)).toBe("status: reversed; path: manuscript://fresh.md; deleted; undo: w1");
       await undo.save();
-      expect((await documentRow(copy.id))?.deletedAt).not.toBeNull();
+      expect((await documentRow(fresh.id))?.deletedAt).not.toBeNull();
       const { call } = await script.begin();
-      expect((await call("read", { path: COPY })).isError).toBe(true);
+      expect((await call("read", { path: FRESH })).isError).toBe(true);
 
       const redo = await script.begin();
-      const redone = await redo.call("write", { command: "redo", path: COPY });
+      const redone = await redo.call("write", { command: "redo", path: FRESH });
       expect(text(redone)).toMatch(
-        /^status: reversed; path: manuscript:\/\/copy\.md; restored; redo: w1/,
+        /^status: reversed; path: manuscript:\/\/fresh\.md; restored; redo: w1/,
       );
       await redo.save();
-      expect((await documentRow(copy.id))?.deletedAt).toBeNull();
-      expect(await script.text(COPY)).toContain("Chapter one text.");
+      expect((await documentRow(fresh.id))?.deletedAt).toBeNull();
+      expect(await script.text(FRESH)).toContain("Fresh.");
     });
 
     it("lets the writer restore the agent's delete from its turn, unless its path is taken", async () => {
@@ -361,7 +359,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadWorks: app.threadRepos.threadWorks,
         works: app.workRepo,
         workAuthorityResolver: app.workAuthorityResolver,
-        namespaceChanges: app.namespaceChanges,
+        namespaceChanges: app.documentSync.namespaceChanges,
       };
       const restore = () =>
         restoreAgentDelete(deps, {
@@ -389,6 +387,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await documentRow(DOC_ID))?.deletedAt).toBeNull();
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
       await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("the writer's turn undo puts back the turn's move and delete, and redo makes them again", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("read", { path: HOLDER });
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+        await call("write", { command: "delete", path: HOLDER });
+      });
+      const [holder] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "holder"));
+      const reverse = (direction: "undo" | "redo") =>
+        runtime.app.documentSync.reverseThreadContext({
+          threadId: THREAD.threadId as never,
+          turnId: THREAD.turnId as never,
+          userId: USER_ID as never,
+          direction,
+          scope: "turn",
+          selection: THREAD.turnId,
+        });
+
+      await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+      expect((await documentRow(holder?.id ?? ""))?.deletedAt).toBeNull();
+
+      await expect(reverse("redo")).resolves.toMatchObject({ status: "reversed" });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
+      expect((await documentRow(holder?.id ?? ""))?.deletedAt).not.toBeNull();
     });
 
     it("cleans up a document created then moved in a reply whose save refuses it", async () => {
