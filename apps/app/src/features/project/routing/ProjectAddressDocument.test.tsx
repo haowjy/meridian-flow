@@ -72,7 +72,7 @@ it.each([
       replaceEntry: () => undefined,
       navigate,
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
@@ -93,7 +93,8 @@ it.each([
       entryKey="entry"
       address={address}
       result={result}
-      workId={null}
+      workId={"00000000-0000-4000-8000-000000000009"}
+      noWorkId={"00000000-0000-4000-8000-000000000009"}
       navigation={navigation}
       onAdmission={onAdmission}
     />,
@@ -137,7 +138,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const localFile: CatalogFile = {
     kind: "file",
@@ -172,7 +173,8 @@ it("preserves a proven local resource handle during readable-route admission", a
       }}
       result={documentResult("current")}
       localFile={localFile}
-      workId={null}
+      workId={"00000000-0000-4000-8000-000000000009"}
+      noWorkId={"00000000-0000-4000-8000-000000000009"}
       navigation={navigation}
       onAdmission={vi.fn()}
     />,
@@ -205,7 +207,7 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   function Harness() {
     const [admission, setAdmission] = useState<AddressAdmission | null>(null);
@@ -224,7 +226,8 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
             results: false,
           }}
           result={documentResult("current")}
-          workId={null}
+          workId={"00000000-0000-4000-8000-000000000009"}
+          noWorkId={"00000000-0000-4000-8000-000000000009"}
           navigation={navigation}
           onAdmission={setAdmission}
         />
@@ -261,7 +264,7 @@ it.each([
       replaceEntry: () => undefined,
       navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
     },
-    () => ({ workId: null }),
+    () => ({ work: { kind: "none" } }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
@@ -285,7 +288,8 @@ it.each([
         entryKey="entry"
         address={address}
         result={documentResult("alias")}
-        workId={null}
+        workId={"00000000-0000-4000-8000-000000000009"}
+        noWorkId={"00000000-0000-4000-8000-000000000009"}
         navigation={navigation}
         onAdmission={onAdmission}
       />,
@@ -303,4 +307,55 @@ it.each([
   } finally {
     navigation.dispose();
   }
+});
+
+it("admits a manuscript in No Work without replacing its unchanged public href", async () => {
+  openTab.mockReturnValue({ kind: "opened" });
+  const noWorkId = "00000000-0000-4000-8000-000000000009";
+  const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/doc";
+  const navigate = vi.fn(async () => {});
+  const navigation = createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => {},
+      flush: () => {},
+      settlePendingTraversal: () => undefined,
+      replaceEntry: () => {},
+      navigate,
+    },
+    () => ({ work: { kind: "none" } }),
+  );
+  const result = documentResult("current");
+  if (result.kind === "unavailable") throw new Error("Invalid fixture");
+  result.document.entry.uri = "manuscript://doc";
+  const onAdmission = vi.fn();
+  await withReactRoot(
+    <ProjectAddressDocument
+      projectId="550e8400-e29b-41d4-a716-446655440000"
+      href={href}
+      entryKey="entry"
+      address={{
+        projectId: "550e8400-e29b-41d4-a716-446655440000",
+        destination: { kind: "document", scheme: "manuscript", path: "doc" },
+        work: { kind: "none" },
+        results: false,
+      }}
+      result={result}
+      workId={noWorkId}
+      noWorkId={noWorkId}
+      navigation={navigation}
+      onAdmission={onAdmission}
+    />,
+    async () => {
+      await act(async () => {});
+      expect(navigate).not.toHaveBeenCalled();
+      expect(onAdmission).toHaveBeenLastCalledWith({
+        key: "entry",
+        href,
+        documentId: "doc-id",
+        issue: undefined,
+      });
+    },
+  );
+  navigation.dispose();
 });

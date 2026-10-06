@@ -17,8 +17,8 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * A Work switch, a base URI arriving, and a rename are all scope changes the
- * follower re-registers on, so nothing here remounts the collaborative editor.
+ * A Work switch, a base URI arriving, a rename, and a change to the document's
+ * own text are all scope changes the follower re-registers on, so nothing here remounts the collaborative editor.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -35,6 +35,7 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
+import { useDocumentRevision } from "./useDocumentRevision";
 
 /**
  * The Editor's destination: the document opens in this editor's pane, or on
@@ -47,7 +48,7 @@ export function useEditorLinkDestination(): LinkDestination {
     (document, gesture) =>
       openDocument({
         documentId: document.documentId,
-        workId,
+        workId: workId ?? undefined,
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openDocument, workId],
@@ -57,11 +58,14 @@ export function useEditorLinkDestination(): LinkDestination {
 /** Runtime over the scope's document index, which the Editor also reads its holder from. */
 export function ProjectLinkRuntime({
   editor,
+  documentId,
   baseUri,
   index,
   active,
 }: {
   editor: Editor | null;
+  /** The document holding the links: a server fallback names it as the holder. */
+  documentId: string;
   /**
    * The document's own address: what its relative links are relative to.
    * Null until the tree carrying it arrives, which is a link with no answer
@@ -76,9 +80,14 @@ export function ProjectLinkRuntime({
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
 
+  const documentRevision = useDocumentRevision(editor);
+
   const scope = useMemo<LinkResolutionScope | null>(
-    () => (active && projectId ? { projectId, workId, baseUri } : null),
-    [active, baseUri, projectId, workId],
+    () =>
+      active && projectId && workId
+        ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+        : null,
+    [active, baseUri, documentId, documentRevision, projectId, workId],
   );
   const reporter = useMemo<FollowReporter>(
     () => ({

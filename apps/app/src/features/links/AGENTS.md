@@ -43,6 +43,13 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   project, Work, base URI, or catalog revision changes; registering is the
   cache's only invalidation. A move or delete is a scope change: the link is
   spelled the same, and its old answer is now the wrong document or none.
+  An Editor's scope also carries its document's change revision (local, never
+  sent), because a rename rewrites the text an answer was given for. It moves
+  once per burst, 400 ms after the last document-changing edit: once per
+  keystroke would re-ask the server about every unanswered link on every
+  character. Its
+  server fallbacks name the holding document so the server can answer through
+  a pending redirect; chat has no holder.
 - **No component invalidates the link cache.** A create or rename anywhere is a
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
@@ -73,9 +80,7 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   folders, filename (`.md` added when omitted), and for Scratch the Work its
   authority names, or the surface's Work for a contextual `scratch://`. It
   commits locally and opens the document through the surface's `open` at once;
-  sync failure lands on the document. The one exception is No Work's Scratch,
-  which the local replica cannot place: there Create asks the server first
-  (issue #648). Do not route other Creates through the server to match it.
+  sync failure lands on the document.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md): scope contracts, what a follow
   does per answer, create-on-miss, and the document index

@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
+
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
@@ -7,11 +11,18 @@
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
-## [Unreleased]
+- Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
 
 - Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice; the provider's status and message stay on the failed reply (`./mf thread view`), its response body on the captured call (`./mf thread context --call` and the LLM Calls panel), and `providerStatus` on the call's `stream.close` log.
 - Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
 
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
+
+- A rename the server refused no longer comes back under the refused name after a later delete of the same document is also refused.
+
+- No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.

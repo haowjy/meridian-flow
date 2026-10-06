@@ -1,6 +1,7 @@
 /** Durable namespace policy protects request bytes, response-loss recovery and newer intentions. */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
+import { planResourceDeletion } from "./resource-deletion";
 import {
   installCanonicalRefresh,
   prepareNamespaceAttempt,
@@ -8,6 +9,7 @@ import {
   recordNamespaceOutcome,
   settleNamespaceOutcome,
 } from "./resource-namespace";
+import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import type {
   NamespaceOutcome,
   ResourceMetadataStore,
@@ -16,6 +18,7 @@ import type {
   ResourceWrite,
 } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
+import { planResourceLocation } from "./resource-state";
 
 function local(): ResourceRecord {
   return {
@@ -595,4 +598,219 @@ describe("namespace reconciliation", () => {
     await expect(running).resolves.toBe("uncertain");
     expect(submit).not.toHaveBeenCalled();
   });
+});
+
+it("keeps canonical Scratch placement after a rejected rename and rejected delete", async () => {
+  const before = local();
+  before.resource.canonical = {
+    scheme: "scratch",
+    path: "/before.md",
+    name: "before.md",
+    workId: "no-work",
+    workSlug: null,
+  };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [
+    {
+      ...before.intents[0],
+      intentId: "move",
+      desired: {
+        kind: "set-location",
+        destination: {
+          scheme: "scratch",
+          folderPath: "",
+          name: "after.md",
+          workId: "no-work",
+          workSlug: null,
+        },
+      },
+    },
+  ];
+  const store = new MemoryStore(before);
+  const result = await reconcileResourceNamespace({
+    key: before.resource,
+    metadata: asMetadata(store),
+    lock: immediateLock,
+    newAttemptIds: () => ({ attemptId: "attempt", operationId: "operation" }),
+    transport: transport({
+      submit: async () => ({
+        kind: "operation",
+        receipt: {
+          operationId: "operation",
+          command: {
+            kind: "move",
+            sourceUri: "scratch://@/before.md",
+            destinationUri: "scratch://@/after.md",
+            expected: { kind: "file", nodeId: "document" },
+          },
+          result: { ok: false, error: { code: "conflict", uri: "scratch://@/after.md" } },
+        },
+      }),
+    }),
+  });
+  expect(result).toBe("needs-repair");
+  expect(store.record.resource.identity.documentId).toBe("document");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceNeedsRepair("project", store.record)).toEqual({
+    intentId: "move",
+    kind: "set-location",
+    name: "after.md",
+  });
+  const rejectedRename = structuredClone(store.record.intents[0]?.attempts);
+  const deletion = planResourceDeletion(store.record, "project", "delete");
+  if (!deletion) throw new Error("Delete must supersede the rejected rename");
+  await store.commitResource(deletion);
+  expect(store.record.intents[0]?.state).toBe("superseded");
+  expect(store.record.intents[0]?.attempts).toEqual(rejectedRename);
+  expect(() =>
+    validateResourceRecordUpdate(store.record, {
+      ...store.record,
+      resource: { ...store.record.resource, revision: store.record.resource.revision + 1 },
+      intents: store.record.intents.map((intent) =>
+        intent.state === "superseded" ? { ...intent, state: "needs-repair" } : intent,
+      ),
+    }),
+  ).toThrow("Terminal intentions cannot restart");
+  expect(projectResourceNeedsRepair("project", store.record)).toBeNull();
+  expect(projectResourceLocation("project", store.record)).toBeNull();
+  expect(
+    await reconcileResourceNamespace({
+      key: before.resource,
+      metadata: asMetadata(store),
+      lock: immediateLock,
+      newAttemptIds: () => ({ attemptId: "delete-attempt", operationId: "delete-operation" }),
+      transport: transport({
+        submit: async () => ({
+          kind: "operation",
+          receipt: {
+            operationId: "delete-operation",
+            command: {
+              kind: "delete",
+              uri: "scratch://@/before.md",
+              expected: { kind: "file", documentId: "document" },
+            },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@/before.md" } },
+          },
+        }),
+      }),
+    }),
+  ).toBe("needs-repair");
+  expect(projectResourceLocation("project", store.record)?.path).toBe("/before.md");
+  expect(projectResourceNeedsRepair("project", store.record)?.kind).toBe("delete");
+});
+
+it("restores a rejected delete after retry and admits another delete", async () => {
+  const before = local();
+  before.resource.canonical = {
+    scheme: "scratch",
+    path: "/note.md",
+    name: "note.md",
+    workId: "work",
+    workSlug: "alpha",
+  };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [];
+  const store = new MemoryStore(before);
+  for (const number of [1, 2]) {
+    const write = planResourceDeletion(store.record, "project", `delete-${number}`);
+    if (!write) throw new Error("Delete must be admitted");
+    await store.commitResource(write);
+    expect(projectResourceLocation("project", store.record)).toBeNull();
+    expect(
+      await reconcileResourceNamespace({
+        key: before.resource,
+        metadata: asMetadata(store),
+        lock: immediateLock,
+        newAttemptIds: () => ({
+          attemptId: `attempt-${number}`,
+          operationId: `operation-${number}`,
+        }),
+        transport: transport({
+          submit: async () => ({
+            kind: "operation",
+            receipt: {
+              operationId: `operation-${number}`,
+              command: {
+                kind: "delete",
+                uri: "scratch://@alpha/note.md",
+                expected: { kind: "file", documentId: "document" },
+              },
+              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note.md" } },
+            },
+          }),
+        }),
+      }),
+    ).toBe("needs-repair");
+    expect(projectResourceLocation("project", store.record)?.path).toBe("/note.md");
+  }
+  expect(planResourceDeletion(store.record, "project", "delete-3")).not.toBeNull();
+});
+
+it("offers the latest queued file name after refusal and retries from accepted placement", () => {
+  const before = local();
+  const source = { scheme: "manuscript" as const, path: "/A.md", name: "A.md", workId: null };
+  before.resource.canonical = source;
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [];
+  const location = (record: ResourceRecord, name: string) => {
+    const write = planResourceLocation({
+      record,
+      projectId: "project",
+      intentId: name,
+      operationId: name,
+      eligibleAt: 1,
+      destination: { scheme: "manuscript", folderPath: "", name, workId: null },
+    });
+    if (!write) throw new Error("Missing location command");
+    validateResourceRecordUpdate(record, write.next);
+    return write.next;
+  };
+  const renamed = location(before, "B.md");
+  const submitted = prepareNamespaceAttempt(renamed, { attemptId: "attempt", operationId: "B.md" });
+  if (!submitted) throw new Error("Missing submission");
+  const queued = location(submitted.next, "C.md");
+  const received = recordNamespaceOutcome(queued, "B.md", "attempt", {
+    kind: "operation",
+    receipt: {
+      operationId: "B.md",
+      command: {
+        kind: "move",
+        sourceUri: "manuscript://A.md",
+        destinationUri: "manuscript://B.md",
+        expected: { kind: "file", nodeId: "document" },
+      },
+      result: { ok: false, error: { code: "conflict", uri: "manuscript://B.md" } },
+    },
+  });
+  if (!received) throw new Error("Missing receipt");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Missing settlement");
+  expect(settled.next.intents.map(({ state }) => state)).toEqual(["needs-repair", "cancelled"]);
+  validateResourceRecordUpdate(received.next, settled.next);
+  const reopened = structuredClone(settled.next);
+  expect(projectResourceLocation("project", reopened)).toEqual({ ...source, provisional: false });
+  const offered = projectResourceNeedsRepair("project", reopened);
+  expect(offered).toEqual({
+    intentId: "B.md",
+    kind: "set-location",
+    name: "C.md",
+  });
+  if (!offered) throw new Error("Missing offered repair");
+  // The caller retries the offered destination, keeping the original receipt as evidence.
+  const repair = planResourceLocation({
+    record: reopened,
+    projectId: "project",
+    intentId: "repair",
+    operationId: "repair",
+    eligibleAt: 1,
+    destination: { scheme: "manuscript", folderPath: "", name: offered.name, workId: null },
+  });
+  if (!repair) throw new Error("Missing repair");
+  validateResourceRecordUpdate(reopened, repair.next);
+  const retry = prepareNamespaceAttempt(repair.next, { attemptId: "retry", operationId: "repair" });
+  if (!retry) throw new Error("Missing retry");
+  expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
+    body: { path: "A.md", newName: "C.md" },
+  });
+  expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });

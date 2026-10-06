@@ -2,13 +2,12 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ResourceWorkAuthority } from "@meridian/resource-replica";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
   type DesiredIdentity,
-  type IdentityDestination,
+  destinationWorkAuthority,
   identityDestination,
   tabLocation,
 } from "./identity-location";
@@ -16,7 +15,9 @@ import {
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
-export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
+export type IdentityCommitOutcome =
+  /** `operationId` names the move's receipt; absent when the document queued or nothing changed. */
+  { status: "committed"; operationId?: string } | { status: "error"; message: string };
 
 /** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
@@ -71,21 +72,6 @@ export function deriveIdentityCommitPlan(
   return { kind: "commit", desired };
 }
 
-/**
- * The Work authority a destination's placement carries: none, or a named Work
- * with its slug, which the namespace request needs to sync. Null when the
- * named Work is not in the Works list, so the commit fails on the document
- * instead of queuing a placement that can never sync.
- */
-function identityWorkAuthority(
-  destination: IdentityDestination,
-  works: readonly { id: string; slug: string | null }[] | null | undefined,
-): ResourceWorkAuthority | null {
-  if (!destination.workId) return { workId: null };
-  const slug = works?.find((work) => work.id === destination.workId)?.slug;
-  return slug ? { workId: destination.workId, workSlug: slug } : null;
-}
-
 export function useIdentityCommit({
   projectId,
   tab,
@@ -102,7 +88,7 @@ export function useIdentityCommit({
   ) => void;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
   const resources = useAccountResourceReplica();
-  const { works } = useWorks(projectId);
+  const { works, noWork } = useWorks(projectId);
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
     if (plan.kind === "no-op") return { status: "committed" };
@@ -113,7 +99,7 @@ export function useIdentityCommit({
         : await resources.keyForDocument(projectId, tab.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
-      const authority = identityWorkAuthority(destination, works);
+      const authority = destinationWorkAuthority(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
         scheme: destination.scheme,
@@ -129,11 +115,14 @@ export function useIdentityCommit({
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
-          routeWorkId: destination.workId ?? editorWorkId,
+          routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,
       );
-      return { status: "committed" };
+      return {
+        status: "committed",
+        ...(ownership.operationId ? { operationId: ownership.operationId } : {}),
+      };
     } catch {
       return { status: "error", message: t`Couldn't save this document's home. Try again.` };
     }

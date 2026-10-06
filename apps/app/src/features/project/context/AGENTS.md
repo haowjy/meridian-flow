@@ -1,7 +1,8 @@
 # features/project/context — Context file tree (desktop + mobile)
 
 Explorer surfaces for project documents (`manuscript://`, `kb://`, `user://`,
-`unfiled://`). Scratch/Uploads are chat resources, not ordinary Editor tabs;
+`unfiled://`). Scratch documents can open Editor tabs through links and Work Files;
+Uploads remain chat resources, not ordinary Editor tabs;
 reference/tool vocabulary still includes them. `ContextTreePanel` renders the recursive tree in the
 desktop sidebar and phone navigation drawer; the phone Files destination uses
 one-folder-per-screen drill-in (`MobileContextBrowser`).
@@ -11,10 +12,10 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 ## Mental model
 
 A **browse surface** over the account resource replica. The replica owns durable
-resource descriptors, catalog checkpoints, local content access, and file namespace
-work. React Query delivers acquisition results to consumers; it is not a second
-catalog owner. Folder commands and excluded chat resources still use the direct
-context API.
+resource descriptors, catalog checkpoints, local content access, and file and folder
+namespace work. React Query delivers acquisition results to consumers; it is not a second
+catalog owner. Renames of files and folders are admitted locally and dispatched in
+the background; folder creation and deletion still use the direct context API.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files

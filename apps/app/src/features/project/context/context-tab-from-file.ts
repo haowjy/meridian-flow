@@ -3,34 +3,31 @@
  *
  * Keeps desktop and phone context navigation on the same tab construction path
  * so file classification, schema type, and viewer metadata cannot drift between
- * shells.
+ * shells. Work-scoped tabs retain their owner row id, including No Work.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
+  type FolderNamespaceRecord,
   projectResourceLocation,
   type ResourceRecord,
   type ResourceWorkAuthority,
+  rebaseFolderResourceLocation,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 import type { ContextTab } from "@/client/stores";
 
-/**
- * The Work an Editor tab carries: a named Work's id. No Work's documents carry
- * none, because the No Work Editor names no Work. A Work id always states its
- * slug (`ResourceWorkAuthority`, and the server's document authority), and
- * only the No Work row's is null.
- */
+/** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
-  return location.workId && location.workSlug ? location.workId : undefined;
+  return location.workId ?? undefined;
 }
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
-  workId?: string | null,
+  workId?: string,
 ): ContextTab {
   if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
     return {
@@ -40,6 +37,8 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
+  if (isWorkScopedProjectContextScheme(scheme) && !workId)
+    throw new Error("Work-scoped tabs require a Work row id");
   const base = {
     documentId: file.documentId,
     scheme,
@@ -72,12 +71,28 @@ export function contextTabFromFile(
   };
 }
 
+/** Where the writer sees a document: its own placement, then every folder move above it. */
+function resourcePlacement(
+  projectId: string,
+  record: ResourceRecord,
+  folders: readonly FolderNamespaceRecord[],
+) {
+  const location = projectResourceLocation(projectId, record);
+  return (
+    location && {
+      ...rebaseFolderResourceLocation(projectId, location, folders),
+      provisional: location.provisional,
+    }
+  );
+}
+
 /** One optimistic tab projection for a durable editable resource. */
 export function contextTabFromResource(
   projectId: string,
   record: ResourceRecord,
+  folders: readonly FolderNamespaceRecord[],
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
-  const location = projectResourceLocation(projectId, record);
+  const location = resourcePlacement(projectId, record, folders);
   if (!location) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
@@ -129,6 +144,7 @@ export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
+  folders: readonly FolderNamespaceRecord[],
 ): ResourceTabProjection {
   const record =
     (tab.resourceHandle
@@ -142,7 +158,7 @@ export function projectResourceTab(
       generation: record.resource.lifecycle.generation,
     };
   if (record.resource.content.kind === "unacquired") {
-    const location = projectResourceLocation(projectId, record);
+    const location = resourcePlacement(projectId, record, folders);
     if (!location || tab.kind === "new") return { kind: "removed" };
     const { resourceHandle: _resourceHandle, workId: _workId, ...existing } = tab;
     const projected = {
@@ -156,7 +172,7 @@ export function projectResourceTab(
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
-  const projected = contextTabFromResource(projectId, record);
+  const projected = contextTabFromResource(projectId, record, folders);
   return projected
     ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
     : { kind: "removed" };

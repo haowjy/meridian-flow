@@ -33,7 +33,7 @@ function record(): ResourceRecord {
 }
 
 it("projects a server-backed rename without claiming a local resource session", () => {
-  expect(projectResourceTab("project", serverTab, [record()])).toEqual({
+  expect(projectResourceTab("project", serverTab, [record()], [])).toEqual({
     kind: "projected",
     resourceHandle: "catalog:document",
     tab: { ...serverTab, path: "/New.md", name: "New.md", provisionalName: false },
@@ -54,7 +54,7 @@ it("reconciles a member whose recorded handle no longer owns its current documen
     schema: "v0.5",
   };
 
-  expect(projectResourceTab("project", staleMember, [current])).toEqual({
+  expect(projectResourceTab("project", staleMember, [current], [])).toEqual({
     kind: "projected",
     resourceHandle: "catalog:document",
     tab: {
@@ -71,7 +71,7 @@ it("turns a settled resource delete into generation-bearing terminal evidence", 
   const deleted = record();
   deleted.resource.lifecycle = { kind: "terminal", generation: "9", transitionId: "delete" };
 
-  expect(projectResourceTab("project", serverTab, [deleted])).toEqual({
+  expect(projectResourceTab("project", serverTab, [deleted], [])).toEqual({
     kind: "terminal",
     documentIds: ["document"],
     generation: "9",
@@ -97,7 +97,7 @@ it("preserves viewer classification while projecting its namespace", () => {
     workId: null,
   };
 
-  expect(projectResourceTab("project", viewer, [image])).toMatchObject({
+  expect(projectResourceTab("project", viewer, [image], [])).toMatchObject({
     kind: "projected",
     tab: {
       kind: "viewer",
