@@ -15,7 +15,7 @@ export type ToolCommand =
   | "redo"
   | "search"
   | "list"
-  | "invoke"
+  | "skill"
   | "work-read"
   | "work-create"
   | "work-update"
@@ -33,8 +33,8 @@ export function toolCommand(tool: ToolView): ToolCommand {
       return "search";
     case "ls":
       return "list";
-    case "invoke":
-      return "invoke";
+    case "skill":
+      return "skill";
     case "work":
       return workToolCommand(tool);
     default:
@@ -42,7 +42,7 @@ export function toolCommand(tool: ToolView): ToolCommand {
   }
 }
 
-/** The server's receipt for one `work` command: its category, one factual line already written in Work names (never slugs), and — for mutations — the inverse that would put things.... */
+/** The server's facts for one `work` mutation (Work names before and after, never slugs) and the inverse that would undo it; the app writes the line from them. */
 export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
@@ -64,36 +64,23 @@ function workReceiptOrNone(tool: ToolView): WorkReceipt[] {
 }
 
 function workToolCommand(tool: ToolView): ToolCommand {
-  const command = stringInput(toolInputObject(tool), "command");
-  // The receipt's category is the server's own classification of what
-  // happened, so it wins when present — a result-only view has no input to
-  // classify from. The input command then refines a mutation to its exact
-  // claim; without it a mutation stays at the update verb, which the receipt
-  // line corrects on screen anyway.
-  const category = workReceipt(tool)?.category ?? workCategoryFromInput(command);
-  if (category === "read") return "work-read";
-  if (category === "binding") return "work-switch";
-  if (category !== "mutate") return "unknown";
-  if (command === "create") return "work-create";
-  if (command === "delete") return "work-delete";
-  return "work-update";
-}
-
-function workCategoryFromInput(
-  command: string | undefined,
-): WorkReceipt["category"] | "read" | null {
+  // The receipt is the server's record of what changed, so its operation wins;
+  // a result-only view has no input to classify from.
+  const command = workReceipt(tool)?.operation ?? stringInput(toolInputObject(tool), "command");
   switch (command) {
     case "list":
     case "show":
-      return "read";
+      return "work-read";
     case "switch":
-      return "binding";
+      return "work-switch";
     case "create":
+      return "work-create";
     case "update":
+      return "work-update";
     case "delete":
-      return "mutate";
+      return "work-delete";
     default:
-      return null;
+      return "unknown";
   }
 }
 
@@ -153,6 +140,19 @@ export function toolInputObject(tool: ToolView): Record<string, JsonValue> {
 export function stringInput(input: Record<string, JsonValue>, field: string): string | undefined {
   const value = input[field];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** A file inside a skill package: `skills://<skill>/<path>`. */
+type SkillFile = { skill: string; path: string };
+
+/**
+ * The skill a `skills://` path belongs to, and the file's path inside it.
+ * `skills://` addresses no writer document, so it never parses as a context URI.
+ */
+export function skillFile(path: string): SkillFile | null {
+  const match = path.trim().match(/^skills:\/\/([^/]+)\/(.+)$/);
+  if (!match?.[1] || !match[2]) return null;
+  return { skill: match[1], path: match[2] };
 }
 
 export function humanizeSkillSlug(slug: string): string {

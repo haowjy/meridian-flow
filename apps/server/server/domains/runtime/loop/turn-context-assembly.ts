@@ -52,7 +52,7 @@ import {
   type ImageInclusionDecision,
   projectImageBlocksForModel,
 } from "./image-context.js";
-import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
+import type { ToolPolicy } from "./permissions/tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -61,11 +61,24 @@ function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
   return Array.isArray(value) ? (value as unknown as Tool[]) : null;
 }
 
+/**
+ * A `/skill` after the bake offers `skill` (D64), which the frozen list can't
+ * know. Live policy adds it once the binding records an invocation, and
+ * invocations are never removed, so the list changes once and stays stable.
+ */
+function withInvokedSkillTool(baked: Tool[], live: Tool[]): Tool[] {
+  const isSkill = (tool: Tool) => tool.type === "function" && tool.name === "skill";
+  if (baked.some(isSkill)) return baked;
+  const skill = live.find(isSkill);
+  return skill ? [...baked, skill] : baked;
+}
+
 export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
+  threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
@@ -96,7 +109,7 @@ export interface AssembledNextTurnContext {
   agentSlug: string | null;
   systemPrompt: string;
   tools: FunctionTool[];
-  policy: EffectiveToolPolicy;
+  policy: ToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
   baked: boolean;
@@ -138,6 +151,7 @@ export async function composeLivePromptBake(
     basePrompt: agentContext.agentBody,
     appendPrompt: agentContext.appendPrompt,
     workContext,
+    permissionGuidance: agentContext.permissionGuidance,
     availableSkills,
     preloadedSkills,
     namedSubagents,
@@ -164,6 +178,7 @@ export async function assembleNextTurnContext(
   const agentContext = await resolveAgentThreadTurnContext({
     thread,
     agentRevisions: input.agentRevisions,
+    threads: input.threads,
     toolRegistry: input.toolRegistry,
     baseTools: input.baseTools,
   });
@@ -185,7 +200,7 @@ export async function assembleNextTurnContext(
     );
     if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
     systemPrompt = bake.composedSystemPrompt;
-    tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
+    tools = withInvokedSkillTool(toolsFromBakedJson(bake.bakedTools) ?? tools, agentContext.tools);
   } else {
     const { bakeContent, bakedPrompt } = await composeLivePromptBake(input, agentContext);
     if (input.persistBake && input.bakeInitialPrompt) {

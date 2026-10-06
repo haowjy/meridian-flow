@@ -50,7 +50,10 @@ describe("ContextFS drafted-source effective view", () => {
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme,
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
-      threadView: { threadId: THREAD_ID, draftMode: true },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
@@ -90,7 +93,6 @@ describe("ContextFS drafted-source effective view", () => {
         path: "draft-created.md",
         documentId: CREATED_DOC_ID,
         revision: "test-revision",
-        version: "draft",
         matches: [{ excerpt: "new branch bytes", blockHash: "createdhash" }],
         matchCount: 1,
       },
@@ -125,7 +127,10 @@ describe("ContextFS drafted-source effective view", () => {
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
-      threadView: { threadId: THREAD_ID, draftMode: true },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),

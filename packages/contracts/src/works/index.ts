@@ -1,9 +1,7 @@
 export type AiWriteMode = "direct" | "draft";
 
-export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
-
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
-import type { WorkBindingReceiptState } from "./receipts.js";
+import type { WorkReceiptState } from "./receipts.js";
 import type { WorkSlug } from "./work-slug.js";
 
 export interface Work {
@@ -94,19 +92,19 @@ export type RebindThreadWorkError =
 
 export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 
+/** One side of a thread's Work rebind. */
+export type WorkBindingState = WorkReceiptState & {
+  workId: WorkId;
+  slug: WorkSlug | null;
+  aiWriteMode: AiWriteMode;
+};
+
 /** Authoritative result shared by writer and model Work-rebind adapters. */
 export interface RebindThreadWorkResult {
   threadId: ThreadId;
-  before: WorkBindingReceiptState;
-  after: WorkBindingReceiptState;
+  before: WorkBindingState;
+  after: WorkBindingState;
   changed: boolean;
-  receipt: {
-    operation: "switch";
-    category: "binding";
-    before: WorkBindingReceiptState;
-    after: WorkBindingReceiptState;
-    inverse: null;
-  };
 }
 
 export interface RebindThreadWorkResponse extends RebindThreadWorkResult {

@@ -31,7 +31,7 @@ type FakeCommitOptions = {
  * A core whose methods are spies. `name` tags its staged document and the value
  * `withResponseDocument` resolves to, so a test can tell which core answered.
  */
-export function createFakeAgentEditCore(
+function createFakeAgentEditCore(
   name: string,
   options: { onWrite?(command: WrittenCommand, context: { threadId?: string }): void } = {},
 ) {
@@ -74,7 +74,7 @@ export function createFakeAgentEditCore(
  * no peer until `pullThreadPeer` creates one under a Work draft, and owns undo
  * history there only once `recordDraftedWrite` lands an agent row.
  */
-export function createFakeReversalHistory() {
+function createFakeReversalHistory() {
   const peers = new Map<string, string>();
   const branches = new Map<string, { upstreamBranchId: string | null; generation: number }>();
   const rows: BranchJournalRow[] = [];
@@ -101,6 +101,11 @@ export function createFakeReversalHistory() {
 
   return {
     reader,
+    /** The live journal holds no writes here: live undo history is the live core's. */
+    liveHistory: {
+      activeWriteSummary: async () => [],
+      readReversals: async () => [],
+    },
     pullThreadPeer: vi.fn(async (input: { documentId: DocumentId; threadId: ThreadId }) => {
       const peerKey = key(input.documentId, input.threadId);
       if (!peers.has(peerKey)) {

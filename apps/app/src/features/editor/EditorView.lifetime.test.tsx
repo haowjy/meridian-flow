@@ -43,6 +43,7 @@ function sessionFor(roomKey: string): DocumentSession {
     room: { kind: "live", documentId: roomKey },
     status: "detached",
     connectionState: null,
+    access: "edit",
     localPersistenceSynced: true,
     adoptionStalled: false,
     schemaFence: null,
@@ -57,6 +58,7 @@ function sessionFor(roomKey: string): DocumentSession {
     awareness,
     presence: createLocalPresence(awareness),
     markerStore: new SessionMarkerStore("writer"),
+    refusedLocalEdits: () => false,
     whenLocalPersistenceSynced: () =>
       sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),
     whenSynced: () => sessionHorizons.get(roomKey)?.firstServerSync ?? Promise.resolve(),

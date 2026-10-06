@@ -3,7 +3,7 @@
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { BranchPeerShadowAccess } from "../collab/index.js";
-import { destination } from "../file-policy/index.js";
+import { sourceDestination } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
 import {
   type ThreadRepository,
@@ -28,7 +28,8 @@ export function createDocumentRevisions(deps: {
       const revisions = new Map<string, string | null>();
       // Archive restricts writes, not the revision reads used by summaries and compaction.
       const valid = thread && !thread.deletedAt && work && !work.deletedAt;
-      const draftMode = work ? threadExecutionContext(work).draftOwner !== null : false;
+      const draftOwner = work ? threadExecutionContext(work).draftOwner : null;
+      const draftWork = draftOwner && work ? { id: draftOwner.workId, slug: work.slug } : null;
       let membership: Set<string> | undefined;
       for (const documentId of new Set(documentIds)) {
         let revision: string | null = null;
@@ -42,7 +43,7 @@ export function createDocumentRevisions(deps: {
             source?.kind === "available" ? parseUnifiedContextUri(source.entry.uri) : null;
           if (parsed?.ok) {
             // The revision of the version this thread's writes change, per document (D14, D20).
-            const drafted = destination(parsed.value.scheme, draftMode) === "draft";
+            const drafted = sourceDestination(parsed.value.scheme, draftWork).kind === "draft";
             let visible = true;
             if (drafted) {
               membership ??= new Set(

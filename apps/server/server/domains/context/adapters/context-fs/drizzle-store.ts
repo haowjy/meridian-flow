@@ -8,7 +8,6 @@ import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
-  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -75,7 +74,7 @@ export async function notifyMembershipObserver(
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        await observer[method](documentId);
         resolve();
       } catch (cause) {
         reject(cause);

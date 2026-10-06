@@ -8,6 +8,10 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -43,13 +47,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
       await import("../../domains/projects/index.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { currentDrizzleDb, runInDrizzleTransaction, runOutsideDrizzleTransaction } =
       await import("../../shared/drizzle-transaction.js");
-    const { lockDocumentMutation } = await import(
-      "../../domains/collab/adapters/drizzle-document-mutation-lock.js"
-    );
+    const { lockDocumentMutation } = await import("../../shared/document-mutation-lock.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000b01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000b02";
@@ -65,10 +66,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture() {
       const collab = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -100,6 +101,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         works: createDrizzleProjectWorkRepository({
           db,
+          fileAccessChanges: createLocalFileAccessChanges(),
           projectionMutation: createTestWorkProjectionMutation(db),
         }),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),

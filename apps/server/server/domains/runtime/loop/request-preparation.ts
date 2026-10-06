@@ -96,6 +96,7 @@ async function prepareBaseRequest(
     turns: input.turns,
     blocks,
     agentRevisions: input.deps.agentRevisions,
+    threads: input.deps.repos.threads,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,

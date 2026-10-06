@@ -21,8 +21,8 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
-import { createDocumentCreationAggregate } from "../../../collab/index.js";
-import { destination } from "../../../file-policy/index.js";
+import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
+import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
@@ -46,6 +46,7 @@ import type { ContextCommandTransaction } from "../../ports/context-command-tran
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextCreateUntitledDocumentOptions,
+  ContextListOptions,
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
@@ -751,7 +752,10 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  async list(path: string): Promise<Result<AdapterFileEntry[], AdapterFault>> {
+  async list(
+    path: string,
+    options?: ContextListOptions,
+  ): Promise<Result<AdapterFileEntry[], AdapterFault>> {
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folderId = await this.findFolderId(path.split("/").filter(Boolean));
     if (folderId === MISSING) return Ok([]);
@@ -784,6 +788,8 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
+              // The listing query already loaded the projection, so a count costs no query.
+              ...(options?.wordCounts ? { wordCount: countWords(doc.markdown) } : {}),
             }
           : {
               editable: false as const,
@@ -816,7 +822,6 @@ export class ContextFS implements ContextSchemeAdapter {
         path: row.path,
         documentId: row.document.id,
         revision: read.value.revision,
-        version: this.threadView()?.version ?? "live",
         ...match,
       });
     }
@@ -849,7 +854,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.readView;
     if (!view) return null;
     // Without a separate draft both versions are the same document (D3).
-    const ownVersion = destination(this.scheme, view.draftMode);
+    const ownVersion = sourceDestination(this.scheme, view.draftWork).kind;
     return {
       threadId: view.threadId,
       responseId: view.responseId,
@@ -918,7 +923,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.manifestView;
     if (!view) return null;
     // A live view lists the live manifest and never touches a draft.
-    const live = this.readView?.version === "live" && this.readView.draftMode;
+    const live = this.readView?.version === "live" && this.readView.draftWork !== null;
     try {
       const membership = await this.documentSync.resolveManifestMembership(
         live

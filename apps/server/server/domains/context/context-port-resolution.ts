@@ -5,6 +5,7 @@
 import type { DocumentVersion } from "@meridian/agent-edit";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
 import type { ContextPort } from "./ports/context-port.js";
@@ -15,14 +16,14 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** Whether the thread's Work drafts AI writes. */
-  primaryDraftMode: boolean;
+  /** The thread's Work when it drafts AI writes; null in auto-apply. */
+  primaryDraftWork: WorkRef | null;
 }
 
 export interface ThreadContextResolutionDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -49,13 +50,17 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
-  const primaryWork = projectWorks.find((work) => work.id === primaryMembership?.workId);
+  // By id: the project listing leaves out No Work, which can be in draft mode too.
+  const primaryWork = primaryMembership
+    ? await deps.works.findById(primaryMembership.workId)
+    : null;
   return {
     thread,
     primaryWorkId: primaryMembership?.workId ?? null,
     workAuthorities,
     primaryWorkAuthority,
-    primaryDraftMode: primaryWork?.aiWriteMode === "draft",
+    primaryDraftWork:
+      primaryWork?.aiWriteMode === "draft" ? { id: primaryWork.id, slug: primaryWork.slug } : null,
   };
 }
 
@@ -80,7 +85,7 @@ export function contextPortForThread(
     {
       threadId: resolution.thread.id,
       responseId: options.responseId,
-      draftMode: options.liveWrites ? false : resolution.primaryDraftMode,
+      draftWork: options.liveWrites ? null : resolution.primaryDraftWork,
       ...(options.version ? { version: options.version } : {}),
     },
   );
@@ -88,7 +93,7 @@ export function contextPortForThread(
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 

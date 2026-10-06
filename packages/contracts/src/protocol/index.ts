@@ -47,6 +47,7 @@ export * from "./context-operation.js";
 export * from "./document-links.js";
 export * from "./document-revision.js";
 export * from "./event-seq.js";
+export * from "./file-access.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
 export * from "./mock-model-script.js";

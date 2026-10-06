@@ -21,8 +21,9 @@ describe("renderAgentEditResult", () => {
       [
         "status: success; path: chapter.md; blocks: 1; version: live; format: outline",
         "",
-        "e5f6|## Arena",
-        'read({"path": "chapter.md#e5f6", "version": "live"})',
+        'Read a section with read({"path": "chapter.md#<slug>", "version": "live"}).',
+        "",
+        "e5f6|## Arena  #e5f6",
       ].join("\n"),
     );
   });

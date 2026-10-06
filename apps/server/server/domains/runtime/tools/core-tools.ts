@@ -31,8 +31,12 @@ import {
 import { z } from "zod";
 import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
 import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
+import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
+import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import { renderWorkResult } from "./work-result.js";
 
 /** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
 const WorkRefSchema = z
@@ -77,16 +81,25 @@ const WorkStatusSchema = z
     return status;
   });
 
+const WorkVerboseSchema = z
+  .boolean()
+  .describe("Add dates. Leave it off unless you need them.")
+  .optional();
+
 const WorkSelectorSchema = z.object({
   work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
 });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
-    .object({ command: z.literal("list"), archived: z.boolean().optional() })
+    .object({
+      command: z.literal("list"),
+      archived: z.boolean().optional(),
+      verbose: WorkVerboseSchema,
+    })
     .strict()
     .describe("List Works: active, or archived when archived is true."),
-  WorkSelectorSchema.extend({ command: z.literal("show") })
+  WorkSelectorSchema.extend({ command: z.literal("show"), verbose: WorkVerboseSchema })
     .strict()
     .describe("Show one Work."),
   z
@@ -109,7 +122,9 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     .describe("Change a Work's name, goal or status."),
   WorkSelectorSchema.extend({ command: z.literal("archive") })
     .strict()
-    .describe("Archive a Work. Its files and goal become read-only; its chats continue."),
+    .describe(
+      "Archive a Work. Its scratch://, draft and goal become read-only; its chats continue.",
+    ),
   WorkSelectorSchema.extend({ command: z.literal("unarchive") })
     .strict()
     .describe("Unarchive a Work so it can be changed again."),
@@ -119,42 +134,45 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("switch"),
-      target: WorkRefSchema.nullable()
+      work: WorkRefSchema.nullable()
         .optional()
         .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
     })
     .strict()
-    .describe("Move this conversation to another Work."),
+    .describe("Move this conversation to another Work. Needs the user's approval."),
 ]);
 
 export type WorkCommand = z.output<typeof WorkCommandSchema>;
-export type WorkCommandCategory = "read" | "mutate" | "binding";
 
-export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
-  if (command.command === "list" || command.command === "show") return "read";
-  if (command.command === "switch") return "binding";
-  return "mutate";
-}
-
-export const LsToolInputSchema = z
+const LsToolInputSchema = z
   .object({
     path: z
       .string()
       .min(1)
       .describe("Folder path or context URI; omit to list the roots.")
       .optional(),
+    verbose: z
+      .boolean()
+      .describe(
+        "Add each file's size and when it was last edited. Leave it off unless you need them.",
+      )
+      .optional(),
     version: DocumentVersionSchema.optional(),
   })
   .strict();
 export type LsToolInput = z.output<typeof LsToolInputSchema>;
 
-export const SearchToolInputSchema = z
+const SearchToolInputSchema = z
   .object({
     pattern: z.string().min(1).describe("Literal text, not a regex."),
     scope: z
       .string()
       .min(1)
       .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
+      .optional(),
+    verbose: z
+      .boolean()
+      .describe("Show each matching block in full. Leave it off unless you need it.")
       .optional(),
     version: DocumentVersionSchema.optional(),
   })
@@ -173,9 +191,17 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
-/** The document tools' handlers and error formatter return only agent-edit results. */
-function renderDocumentResult(result: unknown): string {
-  return renderAgentEditResult(result as AgentEditResultV1);
+/**
+ * The document tools' handlers and error formatter return agent-edit results,
+ * except a `skills://` read, whose text is already the model's (D52).
+ */
+/** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */
+function renderDocumentResult(tool: "read" | "write") {
+  return (result: unknown): string => {
+    if (typeof result === "string") return result;
+    if (isInvalidArgumentsResult(result)) return renderInvalidArguments(tool, result.issues);
+    return renderAgentEditResult(result as AgentEditResultV1);
+  };
 }
 
 /** Executor-owned failures in the document tools' own result protocol. */
@@ -208,7 +234,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
-      renderResult: renderDocumentResult,
+      renderResult: renderDocumentResult("read"),
     },
     {
       source: "core",
@@ -228,7 +254,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),
       ),
-      renderResult: renderDocumentResult,
+      renderResult: renderDocumentResult("write"),
     },
     {
       source: "core",
@@ -245,6 +271,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
+      renderResult: renderWorkResult,
     },
     {
       source: "core",
@@ -258,6 +285,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.ls },
       historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderLsResult,
     },
     {
       source: "core",
@@ -272,6 +300,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: searchDocumentText,
       historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderSearchResult,
     },
     {
       source: "core",

@@ -66,6 +66,8 @@ export type {
   ContextError,
   ContextFileEntry,
   ContextListEntry,
+  ContextListing,
+  ContextListOptions,
   ContextPort,
   ContextReadResult,
   ContextScheme,

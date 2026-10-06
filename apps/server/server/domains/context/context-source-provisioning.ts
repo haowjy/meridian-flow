@@ -17,7 +17,7 @@ import {
   runInDrizzleTransaction,
   setDrizzleTransactionLocal,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
 import {
@@ -183,7 +183,7 @@ export async function ensureWorkContextSource(
   scheme: WorkScopedContextFsScheme,
 ): Promise<string> {
   return runInDrizzleTransaction(db, async () => {
-    await requireLockedActiveWork(db, workId);
+    await requireLockedActiveWorks(db, [workId]);
     const activeDb = currentDrizzleDb(db) as Database;
     const existing = await findWorkContextSource(activeDb, workId, scheme);
     if (existing) return existing;
@@ -231,7 +231,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   private async mutate<T>(operation: (store: DrizzleContextDocumentStore) => Promise<T>) {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
-      if (workId) await requireLockedActiveWork(this.db, workId);
+      if (workId) await requireLockedActiveWorks(this.db, [workId]);
       return operation(await this.sourceStore());
     });
   }
@@ -336,7 +336,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   async transaction<T>(operation: () => Promise<T>) {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
-      if (workId) await requireLockedActiveWork(this.db, workId);
+      if (workId) await requireLockedActiveWorks(this.db, [workId]);
       await this.sourceStore();
       return operation();
     });

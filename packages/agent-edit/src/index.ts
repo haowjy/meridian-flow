@@ -50,6 +50,11 @@ export {
   isBlockItemId,
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
+export {
+  markdownSections,
+  normalizeRequestedSlug,
+  sectionNotFoundMessage,
+} from "./resolver/heading-sections.js";
 export type {
   DocumentCommandName,
   DocumentVersion,

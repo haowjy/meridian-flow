@@ -205,7 +205,12 @@ describe("prefix stability across a growing thread", () => {
     await agentRevisions.bindThread(
       thread0.id,
       null,
-      { model: MODEL_ID, skills: { load: [], available: [] }, namedTargets: [] },
+      {
+        model: MODEL_ID,
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
       null,
     );
 
@@ -231,6 +236,7 @@ describe("prefix stability across a growing thread", () => {
         turns: withThreadId,
         blocks: withThreadIdBlocks,
         agentRevisions,
+        threads: repos.threads,
         toolRegistry,
         gateway,
         baseTools: liveBaseTools,
@@ -285,7 +291,12 @@ describe("prefix stability across a growing thread", () => {
     const skillTurn = systemNoticeTurn(
       "turn-1-skill",
       formatInvokedSkills([
-        { slug: "story-review", description: "Review drafts.", body: "story-review body." },
+        {
+          slug: "story-review",
+          description: "Review drafts.",
+          body: "story-review body.",
+          readable: true,
+        },
       ]),
       2,
     );
@@ -468,7 +479,12 @@ describe("prefix stability across a growing thread", () => {
     await agentRevisions.bindThread(
       thread0.id,
       null,
-      { model: "no-caching-model", skills: { load: [], available: [] }, namedTargets: [] },
+      {
+        model: "no-caching-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        permission: "edit",
+      },
       null,
     );
     const thread = (await repos.threads.findById(thread0.id)) as Thread;
@@ -478,6 +494,7 @@ describe("prefix stability across a growing thread", () => {
       turns: [{ ...t1.turn, threadId: thread.id }],
       blocks: [t1.block],
       agentRevisions,
+      threads: repos.threads,
       toolRegistry: createToolRegistry(),
       gateway: {
         getDefaultModel: () => "no-caching-model",

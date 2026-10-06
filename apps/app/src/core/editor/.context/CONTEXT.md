@@ -42,6 +42,11 @@ lifetime.
 
 ## Contracts
 
+- The registry alone reacts when the server refuses a live room's pending
+  edits (4409): it drops the room, clearing its local copy. Hosts unbind while
+  `whenRefusedRoomDropped` runs and reopen after; a refused review room is
+  rebuilt by its editor. Branch rooms live in `branch-room-pool.ts` and the
+  private local-transfer facet in `local-document-session-transfers.ts`.
 - `createEditorExtensions()` is the only app-side extension assembly point for
   collaborative documents, and its TipTap schema must stay structurally equal to
   `buildDocumentSchema()`. The two are built separately and parity is not
@@ -81,8 +86,9 @@ lifetime.
     CollaborationCaret is installed. Every field changes which extensions exist
     or which shared document backs them, so `editorMountKey()` renders it into
     the React key that owns the mount, and `editorRoomKey()` names the room the
-    session registry must supply. Callers derive both from the same identity, so
-    a session swap cannot arrive without a new mount.
+    session registry must supply. A rebuilt or reopened room keeps its name, so
+    `EditorView` adds the session's Y.Doc `guid` to the key; together they
+    make a session swap arrive with a new mount.
   - `useMountedEditor()` freezes one construction bundle on first render:
     extension configuration, initial options, and the witness's document,
     horizon-degradation flag, and report callback. It manually constructs TipTap
@@ -412,8 +418,9 @@ lifetime.
   already worked.
 - Editable link clicks place a cursor instead of navigating: `openOnClick` is
   off and a plugin calls `preventDefault()` while still letting ProseMirror
-  resolve the selection. `link-url.ts` is the single normalizer for
-  writer-entered targets (http/https/mailto only).
+  resolve the selection. `normalizeLinkHref` in `links/link-target.ts` is the
+  single normalizer for writer-entered targets: web addresses, internal scheme
+  addresses and relative document paths.
 
 ## Holding a position across a remote write
 

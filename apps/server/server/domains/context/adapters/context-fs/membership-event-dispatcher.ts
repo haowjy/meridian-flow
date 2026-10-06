@@ -1,6 +1,5 @@
 /** One-attempt post-commit delivery of sorted ContextFS membership events. */
 import { randomUUID } from "node:crypto";
-import { runOutsideDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../../observability/index.js";
 
 export interface ContextDocumentMembershipObserver {
@@ -30,9 +29,7 @@ export async function dispatchMembershipEvents(input: {
   );
   const settled = await Promise.allSettled(
     events.map((event) =>
-      Promise.resolve().then(() =>
-        runOutsideDrizzleTransaction(() => input.observer?.[event.method](event.documentId)),
-      ),
+      Promise.resolve().then(() => input.observer?.[event.method](event.documentId)),
     ),
   );
   for (const [index, outcome] of settled.entries()) {

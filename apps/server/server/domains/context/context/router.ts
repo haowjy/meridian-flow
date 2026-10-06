@@ -27,6 +27,8 @@ import type {
   ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
+  ContextListing,
+  ContextListOptions,
   ContextMoveOptions,
   ContextMoveResult,
   ContextPort,
@@ -106,7 +108,6 @@ function toSearchResult(
     uri: uriFor(scheme, hit.path, authority),
     documentId: hit.documentId,
     revision: hit.revision,
-    version: hit.version,
     matches: hit.matches,
     matchCount: hit.matchCount,
     score: hit.score,
@@ -537,25 +538,32 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.mkdir(path, options));
     },
 
-    async list(uri?: string): Promise<Result<FileEntry[], ContextError>> {
+    async list(
+      uri?: string,
+      options?: ContextListOptions,
+    ): Promise<Result<ContextListing, ContextError>> {
       if (!uri) {
-        return Ok(
-          [...adapters.keys()].sort().map((scheme) => ({
+        return Ok({
+          uri: null,
+          entries: [...adapters.keys()].sort().map((scheme) => ({
             kind: "directory" as const,
             uri: `${scheme}://`,
             readonly: !(adapters.get(scheme)?.capabilities.writable ?? false),
           })),
-        );
+        });
       }
       const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, scheme, authority, path, canonical } = r.value;
 
-      const result = await callAdapter(canonical, () => adapter.list(path));
+      const result = await callAdapter(canonical, () => adapter.list(path, options));
       if (!result.ok) return result;
 
       const readonly = !adapter.capabilities.writable;
-      return Ok(result.value.map((entry) => toFileEntry(scheme, authority, entry, readonly)));
+      return Ok({
+        uri: canonical,
+        entries: result.value.map((entry) => toFileEntry(scheme, authority, entry, readonly)),
+      });
     },
 
     async search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>> {

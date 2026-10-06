@@ -20,18 +20,21 @@ over retained source revisions. It is not a fifth content or execution owner.
   a presence-sensitive definition with a versioned digest. Flat skills normalize
   to `skills.load`. Agent-specific body text becomes `systemPrompt`.
 - The canonical execution-knob schemas (effort value set + `max→xhigh` alias,
-  tool policy, tool-name alias fold, tools representation) live in
+  permission, tool-name alias fold, tool lists) live in
   `@meridian/contracts/agents` (`execution-knobs.ts`). The compiler imports them
   rather than re-declaring; authoring accepts the canonical effort set including
   `xhigh`/`none`. `domain/agent-gateway-meta.ts` sources its accepted effort set
   from the same constants and keeps only a private normalize helper.
-- Compilation accepts canonical frontmatter tools as lists or allow/deny maps.
-  TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
-  clear that channel. A disallowed-list overlay replaces all baseline denials,
-  including map-form denials; an allowed-list-only overlay retains them.
-  Authoring capability names are `read`/`edit`; `write` is the model tool name
-  and is rejected as a permission, `edit` implies `read`, and only an explicit
-  `disallowed-tools` read denial contradicts it.
+- `tools` (allow-list) and `disallowed-tools` are lists of tool names only;
+  the map form is refused. Mars aliases fold first (`Task` → `agent`), and no
+  alias may equal a Flow tool name. TOML overlays use `tools.allowed` and
+  `tools.disallowed`, each replacing its list; an explicit empty list clears
+  it. Access is `permission: read | edit` (default `edit`), never a tool:
+  `edit` and its aliases in `tools` are refused with a message naming
+  `permission`; in `disallowed-tools` they are ignored (D57).
+  Runtime support then refuses a `tools` name outside `TOOL_CATALOG` and
+  ignores an unknown `disallowed-tools` name, which denies nothing
+  ([runtime tools](../../runtime/.context/tools.md#permissions)).
 - Compilation is syntax validation. Runtime support, resource authorization,
   model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
   Unknown metadata is retained; acceptance does not establish its execution.
@@ -110,7 +113,7 @@ publication rather than silently changing those references;
 removed pristine definitions leave retained history but no future-chat selection.
 `definition-editing.ts` edits or restores one entity within that complete source.
 The skill-availability edit versions `skills.available` on the retained Agent.
-Prompt freeze and `skill()` consume that declaration in the runtime domain.
+Prompt freeze and `skills://` visibility consume that declaration in the runtime domain.
 Slash listing walks system and owner installation heads with
 `retainedPackageSkillMaps`, then account installs; it is not the bound Agent
 package and not Agent `available`. `package-export.ts` exports retained files without reconstructing source

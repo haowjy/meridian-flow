@@ -22,7 +22,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../test-support/drizzle-reset.js"
     );
-    const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { bindEditAgent, useComposedRuntimes } = await import(
+      "../test-support/composed-runtime.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -172,7 +174,67 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const loreHits = await call("search", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore.md");
       const listedLive = await call("ls", { path: "kb://", version: "live" });
-      expect(text(listedLive)).not.toContain("kb://lore.md");
+      expect(text(listedLive)).toMatch(/^kb:\/\//);
+      expect(text(listedLive)).not.toContain("lore.md");
+    });
+
+    // D40: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
+    it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
+      const script = await startWithChapter("Writer live content.");
+      const first = await script.begin();
+      await first.call("read", { path: CHAPTER });
+      await first.call("write", {
+        command: "replace",
+        path: CHAPTER,
+        find: "Writer live content.",
+        content: "Kept draft content.",
+      });
+      await first.save();
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.works.id, WORK_ID));
+
+      const { call } = await script.begin();
+      const kept = await call("read", { path: CHAPTER, version: "draft" });
+      expect(kept.result).toMatchObject({ read: { version: "draft" } });
+      expect(kept.output).toContain("Kept draft content.");
+      const destination = await call("read", { path: CHAPTER });
+      expect(destination.result).toMatchObject({ read: { version: "live" } });
+      expect(destination.output).toContain("Writer live content.");
+      const notes = await call("write", {
+        command: "create",
+        path: "scratch://notes.md",
+        content: "Notes.",
+      });
+      expect(notes.isError).toBeFalsy();
+      const noDraft = await call("read", { path: "scratch://notes.md", version: "draft" });
+      expect(noDraft.result).toMatchObject({ read: { version: "live" } });
+    });
+
+    // D31: a create or copy would make its file in the archived Work's frozen draft.
+    it("refuses a create or copy into an archived draft-mode Work with D31's copy", async () => {
+      const script = await startWithChapter("Writer live content.");
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+      const { call } = await script.begin();
+      const frozen =
+        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch @rewrite to auto-apply.';
+
+      for (const args of [
+        { command: "create", path: "manuscript://new.md", content: "Never lands." },
+        { command: "copy", from: { path: CHAPTER }, path: "manuscript://copy.md" },
+      ]) {
+        const refused = await call("write", args);
+        expect(refused.isError).toBe(true);
+        expect(refused.result).toMatchObject({
+          status: "permission_denied",
+          reason: "work_archived",
+        });
+        expect(text(refused)).toContain(frozen);
+      }
     });
 
     it("copies the section a #fragment names (D49)", async () => {
@@ -243,6 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!written.ok) throw new Error(JSON.stringify(written.error));
 
       // Outside a reply, as a tool call with no model response.
+      await bindEditAgent(runtime, THREAD.threadId);
       const copied = await runtime.app.toolExecutor.executeTool(
         {
           id: crypto.randomUUID(),

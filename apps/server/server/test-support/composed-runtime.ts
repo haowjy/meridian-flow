@@ -14,14 +14,14 @@ import { createNoopEventSink } from "../domains/observability/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
 
-export type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
-export type RuntimeThread = { threadId: string; turnId: string };
+type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
+type RuntimeThread = { threadId: string; turnId: string };
 export type ToolCall = (
   name: string,
   args: Record<string, unknown>,
 ) => Promise<ToolExecutionResult>;
 /** Calls a tool and returns its text, throwing when the tool reports an error. */
-export type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
+type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
 
 async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({
@@ -41,6 +41,22 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   ports.documentSync.bindHocuspocus(hocuspocus);
   const app = composeAppServices(ports);
   return { ports, hocuspocus, app };
+}
+
+/** Tool calls read the thread's Agent binding for its permission (file-access §8). */
+export async function bindEditAgent(runtime: ComposedRuntime, threadId: string): Promise<void> {
+  if (await runtime.ports.agentRevisions.readThreadBinding(threadId)) return;
+  await runtime.ports.agentRevisions.bindThread(
+    threadId,
+    null,
+    {
+      model: "mock-model",
+      skills: { load: [], available: [] },
+      namedTargets: [],
+      permission: "edit",
+    },
+    null,
+  );
 }
 
 /** Unloads every open room, so pending stores land before the case ends. */
@@ -102,6 +118,7 @@ export function useComposedRuntimes(db: () => Database) {
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
     const begin = async () => {
+      await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
       const call: ToolCall = (name, args) =>
         runtime.app.toolExecutor.executeTool(

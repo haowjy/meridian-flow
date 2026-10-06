@@ -1,6 +1,9 @@
 /** Unit contract for thread-peer response transaction delegation and ownership settlement. */
+
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { asLiveAgentEditCore } from "./domain/agent-edit-cores.js";
 import { createThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
 import {
@@ -20,10 +23,14 @@ function createCore(
     liveUtilityCore: asLiveAgentEditCore(cores.liveCore.asCore()),
     createThreadCore: () => cores.threadCore.asCore(),
     reversalHistory: cores.history.reader,
+    liveHistory: cores.history.liveHistory,
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: cores.history.pullThreadPeer,
     commitThreadResponseAtomically,
     ...inProcessResponseTransactions,
+    fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
   return { core, ...cores };
 }
@@ -36,7 +43,7 @@ describe("thread-peer response transaction delegation", () => {
       sessionId: THREAD_ID,
       turnId: "turn-live-then-draft",
       responseId: "response-live-then-draft",
-      destination: DRAFT,
+      grant: testFileGrant(DRAFT),
     };
 
     await core.write({ command: "undo", file: "alpha.md", all: true }, context);
@@ -80,7 +87,7 @@ describe("thread-peer response transaction delegation", () => {
         sessionId: THREAD_ID,
         turnId: "turn-finalize",
         responseId,
-        destination: DRAFT,
+        grant: testFileGrant(DRAFT),
       },
     );
 
@@ -120,7 +127,7 @@ describe("thread-peer response transaction delegation", () => {
         sessionId: THREAD_ID,
         turnId: "turn-rollback",
         responseId,
-        destination: DRAFT,
+        grant: testFileGrant(DRAFT),
       },
     );
 

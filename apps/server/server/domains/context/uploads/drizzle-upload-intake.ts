@@ -10,6 +10,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type {
   ReserveUploadResult,
@@ -36,6 +37,19 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
   await currentDrizzleDb(db).execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`upload-intake:${projectId}:${intakeId}`}, 0))`,
   );
+}
+
+/** An intake's Work never changes, so it is safe to read before any lock. */
+async function readIntakeWorkId(
+  db: Database,
+  where: ReturnType<typeof and>,
+): Promise<string | null> {
+  const [row] = await currentDrizzleDb(db)
+    .select({ workId: uploadIntakes.workId })
+    .from(uploadIntakes)
+    .where(where)
+    .limit(1);
+  return row?.workId ?? null;
 }
 
 function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
@@ -69,6 +83,7 @@ async function readReservation(db: Database, projectId: string, intakeId: string
   return row ? mapRow(row.intake, row.workSlug) : null;
 }
 
+/** Runs in `reserve`, which already holds the owning Work's row lock. */
 async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: string) {
   const activeDb = currentDrizzleDb(db);
   const [project] = await activeDb
@@ -96,7 +111,6 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
         isNull(works.archivedAt),
       ),
     )
-    .for("update")
     .limit(1);
   if (!lockedRow) return null;
   const workSlug = lockedRow.isNoWork ? null : lockedRow.slug;
@@ -146,6 +160,9 @@ export function createDrizzleUploadIntakeRepository(
     async reserve(input): Promise<ReserveUploadResult> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
+        // The owning Work's row and the grants' confirmation come before any
+        // advisory lock (file-access §5).
+        await lockSeamWorks(db, input.owner.workId ? [input.owner.workId] : []);
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
@@ -249,6 +266,12 @@ export function createDrizzleUploadIntakeRepository(
         );
     },
     async lockForFinalize(projectId, intakeId) {
+      const workId = await readIntakeWorkId(
+        db,
+        and(eq(uploadIntakes.projectId, projectId as never), eq(uploadIntakes.intakeId, intakeId)),
+      );
+      // Work row and grant confirmation before the intake lock (file-access §5).
+      await lockSeamWorks(db, workId ? [workId] : []);
       await lockIntakeKey(db, projectId, intakeId);
       const reservation = await readReservation(db, projectId, intakeId);
       if (!reservation) throw new Error("Upload reservation unavailable during finalize");
@@ -280,21 +303,23 @@ export function createDrizzleUploadIntakeRepository(
     },
     async deleteDraft(input, actorUserId) {
       return runInDrizzleTransaction(db, async () => {
+        const identity = and(
+          eq(uploadIntakes.intakeId, input.intakeId),
+          eq(uploadIntakes.documentId, input.documentId as never),
+          sql`exists (
+            select 1 from projects
+            where projects.id = ${uploadIntakes.projectId}
+              and projects.user_id = ${actorUserId}
+              and projects.deleted_at is null
+          )`,
+        );
+        // Work row and grant confirmation before the intake row (file-access §5).
+        const workId = await readIntakeWorkId(db, identity);
+        await lockSeamWorks(db, workId ? [workId] : []);
         const [row] = await currentDrizzleDb(db)
           .select()
           .from(uploadIntakes)
-          .where(
-            and(
-              eq(uploadIntakes.intakeId, input.intakeId),
-              eq(uploadIntakes.documentId, input.documentId as never),
-              sql`exists (
-                select 1 from projects
-                where projects.id = ${uploadIntakes.projectId}
-                  and projects.user_id = ${actorUserId}
-                  and projects.deleted_at is null
-              )`,
-            ),
-          )
+          .where(identity)
           .for("update")
           .limit(1);
         if (!row) return { result: { kind: "identity_mismatch" } };

@@ -21,9 +21,7 @@ export {
   type LsToolInput,
   type SearchToolInput,
   type WorkCommand,
-  type WorkCommandCategory,
   WorkCommandSchema,
-  workCommandCategory,
 } from "./core-tools.js";
 export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
 export { createInspectionToolRegistrations } from "./inspection-tools.js";
@@ -33,16 +31,21 @@ export {
   invalidArgumentsResult,
   renderInvalidArguments,
 } from "./invalid-arguments.js";
-export { createSkillToolRegistrations } from "./skill-tool.js";
+export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
+export {
+  createSkillToolRegistrations,
+  readSkill,
+  refuseSkillSearch,
+  refuseSkillWrite,
+  skillsRootEntries,
+} from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,
   SpawnInputSchema,
   type SpawnToolArgs,
   type ThreadMessageArgs,
-  ThreadMessageInputSchema,
   type ThreadMessageMode,
   type ThreadReportArgs,
-  ThreadReportInputSchema,
 } from "./spawn-tools.js";
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
@@ -58,3 +61,4 @@ export type {
   ToolRegistration,
   ToolRegistry,
 } from "./types.js";
+export type { ModelWork, WorkShowResult } from "./work-result.js";

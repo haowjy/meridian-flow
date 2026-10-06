@@ -40,12 +40,13 @@ describe("read selection", () => {
     const outline = await ctx.core.read({ file: "chapter.md", format: "outline" }, context);
     const text = renderAgentEditResult(outline.result);
     const cafeHash = hashAt(ctx.liveDoc("chapter.md"), 6);
-    expect(text.split("\n").filter((line) => line.startsWith("read("))).toEqual([
-      'read({"path": "chapter.md#chapter"})',
-      'read({"path": "chapter.md#the-arena"})',
-      'read({"path": "chapter.md#the-arena-1"})',
+    expect(text).toContain('Read a section with read({"path": "chapter.md#<slug>"}).');
+    expect(text.split("\n").flatMap((line) => line.match(/ {2}(#\S+)$/u)?.[1] ?? [])).toEqual([
+      "#chapter",
+      "#the-arena",
+      "#the-arena-1",
       // A hex-shaped slug would resolve as a block hash first, so it keeps the hash.
-      `read({"path": "chapter.md#${cafeHash}"})`,
+      `#${cafeHash}`,
     ]);
   });
 

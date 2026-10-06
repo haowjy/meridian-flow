@@ -78,7 +78,7 @@ export interface WriteReversal {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
 }
 
-export function emptyAfterUndoMessage(path: string): string {
+function emptyAfterUndoMessage(path: string): string {
   return `The document at ${path} is empty but still exists until document delete ships.`;
 }
 

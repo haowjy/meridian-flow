@@ -24,14 +24,15 @@
  */
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem, skillBodyMetadata } from "../../threads/index.js";
+import { skillFileHeader } from "./skill-files.js";
 
 /** One activated skill's loaded body, ready to render onto its hidden body turn. */
 export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
-  /** Files the model can open with `skill`; empty when it can't load this skill. */
-  resources?: readonly string[];
+  /** Whether the model can read the skill's files; if so the body takes `skill`'s header (D58). */
+  readable: boolean;
 }
 
 /** Metadata stamped on the hidden turn carrying activated skill bodies. */
@@ -67,26 +68,9 @@ export function formatInvokedSkills(skills: readonly ActivatedSkillBody[]): stri
 function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
   return [
-    `skill invoked: ${skill.slug}`,
+    skill.readable ? skillFileHeader(skill.slug, "SKILL.md") : `skill invoked: ${skill.slug}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
-    withSkillResources(skill),
-  ].join("\n");
-}
-
-/** A skill body followed by one copyable `skill` call per resource, the form every body load shares. */
-export function withSkillResources(skill: {
-  slug: string;
-  body: string;
-  resources?: readonly string[];
-}): string {
-  if (!skill.resources?.length) return skill.body;
-  return [
-    skill.body.trimEnd(),
-    "",
-    "Resources:",
-    ...skill.resources.map(
-      (resource) => `skill(${JSON.stringify({ slug: skill.slug, resource })})`,
-    ),
+    skill.body,
   ].join("\n");
 }

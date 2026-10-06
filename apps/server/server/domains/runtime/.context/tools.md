@@ -10,9 +10,9 @@ tools are in [history tools](history-tools.md).
 |---|---|
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
-| `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `input` (the zod schema both published and parsed), `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, `renderResult` (typed result → the model's text), `historyKind`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
-| Core handlers | The strict `work` command union, the `read` and `write` document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`) for primaries and subagents alike; it loads a SKILL.md body only when the slug is in the thread's bound `skills.available` and `model-invocable` is not false, and returns plain text: the body, then one `skill({"slug":…,"resource":…})` call per resource file. `resource` opens a UTF-8 file under an available or preloaded skill's directory. `skills.load` bodies are baked into the first prompt ([request assembly](request-assembly.md)). No legacy `invoke` registration or mutable skill catalog participates in preparation. |
+| `ToolRegistration` | `source: "core" | "spawn"`, `definition`, `input` (the zod schema both published and parsed), `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, `renderResult` (typed result → the model's text), `historyKind`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
+| Core handlers | The strict `work` command union, the `read` and `write` document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/model-tools/` (one file per tool; `resolveToolCall` resolves the thread, its Work, the context port and the principal once per call). |
+| Skills | References are retained at binding. Skills are read-only files under `skills://<skill>/` (D52). `tools/skill-tool.ts` owns the `skill` tool and every other tool's `skills://` branch; each model tool has one hook. `skill({name})` loads one (D58): exactly `read`'s result for its `SKILL.md` (`renderSkillFile`), whose header names the file and the folder its relative paths start from; refused with the loadable names when the agent can't see it. `read` returns a file whole, one `#heading` section or `format: "outline"` (D60), with document slugs from agent-edit's `heading-sections.ts`; `in` and `around` are `invalid_arguments` (skill files have no block hashes). `ls` lists folders through `loop/skill-files.ts`; `write` and `search` refuse the scheme. Which skills a thread sees is file-policy's pure `skillLevel`, applied to one binding read per call (`readThreadSkills`): its own binding's `skills.load`, plus `skills.available` entries that are `model-invocable`, plus packaged skills the user invoked with `/skill` in that thread, which `loadUserSkillBody` pins on the binding (D64; kept by forks, not by spawned children or handoffs); anything else reads as not found. `skill` is offered only when the binding names a skill in `load` or `available` or the user invoked one (`agent-thread-context.ts`, from the binding it already reads); an agent whose listed skills are all hidden from the model keeps it and gets the refusal. `skills.load` bodies are baked into the first prompt ([request assembly](request-assembly.md)). |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, `return_result`, and `thread_report` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. `return_result` accepts Meridian document URI strings and validates them through the contracts capture schema before mapping them to `{ type: "object", uri }`. Invalid input returns a model-correctable tool error instead of aborting the child run. Neither spawn nor thread_message accepts an escalation patch. |
 | Inspection tools | `tools/inspection-tools.ts` registers `thread_ls` and `thread_history` with repository and tokenizer ports at composition (`thread_report` registers with the spawn tools); see [history tools](history-tools.md). |
 | Document text | `tools/document-text.ts` and `tools/history-summaries.ts`: each registration owns its `DocumentTextPolicy`, `historySummary` (the result after a history call line's `→`) and `historyKind` (`routine` calls are hidden in history by default); see [document text in history](document-text.md) and [history tools](history-tools.md). |
@@ -22,7 +22,15 @@ Every `ToolExecutionResult` carries `output` (what the model sees) and
 `result` on the `tool_result` block and the `tool.result` event, and every
 reader (history summaries, `thread_history`, the app) reads `result`, never
 `output` (D8, D43). With `renderResult`, `output` is its text; without, both
-are the value. Parse failures return `invalid_arguments` with `result`
+are the value. `renderResult(result, input)` gets the parsed input, so a
+`verbose` flag shapes the text, not the handler (D65). A refusal (any
+`MeridianError`, handler-owned or the executor's own) never reaches a
+renderer: `modelOutput` renders it once as its message plus the code
+(`tools/refusal.ts`; the code is left off when it's the generic `tool_error`
+or the message already holds it), and `details` stays on `result`. Results are
+short text by default: no ids, nulls, zero counts, echoed inputs or flags that
+restate the default; `verbose: true` on `ls`, `work` (`list`, `show`) and
+`search` adds the rest. Parse failures return `invalid_arguments` with `result`
 `{ error, issues }` and a rendered text. Timeout, abort, and thrown failures
 belong to the executor; it delegates those to the registration's
 `formatExecutionError` when present and otherwise uses the generic Meridian
@@ -37,19 +45,51 @@ behavior; schema-only stubs are not advertised.
 
 ## Permissions
 
-`loop/permissions/`: `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and the `work` command set. `read` is always advertised; `write` only when the existing `edit` policy allows it (until file permissions replace this, PR 2). A call to any tool the agent lacks, `write` included, is `permission_denied` with one message: `This agent has no "<tool>" tool, so it can't make this call. Tell the user you can't do this here.` `edit` also adds or removes Work mutation commands, and `advertiseTools` narrows the `work` schema, including its per-command descriptions, to the same set. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free.
+Three controls, each decided in one place (D34). An action needs the tool
+and the access.
+
+- **Tools: which verbs an agent has.** `projectToolPolicy`
+  (`loop/permissions/`) is `(tools or TOOL_CATALOG) − disallowed-tools −
+  disabled`, plus `return_result` for a subagent. It never narrows a tool's
+  commands. `TOOL_CATALOG` is the static list of every model tool;
+  `model-tool-schema.test.ts` keeps it equal to the registrations, and
+  an authoring `tools` list and spawn's `disallowed_tools` refuse any other
+  name. An unknown name in an authoring `disallowed-tools` is ignored. A call to a
+  tool the agent lacks is `permission_denied`: `This agent has no "<tool>"
+  tool. Tell the user you can't do this here.` A spawned child's tools must be
+  a subset of its parent's (`toolsBeyondParent`); the refusal names the extra
+  tools for `overrides.disallowed_tools`. `loop/permissions/tool-policy.ts`
+  holds all of it: catalog, projection, advertisement, the parent check and
+  the refusal copy.
+- **Files: what it may read or change.** The agent's `permission` (`read` or
+  `edit`, default `edit`), capped over the delegation chain, feeds the
+  [file policy](../../file-policy/.context/CONTEXT.md). Handlers ask it per
+  call; a `read` agent with `write` is refused per file except its own
+  scratch.
+- **Other actions: allow, ask or deny.** `actionPolicy(permission, action)`
+  reads the chain's effective permission (`chainPermission`, or
+  `readChainPermission` from the lighter lineage walk); every row is
+  monotone, so that is the minimum over the chain. Work changes are `deny` for a `read` chain; the
+  model's `work` switch is `ask` for everyone, refused until the writer
+  prompt exists ([#601](https://github.com/haowjy/meridian-flow/issues/601));
+  `list` and `show` always run. The `work` schema is the same for every agent.
+  Denial copy and the work context line ask the same `mayChangeWorks` before
+  offering `work unarchive`. The model's `switch` only resolves its target
+  (unknown, archived, already there) and then asks; it never rebinds.
+
+Advertise and the per-turn gate use the tool policy; dispatch and direct
+`toolExecutor.executeTool` don't apply it. The core catalogue stays
+policy-free.
 
 ## Policy and cost
 
-- Tool policy is per-turn: `projectToolPolicy` → permission gate (`check` name,
-  then command) → `persistToolRejection`. A missing, non-string, or unknown
-  command is `invalid_arguments`; a recognized but disabled command or tool is
-  `permission_denied`. Dispatch does not apply policy. Direct
-  `toolExecutor.executeTool` does not apply policy.
+- Tool policy is per-turn: `projectToolPolicy` → the orchestrator checks
+  the call's name against the policy set → `persistToolRejection`. A malformed command is the executor's
+  `invalid_arguments`, as for any tool.
 - `ask_user` is never advertised until its rework (composer-attached answer
   input and defined subagent semantics,
   [#601](https://github.com/haowjy/meridian-flow/issues/601)), even when an
-  Agent's Mars policy allows it (`project-tool-policy.ts`). The interrupt
+  Agent's Mars policy allows it (`tool-policy.ts`). The interrupt
   runtime and the app's interrupt card remain; re-enabling is that one line.
 - Documents have two tools (D1): `read({ path, in?, around?, format?,
   version? })` never changes a document, and every `write` command (`create`,
@@ -70,7 +110,35 @@ behavior; schema-only stubs are not advertised.
   model's text; the typed result is persisted beside it as `result` (D43).
   Reading does not expand URI, object, Project, owner, or document
   authorization, change Work binding, or change write mode.
-- Model-call cost gating is not a `PermissionGate` method. The runtime uses
+- `ls` returns a typed `LsResult` (`tools/ls-result.ts`): the listed folder's
+  canonical URI (null at the root) and entries with `uri`, `kind`,
+  `readonly`, a non-text file's `fileType`, and with `verbose: true` the
+  `wordCount` (text), `sizeBytes` (uploads) and `updatedAt`. No IDs or schema
+  fields. `renderLsResult` gives the model plain text (D61): the folder URI,
+  then entries relative to it, folders ending in `/`, with one parenthesis
+  for kind, details and `read-only` when any apply; `  (empty)` for an empty
+  folder; one line per source at the root. `skills://` listings share the
+  shape. Word counts come from the projection the listing query already
+  loads, counted only when `verbose` is set.
+- `work` returns typed Works (`ModelWork`, `WorkShowResult` in
+  `tools/work-result.ts`; `historySummary` reads them). `renderWorkResult`
+  gives one line per Work: `@slug`, name with its status, the goal clipped
+  at a word, `draft mode` only when not auto-apply, pending changes only
+  above zero, `(archived)`. `show` adds the goal in full, recent chats and
+  drafts; create, update, archive, unarchive and delete say what happened,
+  then the Work line. `verbose` adds created, updated and last-activity dates.
+- `search` returns typed hits (`uri`, `version`, `matches` of `{ excerpt,
+  blockHash? }` with the whole block as excerpt, `matchCount`, `readonly`);
+  the app's previews and `PassageDoor` read them. `renderSearchResult`
+  (`tools/search-result.ts`) prints each file's URI, then `hash|excerpt` per
+  passage as `read` prints blocks, the excerpt cut to about 120 characters
+  either side of the match; `read-only` and the count only when they say
+  something. `verbose` gives whole blocks and the score. Compaction's
+  `searchDocumentText` re-renders from the typed hits (`elide` gets `result`
+  beside `output`), so a changed file loses only its own passages.
+- A `read` with `format: "outline"` (documents and `skills://`) says once how
+  to read a section, then lists each heading with its `#slug` (D65).
+- Model-call cost gating is not part of the tool policy. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
 - `costing/` owns model token-rate resolution and applies the fixed 1.15

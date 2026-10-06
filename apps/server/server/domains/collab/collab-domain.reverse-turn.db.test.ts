@@ -4,6 +4,8 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -33,7 +35,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
@@ -57,10 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const collabs: Array<{ dispose(): void }> = [];
     const createTestCollab = () => {
       const collab = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collabs.push(collab);
       return collab;
@@ -69,6 +70,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterEach(() => {
       for (const collab of collabs.splice(0)) collab.dispose();
     });
+
+    /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
+    async function applyDraft(
+      collab: ReturnType<typeof createTestCollab>,
+      documentId: string,
+    ): Promise<void> {
+      const [draft] = await db
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, documentId as never),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        );
+      if (!draft) throw new Error(`missing Work draft for ${documentId}`);
+      await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
+    }
 
     async function currentDraftId(
       collab: ReturnType<typeof createTestCollab>,
@@ -199,14 +219,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(
-          context.write("fresh.md", "Current café.", {
-            origin: {
-              type: "agent",
-              agentSlug: "writer",
-              turnId: TURN_ID as never,
-              threadId: THREAD_ID as never,
-            },
-          }),
+          asGrantedWriter(() =>
+            context.write("fresh.md", "Current café.", {
+              origin: {
+                type: "agent",
+                agentSlug: "writer",
+                turnId: TURN_ID as never,
+                threadId: THREAD_ID as never,
+              },
+            }),
+          ),
         ).resolves.toMatchObject({
           ok: true,
         });
@@ -242,7 +264,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       expect(write.status).toBe("success");
@@ -328,7 +350,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [find, content] of [
         [fountain, gate],
         [gate, ""],
@@ -340,10 +361,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               sessionId: "session-overlap",
               threadId: THREAD_ID,
               turnId: TURN_ID,
-              destination: DRAFT_DESTINATION,
+              grant: testFileGrant(DRAFT_DESTINATION),
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, DOC_ID);
       }
 
       const undo = await collab.reverseTurn({
@@ -375,7 +397,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [documentId, markdown] of [
         [DOC_ID, "First base."],
         [CREATED_DOC_ID, "Second base."],
@@ -398,10 +419,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               sessionId: "session-atomic-reversal",
               threadId: THREAD_ID,
               turnId: TURN_ID,
-              destination: DRAFT_DESTINATION,
+              grant: testFileGrant(DRAFT_DESTINATION),
             },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, documentId);
       }
       await collab.writeDocument({
         documentId: CREATED_DOC_ID as never,
@@ -448,7 +470,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-writer-redo",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -528,7 +550,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-live-dependent",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -576,7 +598,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-live-independent",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
       const [workDraft] = await activeWorkDraft();
@@ -605,6 +627,66 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
+    it("keeps a pending draft after switching to auto-apply and applies it later", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await expect(
+        collab.agentEdit().write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Drafted." },
+          {
+            sessionId: "session-keep",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            grant: testFileGrant(DRAFT_DESTINATION),
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" }),
+      ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 1 });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto", pending: "keep" }),
+      ).resolves.toEqual({ status: "updated", policy: "auto" });
+
+      const [work] = await db
+        .select({ aiWriteMode: works.aiWriteMode })
+        .from(works)
+        .where(eq(works.id, WORK_ID));
+      expect(work?.aiWriteMode).toBe("direct");
+      const draftId = await currentDraftId(collab, DOC_ID);
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId,
+      });
+      expect(preview.status).toBe("active");
+
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.\n\nLive.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
+
+      await collab.draftReview.applyWorkDraft({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId,
+        userId: USER_ID as never,
+      });
+      const applied = await readMarkdown(collab, DOC_ID);
+      expect(applied).toContain("Base.");
+      expect(applied).toContain("Live.");
+      expect(applied).toContain("Drafted.");
+    });
+
     it("durably commits two same-response staged writes to one document", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -625,7 +707,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "session-same-response-db",
-          destination: DRAFT_DESTINATION,
+          grant: testFileGrant(DRAFT_DESTINATION),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId,
@@ -644,7 +726,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-same-response-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId,
@@ -693,7 +775,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId: "response-reused-provider-tool-id-db-a",
@@ -716,7 +798,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            destination: DRAFT_DESTINATION,
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseId: "response-reused-provider-tool-id-db-b",

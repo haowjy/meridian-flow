@@ -24,7 +24,10 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
 
   const uri = contextUriFromWritePath(path);
   const isDoor =
-    passage !== undefined && openContextUri !== null && canOpenContextUri?.(uri) === true;
+    uri !== null &&
+    passage !== undefined &&
+    openContextUri !== null &&
+    canOpenContextUri?.(uri) === true;
 
   const term = excerpt.match ? (
     <span

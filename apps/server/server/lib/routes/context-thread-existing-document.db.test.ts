@@ -39,7 +39,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
-    const { useComposedRuntimes } = await import("../../test-support/composed-runtime.js");
+    const { bindEditAgent, useComposedRuntimes } = await import(
+      "../../test-support/composed-runtime.js"
+    );
     const { writeThreadContextDocument } = await import("../thread-context-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000b01";
@@ -59,17 +61,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { app, ports } = runtime;
       const routeDeps = {
         contextPorts: app.contextPorts,
+        fileAccess: app.fileAccess,
         threads: app.threadRepos.threads,
         threadWorks: app.threadRepos.threadWorks,
         works: app.workRepo,
         workAuthorityResolver: app.workAuthorityResolver,
       };
       // Any model tool through the executor, outside a reply.
-      const callTool = (name: string, input: Record<string, unknown>) =>
-        app.toolExecutor.executeTool(
+      const callTool = async (name: string, input: Record<string, unknown>) => {
+        await bindEditAgent(runtime, THREAD_ID);
+        return app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: input },
           { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
         );
+      };
       const callWrite = (input: Record<string, unknown>) => callTool("write", input);
       return {
         collab: ports.documentSync,

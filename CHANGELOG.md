@@ -1,24 +1,5 @@
 # Changelog
 
-- Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0026 renames the report column.
-- Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
-- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone. Agents without `edit` get `read` and no `write`.
-- `read` and `write` results reach the model as a status line plus `hash|text` blocks; the typed result is stored beside the text on the tool result.
-- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
-- Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
-- Every tool returns a typed `result`; the model's text is rendered from it and the app reads only `result`.
-- `write` gains `copy` (a document, or part of it via `#fragment` or `in`, with its own history) and `from` on `insert`/`replace` (copy blocks as exact nodes). Undo and rollback cover both.
-- In a draft-mode Work, `scratch://` and `uploads://` writes go live; every other drafted source goes to the Work draft. Write results say `version: live` or `version: draft (@slug)`.
-- A reply's live and draft writes save in one database transaction; a failure saves none. `undo`, `redo` and `work switch` save pending writes first.
-- `read`, `search` and `ls` take `version: draft | live` (omitted: the version your writes change). A write against a different version than the last read returns `read_required`.
-- Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
-- Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
-- `skill` loads a skill's resource files with `resource`; built-in agents declare their skills.
-- A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
-- An undo or redo is `reconciled` only when other edits survive it.
-- `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
-- Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
-
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
@@ -26,6 +7,39 @@
 
 ## [Unreleased]
 
+- Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
+- Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.
+- Every model tool validates input against its published schema before running; bad calls get `invalid_arguments` naming each field instead of silent defaults.
+- `thread_history` shows numbered turns, hides routine inspection calls behind a count, shows a child's saved report on the turn that produced it, and expands by turn number or `"N.k"`. `limit` counts turns. Each tool call reads as the call itself, `name({json args}) → result`, long values shortened; `include: ["tool_args"]` is gone.
+- `write` gains `copy` (a document, or part of it via `#fragment` or `in`, with its own history) and `from` on `insert`/`replace` (copy blocks as exact nodes). Undo and rollback cover both.
+- In a draft-mode Work, `scratch://` and `uploads://` writes go live; every other drafted source goes to the Work draft. Write results say `version: live` or `version: draft (@slug)`.
+- A reply's live and draft writes save in one database transaction; a failure saves none. `undo` and `redo` save pending writes first.
+- `read`, `search` and `ls` take `version: draft | live` (omitted: the version your writes change). A write against a different version than the last read returns `read_required`.
+- Direct-mode threads read live, not a Work's pending draft; AI live writes merge into active Work drafts.
+- An AI reply that was writing to a Work's draft when you switched the Work to auto-apply finishes in that draft, where it waits for your review like the changes you kept. Nothing in a draft goes live until you apply it.
+- `undo` and `redo` reverse each write in the journal it landed in (live or the Work draft). An undo or redo is `reconciled` only when other edits survive it.
+- Binary files return `binary_file` on read, write and block copy. Unknown Works and schemes say which and how to recover.
+- Skills are read-only files under `skills://<skill>/`. The prompt lists available skills by slug, and `skill({name})` loads one, returning what `read` returns for its `SKILL.md`: the address, a line saying paths in the skill are relative to its folder, then the text. `read` and `ls` reach the skill's other files; `read` on a skill's markdown takes `#heading` and `format: "outline"`, and `in` or `around` is `invalid_arguments`. `write` and `search` refuse `skills://`. The built-in skills no longer name files or skills that don't ship.
+- An agent sees the skills its own Agent preloads or offers as `model-invocable`, plus any skill the user invoked with `/skill` in that chat; a fork keeps those, spawned subagents and handoffs don't. `skill` refuses any other skill with the names it can load, and `read` answers not found. An agent that can see no skill isn't offered `skill`. A `/skill` body carries the same header as `skill()`. Migration 0028 adds `thread_agent_bindings.invoked_skills`.
+- Subagents list and load the skills their own configuration offers, and an Agent's `skills.load` bodies are baked into its first prompt (nonempty `load` no longer refuses the Agent).
+- A skill's chat row reads "Invoked 'Story Review'", like the Thinking fold's summary.
+- Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0026 renames the report column.
+- A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
+- `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
+- Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
+- Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
+- Tool lists say only which tools an agent has: `tools` is an optional allow-list and `disallowed-tools` removes tools, both arrays of real tool names. `edit` in `tools` and the allow/deny map fail to compile with the replacement named. An unknown name in `tools` makes the Agent unsupported; an unknown name in `disallowed-tools`, `Edit` and `apply_patch` included, is ignored. Tool names never fold onto another Flow tool: `search` stays `search`. No tool narrows its commands; a `read` agent gets `write` and is refused per file. Critic and Writer drop their tool lists.
+- `spawn.overrides` publishes its typed shape. `tools` is gone, `disallowed_tools` only adds denials and refuses a name outside the tool catalog, listing the tools, and a child with a tool its parent lacks is `invalid_arguments` naming it.
+- One action policy decides Work changes: a `read` agent (or any agent under a `read` parent) can't create, update, archive, unarchive or delete Works. The model's `work switch` takes `work` (was `target`) and is refused until the writer can approve it.
+- A `write` the file policy refuses returns `permission_denied` with a `reason`: `work_archived`, `agent_read_only`, `uploads_read_only`, or `action_denied` for a refused `work` command. Agents can't write `uploads://`. A read agent refused on another Work's `scratch://` is told it can change only this chat's.
+- An archived Work's scratch and draft are refused when the call runs, with the archived-Work copy, and so are `undo` and `redo` there. The archived Work's context line says which of its files are frozen and that `work unarchive` changes that; a read agent is told to ask the user.
+- File routes on an archived Work's files return 403 `work_archived` (was 409).
+- Live editing rooms open read-only (`readonly` scope) for a file you may read but not edit, such as an archived Work's draft or scratch; their edits are refused and never saved. Archiving, unarchiving, deleting or restoring a Work closes that Work's open draft and scratch rooms with the new close code 4409 (`access-changed`) so they reconnect at the new access; other rooms stay open.
+- The editor follows a room's access in place: an archived Work's draft review and scratch files turn read-only under the archived notice without a refresh, in the tab that archives at once and in other tabs when the server's 4409 arrives, and turn editable again after Unarchive once the server reconnects them read-write. Keystrokes the server refused at that moment are dropped, never replayed: a scratch file holding them drops its local copy and reopens from the server.
+- A tab that loaded while a Work was archived turns its draft review and scratch editors editable again when the Work is unarchived elsewhere, even if their room first connected after the unarchive.
+- An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
+- Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
+- Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.

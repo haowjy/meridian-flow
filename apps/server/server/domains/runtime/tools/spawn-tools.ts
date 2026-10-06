@@ -11,6 +11,7 @@ import {
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
+import { TOOL_CATALOG } from "../loop/permissions/tool-policy.js";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";
@@ -29,15 +30,46 @@ const SPAWN_DESCRIPTION =
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
   "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 
-const { "disallowed-tools": disallowedTools, ...invocationPatchShape } =
+const { "disallowed-tools": _authoringToolList, ...invocationPatchShape } =
   invocationPatchSchema.shape;
 
+const catalog = new Set<string>(TOOL_CATALOG);
+const UNKNOWN_TOOL = `isn't a tool; the tools are ${TOOL_CATALOG.join(", ")}`;
+
 /**
- * Today's invocation patch with its one public spelling change: the model
- * writes `disallowed_tools`, the configuration keeps `disallowed-tools`.
+ * The model names real tools, so no alias fold: an unknown name is refused
+ * rather than silently denying nothing.
+ */
+const DisallowedToolsSchema = z
+  .array(z.string())
+  .superRefine((names, context) => {
+    for (const [index, name] of names.entries()) {
+      if (!catalog.has(name)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: `${JSON.stringify(name)} ${UNKNOWN_TOOL}`,
+        });
+      }
+    }
+  })
+  .transform((names) => [...new Set(names)]);
+
+/**
+ * The invocation patch, published with its full typed shape (audit F2). Its one
+ * spelling change: the model writes `disallowed_tools`, the configuration keeps
+ * `disallowed-tools`.
  */
 const SpawnOverridesSchema = z
-  .object({ ...invocationPatchShape, disallowed_tools: disallowedTools })
+  .object({
+    ...invocationPatchShape,
+    permission: invocationPatchShape.permission.describe(
+      'Lower to "read" so this run edits only scratch://; it can\'t raise a read agent to "edit".',
+    ),
+    disallowed_tools: DisallowedToolsSchema.describe(
+      "Tools this run can't use, on top of the child's own.",
+    ).optional(),
+  })
   .strict()
   .transform(
     ({ disallowed_tools, ...patch }): InvocationPatch => ({
@@ -73,7 +105,7 @@ export const SpawnInputSchema = z
       .describe("Extra system-prompt text for this run only.")
       .optional(),
     overrides: SpawnOverridesSchema.describe(
-      "Change this run's model, effort, tools, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
+      "Change this run's model, effort, permission, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
     ).optional(),
   })
   .strict();
@@ -89,7 +121,7 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
  * as parsed JSON, so `payload` is published as any value: the canonical
  * recursive JSON-value schema would add a self-referencing `$defs` entry.
  */
-export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
+const ReturnResultInputSchema = returnResultCaptureSchema.extend({
   summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
   payload: z.unknown().describe("Optional JSON result.").optional(),
   artifacts: returnResultCaptureSchema.shape.artifacts.describe(
@@ -99,7 +131,7 @@ export const ReturnResultInputSchema = returnResultCaptureSchema.extend({
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
-export const ThreadMessageInputSchema = z
+const ThreadMessageInputSchema = z
   .object({
     ref: z
       .string()
@@ -118,7 +150,7 @@ export const ThreadMessageInputSchema = z
 export type ThreadMessageArgs = z.output<typeof ThreadMessageInputSchema>;
 export type ThreadMessageMode = ThreadMessageArgs["mode"];
 
-export const ThreadReportInputSchema = z
+const ThreadReportInputSchema = z
   .object({
     ref: z.string().min(1).describe('Subagent ref such as p3, or "current".'),
   })

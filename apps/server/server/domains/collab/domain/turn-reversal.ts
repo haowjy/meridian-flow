@@ -105,7 +105,7 @@ async function reverseDocumentForTurn(
 }
 
 /** One document's reversal status and the text the agent would see for it. */
-export type DocumentReversalOutcome = Pick<DocumentReversalResult, "status" | "text">;
+type DocumentReversalOutcome = Pick<DocumentReversalResult, "status" | "text">;
 
 export function documentReversalOutcome(outcome: WriteOutcome): DocumentReversalOutcome {
   return { status: outcome.status, text: renderAgentEditResult(outcome.result) };
@@ -132,6 +132,7 @@ export function aggregateStatus(
   const successes = new Set(["reversed", "reconciled"]);
 
   if (statuses.every((status) => status === noOp)) return noOp;
+  if (statuses.every((status) => status === "permission_denied")) return "permission_denied";
   if (statuses.every((status) => successes.has(status))) {
     return statuses.includes("reconciled") ? "reconciled" : "reversed";
   }

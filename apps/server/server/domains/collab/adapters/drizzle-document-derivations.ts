@@ -10,13 +10,13 @@ import {
   works,
 } from "@meridian/database";
 import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export function createDrizzleDocumentDerivationStore(db: Database): DocumentDerivationStore {

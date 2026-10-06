@@ -261,6 +261,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revision: first,
         configuration,
         invocationOverlay: null,
+        invokedSkills: {},
       });
       expect(
         await store.bindThread(
@@ -282,7 +283,8 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         model: "fixture-model",
         skills: { load: [], available: [] },
         namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
-        tools: { read: "allow" as const },
+        permission: "edit" as const,
+        tools: ["read"],
       };
       const invocationOverlay = {
         appendSystemPrompt: "Appended body.",
@@ -293,6 +295,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revision: null,
         configuration,
         invocationOverlay,
+        invokedSkills: {},
       });
     });
 
@@ -474,4 +477,5 @@ const bindingConfiguration = {
   model: "fixture-model",
   skills: { load: [], available: [] },
   namedTargets: [],
+  permission: "edit" as const,
 };

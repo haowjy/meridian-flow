@@ -66,7 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { DrizzleContextDocumentStore } = await import(
       "../../../context/adapters/context-fs/drizzle-store.js"
     );
-    const { createDrizzleDocumentAccess } = await import("../../../../lib/document-access.js");
+    const { drizzleFileAccess } = await import("../../../../test-support/file-grants.js");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../../projects/index.js"
@@ -304,25 +304,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
-    it("seeds work-draft push policy from the work write mode", async () => {
-      const directWork = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("direct mode"),
-      });
-      expect(directWork.pushPolicy).toBe("auto");
-
-      await db.delete(documentBranches).where(eq(documentBranches.id, directWork.branchId));
-      await db.update(works).set({ aiWriteMode: "draft" }).where(eq(works.id, WORK_ID));
-
-      const draftWork = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("draft mode"),
-      });
-      expect(draftWork.pushPolicy).toBe("manual");
-    });
-
     it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
       const majorMismatchVersion = { major: 1, minor: 0, patch: 0 };
       const packedMajorMismatchVersion = packCollabSchemaVersion(majorMismatchVersion);
@@ -354,7 +335,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         upstreamBranchId: work.branchId,
         workId: WORK_ID as never,
         threadId: THREAD_ID as never,
-        pushPolicy: "manual",
         status: "active",
         state: Buffer.from(Y.encodeStateAsUpdate(peerDoc)),
         stateVector: Buffer.from(Y.encodeStateVector(peerDoc)),
@@ -569,7 +549,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ markdownProjection: "manifest-only secret" })
         .where(eq(documents.id, manifest.documentId));
       const contentStore = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const access = createDrizzleDocumentAccess(db);
+      const access = drizzleFileAccess(db);
 
       await expect(contentStore.findDocument(null, ".manifest", "json")).resolves.toBeNull();
       await expect(contentStore.listDocuments(null)).resolves.toEqual([
@@ -588,12 +568,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           filetype: "json",
         }),
       ).resolves.toEqual(expect.objectContaining({ name: ".manifest", extension: "json" }));
-      await expect(access.canAccessDocument(USER_ID as never, manifest.documentId)).resolves.toBe(
-        false,
-      );
       await expect(
-        access.canAccessProjectDocument(USER_ID as never, manifest.documentId, PROJECT_ID as never),
-      ).resolves.toBe(false);
+        access.authorize(
+          { accountId: USER_ID as never },
+          { kind: "document", documentId: manifest.documentId },
+          "read",
+        ),
+      ).resolves.toMatchObject({ denied: true, reason: "not_found" });
     });
 
     it("keeps a Work-scoped document URI bound to its owning Work across a thread rebind", async () => {
@@ -1323,7 +1304,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           upstreamBranchId: null,
           workId: WORK_ID as never,
           threadId: null,
-          pushPolicy: "manual",
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("target"))),
@@ -1337,7 +1317,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           upstreamBranchId: "branch_target_floor",
           workId: WORK_ID as never,
           threadId: THREAD_ID as never,
-          pushPolicy: "manual",
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("other"))),
@@ -1351,7 +1330,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           upstreamBranchId: null,
           workId: WORK_ID as never,
           threadId: null,
-          pushPolicy: "manual",
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("other doc"))),
@@ -1427,7 +1405,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         upstreamBranchId: null,
         workId: WORK_ID as never,
         threadId: null,
-        pushPolicy: "manual",
         status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),
@@ -1448,7 +1425,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         upstreamBranchId: null,
         workId: WORK_ID as never,
         threadId: null,
-        pushPolicy: "manual",
         status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),

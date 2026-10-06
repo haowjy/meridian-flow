@@ -1,11 +1,12 @@
 /**
  * User slash catalog (installed packages ∪ account), model-available catalog
- * (Agent available), preloaded skill bodies (Agent load), and the resource
- * files that ship beside a bound skill's SKILL.md.
+ * (Agent available), preloaded skill bodies (Agent load), and the thread's
+ * bound and user-invoked skills with the facts `skillLevel` reads
+ * `skills://` by (D52, D64).
  */
-import { posix } from "node:path";
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
+import type { SkillFacts } from "../../file-policy/index.js";
 import {
   type AccountSkillInstallStore,
   type AgentRevisionBinding,
@@ -19,9 +20,9 @@ const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
 
 type UserSkillCatalogStore = Pick<AgentRevisionStore, "listInstallations" | "readSource">;
 
-/** A bound skill with the UTF-8 files beside its SKILL.md, as paths relative to the skill. */
-export interface LoadedSkill extends SkillListing {
-  resources: string[];
+/** A skill body to inject, and whether the model can read its files under `skills://`. */
+interface LoadedSkill extends SkillListing {
+  readable: boolean;
 }
 
 export interface AvailableSkillListing {
@@ -30,25 +31,11 @@ export interface AvailableSkillListing {
   description: string;
 }
 
-/** A resource the skill doesn't ship, or a path that leaves the skill's directory. */
-export class SkillResourceError extends Error {
-  readonly name = "SkillResourceError";
-}
-
-export class SkillUnavailableError extends Error {
+class SkillUnavailableError extends Error {
   readonly name = "SkillUnavailableError";
 
-  /** `loadable` is the model's own catalog, named so a refused load points at what will work. */
-  constructor(slug: string, loadable?: readonly string[]) {
-    super(
-      loadable === undefined
-        ? `Skill "${slug}" is not available`
-        : `Skill "${slug}" is not available. ${
-            loadable.length > 0
-              ? `Skills you can load: ${loadable.join(", ")}.`
-              : "This agent has no skills to load."
-          }`,
-    );
+  constructor(slug: string) {
+    super(`Skill "${slug}" is not available`);
   }
 }
 
@@ -107,10 +94,60 @@ export async function resolveThreadModelAvailableSkills(input: {
   return listings;
 }
 
+/** The skills a thread can name, with the reference each is read from, and the facts `skillLevel` decides on. */
+interface ThreadSkills {
+  facts: SkillFacts;
+  bound: ReadonlyMap<string, RetainedSkillReference>;
+}
+
+/**
+ * Every skill the thread's binding names (`load` and `available`) and every
+ * packaged skill its user invoked (D64), from one binding read (D52). A slug
+ * both bound and invoked keeps the binding's reference. Empty when the thread
+ * has no binding.
+ */
+export async function readThreadSkills(
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">,
+  threadId: string,
+): Promise<ThreadSkills> {
+  const binding = await agentRevisions.readThreadBinding(threadId);
+  const bound = new Map<string, RetainedSkillReference>();
+  if (!binding) return { facts: { load: [], available: [], invoked: [] }, bound };
+  const { load, available } = binding.configuration.skills;
+  for (const reference of [...load, ...available]) {
+    const slug = skillSlugFromPath(reference.path);
+    if (!bound.has(slug)) bound.set(slug, reference);
+  }
+  for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
+    if (!bound.has(slug)) bound.set(slug, reference);
+  }
+  const offered = [];
+  for (const reference of available) {
+    const listing = await listingFromBoundReference(agentRevisions, reference);
+    offered.push({ slug: listing.slug, modelInvocable: listing.modelInvocable });
+  }
+  return {
+    facts: {
+      load: load.map((reference) => skillSlugFromPath(reference.path)),
+      available: offered,
+      invoked: Object.keys(binding.invokedSkills),
+    },
+    bound,
+  };
+}
+
+/** Whether a thread can see a skill at all, so it is offered the `skill` tool (D64). */
+export function bindingNamesSkills(
+  binding: Pick<AgentRevisionBinding, "configuration" | "invokedSkills">,
+): boolean {
+  const { load, available } = binding.configuration.skills;
+  return load.length > 0 || available.length > 0 || Object.keys(binding.invokedSkills).length > 0;
+}
+
 /**
  * Bodies of the thread's preloaded skills (`skills.load`), read from its own
  * binding. Preloading is the Agent author's choice, so `model-invocable` does
- * not gate it; that flag only governs the `skill` tool.
+ * not gate it, and a preloaded skill's files are readable under `skills://`.
  */
 export async function resolveThreadPreloadedSkills(input: {
   thread: Thread;
@@ -120,7 +157,10 @@ export async function resolveThreadPreloadedSkills(input: {
   if (!binding) return [];
   const loaded: LoadedSkill[] = [];
   for (const reference of binding.configuration.skills.load) {
-    loaded.push(await listingFromBoundReference(input.agentRevisions, reference));
+    loaded.push({
+      ...(await listingFromBoundReference(input.agentRevisions, reference)),
+      readable: true,
+    });
   }
   return loaded;
 }
@@ -134,13 +174,14 @@ export function unavailableActivatedSkillSlugs(
 }
 
 /**
- * A writer `/skill` body. Its resources are the ones the model can open on
- * this thread, so an activated skill the Agent can't load lists none.
+ * A writer `/skill` body. Invoking a packaged skill pins it on the thread
+ * (D64), so its files are readable for the rest of the thread and its header
+ * names `skills://`. An account-install skill has no files: body only.
  */
 export async function loadUserSkillBody(input: {
   thread: Thread;
   slug: string;
-  agentRevisions: UserSkillCatalogStore & Pick<AgentRevisionStore, "readThreadBinding">;
+  agentRevisions: UserSkillCatalogStore & Pick<AgentRevisionStore, "recordInvokedSkill">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }): Promise<LoadedSkill> {
   if (input.thread.kind === "primary") {
@@ -150,8 +191,13 @@ export async function loadUserSkillBody(input: {
       input.slug,
     );
     if (packaged) {
-      if (!packaged.userInvocable) throw new SkillUnavailableError(input.slug);
-      return { ...packaged, resources: await modelSkillResources(input) };
+      if (!packaged.listing.userInvocable) throw new SkillUnavailableError(input.slug);
+      const readable = await input.agentRevisions.recordInvokedSkill(
+        input.thread.id,
+        input.slug,
+        packaged.reference,
+      );
+      return { ...packaged.listing, readable };
     }
     const accountSkill = (await input.accountSkillInstalls.listByOwner(input.thread.userId)).find(
       (row) => row.slug === input.slug,
@@ -164,103 +210,11 @@ export async function loadUserSkillBody(input: {
         body: accountSkill.body,
         userInvocable: true,
         modelInvocable: true,
-        resources: [],
+        readable: false,
       };
     }
   }
   throw new SkillUnavailableError(input.slug);
-}
-
-export async function loadModelSkillBody(input: {
-  thread: Thread;
-  slug: string;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-}): Promise<LoadedSkill> {
-  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-  if (binding) {
-    const modelSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
-    if (modelSkill?.modelInvocable) return modelSkill;
-  }
-  throw await modelSkillUnavailable(input);
-}
-
-/**
- * Text of one file beside a skill's SKILL.md. The agent may open resources of
- * any skill whose body it can have: model-loadable `available` skills and its
- * preloaded `load` skills.
- */
-export async function loadModelSkillResource(input: {
-  thread: Thread;
-  slug: string;
-  resource: string;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-}): Promise<string> {
-  const reference = await resourceReadableReference(input);
-  if (!reference) throw await modelSkillUnavailable(input);
-  const skill = await listingFromBoundReference(input.agentRevisions, reference);
-  const relative = posix.normalize(input.resource);
-  if (
-    posix.isAbsolute(input.resource) ||
-    input.resource.includes("\\") ||
-    relative === ".." ||
-    relative.startsWith("../")
-  ) {
-    throw new SkillResourceError(`Resource "${input.resource}" is outside skill "${input.slug}".`);
-  }
-  if (skill.resources.includes(relative)) {
-    const source = await input.agentRevisions.readSource(reference.packageRevisionId);
-    const entry = source?.files[`${posix.dirname(reference.path)}/${relative}`];
-    if (typeof entry === "string") return entry;
-  }
-  throw new SkillResourceError(
-    `Skill "${input.slug}" has no resource "${input.resource}". ${
-      skill.resources.length > 0
-        ? `Its resources: ${skill.resources.join(", ")}.`
-        : "It has no resources."
-    }`,
-  );
-}
-
-/** Resources the model may open for `slug` on this thread; [] when it can't load that skill. */
-export async function modelSkillResources(input: {
-  thread: Thread;
-  slug: string;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-}): Promise<string[]> {
-  const reference = await resourceReadableReference(input);
-  if (!reference) return [];
-  return (await listingFromBoundReference(input.agentRevisions, reference)).resources;
-}
-
-async function resourceReadableReference(input: {
-  thread: Thread;
-  slug: string;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-}): Promise<RetainedSkillReference | undefined> {
-  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-  if (!binding) return undefined;
-  const preloaded = binding.configuration.skills.load.find(
-    (reference) => skillSlugFromPath(reference.path) === input.slug,
-  );
-  if (preloaded) return preloaded;
-  const available = binding.configuration.skills.available.find(
-    (reference) => skillSlugFromPath(reference.path) === input.slug,
-  );
-  if (!available) return undefined;
-  const listing = await listingFromBoundReference(input.agentRevisions, available);
-  return listing.modelInvocable ? available : undefined;
-}
-
-async function modelSkillUnavailable(input: {
-  thread: Thread;
-  slug: string;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-}): Promise<SkillUnavailableError> {
-  const loadable = await resolveThreadModelAvailableSkills(input);
-  return new SkillUnavailableError(
-    input.slug,
-    loadable.map((skill) => skill.slug),
-  );
 }
 
 async function listUserInvocableSkills(input: {
@@ -317,13 +271,14 @@ async function readInstalledPackageSkill(
   store: UserSkillCatalogStore,
   ownerUserId: string,
   slug: string,
-): Promise<LoadedSkill | undefined> {
+): Promise<{ listing: SkillListing; reference: RetainedSkillReference } | undefined> {
   for (const installation of await installedPackageHeads(store, ownerUserId)) {
     for (const skills of (
       await retainedPackageSkillMaps(installation.currentRevisionId, store)
     ).values()) {
       const reference = skills.get(slug);
-      if (reference) return listingFromBoundReference(store, reference);
+      if (reference)
+        return { listing: await listingFromBoundReference(store, reference), reference };
     }
   }
   return undefined;
@@ -336,37 +291,17 @@ async function installedPackageHeads(store: UserSkillCatalogStore, ownerUserId: 
   ];
 }
 
-async function readBoundAvailableSkill(
-  store: Pick<AgentRevisionStore, "readSource">,
-  binding: AgentRevisionBinding,
-  slug: string,
-): Promise<LoadedSkill | undefined> {
-  for (const reference of binding.configuration.skills.available) {
-    if (skillSlugFromPath(reference.path) !== slug) continue;
-    return listingFromBoundReference(store, reference);
-  }
-  return undefined;
-}
-
 async function listingFromBoundReference(
   store: Pick<AgentRevisionStore, "readSource">,
   reference: RetainedSkillReference,
-): Promise<LoadedSkill> {
+): Promise<SkillListing> {
   const slug = skillSlugFromPath(reference.path);
   const source = await store.readSource(reference.packageRevisionId);
   const entry = source?.files[reference.path];
   if (!source || typeof entry !== "string") {
     throw new Error(`Retained skill "${slug}" is missing from package source`);
   }
-  const directory = `${posix.dirname(reference.path)}/`;
-  const resources = Object.entries(source.files)
-    .filter(
-      ([path, file]) =>
-        path.startsWith(directory) && path !== reference.path && typeof file === "string",
-    )
-    .map(([path]) => path.slice(directory.length))
-    .sort();
-  return { ...skillListingFromMarkdown(entry, slug), resources };
+  return skillListingFromMarkdown(entry, slug);
 }
 
 function skillSlugFromPath(path: string): string {

@@ -1,5 +1,6 @@
 import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it, vi } from "vitest";
+import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
 import { ReverseThreadContextError } from "../contracts.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
 
@@ -40,16 +41,12 @@ function createService(input: {
       refreshDocumentProjection,
     },
     agentEdit: { reverse: agentReverse } as never,
-    branchReview: { reverseBranchTurn: vi.fn() } as never,
+    branchReview: { reverseBranchTurns: vi.fn(async () => []) } as never,
     branchJournal: { listJournalRowsForTurn: async () => [] },
     branches: { getBranch: async () => null },
     resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
     listEditedDocumentsForTurn: async () => input.lineage ?? [],
-    documentAccess: {
-      canAccessDocument: async (_userId, documentId) => input.allowed?.has(documentId) ?? true,
-      canAccessProjectDocument: async (_userId, documentId) =>
-        input.allowed?.has(documentId) ?? true,
-    },
+    fileAccess: visibleOnly(input.allowed),
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
@@ -146,7 +143,7 @@ describe("reverseThreadContext", () => {
 
 describe("cross-scope reversal", () => {
   it("does not reverse branch documents excluded by the authorized live lineage", async () => {
-    const reverseBranchTurn = vi.fn();
+    const reverseBranchTurns = vi.fn(async () => []);
     const liveReverse = vi.fn(async () => ({
       command: "undo",
       status: "reversed",
@@ -162,7 +159,7 @@ describe("cross-scope reversal", () => {
         refreshDocumentProjection: async () => undefined,
       },
       agentEdit: { reverse: vi.fn() } as never,
-      branchReview: { reverseBranchTurn } as never,
+      branchReview: { reverseBranchTurns } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-denied" }],
       } as never,
@@ -171,10 +168,7 @@ describe("cross-scope reversal", () => {
       } as never,
       resolveDocumentUri: async (documentId) => `manuscript://${documentId}.md`,
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -193,7 +187,7 @@ describe("cross-scope reversal", () => {
       status: "reversed",
       documents: [{ uri: "manuscript://allowed.md", status: "reversed" }],
     });
-    expect(reverseBranchTurn).not.toHaveBeenCalled();
+    expect(reverseBranchTurns).toHaveBeenCalledWith(expect.objectContaining({ branchIds: [] }));
     expect(liveReverse).toHaveBeenCalledTimes(1);
   });
 
@@ -233,24 +227,19 @@ describe("cross-scope reversal", () => {
       },
       agentEdit: { reverse: vi.fn() } as never,
       branchReview: {
-        reverseBranchTurn: async () => ({
-          status: "cant_undo_dependent",
-          branchId: "branch-1",
-          journalIds: [1],
-        }),
+        reverseBranchTurns: async () => [
+          { status: "cant_undo_dependent", branchId: "branch-1", journalIds: [1] },
+        ],
       } as never,
       branchJournal: {
         listJournalRowsForTurn: async () => [{ branchId: "branch-1" }],
       } as never,
       branches: {
-        getBranch: async () => ({ documentId: "document-branch" }),
+        getBranch: async () => ({ branchId: "branch-1", documentId: "document-branch" }),
       } as never,
       resolveDocumentUri: async () => "manuscript://branch.md",
       listEditedDocumentsForTurn: async () => [],
-      documentAccess: {
-        canAccessDocument: async () => true,
-        canAccessProjectDocument: async () => true,
-      },
+      fileAccess: visibleOnly(),
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
@@ -269,3 +258,26 @@ describe("cross-scope reversal", () => {
     expect(liveReversed).toBe(false);
   });
 });
+
+/** Every document is the writer's to edit, except those outside `visible`. */
+function visibleOnly(visible?: ReadonlySet<string>): FileAccess {
+  const open = createAllowAllFileAccess();
+  return {
+    ...open,
+    async authorize(principal, target, need) {
+      if (visible && target.kind !== "container" && !visible.has(target.documentId)) {
+        return {
+          denied: true,
+          target,
+          reason: "not_found",
+          level: "none",
+          archivedWork: null,
+          facts: null,
+          destination: null,
+          agentChain: null,
+        };
+      }
+      return open.authorize(principal, target, need);
+    },
+  };
+}

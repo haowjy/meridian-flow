@@ -7,13 +7,19 @@
  */
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { renderRefusal, renderReportBlock, reportContent } from "./history-result.js";
+import {
+  type InvalidArgumentsResult,
+  isInvalidArgumentsResult,
+  renderInvalidArguments,
+} from "../tools/invalid-arguments.js";
+import { renderRefusal } from "../tools/refusal.js";
+import { renderReportBlock, reportContent } from "./history-result.js";
 
-export const queuedNoReplyCopy =
+const queuedNoReplyCopy =
   "Message queued. No reply is pushed back; the target's response is readable in its transcript.";
-export const queuedNotifyCopy = (handle: string) =>
+const queuedNotifyCopy = (handle: string) =>
   `Message queued. You'll be notified when ${handle} finishes.`;
-export const backgroundRunCopy = (handle: string) =>
+const backgroundRunCopy = (handle: string) =>
   `${handle} is running in the background. You'll be notified when it finishes.`;
 
 /**
@@ -22,14 +28,16 @@ export const backgroundRunCopy = (handle: string) =>
  * failed is a delivered report and stays a plain result.
  */
 export function spawnToolResult(
-  result: SpawnResult,
-): SpawnResult | { isError: true; output: SpawnResult } {
-  return result.status === "error" && result.execution === undefined
-    ? { isError: true, output: result }
-    : result;
+  result: SpawnResult | InvalidArgumentsResult,
+): SpawnResult | { isError: true; output: SpawnResult | InvalidArgumentsResult } {
+  // An argument the coordinator refused reads exactly like the executor's parse refusal.
+  if ("issues" in result) return { isError: true, output: result };
+  if (result.status !== "error" || result.execution !== undefined) return result;
+  return { isError: true, output: result };
 }
 
 export function renderSpawnOutput(value: JsonValue): string {
+  if (isInvalidArgumentsResult(value)) return renderInvalidArguments("spawn", value.issues);
   if (!isSpawnResult(value)) return renderRefusal(value);
   const result = value as SpawnResult;
   if (result.status === "background") {

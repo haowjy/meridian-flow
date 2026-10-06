@@ -10,10 +10,12 @@ import {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
@@ -66,7 +68,6 @@ async function fixture(mode: "direct" | "draft") {
     branches: f.branchStore,
     branchCoordinator: f.branchCoordinator,
     branchPulls: f.branchPulls,
-    branchPush: f.branchPush,
     liveCoordinator: f.liveCoordinator,
     agentEdit: f.collab.agentEdit(),
     documents: f.runtime.markdownDocuments,
@@ -79,6 +80,7 @@ async function fixture(mode: "direct" | "draft") {
     documents: effective,
     works: createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
     threadWorks: createDrizzleThreadWorksRepository(db),
@@ -88,10 +90,11 @@ async function fixture(mode: "direct" | "draft") {
     threadId: THREAD_ID,
     sessionId: THREAD_ID,
     turnId: TURN_ID,
-    destination:
+    grant: testFileGrant(
       mode === "direct"
-        ? ({ kind: "live" } as const)
-        : ({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const),
+        ? { kind: "live" }
+        : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+    ),
   };
   const read = (responseId?: string) =>
     core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
@@ -422,7 +425,7 @@ describe("document revisions (postgres and collab)", () => {
         await f.writerDelete();
       }
       await runInDrizzleTransaction(db, async () => {
-        await requireLockedActiveWork(db, WORK_ID);
+        await requireLockedActiveWorks(db, [WORK_ID]);
         await bounded(async () => {
           await f.effective.resolveManifestMembership({
             projectId: PROJECT_ID,

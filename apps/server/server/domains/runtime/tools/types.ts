@@ -22,6 +22,7 @@ import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
 import type { DocumentTextPolicy } from "./document-text.js";
+import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
@@ -163,11 +164,12 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  * narrow suspend/resume seam the orchestrator owns.
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
-  spawn(input: SpawnToolArgs): Promise<SpawnResult>;
+  /** A run's result, or `invalid_arguments` for an override the caller may not make. */
+  spawn(input: SpawnToolArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 
 export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
-  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult>;
+  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
   threadReport(
@@ -284,10 +286,12 @@ export interface ToolRegistration {
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**
-   * Renders the handler's typed result, success or error, into the text the
-   * model sees (D43). The executor stores the typed result beside the text.
+   * Renders the handler's typed result into the text the model sees (D43, D65),
+   * given the call's parsed input (`{}` when it didn't parse). The executor
+   * stores the typed result beside the text. A refusal (`MeridianError`) never
+   * reaches it: the executor renders refusals itself.
    */
-  renderResult?: (result: JsonValue) => string;
+  renderResult?: (result: JsonValue, input: JsonObject) => string;
 }
 
 export interface ToolExecutionError {

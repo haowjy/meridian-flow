@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import {
   createDrizzleProjectWorkRepository,
   deleteWorkTransition,
@@ -38,12 +39,14 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const workContext = createWorkContextReader({
       threads: repos.threads,
       threadWorks: repos.threadWorks,
       works,
+      readChainPermission: async () => "edit" as const,
     });
     const eventWriter = createDrizzleEventJournalWriter(db);
     const runClaim = createDrizzleRunClaim(db);
@@ -204,7 +207,7 @@ else
       await notices.materializeIdle(ids.threadId);
       const archived = await updates();
       const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
-      expect(archivedBlocks[0]?.textContent).toContain("archived: this Work is read-only");
+      expect(archivedBlocks[0]?.textContent).toContain("writes: archived in auto-apply.");
 
       await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
       await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);

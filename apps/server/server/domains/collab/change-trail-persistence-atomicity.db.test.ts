@@ -41,7 +41,7 @@ describe("change trail (postgres)", () => {
         `),
       );
       try {
-        await expect(harness.autoPush(branchId)).rejects.toThrow();
+        await expect(harness.push(branchId)).rejects.toThrow();
       } finally {
         await db.execute(sql.raw(`DROP TRIGGER inject_change_trail_failure ON ${table}`));
       }
@@ -58,7 +58,7 @@ describe("change trail (postgres)", () => {
   it("persists proven replacements as live ranges and deletes conservatively", async () => {
     const proven = createHarness();
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
-    await proven.autoPush(provenBranchId);
+    await proven.push(provenBranchId);
     const provenChange = (await proven.trailRowMembership()).details[0]?.changes[0];
     expect(provenChange).toMatchObject({
       kind: "modify",
@@ -80,7 +80,7 @@ describe("change trail (postgres)", () => {
     ]);
     const conservative = createHarness();
     const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
-    await conservative.autoPush(conservativeBranchId);
+    await conservative.push(conservativeBranchId);
     const conservativeChange = (await conservative.trailRowMembership()).details[0]?.changes[0];
     expect(conservativeChange).toMatchObject({
       kind: "delete",
@@ -92,7 +92,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-commit-retry");
     const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toEqual(beforeMarkdown);
     expect(await harness.noticeRows()).toEqual([]);
     const committed = await harness.trailRowMembership();
@@ -105,7 +105,7 @@ describe("change trail (postgres)", () => {
       documentCount: 1,
     });
 
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "already_pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "already_pushed" });
     expect(await harness.trailRowMembership()).toEqual(committed);
   });
 
@@ -113,7 +113,7 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     const branchId = await harness.seedDestructivePush("trail-shared-delete");
     await harness.makeJournalOwnershipMixed();
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     const beforeDelete = await harness.trailRowMembership();
     expect(beforeDelete.shells).toEqual([
       expect.objectContaining({ ownerKind: "turn", turnId: expect.any(String), changeCount: 1 }),

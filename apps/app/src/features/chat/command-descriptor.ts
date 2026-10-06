@@ -186,17 +186,21 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  invoke: {
+  // A `skill` call loads that skill's SKILL.md. The row names the skill, not
+  // the file: the writer never opens a skill body as a document.
+  skill: {
     Icon: Sparkles,
     phrases: (tool) => {
-      const slug = stringInput(toolInputObject(tool), "skillname");
+      const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
-      const skill = humanizeSkillSlug(slug);
-      return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
+      // The quotes ride inside the value: an apostrophe in an ICU message
+      // escapes the placeholder next to it.
+      const skill = `'${humanizeSkillSlug(slug)}'`;
+      return tenses(t`Invoking ${skill}…`, t`Invoked ${skill}`);
     },
     failureVerb: () => t`Couldn't run that skill`,
     pathlessTitle: null,
-    expand: "renderer",
+    expand: "none",
   },
   // Work commands manage the writer's Works, never their manuscript, and the
   // whole family wears the Work glyph (Layers — the same mark that rides

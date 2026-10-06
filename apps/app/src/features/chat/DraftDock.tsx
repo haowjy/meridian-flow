@@ -73,8 +73,9 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const openContextUri = useChatContextNavigation();
   const openRow = useCallback(
     (row: DockRow) => {
-      if (!openContextUri || !row.contextPath) return;
-      openContextUri(contextUriFromWritePath(row.contextPath));
+      const uri = row.contextPath ? contextUriFromWritePath(row.contextPath) : null;
+      if (!openContextUri || !uri) return;
+      openContextUri(uri);
     },
     [openContextUri],
   );
@@ -91,6 +92,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       rows.length > 0 ||
       projectDraftDispositionRows(dispositionSnapshot, controller.projectId).length > 0,
     isBusy: controller.isDisposing,
+    dispositionLocked: controller.dispositionLocked,
     dispositionError: controller.dockDispositionError,
     reviewRow,
     openRow,
@@ -203,7 +205,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       setConfirmingDiscardAll(false);
                       dock.startDiscardAll();
                     }}
-                    disabled={dock.isBusy}
+                    disabled={dock.dispositionLocked}
                   >
                     <Trans>Discard</Trans>
                   </QuietButton>
@@ -215,7 +217,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       if (single && firstPending) dock.discardRow(firstPending);
                       else setConfirmingDiscardAll(true);
                     }}
-                    disabled={dock.generating || dock.isBusy || !firstPending}
+                    disabled={dock.generating || dock.dispositionLocked || !firstPending}
                   >
                     {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
                   </QuietButton>
@@ -224,7 +226,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                       if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
                       else dock.startApplyAll();
                     }}
-                    disabled={dock.generating || dock.isBusy || !firstPending}
+                    disabled={dock.generating || dock.dispositionLocked || !firstPending}
                   >
                     {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
                   </QuietButton>

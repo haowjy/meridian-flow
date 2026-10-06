@@ -34,7 +34,7 @@
  *   | tool.executing          | Tool dispatch begins                        |
  *   | tool.output_delta       | Best-effort live stdout/stderr chunk        |
  *   | tool.result             | Tool execution completes                    |
- *   | permission.denied       | Tool blocked by PermissionGate              |
+ *   | permission.denied       | Tool outside the agent's tool policy        |
  *   | model.response_received | A model response is recorded                |
  *   | usage                   | Cumulative token/cost tick                  |
  *   | turn.completed          | Turn finishes successfully                  |
@@ -60,7 +60,10 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
+import type {
+  DocumentRevisionEvidence,
+  PermissionDeniedReason,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -105,7 +108,7 @@ import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
-import { invalidArgumentsResult, type ToolExecutor, type ToolRegistry } from "../tools/index.js";
+import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -144,11 +147,7 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import {
-  type PermissionDecision,
-  type PermissionGate,
-  permissionGateFromToolPolicy,
-} from "./permissions/index.js";
+import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -229,7 +228,7 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
+    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
@@ -276,7 +275,7 @@ type ResponseWriteCommitOutcome =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out; their writes did not land (D29). */
-      refused: Array<{ documentId: string; message: string }>;
+      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -1039,19 +1038,11 @@ async function persistToolRejection(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  decision: Extract<PermissionDecision, { allowed: false }> & {
-    category: Extract<OrchestratorEvent, { type: "permission.denied" }>["category"];
-  };
+  reason: string;
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  // The gate's invalid_arguments refusal reads exactly like the executor's.
-  const rejectionResult: JsonObject =
-    input.decision.kind === "invalid_arguments"
-      ? invalidArgumentsResult(input.decision.issues)
-      : { error: input.decision.kind, reason: input.decision.reason };
-  const rejectionOutput: JsonValue =
-    input.decision.kind === "invalid_arguments" ? input.decision.reason : rejectionResult;
+  const rejectionResult: JsonObject = { error: "permission_denied", reason: input.reason };
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1059,7 +1050,7 @@ async function persistToolRejection(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: rejectionOutput,
+        output: rejectionResult,
         result: rejectionResult,
         isError: true,
       },
@@ -1069,21 +1060,17 @@ async function persistToolRejection(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        ...(input.decision.kind === "permission_denied"
-          ? [
-              {
-                type: "permission.denied" as const,
-                toolCallId: input.call.id,
-                toolName: input.call.name,
-                category: input.decision.category,
-                reason: input.decision.reason,
-              },
-            ]
-          : []),
+        {
+          type: "permission.denied" as const,
+          toolCallId: input.call.id,
+          toolName: input.call.name,
+          category: "tool_denied" as const,
+          reason: input.reason,
+        },
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: rejectionOutput,
+          output: rejectionResult,
           result: rejectionResult,
           isError: true,
         },
@@ -1113,6 +1100,8 @@ async function persistUncommittedWriteResult(input: {
   block: Block;
   text: string;
   status?: "internal_error" | "invalid_write";
+  /** A file-policy refusal at the save: `permission_denied` with this reason. */
+  reason?: PermissionDeniedReason;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1121,8 +1110,12 @@ async function persistUncommittedWriteResult(input: {
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
-      status: input.status ?? "internal_error",
-      payload: { ...(staged?.path ? { path: staged.path } : {}), message },
+      status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
+      payload: {
+        ...(staged?.path ? { path: staged.path } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+        message,
+      },
     }),
   );
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1354,7 +1347,7 @@ type BuiltGenerateRequest = {
   agentSlug: string | null;
   thread: Thread;
   resolvedModel: AssembledNextTurnContext["resolvedModel"];
-  permissionGate: PermissionGate;
+  policy: ToolPolicy;
 };
 
 function buildGenerateRequestFromAssembled(input: {
@@ -1367,10 +1360,7 @@ function buildGenerateRequestFromAssembled(input: {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
     resolvedModel: assembled.resolvedModel,
-    permissionGate: permissionGateFromToolPolicy(
-      assembled.policy,
-      assembled.thread.kind === "subagent" ? ["return_result"] : [],
-    ),
+    policy: assembled.policy,
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -1379,16 +1369,15 @@ function buildGenerateRequestFromAssembled(input: {
 }
 
 /**
- * A call that must see the reply's writes saved first. A Work switch changes
- * where later writes go; an undo or redo reverses saved history, so it can't
- * reach a write still staged in this reply.
+ * A call that must see the reply's writes saved first. An undo or redo
+ * reverses saved history, so it can't reach a write still staged in this reply.
  */
 function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
   const args = call.arguments;
-  if (!args || typeof args !== "object" || !("command" in args)) return false;
-  if (call.name === "work") return args.command === "switch";
-  if (call.name === "write") return args.command === "undo" || args.command === "redo";
-  return false;
+  if (call.name !== "write" || !args || typeof args !== "object" || !("command" in args)) {
+    return false;
+  }
+  return args.command === "undo" || args.command === "redo";
 }
 
 /** Staged edits belong to a response scope, which rotates at a save boundary. */
@@ -1455,6 +1444,7 @@ function createResponseScope(input: {
                     threadId,
                     block: write.block,
                     status: "invalid_write",
+                    ...(refusal.reason ? { reason: refusal.reason } : {}),
                     text: refusal.message,
                   })
                 : settled.status === "committed"
@@ -2235,14 +2225,13 @@ async function executeLoop({
 
             // If denied, we still persist a tool_result block (with isError: true)
             // so the model sees the rejection in the next turn's context build.
-            const decision = built.permissionGate.check(call.name, call.arguments);
-            if (!decision.allowed) {
+            if (!built.policy.has(call.name)) {
               const persistedRejection = await persistToolRejection({
                 deps,
                 threadId: input.threadId,
                 turn: currentTurn,
                 call,
-                decision: { ...decision, category: "tool_denied" },
+                reason: missingToolRefusal(call.name),
                 blockSeq,
               });
               blockSeq = persistedRejection.nextBlockSeq;

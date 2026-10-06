@@ -23,11 +23,6 @@ export type {
   WriteStatus,
   WriteSuccessPhase,
 } from "./model-result.js";
-export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
-export type CopyCommand = Extract<WriteCommand, { command: "copy" }>;
-export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
-export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
-export type RemoveCommand = Extract<WriteCommand, { command: "remove" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */

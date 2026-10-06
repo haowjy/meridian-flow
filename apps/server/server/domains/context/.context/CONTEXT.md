@@ -30,7 +30,7 @@ Each result also says which `version` it came from, `draft` or `live`.
 draft in draft mode and everything else reads live. Drafted sources this
 project stores (`isDrafted`, minus `user://`, which lives in the personal
 project's manifest) also list through the project manifest, so a draft-only
-create appears in `ls` and `search`. `version: "live"` on the view reads published text and the live
+create appears in `ls` and `search`. `version: "live"` on the view reads live text and the live
 manifest, and never touches a draft. `read`, `search` and `ls` build their port
 with the version the model named.
 Plain markdown convenience reads and versioned reads share collab serialization.
@@ -155,7 +155,8 @@ namespace. Project/Work restore changes availability, not file locations.
 
 The Context command transaction receives the complete resolved scheme/Work set.
 Personal User scopes first share the personal-project provisioning owner lock.
-Production then acquires sorted Work lifecycle locks and sorted logical namespace
+Production then acquires sorted Work lifecycle locks (through `lockSeamWorks`,
+which also confirms the caller's bound edit grants) and sorted logical namespace
 locks **before** source provisioning, preflight, or catalog publication. Logical
 keys exist before lazy source rows; direct Drizzle stores derive the same keys
 from backing ownership. Do not enter a single-source transaction and then issue
@@ -270,8 +271,7 @@ currently available to the request owner in the requested project.
   checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
   manifest-aware view consistently, and observations fail closed when membership
   authority is unavailable. New non-empty content is parsed into a detached
-  initialize-only checkpoint; work/thread manifest auto-push also waits for the
-  aggregate commit.
+  initialize-only checkpoint.
   An older row missing membership is repaired on its next tracked-document touch;
   repair seeds absent Yjs state from the row projection and preserves existing
   canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project

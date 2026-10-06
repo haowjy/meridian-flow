@@ -5,7 +5,7 @@ import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
-import { renderRefusal, renderThreadHistoryOutput } from "../spawn/history-result.js";
+import { renderThreadHistoryOutput } from "../spawn/history-result.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import {
   listReadableThreads,
@@ -15,6 +15,7 @@ import {
 import { historyDocumentText } from "./document-text.js";
 import { threadHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderRefusal } from "./refusal.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
 

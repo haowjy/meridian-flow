@@ -25,7 +25,7 @@ dependency). `spawn/child-run-driver.ts` supplies admission input to the shared
 run session, binds the parent card before execution, then reads the exact saved
 result and publishes after the session releases. It owns no lease or terminal
 report policy. `loop/execution-finalizer.ts`
-owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
+owns immutable terminal transaction A.
 `spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
 original card in place with `block.updated`, appends body-free
 `agent.run_completed`, queues compact child-provenance notice text for
@@ -40,7 +40,7 @@ traversal boundary, including compaction selectors.
 
 The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
-`SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
+`SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, scalar `model`/`effort` replace, `permission` only lowers, `disallowed-tools` adds to the child's denials and never lifts one) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key. A patch has no `tools` allow-list. Spawn's `disallowed_tools` takes real tool names checked against `TOOL_CATALOG`, with no alias fold. Before the merge, `resolve-child-invocation` refuses a permission raise and any child tool the parent lacks, both as `invalid_arguments` the model can fix: the coordinator returns the typed `InvalidArgumentsResult` beside `SpawnResult` (`ChildRunResult`), and the spawn tool renders it like the executor's parse refusal. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
 
@@ -100,8 +100,7 @@ original card is bound at admission and terminally replaced by B; a missing card
 but a live caller still receives the notification. `return_result` captures
 candidate content with its successful ordinary `tool_result` in one
 transaction; capture alone never makes success. `spawn_status` remains a
-lifecycle hint for activity readers, while the removed `spawn_result` column is
-not a competing body store. Every child run publishes neutral, body-free
+lifecycle hint for activity readers, not a body store. Every child run publishes neutral, body-free
 `agent.run_completed` metadata; there is no spawn-named completion event.
 
 ## Activity
@@ -134,10 +133,11 @@ Named targets resolve by name within the parent binding's roster; a target with
 An omitted or empty `agent` creates an agent-less child: the binding has no
 Agent revision (`definitionRevisionId` null), the body is the host-owned empty
 `GENERIC_AGENT_BODY`, and the child copies the caller's resolved configuration,
-including `tools`, `disallowed-tools`, and `effort`. Named children resolve
-those fields from their own retained revision. A nested generic keeps the
-ancestor's write deny because it copies that configuration. Turn context reads
-tools and effort from configuration only.
+including `tools`, `disallowed-tools`, `effort` and `permission`. Named
+children resolve those fields from their own retained revision. A nested
+generic keeps every ancestor denial and a `read` permission because it copies
+that configuration; the chain minimum caps it anyway. Turn context reads tools
+and effort from configuration only.
 Max spawn depth defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
 prompt; ordinary turn preparation adds its retained persona and mandatory report

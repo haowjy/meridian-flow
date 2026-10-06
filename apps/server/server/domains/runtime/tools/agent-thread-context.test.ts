@@ -4,6 +4,7 @@ import {
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
   type InvocationOverlay,
+  type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import type { AgentRevision } from "../../packages/index.js";
@@ -22,15 +23,8 @@ import { createSkillToolRegistrations } from "./skill-tool.js";
 import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
-const WRITER_MAP = {
-  edit: "allow",
-  ask_user: "allow",
-} as const;
-
-const CRITIC_MAP = {
-  edit: "deny",
-  ask_user: "allow",
-} as const;
+const WRITER_MAP = ["read", "write", "work", "spawn", "return_result"];
+const CRITIC_MAP = ["read", "work"];
 
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
@@ -57,12 +51,13 @@ const fixtureRevision: AgentRevision = {
 };
 
 async function boundContext(metadata: {
-  tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
-  definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
+  tools?: string[];
+  definitionTools?: string[];
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
   invocationOverlay?: InvocationOverlay | null;
   revision?: AgentRevision | null;
   kind?: "primary" | "subagent";
+  invokedSkills?: Record<string, RetainedSkillReference>;
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -83,8 +78,10 @@ async function boundContext(metadata: {
     }),
     ...createSpawnToolRegistrations(),
     ...createSkillToolRegistrations({
-      loadBody: async (_threadId, slug) => ({ slug, body: "", resources: [] }),
-      loadResource: async () => "",
+      agentRevisions: {
+        readThreadBinding: async () => undefined,
+        readSource: async () => undefined,
+      },
     }),
   ])
     registry.register(registration);
@@ -101,6 +98,7 @@ async function boundContext(metadata: {
       : metadata.revision;
   return resolveAgentThreadTurnContext({
     thread: { ...thread, kind: metadata.kind ?? "primary" },
+    threads: repos.threads,
     agentRevisions: {
       async readThreadBinding(threadId) {
         if (threadId !== thread.id) return undefined;
@@ -110,9 +108,11 @@ async function boundContext(metadata: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
+            permission: "edit",
             ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
           invocationOverlay: metadata.invocationOverlay ?? null,
+          invokedSkills: metadata.invokedSkills ?? {},
         };
       },
     },
@@ -174,6 +174,22 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
     expect(hasTool(generic.tools, "read")).toBe(true);
     expect(hasTool(generic.tools, "write")).toBe(false);
+  });
+
+  it("offers skill only once the thread can see a skill, such as one the user invoked", async () => {
+    const none = await boundContext({});
+    const invoked = await boundContext({
+      invokedSkills: {
+        "story-review": {
+          packageRevisionId: "src",
+          path: "skills/story-review/SKILL.md",
+          contentDigest: "digest",
+        },
+      },
+    });
+    expect(hasTool(none.tools, "skill")).toBe(false);
+    expect(none.policy.has("skill")).toBe(false);
+    expect(hasTool(invoked.tools, "skill")).toBe(true);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {

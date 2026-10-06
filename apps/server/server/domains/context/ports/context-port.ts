@@ -20,6 +20,7 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
+import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /**
@@ -40,8 +41,8 @@ export interface ThreadContextView {
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
-  /** Whether the thread's Work drafts AI writes (D40). */
-  draftMode: boolean;
+  /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
+  draftWork: WorkRef | null;
   version?: "draft" | "live";
 }
 
@@ -113,6 +114,8 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
+  /** Words in the projection; set only when {@link ContextListOptions.wordCounts} asks. */
+  wordCount?: number;
 };
 
 export type BinaryFileEntry = BaseListEntry & {
@@ -127,6 +130,17 @@ export type DirectoryEntry = BaseListEntry & { kind: "directory" };
 export type ContextFileEntry = EditableFileEntry | BinaryFileEntry;
 export type ContextListEntry = DirectoryEntry | ContextFileEntry;
 export type FileEntry = ContextListEntry;
+
+/** A folder's entries and the folder's canonical URI; `uri` is null for the root listing. */
+export interface ContextListing {
+  uri: string | null;
+  entries: ContextListEntry[];
+}
+
+export interface ContextListOptions {
+  /** Count each text document's words from its projection (no extra query). */
+  wordCounts?: boolean;
+}
 
 interface BaseFileRef {
   uri: string;
@@ -177,8 +191,6 @@ export interface SearchResult {
   revision: string | null;
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
-  /** The version the passages came from: this thread's Work draft, or live (D14). */
-  version: "draft" | "live";
   /** Matching passages in file order, capped by the adapter. Never empty. */
   matches: SearchMatch[];
   /**
@@ -309,7 +321,7 @@ export interface ContextPort {
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
-  list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;
+  list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 
   /**
    * Create an empty directory at the URI, including any missing ancestors.

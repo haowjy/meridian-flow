@@ -1,35 +1,24 @@
 # collab TODO
 
-## Route model undo per write handle, not per thread and document
+## Paths that hold a pooled connection while taking another
 
-`reversalCoreFor` (`domain/thread-peer-core-pool.ts`) sends every model undo
-or redo on a document to the thread's Work-draft history when the thread has
-drafted that document, else to live. A thread that wrote a document live and
-later drafted it (after a mode switch) can't undo the live write by handle;
-it is told so, and the writer's undo chip still works. Fix: look up each
-selected handle's journal and reverse each group where it landed; D42's one
-save already spans both. Input to the planned draft rework.
+The live-pull deadlock (10 concurrent pulls each held a root transaction and
+waited for a second connection) is fixed by snapshotting first. These paths
+still hold one connection while acquiring another, on purpose for lock
+order, so enough concurrent callers can exhaust the pool the same way:
 
-## Bound thread-core lock order across a reply's cores
+- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
+  transaction: its live snapshots and its `run(...)` each need a connection.
+- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
+  thread in one transaction, then opens a separate root transaction.
+- `createDeferredLiveProjectionCoordinator.withDocument` in
+  `adapters/hocuspocus-coordinator.ts`: inside a response transaction, reads
+  committed state on a second connection.
 
-A reply can hold several thread-peer cores (one per destination). Review
-finding F5 flagged a possible pool starvation when replies wait on each
-other's cores; not reproduced. PR 2 phase 3 (write seams and locking) sets the
-lock order. Affected: `domain/thread-peer-core-pool.ts`, the response
-finalizer.
-
-## Make archived Work documents read-only in live Yjs sessions
-
-Archived Work documents remain readable and therefore pass document access and
-live-room admission. The app mounts the archived surface read-only, but the live
-Yjs writer-ingress path does not consult Work lifecycle, so a direct or already
-connected peer can still submit updates for durable journaling. Add a read-only
-lifecycle fact to live-session admission and fence updates without revoking the
-readable room.
-
-Affected paths: `apps/server/server/lib/document-access.ts`,
-`apps/server/server/lib/yjs-ws-handler.ts`, project document opening, and live
-session availability contracts.
+Reproduce each with more concurrent callers than the pool's size (the PR 2
+perf bench's item 9 shows how), then restructure so no path waits for a
+connection while holding one. See
+[file-policy performance](../../file-policy/.context/performance.md).
 
 ## Draft preview fails on empty paragraphs
 

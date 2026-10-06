@@ -40,11 +40,24 @@ export const agentEffortAuthoringSchema = z
   .pipe(z.enum(AGENT_EFFORT_AUTHORING_VALUES))
   .transform((value) => (value === "max" ? ("xhigh" as const) : value));
 
-export const TOOL_POLICIES = ["allow", "deny"] as const;
-export type ToolPolicy = (typeof TOOL_POLICIES)[number];
-export const toolPolicySchema = z.enum(TOOL_POLICIES);
+/**
+ * What an agent may change (file-access §8). `read` agents still edit their own
+ * Work's `scratch://`; delegation applies the minimum over the agent chain.
+ */
+const AGENT_PERMISSION_VALUES = ["read", "edit"] as const;
+export type AgentPermission = (typeof AGENT_PERMISSION_VALUES)[number];
+/** An unset permission resolves to this. */
+export const DEFAULT_AGENT_PERMISSION: AgentPermission = "edit";
+export const agentPermissionSchema = z.enum(AGENT_PERMISSION_VALUES, {
+  error: (issue) =>
+    `Expected "read" or "edit", got ${JSON.stringify((issue as { input?: unknown }).input)}`,
+});
 
-/** Mars tool-name aliases, canonical here so authoring and overrides fold the same way. */
+/**
+ * Mars tool-name aliases, canonical here so authoring and overrides fold the
+ * same way. No alias may be a Flow tool name (`search`, `find`): folding one
+ * would rename a real tool.
+ */
 export const toolAliases: Record<string, string> = {
   bash: "bash",
   shell: "bash",
@@ -63,10 +76,8 @@ export const toolAliases: Record<string, string> = {
   skill: "skill",
   workflow: "workflow",
   glob: "glob",
-  find: "glob",
   grep: "grep",
   rg: "grep",
-  search: "grep",
   ripgrep: "grep",
   notebook: "notebook",
   jupyter: "notebook",
@@ -106,100 +117,50 @@ export const toolAliases: Record<string, string> = {
   toolsearch: "tool_search",
 };
 
-/** `write` is a model tool name, never an authoring capability. */
-export const WRITE_IS_MODEL_TOOL_ERROR =
-  '"write" is the model tool name; use "edit" for the document-edit capability';
+/**
+ * `edit` was a capability; access is now `permission` and the document tool is
+ * `write` (D12, D34). An allow-list naming it fails with the replacement named.
+ */
+const EDIT_IS_PERMISSION_ERROR =
+  '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.';
 
-const RETIRED_READ_NAMES = new Set(["read", "cat", "view", "file_read"]);
-const RETIRED_READ_ERROR =
-  'Reading is always available; remove this retired read capability entry. Use "edit" to control document mutations.';
+const TOOL_LIST_ERROR =
+  "Expected a list of tool names, e.g. [read, write]; deny tools with disallowed-tools.";
 
-function validateAuthoringToolName(
-  value: string,
-): { normalized: NormalizedToolName; error?: undefined } | { normalized: null; error: string } {
-  const open = value.indexOf("(");
-  const rawHead = (open < 0 ? value : value.slice(0, open)).trim().toLowerCase();
-  const normalized = normalizeToolName(value);
-  if (RETIRED_READ_NAMES.has(rawHead) || (normalized && RETIRED_READ_NAMES.has(normalized.head))) {
-    return { normalized: null, error: RETIRED_READ_ERROR };
-  }
-  if (!normalized) return { normalized: null, error: "Invalid Mars tool reference" };
-  if (normalized.head === "write") {
-    return { normalized: null, error: WRITE_IS_MODEL_TOOL_ERROR };
-  }
-  return { normalized };
+/** One authoring tool name, alias-folded; Flow's support check rejects names outside its catalog. */
+function toolReference(rejectEdit: boolean) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value, context) => {
+      const normalized = normalizeToolName(value);
+      if (!normalized) {
+        context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
+        return z.NEVER;
+      }
+      if (rejectEdit && normalized.head === "edit") {
+        context.addIssue({ code: "custom", message: EDIT_IS_PERMISSION_ERROR });
+        return z.NEVER;
+      }
+      return normalized.name;
+    });
 }
 
-export const toolReferenceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .transform((value, context) => {
-    const validated = validateAuthoringToolName(value);
-    if (!validated.normalized) {
-      context.addIssue({ code: "custom", message: validated.error });
-      return z.NEVER;
-    }
-    return validated.normalized.name;
-  });
-export const toolReferencesSchema = z
-  .array(toolReferenceSchema)
-  .transform((values) => [...new Set(values)]);
+function toolList(rejectEdit: boolean) {
+  return z
+    .array(toolReference(rejectEdit), { error: TOOL_LIST_ERROR })
+    .transform((values) => [...new Set(values)]);
+}
+
+/** A `tools` allow-list; duplicates collapse after folding. */
+export const toolAllowListSchema = toolList(true);
 
 /**
- * Fold aliases before duplicate detection so `shell` and `bash` collide
- * observably. Same folded name with the same policy collapses; a different
- * policy is a diagnostic. `Object.fromEntries` collapses only after the check.
+ * A `disallowed-tools` list. Flow ignores a name it doesn't have (D57), so
+ * `edit` (a normal Claude Code read-only profile's `Edit`) is ignored too.
  */
-export const toolMapSchema = z
-  .record(z.string(), toolPolicySchema)
-  .transform((map) =>
-    Object.entries(map).map(
-      ([name, policy]) => [validateAuthoringToolName(name.trim()), policy] as const,
-    ),
-  )
-  .superRefine((folded, context) => {
-    const names = new Map<string, string>();
-    for (const [validated, policy] of folded) {
-      const normalized = validated.normalized;
-      if (!normalized) {
-        context.addIssue({ code: "custom", message: validated.error });
-        continue;
-      }
-      const name = normalized.name;
-      if (names.has(name) && names.get(name) !== policy) {
-        context.addIssue({ code: "custom", message: "Empty or duplicate normalized tool name" });
-      }
-      names.set(name, policy);
-    }
-  })
-  .transform((folded) =>
-    Object.fromEntries(
-      folded.flatMap(([validated, policy]) =>
-        !validated.normalized ? [] : [[validated.normalized.name, policy] as const],
-      ),
-    ),
-  );
-
-/**
- * Authoring/patch tool representation; folds tool-name aliases on parse.
- * Array vs map is exclusive: a union collapses inner custom issues to "Invalid input".
- */
-export const toolRepresentationSchema = z.unknown().transform((value, context) => {
-  const parsed = Array.isArray(value)
-    ? toolReferencesSchema.safeParse(value)
-    : toolMapSchema.safeParse(value);
-  if (parsed.success) return parsed.data;
-  for (const issue of parsed.error.issues) {
-    context.addIssue({ code: "custom", message: issue.message, path: issue.path });
-  }
-  return z.NEVER;
-});
-/** Resolved config stores canonical names already, so it is the plain union. */
-export const resolvedToolsSchema = z.union([
-  z.array(z.string()),
-  z.record(z.string(), toolPolicySchema),
-]);
+export const toolDenyListSchema = toolList(false);
 
 /** A retained skill reference resolved by binding preparation. */
 export const retainedSkillReferenceSchema = z.object({
@@ -217,9 +178,11 @@ export const resolvedAgentConfigurationSchema = z.object({
     available: z.array(retainedSkillReferenceSchema),
   }),
   namedTargets: z.array(z.object({ name: z.string(), definitionRevisionId: z.string() })),
-  tools: resolvedToolsSchema.optional(),
+  /** Allow-list of real tool names; absent means the full catalog. */
+  tools: z.array(z.string()).optional(),
   "disallowed-tools": z.array(z.string()).optional(),
   effort: agentEffortSchema.optional(),
+  permission: agentPermissionSchema,
 });
 export type ResolvedAgentConfiguration = z.infer<typeof resolvedAgentConfigurationSchema>;
 
@@ -228,8 +191,8 @@ export const invocationPatchSchema = z
   .object({
     model: z.string().optional(),
     effort: agentEffortSchema.optional(),
-    tools: toolRepresentationSchema.optional(),
-    "disallowed-tools": z.array(toolReferenceSchema).optional(),
+    permission: agentPermissionSchema.optional(),
+    "disallowed-tools": z.array(z.string()).optional(),
     subagents: z.array(z.string()).optional(),
     skills: z
       .object({

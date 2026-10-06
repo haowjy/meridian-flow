@@ -8,6 +8,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
+import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
@@ -84,6 +85,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
+    liveHistory: journal,
     reversalHistory: {
       branches: {
         resolveThreadBranch: async (documentId, threadId) => {
@@ -101,6 +103,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       deferUntilRollback: () => false,
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
+    fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({

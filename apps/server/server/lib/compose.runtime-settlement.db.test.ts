@@ -1,9 +1,10 @@
-/** Production-composition regression for response credit and staged-push completion. */
+/** Production-composition regression for response credit and staged-push settlement. */
 
 import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,7 +21,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../test-support/drizzle-reset.js"
     );
     const { createInMemoryEventSink } = await import("../domains/observability/index.js");
-    const { unloadHocuspocus, useComposedRuntimes } = await import(
+    const { bindEditAgent, unloadHocuspocus, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
 
@@ -106,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             model: "removed-history-model",
             skills: { load: [], available: [] },
             namedTargets: [],
+            permission: "edit" as const,
           },
           null,
         );
@@ -161,6 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
       });
       const responseId = await runtimes.insertModelResponse(THREAD);
+      await bindEditAgent(runtime, THREAD_ID);
 
       const toolContext = {
         threadId: THREAD_ID,
@@ -240,7 +243,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { file: "runtime-settlement.md", documentId: DOC_ID },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,
@@ -288,7 +291,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,
@@ -306,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "runtime-settlement",
-          destination: { kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" },
+          grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId: responseId,
@@ -317,6 +320,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       });
+      // The Work is in auto-apply, but this reply wrote its draft: the writes
+      // wait there (D59) until the writer applies them.
+      const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);
+      expect(unapplied.ok && unapplied.value.trim()).toBe(
+        writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
+      );
+      const [draft] = await db
+        .select({ id: schema.documentBranches.id })
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.documentId, DOC_ID),
+          ),
+        );
+      if (!draft) throw new Error("the reply's draft is missing");
+      await ports.documentSync.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID });
       await app.changeTrailDelivery.drain();
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);

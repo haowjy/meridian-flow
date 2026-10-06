@@ -1,8 +1,8 @@
 /**
- * The one `invalid_arguments` refusal: the executor's input parse and the
- * permission gate's command check both refuse a call this way, so the model
- * sees the same text and the app the same typed result whichever layer caught
- * the mistake. The text is rendered from the result (D8).
+ * The one `invalid_arguments` refusal: the executor's input parse and spawn's
+ * override checks both refuse a call this way, so the model sees the same text
+ * and the app the same typed result whichever layer caught the mistake. The
+ * text is rendered from the result (D8).
  */
 import type { ZodError, z } from "zod";
 
@@ -22,6 +22,15 @@ export function invalidArgumentsResult(
   issues: readonly InvalidArgumentIssue[],
 ): InvalidArgumentsResult {
   return { error: "invalid_arguments", issues: [...issues] };
+}
+
+export function isInvalidArgumentsResult(value: unknown): value is InvalidArgumentsResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { error?: unknown }).error === "invalid_arguments" &&
+    Array.isArray((value as { issues?: unknown }).issues)
+  );
 }
 
 /** The model's text for an `invalid_arguments` refusal. */
@@ -45,7 +54,7 @@ export function parseToolInput<T extends z.ZodType>(
   return { ok: false, issues: invalidArgumentIssues(parsed.error) };
 }
 
-export function invalidArgumentIssues(error: ZodError): InvalidArgumentIssue[] {
+function invalidArgumentIssues(error: ZodError): InvalidArgumentIssue[] {
   return error.issues.flatMap((issue): InvalidArgumentIssue[] => {
     if (issue.code === "unrecognized_keys") {
       return issue.keys.map((key) => ({

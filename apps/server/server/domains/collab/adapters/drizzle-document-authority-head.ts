@@ -157,7 +157,7 @@ export async function replaceDocumentAuthorityHeadGeneration(
 > {
   const { and, ne } = await import("drizzle-orm");
   const { branchPushSettlementOutbox, documentYjsCheckpoints } = await import("@meridian/database");
-  const { lockDocumentMutation } = await import("./drizzle-document-mutation-lock.js");
+  const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assembleComposedSystemPrompt } from "./composed-system-prompt.js";
 
 describe("assembleComposedSystemPrompt", () => {
-  it("joins available skill slugs and descriptions into the frozen bytes", () => {
+  it("lists available skills by slug in the frozen bytes", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
@@ -18,12 +18,23 @@ describe("assembleComposedSystemPrompt", () => {
         },
       ],
     });
-    expect(prompt.startsWith("You are Writer.\n\nAvailable skills\n\n")).toBe(true);
-    expect(prompt).toContain("creative-writing-modes\nModes for putting prose on the page.");
-    expect(prompt).toContain("writing-principles\nReader reward and LLM fiction failure modes.");
+    expect(prompt).toContain(
+      [
+        "You are Writer.",
+        "",
+        "Available skills",
+        "Load a skill with skill before doing work it covers.",
+        "",
+        "creative-writing-modes",
+        "Modes for putting prose on the page.",
+        "",
+        "writing-principles",
+        "Reader reward and LLM fiction failure modes.",
+      ].join("\n"),
+    );
   });
 
-  it("lists slug as identity and name when they differ", () => {
+  it("names the skill after its slug when the name differs", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
@@ -38,7 +49,7 @@ describe("assembleComposedSystemPrompt", () => {
     expect(prompt).not.toContain("\nStory Review\n");
   });
 
-  it("lists a preloaded skill's resources as calls that load them", () => {
+  it("heads a preloaded skill's body as skill does", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Critic.",
       preloadedSkills: [
@@ -46,12 +57,12 @@ describe("assembleComposedSystemPrompt", () => {
           slug: "story-review",
           description: "Review drafts.",
           body: "Review body.\n",
-          resources: ["resources/line-edit.md"],
+          readable: true,
         },
       ],
     });
     expect(prompt).toContain(
-      'skill invoked: story-review\n\ndescription: Review drafts.\n\nReview body.\n\nResources:\nskill({"slug":"story-review","resource":"resources/line-edit.md"})',
+      "skills://story-review/SKILL.md\nPaths in this skill are relative to skills://story-review/.\n\ndescription: Review drafts.\n\nReview body.\n",
     );
   });
 

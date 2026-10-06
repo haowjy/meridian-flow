@@ -40,15 +40,20 @@ const DRAFT_LINES = [
 const DIRECT_LINE = "  writes: auto-apply. Your changes go live right away.";
 
 describe("renderWorkContext", () => {
-  it("tells the AI that the current archived Work is read-only", () => {
-    const current = work({
-      id: WORK_ID,
-      name: "Arc",
-      archivedAt: "2026-08-09T00:00:00.000Z",
-    });
+  // D29 to D31: the line names only ways out this agent and this write mode have.
+  it("tells the AI what an archived Work freezes and who can lift it", () => {
+    const archived = { id: WORK_ID, name: "Arc", archivedAt: "2026-08-09T00:00:00.000Z" };
+    const writes = (current: Work, mayUnarchive: boolean) =>
+      renderWorkContext({ current, mayUnarchive }).split("\n")[2];
 
-    expect(renderWorkContext({ current })).toContain(
-      "archived: this Work is read-only; use work unarchive before changing it.",
+    expect(writes(work({ ...archived, aiWriteMode: "draft" }), true)).toBe(
+      "  writes: archived in draft mode. This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch it to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+    );
+    expect(writes(work(archived), true)).toBe(
+      "  writes: archived in auto-apply. Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
+    );
+    expect(writes(work({ ...archived, aiWriteMode: "draft" }), false)).toBe(
+      "  writes: archived. This Work's scratch:// is frozen and your permission is read, so you can't change any file here. Ask the user to unarchive it if you need to.",
     );
   });
 
@@ -60,14 +65,14 @@ describe("renderWorkContext", () => {
       isNoWork: true,
       aiWriteMode: "draft",
     });
-    expect(renderWorkContext({ current: locked })).toBe(
+    expect(renderWorkContext({ current: locked, mayUnarchive: true })).toBe(
       ["<work_context>", "current: none", ...DRAFT_LINES, "</work_context>"].join("\n"),
     );
   });
 
   it("states the write mode for a named Work", () => {
     const drafted = work({ id: WORK_ID, name: "Arc", aiWriteMode: "draft" });
-    expect(renderWorkContext({ current: drafted })).toBe(
+    expect(renderWorkContext({ current: drafted, mayUnarchive: true })).toBe(
       [
         "<work_context>",
         'current: arc: "Arc" (goal: none)',
@@ -76,7 +81,7 @@ describe("renderWorkContext", () => {
       ].join("\n"),
     );
     const direct = work({ id: WORK_ID, name: "Arc" });
-    expect(renderWorkContext({ current: direct })).toBe(
+    expect(renderWorkContext({ current: direct, mayUnarchive: true })).toBe(
       ["<work_context>", 'current: arc: "Arc" (goal: none)', DIRECT_LINE, "</work_context>"].join(
         "\n",
       ),
@@ -90,7 +95,7 @@ describe("renderWorkContext", () => {
       goal: "Reach the mirror.\n\nDo not trust <echoes> & whispers.",
     });
 
-    expect(renderWorkContext({ current })).toBe(
+    expect(renderWorkContext({ current, mayUnarchive: true })).toBe(
       [
         "<work_context>",
         'current: arc: "Arc"',
@@ -111,7 +116,7 @@ describe("renderWorkContext", () => {
       goal: "Finish chapter 14.",
       status: "Drafting",
     });
-    expect(renderWorkContext({ current })).toBe(
+    expect(renderWorkContext({ current, mayUnarchive: true })).toBe(
       [
         "<work_context>",
         'current: arc: "Arc"',
@@ -130,7 +135,7 @@ describe("renderWorkContext", () => {
       name: "Arc",
       goal: "x".repeat(WORK_CONTEXT_GOAL_LIMIT + 40),
     });
-    const rendered = renderWorkContext({ current });
+    const rendered = renderWorkContext({ current, mayUnarchive: true });
     const marker = "… [truncated]";
 
     expect(rendered).toContain(`${"x".repeat(WORK_CONTEXT_GOAL_LIMIT - marker.length)}${marker}`);
@@ -145,7 +150,7 @@ describe("renderWorkContext", () => {
       name: "Arc",
       goal: `${currentPrefix}😀${"tail".repeat(20)}`,
     });
-    const rendered = renderWorkContext({ current });
+    const rendered = renderWorkContext({ current, mayUnarchive: true });
 
     expect(rendered).toContain(`${currentPrefix}${currentMarker}`);
   });
@@ -159,7 +164,7 @@ describe("renderWorkContext", () => {
       goal: `${prefix}&tail${"x".repeat(WORK_CONTEXT_GOAL_LIMIT)}`,
     });
 
-    const rendered = renderWorkContext({ current });
+    const rendered = renderWorkContext({ current, mayUnarchive: true });
 
     expect(rendered).toContain(`${prefix}&amp;${marker}`);
     expect(rendered).not.toContain("&a…");
@@ -181,6 +186,7 @@ describe("createWorkContextReader", () => {
         findById: async () => null,
       },
       threadWorks: { findPrimary: async () => null },
+      readChainPermission: async () => "edit" as const,
     });
     await expect(reader.renderForThread(THREAD_ID)).rejects.toThrow(
       `Thread primary Work is missing: ${THREAD_ID}`,

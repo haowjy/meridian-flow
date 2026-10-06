@@ -32,15 +32,17 @@ describe("agent definition support", () => {
     expect(agentExecutionUnavailableReasons(loaded, gateway, "model-a")).toEqual([]);
   });
 
-  it("allows compiled tools and disallowed-tools", () => {
+  it("refuses an unknown name in tools and ignores one in disallowed-tools", () => {
     expect(
       agentDefinitionUnsupportedReasons(
-        definition({
-          tools: { read: "allow", edit: "deny", ask_user: "allow" },
-          "disallowed-tools": ["bash"],
-        }),
+        definition({ tools: ["read", "write"], "disallowed-tools": ["spawn"] }),
       ),
     ).toEqual([]);
+    expect(
+      agentDefinitionUnsupportedReasons(
+        definition({ tools: ["read", "bash"], "disallowed-tools": ["grep"] }),
+      ),
+    ).toEqual(["Unknown tool in tools: bash"]);
   });
 
   it("still refuses unknown fields but allows a nonempty subagent roster", () => {

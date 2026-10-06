@@ -42,7 +42,6 @@ export interface LocalDocumentSessionReservationPort {
 
 export interface LocalDocumentSessionAdoptionPort {
   begin(input: {
-    projectId: ProjectId;
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
