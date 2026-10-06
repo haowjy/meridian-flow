@@ -104,6 +104,11 @@ export interface PersistRedoEntry {
 export interface JournalReadOptions {
   since?: number;
   until?: number;
+  /**
+   * False reads from the reconstruction base, not the newest checkpoint, so
+   * rows a checkpoint already folded in still carry their origins.
+   */
+  fromCheckpoint?: boolean;
 }
 
 /** Ordered Yjs update log: append/read/checkpoint/compact only. */

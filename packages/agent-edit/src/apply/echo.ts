@@ -286,10 +286,9 @@ export function applyConcurrentUpdates(
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
     if (touched.size === 0) continue;
 
-    const buckets = bucketsForOrigin(item.origin, byActor);
-    for (const bucket of buckets) {
-      for (const hash of touched) bucket.add(hash);
-    }
+    const bucket = bucketForOrigin(item.origin, byActor);
+    if (!bucket) continue;
+    for (const hash of touched) bucket.add(hash);
     const deletedOrigin = item.origin.type === "agent" ? "agent" : "human";
     captureDeletedBodies(before, diff.deleted, deletedOrigin, deletedBodies);
   }
@@ -326,6 +325,7 @@ function captureNewLineage(
   origin: ConcurrentUpdateOrigin,
   target: Array<ContentLineage & { origin: "human" | "agent" }>,
 ): void {
+  if (origin.type === "link-update") return;
   const existing = visibleLineage(before);
   const actor = origin.type === "agent" ? "agent" : "human";
   for (const lineage of visibleLineage(after)) {
@@ -488,11 +488,13 @@ function mergeOrigin(
   return "mixed";
 }
 
-function bucketsForOrigin(
+/** Who a concurrent change is reported as; a link update is reported as nobody's. */
+function bucketForOrigin(
   origin: ConcurrentUpdateOrigin,
   byActor: { human: Set<string>; agent: Set<string> },
-): Set<string>[] {
-  return [origin.type === "agent" ? byActor.agent : byActor.human];
+): Set<string> | null {
+  if (origin.type === "link-update") return null;
+  return origin.type === "agent" ? byActor.agent : byActor.human;
 }
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */

@@ -170,6 +170,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(HOLDER)).toContain(`[One](${RENAMED})`);
     });
 
+    it("the link update a move makes doesn't reach the model as the writer's edit", async () => {
+      const { runtime, script } = await start();
+      const notes = "manuscript://notes.md";
+      const created = await runtime.app.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .createTrackedDocument(notes, `Intro.\n\nSee [One](${CHAPTER}).`);
+      if (!created.ok) throw new Error(JSON.stringify(created.error));
+      const reply = await script.begin();
+      await reply.call("read", { path: notes });
+      await reply.call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      await runtime.app.linkUpdates.sweep();
+      await reply.call("write", {
+        command: "insert",
+        path: notes,
+        find: "Intro.",
+        content: " More.",
+      });
+      const saved = await reply.save();
+      if (saved.status !== "committed") throw new Error(saved.status);
+      // Neither the link update nor the model's own write is anyone's concurrent edit.
+      expect(saved.documents.map((document) => document.concurrentEdits)).toEqual([undefined]);
+      expect(await script.text(notes)).toContain(`See [One](${RENAMED}).`);
+    });
+
     it("deletes a chapter: it leaves ls and read", async () => {
       const { script } = await start();
       const reply = await script.begin();

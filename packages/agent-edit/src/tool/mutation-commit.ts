@@ -25,7 +25,7 @@ import type {
   JournalCommitKind,
   UpdateJournal,
 } from "../ports/update-journal.js";
-import { effectiveYjsUpdate } from "../yjs-update.js";
+import { applyYjsUpdateIfEffective, effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
@@ -229,6 +229,7 @@ export function createMutationCommit(deps: {
     try {
       const updates = await concurrentUpdatesSince(
         coordinator,
+        journal,
         input.docId,
         preOwnDoc ?? input.runtime.doc,
         detectionDoc,
@@ -429,6 +430,7 @@ export function createMutationCommit(deps: {
     try {
       const updates = await concurrentUpdatesSince(
         coordinator,
+        journal,
         input.docId,
         liveDoc,
         detectionDoc,
@@ -570,6 +572,7 @@ function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
 
 async function concurrentUpdatesSince(
   coordinator: DocumentCoordinator,
+  journal: UpdateJournal,
   docId: string,
   doc: Y.Doc,
   baselineDoc: Y.Doc | undefined,
@@ -589,15 +592,72 @@ async function concurrentUpdatesSince(
       attemptId,
     });
   }
-  const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-  const probe = baselineDoc ?? new Y.Doc({ gc: false });
-  try {
-    return effectiveYjsUpdate(probe, update)
-      ? [{ update, origin: { type: "human", userId: "unknown" } }]
-      : [];
-  } finally {
-    if (!baselineDoc) probe.destroy();
+  if (!baselineDoc) {
+    const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
+    const empty = new Y.Doc({ gc: false });
+    try {
+      return effectiveYjsUpdate(empty, update)
+        ? [{ update, origin: { type: "human", userId: "unknown" } }]
+        : [];
+    } finally {
+      empty.destroy();
+    }
   }
+  // Journaled changes keep the origin their row records, so the model's own writes and the
+  // link updater's rewrites (#694) aren't reported as a person's; the rest of the delta
+  // (a person's edit not journaled yet) has none to read, so it counts as theirs.
+  const probe = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(baselineDoc));
+    const updates: ConcurrentUpdate[] = [];
+    for (const row of await journaledUpdatesIn(journal, docId, doc, liveJournalSeq)) {
+      if (applyYjsUpdateIfEffective(probe, row.update)) updates.push(row);
+    }
+    // Only what no row accounts for, so a skipped own row isn't counted again here.
+    const rest = Y.encodeStateAsUpdate(doc, Y.encodeStateVector(probe));
+    if (effectiveYjsUpdate(probe, rest)) {
+      updates.push({ update: rest, origin: { type: "human", userId: "unknown" } });
+    }
+    return updates;
+  } finally {
+    probe.destroy();
+  }
+}
+
+/**
+ * The journal rows `doc` already holds, with their origins. Read past the
+ * newest checkpoint, which may already fold them in.
+ */
+async function journaledUpdatesIn(
+  journal: UpdateJournal,
+  docId: string,
+  doc: Y.Doc,
+  sinceSeq: number | undefined,
+): Promise<ConcurrentUpdate[]> {
+  const snapshot = await journal.read(docId, {
+    fromCheckpoint: false,
+    ...(sinceSeq === undefined ? {} : { since: sinceSeq }),
+  });
+  const held = Y.decodeStateVector(Y.encodeStateVector(doc));
+  return snapshot.updates
+    .filter((row) =>
+      [...Y.decodeStateVector(Y.encodeStateVectorFromUpdate(row.update))].every(
+        ([client, clock]) => (held.get(client) ?? 0) >= clock,
+      ),
+    )
+    .map((row) => ({ update: row.update, origin: journalOrigin(row.meta) }));
+}
+
+/** A journal row's origin as concurrent attribution reads it (`UpdateMeta.origin`). */
+function journalOrigin(meta: UpdateMeta): ConcurrentUpdateOrigin {
+  if (meta.origin === "link-update") return { type: "link-update" };
+  if (meta.origin.startsWith("agent:")) {
+    return { type: "agent", actorTurnId: meta.actorTurnId ?? meta.origin.slice("agent:".length) };
+  }
+  if (meta.origin.startsWith("human:")) {
+    return { type: "human", userId: meta.origin.slice("human:".length) };
+  }
+  return { type: "system" };
 }
 
 function mergeUpdates(updates: Uint8Array[]): Uint8Array {

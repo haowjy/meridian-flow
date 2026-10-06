@@ -68,7 +68,9 @@ export type ApplyTransactionOrigin = unknown;
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
   | { type: "human"; userId: string }
-  | { type: "system" };
+  | { type: "system" }
+  /** The link updater's rewrite after a move (#694): nobody's edit, so never reported as one. */
+  | { type: "link-update" };
 
 export interface ConcurrentUpdate {
   update: Uint8Array;
