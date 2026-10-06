@@ -85,19 +85,19 @@ function decodeWorkReceipt(event: { type: string; metadata?: unknown }) {
 }
 
 /**
- * A model `undo` or `redo` that put something back. It can reverse a write
+ * A model `undo` or `redo` result, whatever its status. It can reverse a write
  * from any earlier turn, so every turn's lineage (its receipt control, and
- * whether its moves and deletes still stand) is stale once it lands.
+ * whether its moves and deletes still stand) may be stale once it lands. An
+ * error can follow steps that went through ("Undone: w4." and then the
+ * refusal), and only the message says so; refreshing on every result keeps
+ * the rows true without reading model text.
  */
 function isWriteReversal(event: { type: string; result?: unknown }): boolean {
   if (event.type !== EventType.TOOL_CALL_RESULT) return false;
   const result = event.result;
   if (!result || typeof result !== "object") return false;
-  const { command, status } = result as Record<string, unknown>;
-  return (
-    (command === "undo" || command === "redo") &&
-    (status === "reversed" || status === "reconciled" || status === "partial")
-  );
+  const { command } = result as Record<string, unknown>;
+  return command === "undo" || command === "redo";
 }
 
 export function useThreadDurableProjections({

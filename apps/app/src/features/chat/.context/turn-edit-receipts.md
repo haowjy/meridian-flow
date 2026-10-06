@@ -31,7 +31,8 @@ whole-turn Undo. Their timeline rows (`NamespaceChangeRow`) read the same
 lineage, so a model `undo`/`redo`, the turn's Undo and the writer's Restore
 all reach the row one way: the lineage refetches. A model `undo`/`redo` result
 on the thread stream invalidates every turn's lineage, since it can reverse
-any earlier turn. Restore sits on both the delete's timeline row and its receipt line
+any earlier turn. That includes an error result, which may follow steps that
+went through. Restore sits on both the delete's timeline row and its receipt line
 while the delete is applied: one control and one mutation. It marks the
 lineage reversed at once, so both places follow, and a refusal lands as a
 note where the writer clicked.
