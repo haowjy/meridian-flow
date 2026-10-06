@@ -1,3 +1,4 @@
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -46,7 +47,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextTabFromFile } from "./context-tab-from-file";
@@ -400,9 +401,16 @@ export class ProjectDocumentNavigationAdapter {
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tab = isWorkScopedProjectContextScheme(input.scheme)
-      ? undefined
-      : contextTabFromFile(input.scheme, input.file, input.routeWorkId);
+    const uri = parseContextUri(input.file.uri);
+    const tabWorkId =
+      isWorkScopedProjectContextScheme(input.scheme) &&
+      uri.ok &&
+      uri.value.authority.kind === "none"
+        ? null
+        : input.routeWorkId;
+    const tab = isEditorScheme(input.scheme)
+      ? contextTabFromFile(input.scheme, input.file, tabWorkId)
+      : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)
