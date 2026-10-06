@@ -288,7 +288,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       });
-      expect(reversed.status).toBe("reversed");
+      // The rewrite edited the AI's own paragraph, so the undo merges with an
+      // edit it didn't make: reconciled, not refused.
+      expect(reversed.status).toBe("reconciled");
       expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
     });
 
