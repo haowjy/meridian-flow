@@ -52,7 +52,6 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
