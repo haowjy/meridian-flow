@@ -96,10 +96,9 @@ export type EditorViewProps = {
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
   /**
-   * The Work this editor is open in — the active editing context, not a review's
-   * ownership. It scopes what the `@` menu offers, what the resolver is asked, and
-   * where a followed link is looked for. Runtime scope: changing it never
-   * remounts the editor.
+   * Host route context, retained for draft navigation. Links never read this:
+   * their scope comes from the holder's resource location or No Work.
+   * Changing route context never remounts the editor.
    */
   workId?: string | null;
   /** Active draft room for inline review; absent means bind to the live document room. */
