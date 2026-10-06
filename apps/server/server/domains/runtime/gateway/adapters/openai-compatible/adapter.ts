@@ -24,7 +24,7 @@ import type {
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { mapOpenAIError } from "./errors.js";
+import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
@@ -46,6 +46,7 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
     defaultHeaders: config.auth?.headers,
     // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
     maxRetries: 0,
+    fetch: providerFetch,
   });
 
   const providerId = config.id;
@@ -92,7 +93,7 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
           };
           return;
         }
-        const mapped = mapOpenAIError(err);
+        const mapped = mapProviderHttpError(err);
         yield { type: "error", ...mapped };
       }
     },

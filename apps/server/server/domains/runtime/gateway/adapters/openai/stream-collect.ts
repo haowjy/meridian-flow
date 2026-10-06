@@ -473,6 +473,7 @@ export function* eventsFromResponseStreamEvent(
               : "provider_error",
           message: response.error.message,
           retryable: false,
+          providerError: { status: null, message: response.error.message },
           result: buildGenerateResult(acc),
         };
       }

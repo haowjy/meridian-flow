@@ -1,7 +1,12 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
-import type { JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
+import type {
+  JsonObject,
+  JsonValue,
+  ProviderErrorResponse,
+  Turn,
+} from "@meridian/contracts/threads";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -282,6 +287,40 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
     pinnedRequestTurnIds: metadata.pinnedRequestTurnIds,
     ...(metadata.trigger ? { trigger: metadata.trigger } : {}),
     ...(metadata.instructions ? { instructions: metadata.instructions } : {}),
+  };
+}
+
+/** Cap on the provider message kept on a failed reply. */
+const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
+
+/**
+ * Failed-reply metadata: the terminal reason, the gateway's retry verdict when the
+ * failure carried one, and the provider's status and capped message when it answered.
+ */
+export function replyFailureMetadata(
+  metadata: JsonValue | null | undefined,
+  failure: { reason: string; retryable?: boolean; providerError?: ProviderErrorResponse },
+): JsonObject {
+  const previous =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as JsonObject)
+      : {};
+  const preserved = { ...previous };
+  delete preserved.retryable;
+  delete preserved.providerError;
+  const { providerError } = failure;
+  return {
+    ...preserved,
+    reason: failure.reason,
+    ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+    ...(providerError
+      ? {
+          providerError: {
+            status: providerError.status,
+            message: providerError.message.slice(0, REPLY_PROVIDER_MESSAGE_LIMIT),
+          },
+        }
+      : {}),
   };
 }
 
