@@ -36,13 +36,20 @@ export function projectAddressMatchesContextTarget(
   noWorkId: string | null,
   /** The document the address resolved to, absent while it is still resolving. */
   addressDocumentId?: string,
+  /** The Editor's resolved Work: the one an address that names none (a copied live URL) shows. */
+  editorWorkId?: string | null,
 ): boolean {
   const destination = address.destination;
   if (destination.kind !== "document") return false;
   const work = workSelectionFor(destination, target.workId, noWorkId);
+  // An address with no `?work=` is not a different Work from No Work: it shows the Editor's own.
+  const addressWork =
+    address.work.kind === "absent" && editorWorkId
+      ? workSelectionFor(destination, editorWorkId, noWorkId)
+      : address.work;
   if (
-    work.kind !== address.work.kind ||
-    (work.kind === "id" && !(address.work.kind === "id" && address.work.id === work.id))
+    work.kind !== addressWork.kind ||
+    (work.kind === "id" && !(addressWork.kind === "id" && addressWork.id === work.id))
   )
     return false;
   if (target.documentId !== undefined && addressDocumentId !== undefined)

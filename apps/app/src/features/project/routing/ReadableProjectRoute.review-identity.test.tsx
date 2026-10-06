@@ -412,3 +412,14 @@ it("fails the launch, and stays where it is, when its document cannot be located
     expect(history.length).toBe(length);
   });
 });
+
+it("replaces the entry when a copied live address names no Work and its document is reviewed", async () => {
+  // A live document opened from a copied URL has no `?work=` to say No Work. Reviewing it
+  // is still the same document in the same Work, so Back must not step through the launch.
+  await withRoute("manuscript/a.md", "document-a", "/a.md", async (history) => {
+    const before = history.length;
+    await open(launchOfA, draftLaunch);
+    expect(history.length).toBe(before);
+    expect(history.location.search).toContain("draft=draft-a");
+  });
+});

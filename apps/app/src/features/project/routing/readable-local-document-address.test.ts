@@ -417,6 +417,32 @@ describe("projectAddressMatchesContextTarget", () => {
     ).toBe(false);
   });
 
+  it("reads an address that names no Work (a copied live URL) as the Editor's own Work", () => {
+    // Same document, same Work: a review launch replaces the entry rather than pushing.
+    expect(
+      projectAddressMatchesContextTarget(
+        address({ kind: "absent" }),
+        target(noWorkId),
+        noWorkId,
+        undefined,
+        noWorkId,
+      ),
+    ).toBe(true);
+    // The Editor's Work is another one: a different destination.
+    expect(
+      projectAddressMatchesContextTarget(
+        address({ kind: "absent" }),
+        target(noWorkId),
+        noWorkId,
+        undefined,
+        "work-1",
+      ),
+    ).toBe(false);
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "absent" }), target(noWorkId), noWorkId),
+    ).toBe(false);
+  });
+
   it("never matches a request whose Work is not yet resolved", () => {
     expect(projectAddressMatchesContextTarget(address({ kind: "none" }), target(), noWorkId)).toBe(
       false,
