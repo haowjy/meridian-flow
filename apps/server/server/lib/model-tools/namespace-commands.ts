@@ -221,7 +221,6 @@ export async function runNamespaceCommand(
         documentId: source.documentId,
         threadId: ctx.threadId,
         turnId: ctx.turnId ?? null,
-        responseId: ctx.responseId ?? null,
         draftBranchId: null,
       },
       () =>

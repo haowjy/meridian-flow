@@ -25,7 +25,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
-import { modelResponses, threads, turns } from "./agent-threads";
+import { threads, turns } from "./agent-threads";
 import { documents, works } from "./content";
 import { users } from "./users";
 
@@ -487,9 +487,11 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
+    /**
+     * The reply's edit scope: its model response's id until a save boundary
+     * rotates it mid-reply, so not a `model_responses` reference.
+     */
+    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
     reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
     reversalActorUserId: uuid("reversal_actor_user_id")
       .$type<UserId>()
@@ -522,9 +524,11 @@ export const documentYjsReversals = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
+    /**
+     * The reply's edit scope: its model response's id until a save boundary
+     * rotates it mid-reply, so not a `model_responses` reference.
+     */
+    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
     // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
@@ -600,9 +604,11 @@ export const agentEditMutations = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
+    /**
+     * The reply's edit scope: its model response's id until a save boundary
+     * rotates it mid-reply, so not a `model_responses` reference.
+     */
+    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
     actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
     userId: text("user_id"),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.
@@ -669,9 +675,6 @@ export const agentNamespaceChanges = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
-    responseId: uuid("response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "cascade" }),
     /** Undoing a `create` deletes the document; undoing a `delete` restores it. */
     kind: text("kind").$type<"create" | "move" | "delete">().notNull(),
     /** A move's old location, or where the document was created or deleted. */

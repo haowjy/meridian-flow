@@ -13,7 +13,6 @@ export type NamespaceChangeOwner = {
   documentId: string;
   threadId: string;
   turnId: string | null;
-  responseId: string | null;
   /** The Work draft the change lands in; null for live. Undo reverses it where it landed. */
   draftBranchId: string | null;
 };

@@ -258,7 +258,6 @@ async function recordCreate(
     documentId: address.documentId,
     threadId: ctx.threadId,
     turnId: ctx.turnId ?? null,
-    responseId: ctx.responseId ?? null,
     wId,
     fromUri: address.uri,
     draftBranchId: null,

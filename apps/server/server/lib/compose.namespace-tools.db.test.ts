@@ -6,6 +6,7 @@
  * the writer restores an agent's delete or undoes its whole turn.
  */
 
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -323,6 +324,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await liveUndo.save();
       expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+    });
+
+    it("after a save boundary, a reply undoes and moves under its rotated edit id", async () => {
+      const { runtime, script } = await start();
+      const reply = await script.begin();
+      await reply.call("read", { path: CHAPTER });
+      await reply.call("write", {
+        command: "insert",
+        path: CHAPTER,
+        find: "text.",
+        content: " More.",
+      });
+      await reply.save();
+      // The orchestrator's save boundary: the rest of the reply runs under a new edit id.
+      const rotated = randomUUID();
+      const call = (args: Record<string, unknown>) =>
+        runtime.app.toolExecutor.executeTool(
+          { id: randomUUID(), name: "write", arguments: args },
+          { ...THREAD, responseId: rotated, agentSlug: null },
+        );
+      const undone = await call({ command: "undo", path: CHAPTER });
+      expect(text(undone)).toMatch(/^status: reversed; path: manuscript:\/\/chapter\.md; undo: w1/);
+      const moved = await call({ command: "move", from: { path: CHAPTER }, path: RENAMED });
+      expect(text(moved)).toMatch(/^status: success; path: manuscript:\/\/renamed\.md/);
+      await runtime.ports.documentSync.finalizeResponseCommit(rotated, THREAD as never);
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
     });
 
     it("refuses to undo a move whose old path is taken", async () => {

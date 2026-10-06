@@ -1,5 +1,5 @@
 {
-  "id": "9168da05-723c-40ae-bf07-2fd741b6afb8",
+  "id": "24ee6c74-4238-4a22-af4f-a08fc7f12bfe",
   "prevId": "dcb01017-9977-499e-ab5d-884eefefa0be",
   "version": "7",
   "dialect": "postgresql",
@@ -7256,19 +7256,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "agent_edit_mutations_authoring_response_id_model_responses_id_fk": {
-          "name": "agent_edit_mutations_authoring_response_id_model_responses_id_fk",
-          "tableFrom": "agent_edit_mutations",
-          "tableTo": "model_responses",
-          "columnsFrom": [
-            "authoring_response_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7351,12 +7338,6 @@
         },
         "turn_id": {
           "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "response_id": {
-          "name": "response_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -7489,19 +7470,6 @@
           "tableTo": "turns",
           "columnsFrom": [
             "turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_namespace_changes_response_id_model_responses_id_fk": {
-          "name": "agent_namespace_changes_response_id_model_responses_id_fk",
-          "tableFrom": "agent_namespace_changes",
-          "tableTo": "model_responses",
-          "columnsFrom": [
-            "response_id"
           ],
           "columnsTo": [
             "id"
@@ -9531,19 +9499,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "document_yjs_reversals_authoring_response_id_model_responses_id_fk": {
-          "name": "document_yjs_reversals_authoring_response_id_model_responses_id_fk",
-          "tableFrom": "document_yjs_reversals",
-          "tableTo": "model_responses",
-          "columnsFrom": [
-            "authoring_response_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "document_yjs_reversals_reversed_by_user_id_users_id_fk": {
           "name": "document_yjs_reversals_reversed_by_user_id_users_id_fk",
           "tableFrom": "document_yjs_reversals",
@@ -9754,19 +9709,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_yjs_updates_authoring_response_id_model_responses_id_fk": {
-          "name": "document_yjs_updates_authoring_response_id_model_responses_id_fk",
-          "tableFrom": "document_yjs_updates",
-          "tableTo": "model_responses",
-          "columnsFrom": [
-            "authoring_response_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "document_yjs_updates_reversal_actor_user_id_users_id_fk": {
