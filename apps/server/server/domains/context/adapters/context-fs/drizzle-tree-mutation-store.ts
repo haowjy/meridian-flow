@@ -692,13 +692,29 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         if (!folder) return Err({ code: "not_found" });
       }
       const filename = renderFilename(row.name, row.extension);
+      const [taken] = await tx
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.contextSourceId, command.sourceId as never),
+            row.folderId === null
+              ? isNull(documents.folderId)
+              : eq(documents.folderId, row.folderId),
+            eq(documents.name, row.name),
+            eq(documents.extension, row.extension),
+            contentDocumentPredicate(),
+            isNull(documents.deletedAt),
+          ),
+        )
+        .limit(1);
       if (
-        await hasOppositeContextEntry(this.db, command.sourceId, row.folderId, filename, "file")
+        taken ||
+        (await hasOppositeContextEntry(this.db, command.sourceId, row.folderId, filename, "file"))
       ) {
         return Err({ code: "conflict" });
       }
       const now = new Date();
-      // A live file at the same name fails the active-name unique index: a conflict.
       await tx
         .update(documents)
         .set({ deletedAt: null, deletedByWorkId: null, updatedAt: now })
