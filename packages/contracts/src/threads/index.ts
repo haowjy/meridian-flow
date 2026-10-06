@@ -417,6 +417,7 @@ export interface Block {
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
+export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 export { formatThreadRef, parseThreadRef } from "./thread-ref.js";

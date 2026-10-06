@@ -5,6 +5,7 @@
  * while refusing retries after committed output.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mapProviderHttpError } from "./adapters/provider-http-error.js";
 import { streamWithRetry } from "./attempt-stream.js";
 import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "./deadline.js";
 import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "./domain/index.js";
@@ -192,6 +193,25 @@ describe("streamWithRetry retry gate", () => {
     const terminal = last(events);
     expect(terminal).toMatchObject({ type: "error", retryable: true });
     expect(terminal?.type === "error" ? terminal.message : "").toContain("stalled");
+  });
+});
+
+describe("streamWithRetry provider refusals", () => {
+  it("makes one attempt for a 4xx the gateway does not name", async () => {
+    async function* insufficientBalance(): AsyncGenerator<StreamEvent> {
+      yield {
+        type: "error",
+        ...mapProviderHttpError({ status: 402, message: "402 Insufficient Balance" }),
+      };
+    }
+    const { adapter, calls } = scriptedAdapter([insufficientBalance, textThenEnd]);
+
+    const events = await collect(
+      streamWithRetry(adapter, REQUEST, MODEL, RETRY, { stallMs: 80, ceilingMs: 0 }),
+    );
+
+    expect(calls()).toBe(1);
+    expect(last(events)).toMatchObject({ type: "error", code: "provider_error", retryable: false });
   });
 });
 

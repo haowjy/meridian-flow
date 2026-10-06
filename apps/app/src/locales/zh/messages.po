@@ -585,6 +585,10 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Back online (all changes saved)"
+msgstr ""
+
 #: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr ""
@@ -3719,6 +3723,14 @@ msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "The AI asked you a question"
+msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down."
+msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
