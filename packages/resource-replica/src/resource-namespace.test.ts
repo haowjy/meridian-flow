@@ -601,10 +601,13 @@ describe("namespace reconciliation", () => {
 });
 
 it.each([
-  "work_archived",
-  "work_deleted",
-  "work_missing",
-] as const)("keeps accepted placement after %s and does not replay the refusal", async (reason) => {
+  ["work_archived", false],
+  ["work_deleted", false],
+  ["work_missing", false],
+  ["work_archived", true],
+  ["work_deleted", true],
+  ["work_missing", true],
+] as const)("keeps accepted placement after %s (receiptless %s) and does not replay", async (reason, receiptless) => {
   const before = local();
   before.resource.canonical = {
     scheme: "scratch",
@@ -637,27 +640,39 @@ it.each([
     lock: immediateLock,
     newAttemptIds: () => ({ attemptId: "attempt", operationId: "operation" }),
     transport: transport({
-      submit: async () => ({
-        kind: "operation",
-        receipt: {
-          operationId: "operation",
-          command: {
-            kind: "move",
-            sourceUri: "scratch://@/before.md",
-            destinationUri: "scratch://@/after.md",
-            expected: { kind: "file", nodeId: "document" },
-          },
-          result: {
-            ok: false,
-            error: {
-              code: "context_unavailable",
-              reason,
-              workSlug: null,
-              uri: "scratch://@/after.md",
+      submit: async () =>
+        receiptless
+          ? {
+              kind: "refusal",
+              operationId: "operation",
+              error: {
+                code: reason,
+                message: "Work unavailable",
+                source: "system",
+                retryable: false,
+              },
+            }
+          : {
+              kind: "operation",
+              receipt: {
+                operationId: "operation",
+                command: {
+                  kind: "move",
+                  sourceUri: "scratch://@/before.md",
+                  destinationUri: "scratch://@/after.md",
+                  expected: { kind: "file", nodeId: "document" },
+                },
+                result: {
+                  ok: false,
+                  error: {
+                    code: "context_unavailable",
+                    reason,
+                    workSlug: null,
+                    uri: "scratch://@/after.md",
+                  },
+                },
+              },
             },
-          },
-        },
-      }),
     }),
   });
   expect(result).toBe("needs-repair");
@@ -712,27 +727,39 @@ it.each([
     lock: immediateLock,
     newAttemptIds: () => ({ attemptId: "place-attempt", operationId: "place-operation" }),
     transport: transport({
-      submit: async () => ({
-        kind: "operation",
-        receipt: {
-          operationId: "place-operation",
-          command: {
-            kind: "move",
-            sourceUri: "unfiled://drafts/Untitled.md",
-            destinationUri: "scratch://@/new.md",
-            expected: { kind: "file", nodeId: "document" },
-          },
-          result: {
-            ok: false,
-            error: {
-              code: "context_unavailable",
-              reason,
-              workSlug: null,
-              uri: "scratch://@/new.md",
+      submit: async () =>
+        receiptless
+          ? {
+              kind: "refusal",
+              operationId: "place-operation",
+              error: {
+                code: reason,
+                message: "Work unavailable",
+                source: "system",
+                retryable: false,
+              },
+            }
+          : {
+              kind: "operation",
+              receipt: {
+                operationId: "place-operation",
+                command: {
+                  kind: "move",
+                  sourceUri: "unfiled://drafts/Untitled.md",
+                  destinationUri: "scratch://@/new.md",
+                  expected: { kind: "file", nodeId: "document" },
+                },
+                result: {
+                  ok: false,
+                  error: {
+                    code: "context_unavailable",
+                    reason,
+                    workSlug: null,
+                    uri: "scratch://@/new.md",
+                  },
+                },
+              },
             },
-          },
-        },
-      }),
     }),
   });
   // An independently accepted Unfiled document must not be discarded when later filing fails.

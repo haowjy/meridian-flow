@@ -80,8 +80,9 @@ export function planRejectedReservationDeletion(
     !created ||
     acceptedPlacement ||
     !failed ||
-    outcome?.kind !== "operation" ||
-    outcome.receipt.result.ok
+    !outcome ||
+    outcome.kind === "create" ||
+    (outcome.kind === "operation" && outcome.receipt.result.ok)
   )
     return null;
   return planResourceDeletion(record, failed.projectId, intentId);

@@ -7,6 +7,7 @@ import {
   type FolderNamespaceStore,
   type FolderNamespaceWrite,
   folderObservationFence,
+  type NamespaceOutcome,
   planFolderCatalogInstallation,
   planFolderLocation,
   projectFolderLocation,
@@ -112,14 +113,17 @@ function install(store: MemoryFolders, name: string, fenced = store.current()) {
   });
 }
 
-it("recovers a refused middle of the queue and offers the latest name after reopening", async () => {
+it.each([
+  false,
+  true,
+])("recovers a refused queue (receiptless %s) after reopening", async (receiptless) => {
   const store = new MemoryFolders();
   await command(store, "B");
   let started!: () => void;
   const dispatched = new Promise<void>((resolve) => {
     started = resolve;
   });
-  let refuse!: (value: { kind: "operation"; receipt: ContextOperationReceipt }) => void;
+  let refuse!: (value: NamespaceOutcome) => void;
   const pending = reconcile(store, {
     readOutcome: async () => null,
     submit: async () => {
@@ -131,7 +135,20 @@ it("recovers a refused middle of the queue and offers the latest name after reop
   });
   await dispatched;
   await command(store, "C");
-  refuse({ kind: "operation", receipt: receipt("B", false) });
+  refuse(
+    receiptless
+      ? {
+          kind: "refusal",
+          operationId: "B",
+          error: {
+            code: "work_missing",
+            message: "Work not found.",
+            source: "system",
+            retryable: false,
+          },
+        }
+      : { kind: "operation", receipt: receipt("B", false) },
+  );
   expect(await pending).toBe("needs-repair");
   const reopened = new MemoryFolders();
   reopened.record = structuredClone(store.current());
