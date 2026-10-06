@@ -11,6 +11,7 @@ import {
   projectResourceLocation,
   type ResourceRecord,
   type ResourceWorkAuthority,
+  resourceContextAuthority,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
@@ -20,11 +21,14 @@ import type { ContextTab } from "@/client/stores";
 /**
  * The Work an Editor tab carries: a named Work's id. No Work's documents carry
  * none, because the No Work Editor names no Work. A Work id always states its
- * slug (`ResourceWorkAuthority`, and the server's document authority), and
- * only the No Work row's is null.
+ * slug checked by the command constructor or asserted by the scoped catalog;
+ * the shared durable authority rule decides No Work.
  */
 export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
-  return location.workId && location.workSlug ? location.workId : undefined;
+  if (location.workId === null) return undefined;
+  return resourceContextAuthority("scratch", location).kind === "work"
+    ? location.workId
+    : undefined;
 }
 
 export function contextTabFromFile(

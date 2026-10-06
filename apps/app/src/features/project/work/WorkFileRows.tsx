@@ -5,6 +5,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
+import { useEffect } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ import {
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
 import { EntryNameField } from "../context/EntryNameField";
+import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
@@ -67,6 +69,12 @@ export function ScratchFileRow({
     (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
   );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
+  // Like the tree, a refused rename reopens the name field to try again.
+  const repairRename = edit && file.namespaceFailure === "set-location";
+  const startRename = edit?.onRename;
+  useEffect(() => {
+    if (repairRename) startRename?.(file.path);
+  }, [repairRename, startRename, file.path]);
   if (edit?.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -96,6 +104,9 @@ export function ScratchFileRow({
           <span className="block truncate font-medium">{file.name}</span>
           {folder ? (
             <span className="block truncate text-xs text-muted-foreground">{folder}</span>
+          ) : null}
+          {file.namespaceFailure ? (
+            <NamespaceFailureMark failure={file.namespaceFailure} labelled />
           ) : null}
         </span>
       </button>
@@ -191,6 +202,7 @@ function InlineRename({
     scheme: "scratch",
     path: file.path,
     currentName: file.name,
+    repairName: file.namespaceRepairName,
     siblingNames,
     kind: "file",
     onDone,
