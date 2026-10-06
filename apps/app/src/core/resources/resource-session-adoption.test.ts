@@ -280,13 +280,66 @@ it("rejects an authority fence before pinning the resource generation", async ()
 });
 
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {
-  const { adoption, availability, coordinator, key, metadata } = await fixture();
+  const { adoption, availability, coordinator, created, key, metadata } = await fixture();
   availability.resolve.mockResolvedValueOnce({ kind: "failed" });
 
   await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ adoptionStalled: false });
 
   expect(adoption.begin).toHaveBeenCalledTimes(1);
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
+});
+
+function failAcknowledgementOnce(metadata: IndexedDbResourceMetadata) {
+  const commit = metadata.commitResource.bind(metadata);
+  let failed = false;
+  vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
+    if (!failed && !write.next.resource.obligations.sessionAdoption) {
+      failed = true;
+      throw new Error("transient acknowledgement failure");
+    }
+    return commit(write);
+  });
+}
+
+it("does not label a transport-owned session offline when only the acknowledgement fails", async () => {
+  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
+  const bind = vi.mocked(adoption.bindAndAdopt).getMockImplementation();
+  if (!bind) throw new Error("Missing bind implementation");
+  vi.mocked(adoption.bindAndAdopt).mockImplementation(async (input) => {
+    const result = await bind(input);
+    created[0]?.attachTransport(() => ({
+      synced: true,
+      whenSynced: Promise.resolve(),
+      whenDurablySynced: Promise.resolve(),
+      subscribeStatus(listener) {
+        listener({ kind: "connected" });
+        return () => {};
+      },
+      destroy() {},
+    }));
+    return result;
+  });
+  failAcknowledgementOnce(metadata);
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  verified.handle.release();
+  await created[0]?.destroy();
+});
+
+it("clears a stalled flag when the retry finds the transfer already adopted", async () => {
+  const { coordinator, created, key, metadata, verified } = await fixture();
+  failAcknowledgementOnce(metadata);
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ adoptionStalled: false });
+  verified.handle.release();
 });

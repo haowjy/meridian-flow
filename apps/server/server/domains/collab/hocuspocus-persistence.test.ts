@@ -164,9 +164,6 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
         queued = [];
         for (const callback of callbacks) callback();
       },
-      rollback() {
-        queued = [];
-      },
     };
   }
 
@@ -175,6 +172,7 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
     const doc = docWithText("stored");
 
     await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, doc);
+    await fixture.persistence.drainHocuspocusPersistence();
     expect(fixture.journal.checkpoint).not.toHaveBeenCalled();
 
     fixture.commit();
@@ -185,15 +183,6 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
       7,
       { authorityId: "test-authority", generation: 1n },
     );
-  });
-
-  it("drops the checkpoint when the caller rolls back", async () => {
-    const fixture = liveCheckpointFixture();
-
-    await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, docWithText("uncommitted"));
-    fixture.rollback();
-    await fixture.persistence.drainHocuspocusPersistence();
-    expect(fixture.journal.checkpoint).not.toHaveBeenCalled();
   });
 
   it("skips a checkpoint whose live generation was retired before it ran", async () => {
