@@ -96,6 +96,10 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "“{workName}” is archived, so it can't take new notes. Unarchive it to create this one."
+msgstr ""
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -4057,6 +4061,7 @@ msgstr ""
 msgid "Unable to render diagram"
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/work/ArchivedWorkNotice.tsx
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Unarchive"

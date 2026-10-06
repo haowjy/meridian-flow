@@ -18,15 +18,34 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
 import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
+import { useWorkArchiveToggle } from "@/features/project/work/useWorkArchiveToggle";
+import { WorkCommandFailureRow } from "@/features/project/work/WorkCommandFailureRow";
 
 import type { LinkDocumentRef } from "./follow-link";
-import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
+import { useCreateLinkedDocument, useLinkCreation } from "./use-create-linked-document";
 
-export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
+const UNARCHIVE = ["unarchive"] as const;
+
+/** The host's dialog title. A component, because "doesn't exist yet" depends on the Work. */
+export function FollowOutcomeTitle({
+  outcome,
+  projectId,
+  workId,
+}: {
+  outcome: LinkFollowOutcome;
+  projectId: string | null;
+  workId: string | null;
+}): ReactNode {
+  const creation = useLinkCreation(
+    projectId,
+    workId,
+    outcome.state === "missing" ? outcome.address : null,
+  );
   switch (outcome.state) {
     case "checking":
       return <Trans>Opening the link</Trans>;
@@ -34,7 +53,7 @@ export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
       return <Trans>That link could not be checked</Trans>;
     case "missing": {
       const name = targetName(outcome);
-      return linkCreationTarget(outcome.address) ? (
+      return creation ? (
         <Trans>“{name}” doesn't exist yet</Trans>
       ) : (
         <Trans>“{name}” can't be found</Trans>
@@ -88,9 +107,19 @@ export function FollowOutcomeContent({
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
-  const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId, workId);
-  const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
+  const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId);
+  const creation = useLinkCreation(
+    projectId,
+    workId,
+    outcome.state === "missing" ? outcome.address : null,
+  );
   const name = outcome.state === "missing" ? targetName(outcome) : "";
+  const archivedWork = creation?.kind === "archived" ? creation.work : null;
+  const workName = archivedWork?.name ?? "";
+  const toggleArchive = useWorkArchiveToggle(projectId ?? "");
+  const unarchiveFailure = useWorkCommandFailures(projectId ?? "", UNARCHIVE).get(
+    archivedWork?.id ?? "",
+  );
 
   return (
     <>
@@ -99,6 +128,10 @@ export function FollowOutcomeContent({
           <Trans>Looking for the document this link names.</Trans>
         ) : outcome.state === "failed" ? (
           <Trans>The project could not be reached. The link itself is fine.</Trans>
+        ) : archivedWork ? (
+          <Trans>
+            “{workName}” is archived, so it can't take new notes. Unarchive it to create this one.
+          </Trans>
         ) : creation ? (
           <Trans>Create it and this link opens it.</Trans>
         ) : (
@@ -114,6 +147,8 @@ export function FollowOutcomeContent({
         </p>
       ) : null}
 
+      {unarchiveFailure ? <WorkCommandFailureRow failure={unarchiveFailure} /> : null}
+
       <DialogFooter>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           {outcome.state === "checking" ? t`Cancel` : t`Close`}
@@ -123,13 +158,15 @@ export function FollowOutcomeContent({
             {t`Try again`}
           </Button>
         ) : null}
+        {/* One button for both steps, so focus stays put when Unarchive turns into Create. */}
         {creation ? (
           <Button
             type="button"
             size="sm"
-            disabled={creating}
+            disabled={creating || creation.kind === "loading"}
             onClick={async () => {
-              if (creating) return;
+              if (archivedWork) return void toggleArchive(archivedWork);
+              if (creating || creation.kind !== "create") return;
               // Both steps are local commits, so this resolves at once; the
               // server catches up in the background.
               const documentId = await create(creation);
@@ -138,7 +175,7 @@ export function FollowOutcomeContent({
               await onOpen({ documentId });
             }}
           >
-            {t`Create “${name}”`}
+            {archivedWork ? t`Unarchive` : t`Create “${name}”`}
           </Button>
         ) : null}
       </DialogFooter>

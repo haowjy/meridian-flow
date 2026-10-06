@@ -13,7 +13,7 @@
 import type { Editor } from "@tiptap/core";
 
 import { linkTargetHref } from "@/core/editor/links";
-import { FollowOutcomeContent, followOutcomeTitle } from "@/features/links";
+import { FollowOutcomeContent, FollowOutcomeTitle } from "@/features/links";
 
 import { EditorDialog } from "../../chrome";
 import { useEditorScope } from "../../editor-scope";
@@ -45,7 +45,7 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
       }}
       showTitle
       className="sm:max-w-md"
-      title={followOutcomeTitle(follow)}
+      title={<FollowOutcomeTitle outcome={follow} projectId={projectId} workId={workId} />}
     >
       <FollowOutcomeContent
         outcome={follow}

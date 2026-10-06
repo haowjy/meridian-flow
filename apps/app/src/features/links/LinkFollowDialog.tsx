@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { LinkFollowOutcome } from "@/core/editor/links";
 import { linkTargetHref } from "@/core/editor/links";
 
-import { FollowOutcomeContent, followOutcomeTitle } from "./FollowOutcomeContent";
+import { FollowOutcomeContent, FollowOutcomeTitle } from "./FollowOutcomeContent";
 import type { FollowReporter, LinkDocumentRef } from "./follow-link";
 
 /** The outcome a follower reports into, and the reporter it reports through. */
@@ -58,7 +58,9 @@ export function LinkFollowDialog({
       }}
     >
       <DialogContent className="max-w-[calc(100vw-2rem)] rounded-lg sm:max-w-md">
-        <DialogTitle>{followOutcomeTitle(outcome)}</DialogTitle>
+        <DialogTitle>
+          <FollowOutcomeTitle outcome={outcome} projectId={projectId} workId={workId} />
+        </DialogTitle>
         <FollowOutcomeContent
           outcome={outcome}
           projectId={projectId}
