@@ -84,10 +84,6 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     return this.updateRecords(docId).at(-1) ?? null;
   }
 
-  async latestUpdateSeq(docId: string): Promise<number> {
-    return Math.max(0, (this.debugEntry(docId)?.nextSeq ?? 1) - 1);
-  }
-
   override async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
     await this.createCheckpoint(docId, state, "checkpoint", upToSeq);
   }

@@ -104,6 +104,7 @@ export type CollabFacadeStore = {
 export type CollabJournal = CheckpointJournal &
   ReversalStore & {
     headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
+    latestUpdateSeq(docId: string): Promise<number>;
   };
 
 export type DrizzleCollabPersistence = {
@@ -829,6 +830,24 @@ async function persistRedoEntries(
   return { consumed: true, seqs };
 }
 
+/** Newest journal row's seq, or the head's when every row is compacted away. */
+async function readLatestUpdateSeq(db: JournalDb, docId: string): Promise<number> {
+  const readDb = currentDrizzleDb(db as Database) as JournalDb;
+  const [row] = await readDb
+    .select({ seq: documentYjsUpdates.id })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
+    .orderBy(desc(documentYjsUpdates.id))
+    .limit(1);
+  if (row) return row.seq;
+  const [head] = await readDb
+    .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
+    .limit(1);
+  return Number(head?.latestUpdateSeq ?? 0);
+}
+
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
@@ -1237,6 +1256,10 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       };
     },
 
+    latestUpdateSeq(docId) {
+      return readLatestUpdateSeq(db, docId);
+    },
+
     async readForReconstruction(docId: string): Promise<JournalSnapshot> {
       return (
         this.read as (
@@ -1642,20 +1665,8 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
       return row ? mapUpdate(row, "latest") : null;
     },
 
-    async latestUpdateSeq(docId) {
-      const [row] = await db
-        .select({ seq: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
-        .orderBy(desc(documentYjsUpdates.id))
-        .limit(1);
-      if (row) return row.seq;
-      const [head] = await db
-        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
-        .from(documentYjsHeads)
-        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
-        .limit(1);
-      return Number(head?.latestUpdateSeq ?? 0);
+    latestUpdateSeq(docId) {
+      return readLatestUpdateSeq(db, docId);
     },
   };
 }

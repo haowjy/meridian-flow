@@ -89,6 +89,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
+    journal: options.journal,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
   const lifecyclePort = options.lifecycle;

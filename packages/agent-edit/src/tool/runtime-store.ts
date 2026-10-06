@@ -5,6 +5,7 @@ import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import { applyYjsUpdateIfEffective } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
@@ -19,6 +20,11 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
+  /**
+   * Journal head when this runtime last took in the live document. Rows at or
+   * below it are already in `doc`, so live attribution reads only later ones.
+   */
+  liveJournalSeq?: number;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -69,9 +75,10 @@ export interface RuntimeEvictOptions {
 
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
+  journal?: Pick<UpdateJournal, "latestUpdateSeq">;
   createRuntimeDoc: () => Y.Doc;
 }): RuntimeStore {
-  const { coordinator, createRuntimeDoc } = deps;
+  const { coordinator, journal, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
   // Live docs whose canonical journal has updates not yet replayed into the
   // shared in-memory live Y.Doc; the next access replays (coordinator.recover)
@@ -166,10 +173,12 @@ export function createRuntimeStore(deps: {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return recovered;
     }
-    const response = await withLiveDocument(coordinator, docId, commandName, (liveDoc) => {
+    const response = await withLiveDocument(coordinator, docId, commandName, async (liveDoc) => {
+      const liveJournalSeq = await journal?.latestUpdateSeq?.(docId);
       const restored = createRuntimeDoc();
       Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
       runtime.doc = restored;
+      runtime.liveJournalSeq = liveJournalSeq;
       return null;
     });
     if (isInternalWriteResult(response)) return response;
@@ -216,8 +225,10 @@ export function createRuntimeStore(deps: {
       if (recovered) return { ok: false, response: recovered };
     }
     const response = await withLiveDocument(coordinator, docId, commandName, async (liveDoc) => {
+      const liveJournalSeq = await journal?.latestUpdateSeq?.(docId);
       const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
       applyYjsUpdateIfEffective(runtime.doc, update, { type: "system" });
+      runtime.liveJournalSeq = liveJournalSeq;
       return null;
     });
     if (isInternalWriteResult(response)) return { ok: false, response };

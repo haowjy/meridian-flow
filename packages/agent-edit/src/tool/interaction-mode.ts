@@ -11,23 +11,22 @@ export function mutationMode(
 }
 
 /**
- * Per-attempt interaction context for immediate (non-staged) writes: always
- * stamps the durable attempt ID without changing interaction mode.
+ * Per-attempt interaction context for a write: stamps the durable attempt ID
+ * without changing interaction mode. A live write without its own journal
+ * floor takes the runtime's, the head it last read the live document at.
  */
 export function interactionContextForAttempt(
   context: InteractionContext | undefined,
   attemptId: string,
-): InteractionContext | undefined {
-  if (!context) return { mode: "live", attemptId };
-  if (context?.mode === "threadPeer") {
-    return {
-      ...context,
-      attemptId,
-    };
-  }
+  runtimeJournalSeq: number | undefined,
+): InteractionContext {
+  if (context?.mode === "threadPeer") return { ...context, attemptId };
+  const liveJournalSeq = context?.liveJournalSeq ?? runtimeJournalSeq;
   return {
     ...context,
+    mode: "live",
     attemptId,
+    ...(liveJournalSeq === undefined ? {} : { liveJournalSeq }),
   };
 }
 

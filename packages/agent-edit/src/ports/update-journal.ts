@@ -129,6 +129,12 @@ export interface UpdateJournal {
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
+  /**
+   * Newest row's sequence, or 0. Live attribution reads only rows after the
+   * head a runtime last copied the live document at; journals without one
+   * (branch journals, whose rows are not live) are read in full.
+   */
+  latestUpdateSeq?(docId: string): Promise<number>;
   /** Durable attributed base used when reporting destructive effects. */
   readAttribution?(docId: string): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;

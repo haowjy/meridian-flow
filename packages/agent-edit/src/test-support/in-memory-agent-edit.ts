@@ -132,6 +132,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return this.readSync(docId, opts);
   }
 
+  async latestUpdateSeq(docId: string): Promise<number> {
+    return Math.max(0, (this.data.get(docId)?.nextSeq ?? 1) - 1);
+  }
+
   async readAttribution(docId: string): Promise<JournalSnapshot> {
     return {
       checkpoint: null,

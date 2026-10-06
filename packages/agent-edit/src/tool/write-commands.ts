@@ -408,6 +408,7 @@ export function createWriteCommands(deps: {
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
           writeIdentity.durableId,
+          runtime.liveJournalSeq,
         ),
       },
       session,
@@ -509,6 +510,7 @@ export function createWriteCommands(deps: {
     const interactionContext = interactionContextForAttempt(
       context.interactionContext,
       writeIdentity.durableId,
+      runtime.liveJournalSeq,
     );
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
