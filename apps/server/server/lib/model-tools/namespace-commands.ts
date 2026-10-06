@@ -73,6 +73,11 @@ async function resolveSource(
   return { ...ref.value, documentId };
 }
 
+/** A Work as model-facing copy names it: `@slug`, or No Work. */
+function workName(slug: string | null): string {
+  return slug ? `@${slug}` : "No Work";
+}
+
 /**
  * A draft-mode Work holds every change to the project's files, but a draft
  * can't hold a move or delete yet, so the change isn't made.
@@ -86,7 +91,25 @@ export function draftRefusal(
   if (draft?.kind !== "draft") return undefined;
   return writeToolError(
     command,
-    `${doing} in @${draft.workSlug ?? "/"}'s draft isn't supported yet, so nothing changed.`,
+    `${doing} in ${workName(draft.workSlug)}'s draft isn't supported yet, so nothing changed.`,
+  );
+}
+
+/**
+ * A move between a drafted file and a live one would land half in a draft
+ * and half live, so it's refused, naming what would let it through (D45).
+ */
+function mixedMoveRefusal(
+  source: FileDestination,
+  container: FileDestination | undefined,
+): WriteToolErrorOutput | undefined {
+  if (!container || source.kind === container.kind) return undefined;
+  const draft = source.kind === "draft" ? source : container;
+  if (draft.kind !== "draft") return undefined;
+  const work = workName(draft.workSlug);
+  return writeToolError(
+    "move",
+    `${work} is in draft mode, so this move would be half drafted and half live. Copy the document, then delete the original, or ask the user to switch ${work} to auto-apply.`,
   );
 }
 
@@ -199,6 +222,8 @@ export async function runNamespaceCommand(
     const container = await containerGrant(deps, call, input.command, input.path);
     if (isToolError(container)) return container;
     if (container) grants.push(container);
+    const mixed = mixedMoveRefusal(grant.destination, container?.destination);
+    if (mixed) return mixed;
   }
   const refused = draftRefusal(
     input.command,

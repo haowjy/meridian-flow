@@ -229,7 +229,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await documentRow(UPLOAD_ID)).toMatchObject({ name: "notes", deletedAt: null });
     });
 
-    it("refuses in a draft-mode Work, and after the mode changes until the model reads again (D41)", async () => {
+    it("refuses in a draft-mode Work, a half-drafted move (D45), and after the mode changes until the model reads again (D41)", async () => {
       await db
         .update(schema.works)
         .set({ aiWriteMode: "draft" })
@@ -240,6 +240,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const refused = await drafted.call("write", { command: "delete", path: CHAPTER });
       expect(refused.isError).toBe(true);
       expect(text(refused)).toContain("@rewrite's draft");
+      // Scratch stays live in draft mode, so a move into the manuscript is half of each (D45).
+      const note = await drafted.call("write", {
+        command: "create",
+        path: "scratch://note.md",
+        content: "A note.",
+      });
+      expect(note.isError).toBeFalsy();
+      const mixed = await drafted.call("write", {
+        command: "move",
+        from: { path: "scratch://note.md" },
+        path: "manuscript://note.md",
+      });
+      expect(text(mixed)).toBe(
+        "status: invalid_write\n\n@rewrite is in draft mode, so this move would be half drafted and half live. Copy the document, then delete the original, or ask the user to switch @rewrite to auto-apply.",
+      );
       await drafted.save();
 
       await db
