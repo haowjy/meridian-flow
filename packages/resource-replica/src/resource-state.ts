@@ -110,7 +110,13 @@ export function planResourceLocation(input: {
     intentId: input.intentId,
     sequence: nextSequence(record),
     identityRevision: record.resource.identity.revision,
-    desired: { kind: "set-location", destination: input.destination },
+    desired: {
+      kind: "set-location",
+      destination: input.destination,
+      ...(record.resource.obligations.createEligibility?.eligibleAt === null
+        ? { initializesReservation: true as const }
+        : {}),
+    },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",

@@ -70,7 +70,10 @@ export function planRejectedReservationDeletion(
     (intent) => intent.desired.kind === "set-location" && intent.state === "settled",
   );
   const failed = record.intents.find(
-    (intent) => intent.desired.kind === "set-location" && intent.state === "needs-repair",
+    (intent) =>
+      intent.desired.kind === "set-location" &&
+      intent.desired.initializesReservation === true &&
+      intent.state === "needs-repair",
   );
   const outcome = failed?.attempts.at(-1)?.outcome;
   if (

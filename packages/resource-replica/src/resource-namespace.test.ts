@@ -682,13 +682,7 @@ it.each([
   expect(noReplay).not.toHaveBeenCalled();
   // A first placement has only a hidden reservation as its accepted source.
   const reservation = new MemoryStore(local());
-  await reconcileResourceNamespace({
-    key: reservation.record.resource,
-    metadata: asMetadata(reservation),
-    lock: immediateLock,
-    newAttemptIds: () => ({ attemptId: "create-attempt", operationId: "create-operation" }),
-    transport: transport({ submit: async () => createOutcome() }),
-  });
+  reservation.record.resource.obligations.createEligibility = { eligibleAt: null };
   const placement = planResourceLocation({
     record: reservation.record,
     projectId: "project",
@@ -704,6 +698,14 @@ it.each([
   });
   if (!placement) throw new Error("Expected first placement");
   await reservation.commitResource(placement);
+  await reconcileResourceNamespace({
+    key: reservation.record.resource,
+    metadata: asMetadata(reservation),
+    lock: immediateLock,
+    newAttemptIds: () => ({ attemptId: "create-attempt", operationId: "create-operation" }),
+    transport: transport({ submit: async () => createOutcome() }),
+  });
+
   await reconcileResourceNamespace({
     key: reservation.record.resource,
     metadata: asMetadata(reservation),
@@ -733,6 +735,23 @@ it.each([
       }),
     }),
   });
+  // An independently accepted Unfiled document must not be discarded when later filing fails.
+  expect(
+    planRejectedReservationDeletion(
+      {
+        ...reservation.record,
+        intents: reservation.record.intents.map((intent) =>
+          intent.desired.kind === "set-location"
+            ? {
+                ...intent,
+                desired: { kind: "set-location", destination: intent.desired.destination },
+              }
+            : intent,
+        ),
+      },
+      "not-cleanup",
+    ),
+  ).toBeNull();
   const cleanup = planRejectedReservationDeletion(reservation.record, "cleanup");
   if (!cleanup) throw new Error("A never-filed reservation must be deleted");
   await reservation.commitResource(cleanup);
