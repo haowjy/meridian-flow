@@ -10,6 +10,9 @@
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
  * and syncs in the background; the server's move creates any missing folders.
+ * Whether the address can be created at all, and whether its Work can take a
+ * note, is decided up front (`planLinkCreation`), when the dialog is shown, so
+ * Create is only ever offered where it can succeed.
  * A later sync failure lands on the document itself. Nothing about the link
  changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
@@ -17,8 +20,9 @@
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useWorks } from "@/client/query/useWorks";
 import {
@@ -36,7 +40,7 @@ export type LinkCreationTarget = {
 };
 
 /** Where Create puts the document for this address, or null when it cannot. */
-export function linkCreationTarget(address: string | null): LinkCreationTarget | null {
+function linkCreationTarget(address: string | null): LinkCreationTarget | null {
   if (!address) return null;
   const parsed = parseContextUri(address);
   if (!parsed.ok) return null;
@@ -51,24 +55,69 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
   return { scheme, folderPath: folders.join("/"), name, authority };
 }
 
+type CreationWork = ResourceWorkAuthority | { workId: null };
+
+/**
+ * What the dialog can offer for a missing address, decided once from the
+ * Works snapshot: Create (with the Work it lands in), Unarchive first (an
+ * archived Work takes no new notes), or nothing. `loading` is a Scratch
+ * address whose Work the snapshot has not delivered yet.
+ */
+export type LinkCreation =
+  | { kind: "create"; target: LinkCreationTarget; work: CreationWork }
+  | { kind: "archived"; target: LinkCreationTarget; work: Work }
+  | { kind: "loading"; target: LinkCreationTarget };
+
+/**
+ * `surfaceWorkId` is the surface's Work (a named Work or the No Work row; null
+ * while unresolved): what a contextual `scratch://` address means there.
+ * `snapshot` is the live Works (deleted ones absent), or null while loading.
+ * A Work that is deleted, or that no Work has the name of, offers nothing.
+ */
+export function planLinkCreation(
+  address: string | null,
+  surfaceWorkId: string | null,
+  snapshot: { works: readonly Work[]; noWork: Work } | null,
+): LinkCreation | null {
+  const target = linkCreationTarget(address);
+  if (!target) return null;
+  if (target.scheme !== "scratch") return { kind: "create", target, work: { workId: null } };
+  const { authority } = target;
+  if (!snapshot || (authority.kind === "contextual" && !surfaceWorkId))
+    return { kind: "loading", target };
+  const work =
+    authority.kind === "none"
+      ? snapshot.noWork
+      : authority.kind === "contextual"
+        ? [snapshot.noWork, ...snapshot.works].find(({ id }) => id === surfaceWorkId)
+        : snapshot.works.find(({ slug }) => slug === authority.workSlug);
+  if (!work) return null;
+  if (isWorkArchived(work)) return { kind: "archived", target, work };
+  return { kind: "create", target, work: resourceWorkAuthorityFor(work.id, snapshot) };
+}
+
+/** `planLinkCreation` over the project's Works as this surface sees them. */
+export function useLinkCreation(
+  projectId: string | null,
+  workId: string | null,
+  address: string | null,
+): LinkCreation | null {
+  const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  return useMemo(
+    () => planLinkCreation(address, workId, works && noWork ? { works, noWork } : null),
+    [address, workId, works, noWork],
+  );
+}
+
 export type CreateLinkedDocument = {
   /** The new document's id, or null when it could not be created. */
-  create(target: LinkCreationTarget): Promise<string | null>;
+  create(creation: Extract<LinkCreation, { kind: "create" }>): Promise<string | null>;
   creating: boolean;
   failed: boolean;
 };
 
-type WorkList = readonly { id: string; slug: string | null }[];
-
-/**
- * `workId` is the surface's Work (a named Work or the No Work row; null while unresolved): what a contextual `scratch://` address means there.
- */
-export function useCreateLinkedDocument(
-  projectId: string | null,
-  workId: string | null,
-): CreateLinkedDocument {
+export function useCreateLinkedDocument(projectId: string | null): CreateLinkedDocument {
   const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const [creating, setCreating] = useState(false);
   const [failed, setFailed] = useState(false);
   // State lands a render late; a second press in the same tick must not
@@ -76,7 +125,7 @@ export function useCreateLinkedDocument(
   const inFlight = useRef(false);
 
   const create = useCallback(
-    async (target: LinkCreationTarget) => {
+    async ({ target, work }: Extract<LinkCreation, { kind: "create" }>) => {
       if (!projectId || inFlight.current) return null;
       inFlight.current = true;
       setFailed(false);
@@ -84,13 +133,6 @@ export function useCreateLinkedDocument(
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        const work =
-          target.scheme === "scratch"
-            ? workId && noWork
-              ? scratchWork(target, workId, { works: works ?? [], noWork })
-              : "unknown"
-            : { workId: null };
-        if (work === "unknown") throw new Error("The address names no Work this project has");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
@@ -119,25 +161,8 @@ export function useCreateLinkedDocument(
       if (!documentId) setFailed(true);
       return documentId;
     },
-    [noWork, projectId, resources, workId, works],
+    [projectId, resources],
   );
 
   return { create, creating, failed };
-}
-
-/** Resolve URI authority once against the surface's loaded Works snapshot. */
-function scratchWork(
-  target: LinkCreationTarget,
-  surfaceWorkId: string,
-  snapshot: { works: WorkList; noWork: { id: string } },
-): ResourceWorkAuthority | "unknown" {
-  const { authority } = target;
-  const workId =
-    authority.kind === "none"
-      ? snapshot.noWork.id
-      : authority.kind === "contextual"
-        ? surfaceWorkId
-        : snapshot.works.find((work) => work.slug === authority.workSlug)?.id;
-  if (!workId) return "unknown";
-  return resourceWorkAuthorityFor(workId, snapshot);
 }

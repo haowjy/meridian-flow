@@ -72,8 +72,13 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   the resolver rather than answering null.
 - **Unresolved is a sentence, never a warning.** Linking ahead of writing is
   the job: "“Name” doesn't exist yet", with Create “Name” when the address is
-  creatable (manuscript, kb, user, or scratch, with a filename; never uploads),
-  and "“Name” can't be found" when it is not. Every state of the dialog shows where the
+  creatable (manuscript, kb, user, or scratch, with a filename; never uploads)
+  *and* its area can take it, and "“Name” can't be found" when it is not. A
+  Scratch address is decided up front against the Works snapshot
+  (`planLinkCreation`): an archived Work takes no new notes, so the dialog
+  offers Unarchive (the Work's title in the sentence) and Create follows the
+  moment it lands; a deleted Work or a name no Work has is "can't be found".
+  Every state of the dialog shows where the
   link points, worded as the `@` menu words a row's location
   (`documentLocation`); the full address is only a tooltip.
 - **Create makes the document at exactly the link's address**: scheme,

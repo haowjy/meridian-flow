@@ -6,7 +6,7 @@
  * the checking delay, the outcome states, and create-on-miss) lives here.
  */
 
-export { FollowOutcomeContent, followOutcomeTitle } from "./FollowOutcomeContent";
+export { FollowOutcomeContent, FollowOutcomeTitle } from "./FollowOutcomeContent";
 export type { FollowReporter, LinkDestination, LinkDocumentRef } from "./follow-link";
 export { LinkFollowDialog, useFollowOutcomeState } from "./LinkFollowDialog";
 export type { LinkResolutionScope } from "./project-link-resolver";

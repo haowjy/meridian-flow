@@ -2,6 +2,7 @@
 
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
+import type { Work } from "@meridian/contracts/works";
 import {
   planResourceLocation,
   type ResourceRecord,
@@ -22,9 +23,11 @@ import { resolveLocalDocumentAddress } from "@/features/project/routing/local-do
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   type CreateLinkedDocument,
-  linkCreationTarget,
+  planLinkCreation,
   useCreateLinkedDocument,
 } from "./use-create-linked-document";
+
+const noWork = { id: "123e4567-e89b-42d3-a456-426614174000", archivedAt: null } as Work;
 
 const resources = vi.hoisted(() => ({
   reserveDocument: vi.fn(async () => ({
@@ -42,9 +45,7 @@ const resources = vi.hoisted(() => ({
 }));
 // A server response that never arrives: local creation must not depend on it.
 vi.mock("@/client/api/projects-api", () => ({ createContextEntry: () => new Promise(() => {}) }));
-vi.mock("@/client/query/useWorks", () => ({
-  useWorks: () => ({ works: [], noWork: { id: "123e4567-e89b-42d3-a456-426614174000" } }),
-}));
+vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ works: [], noWork }) }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountResourceReplica: () => resources,
 }));
@@ -52,7 +53,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 it("opens a No Work Scratch Create before the server answers", async () => {
   let creation!: CreateLinkedDocument;
   function Probe() {
-    creation = useCreateLinkedDocument("project", "123e4567-e89b-42d3-a456-426614174000");
+    creation = useCreateLinkedDocument("project");
     return null;
   }
   const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
@@ -142,10 +143,13 @@ it("opens a No Work Scratch Create before the server answers", async () => {
       <Probe />
     </QueryClientProvider>,
     async () => {
-      const target = linkCreationTarget("scratch://@/notes/scene.md");
-      if (!target) throw new Error("Missing target");
+      const plan = planLinkCreation("scratch://@/notes/scene.md", noWork.id, {
+        works: [],
+        noWork,
+      });
+      if (plan?.kind !== "create") throw new Error("Missing creation");
       await act(async () => {
-        void creation.create(target).then((documentId) => {
+        void creation.create(plan).then((documentId) => {
           if (documentId) return adapter.open("project", { documentId });
         });
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -177,6 +181,30 @@ it("opens a No Work Scratch Create before the server answers", async () => {
       expect(creation.failed).toBe(false);
     },
   );
+});
+
+it("offers Create only into a Work that can take the note", () => {
+  const work = (id: string, slug: string, archivedAt: string | null) =>
+    ({ id, slug, name: slug, archivedAt }) as Work;
+  const live = work("w-live", "live", null);
+  const old = work("w-old", "old", "2026-01-01T00:00:00Z");
+  const snapshot = { works: [live, old], noWork };
+  const plan = (address: string, surfaceWorkId: string | null = noWork.id) =>
+    planLinkCreation(address, surfaceWorkId, snapshot);
+
+  expect(plan("scratch://@live/x.md")).toMatchObject({
+    kind: "create",
+    work: { workId: "w-live", workSlug: "live" },
+  });
+  expect(plan("scratch://@old/x.md")).toMatchObject({ kind: "archived", work: { id: "w-old" } });
+  // A contextual address means the surface's Work, archived or not.
+  expect(plan("scratch://x.md", "w-old")).toMatchObject({ kind: "archived" });
+  expect(plan("scratch://x.md", "w-live")).toMatchObject({ kind: "create" });
+  // A deleted Work is absent from the snapshot, like a name no Work has.
+  expect(plan("scratch://@typo/x.md")).toBeNull();
+  expect(plan("scratch://x.md", "w-deleted")).toBeNull();
+  expect(plan("manuscript://ch1.md")).toMatchObject({ kind: "create", work: { workId: null } });
+  expect(planLinkCreation("scratch://@live/x.md", null, null)).toMatchObject({ kind: "loading" });
 });
 
 it("keeps the locked No Work row in the destination after an Editor identity rename", async () => {
