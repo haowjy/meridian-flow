@@ -203,6 +203,7 @@ export async function runReversal(
     address: ResolvedDocumentAddress;
   } | null = null;
   const done: string[] = [];
+  const contentDone = new Set<string>();
   const doneNote = () =>
     done.length === 0 ? "" : `${direction === "undo" ? "Undone" : "Redone"}: ${done.join(", ")}.`;
 
@@ -225,11 +226,17 @@ export async function runReversal(
       location = { live: liveAfter(change, direction), uri: locationAfter(change, direction) };
       continue;
     }
+    // An earlier step may have reversed these with their group (a writer's turn undo groups a turn's writes).
+    const handles = step.handles.filter((handle) => !contentDone.has(handle));
+    if (handles.length === 0) continue;
     const address = await content.resolve(location.uri);
     if (isToolError(address)) return withNote(address, doneNote());
-    const outcome = await content.run(address, step.handles);
+    const outcome = await content.run(address, handles);
     if (isToolError(outcome)) return withNote(outcome, doneNote());
-    done.push(...(outcome.result.reversal?.writes ?? []));
+    for (const handle of outcome.result.reversal?.writes ?? []) {
+      done.push(handle);
+      contentDone.add(handle);
+    }
     last = { outcome, address };
   }
 

@@ -503,6 +503,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await documentRow(holder?.id ?? ""))?.deletedAt).not.toBeNull();
     });
 
+    it("after the writer's turn undo, the model's redo all redoes the turn's edits and move once each", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "insert", path: CHAPTER, find: "text.", content: " One." });
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+        await call("read", { path: RENAMED });
+        await call("write", { command: "insert", path: RENAMED, find: "One.", content: " Two." });
+      });
+      await expect(
+        runtime.app.documentSync.reverseThreadContext({
+          threadId: THREAD.threadId as never,
+          turnId: THREAD.turnId as never,
+          userId: USER_ID as never,
+          direction: "undo",
+          scope: "turn",
+          selection: THREAD.turnId,
+        }),
+      ).resolves.toMatchObject({ status: "reversed" });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter" });
+
+      const redo = await script.begin();
+      const redone = await redo.call("write", { command: "redo", path: CHAPTER, all: true });
+      expect(text(redone)).toMatch(
+        /^status: reversed; path: manuscript:\/\/renamed\.md; .*redo: w1, w2, w3/,
+      );
+      await redo.save();
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed" });
+      expect(await script.text(RENAMED)).toContain("Chapter one text. One. Two.");
+    });
+
     it("cleans up a document created then moved in a reply whose save refuses it", async () => {
       const { script } = await start();
       const reply = await script.begin();
