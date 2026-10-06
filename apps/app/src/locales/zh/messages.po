@@ -1242,6 +1242,10 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't open this draft. Try again."
+msgstr ""
+
 #: src/features/chat/compaction/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr ""
