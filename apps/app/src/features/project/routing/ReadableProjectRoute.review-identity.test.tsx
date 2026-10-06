@@ -15,8 +15,20 @@ import { ReadableProjectRoute } from "./ReadableProjectRoute";
 
 const projectId = "00000000-0000-4000-8000-000000000020";
 const workId = "00000000-0000-4000-8000-000000000021";
+/** A live catalog that knows where one document is. */
+function catalogPlacing(documentId: string, path: string) {
+  return {
+    normalized: { generation: "g", appliedRevision: "1", entries: new Map() },
+    findPath: () => null,
+    findDocument: (id: string) => (id === documentId ? { path } : null),
+  };
+}
+
 const state = vi.hoisted(() => ({
   lookup: undefined as unknown,
+  catalog: null as unknown,
+  /** The server's identity answer for a document no tab, address or catalog places. */
+  identity: vi.fn(),
   router: null as unknown as {
     history: ReturnType<typeof createMemoryHistory>;
     navigate: (options: { href: string; replace: boolean; state: object }) => Promise<void>;
@@ -52,8 +64,13 @@ vi.mock("@tanstack/react-query", async (original) => ({
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [], isError: false }),
 }));
-vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: () => ({ catalog: null }),
+vi.mock("@/client/query/useContextCatalog", async (original) => ({
+  ...(await original<typeof import("@/client/query/useContextCatalog")>()),
+  useContextCatalogView: () => ({ catalog: state.catalog }),
+}));
+vi.mock("@/client/api/projects-api", async (original) => ({
+  ...(await original<typeof import("@/client/api/projects-api")>()),
+  getProjectContextAvailability: (...args: unknown[]) => state.identity(...args),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ status: "ready", groups: [] }),
@@ -94,6 +111,8 @@ async function withRoute(
   documentId: string,
   tabPath: string,
   run: (history: ReturnType<typeof createMemoryHistory>) => Promise<void>,
+  /** What the live catalog already holds when the route mounts. */
+  catalog: unknown = null,
 ) {
   const history = createMemoryHistory({ initialEntries: [`/p/${projectId}/editor/${address}`] });
   state.router = {
@@ -104,6 +123,8 @@ async function withRoute(
     },
   };
   state.lookup = { kind: "current", document: { kind: "available", documentId } };
+  state.catalog = catalog;
+  state.identity.mockReset();
   const prior = useContextTabsStore.getState();
   useContextTabsStore.setState({
     byProject: {},
@@ -141,18 +162,26 @@ async function withRoute(
 
 it("opens another document at a reused path as a new history entry", async () => {
   // Document A was renamed and B took its old path. The address shows B; a stale
-  // draft row still names A at that path.
-  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
-    const before = history.length;
-    await open(
-      { documentId: "document-a", scheme: "manuscript", path: "/a.md", workId },
-      {
-        draftId: "draft-a",
-        replaceIfSameDocument: true,
-      },
-    );
-    expect(history.length).toBe(before + 1);
-  });
+  // draft row still names A at that path, and A has no tab to say where it went.
+  await withRoute(
+    "manuscript/a.md?work=",
+    "document-b",
+    "/a.md",
+    async (history) => {
+      const before = history.length;
+      await open(
+        { documentId: "document-a", scheme: "manuscript", path: "/a.md", workId },
+        {
+          draftId: "draft-a",
+          replaceIfSameDocument: true,
+        },
+      );
+      expect(history.length).toBe(before + 1);
+      expect(history.location.pathname).toContain("/manuscript/renamed.md");
+      expect(history.location.search).toContain("draft=draft-a");
+    },
+    catalogPlacing("document-a", "/renamed.md"),
+  );
 });
 
 it("repairs a renamed document's address in place and keeps its review", async () => {
@@ -297,5 +326,89 @@ it("installs a cold review launch's tab at the route's own path spelling", async
     expect(
       resolveWorkspaceRoute({ tabs, selectedDocumentId: undefined, locator: route }),
     ).toMatchObject({ kind: "owner" });
+  });
+});
+
+const draftLaunch = {
+  draftId: "draft-a",
+  replaceIfSameDocument: true,
+} as const;
+const launchOfA = {
+  documentId: "document-a",
+  scheme: "manuscript",
+  path: "/a.md",
+  workId,
+} as const;
+
+function manuscriptEntry(documentId: string, path: string) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return {
+    kind: "file",
+    entryId: documentId,
+    scope: { kind: "project", projectId },
+    sourceId: "manuscript-source",
+    parentId: "manuscript-source",
+    name,
+    aliases: [],
+    path: [name],
+    uri: `manuscript:/${path}`,
+    provisionalName: false,
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  };
+}
+
+it("places a launch with no tab of its document through the live catalog, not its cached path", async () => {
+  // A was renamed and B took /a.md, which the address shows. A has no tab, so only the
+  // catalog knows where A is.
+  await withRoute(
+    "manuscript/a.md?work=",
+    "document-b",
+    "/a.md",
+    async (history) => {
+      const before = history.length;
+      const result = await open(launchOfA, draftLaunch);
+      expect(result).toMatchObject({ kind: "applied" });
+      expect(history.length).toBe(before + 1);
+      expect(history.location.pathname).toContain("/manuscript/renamed.md");
+      expect(history.location.search).toContain("draft=draft-a");
+      expect(state.identity).not.toHaveBeenCalled();
+    },
+    catalogPlacing("document-a", "/renamed.md"),
+  );
+});
+
+it("asks the server where a document is when neither a tab, the address nor the catalog does", async () => {
+  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
+    state.identity.mockResolvedValue({
+      projectId,
+      resolutionId: "r",
+      resolutions: [
+        {
+          kind: "available",
+          documentId: "document-a",
+          generation: "0",
+          authority: { kind: "project", projectId },
+          entry: manuscriptEntry("document-a", "/renamed.md"),
+        },
+      ],
+    });
+    await open(launchOfA, draftLaunch);
+    expect(history.location.pathname).toContain("/manuscript/renamed.md");
+    expect(history.location.search).toContain("draft=draft-a");
+  });
+});
+
+it("fails the launch, and stays where it is, when its document cannot be located", async () => {
+  // Navigating to the old path would open B under A's draft.
+  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
+    state.identity.mockRejectedValue(new Error("offline"));
+    const before = history.location.href;
+    const length = history.length;
+    const result = await open(launchOfA, draftLaunch);
+    expect(result.kind).toBe("failed");
+    expect(history.location.href).toBe(before);
+    expect(history.length).toBe(length);
   });
 });

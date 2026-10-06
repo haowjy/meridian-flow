@@ -9,6 +9,7 @@ import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
+import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
 
@@ -92,12 +93,15 @@ export function resolveLocalDocumentAddress(
   // an unconfirmed move of it or a folder above it, that move's rollback, or another document
   // taking a path it holds or left. The path is its current label, and admission repairs the
   // URL to it. It is already open, so it needs no exact local content, and the server's answer
-  // for a path in flux does not outrank it.
-  const bound = boundDocumentId ? (catalog.findDocument(boundDocumentId) ?? null) : null;
-  const file = bound ?? catalog.findPath(requested);
+  // for a path in flux does not outrank it. A bound document the catalog does not list yet is
+  // never answered by the path's occupant (the shared route-document order).
+  const owner = resolveLiveRouteDocument({ path: requested, boundDocumentId, catalog });
+  if (owner.kind !== "live") return undefined;
+  const { file } = owner;
+  const bound = owner.byIdentity ? file : null;
   // A document under the writer's own unconfirmed move is likewise a known server document.
   if (
-    file?.kind !== "file" ||
+    file.kind !== "file" ||
     !file.editable ||
     !(file.localContent || file.placementPending || bound)
   )
@@ -188,9 +192,14 @@ export function mergeLocalResourceState(
  *
  * Absence concludes "unavailable" only on an authoritative read: the catalog is
  * settled (a stored checkpoint stays "complete" while its refresh is in flight)
- * and the drafts were read. Anything less is still loading. A tab already open
- * live (an Apply promoted it) is never second-guessed by a lagging catalog.
+ * and the drafts were read. A read still in flight is `pending`; a read that
+ * failed is `failed`, never evidence of absence and never an endless wait. A tab
+ * already open live (an Apply promoted it) is never second-guessed by a lagging catalog.
  */
+export type GatedLiveView =
+  | { outcome: "ready"; result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup }
+  | { outcome: "pending" | "failed"; result: undefined };
+
 export function gateLiveView(
   result: DocumentAddressResult | undefined,
   scheme: string,
@@ -202,15 +211,18 @@ export function gateLiveView(
   },
   drafts: { status: string; groups: ThreadDraftGroup[] | null },
   hasLiveTab: (documentId: string) => boolean,
-): { result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup } {
-  if (scheme !== "manuscript" || !result || result.kind === "unavailable") return { result };
+): GatedLiveView {
+  if (scheme !== "manuscript" || !result || result.kind === "unavailable")
+    return { outcome: "ready", result };
   const documentId = result.document.documentId;
   if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
-    return { result };
-  const settled = manifest.isComplete && !manifest.isFetching && !manifest.isError;
-  if (!settled || drafts.status === "loading" || drafts.status === "error")
-    return { result: undefined };
+    return { outcome: "ready", result };
+  if (manifest.isError || drafts.status === "error")
+    return { outcome: "failed", result: undefined };
+  const settled = manifest.isComplete && !manifest.isFetching;
+  if (!settled || drafts.status === "loading") return { outcome: "pending", result: undefined };
   const group = drafts.groups?.find((candidate) => candidate.documentId === documentId);
-  if (group && pendingReviewDraft(group)?.isNewDocument) return { result, draftOnly: group };
-  return { result: { kind: "unavailable" } };
+  if (group && pendingReviewDraft(group)?.isNewDocument)
+    return { outcome: "ready", result, draftOnly: group };
+  return { outcome: "ready", result: { kind: "unavailable" } };
 }

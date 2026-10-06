@@ -96,6 +96,27 @@ describe("phone draft-only review route", () => {
     expect(route({ workspaceTabs: [{ ...draftTab, draftOnly: undefined }] }).tab).toBeNull();
   });
 
+  it("keeps a bound draft-only document when another document now holds its old path", () => {
+    // Document A moved from /old.md to /new.md and B took /old.md before the URL repaired.
+    const occupant = { ...file, documentId: "document-b", path: "/old.md" };
+    const catalog = {
+      findPath: (path: string) => (path === occupant.path ? occupant : null),
+      findDocument: (id: string) => (id === occupant.documentId ? occupant : null),
+    } as never;
+    const moved = { ...draftTab, path: "/new.md", name: "new.md" };
+    const resolved = route({
+      path: "/old.md",
+      boundDocumentId: "document-draft",
+      workspaceTabs: [moved],
+      catalog,
+    });
+    expect(resolved.tab).toMatchObject({ documentId: "document-draft", draftOnly: true });
+    // A bound document no source resolves is pending, never the occupant.
+    expect(
+      route({ path: "/old.md", boundDocumentId: "document-draft", workspaceTabs: [], catalog }).tab,
+    ).toBeNull();
+  });
+
   it("prefers the live document once the catalog lists it", () => {
     const live = { ...file, documentId: "document-draft", path: "/new-chapter.md" };
     const tab = route({
