@@ -466,6 +466,18 @@ entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
 Work: the same path under another Work is a different destination. The review address owner replaces the current
 entry when it adds or removes `?draft=`, so Back does not toggle review.
 
+A route finds its document in one order on desktop and phone
+(`context/route-document-owner.ts`, with `resolveWorkspaceRoute`): the bound
+identity across the live catalog and then the draft-only review tab, and only
+with no bound identity the path's occupant. A bound identity no source resolves
+is pending, never the occupant that holds its old path. A review launch places
+its document the same way (`routing/launch-locator.ts`: tab, address, draft-only
+admission, live catalog, then the server's identity lookup) and fails rather than
+navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
+`ready`; a failed catalog or draft-list read ends the wait with the route
+boundary's error and Retry (address and `?draft=` kept), and the phone host
+treats a failed address as neither pending nor settled, so it never rejects the route.
+
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
 confirmation never replaces the browser path. Browser paths never contain
