@@ -15,10 +15,9 @@ import type { CatalogCacheView } from "./catalog";
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
 /**
- * How a location names its Work. No Work id: a project-scoped location, or a
- * Work-scoped destination in No Work. A Work id always states its slug, which
- * a durable command needs to validate canonical URI authority; `null` is only
- * the No Work row's, which has no slug.
+ * Durable Work identity asserted by a scoped catalog or checked command constructor.
+ * The type preserves the pair; only a known project snapshot can establish which
+ * row is No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
 export type ResourceWorkAuthority =
   | { workId: null; workSlug?: undefined }
@@ -110,18 +109,24 @@ export type NamespaceAttempt = {
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
   intentId: string;
+  /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
+  operationId?: string;
   sequence: number;
   identityRevision: number;
   desired:
     | { kind: "create"; folderPath: string; provisionalName?: string }
     | { kind: "set-location"; destination: ResourceDestination }
+    | { kind: "set-folder-location"; destination: ResourceDestination }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
+  /** Local receipt application time; immutable evidence is retained after the UI note expires. */
+  settledAt?: number;
   state:
     | "pending"
     | "submitted"
     | "received"
     | "settled"
+    | "superseded"
     | "needs-repair"
     | "cancelled"
     | "settled-locally";
@@ -130,6 +135,22 @@ export type NamespaceIntent = ResourceKey & {
 export type ResourceRecord = {
   resource: ResourceDescriptor;
   intents: readonly NamespaceIntent[];
+};
+
+/** A folder is namespace identity only: it never owns a document id, content or classification. */
+export type FolderNamespaceRecord = ResourceKey & {
+  /** Null for account-owned personal folders; command projects live on the intents. */
+  projectId: string | null;
+  folderId: string;
+  revision: number;
+  canonical: ResourceLocation;
+  canonicalRefresh?: { operationId: string };
+  intents: readonly NamespaceIntent[];
+};
+
+export type FolderNamespaceWrite = {
+  expectedRevision: number | null;
+  next: FolderNamespaceRecord;
 };
 
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
@@ -152,6 +173,7 @@ export type ResourceWrite = {
 export type MetadataCommitResult = "committed" | "stale";
 export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 
@@ -168,6 +190,8 @@ export interface ResourceMetadataStore {
     expectedRevision: number | null;
     next: ResourceCatalogCheckpoint;
     resources: readonly ResourceWrite[];
+    /** Folder canonical observations commit with the checkpoint that proves them. */
+    folders: readonly FolderNamespaceWrite[];
   }): Promise<MetadataCommitResult>;
   observeProjection(
     projectId: string,

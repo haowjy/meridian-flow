@@ -36,8 +36,8 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
 }
 
 /**
- * The Work a route addresses. `unresolved` has no id when the address named
- * no Work it could parse.
+ * The Work a route addresses. Ready Editors include the No Work row; screen
+ * chrome collapses it to absent. Unresolved means identity is not ready.
  */
 export type RouteWorkResolution =
   | { status: "new" }
@@ -53,7 +53,7 @@ export type RouteWorkResolution =
       goal: string | null;
       phase: "pending" | "failed";
     }
-  | { status: "none" }
+  | { status: "absent" }
   | { status: "present"; workId: ParsedRequestId; work: AddressableWork };
 
 /** The id of the Work a route addresses, whether it is present, being created, or unresolved. */
@@ -83,8 +83,11 @@ export type ContextRouteTarget = {
   documentId?: string;
   scheme: ProjectContextTreeScheme;
   path: string;
-  workId: string | null;
+  workId: string;
 };
+
+/** Open requests inherit the current Editor Work once at the route boundary. */
+export type ContextRouteRequest = Omit<ContextRouteTarget, "workId"> & { workId?: string };
 
 export type ContextRouteRepair = {
   expectedSearch: {
@@ -115,7 +118,7 @@ export function openContextRouteSearch(
   return stripEmptySearch({
     ...search,
     screen: "context",
-    work: target.workId ?? "none",
+    work: target.workId,
     scheme: target.scheme,
     folder: segments.length ? `/${segments.join("/")}` : undefined,
     path: target.path,
@@ -130,7 +133,7 @@ export function contextRouteMatchesSearch(
   inheritedWorkId: string | null,
 ): boolean {
   if (!search) return false;
-  const workId = search.work === "none" ? null : (search.work ?? inheritedWorkId);
+  const workId = search.work ?? inheritedWorkId;
   return (
     search.screen === "context" &&
     search.scheme === target.scheme &&

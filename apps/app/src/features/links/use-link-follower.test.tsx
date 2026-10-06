@@ -26,7 +26,7 @@ function doc(name: string): ResolvedDocumentLink {
     scheme: "manuscript",
     path: `${name}.md`,
     uri: `manuscript://${name}.md`,
-    workId: null,
+    workId: "no-work",
   };
 }
 
@@ -38,7 +38,7 @@ let root: Root;
 let host: HTMLDivElement;
 let follower: LinkFollower;
 
-const scope: LinkResolutionScope = { projectId: "project-1", workId: null, baseUri: null };
+const scope: LinkResolutionScope = { projectId: "project-1", workId: "no-work", baseUri: null };
 const reporter: FollowReporter = {
   report: (outcome) => events.push(`report:${outcome.state}`),
   clear: () => events.push("clear"),
@@ -52,13 +52,25 @@ function catalog(revision: string): LinkableDocumentIndex {
   return { documents: [], revision, complete: false };
 }
 
-function Probe({ index }: { index: LinkableDocumentIndex }) {
-  follower = useLinkFollower({ scope, index, resolution, open, reporter });
+function Probe({
+  scope: probed,
+  index,
+}: {
+  scope: LinkResolutionScope;
+  index: LinkableDocumentIndex;
+}) {
+  follower = useLinkFollower({ scope: probed, index, resolution, open, reporter });
   return null;
 }
 
-function render({ index }: { scope: LinkResolutionScope; index: LinkableDocumentIndex }) {
-  act(() => root.render(<Probe index={index} />));
+function render({
+  scope: rendered,
+  index,
+}: {
+  scope: LinkResolutionScope;
+  index: LinkableDocumentIndex;
+}) {
+  act(() => root.render(<Probe scope={rendered} index={index} />));
 }
 
 const address = (name: string): LinkTarget => ({ kind: "scheme", uri: `manuscript://${name}.md` });
@@ -137,5 +149,26 @@ describe("useLinkFollower", () => {
     await answer("Kael", doc("kael"));
 
     expect(events).toEqual(["report:checking", "clear", "open:doc-kael:current"]);
+  });
+
+  it("drops a cached server answer when the holder revision changes", async () => {
+    const holding: LinkResolutionScope = {
+      ...scope,
+      holderDocumentId: "doc-holder",
+      documentRevision: 0,
+    };
+    const href = "manuscript://Ch6.md";
+    // One catalog throughout: only the holder's text changes.
+    const index = catalog("a");
+    render({ scope: holding, index });
+    act(() => resolution.request([href]));
+    await answer("Ch6", doc("old-ch6"));
+
+    expect(resolution.read(href)?.state).toBe("resolved");
+
+    // A rewrite arrived: the same text now spells a different document.
+    render({ scope: { ...holding, documentRevision: 1 }, index });
+    await elapse(0);
+    expect(resolution.read(href)).toBeNull();
   });
 });

@@ -30,7 +30,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
@@ -41,7 +41,7 @@ export type ChatScreenProps = {
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  onOpenContextTarget?: (target: ContextRouteTarget) => void;
+  onOpenContextTarget?: (target: ContextRouteRequest) => void;
   /** False while the host keeps the chat mounted but hidden. */
   visible?: boolean;
 };
@@ -124,7 +124,7 @@ function ChatScreenLoaded({
   availableWorks: readonly Work[];
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
-  onOpenContextTarget?: (target: ContextRouteTarget) => void;
+  onOpenContextTarget?: (target: ContextRouteRequest) => void;
   visible: boolean;
 }) {
   const {
@@ -185,10 +185,8 @@ function ChatScreenLoaded({
       <div className="min-h-0 flex-1">
         <ProjectChatContextNavigationProvider
           projectId={projectId}
-          activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
-          availableWorks={availableWorks.flatMap((work) =>
-            work.slug ? [{ id: work.id, slug: work.slug }] : [],
-          )}
+          activeWork={activeWork}
+          availableWorks={availableWorks}
           onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView

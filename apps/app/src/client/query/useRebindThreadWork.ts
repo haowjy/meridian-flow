@@ -15,8 +15,8 @@ import { workFromSnapshot } from "./works-projection-acquisition";
 
 export type ThreadWorkMutationInput =
   | {
-      workId: string | null;
-      previousWorkId: string | null;
+      workId: string;
+      previousWorkId: string;
     }
   | { targetWorkId: string; previousWorkId: string };
 
@@ -82,7 +82,7 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
         },
         accountSignal,
       );
-      const currentWork = workFromSnapshot(fresh.catalog, fresh.workId);
+      const currentWork = fresh.workId ? workFromSnapshot(fresh.catalog, fresh.workId) : null;
       if (fresh.workId === targetWorkId) {
         if (response) {
           return {

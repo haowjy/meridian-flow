@@ -1,6 +1,6 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
-import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
@@ -8,12 +8,7 @@ export function planResourceDeletion(
   projectId: string,
   intentId: string,
 ): ResourceWrite | null {
-  if (
-    record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some(
-      (intent) => intent.desired.kind === "delete" && intent.state !== "needs-repair",
-    )
-  )
+  if (record.resource.lifecycle.kind === "terminal" || record.intents.some(intentOwnsDeletion))
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
@@ -49,7 +44,10 @@ export function planResourceDeletion(
       },
       intents: [
         ...superseded.intents.map((intent) =>
-          !superseded.repaired && intent.attempts.length === 0 && intent.state !== "cancelled"
+          !superseded.repaired &&
+          intent.attempts.length === 0 &&
+          intent.state !== "cancelled" &&
+          intent.state !== "superseded"
             ? { ...intent, state: "cancelled" as const }
             : intent,
         ),

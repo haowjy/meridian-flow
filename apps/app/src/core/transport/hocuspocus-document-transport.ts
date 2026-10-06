@@ -6,6 +6,12 @@
  * connection-wide, while schema refusals are room-specific. It maps those
  * provider/socket events back to the unchanged DocumentSessionTransportProvider
  * seam.
+ *
+ * It also reports whether the server has acknowledged every local change
+ * (`server-acknowledgement.ts`). That is read off the socket's own send and
+ * receive path rather than provider events: the provider emits its outgoing
+ * message before the socket decides to queue it, and queued messages can be
+ * dropped, so only the socket knows what actually reached the wire.
  */
 import {
   HocuspocusProvider,
@@ -15,7 +21,6 @@ import {
   type onStatelessParameters,
   type onStatusParameters,
   type onSyncedParameters,
-  type onUnsyncedChangesParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
 import {
@@ -35,6 +40,10 @@ import type {
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
+import {
+  createServerAcknowledgementTracker,
+  type ServerAcknowledgementTracker,
+} from "./server-acknowledgement";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
 const TERMINAL_DENIAL_CODES = new Set<number>([
@@ -42,11 +51,54 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
   WS_CLOSE.PERMISSION_DENIED.code,
 ]);
 
+// WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
+const SOCKET_OPEN = 1;
+
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
-
   private reconnectGeneration = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly acknowledgement: ServerAcknowledgementTracker;
+
+  constructor(
+    configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
+    acknowledgement: ServerAcknowledgementTracker,
+  ) {
+    super(configuration);
+    this.acknowledgement = acknowledgement;
+  }
+
+  // The provider emits "open" only after this listener (registered in the base
+  // constructor), so counting starts before the handshake's first frame.
+  // 4.3 also clears retry cancellation on native open, before the first frame
+  // settles the attempt. Keep it until resolution so retry-now can fence that loop.
+  override async onOpen(event: Event) {
+    this.acknowledgement.beginConnection();
+    const cancel = this.cancelWebsocketRetry;
+    void super.onOpen(event);
+    this.cancelWebsocketRetry = cancel;
+  }
+
+  // Every document frame passes here, whether the provider sent it directly,
+  // flushed it from the offline queue, or replied to a server SyncStep1.
+  // Counted before the write so a synchronous reply cannot overtake it. A frame
+  // the base class will queue (socket not open) invalidates instead.
+  override send(message: unknown) {
+    if (message instanceof Uint8Array) {
+      if (this.webSocket?.readyState === SOCKET_OPEN) this.acknowledgement.noteFrameSent(message);
+      else this.acknowledgement.noteFrameQueued(message);
+    }
+    super.send(message);
+  }
+
+  override onMessage(event: MessageEvent) {
+    try {
+      super.onMessage(event);
+    } finally {
+      // Same read the base class makes: frames arrive as ArrayBuffer.
+      this.acknowledgement.noteFrameReceived(new Uint8Array(event.data));
+    }
+  }
 
   override async connect() {
     if (this.permanentlyDestroyed || this.status === WebSocketStatus.Connected) return;
@@ -57,14 +109,6 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     // slot. super.connect cancels that retryer's next attempt synchronously.
     this.rejectConnectionAttempt();
     return super.connect();
-  }
-
-  override async onOpen(event: Event) {
-    // 4.3 clears cancellation on native open, before the first frame settles
-    // the attempt. Keep it until resolution so retry-now can fence that loop.
-    const cancel = this.cancelWebsocketRetry;
-    void super.onOpen(event);
-    this.cancelWebsocketRetry = cancel;
   }
 
   override resolveConnectionAttempt(): void {
@@ -170,30 +214,6 @@ export type HocuspocusDocumentTransportOptions = {
   connectivityHints?: ConnectivityHintsPort;
 };
 
-/** Initial SyncStep2 plus a later zero-count SyncStatus acknowledgement. */
-export function createDurableSyncBarrier(): {
-  promise: Promise<void>;
-  markInitialSyncComplete: (unsyncedChanges: number) => void;
-  noteUnsyncedChanges: (unsyncedChanges: number) => void;
-} {
-  let initialSyncComplete = false;
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  const settleIfReady = (unsyncedChanges: number) => {
-    if (initialSyncComplete && unsyncedChanges === 0) resolve();
-  };
-  return {
-    promise,
-    markInitialSyncComplete(unsyncedChanges) {
-      initialSyncComplete = true;
-      settleIfReady(unsyncedChanges);
-    },
-    noteUnsyncedChanges: settleIfReady,
-  };
-}
-
 export function createHocuspocusDocumentTransport({
   roomName,
   document,
@@ -202,11 +222,18 @@ export function createHocuspocusDocumentTransport({
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
-  const websocket = new RoomScopedHocuspocusWebsocket({
-    url: buildSameOriginWsUrl(yjsWsPath()),
-    WebSocketPolyfill: CollabSchemaWebSocket,
-    autoConnect: false,
+  const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
+  const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
+    for (const listener of acknowledgementListeners) listener(acknowledged);
   });
+  const websocket = new RoomScopedHocuspocusWebsocket(
+    {
+      url: buildSameOriginWsUrl(yjsWsPath()),
+      WebSocketPolyfill: CollabSchemaWebSocket,
+      autoConnect: false,
+    },
+    acknowledgement,
+  );
   let currentState = mapStatus(websocket.status);
   let terminal = false;
   let destroyed = false;
@@ -214,7 +241,6 @@ export function createHocuspocusDocumentTransport({
   const whenSynced = new Promise<void>((resolve) => {
     resolveSynced = resolve;
   });
-  const durableSync = createDurableSyncBarrier();
 
   const source = {};
   let stopHints = () => {};
@@ -230,6 +256,7 @@ export function createHocuspocusDocumentTransport({
     if (terminal) return;
     terminal = true;
     stopHints();
+    acknowledgement.endConnection();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -237,19 +264,16 @@ export function createHocuspocusDocumentTransport({
 
   function handleStatus({ status }: onStatusParameters): void {
     if (terminal || destroyed) return;
+    // Cleared before the status goes out so no subscriber sees "offline" with a
+    // stale "saved". The tracker restarts on the next socket open.
+    if (status !== WebSocketStatus.Connected) acknowledgement.endConnection();
     publish(mapStatus(status));
   }
 
   function handleSynced(_event: onSyncedParameters): void {
     if (terminal || destroyed) return;
     resolveSynced();
-    durableSync.markInitialSyncComplete(provider.unsyncedChanges);
     publish({ kind: "connected" });
-  }
-
-  function handleUnsyncedChanges({ number }: onUnsyncedChangesParameters): void {
-    if (terminal || destroyed) return;
-    durableSync.noteUnsyncedChanges(number);
   }
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
@@ -276,7 +300,6 @@ export function createHocuspocusDocumentTransport({
     websocketProvider: websocket,
     onStatus: handleStatus,
     onSynced: handleSynced,
-    onUnsyncedChanges: handleUnsyncedChanges,
     onAuthenticationFailed: handleAuthenticationFailed,
     onClose: handleClose,
     onStateless: handleStateless,
@@ -301,17 +324,20 @@ export function createHocuspocusDocumentTransport({
   provider.attach();
   void websocket.connect();
 
-  if (provider.synced) {
-    resolveSynced();
-    durableSync.markInitialSyncComplete(provider.unsyncedChanges);
-  }
+  if (provider.synced) resolveSynced();
 
   return {
     get synced() {
       return provider.synced;
     },
     whenSynced,
-    whenDurablySynced: durableSync.promise,
+    subscribeServerAcknowledgement(listener) {
+      acknowledgementListeners.add(listener);
+      listener(acknowledgement.acknowledged);
+      return () => {
+        acknowledgementListeners.delete(listener);
+      };
+    },
     subscribeStatus(listener) {
       listeners.add(listener);
       listener(currentState);
@@ -327,9 +353,11 @@ export function createHocuspocusDocumentTransport({
       if (destroyed) return;
       destroyed = true;
       stopHints();
+      acknowledgement.endConnection();
       provider.destroy();
       websocket.destroy();
       listeners.clear();
+      acknowledgementListeners.clear();
       changeEventListeners.clear();
     },
   };

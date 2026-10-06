@@ -11,6 +11,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
+import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
@@ -46,6 +49,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
   "../adapters/drizzle-document-activity.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
+const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
@@ -374,6 +378,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     durableProjectionSerializer,
     createDrizzleDocumentProjectionEffects(db),
     changeTrails,
+    createDrizzleDocumentDerivationStore(db, (tx, id) =>
+      resolvePersistedDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+    ),
     notices,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
@@ -1218,7 +1225,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           seq: 0,
         },
       );
-      await persistence.journal.checkpoint(ALPHA_ID, Y.encodeStateAsUpdate(doc), baseSeq);
+      await persistence.journal.checkpoint(
+        ALPHA_ID,
+        Y.encodeStateAsUpdate(doc),
+        baseSeq,
+        documentAuthority(doc),
+      );
       const [checkpoint] = await db
         .select({ id: schema.documentYjsCheckpoints.id })
         .from(schema.documentYjsCheckpoints)
@@ -1461,7 +1473,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     const { state, upToSeq, authorityHead } = await liveCoordinator.withDocument(
       ALPHA_ID,
       async (doc) => {
-        const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+        const authorityHead = documentAuthority(doc);
         const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
         return { state: Y.encodeStateAsUpdate(doc), upToSeq, authorityHead };
       },

@@ -117,10 +117,6 @@ describe("code document serialization", () => {
     const subject = setup();
     await seedCode(subject, "const original = true;");
     const checkpoints = createCheckpointService({
-      readCheckpointAuthority: async () => ({
-        authorityId: "test-authority" as never,
-        generation: 1n,
-      }),
       coordinator: subject.coordinator,
       store: subject.journal,
       latestUpdateSeq: (documentId) => subject.journal.latestUpdateSeq(documentId),

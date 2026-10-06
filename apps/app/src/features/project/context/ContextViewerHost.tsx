@@ -47,7 +47,7 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const workId = isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : editorWorkId;
+  const workId = isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : editorWorkId;
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, { workId });
   if (read.status === "loading") {
     return (

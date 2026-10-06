@@ -27,7 +27,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 
 import {
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -46,7 +45,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextTabFromFile } from "./context-tab-from-file";
@@ -192,8 +191,8 @@ export class ProjectDocumentLiveOpener {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
-  /** Host Work context for project-scoped files; resolved Work/no-Work authority wins. */
-  workId?: string | null;
+  /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
+  workId?: string;
   disposition?: "current" | "background";
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
@@ -271,7 +270,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId = null, disposition = "current", signal }: OpenProjectDocumentRequest,
+    { documentId, workId, disposition = "current", signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -394,14 +393,15 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string;
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
-    routeWorkId: string | null;
+    routeWorkId: string | undefined;
     disposition: "current" | "background";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tab = isWorkScopedProjectContextScheme(input.scheme)
-      ? undefined
-      : contextTabFromFile(input.scheme, input.file, input.routeWorkId);
+    const tabWorkId = input.routeWorkId;
+    const tab = isEditorScheme(input.scheme)
+      ? contextTabFromFile(input.scheme, input.file, tabWorkId)
+      : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)

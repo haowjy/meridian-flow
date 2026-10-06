@@ -110,9 +110,24 @@ the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
 
-One authority generation per checkpoint and per reconstruction. Room and explicit
-checkpoint producers capture authority identity and generation before asynchronous
-snapshot work; persistence validates both under the document mutation lock and
+One authority generation per checkpoint and per reconstruction. Live document
+handles carry immutable authority identity and generation from
+the same journal snapshot that loaded their bytes. Hocuspocus binds rooms during
+load; coordinator acquisition/recovery may replay only a matching generation,
+never relabel a warm handle. Room and explicit checkpoint producers, writer
+frames, Markdown replacements, and agent journal batches carry that binding
+into persistence. Agent response batches capture it during canonical-document
+preflight; the host coordinator supplies it through the package port. Append
+validation happens after acquiring the mutation lock, before admission allocation.
+Restore marks acquired handles retired and disconnects the room; still-loading
+rooms are retired when their load promise finishes;
+load completion and connection creation revalidate the binding and evict stale
+rooms, so late joins reconnect. Retained references remain fenced by their binding.
+There is no transport generation cache: connection admission reads the head and
+writer frames use the room binding. The retired-state-vector filter remains only
+to identify cached pre-restore structs and deletes replayed by a reconnected client
+on a current handle; it does not select or authorize a generation.
+Persistence validates both under the document mutation lock and
 drops stale bytes rather than relabeling them. An explicit stale checkpoint returns
 `stale_generation`, never a successful checkpoint ID. Seed and compaction snapshots
 are produced under that same lock. Current reads capture the head once and constrain
@@ -131,14 +146,38 @@ For an initialized live document, lifecycle ensure is read-only: retaining an
 ambient head-row update lock would deadlock the subsequent root journal batch.
 The root batch still commits before live apply; derivation can then join the
 context command transaction.
-A changed cut retries three times, then remains stale for recovery.
+A changed cut retries three times, then returns `deferred` at debug level and
+remains stale for recovery. Serializer/database failures still log as errors.
+Push completion requires a derived result inside its mutation transaction.
 
-`document_derivations` certifies projection output by generation, next admission
-sequence, location version, and extractor version. Equal cuts are idempotent;
-older cuts cannot replace newer output. Projection byte size comes from the same
-certified serialization. Changing the extractor invalidates older output: bump
-its version when adding link extraction and add the output and link watermarks
-to the existing certification transaction, not a second post-write hook.
+`document_derivations` certifies projection and link output by generation, next
+admission sequence, location version, and extractor version. Equal cuts are
+idempotent; older cuts cannot replace newer output. Projection byte size comes
+from the same certified serialization. `document_links` is replaced in that
+same transaction, using occurrences from the same private Y.Doc and the holder's
+canonical URI captured under the journal lock. Its targets are address keys,
+not resolved document identities; contextual links have no target key or project.
+User links name the holder owner's personal project. Manifests (and already
+soft-deleted staged-push holders without a live URI) certify with no link rows.
+Changing the extractor must bump its version to invalidate older output; never
+add a second post-write publisher.
+
+`rewriteDocumentLinks({ documentId, claim })` maintains links under one mutation
+lock and a holder-row `FOR NO KEY UPDATE` lock. The caller's claim runs after
+capture in the ambient transaction, owns its redirect locks, and returns
+substitutions, mover attribution, and consumption. The same transaction admits
+fresh writer-protected words, certifies through the shared derivation helpers at
+the post-append admission sequence, then consumes. A null claim writes nothing;
+rejection or consumption failure rolls back everything. Only after commit does
+the update reach an already-loaded room and schedule the ordinary live-to-draft
+pull. This operation neither opens a room under database locks nor owns redirect
+storage or lifecycle eligibility (the caller checks those).
+
+`link-update` journal metadata persists as `link_update` with the mover's user
+or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
+words have writer-protected birth provenance. Maintenance is excluded from both
+live overlap dependencies and reversal lineage blockers, so rewriting a link
+inside an AI paragraph does not prevent the paragraph's Undo.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
@@ -157,3 +196,21 @@ output without advancing certification; a later sweep retries them.
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
 - [Collab domain visual explainer, end to end](collab-domain.html)
+
+## Stored link occurrence primitives
+
+`domain/document-link-occurrences.ts` is internal to collab and shares extraction
+and substitution traversal. Only its substitution type is part of the public rewrite contract. One text occurrence is contiguous
+runs with the same href within one XmlText, regardless of other marks; paragraph
+boundaries split occurrences. Literal image and figure `src` attributes are
+occurrences; only addresses with an explicit substitution are rewritten. Extraction retains Yjs references for
+immediate use, not durable occurrence identity.
+
+Application takes a private, integrated snapshot fragment and a map from the
+original href to its replacement and optional old/new filenames. Substitutions
+are simultaneous, count changed occurrences, and relabel only exact filename
+or stem matches. Replacement words inherit the first character's marks.
+Insert inside the original run, delete around the insertion, then retarget;
+this ordering preserves concurrent manual retargeting. Snapshot creation,
+reserved client identity, journal origin, admission fencing, persistence and
+publication belong to the caller, not these pure traversal primitives.

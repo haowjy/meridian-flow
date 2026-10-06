@@ -18,7 +18,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -36,6 +36,7 @@ import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js
 import { deriveDocument } from "../domain/document-derivations.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import type {
@@ -44,12 +45,13 @@ import type {
 } from "../domain/ports/pending-settlement-store.js";
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
+import { loadDocumentState } from "./document-loader.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
+import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -105,6 +107,7 @@ export function createDrizzlePendingSettlementStore(
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
+  derivationStore: DocumentDerivationStore,
   notices?: NoticePort,
   eventSink?: EventSink,
 ): PendingSettlementStore {
@@ -207,6 +210,7 @@ export function createDrizzlePendingSettlementStore(
             input.documentId,
             durableProjectionSerializer,
             projectionEffects,
+            derivationStore,
           );
           const result = complete();
           if (result !== "applied" && result !== "already_applied" && result !== "retry") {
@@ -383,6 +387,7 @@ async function completeStagedPush(
   documentId: DocumentId,
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
+  derivationStore: DocumentDerivationStore,
 ): Promise<void> {
   const [staged] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -492,14 +497,18 @@ async function completeStagedPush(
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
   }
-  const stateVector = await deriveDocument(
+  const derivation = await deriveDocument(
     {
-      store: createDrizzleDocumentDerivationStore(db as Database),
+      store: derivationStore,
       serializer: durableProjectionSerializer,
     },
     documentId,
   );
-  if (!stateVector) throw new Error(`Missing durable document for push ${pushId}`);
+  // Completion already owns the mutation transaction: a stale cut is not an
+  // expected scheduling deferral here and must not certify push completion.
+  if (derivation.status !== "derived")
+    throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
+  const { stateVector } = derivation;
   await upsertHead(db, documentId, canonicalRow.id, stateVector);
   await projectionEffects.applyPushCompletion({
     documentId,
@@ -881,30 +890,11 @@ async function materializeDurableDocumentBefore(
   documentId: DocumentId,
   beforeUpdateSeq: number,
 ): Promise<Y.Doc> {
-  const [checkpoint] = await db
-    .select()
-    .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, documentId),
-        lt(documentYjsCheckpoints.upToSeq, beforeUpdateSeq),
-      ),
-    )
-    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-    .limit(1);
-  const rows = await db
-    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, documentId),
-        lt(documentYjsUpdates.id, beforeUpdateSeq),
-        checkpoint ? sql`${documentYjsUpdates.id} > ${checkpoint.upToSeq}` : undefined,
-      ),
-    )
-    .orderBy(documentYjsUpdates.id);
+  const journal = createDrizzleJournal(db as Database);
+  // Journal bounds are inclusive; settlement must exclude its own push update.
+  const snapshot = await journal.read(documentId, { until: beforeUpdateSeq - 1 });
+  const state = await loadDocumentState(journal, documentId, undefined, snapshot);
   const doc = createCollabYDoc({ gc: false });
-  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-  for (const row of rows) Y.applyUpdate(doc, row.update);
+  if (state) Y.applyUpdate(doc, state);
   return doc;
 }

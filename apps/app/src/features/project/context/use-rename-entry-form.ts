@@ -11,13 +11,14 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath, validateContextEntryName } from "./context-entry-name";
-import { createContextIdentityMutationService } from "./context-identity-mutation";
+import { destinationWorkAuthority } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
@@ -33,6 +34,8 @@ export type UseRenameEntryFormOptions = {
   /** Sibling names for collision detection (should include all siblings). */
   siblingNames: readonly string[];
   kind: ContextCreateKind;
+  /** Called with the move's operation id once the rename is admitted, before `onDone`. */
+  onRenamed?: (operationId: string) => void;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
 };
@@ -49,40 +52,38 @@ export function useRenameEntryForm({
   repairName,
   siblingNames,
   kind,
+  onRenamed,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
-  const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
+  const { works, noWork } = useWorks(projectId);
   const ownedWorkId = isWorkScopedProjectContextScheme(scheme) ? workId : null;
   const mutation = useMutation({
     mutationFn: async (name: string) => {
-      if (kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
-        const key = await resources.keyForDocument(projectId, entryId);
-        if (!key) throw new Error(t`This file is unavailable. Refresh and try again.`);
-        await resources.setLocation(projectId, key, {
-          scheme,
-          folderPath: parentContextEntryPath(path),
-          name,
-          workId: null,
-        });
-        return;
-      }
-      const result = await createContextIdentityMutationService(queryClient).move(
-        entryId,
-        projectId,
-        { scheme, path, ...(ownedWorkId ? { workId: ownedWorkId } : {}) },
-        {
-          name,
-          destination: {
-            scheme,
-            folderPath: parentContextEntryPath(path),
-            ...(ownedWorkId ? { workId: ownedWorkId } : {}),
-          },
-        },
-        kind,
+      const unavailable = () =>
+        new Error(
+          kind === "folder"
+            ? t`This folder is unavailable. Refresh and try again.`
+            : t`This file is unavailable. Refresh and try again.`,
+        );
+      const authority = destinationWorkAuthority(
+        { scheme, ...(ownedWorkId ? { workId: ownedWorkId } : {}) },
+        works,
+        noWork,
       );
-      if (result.result.status === "conflict") throw new Error(t`That name is already in use.`);
-      if (result.result.status === "retry") throw new Error(t`The location changed. Try again.`);
+      if (!authority) throw unavailable();
+      const destination = { scheme, folderPath: parentContextEntryPath(path), name, ...authority };
+      if (kind === "folder") {
+        return resources
+          .setFolderLocation(projectId, entryId, destination)
+          .catch(() => {
+            throw unavailable();
+          })
+          .then(({ operationId }) => operationId);
+      }
+      const key = await resources.keyForDocument(projectId, entryId);
+      if (!key) throw unavailable();
+      return (await resources.setLocation(projectId, key, destination)).operationId;
     },
   });
 
@@ -111,10 +112,13 @@ export function useRenameEntryForm({
       : undefined,
     validate: (draft) => validateContextEntryName(draft, filteredSiblings, kind),
     onCommit: async (name) => {
-      await mutation.mutateAsync(name);
+      const operationId = await mutation.mutateAsync(name);
+      if (operationId) onRenamed?.(operationId);
       onDone();
     },
     onCancel: onDone,
     select,
+    // A refused rename is retried by an explicit Enter, never by leaving the field.
+    commitOnBlur: !repairName,
   });
 }

@@ -78,10 +78,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = asThreadPeerAgentEditCore(runtime.liveUtilityCore);
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    readCheckpointAuthority: async (documentId) => ({
-      authorityId: documentId as never,
-      generation: 1n,
-    }),
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
@@ -115,10 +111,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     notices: SILENT_POST_DURABILITY_NOTICES,
   });
   const checkpoints = createCheckpointService({
-    readCheckpointAuthority: async (documentId) => ({
-      authorityId: documentId as never,
-      generation: 1n,
-    }),
     coordinator,
     store,
     latestUpdateSeq: store.latestUpdateSeq,
@@ -135,6 +127,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
@@ -178,10 +171,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
+      rewriteDocumentLinks: async () => {
+        throw new Error("Link maintenance requires durable transactions");
+      },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
-          return null;
+          return { status: "missing" };
         },
         schedule: () => {},
         sweep: async () => 0,
