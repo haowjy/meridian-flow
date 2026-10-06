@@ -9,6 +9,7 @@ import {
   type FinishReason,
   isTerminalTurnStatus,
   type OrchestratorEvent,
+  type ProviderErrorResponse,
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -17,6 +18,7 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
+  replyFailureMetadata,
   type ThreadRepositories,
   turnFailedCopy,
 } from "../../threads/index.js";
@@ -29,6 +31,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
+      /** The provider's own answer, kept on the failed reply's metadata. */
+      providerError?: ProviderErrorResponse;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -187,14 +191,13 @@ export async function finalizeExecution(
         ...turn,
         ...(turn.role === "assistant" && input.cause.kind === "failed"
           ? {
-              metadata: {
-                ...(turn.metadata &&
-                typeof turn.metadata === "object" &&
-                !Array.isArray(turn.metadata)
-                  ? turn.metadata
-                  : {}),
+              metadata: replyFailureMetadata(turn.metadata, {
                 reason: input.cause.reason,
-              },
+                ...(typeof input.cause.error === "string"
+                  ? {}
+                  : { retryable: input.cause.error.retryable }),
+                ...(input.cause.providerError ? { providerError: input.cause.providerError } : {}),
+              }),
             }
           : {}),
         ...(turn.role === "compaction" && input.cause.kind === "failed"
