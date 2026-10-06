@@ -25,7 +25,7 @@ import type { SchemaRepairEvent } from "./schema-repair-witness";
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: DocumentSessionConnectionState) => void;
   resolveFirstSync: () => void;
-  resolveDurableSync: () => void;
+  setAcknowledged: (acknowledged: boolean) => void;
   setSynced: (synced: boolean) => void;
   emitChange: (message: ChangeEventWsMessage) => void;
   destroyed: boolean;
@@ -44,10 +44,8 @@ function makeFakeTransport(
       const whenSynced = new Promise<void>((resolve) => {
         resolveSynced = resolve;
       });
-      let resolveDurableSynced!: () => void;
-      const whenDurablySynced = new Promise<void>((resolve) => {
-        resolveDurableSynced = resolve;
-      });
+      const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
+      let acknowledged = false;
       const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
       const changeListeners = new Set<(message: ChangeEventWsMessage) => void>();
       let latest = initial;
@@ -57,7 +55,11 @@ function makeFakeTransport(
           return synced;
         },
         whenSynced,
-        whenDurablySynced,
+        subscribeServerAcknowledgement(listener) {
+          acknowledgementListeners.add(listener);
+          listener(acknowledged);
+          return () => acknowledgementListeners.delete(listener);
+        },
         subscribeStatus(listener) {
           listeners.add(listener);
           listener(latest);
@@ -78,8 +80,9 @@ function makeFakeTransport(
           synced = true;
           resolveSynced();
         },
-        resolveDurableSync() {
-          resolveDurableSynced();
+        setAcknowledged(next) {
+          acknowledged = next;
+          for (const l of acknowledgementListeners) l(next);
         },
         setSynced(next) {
           synced = next;
@@ -384,42 +387,36 @@ describe("DocumentSession status derivation", () => {
     await expect(synced).resolves.toBeUndefined();
   });
 
-  it("waits for the server update acknowledgement after initial sync", async () => {
+  it("reports server acknowledgement only while synced, and re-arms it after an outage", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "doc-durable",
+      roomKey: "doc-acknowledged",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
+    const { snapshots } = track(session);
     current().emit({ kind: "connected" });
     current().resolveFirstSync();
     await session.whenSynced();
-
-    let durable = false;
-    void session.waitForDurableSync().then(() => {
-      durable = true;
-    });
     await flushMicrotasks();
-    expect(durable).toBe(false);
 
-    current().resolveDurableSync();
-    await session.waitForDurableSync();
-    expect(durable).toBe(true);
-    await session.destroy();
-  });
+    // Synced is a handshake fact, not an upload claim.
+    expect(snapshots.at(-1)).toMatchObject({ status: "synced", serverHasLocalChanges: false });
 
-  it("settles the durable wait on terminal denial", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-denied",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const durable = session.waitForDurableSync();
+    current().setAcknowledged(true);
+    expect(snapshots.at(-1)).toMatchObject({ status: "synced", serverHasLocalChanges: true });
 
-    current().emit({ kind: "unauthorized", reason: "expired", code: 4401 });
+    // A local edit clears it, then the next acknowledgement restores it.
+    current().setAcknowledged(false);
+    expect(snapshots.at(-1)?.serverHasLocalChanges).toBe(false);
+    current().setAcknowledged(true);
+    expect(snapshots.at(-1)?.serverHasLocalChanges).toBe(true);
 
-    await expect(durable).resolves.toBeUndefined();
+    // Never reported outside `synced`, even if the transport still says true.
+    current().emit({ kind: "disconnected" });
+    expect(snapshots.at(-1)).toMatchObject({ status: "offline", serverHasLocalChanges: false });
+    current().emit({ kind: "connecting", attempt: 1 });
+    expect(snapshots.at(-1)).toMatchObject({ status: "syncing", serverHasLocalChanges: false });
     await session.destroy();
   });
 
