@@ -1,12 +1,17 @@
 /**
- * A thread's list and create onto an existing document check manifest
- * membership inside the namespace-locked command transaction; that check must
- * never wait on a lock its own transaction holds. Releasing a live room must
- * never wait on a document lock a caller holds.
+ * A thread's list checks manifest membership inside the namespace-locked
+ * command transaction; that check must never wait on a lock its own
+ * transaction holds. Releasing a live room must never wait on a document lock
+ * a caller holds. The model's create onto an existing document is covered by
+ * context-thread-existing-document.db.test.ts.
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -42,16 +47,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
       await import("../../domains/projects/index.js");
-    const { createDrizzleDocumentAccess } = await import("../document-access.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { createAgentEditResponseWriteLifecycle, createWiredCoreToolRegistrations } =
-      await import("../wired-core-tools.js");
     const { currentDrizzleDb, runInDrizzleTransaction, runOutsideDrizzleTransaction } =
       await import("../../shared/drizzle-transaction.js");
-    const { lockDocumentMutation } = await import(
-      "../../domains/collab/adapters/drizzle-document-mutation-lock.js"
-    );
-    const { createNoopEventSink } = await import("../../domains/observability/index.js");
+    const { lockDocumentMutation } = await import("../../shared/document-mutation-lock.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000b01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000b02";
@@ -67,10 +66,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture() {
       const collab = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -102,37 +101,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         works: createDrizzleProjectWorkRepository({
           db,
+          fileAccessChanges: createLocalFileAccessChanges(),
           projectionMutation: createTestWorkProjectionMutation(db),
         }),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       };
-      const registrations = createWiredCoreToolRegistrations({
-        ...routeDeps,
-        threads: routeDeps.threads as never,
-        threadWorks: routeDeps.threadWorks as never,
-        documentSync: collab,
-        responseWrites: createAgentEditResponseWriteLifecycle({ documentSync: collab }),
-        drafts: collab,
-        workContextNotices: { workChanged: async () => {}, threadChanged: async () => {} },
-        stopThreadRun: async () => {},
-        eventSink: createNoopEventSink(),
-        transaction: (operation) => operation(),
-      });
-      const write = registrations.find((registration) => registration.definition.name === "write");
-      if (write?.execution.type !== "server") throw new Error("write tool is not registered");
-      const handler = write.execution.handler as (
-        input: unknown,
-        context: unknown,
-      ) => Promise<unknown>;
-      // The model's `write` tool, called as the executor would call it.
-      const callWrite = (input: Record<string, unknown>) =>
-        handler(input as never, {
-          signal: new AbortController().signal,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          agentSlug: null,
-        }).then((result) => JSON.stringify(result));
-      return { collab, hocuspocus, contextPorts, routeDeps, callWrite };
+      return { collab, hocuspocus, contextPorts, routeDeps };
     }
 
     async function threadPort(fixture: ReturnType<typeof createFixture>) {
@@ -248,47 +222,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await fixture.collab.drainHocuspocusPersistence();
       return created.value.documentId;
     }
-
-    it("refuses the model's plain create onto an existing document at once", async () => {
-      const fixture = createFixture();
-      await seedExisting(fixture, "existing.md");
-
-      const refused = await settlesWithin(
-        "create",
-        fixture.callWrite({
-          command: "create",
-          path: "manuscript://existing.md",
-          content: "New text.",
-        }),
-      );
-      expect(refused).toContain("File already exists");
-      const port = await threadPort(fixture);
-      await expect(port.read("manuscript://existing.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Existing existing.md.\n" },
-      });
-    });
-
-    it("overwrites an existing document with the model's create at once", async () => {
-      const fixture = createFixture();
-      await seedExisting(fixture, "target.md");
-      const port = await threadPort(fixture);
-
-      const created = await settlesWithin(
-        "create overwrite",
-        fixture.callWrite({
-          command: "create",
-          path: "manuscript://target.md",
-          content: "Created over.",
-          overwrite: true,
-        }),
-      );
-      expect(created).not.toContain("error");
-      await expect(port.read("manuscript://target.md")).resolves.toMatchObject({
-        ok: true,
-        value: { content: "Created over.\n" },
-      });
-    });
 
     it("lists the manuscript at once", async () => {
       const fixture = createFixture();

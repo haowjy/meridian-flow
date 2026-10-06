@@ -2,11 +2,13 @@
 
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { serializeTransport } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler } from "nitro/h3";
+import { isFileAccessDenied } from "../../../../../../domains/file-policy/index.js";
 import { resolveCatalogRoute } from "./_helpers.js";
 
 export default defineEventHandler(async (event) => {
-  const { app, query, scope } = await resolveCatalogRoute(event);
+  const { app, query, scope, userId } = await resolveCatalogRoute(event);
   const entryId = typeof query.entryId === "string" && query.entryId ? query.entryId : null;
   const uri = typeof query.uri === "string" && query.uri ? query.uri : null;
   if (Boolean(entryId) === Boolean(uri)) {
@@ -19,5 +21,15 @@ export default defineEventHandler(async (event) => {
     }
   }
   const input = entryId ? ({ scope, entryId } as const) : ({ scope, uri: uri as string } as const);
-  return serializeTransport(await app.contextCatalog.lookup(input));
+  const found = await app.contextCatalog.lookup(input);
+  // The final identity after alias resolution must be readable (file-access §4).
+  if (found.entry?.kind === "file") {
+    const grant = await app.fileAccess.authorize(
+      { accountId: userId as UserId },
+      { kind: "document", documentId: found.entry.entryId },
+      "read",
+    );
+    if (isFileAccessDenied(grant)) return serializeTransport({ ...found, entry: null });
+  }
+  return serializeTransport(found);
 });

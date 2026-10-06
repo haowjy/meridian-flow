@@ -1,6 +1,7 @@
 /** Draft-review scope ownership and the boundary that exposes one scope to consumers. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -51,31 +52,6 @@ export type DraftReviewContextValue = {
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 let reviewProjectionOwnerSequence = 0;
 
-export type DraftReviewProviderProps = {
-  projectId: string | null;
-  workId: string | null;
-  stateOwner?: DraftReviewStateOwner;
-  /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
-  threadId?: string | null;
-  children: ReactNode;
-};
-
-export function DraftReviewProvider({
-  projectId,
-  workId,
-  stateOwner,
-  threadId = null,
-  children,
-}: DraftReviewProviderProps) {
-  const value = useDraftReviewScopeValue({
-    projectId,
-    workId,
-    stateOwner,
-    threadId,
-  });
-  return <DraftReviewBoundary value={value}>{children}</DraftReviewBoundary>;
-}
-
 export function DraftReviewBoundary({
   value,
   children,
@@ -88,19 +64,18 @@ export function DraftReviewBoundary({
 
 export function useDraftReviewScopeValue({
   projectId,
-  workId,
+  work,
   stateOwner,
   threadId = null,
-}: Omit<DraftReviewProviderProps, "children">): DraftReviewContextValue {
-  return useDraftReviewScopeOwner(projectId, workId, threadId, stateOwner);
-}
-
-function useDraftReviewScopeOwner(
-  projectId: string | null,
-  workId: string | null,
-  threadId: string | null,
-  stateOwner?: DraftReviewStateOwner,
-): DraftReviewContextValue {
+}: {
+  projectId: string | null;
+  /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
+  work: Work | null;
+  stateOwner?: DraftReviewStateOwner;
+  /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
+  threadId?: string | null;
+}): DraftReviewContextValue {
+  const workId = work?.id ?? null;
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const contextRemoval = useContextRemovalCoordinator();
@@ -113,12 +88,12 @@ function useDraftReviewScopeOwner(
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
   const groups = drafts.groups ?? [];
-  const controller = useDraftReviewController(
-    effectiveProjectId,
-    effectiveWorkId,
+  const controller = useDraftReviewController({
+    projectId: effectiveProjectId,
+    work,
     threadId,
     stateOwner,
-  );
+  });
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
@@ -334,7 +309,7 @@ function useDraftReviewScopeOwner(
 export function useDraftReview(): DraftReviewContextValue {
   const value = useContext(DraftReviewContext);
   if (!value) {
-    throw new Error("useDraftReview must be used within DraftReviewProvider");
+    throw new Error("useDraftReview must be used within DraftReviewBoundary");
   }
   return value;
 }

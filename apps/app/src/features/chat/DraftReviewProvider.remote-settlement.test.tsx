@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /** A draft-only tab whose draft vanished is classified from a catalog observation made after it vanished. */
+
+import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { DraftReviewProvider } from "./DraftReviewProvider";
+import { DraftReviewBoundary, useDraftReviewScopeValue } from "./DraftReviewProvider";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -33,6 +35,14 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
     getBranchRoom: vi.fn(),
   }),
 }));
+
+const work = { id: "work-a", projectId: "project-a", name: "Work A", archivedAt: null } as Work;
+
+/** One review scope for the Work, composed the way the project view composes it. */
+function ReviewScope() {
+  const value = useDraftReviewScopeValue({ projectId: "project-a", work });
+  return <DraftReviewBoundary value={value}>{null}</DraftReviewBoundary>;
+}
 
 const draft = { draftId: "draft-a", documentId: "document-a", status: "active" };
 
@@ -63,9 +73,7 @@ describe("DraftReviewProvider remote settlement", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await withReactRoot(
       <QueryClientProvider client={queryClient}>
-        <DraftReviewProvider projectId="project-a" workId="work-a">
-          {null}
-        </DraftReviewProvider>
+        <ReviewScope />
       </QueryClientProvider>,
       async () => {
         await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());

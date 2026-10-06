@@ -18,6 +18,10 @@ const resourceReplica = vi.hoisted(() => ({
 vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
+  useLiveDocumentSessionRegistry: () => ({
+    whenRefusedRoomDropped: () => null,
+    observeBranchRoom: () => () => undefined,
+  }),
 }));
 
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
@@ -25,6 +29,7 @@ import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./Conte
 function session(): DocumentSession {
   return {
     getSnapshot: () => ({ status: "synced", schemaFence: null }),
+    subscribe: () => () => undefined,
   } as unknown as DocumentSession;
 }
 

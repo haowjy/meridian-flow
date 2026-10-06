@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Draft dispositions: draft-only Discard closes its tab at once, and Apply is done at server confirmation. */
+import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +20,10 @@ import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNav
 import type { ProjectSearch } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
+
+/** Only the identity and archive state of a Work reach the controller. */
+const workFixture = (id: string): Work =>
+  ({ id, projectId: "project-a", name: id, isNoWork: false, archivedAt: null }) as Work;
 
 let resolveDiscard: (() => void) | null = null;
 let rejectDiscard: ((reason: unknown) => void) | null = null;
@@ -116,7 +121,7 @@ let otherSurface: DraftReviewController | null = null;
 
 /** A second review scope over the same Work, like the Editor beside Chat. */
 function CaptureOtherSurface() {
-  otherSurface = useDraftReviewController("project-a", "work-a");
+  otherSurface = useDraftReviewController({ projectId: "project-a", work: workFixture("work-a") });
   return null;
 }
 
@@ -125,8 +130,8 @@ let unrelated: DraftReviewController[] = [];
 /** Other Works and projects, which share nothing with the draft under command. */
 function CaptureUnrelated() {
   unrelated = [
-    useDraftReviewController("project-a", "work-b"),
-    useDraftReviewController("project-b", "work-a"),
+    useDraftReviewController({ projectId: "project-a", work: workFixture("work-b") }),
+    useDraftReviewController({ projectId: "project-b", work: workFixture("work-a") }),
   ];
   return null;
 }
@@ -138,12 +143,12 @@ let switchWork!: (workId: string) => void;
 function CaptureSwitching() {
   const [workId, setWorkId] = useState("work-a");
   switchWork = setWorkId;
-  switching = useDraftReviewController("project-a", workId);
+  switching = useDraftReviewController({ projectId: "project-a", work: workFixture(workId) });
   return null;
 }
 
 function CaptureController() {
-  controller = useDraftReviewController("project-a", "work-a");
+  controller = useDraftReviewController({ projectId: "project-a", work: workFixture("work-a") });
   heldRecords = useDraftCommandRecords();
   return null;
 }

@@ -39,12 +39,12 @@ type PatchMerge<K extends keyof InvocationPatch> = (
 const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
   model: (value) => ({ model: value }),
   effort: (value) => ({ effort: value }),
-  // tools and disallowed-tools are coupled: a map `allow` lifts the name from the
-  // baseline denial list. Each entry returns the full patchTools result so either
-  // key present alone still applies the lift; patchTools is pure in
-  // (baseline, patch), so this is idempotent and order-independent.
-  tools: (_value, input) => patchTools(input.baseline, input.patch),
-  "disallowed-tools": (_value, input) => patchTools(input.baseline, input.patch),
+  // Lowering only; resolve-child-invocation refuses a raise before the merge.
+  permission: (value) => ({ permission: value }),
+  // Adds to the child's denials; a spawn can never lift one.
+  "disallowed-tools": (value, input) => ({
+    "disallowed-tools": [...new Set([...(input.baseline["disallowed-tools"] ?? []), ...value])],
+  }),
   subagents: (_value, input) => ({
     namedTargets: patchSubagents(input.baseline, input.patch, input.caller),
   }),
@@ -60,8 +60,9 @@ export async function applyInvocationPatch(
     model: baseline.model,
     skills: copySkills(baseline.skills),
     namedTargets: copyNamedTargets(baseline.namedTargets),
+    permission: baseline.permission,
   };
-  if (baseline.tools !== undefined) result.tools = copyTools(baseline.tools);
+  if (baseline.tools !== undefined) result.tools = [...baseline.tools];
   if (baseline["disallowed-tools"] !== undefined) {
     result["disallowed-tools"] = [...baseline["disallowed-tools"]];
   }
@@ -73,64 +74,6 @@ export async function applyInvocationPatch(
     Object.assign(result, await merge(input.patch[key] as never, input));
   }
 
-  return result;
-}
-
-interface PatchedTools {
-  tools?: ResolvedAgentConfiguration["tools"];
-  "disallowed-tools"?: string[];
-}
-
-/**
- * Merges a tools patch over the baseline without changing which representation
- * semantics apply. A non-empty array baseline stays an allow-list: an `allow`
- * adds the name to the list, a `deny` keeps the name in the list but adds it to
- * `disallowed-tools`. An object (or empty/omitted) baseline stays a deny-list
- * map. An array patch replaces outright; `[]` keeps Mars's full-tools default.
- */
-function patchTools(baseline: ResolvedAgentConfiguration, patch: InvocationPatch): PatchedTools {
-  let tools: ResolvedAgentConfiguration["tools"] = copyTools(baseline.tools);
-  let disallowed = [...(baseline["disallowed-tools"] ?? [])];
-
-  const patchTools = patch.tools;
-  if (Array.isArray(patchTools)) {
-    tools = [...patchTools];
-  } else if (patchTools !== undefined) {
-    const entries = Object.entries(patchTools);
-    if (Array.isArray(tools) && tools.length > 0) {
-      const list = [...tools];
-      for (const [name, policy] of entries) {
-        if (policy === "allow") {
-          if (!list.includes(name)) list.push(name);
-          disallowed = disallowed.filter((item) => item !== name);
-        } else if (!disallowed.includes(name)) {
-          disallowed = [...disallowed, name];
-        }
-      }
-      tools = list;
-    } else {
-      const base = tools !== undefined && !Array.isArray(tools) ? { ...tools } : {};
-      for (const [name, policy] of entries) {
-        base[name] = policy;
-        if (policy === "allow") disallowed = disallowed.filter((item) => item !== name);
-      }
-      tools = base;
-    }
-  }
-
-  if (patch["disallowed-tools"] !== undefined) {
-    disallowed = [...patch["disallowed-tools"]];
-  }
-
-  const result: PatchedTools = {};
-  if (tools !== undefined) result.tools = tools;
-  if (
-    disallowed.length > 0 ||
-    patch["disallowed-tools"] !== undefined ||
-    baseline["disallowed-tools"] !== undefined
-  ) {
-    result["disallowed-tools"] = disallowed;
-  }
   return result;
 }
 
@@ -192,14 +135,6 @@ async function patchSkills(
         ? copySkillReferences(baseline.skills.available)
         : availableNames.map(resolve),
   };
-}
-
-function copyTools(
-  tools: ResolvedAgentConfiguration["tools"],
-): ResolvedAgentConfiguration["tools"] {
-  if (tools === undefined) return undefined;
-  if (Array.isArray(tools)) return [...tools];
-  return { ...tools };
 }
 
 function copyNamedTargets(

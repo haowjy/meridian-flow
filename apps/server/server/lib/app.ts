@@ -41,6 +41,7 @@ async function createAppServices(): Promise<AppServices> {
     eventHub: app.threadEventHub,
     eventSink,
   });
+  await ports.fileAccessChanges.listen();
   const scheduler = startRecoveryScheduler(
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },

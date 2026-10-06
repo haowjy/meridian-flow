@@ -27,6 +27,9 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  *
+ * `access` is separate from status: the server's scope for this room. A `read`
+ * room stays live (peers' changes still arrive) but takes no local edits.
+ *
  * `serverHasLocalChanges` is separate from `status`: true only while `synced`
  * AND the server has acknowledged every local change on the current
  * connection (for a live room it journaled each update and applied it to its
@@ -84,13 +87,19 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
   /** Server acknowledged every local change on this connection (see file header). */
   serverHasLocalChanges: boolean;
   connectionState: DocumentSessionConnectionState | null;
+  /**
+   * The scope the server last named for this room, kept across reconnects and
+   * transport restarts; `null` until it names one. An unnamed room is writable
+   * (local-first).
+   */
+  access: DocumentSessionAccess | null;
   localPersistenceSynced: boolean;
   /** Derived: true only while `detached` after a reported adoption failure; edits stay local only. */
   adoptionStalled: boolean;
@@ -98,7 +107,11 @@ export type DocumentSessionSnapshot = {
   schemaRepairs: SchemaRepairEvent[];
 };
 
+export type DocumentSessionAccess = "edit" | "read";
+
 export type DocumentSessionResetReason =
+  /** The room's access changed while local edits were pending; the server refused them. */
+  | typeof WS_CLOSE.ACCESS_CHANGED.reason
   | typeof WS_CLOSE.BRANCH_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
@@ -138,6 +151,11 @@ export type DocumentSessionTransportProvider = {
    * and on every subsequent change. Returns an unsubscribe function.
    */
   subscribeStatus?: (listener: (state: DocumentSessionConnectionState) => void) => () => void;
+  /**
+   * Every scope the server names for this room, and on subscribe the one it
+   * last named. Nothing until it names one: a transport never invents a scope.
+   */
+  subscribeAccess?: (listener: (access: DocumentSessionAccess) => void) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
@@ -151,7 +169,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -183,6 +201,7 @@ export class DocumentSession {
   private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
+  private unsubscribeTransportAccess: (() => void) | null = null;
   private unsubscribeChangeEvents: (() => void) | null = null;
   private unsubscribeAcknowledgement: (() => void) | null = null;
   private destroyed = false;
@@ -201,6 +220,7 @@ export class DocumentSession {
    * distinguish "connected & synced" from "disconnected" after that.
    */
   private transportState: DocumentSessionConnectionState | null = null;
+  private access: DocumentSessionAccess | null = null;
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
@@ -295,6 +315,12 @@ export class DocumentSession {
         }
         this.recomputeStatus();
       }) ?? null;
+    this.unsubscribeTransportAccess =
+      this.transportProvider.subscribeAccess?.((access) => {
+        if (access === this.access) return;
+        this.access = access;
+        this.emit();
+      }) ?? null;
     this.unsubscribeChangeEvents =
       this.room.kind === "live"
         ? (this.transportProvider.subscribeChangeEvents?.((message) => {
@@ -316,11 +342,17 @@ export class DocumentSession {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
     }
+    if (this.refusedLocalEdits()) {
+      // A reconnect would replay the refused edits from this Y.Doc.
+      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
+    }
     const previous = this.transportProvider;
     this.unsubscribeTransportStatus?.();
+    this.unsubscribeTransportAccess?.();
     this.unsubscribeChangeEvents?.();
     this.unsubscribeAcknowledgement?.();
     this.unsubscribeTransportStatus = null;
+    this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
     this.unsubscribeAcknowledgement = null;
     this.transportProvider = null;
@@ -334,6 +366,14 @@ export class DocumentSession {
     this.localPeers = null;
     this.attachTransport(transportFactory);
     this.startLocalPeers();
+  }
+
+  /** The server refused this Y.Doc's pending edits; only a rebuilt room may sync again. */
+  refusedLocalEdits(): boolean {
+    return (
+      this.transportState?.kind === "reset" &&
+      this.transportState.reason === WS_CLOSE.ACCESS_CHANGED.reason
+    );
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
@@ -358,6 +398,7 @@ export class DocumentSession {
       status: this.status,
       serverHasLocalChanges: this.serverHasLocalChanges,
       connectionState: this.transportState,
+      access: this.access,
       localPersistenceSynced: this.localPersistenceSynced,
       adoptionStalled: this.adoptionFailed && this.status === "detached",
       schemaFence: this.schemaFence,
@@ -560,6 +601,7 @@ export class DocumentSession {
             ),
         },
         { settled: false, run: () => this.unsubscribeTransportStatus?.() },
+        { settled: false, run: () => this.unsubscribeTransportAccess?.() },
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
         { settled: false, run: () => this.unsubscribeAcknowledgement?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },

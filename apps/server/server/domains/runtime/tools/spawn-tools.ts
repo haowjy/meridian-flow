@@ -1,18 +1,21 @@
 /**
  * Spawn primitive tools: spawn (create a child), thread_message (put a message
  * into a thread), and return_result (child-side). Handlers are thin —
- * ChildRunCoordinator owns lifecycle; these only validate input.
+ * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
+ * the executor before its handler runs.
  */
 import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
 import {
-  meridianErrorFromSystem,
-  meridianErrorFromTool,
-  meridianErrorToJson,
-} from "@meridian/contracts/interrupt";
-import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
-import { ZodError, z } from "zod";
-import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
-import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
+  type ReturnResultCapture,
+  returnResultCaptureSchema,
+  type SpawnResult,
+} from "@meridian/contracts/spawn";
+import { z } from "zod";
+import { TOOL_CATALOG } from "../loop/permissions/tool-policy.js";
+import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
+import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
+import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type {
   ReturnResultToolHandlerContext,
@@ -23,121 +26,136 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
+  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
-  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. After starting background work, end your turn without claiming its result; its completion wakes you. Don't message a child just to wait.";
+  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
 
-export type SpawnToolArgs = {
-  agent?: string;
-  prompt: string;
-  from?: string;
-  description?: string;
-  mode: "foreground" | "background";
-  append_system_prompt?: string;
-  overrides?: InvocationPatch;
-};
+const { "disallowed-tools": _authoringToolList, ...invocationPatchShape } =
+  invocationPatchSchema.shape;
 
-/** One parse for spawn tool arguments. */
-export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
-    ...(rec.from !== undefined && rec.from !== null ? { from: z.string().parse(rec.from) } : {}),
-    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
-    ...(typeof rec.description === "string" ? { description: rec.description } : {}),
-    mode: rec.mode === "background" ? "background" : "foreground",
-    ...(typeof rec.append_system_prompt === "string"
-      ? { append_system_prompt: rec.append_system_prompt }
-      : {}),
-    ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
-      ? { overrides: parseInvocationPatch(rec.overrides) }
-      : {}),
-  };
-}
+const catalog = new Set<string>(TOOL_CATALOG);
+const UNKNOWN_TOOL = `isn't a tool; the tools are ${TOOL_CATALOG.join(", ")}`;
 
-function parseInvocationPatch(input: unknown): InvocationPatch {
-  try {
-    return invocationPatchSchema.parse(input);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      throw new InvocationPatchError(
-        error.issues
-          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-          .join("; "),
-      );
+/**
+ * The model names real tools, so no alias fold: an unknown name is refused
+ * rather than silently denying nothing.
+ */
+const DisallowedToolsSchema = z
+  .array(z.string())
+  .superRefine((names, context) => {
+    for (const [index, name] of names.entries()) {
+      if (!catalog.has(name)) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message: `${JSON.stringify(name)} ${UNKNOWN_TOOL}`,
+        });
+      }
     }
-    throw error;
-  }
-}
+  })
+  .transform((names) => [...new Set(names)]);
+
+/**
+ * The invocation patch, published with its full typed shape (audit F2). Its one
+ * spelling change: the model writes `disallowed_tools`, the configuration keeps
+ * `disallowed-tools`.
+ */
+const SpawnOverridesSchema = z
+  .object({
+    ...invocationPatchShape,
+    permission: invocationPatchShape.permission.describe(
+      'Lower to "read" so this run edits only scratch://; it can\'t raise a read agent to "edit".',
+    ),
+    disallowed_tools: DisallowedToolsSchema.describe(
+      "Tools this run can't use, on top of the child's own.",
+    ).optional(),
+  })
+  .strict()
+  .transform(
+    ({ disallowed_tools, ...patch }): InvocationPatch => ({
+      ...patch,
+      ...(disallowed_tools !== undefined ? { "disallowed-tools": disallowed_tools } : {}),
+    }),
+  );
+
+export const SpawnInputSchema = z
+  .object({
+    agent: z.string().min(1).describe("Roster name; omit for the generic subagent.").optional(),
+    from: z
+      .string()
+      .min(1)
+      .describe(
+        'A conversation ref, not a document (or "current"). The child can read it with thread_history; its history is not copied in.',
+      )
+      .optional(),
+    prompt: z.string().min(1).describe("The child's task."),
+    name: z
+      .string()
+      .min(1)
+      .describe(
+        '2–5 word task label the user sees, e.g. "Chapter 12 continuity check". Make parallel tasks distinct. Not the agent\'s name.',
+      )
+      .optional(),
+    mode: z
+      .enum(["foreground", "background"])
+      .default("foreground")
+      .describe("foreground (default) waits for the child's report; background returns at once."),
+    append_system_prompt: z
+      .string()
+      .describe("Extra system-prompt text for this run only.")
+      .optional(),
+    overrides: SpawnOverridesSchema.describe(
+      "Change this run's model, effort, permission, disallowed_tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
+    ).optional(),
+  })
+  .strict();
+export type SpawnToolArgs = z.output<typeof SpawnInputSchema>;
 
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
-function returnResultInputError(error: ZodError): string {
-  const issue = error.issues[0];
-  const field = issue?.path.length
-    ? issue.path.reduce<string>(
-        (path, part) =>
-          typeof part === "number"
-            ? `${path}[${part}]`
-            : path
-              ? `${path}.${String(part)}`
-              : String(part),
-        "",
-      )
-    : "input";
-  if (issue?.path[0] === "artifacts") {
-    return `Invalid return_result input at ${field}: expected a Meridian document URI string. ${issue.message}`;
-  }
-  if (issue?.path[0] === "summary") {
-    return `Invalid return_result input at ${field}: expected a string.`;
-  }
-  if (issue?.path[0] === "payload") {
-    return `Invalid return_result input at ${field}: expected a JSON value.`;
-  }
-  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of Meridian document URI strings.`;
-}
+/**
+ * The canonical capture schema with model-facing copy. Tool arguments arrive
+ * as parsed JSON, so `payload` is published as any value: the canonical
+ * recursive JSON-value schema would add a self-referencing `$defs` entry.
+ */
+const ReturnResultInputSchema = returnResultCaptureSchema.extend({
+  summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
+  payload: z.unknown().describe("Optional JSON result.").optional(),
+  artifacts: returnResultCaptureSchema.shape.artifacts.describe(
+    "Meridian document URIs produced by this child.",
+  ),
+});
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
 
-export type ThreadMessageMode = "foreground" | "background";
+const ThreadMessageInputSchema = z
+  .object({
+    ref: z
+      .string()
+      .min(1)
+      .refine((ref) => ref !== "current", { message: "Name the thread to message, e.g. p12" })
+      .describe('Thread ref such as p3 or c1. Not "current".'),
+    message: z.string().min(1),
+    mode: z
+      .enum(["foreground", "background"])
+      .default("background")
+      .describe(
+        "background (default) queues it and returns; foreground waits for a subagent in your subtree and returns its report.",
+      ),
+  })
+  .strict();
+export type ThreadMessageArgs = z.output<typeof ThreadMessageInputSchema>;
+export type ThreadMessageMode = ThreadMessageArgs["mode"];
 
-export type ThreadMessageArgs = {
-  /** Thread handle (`pN`/`cN`); never an internal id. */
-  ref: string;
-  message: string;
-  mode: ThreadMessageMode;
-};
-
-export type ThreadReportArgs = { ref: string; run?: number };
-export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ref: typeof rec.ref === "string" ? rec.ref : "",
-    ...(Number.isInteger(rec.run) && Number(rec.run) > 0 ? { run: Number(rec.run) } : {}),
-  };
-}
-
-/** One parse for thread_message arguments; omitted mode is background. */
-export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
-  const rec =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {};
-  return {
-    ref: typeof rec.ref === "string" ? rec.ref : "",
-    message: typeof rec.message === "string" ? rec.message : "",
-    mode: rec.mode === "foreground" ? "foreground" : "background",
-  };
-}
+const ThreadReportInputSchema = z
+  .object({
+    ref: z.string().min(1).describe('Subagent ref such as p3, or "current".'),
+  })
+  .strict();
+export type ThreadReportArgs = z.output<typeof ThreadReportInputSchema>;
 
 export function createSpawnToolRegistrations(): ToolRegistration[] {
   return [
@@ -147,41 +165,21 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "thread_report",
         description: "Read a subagent's latest finished report. Does not wait for a running one.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            ref: { type: "string", description: "Subagent ref such as p3." },
-            run: {
-              type: "integer",
-              minimum: 1,
-              description: "An earlier run, counting from 1.",
-            },
-          },
-          required: ["ref"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ThreadReportInputSchema),
       },
+      input: ThreadReportInputSchema,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
-          const result = await ctx.threadReport(parseThreadReportArgs(input));
-          if ("ok" in result) return toolFailureResult(result);
-          if ("status" in result) return { ref: result.ref, status: result.status };
-          return {
-            ref: result.ref,
-            run: result.run,
-            outcome: result.outcome,
-            summary: result.summary,
-            ...(result.payload !== undefined ? { payload: result.payload } : {}),
-            ...(result.artifacts?.length ? { artifacts: result.artifacts } : {}),
-            ...(result.reason !== null ? { reason: result.reason } : {}),
-            ...(result.source !== "return_result" ? { source: result.source } : {}),
-          };
+          const result = await ctx.threadReport(input as ThreadReportArgs);
+          return "ok" in result ? toolFailureResult(result) : result;
         },
       },
       sequential: true,
       capability: "thread_report",
-      historyPreview: threadHistoryPreview,
+      renderResult: renderThreadReportOutput,
+      historySummary: threadHistorySummary,
+      historyKind: "routine",
       advertise: true,
     },
     {
@@ -190,72 +188,18 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "spawn",
         description: SPAWN_DESCRIPTION,
-        inputSchema: {
-          type: "object",
-          properties: {
-            agent: {
-              type: "string",
-              description: "Roster name; omit for the generic subagent.",
-            },
-            from: {
-              type: "string",
-              description:
-                'Conversation ref, or "current", that the child can read with thread_history; its history is not copied in.',
-            },
-            prompt: { type: "string", description: "The child's task." },
-            description: {
-              type: "string",
-              description:
-                'The name the user sees in chat, 2 to 5 words naming the task, e.g. "Chapter 12 continuity check". Distinct across parallel subagents; not a sentence, agent name or pN handle.',
-            },
-            mode: {
-              type: "string",
-              enum: ["foreground", "background"],
-              description:
-                "foreground (default) waits for the child's report; background returns at once.",
-            },
-            append_system_prompt: {
-              type: "string",
-              description: "Extra system-prompt text for this run only.",
-            },
-            overrides: {
-              type: "object",
-              description:
-                "Change this run's model, effort, tools, disallowed-tools, subagents or skills; omitted keys keep the child's own. Change model or effort only when the task needs it.",
-            },
-          },
-          required: ["prompt"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(SpawnInputSchema),
       },
+      input: SpawnInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
-          let args: SpawnToolArgs;
-          try {
-            args = parseSpawnToolArgs(input);
-          } catch (error) {
-            if (error instanceof ZodError) {
-              return {
-                ok: false,
-                error: meridianErrorFromSystem(
-                  "invalid_from",
-                  'from must be one conversation ref or "current".',
-                ),
-              };
-            }
-            if (!(error instanceof InvocationPatchError)) throw error;
-            return {
-              ok: false,
-              error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
-            };
-          }
-          return ctx.spawn(args);
-        },
+        handler: async (input: unknown, ctx: SpawnToolHandlerContext) =>
+          spawnToolResult(await ctx.spawn(input as SpawnToolArgs)),
       },
       sequential: true,
       capability: "spawn",
-      historyPreview: spawnHistoryPreview,
+      renderResult: renderSpawnOutput,
+      historySummary: spawnHistorySummary,
       advertise: true,
     },
     {
@@ -264,34 +208,18 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "thread_message",
         description: THREAD_MESSAGE_DESCRIPTION,
-        inputSchema: {
-          type: "object",
-          properties: {
-            ref: {
-              type: "string",
-              description: "Thread ref such as p3 or c1.",
-            },
-            message: { type: "string" },
-            mode: {
-              type: "string",
-              enum: ["foreground", "background"],
-              description:
-                "background (default) queues it and returns; foreground waits for a subagent in your subtree and returns its report.",
-            },
-          },
-          required: ["ref", "message"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ThreadMessageInputSchema),
       },
+      input: ThreadMessageInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) => {
-          return ctx.threadMessage(parseThreadMessageArgs(input));
-        },
+        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) =>
+          spawnToolResult(await ctx.threadMessage(input as ThreadMessageArgs)),
       },
       sequential: true,
       capability: "thread_message",
-      historyPreview: threadHistoryPreview,
+      renderResult: renderSpawnOutput,
+      historySummary: spawnHistorySummary,
       advertise: true,
     },
     {
@@ -300,39 +228,17 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "return_result",
         description: "Record the report and end this turn. The child chat stays open.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            summary: { type: "string", description: "Terminal summary for the parent." },
-            payload: { description: "Package-defined structured result." },
-            artifacts: {
-              type: "array",
-              description: "Meridian document URIs produced by this child.",
-              items: {
-                type: "string",
-              },
-            },
-          },
-          required: ["summary"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(ReturnResultInputSchema),
       },
+      input: ReturnResultInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) => {
-          const parsed = returnResultCaptureSchema.safeParse(input);
-          if (!parsed.success) {
-            return {
-              isError: true,
-              output: meridianErrorToJson(
-                meridianErrorFromTool(returnResultInputError(parsed.error)),
-              ),
-            };
-          }
-          return ctx.returnResult(parsed.data);
-        },
+        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) =>
+          ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
+      // The child's saved report renders in its place (D6); history withholds its arguments.
+      historyKind: "routine",
       advertise: false,
     },
   ];

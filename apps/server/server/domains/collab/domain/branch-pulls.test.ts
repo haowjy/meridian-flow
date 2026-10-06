@@ -69,6 +69,33 @@ describe("BranchPullService", () => {
     await service.flushLivePull(DOCUMENT_ID);
     await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
   });
+  it("skips the live snapshot and root transaction when no Work draft is active", async () => {
+    const touched: string[] = [];
+    const service = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => {
+        touched.push("root transaction");
+        return operation();
+      },
+      liveCoordinator: {
+        withDocument: async (_documentId, fn) => {
+          touched.push("live snapshot");
+          return fn(docWithText("live"));
+        },
+        recover: async () => {},
+      },
+      branchCoordinator: {} as BranchCoordinator,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => [],
+        ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+        ensureThreadPeerBranch: async () => ({ branchId: "thread" }),
+      },
+    });
+
+    await service.flushLivePull(DOCUMENT_ID);
+
+    expect(touched).toEqual([]);
+  });
   it("flushes live pulls into each active work draft outside the live mutation", async () => {
     const liveDoc = docWithText("live update");
     const pulled: string[] = [];

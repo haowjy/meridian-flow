@@ -27,7 +27,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       },
     });
     const branchId = await actorA.seedDestructivePush("item-6-stale-owner");
-    await expect(actorA.autoPush(branchId)).rejects.toThrow("pause actor A");
+    await expect(actorA.push(branchId)).rejects.toThrow("pause actor A");
     const [ownedByA] = await db.select().from(schema.branchPushSettlementOutbox);
     if (
       !ownedByA?.claimToken ||
@@ -103,7 +103,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterSettlement: deleteAfterFirstClassification(),
         });
         const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
-        await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
         await expectLiveSweepOnly(warm);
         const observed = await observeSettlement(warm);
         warm.destroyWarmState();
@@ -118,7 +118,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           },
         });
         const branchId = await coldHarness.seedDestructivePush("oracle-f1a-cold");
-        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("injected process death");
+        await expect(coldHarness.push(branchId)).rejects.toThrow("injected process death");
       },
       async destroyWarmState() {
         coldHarness?.destroyWarmState();
@@ -184,7 +184,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           },
         });
         const branchId = await warm.seedDestructivePush("oracle-race-fault-warm");
-        await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
         const observed = await observeSettlement(warm);
         warm.destroyWarmState();
         return observed;
@@ -202,7 +202,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           },
         });
         const branchId = await coldHarness.seedDestructivePush("oracle-race-fault-cold");
-        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("fault after journal commit");
+        await expect(coldHarness.push(branchId)).rejects.toThrow("fault after journal commit");
       },
       async destroyWarmState() {
         coldHarness?.destroyWarmState();

@@ -2,12 +2,13 @@ import { createError, defineEventHandler, getRouterParam, sendRedirect, setHeade
 import { objectStoreKeyFromStorageUrl } from "../../../../domains/storage/index.js";
 import type { AppServices } from "../../../../lib/app.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { documentTarget, requireFileGrant } from "../../../../lib/file-access-http.js";
 export function attachmentFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
 
 type DocumentDownloadRouteServices = {
-  documentAccess: AppServices["documentAccess"];
+  fileAccess: AppServices["fileAccess"];
   uploadIdentity: AppServices["uploadIdentity"];
   objectStore: AppServices["objectStore"];
   documentSync: AppServices["documentSync"];
@@ -15,7 +16,7 @@ type DocumentDownloadRouteServices = {
 
 function selectDocumentDownloadRouteServices(app: AppServices): DocumentDownloadRouteServices {
   return {
-    documentAccess: app.documentAccess,
+    fileAccess: app.fileAccess,
     uploadIdentity: app.uploadIdentity,
     objectStore: app.objectStore,
     documentSync: app.documentSync,
@@ -26,10 +27,13 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const services = selectDocumentDownloadRouteServices(app);
   const documentId = getRouterParam(event, "documentId") ?? "";
-  if (!(await services.documentAccess.canAccessDocument(user.userId, documentId)))
-    throw createError({ statusCode: 404, message: "Document not found" });
-  const projectId = await services.documentAccess.projectIdForDocument(documentId);
-  if (!projectId) throw createError({ statusCode: 404, message: "Document not found" });
+  const grant = await requireFileGrant(
+    services.fileAccess,
+    user.userId,
+    documentTarget(documentId),
+    "read",
+  );
+  const projectId = grant.facts.projectId;
   const membership = await services.documentSync.resolveManifestMembership({ projectId });
   if (!membership.members.includes(documentId))
     throw createError({ statusCode: 404, message: "Document not found" });

@@ -81,7 +81,7 @@ describe("deriveModelRequestDebugViews", () => {
               type: "tool_use",
               toolCallId: "tool-1",
               toolName: "write",
-              input: { command: "delete", in: "84c5" },
+              input: { command: "remove", in: "84c5" },
             },
           ],
         },

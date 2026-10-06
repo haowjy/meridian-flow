@@ -299,8 +299,10 @@ export function createOrchestratorEventProjector() {
             messageId,
             toolCallId: event.toolCallId,
             content: typeof event.output === "string" ? event.output : JSON.stringify(event.output),
-            // AG-UI's event schema is passthrough: `metadata` survives the
-            // protocol parse and the client reads it directly off this event.
+            // AG-UI's event schema is passthrough: `result` and `metadata`
+            // survive the protocol parse and the client reads them directly
+            // off this event.
+            ...(event.result !== undefined ? { result: event.result } : {}),
             ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
           }),
         );

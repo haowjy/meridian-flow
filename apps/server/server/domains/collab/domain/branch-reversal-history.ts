@@ -15,6 +15,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchJournalRow, branchJournalRevision } from "./branch-push-contracts.js";
+import { isBranchNotFoundError } from "./branch-resolver.js";
 
 export type BranchReversalScope = {
   branchId: string;
@@ -23,9 +24,8 @@ export type BranchReversalScope = {
   rows: BranchJournalRow[];
 };
 
-export async function resolveBranchReversalScope(input: {
-  documentId: DocumentId;
-  threadId: ThreadId;
+/** The branch reads that decide where a thread's undo history lives. */
+export type BranchReversalHistoryReader = {
   branches: {
     resolveThreadBranch(
       documentId: DocumentId,
@@ -41,8 +41,20 @@ export async function resolveBranchReversalScope(input: {
       generation: number;
     }): Promise<BranchJournalRow[]>;
   };
-}): Promise<BranchReversalScope | null> {
-  const peer = await input.branches.resolveThreadBranch(input.documentId, input.threadId);
+};
+
+export async function resolveBranchReversalScope(
+  input: { documentId: DocumentId; threadId: ThreadId } & BranchReversalHistoryReader,
+): Promise<BranchReversalScope | null> {
+  // No peer in the thread's current Work means it never drafted this document
+  // there: its writes went live (D19), so the live journal holds its history.
+  const peer = await input.branches
+    .resolveThreadBranch(input.documentId, input.threadId)
+    .catch((cause: unknown) => {
+      if (isBranchNotFoundError(cause)) return null;
+      throw cause;
+    });
+  if (!peer) return null;
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   if (!peerSnapshot?.upstreamBranchId) return null;

@@ -23,6 +23,7 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { isConversationTurn } from "../../domain/turn-metadata.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
@@ -752,6 +753,33 @@ export function createInMemoryRepositories(
         });
       }
       return items.slice(0, input.limit + 1);
+    },
+    async countConversationTurns(spans, beforePosition) {
+      return [...turns.values()].filter(
+        (turn) =>
+          turn.position < beforePosition &&
+          isConversationTurn(turn) &&
+          spans.some(
+            (span) =>
+              turn.threadId === span.threadId &&
+              turn.position > span.afterPosition &&
+              (span.throughPosition === null || turn.position <= span.throughPosition),
+          ),
+      ).length;
+    },
+    async findConversationTurnByOrdinal(spans, ordinal) {
+      if (!Number.isSafeInteger(ordinal) || ordinal < 1) return null;
+      const matches = [...turns.values()].filter(
+        (turn) =>
+          isConversationTurn(turn) &&
+          spans.some(
+            (span) =>
+              turn.threadId === span.threadId &&
+              turn.position > span.afterPosition &&
+              (span.throughPosition === null || turn.position <= span.throughPosition),
+          ),
+      );
+      return orderTurnsByPosition(matches)[ordinal - 1] ?? null;
     },
     async findFirstUnsettledTranscriptTurn(spans) {
       const matches = spans.flatMap((span) =>

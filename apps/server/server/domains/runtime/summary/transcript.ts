@@ -22,10 +22,7 @@ function resultExcerpt(
 ): string {
   if (part.type !== "tool_result" || rendered.length <= EXCERPT_CHARACTERS) return rendered;
   const call = calls.get(part.toolCallId);
-  const uri =
-    call?.toolName === "write" && call.input.command === "read"
-      ? (call.input.path ?? call.input.file)
-      : undefined;
+  const uri = call?.toolName === "read" ? call.input.path : undefined;
   // Only document reads can be re-read. Writes and other bulky results must split or fail.
   return typeof uri === "string"
     ? `Tool result for ${uri}${part.isError ? " (error)" : ""} (excerpt; re-read this URI for the full document):

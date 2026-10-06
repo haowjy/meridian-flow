@@ -34,7 +34,7 @@ export function locateBlockByHash(
     return {
       ok: false,
       code: "not_found",
-      message: options.notFoundMessage ?? `Block hash "${hash}" was not found`,
+      message: options.notFoundMessage ?? hashNotFoundMessage(hash),
     };
   }
 
@@ -44,7 +44,7 @@ export function locateBlockByHash(
     return {
       ok: false,
       code: "not_found",
-      message: options.notFoundMessage ?? `Block hash "${hash}" was not found`,
+      message: options.notFoundMessage ?? hashNotFoundMessage(hash),
     };
   }
   return { ok: true, block: lookup.block, index, blocks };
@@ -57,4 +57,12 @@ function ambiguousHashMessage(
 ): string {
   const candidateHashes = matches.map((match) => model.getBlockId(match)).join(", ");
   return `Block hash "${hash}" is ambiguous (matches: ${candidateHashes}). Read the block to disambiguate.`;
+}
+
+/**
+ * Writes resolve hashes in the version they change, never live (D14), so a
+ * hash from a `version: "live"` read can be missing here.
+ */
+function hashNotFoundMessage(hash: string): string {
+  return `Block hash "${hash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it.`;
 }

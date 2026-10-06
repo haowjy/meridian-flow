@@ -16,6 +16,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
@@ -36,7 +37,6 @@ import {
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleDocumentLinkRewrite } from "./drizzle-document-link-rewrite.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 

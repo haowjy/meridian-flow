@@ -25,6 +25,7 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
+import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -182,6 +183,10 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     owner: "mobile-project-document-host",
   });
   const liveState = live.state;
+  const bindableLiveSession = useRefusedEditsReopen(
+    liveState.kind === "opened" ? liveState.session : null,
+    live.retry,
+  );
 
   useEffect(() => {
     if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
@@ -244,7 +249,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
 
   const liveSession =
     liveState.kind === "opened" && liveState.documentId === activeTab.documentId
-      ? liveState.session
+      ? bindableLiveSession
       : null;
   if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
     return (

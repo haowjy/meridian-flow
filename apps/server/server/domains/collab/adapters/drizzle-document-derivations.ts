@@ -13,6 +13,7 @@ import {
 } from "@meridian/database";
 import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -24,7 +25,6 @@ import {
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /** Caller owns the document mutation lock for this transaction. */

@@ -38,7 +38,10 @@ back *above* it, and prose never rolls into a fold.
    render time.
 3. **Hidden protocol** — a `tool_use`/`tool_result` whose row a custom card
    already surfaces (`ask_user`, `spawn`, `thread_message`, `return_result`) — is
-   dropped, not folded.
+   dropped, not folded. Any tool call whose helper card is in the turn is
+   hidden by its `toolCallId`. A `thread_message` refused before a child run
+   started (turn budget, no agent binding, not authorised) has no card, so its
+   failure row stays in the fold.
 4. **An `image` block and a `file` block are artifacts** (`isArtifactBlock`).
 5. **Text** flushes the open run and emits a `text` item. Empty text is dropped.
 6. **Custom cards** flush the open run and emit an `artifact` item.
@@ -75,13 +78,15 @@ Notation: `r` = reasoning, `t` = process tool, `p` = prose, `c` = custom card,
 
 ### Digest contract
 
-The label summarizes the `write` tools inside that process item: reads with
-document targets contribute unique explored documents, and successful writes
-contribute edited/drafted documents. Failed operations and every non-`write`
-tool (`search`, `ls`, `work`) contribute steps instead of documents. Clauses are
-ordered explore → edit → steps. A process item with no readable tool but a
-reasoning run still shows `Thinking`. The accessible name remains `Thinking` /
-`Thinking part N` regardless of the visible digest.
+The label summarizes the tools inside that process item: a successful `skill`
+call names its skill (`Invoked 'Story Review'`, several joined as a list),
+`read` calls contribute unique explored documents, and successful `write`
+calls contribute edited/drafted documents. Failed operations and every other
+tool (`search`, `ls`, `work`, a `read` of a `skills://` file) contribute steps
+instead of documents; a `write` paused with `read_required` counts as a step.
+Clauses are ordered skills → explore → edit → steps. A process item with no
+readable tool but a reasoning run still shows `Thinking`. The trigger's
+accessible name is the visible label; there is no separate `aria-label`.
 
 ## Cards are artifacts
 
@@ -93,8 +98,10 @@ advertise `ask_user` until its rework
 ([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the
 interrupt card and its response path, they are not dead code.
 
-Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
-custom card is the surface. Spawn and `return_result` protocol remain model
+Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts` per tool,
+`partitionTurn` by the card's `toolCallId`). The custom card is the surface.
+Every reader takes the typed `result`; `output` is the model's text and the app
+never parses it (`ToolView` does not carry it). Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
 
 Each card-bearing admitted invocation has one retained helper-result card,
@@ -234,10 +241,13 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
-`thread_report`, and `return_result`. `ask_user` and `helper-result` render
-through custom cards; `spawn` and `thread_message` tool rows are hidden because
-the retained invocation card owns their writer surface. `thread_report` is a
+`read`, `write`, `work`, `ls`, `search`, `skill`, `ask_user`, `spawn`,
+`thread_message`, `thread_report`, `thread_ls`, `thread_history`, and
+`return_result`. `ask_user` and `helper-result` render
+through custom cards; `spawn` and a foreground `thread_message` that ran have
+hidden tool rows because the retained invocation card owns their writer
+surface, while a queued or failed `thread_message` shows as its own row
+(`tool-view-visibility.ts`). `thread_report` is a
 process row with its own renderer (`thread-report-renderer.tsx`).
 `return_result` remains a report render item, not a child-report artifact.
 Interrupt cards render in the shared `ArtifactCard` shell; invocation cards
@@ -245,7 +255,7 @@ render through `SpawnReportCard` on `subagent/SubagentRow`. Artifact lists
 render through `ArtifactGrid`, used by `FormBlock` and by `ReportContent`, the
 one report body shared by the launch card, the `thread_report` step, and the
 `return_result` report item.
-Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
+Process tools (`read`, `write`, `work`, `ls`, `search`) render as `ActivityRow`.
 `tool-kind.ts` names the split: an **artifact** result is writer-facing
 (custom card, image) and never folds; a **process** tool is scaffolding.
 Three conventions govern all renderers:
@@ -254,15 +264,16 @@ Three conventions govern all renderers:
   the tool name with underscores replaced by spaces and its first letter
   capitalized — never arguments or paths. Tool arguments are developer detail
   that should not appear in the writer's chat surface.
-- **`toolVerb()` for status-aware tense.** Every registered renderer uses
-  `toolVerb(tool, completedNode, activeNode)` to conjugate the action label
-  by `tool.status` (`complete` vs `partial`). This keeps verb presentation
+- **`toolActivityPhrase()` for status-aware tense.** Every registered renderer
+  takes its label from `toolActivityPhrase(tool, writeMode)` in
+  `command-descriptor.ts`, which picks the descriptor's `complete` or `active`
+  phrase by `tool.status`. This keeps verb presentation
   consistent and prevents missing-tense bugs when adding new tools.
 - **Curated expand content.** Inline expansions render result rows, stream tails,
   or plain output — never raw JSON. If raw JSON is needed for debugging, it goes
   behind a dev-only setting.
 
-Neutral tools (`write`, `work`, `ls`, `search`) get explicit titles/icons and
+Neutral tools (`read`, `write`, `work`, `ls`, `search`) get explicit titles/icons and
 may expose curated result rows without implying any external execution
 substrate. Adding a renderer is a presentation change only: append
 the real runtime tool name to the `RENDERERS` map and keep protocol pairing in
@@ -280,7 +291,7 @@ Key files:
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
 | `ProcessDisclosure.tsx` | Collapsible `Thinking` disclosure with sticky user-toggle state |
 | `CustomBlockRenderer.tsx` | Renders `custom` blocks; interrupts pass through `onRespondToInterrupt` |
-| `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolVerb()` for tense and may show curated expand content. Mismatched keys don't error — a renamed tool silently falls through to the bare-name default, so verify registry keys against the server tool names when either side changes |
+| `tool-renderers.tsx` | Tool renderer registry; unknown tools show name only, registered tools use `toolActivityPhrase()` for tense and may show curated expand content. Mismatched keys don't error — a renamed tool silently falls through to the bare-name default, so verify registry keys against the server tool names when either side changes |
 | `AssistantTurn.tsx` (`DeliverySegments`) | Renders adjacent ToolViews as sibling `ToolRow`s inside a fold |
 | `ActivityRow.tsx` | Timeline row primitive: 19px icon gutter where each row paints its own 1px rail segment (no sibling-aware CSS). The rail invariants live in its header comment |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning blocks inside a fold; text and artifacts are handled upstream |

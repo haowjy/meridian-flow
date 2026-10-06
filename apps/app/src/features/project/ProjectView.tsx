@@ -486,13 +486,13 @@ function HydratedReviewControllers({
 }) {
   const chatReview = useDraftReviewScopeValue({
     projectId: props.projectId,
-    workId: props.chatWorkId,
+    work: props.chatWork,
     stateOwner: chatReviewState,
     threadId: props.chatThreadId,
   });
   const editorReview = useDraftReviewScopeValue({
     projectId: props.projectId,
-    workId: props.editorWorkId,
+    work: props.editorWork,
     stateOwner: editorReviewState,
     threadId: null,
   });

@@ -256,9 +256,10 @@ unmounts.
 
 A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
-rebind an idle existing chat through the canonical durable transition, and the
-model's explicit `work.switch` command uses that same separate authority. Work
-management and navigation never rebind a chat implicitly.
+rebind an idle existing chat through the canonical durable transition; the
+model's `work switch` never rebinds
+([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
+Work management and navigation never rebind a chat implicitly.
 
 The desktop rail contains Manuscript, Knowledge Base, User and Unfiled. Chat
 resources have no Editor sections or resource tabs. Editor Work remains a route

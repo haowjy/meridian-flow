@@ -30,6 +30,12 @@ the server discard mutation with
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
 
+An archived Work's drafts are frozen (D30): the server refuses Apply and
+Discard. The controller's `dispositionLocked` (frozen drafts, from the
+scope's Work, or a disposition in flight) disables every disposition control
+beside the existing archived notice; Review stays available. A new disposition
+control reads the same flag.
+
 Bulk Apply/Discard is one controller command over a captured target list; the
 dock does not infer command completion from busy/idle render edges. Apply
 addresses the current branch rather than preview operation ids or a revision
@@ -145,10 +151,10 @@ authority.
 ## The pending signal and draft-only tab lifecycle
 
 **One client pending projection; one server authority.**
-`pendingReviewDrafts(group)` in `docked-drafts.ts` is the per-document client
-"has changes to review" derivation. `pendingReviewDraft` selects its newest
-draft, while `activeDockedDraftGroups` projects all pending groups once for
-composer surfaces. The dock's pending rows, the identity bar's
+`pendingReviewDrafts(group)` in `client/query/useWorkDrafts.ts` is the
+per-document client "has changes to review" derivation. `pendingReviewDraft`
+selects its newest draft, while `activeWorkDraftGroups` projects all pending
+groups once for composer surfaces. The dock's pending rows, the identity bar's
 `DraftReviewChip` (self-contained; hides itself during that document's inline
 review so it never coexists with `DraftReviewHeader`), and the mode selector's
 fast-path count all derive from this filter. Never grow a second client
@@ -162,10 +168,8 @@ dock showed no reviewable change but the mode-switch dialog raw-counted one
 manifest journal row.
 
 Pending membership and presentation order are separate contracts.
-`activeDockedDraftGroups` stays newest-updated-first for the DraftDock. The
-composer's single **Review changes** action sorts a copy by
-`documentName ?? documentId` and opens the alphabetically first pending
-document; it must not reorder the shared projection.
+`dockRows` builds its own list sorted by `documentName ?? documentId` for the
+DraftDock and the Changes view; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until Apply, and the server

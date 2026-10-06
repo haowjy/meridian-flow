@@ -1,7 +1,7 @@
 # TODO — features/project
 
-- Open in Editor for Scratch and Uploads lands on the "not available yet"
-  placeholder. Tracked in https://github.com/haowjy/meridian-flow/issues/625.
+- Open in Editor for Uploads lands on the "not available yet" placeholder
+  (Scratch opens in the Editor). Tracked in https://github.com/haowjy/meridian-flow/issues/625.
 - Dock file slot is synced by effects (`dock/dock-view-store.ts` `workFile.active`,
   `enterWork`/`leaveWork`, the `ProjectView.tsx` layout effect, `DockShell`
   re-checks). Derive the shown file from the route's Work instead of syncing it.

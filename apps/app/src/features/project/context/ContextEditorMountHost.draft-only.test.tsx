@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** A draft-only document under review is hosted by its branch room alone; a live document keeps painting while its review room resolves. */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ComponentProps, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -17,6 +18,10 @@ const resourceReplica = vi.hoisted(() => ({
 vi.mock("./account-feature-context", () => ({
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
+  useLiveDocumentSessionRegistry: () => ({
+    whenRefusedRoomDropped: () => null,
+    observeBranchRoom: () => () => undefined,
+  }),
 }));
 const review = vi.hoisted(() => ({
   reviewing: false,
@@ -50,6 +55,8 @@ vi.mock("@/features/editor/EditorView", () => ({
     />
   ),
 }));
+
+const queryClient = new QueryClient();
 
 const liveSession = {
   getSnapshot: () => ({ status: "synced", schemaFence: null }),
@@ -106,15 +113,17 @@ describe("ContextEditorMountHost draft-only review", () => {
           : { ...tab, draftOnly: true, reviewWorkId: "work-a", reviewDraftId: "draft-a" }
       ) as ComponentProps<typeof ContextEditorMountHost>["trackedTabs"][number];
       return (
-        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextEditorMountHost
-            projectId="project-a"
-            workId="work-a"
-            trackedTabs={[hostedTab]}
-            activeTabId="document-a"
-            active
-          />
-        </ProjectDocumentLiveOpenerContext.Provider>
+        <QueryClientProvider client={queryClient}>
+          <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+            <ContextEditorMountHost
+              projectId="project-a"
+              workId="work-a"
+              trackedTabs={[hostedTab]}
+              activeTabId="document-a"
+              active
+            />
+          </ProjectDocumentLiveOpenerContext.Provider>
+        </QueryClientProvider>
       );
     }
 
@@ -159,15 +168,17 @@ describe("ContextEditorMountHost draft-only review", () => {
       })),
     };
     await withReactRoot(
-      <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-        <ContextEditorMountHost
-          projectId="project-a"
-          workId="work-a"
-          trackedTabs={[tab]}
-          activeTabId="document-a"
-          active
-        />
-      </ProjectDocumentLiveOpenerContext.Provider>,
+      <QueryClientProvider client={queryClient}>
+        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+          <ContextEditorMountHost
+            projectId="project-a"
+            workId="work-a"
+            trackedTabs={[tab]}
+            activeTabId="document-a"
+            active
+          />
+        </ProjectDocumentLiveOpenerContext.Provider>
+      </QueryClientProvider>,
       async () => {
         await act(async () => undefined);
         const editor = document.querySelector("[data-editor]");

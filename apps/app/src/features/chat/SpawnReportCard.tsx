@@ -67,7 +67,7 @@ export function SpawnReportCard({
     ref: null,
     execution: savedReport?.execution ?? null,
     agentName: agentName || "Subagent",
-    description: title?.trim() || null,
+    name: title?.trim() || null,
     status:
       resolvedOutcome === "succeeded"
         ? "done"

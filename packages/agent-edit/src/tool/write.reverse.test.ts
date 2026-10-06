@@ -1,7 +1,7 @@
 // Host reverse() API coverage for user-facing write, turn, and thread reversal scopes.
 import { describe, expect, it, vi } from "vitest";
 
-import { blockTexts, expectOutcome } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 
@@ -32,6 +32,22 @@ describe("write host reverse", () => {
 
     expectOutcome(edit, "success");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "After undo."]);
+  });
+
+  it("reports undoing a remove with no later edits as reversed, without the kept-edits note", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "One.\n\nTwo.\n\nThree." });
+    const removed = await scenario.ctx.core.write(
+      { command: "remove", file: "chapter.md", in: [2, 3] },
+      { ...context, turnId: "turn-remove" },
+    );
+    expectOutcome(removed, "success");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["One."]);
+
+    const undo = await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+    expectOutcome(undo, "reversed");
+    expect(outcomeText(undo)).not.toContain("later edits were kept");
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["One.", "Two.", "Three."]);
   });
 
   it("undoes a targeted write by id", async () => {
@@ -76,7 +92,8 @@ describe("write host reverse", () => {
       actor,
     });
 
-    expectOutcome(undo, "reversed");
+    expectOutcome(undo, "reconciled");
+    expect(outcomeText(undo)).toContain("later edits were kept");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Later."]);
   });
 
@@ -120,7 +137,7 @@ describe("write host reverse", () => {
       selection: { kind: "turn", turnId: "turn-cycle" },
       actor,
     });
-    expectOutcome(redo, "reconciled");
+    expectOutcome(redo, "reversed");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
     expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
     expect(await scenario.ctx.core.getAvailability("chapter.md", THREAD_ID)).toEqual({
@@ -146,7 +163,7 @@ describe("write host reverse", () => {
       selection: { kind: "turn", turnId: "turn-cycle" },
       actor,
     });
-    expectOutcome(secondRedo, "reconciled");
+    expectOutcome(secondRedo, "reversed");
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "One."]);
   });
 

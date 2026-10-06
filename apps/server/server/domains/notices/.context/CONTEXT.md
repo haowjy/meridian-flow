@@ -25,8 +25,8 @@ AGENTS.md / runtime CONTEXT.md).
 The domain contains only notices that affect a later model call: `undo`,
 `awareness_degraded`, and writer-origin `work_switched`. A Work-switch notice is
 one-shot causal context; it does not replace the persistent hidden Work-context
-update. Model-origin Work switches do not enqueue the notice because their tool
-call and result already carry the event.
+update. The model can't switch Works
+([rule](../../runtime/.context/tools.md#permissions)).
 
 ## Failure boundary
 

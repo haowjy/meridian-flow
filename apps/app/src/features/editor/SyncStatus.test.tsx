@@ -27,6 +27,7 @@ function fakeSession(initial: Partial<DocumentSessionSnapshot> = {}) {
     serverHasLocalChanges: false,
     adoptionStalled: false,
     connectionState: null,
+    access: null,
     localPersistenceSynced: true,
     schemaFence: null,
     schemaRepairs: [],
