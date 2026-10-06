@@ -37,16 +37,21 @@ export function contextErrorToHttp(error: ContextError): never {
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
     case "context_unavailable":
-      return throwHttpInterrupt(
-        meridianErrorFromSystem(
-          error.reason,
-          error.reason === "work_archived"
-            ? "This Work is archived and read-only."
-            : "Work not found.",
-        ),
-        error.reason === "work_archived" ? 409 : 404,
-      );
+      return throwContextWorkUnavailableHttpError(error.reason);
     case "io_error":
       throw createError({ statusCode: 502, message: error.message });
   }
+}
+
+/** Locator resolution cannot distinguish a deleted Work from an unknown ID. */
+export function throwContextWorkUnavailableHttpError(
+  reason: Extract<ContextError, { code: "context_unavailable" }>["reason"],
+): never {
+  return throwHttpInterrupt(
+    meridianErrorFromSystem(
+      reason,
+      reason === "work_archived" ? "This Work is archived and read-only." : "Work not found.",
+    ),
+    reason === "work_archived" ? 409 : 404,
+  );
 }

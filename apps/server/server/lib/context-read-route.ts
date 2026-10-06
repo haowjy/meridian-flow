@@ -21,7 +21,7 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
-import { contextErrorToHttp } from "./context-error-http.js";
+import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export interface ContextReadRouteDeps {
   projectRepo: ProjectRepository;
@@ -119,7 +119,7 @@ export async function handleContextReadRequest(
     else {
       const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
       if (!resolved) {
-        throw createError({ statusCode: 404, message: "Work not found" });
+        throwContextWorkUnavailableHttpError("work_missing");
       }
       authority = resolved;
     }
@@ -135,7 +135,7 @@ export async function handleContextReadRequest(
     userId: input.userId,
     workId: input.workId,
   });
-  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
   const ref = await port.stat(path.uri);
   if (!ref.ok) contextErrorToHttp(ref.error);
   if (ref.value.kind === "tracked") {
