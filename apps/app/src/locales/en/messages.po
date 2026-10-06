@@ -216,10 +216,6 @@ msgstr "{count, plural, one {# match} other {# matches}}"
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
-#: src/features/project/context/LinkUpdateNote.tsx
-#~ msgid "{count, plural, one {Updated # link} other {Updated # links}}"
-#~ msgstr "{count, plural, one {Updated # link} other {Updated # links}}"
-
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr "{days, plural, one {# day left} other {# days left}}"
@@ -3621,10 +3617,6 @@ msgstr "That link could not be checked"
 msgid "That location does not exist"
 msgstr "That location does not exist"
 
-#: src/features/project/context/use-rename-entry-form.ts
-#~ msgid "That name is already in use."
-#~ msgstr "That name is already in use."
-
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
 msgstr "That part of the chapter is no longer available."
@@ -3649,6 +3641,14 @@ msgstr "That Work is no longer available. Choose another Work."
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down."
+msgstr "The AI provider turned this request down."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
+msgstr "The AI provider turned this request down. Trying again won't help until that's fixed."
 
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
@@ -3682,10 +3682,6 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
-
-#: src/features/project/context/use-rename-entry-form.ts
-#~ msgid "The location changed. Try again."
-#~ msgstr "The location changed. Try again."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."

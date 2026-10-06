@@ -26,6 +26,10 @@ Start from your symptom in [Strategies](#strategies), or scan the
   records carry the gateway error and correlation. Pivot to
   `?gatewayCallId=<id>` for the call's full lifecycle, then expand the call in
   the LLM Calls panel if you need request-level detail.
+- **A provider refused or failed a call** (out of balance, bad key, unknown
+  model). Start with `./mf thread view <id>`: the failed reply shows the
+  provider's HTTP status and message under its failure reason (see
+  [Provider Failures](#provider-failures)).
 - **Something is slow or chatty.** LLM Calls panel first (latency, retries,
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
@@ -117,6 +121,29 @@ jq -c 'select(.name == "meridian.subagent.activity")' run.ndjson   # one custom 
 
 Replays joined mid-message (`events --since`, `tail --since`) mark that
 message `partial: true`, since its text is only the tail after the cursor.
+
+## Provider Failures
+
+When a provider answers a model call with an error, the failed reply keeps
+its status and message:
+
+```bash
+./mf thread view <id>                          # status and message on the failed reply
+./mf thread view <id> --turn <turnId> --full   # the stored message untruncated
+```
+
+```text
+[assistant] 9475094e-… error/error in=0 out=0
+  error: This response failed.
+  failure reason: provider_error
+  provider error (402): Insufficient Balance
+```
+
+The failed reply's `metadata.providerError` is `{ status, message }`, with
+the message capped at 1,000 characters; `status` is null for a failure reported
+inside the stream. Server events keep only `errorCode`, so provider text never
+enters `EventSink`, JSONL, or model context. The retry policy is in the
+[gateway context](../apps/server/server/domains/runtime/gateway/.context/CONTEXT.md#provider-errors).
 
 ## Debug Gate
 

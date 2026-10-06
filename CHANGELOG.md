@@ -13,6 +13,9 @@
 
 - Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
 
+- Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
+- Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
+
 - Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
 
 - Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
