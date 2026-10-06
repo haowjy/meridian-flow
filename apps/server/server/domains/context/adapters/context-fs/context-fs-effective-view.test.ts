@@ -7,8 +7,8 @@ import { ContextFS } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
   InMemoryContextDocumentStore,
-  InMemoryContextTreeMutationStore,
 } from "./in-memory-store.js";
+import { InMemoryContextTreeMutationStore } from "./in-memory-tree-mutation-store.js";
 
 const SOURCE_ID = "00000000-0000-4000-8000-000000000801";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000802";

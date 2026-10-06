@@ -8,8 +8,8 @@ import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
   InMemoryContextDocumentStore,
-  InMemoryContextTreeMutationStore,
 } from "./in-memory-store.js";
+import { InMemoryContextTreeMutationStore } from "./in-memory-tree-mutation-store.js";
 
 const SOURCE_A = "00000000-0000-4000-8000-000000000901";
 const SOURCE_B = "00000000-0000-4000-8000-000000000902";
