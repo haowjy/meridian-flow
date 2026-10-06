@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
+
+import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
 import { act, StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-
+import { resolveDocumentLink } from "@/client/api/document-links-api";
 import type {
   DocumentSession,
   DocumentSessionConnectionState,
@@ -15,8 +17,28 @@ import type {
 import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
+import { createProjectLinkResolver } from "@/features/links/project-link-resolver";
+import { planLinkCreation } from "@/features/links/use-create-linked-document";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
+import { type EditorScope, useEditorScope } from "./editor-scope";
+
+const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
+const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
+let holderScheme = "manuscript";
+let observedScope: EditorScope;
+let indexedWorkId: string | null;
+let referenceWorkId: string | null;
+vi.mock("./references/useReferenceBrowserCatalog", () => ({
+  useReferenceBrowserCatalog: (_projectId: string, workId: string | null) => {
+    referenceWorkId = workId;
+    return null;
+  },
+}));
+vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
+vi.mock("@/client/query/useWorks", () => ({
+  useWorks: () => ({ noWork, works: [namedWork] }),
+}));
 
 type ThreadListItem = { id: string; title: string | null };
 
@@ -135,15 +157,42 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,
   useOptionalAccountResourceReplica: () => null,
-  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
+  useAccountResourceProjection: () => ({
+    snapshot: null,
+    records: [
+      {
+        resource: {
+          identity: { documentId: "holder" },
+          aliases: {},
+          lifecycle: { kind: "acknowledged" },
+          obligations: {},
+          canonical: {
+            scheme: holderScheme,
+            path: "/holder.md",
+            name: "holder.md",
+            workId: holderScheme === "scratch" || holderScheme === "uploads" ? namedWork.id : null,
+            workSlug: "named",
+          },
+        },
+        intents: [],
+      },
+    ],
+    error: null,
+  }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./surfaces/link", () => ({
-  ProjectLinkRuntime: () => null,
+  ProjectLinkRuntime: () => {
+    observedScope = useEditorScope();
+    return null;
+  },
 }));
 vi.mock("@/features/links", () => ({
-  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
+  useLinkableDocuments: (scope: EditorScope) => {
+    indexedWorkId = scope.workId;
+    return { documents: [], revision: "", complete: false };
+  },
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.
@@ -359,5 +408,51 @@ describe("editor lifetime", () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
       expect(sessionSnapshots.get("document-stale")?.schemaFence).toBeNull();
     });
+  });
+});
+
+describe("holder-owned Editor link scope", () => {
+  it.each([
+    "manuscript",
+    "kb",
+    "user",
+    "unfiled",
+    "scratch",
+    "uploads",
+  ])("%s links ignore the Editor route Work for resolution and creation", async (scheme) => {
+    holderScheme = scheme;
+    const expectedWork = scheme === "scratch" || scheme === "uploads" ? namedWork : noWork;
+    await withReactRoot(
+      <Harness initial={{ documentId: "holder", projectId: "project-1", workId: namedWork.id }} />,
+      async () => {
+        expect(observedScope.workId).toBe(expectedWork.id);
+        expect(indexedWorkId).toBe(expectedWork.id);
+        expect(referenceWorkId).toBe(expectedWork.id);
+        const index = { documents: [], revision: "", complete: false };
+        vi.mocked(resolveDocumentLink).mockResolvedValue({ document: null });
+        const target = { kind: "scheme" as const, uri: "scratch://x.md" };
+        await createProjectLinkResolver(
+          {
+            ...observedScope,
+            projectId: "project-1",
+            workId: observedScope.workId ?? "unresolved",
+            baseUri: null,
+          },
+          index,
+        )(target);
+        expect(resolveDocumentLink).toHaveBeenLastCalledWith(
+          "project-1",
+          expect.objectContaining({ workId: expectedWork.id }),
+        );
+        expect(
+          planLinkCreation(target.uri, observedScope.workId, { noWork, works: [namedWork] }),
+        ).toMatchObject({ kind: "create", work: { workId: expectedWork.id } });
+        await act(async () => applyProps({ workId: null }));
+        expect(observedScope.workId).toBe(expectedWork.id);
+        expect(indexedWorkId).toBe(expectedWork.id);
+        expect(referenceWorkId).toBe(expectedWork.id);
+      },
+    );
+    holderScheme = "manuscript";
   });
 });

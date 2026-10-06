@@ -18,6 +18,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { projectResourceLocation, resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -31,6 +32,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
@@ -44,7 +46,10 @@ import {
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { useLinkableDocuments } from "@/features/links";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import {
+  useAccountResourceProjection,
+  useLiveDocumentSessionRegistry,
+} from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -260,7 +265,6 @@ function ActiveSessionEditorView({
   showToolbar = true,
   active = true,
   ariaLabel,
-  workId = null,
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
@@ -280,12 +284,19 @@ function ActiveSessionEditorView({
   const effectiveEditable = editable && !snapshot.schemaFence;
   effectiveEditableRef.current = effectiveEditable;
 
-  // Which project and which Work this editor is open in. Everything that has to
-  // reach past the document — the `@` candidates, the resolver, a followed
-  // link — reads this one value, and none of it is a reason to remount.
+  // Links belong to their holder, never to the route's or a chat's Work.
+  const { records } = useAccountResourceProjection(projectId ?? "");
+  const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const holder = resourceForDocumentIdentity(records, documentId);
+  const location = holder && projectId ? projectResourceLocation(projectId, holder) : null;
+  const linkWorkId = !location
+    ? null
+    : location.scheme === "scratch" || location.scheme === "uploads"
+      ? location.workId
+      : (noWork?.id ?? null);
   const scope = useMemo<EditorScope>(
-    () => ({ projectId: projectId ?? null, workId }),
-    [projectId, workId],
+    () => ({ projectId: projectId ?? null, workId: linkWorkId }),
+    [projectId, linkWorkId],
   );
 
   // Marks render before anyone clicks one. Warming their trail detail here is
@@ -336,7 +347,7 @@ function ActiveSessionEditorView({
   );
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
-    active ? workId : null,
+    active ? scope.workId : null,
     t`Reference a file`,
   );
   // Where a link to a document nobody has written goes, unless a document is

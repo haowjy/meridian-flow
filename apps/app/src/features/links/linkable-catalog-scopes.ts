@@ -2,7 +2,7 @@
  * Which context catalogs the scope's document index walks.
  *
  * The project catalog (manuscript, kb, and Unfiled, whatever the Work), the
- * writer's user catalog, and the current Work's catalog by row id (including
+ * writer's user catalog, and the scope Work's catalog by row id (including
  * No Work). Unresolved surfaces have no scope. These are the catalogs a contextual
  * address resolves in on the server
  * (`apps/server/server/domains/context/document-link-resolution.ts`), so the
