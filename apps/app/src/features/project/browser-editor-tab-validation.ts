@@ -99,25 +99,27 @@ export async function validateEditorWorkspaceTabs({
   const needsProjection = restored.some(
     (tab) => tab.kind === "new" || (tab.kind === "tracked" && tab.origin === "local-resource"),
   );
-  const recordIndex = needsProjection
+  const projection = needsProjection
     ? await resources.readProjection(projectId).then(
-        (snapshot) =>
-          indexResourceRecords(
+        (snapshot) => ({
+          records: indexResourceRecords(
             snapshot.records.filter((record) =>
               resourceVisibleInProject(projectId, record, snapshot.catalogs),
             ),
           ),
+          folders: snapshot.folders,
+        }),
         () => null,
       )
-    : new Map<string, ResourceRecord>();
+    : { records: new Map<string, ResourceRecord>(), folders: [] };
   const results = await Promise.allSettled(
     restored.map(
       async (tab): Promise<{ tab: ContextTab | null; removedRoute: WorkingSetRoute | null }> => {
         if (tab.kind === "new") {
-          if (!recordIndex) throw new Error("Resource projection is unavailable");
-          const record = resourceRecordForTab(recordIndex, tab);
+          if (!projection) throw new Error("Resource projection is unavailable");
+          const record = resourceRecordForTab(projection.records, tab);
           return {
-            tab: record ? contextTabFromResource(projectId, record) : null,
+            tab: record ? contextTabFromResource(projectId, record, projection.folders) : null,
             removedRoute: null,
           };
         }
@@ -128,9 +130,11 @@ export async function validateEditorWorkspaceTabs({
           );
           return restored;
         }
-        if (!recordIndex) throw new Error("Resource projection is unavailable");
-        const record = resourceRecordForTab(recordIndex, tab);
-        const projected = record ? contextTabFromResource(projectId, record) : null;
+        if (!projection) throw new Error("Resource projection is unavailable");
+        const record = resourceRecordForTab(projection.records, tab);
+        const projected = record
+          ? contextTabFromResource(projectId, record, projection.folders)
+          : null;
         return {
           tab: projected,
           removedRoute: projected ? null : workingSetRouteForTab(tab),

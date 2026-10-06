@@ -11,6 +11,7 @@ import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protoco
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
 import type { ContextCatalog } from "./ports/context-catalog.js";
 import type {
+  DocumentLinkHistory,
   DocumentLinkResolver,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
@@ -21,8 +22,10 @@ type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
 export function createDocumentLinkResolver({
   catalog,
   workAuthorityResolver,
+  history,
 }: {
   catalog: ContextCatalog;
+  history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
   async function noWorkScope(projectId: ResolveDocumentLinkInput["projectId"]) {
@@ -48,25 +51,36 @@ export function createDocumentLinkResolver({
     } else scope = await currentScope(input);
     return scope ? { scope, scheme, path } : null;
   }
+  async function atUri(
+    input: ResolveDocumentLinkInput,
+    uri: string,
+    allowHistory: boolean,
+  ): Promise<ResolvedDocumentLink | null> {
+    const address = await location(input, uri);
+    if (!address) return null;
+    const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
+      if (entry.kind !== "file") return [];
+      const parsed = parseContextUri(entry.uri);
+      return parsed.ok && parsed.value.scheme === address.scheme
+        ? [{ entry, path: parsed.value.path }]
+        : [];
+    });
+    const match = matchDocumentPath(files, address.path, (file) => file.path);
+    if (match) return resolvedLink(match.entry);
+    const previous = allowHistory ? await history?.previous(input, address) : null;
+    return previous ? atUri(input, previous, false) : null;
+  }
   return {
     async resolve(input) {
+      const redirect = input.holder ? await history?.redirect(input) : null;
+      if (redirect) return redirect.uri ? atUri(input, redirect.uri, false) : null;
       const { target } = input;
       const resolved =
         target.kind === "scheme"
           ? resolveDocumentHref(target.uri, null)
           : resolveDocumentHref(target.path, target.baseUri);
       if (!resolved) return null;
-      const address = await location(input, resolved.uri);
-      if (!address) return null;
-      const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
-        if (entry.kind !== "file") return [];
-        const parsed = parseContextUri(entry.uri);
-        return parsed.ok && parsed.value.scheme === address.scheme
-          ? [{ entry, path: parsed.value.path }]
-          : [];
-      });
-      const match = matchDocumentPath(files, address.path, (file) => file.path);
-      return match ? resolvedLink(match.entry) : null;
+      return atUri(input, resolved.uri, !input.holder);
     },
   };
 }

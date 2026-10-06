@@ -2,6 +2,7 @@
 
 import type { Database } from "@meridian/database";
 import type { AssetPathResolver } from "@meridian/markup";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -15,7 +16,7 @@ import {
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
-import { createDocumentUriResolver } from "../context/document-uri-resolver.js";
+import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
@@ -51,6 +52,7 @@ import {
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDocumentLinkRewrite } from "./adapters/drizzle-document-link-rewrite.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -182,8 +184,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
+  const derivationStore = createDrizzleDocumentDerivationStore(deps.db, (tx, documentId) =>
+    resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+  );
   const derivations = createDocumentDerivationService({
-    store: createDrizzleDocumentDerivationStore(deps.db),
+    store: derivationStore,
     serializer: {
       serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
     },
@@ -255,6 +260,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     runtime.markdownDocuments,
     projectionEffects,
     changeTrails,
+    derivationStore,
     deps.notices,
     deps.eventSink,
   );
@@ -501,6 +507,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     projections: {
       documentDerivations: derivations,
+      rewriteDocumentLinks: createDrizzleDocumentLinkRewrite({
+        db: deps.db,
+        resolveUri: (tx, documentId) =>
+          resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+        serializer: runtime.markdownDocuments,
+        publish(documentId, update) {
+          const room = hocuspocusBinding.current()?.documents.get(documentId);
+          if (room)
+            Y.applyUpdate(room, update, {
+              source: "local",
+              context: { origin: { type: "system", reason: "link-update" } },
+            });
+          branchPulls.scheduleLivePull(documentId);
+        },
+      }),
       refreshDocumentProjection: projectionRefresher.refresh,
     },
     lineage,

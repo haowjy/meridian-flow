@@ -1,7 +1,7 @@
 /** One history policy for project destinations, secondary choices, and delayed address repair. */
 
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import {
+  type AddressSelection,
   type ProjectAddress,
   parseProjectAddress,
   projectAddressHref,
@@ -24,7 +24,7 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  workId: ParsedRequestId | null;
+  work: AddressSelection;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
 };
@@ -132,15 +132,9 @@ export function createProjectNavigation(
     if (parsed.kind !== "valid") return;
     const current = parsed.address;
     const shown = displayed();
-    const workId = shown.workId;
     const frozen: ProjectAddress = {
       ...current,
-      work:
-        current.work.kind === "absent"
-          ? workId
-            ? { kind: "id", id: workId }
-            : { kind: "none" }
-          : current.work,
+      work: current.work.kind === "absent" ? shown.work : current.work,
     };
     const href = projectAddressHref(frozen);
     port.replaceEntry(

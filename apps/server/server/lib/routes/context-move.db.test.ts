@@ -468,6 +468,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
         scheme: "manuscript",
         path: "Act 1/Untitled 1.md",
         name: "Untitled 1.md",
@@ -542,6 +543,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
         scheme: "scratch",
         path: "Assigned/Unassigned.md",
         name: "Unassigned.md",
@@ -579,6 +581,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
         scheme: "scratch",
         path: "Returned/Unassigned.md",
         name: "Unassigned.md",
@@ -679,6 +682,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
         scheme: "manuscript",
         path: "Act 1/Opening.md",
         name: "Opening.md",
@@ -719,6 +723,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "moved",
+        linkUpdate: { links: 0, documents: 0 },
         scheme: "manuscript",
         path: "Act 1/Source",
         name: "Source",

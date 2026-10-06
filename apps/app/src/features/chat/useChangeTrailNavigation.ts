@@ -32,7 +32,7 @@ export function useChangeTrailNavigation(threadId: string) {
             if (signal.aborted) return { kind: "cancelled" };
             return openDocument({
               documentId,
-              workId: thread?.workId ?? null,
+              workId: thread?.workId ?? undefined,
               signal,
             });
           },

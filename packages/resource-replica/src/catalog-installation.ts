@@ -1,6 +1,10 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { CatalogFileClassification, CatalogFileEntry } from "@meridian/contracts/protocol";
+import type {
+  CatalogFileClassification,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+} from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
@@ -14,6 +18,8 @@ import type {
 } from "./resource-records";
 
 export type CatalogObservationFence = Readonly<{
+  /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
+  folders?: ReadonlyMap<string, { canonical: ResourceLocation; refreshOperationId?: string }>;
   /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
   resources?: ReadonlyMap<
     string,
@@ -38,7 +44,11 @@ function displayedPath(path: string): string {
   return path ? `/${path}` : "/";
 }
 
-function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceLocation {
+/** The canonical location a catalog view gives one of its file or folder entries. */
+export function catalogEntryLocation(
+  view: CatalogCacheView,
+  entry: CatalogFileEntry | CatalogFolderEntry,
+): ResourceLocation {
   if (!sameCatalogScope(entry.scope, view.scope)) throw new Error("Catalog file scope mismatch");
   const source = view.entries.get(entry.sourceId);
   if (
@@ -89,7 +99,10 @@ function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceL
   };
 }
 
-function sameLocation(left: ResourceLocation | null, right: ResourceLocation | null): boolean {
+export function sameResourceLocation(
+  left: ResourceLocation | null,
+  right: ResourceLocation | null,
+): boolean {
   if (!left || !right) return left === right;
   return (
     left.scheme === right.scheme &&
@@ -156,7 +169,7 @@ function observedResourceWrite(input: {
   if (!observed) return null;
   if (
     observed.revision !== current.revision &&
-    (!sameLocation(observed.canonical, current.canonical) ||
+    (!sameResourceLocation(observed.canonical, current.canonical) ||
       !sameClassification(observed.classification, current.classification))
   )
     return null;
@@ -167,7 +180,7 @@ function observedResourceWrite(input: {
     : null;
   const changed =
     refreshed !== null ||
-    !sameLocation(current.canonical, location) ||
+    !sameResourceLocation(current.canonical, location) ||
     !sameClassification(current.classification, classification);
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
@@ -218,7 +231,7 @@ export function planCatalogInstallation(input: {
   const resources: ResourceWrite[] = [];
   const fence = input.observedAfter ?? {};
   for (const entry of catalogFiles(input.view)) {
-    const location = locationFor(input.view, entry);
+    const location = catalogEntryLocation(input.view, entry);
     const current = index.current.get(entry.entryId);
     if (current) {
       const write = observedResourceWrite({

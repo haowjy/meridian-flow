@@ -149,6 +149,14 @@ export function attributionFromMeta(meta: UpdateMeta): {
   actorTurnId: TurnId | null;
   actorUserId: import("@meridian/contracts/runtime").UserId | null;
 } {
+  if (meta.origin === "link-update") {
+    return {
+      originType: "link_update",
+      actorTurnId: (meta.actorTurnId as TurnId | undefined) ?? null,
+      actorUserId:
+        (meta.actorUserId as import("@meridian/contracts/runtime").UserId | undefined) ?? null,
+    };
+  }
   if (meta.origin === "system") {
     return {
       originType: "system",

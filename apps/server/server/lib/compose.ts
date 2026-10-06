@@ -36,6 +36,7 @@ import {
   createDrizzleAssetPathResolver,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
@@ -44,6 +45,7 @@ import {
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
+  createLinkUpdateWorker,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createUploadIntake,
@@ -51,6 +53,7 @@ import {
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
+  type LinkUpdateWorker,
   type ProjectContextAvailabilityPort,
   type PromotionService,
   type ResultRepository,
@@ -246,6 +249,7 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  linkUpdates: LinkUpdateWorker;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -328,6 +332,7 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  linkUpdates: LinkUpdateWorker;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -513,10 +518,17 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
+  const linkUpdates = createLinkUpdateWorker({
+    db,
+    rewriteDocumentLinks: documentSync.rewriteDocumentLinks,
+    eventSink,
+  });
   contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
+    documentDerivations: documentSync.documentDerivations,
+    kickLinkUpdates: linkUpdates.kick,
     catalogMutations: contextCatalog,
     eventSink,
   });
@@ -597,6 +609,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    linkUpdates,
     contextPorts,
     contextCatalog,
     projectContextAvailability,
@@ -605,7 +618,11 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     contextCatalogWakeHub,
-    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    documentLinks: createDocumentLinkResolver({
+      catalog: contextCatalog,
+      workAuthorityResolver,
+      history: createDrizzleDocumentLinkHistory(db),
+    }),
     projects,
     works: workRepo,
     projectRepo,
@@ -1007,6 +1024,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
+    linkUpdates: ports.linkUpdates,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -1059,6 +1077,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
+      await ports.linkUpdates.stop();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1280,6 +1299,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     documentAddresses: {

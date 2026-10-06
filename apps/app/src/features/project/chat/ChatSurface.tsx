@@ -22,7 +22,7 @@ import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { cn } from "@/lib/utils";
 import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
 
@@ -48,7 +48,7 @@ export type ChatSurfaceProps = {
    * owns no close (its rail toggles live in the PaneHeader).
    */
   onCloseDock?: () => void;
-  onOpenContextTarget?: (target: ContextRouteTarget) => void;
+  onOpenContextTarget?: (target: ContextRouteRequest) => void;
   /** Dock header renderer; omit for the default desktop header. The phone chat sheet supplies its own. */
   renderHeader?: (args: DockHeaderProps) => ReactNode;
 };

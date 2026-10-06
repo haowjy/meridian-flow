@@ -8,11 +8,10 @@ import type { ResourceWorkAuthority } from "./resource-records";
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
 export function resourceWorkAuthorityFor(
   workId: string,
-  works: readonly { id: string; slug: string | null }[] | null | undefined,
-  noWorkId: string | null | undefined,
+  snapshot: { works: readonly { id: string; slug: string | null }[]; noWork: { id: string } },
 ): ResourceWorkAuthority {
-  if (workId === noWorkId) return { workId, workSlug: null };
-  const work = works?.find((candidate) => candidate.id === workId);
+  if (workId === snapshot.noWork.id) return { workId, workSlug: null };
+  const work = snapshot.works.find((candidate) => candidate.id === workId);
   if (!work?.slug) throw new Error("The destination Work has no known named authority");
   return { workId: work.id, workSlug: work.slug };
 }

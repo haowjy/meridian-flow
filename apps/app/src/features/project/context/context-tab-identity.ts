@@ -16,11 +16,11 @@ export function contextTabMatchesRoute(
   tab: ContextTab,
   scheme: ProjectContextTreeScheme,
   path: string,
-  workId: string | null,
+  workId: string,
 ): boolean {
   if (tab.kind === "new") return false;
   if (tab.scheme !== scheme || tab.path !== path) return false;
-  if (isWorkScopedProjectContextScheme(scheme)) return (tab.workId ?? null) === workId;
+  if (isWorkScopedProjectContextScheme(scheme)) return tab.workId === workId;
   return true;
 }
 
@@ -28,9 +28,9 @@ export function contextTabRouteKey(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  workId: string | null,
+  workId: string,
 ): string {
-  if (isWorkScopedProjectContextScheme(scheme) && workId) {
+  if (isWorkScopedProjectContextScheme(scheme)) {
     return `${projectId}:${scheme}:${workId}:${path}`;
   }
   return `${projectId}:${scheme}:${path}`;

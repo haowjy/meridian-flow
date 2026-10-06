@@ -52,7 +52,8 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
           documentId: file.documentId,
           anchor: passage,
           signal,
-          openDocument: (documentId) => openDocument({ documentId, workId: target.workId, signal }),
+          openDocument: (documentId) =>
+            openDocument({ documentId, workId: target.workId ?? undefined, signal }),
         });
         // Report only while this door is still the writer's latest: a stale
         // verdict about somewhere they have already left is worse than silence.

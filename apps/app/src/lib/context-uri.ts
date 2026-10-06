@@ -20,7 +20,7 @@ export type ParsedContextUriTarget = {
   workId: string | null;
 };
 
-export type ActiveWorkHandle = { id: string; slug: string };
+export type ActiveWorkHandle = { id: string; slug: string | null };
 
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
@@ -42,8 +42,9 @@ export function contextUriFromWritePath(path: string): string | null {
 
 export function contextRouteTargetFromUri(
   uri: string,
-  activeWork: ActiveWorkHandle | null,
-  availableWorks: readonly ActiveWorkHandle[] = activeWork ? [activeWork] : [],
+  activeWork: ActiveWorkHandle,
+  availableWorks: readonly ActiveWorkHandle[],
+  noWorkId: string,
 ): ParsedContextUriTarget | null {
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
@@ -53,10 +54,10 @@ export function contextRouteTargetFromUri(
   }
 
   if (parsed.authority.kind === "none") {
-    return { scheme: parsed.scheme, path: parsed.path, workId: null };
+    return { scheme: parsed.scheme, path: parsed.path, workId: noWorkId };
   }
   if (parsed.authority.kind === "contextual") {
-    return { scheme: parsed.scheme, path: parsed.path, workId: activeWork?.id ?? null };
+    return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
   const requestedSlug = parsed.authority.workSlug;
   const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
@@ -65,10 +66,11 @@ export function contextRouteTargetFromUri(
 
 export function canOpenContextUri(
   uri: string,
-  activeWork: ActiveWorkHandle | null,
-  availableWorks?: readonly ActiveWorkHandle[],
+  activeWork: ActiveWorkHandle,
+  availableWorks: readonly ActiveWorkHandle[],
+  noWorkId: string,
 ): boolean {
-  return contextRouteTargetFromUri(uri, activeWork, availableWorks) !== null;
+  return contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId) !== null;
 }
 
 function formatContextPath(value: string): string {

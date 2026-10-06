@@ -7,8 +7,7 @@
  * resolves against), which document is at an address, so a link the index can
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
- * and the current Work's Scratch and Uploads, where no Work means the No Work
- * row. A URI naming another Work's Scratch is outside it and always asks the
+ * and the current Work's Scratch and Uploads by row id, including No Work. A URI naming another Work's Scratch is outside it and always asks the
  * server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
@@ -26,7 +25,6 @@ import { useMemo, useRef } from "react";
 
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
-import { useWorks } from "@/client/query/useWorks";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
 
@@ -61,8 +59,7 @@ export function useLinkableDocuments({
   workId: string | null;
 }): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) && !workId });
-  const scopes = linkableCatalogScopes({ projectId, workId, noWorkId: noWork?.id ?? null });
+  const scopes = linkableCatalogScopes({ projectId, workId });
   const catalogWorkId = scopes?.workId ?? null;
   const {
     manuscript: { catalog: manuscript, isComplete: manuscriptComplete },

@@ -40,8 +40,9 @@ the locked No Work row uses a null slug and URI authority `@/`.
 `resourceWorkAuthorityFor` checks command construction against the known project
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
-single durable authority rule used by catalog projection, receipt matching and
-tab ownership.
+single durable URI authority rule (`@/` or `@slug`) used by catalog projection,
+receipt matching and folder re-basing. Tab ownership does not use it: app tabs
+carry the location's Work row id, No Work's included.
 
 The journal type and structural validator cannot prove that a row id is the
 project's locked row: they have no Works registry. Server catalog acquisition
@@ -71,3 +72,52 @@ and cache projections, but it does not install independent resource truth. Two
 live metadata writers are forbidden. Durable local command acceptance is not
 server settlement: background reconciliation records immutable attempts and
 outcomes, and unresolved or rejected work remains projected for retry.
+
+Folder placement has a namespace-only record: a stable folder id, canonical
+location and ordered `set-folder-location` intentions. Its project ownership is
+null for account-owned personal folders; each intent retains the initiating project
+for transport. Personal overlays and catalog observations are shared across projects. It never reserves a
+document id, classification or content database. The browser account owner
+implements `FolderNamespaceStore` alongside its file metadata; it must observe
+folder commits through that same projection owner, not a second cache writer.
+
+File and folder records share immutable journal validation, receipt matching,
+account-bound transport and the CAS replay loop. `owningLocationIntent` is the
+placement ownership rule for both projection and admission; superseded rejected
+receipts remain evidence but cannot reclaim a location. A successful folder
+receipt requires a post-receipt catalog observation before later dispatch.
+Install that observation and its catalog checkpoint together, with the captured
+folder revision fence.
+
+Folder overlays rebase paths, URI authority, source/scope and parent ids for the
+folder and every descendant. Supply the installed destination source and parent
+catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
+use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
+old location and expose the latest requested name in the cancelled chain through
+`projectFolderNeedsRepair`, anchored to the refused intent for receipt feedback.
+File repair uses the same destination rule through `projectResourceNeedsRepair`.
+Shared namespace journal policy cancels unsubmitted queued placement commands
+for the refused identity revision and offers the newest cancelled destination,
+without changing immutable intentions or the failed receipt anchor.
+An explicit repair supersedes rejected history and starts from the last canonical
+location, even when the chosen destination matches the currently displayed location.
+Replay remains bound to stable folder identity, not a stale source-path comparison:
+the immutable request obtains a server outcome even after another client moves it.
+
+Catalog installation owns folder canonical state exactly as it owns files': the
+acquisition fence captures each folder's canonical location and refresh barrier
+before HTTP, and `planFolderCatalogInstallation` clears a barrier only for the
+operation id the fence saw, or follows a canonical location that changed elsewhere
+(a parent moved by anyone). A settled move owns placement only while its refresh is
+outstanding (`owningLocationIntent`); after that the installed location is truth,
+so a stale destination recorded by an old intention cannot override a later move of
+a parent.
+
+Caller-issued operation ids survive dispatch. Local settlement records
+`settledAt`; `settledNamespaceReceipt` returns the entire matching receipt for
+four seconds, including fields added by the server later, without deleting
+journal evidence. Surfaces own the timer/rerender that removes their note.
+
+Completed successful file naming remains evidence after canonical refresh retires
+placement ownership. Retained create history alone cannot make a named file
+provisional again.
