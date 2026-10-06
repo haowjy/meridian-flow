@@ -181,9 +181,12 @@ export async function ensureDatabaseForUrl(
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
+  options: { allowNonDevEndpoint?: boolean } = {},
 ): Promise<{ targetDb: string }> {
-  assertLocalDevPostgresEndpoint(templateDatabaseUrl, "clone test database");
-  assertLocalDevPostgresEndpoint(targetDatabaseUrl, "clone test database");
+  if (!options.allowNonDevEndpoint) {
+    assertLocalDevPostgresEndpoint(templateDatabaseUrl, "clone test database");
+    assertLocalDevPostgresEndpoint(targetDatabaseUrl, "clone test database");
+  }
   const template = parseTargetDatabase(templateDatabaseUrl);
   const target = parseTargetDatabase(targetDatabaseUrl);
   validateDbName(template.targetDb);
@@ -263,15 +266,22 @@ export async function resetSchemaForUrl(databaseUrl: string): Promise<{ targetDb
 export async function dropDatabaseForUrl(
   databaseUrl: string,
   mainDbNames: Iterable<string>,
+  options: { allowNonDevEndpoint?: boolean } = {},
 ): Promise<{ targetDb: string; dropped: boolean }> {
-  assertLocalDevPostgresEndpoint(databaseUrl, "drop database");
+  if (!options.allowNonDevEndpoint) assertLocalDevPostgresEndpoint(databaseUrl, "drop database");
   const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
   if (isReservedDatabase(targetDb, mainDbNames)) {
     throw new Error(`Refusing to drop reserved database: ${targetDb}`);
   }
 
-  const adminSql = postgres(adminConnString, { max: 1 });
+  const adminSql = postgres(adminConnString, {
+    max: 1,
+    connection: {
+      lock_timeout: 5_000,
+      statement_timeout: 60_000,
+    },
+  });
   try {
     await adminSql.unsafe(`DROP DATABASE IF EXISTS "${targetDb}" WITH (FORCE)`);
     return { targetDb, dropped: true };

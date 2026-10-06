@@ -1,11 +1,22 @@
 #!/usr/bin/env tsx
 /** Run the shared DB suite against a database owned by this invocation. */
-import { fork, spawn } from "node:child_process";
+import { execFile, fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
+import { promisify } from "node:util";
+import { mapConcurrentSettled, throwSettledFailures } from "./lib/bounded-concurrency";
+import { acquireDatabaseTestAdmission } from "./lib/db-test-admission";
+import { effectiveDbTestWorkerCount, parseDbTestWorkerCount } from "./lib/db-test-workers";
+import {
+  cloneDatabaseForUrl,
+  dropDatabaseForUrl,
+  ensureDatabaseForUrl,
+  isLocalDevPostgres,
+} from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
+
+const execFileAsync = promisify(execFile);
 
 function run(
   repoRoot: string,
@@ -33,6 +44,36 @@ function run(
   });
 }
 
+async function countSelectedSuites(
+  repoRoot: string,
+  testArgs: readonly string[],
+  databaseUrl: string,
+): Promise<number> {
+  const { stdout } = await execFileAsync(
+    "pnpm",
+    [
+      "exec",
+      "vitest",
+      "list",
+      "--config",
+      "apps/server/vitest.db.config.ts",
+      "--filesOnly",
+      ...testArgs,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+        RUN_DB_TESTS: "1",
+        TEST_DB_ALLOW_DESTRUCTIVE: "1",
+      },
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
+  return stdout.split("\n").filter((line) => line.startsWith("[db] ")).length;
+}
+
 async function main(): Promise<void> {
   const sourceDatabaseUrl = process.env.DATABASE_URL;
   if (!sourceDatabaseUrl) throw new Error("DB tests require DATABASE_URL.");
@@ -40,6 +81,7 @@ async function main(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
   const mainDatabaseNames = resolveMainDatabaseNames(repoRoot);
   const local = isLocalDevPostgres(sourceDatabaseUrl);
+  const clonesEnabled = process.env.DB_TEST_CLONES === "1";
   const mainDatabaseName = mainDatabaseNames[0];
   if (local && !mainDatabaseName) {
     throw new Error("Local DB tests require a registered main database in .env.");
@@ -50,19 +92,26 @@ async function main(): Promise<void> {
   }
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
-  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
-  if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
-    throw new Error(
-      "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
-    );
-  }
-  const workerDatabaseUrls = local
-    ? Array.from({ length: workerCount }, (_, index) =>
-        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
-      )
-    : [];
+  const configuredWorkerCount = parseDbTestWorkerCount(process.env.DB_TEST_WORKERS);
+  const admission = clonesEnabled
+    ? await acquireDatabaseTestAdmission(sourceDatabaseUrl, configuredWorkerCount)
+    : undefined;
+  let workerDatabaseUrls: string[] = [];
 
   try {
+    const selectedSuiteCount = await countSelectedSuites(repoRoot, testArgs, databaseUrl);
+    const workerCount = effectiveDbTestWorkerCount(
+      Math.min(configuredWorkerCount, admission?.workerBudget ?? configuredWorkerCount),
+      selectedSuiteCount,
+    );
+    console.log(
+      `DB tests: ${selectedSuiteCount} suite(s) selected; using ${workerCount} of ${configuredWorkerCount} configured worker(s).`,
+    );
+    workerDatabaseUrls = clonesEnabled
+      ? Array.from({ length: workerCount }, (_, index) =>
+          managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+        )
+      : [];
     if (local) {
       const { targetDb } = await ensureDatabaseForUrl(databaseUrl);
       console.log(`DB tests: created owned database ${targetDb}.`);
@@ -73,9 +122,13 @@ async function main(): Promise<void> {
       );
       if (migrationExit !== 0)
         throw new Error(`DB migrations exited with status ${migrationExit}.`);
+    }
+    if (clonesEnabled) {
       await Promise.all(
         workerDatabaseUrls.map(async (workerDatabaseUrl) => {
-          const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl);
+          const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl, {
+            allowNonDevEndpoint: !local,
+          });
           console.log(`DB tests: cloned worker database ${workerDb}.`);
         }),
       );
@@ -96,34 +149,52 @@ async function main(): Promise<void> {
                 return url.toString();
               }),
             ),
+            DB_TEST_WORKERS: String(workerCount),
           }
         : {},
     );
     process.exitCode = testExit;
   } finally {
-    if (local) {
-      const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
-      mkdirSync(logDirectory, { recursive: true });
-      const logPath = join(logDirectory, `${process.pid}.log`);
-      const log = openSync(logPath, "a", 0o600);
-      const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
-        cwd: repoRoot,
-        detached: true,
-        stdio: ["ignore", log, log, "ipc"],
-      });
-      closeSync(log);
-      await new Promise<void>((resolve, reject) => {
-        cleanup.once("error", reject);
-        cleanup.once("exit", (code) =>
-          reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
-        );
-        cleanup.on("message", (message) => {
-          if (message === "ready") resolve();
+    try {
+      if (local) {
+        const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
+        mkdirSync(logDirectory, { recursive: true });
+        const logPath = join(logDirectory, `${process.pid}.log`);
+        const log = openSync(logPath, "a", 0o600);
+        const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
+          cwd: repoRoot,
+          detached: true,
+          stdio: ["ignore", log, log, "ipc"],
         });
-        cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
-      });
-      cleanup.unref();
-      console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
+        closeSync(log);
+        await new Promise<void>((resolve, reject) => {
+          cleanup.once("error", reject);
+          cleanup.once("exit", (code) =>
+            reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
+          );
+          cleanup.on("message", (message) => {
+            if (message === "ready") resolve();
+          });
+          cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
+        });
+        cleanup.unref();
+        console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
+      } else if (clonesEnabled) {
+        const cleanupResults = await mapConcurrentSettled(workerDatabaseUrls, 4, async (url) => {
+          const result = await dropDatabaseForUrl(url, mainDatabaseNames, {
+            allowNonDevEndpoint: true,
+          });
+          console.log(`Dropped ${result.targetDb}.`);
+          return result;
+        });
+        throwSettledFailures(
+          "DB test cleanup",
+          cleanupResults,
+          workerDatabaseUrls.map((url) => new URL(url).pathname.slice(1)),
+        );
+      }
+    } finally {
+      await admission?.release();
     }
   }
 }

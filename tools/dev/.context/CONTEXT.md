@@ -105,28 +105,32 @@ tools/dev/
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
 - **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, explicit `<base>_test-manual-*` databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
 - **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and
-  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones eight
-  `-worker-<n>` databases, and routes each Vitest worker to its own clone.
-  `DB_TEST_WORKERS=1..8` can lower concurrency when sharing a busy server; the
-  cap leaves connection headroom rather than scaling with host CPU count.
+  migrates one `<base>_test-run-<pid>-<timestamp>` template and routes each
+  Vitest worker to its own clone. The clone count is the lesser of selected
+  suites, `DB_TEST_WORKERS` (eight by default), and a live connection budget
+  that reserves 20 server connections for development. A session advisory lock
+  admits one local run at a time, queues other invocations for at most five
+  minutes with progress output, and releases automatically if the owner dies.
+  `DB_TEST_ADMISSION=off` bypasses admission only for dedicated servers.
   Migration catalog assertions run against those fresh clones instead of
   replaying migrations in a nested process. After Vitest exits, the runner hands
   only its own clone/template URLs to
   a detached cleanup child over IPC. Ownership is checked against the live
   sending parent before acknowledgment. Cleanup logs live in
   `.meridian/db-test-cleanup/<owner-pid>.log`; the CLI does not wait on
-  PostgreSQL's forced DROP checkpoint. `dev:gc-dbs` recognizes the encoded
+  PostgreSQL's forced DROP checkpoint. Cleanup drops four worker clones in
+  parallel, then the template; server-side lock and statement timeouts bound a
+  stuck drop. `dev:gc-dbs` uses the same four-way fan-out and recognizes the encoded
   owner PID and can reclaim both leftovers and in-flight detached cleanup once
   that owner exits. Failed drops leave remaining databases for GC. CI/external
-  Postgres instances retain serial execution against their
-  pre-provisioned ephemeral database.
-- **DB suites under load:** runs never share databases, but under shared
-  Postgres load a timed-out fixture hook's async work can overlap the next
-  rollback or FK-DELETE reset inside one worker database, which can cause
-  duplicate-key errors or lock contention that looks like cross-run interference.
-  The 30-second `hookTimeout` mitigates it; the harness fix is
-  [#616](https://github.com/haowjy/meridian-flow/issues/616). Do not run
-  `pnpm check` and `pnpm test:db` at once in one worktree. Inspect the cleanup
+  CI opts into the same clone capability with one migrated ephemeral template,
+  four workers, and admission disabled because its Postgres service is dedicated.
+- **DB suites under load:** admitted local runs do not overlap, but Vitest does
+  not cancel asynchronous hook work when `hookTimeout` expires. That work can
+  still overlap the next rollback or FK-DELETE reset inside the same worker DB.
+  The reset helper can drain registered runtime work, not arbitrary unfinished
+  hook promises; the remaining investigation is recorded beside test support.
+  Inspect the cleanup
   log when detached drops are still waiting on a
   PostgreSQL checkpoint. Cleanup relocates that I/O; it does not eliminate it.
 - **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
