@@ -7,8 +7,7 @@ import { notifyThreadFrame, notifyThreadSocketClose, notifyThreadSocketOpen } fr
 import {
   computePersistentReconnectDelayMs,
   computeReconnectDelayMs,
-  resolveWsReconnectBackoff,
-  type WsReconnectBackoffConfig,
+  DEFAULT_WS_RECONNECT,
 } from "./ws-reconnect";
 import {
   DEFAULT_WS_PING_TIMEOUT_MS,
@@ -19,12 +18,6 @@ import {
 export type SocketLifecycleOptions = {
   connectivityHints?: ConnectivityHintsPort;
   webSocketFactory?: (url: string) => WebSocket;
-  backoff?: WsReconnectBackoffConfig;
-  now?: () => number;
-  random?: () => number;
-  setTimeoutFn?: typeof setTimeout;
-  clearTimeoutFn?: typeof clearTimeout;
-  pingTimeoutMs?: number;
 };
 
 /**
@@ -34,8 +27,6 @@ export type SocketLifecycleOptions = {
 export type SocketLifecycleConsumer = {
   /** Same-origin (or threads) WS URL for the next socket. */
   buildUrl: () => string;
-  /** Optional binaryType to set on the freshly created socket. */
-  binaryType?: BinaryType;
   /** True while the consumer still wants the socket up (drives reconnect). */
   wantsConnection: () => boolean;
   /** Socket just opened. Ping timer is already armed. */
@@ -54,12 +45,6 @@ export type SocketLifecycleConsumer = {
 
 export class SocketLifecycleController {
   private readonly webSocketFactory: (url: string) => WebSocket;
-  private readonly backoff: Required<WsReconnectBackoffConfig>;
-  private readonly pingTimeoutMs: number;
-  private readonly now: () => number;
-  private readonly random: () => number;
-  private readonly setTimeoutFn: typeof setTimeout;
-  private readonly clearTimeoutFn: typeof clearTimeout;
   private readonly consumer: SocketLifecycleConsumer;
 
   private readonly connectivityHints?: ConnectivityHintsPort;
@@ -76,22 +61,10 @@ export class SocketLifecycleController {
     this.consumer = consumer;
     this.connectivityHints = options.connectivityHints;
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
-    this.backoff = resolveWsReconnectBackoff(options.backoff);
-    this.pingTimeoutMs = options.pingTimeoutMs ?? DEFAULT_WS_PING_TIMEOUT_MS;
-    this.now = options.now ?? (() => Date.now());
-    this.random = options.random ?? (() => Math.random());
-    this.setTimeoutFn =
-      options.setTimeoutFn ?? (globalThis.setTimeout.bind(globalThis) as typeof setTimeout);
-    this.clearTimeoutFn =
-      options.clearTimeoutFn ?? (globalThis.clearTimeout.bind(globalThis) as typeof clearTimeout);
   }
 
   get state(): ConnectionState {
     return this.connectionState;
-  }
-
-  get currentSocket(): WebSocket | null {
-    return this.socket;
   }
 
   get currentGeneration(): number {
@@ -171,10 +144,10 @@ export class SocketLifecycleController {
 
   resetPingTimer(): void {
     this.clearPingTimer();
-    this.pingTimer = this.setTimeoutFn(() => {
+    this.pingTimer = setTimeout(() => {
       this.pingTimer = null;
       this.socket?.close(4000, "ping_timeout");
-    }, this.pingTimeoutMs);
+    }, DEFAULT_WS_PING_TIMEOUT_MS);
   }
 
   publishConnectionState(state: ConnectionState): void {
@@ -208,7 +181,6 @@ export class SocketLifecycleController {
     this.publishConnectionState({ kind: "connecting", attempt });
 
     const socket = this.webSocketFactory(this.consumer.buildUrl());
-    if (this.consumer.binaryType) socket.binaryType = this.consumer.binaryType;
     this.socket = socket;
 
     socket.addEventListener("open", () => {
@@ -284,11 +256,11 @@ export class SocketLifecycleController {
     const nextAttempt = this.reconnectAttempt + 1;
     this.reconnectAttempt = nextAttempt;
 
-    const isAggressive = nextAttempt <= this.backoff.maxReconnectAttempts;
+    const isAggressive = nextAttempt <= DEFAULT_WS_RECONNECT.maxReconnectAttempts;
     const delayMs = isAggressive
-      ? computeReconnectDelayMs(this.backoff, nextAttempt, this.random)
-      : computePersistentReconnectDelayMs(this.backoff, this.random);
-    const nextRetryAt = this.now() + delayMs;
+      ? computeReconnectDelayMs(DEFAULT_WS_RECONNECT, nextAttempt, Math.random)
+      : computePersistentReconnectDelayMs(DEFAULT_WS_RECONNECT, Math.random);
+    const nextRetryAt = Date.now() + delayMs;
     this.publishConnectionState(
       isAggressive
         ? { kind: "reconnecting", attempt: nextAttempt, nextRetryAt }
@@ -298,7 +270,7 @@ export class SocketLifecycleController {
       this.consumer.publishError?.(error);
     }
 
-    this.reconnectTimer = this.setTimeoutFn(() => {
+    this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.consumer.wantsConnection()) return;
       this.startSocket();
@@ -307,13 +279,13 @@ export class SocketLifecycleController {
 
   private clearReconnectTimer(): void {
     if (!this.reconnectTimer) return;
-    this.clearTimeoutFn(this.reconnectTimer);
+    clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
   }
 
   private clearPingTimer(): void {
     if (!this.pingTimer) return;
-    this.clearTimeoutFn(this.pingTimer);
+    clearTimeout(this.pingTimer);
     this.pingTimer = null;
   }
 

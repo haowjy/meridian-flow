@@ -9,10 +9,7 @@ export type ConnectivityHintsPort = Pick<
 type Environment = {
   browser: Pick<Window, "addEventListener" | "removeEventListener">;
   document: Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState">;
-  now: () => number;
   random: () => number;
-  setTimeout: typeof globalThis.setTimeout;
-  clearTimeout: typeof globalThis.clearTimeout;
 };
 
 export class ConnectivityHints {
@@ -70,7 +67,7 @@ export class ConnectivityHints {
     };
     this.subscribers.add(subscriber);
     return () => {
-      if (subscriber.timer !== null) this.environment.clearTimeout(subscriber.timer);
+      if (subscriber.timer !== null) clearTimeout(subscriber.timer);
       this.subscribers.delete(subscriber);
       this.connected.delete(source);
     };
@@ -81,7 +78,7 @@ export class ConnectivityHints {
     this.connected.add(source);
     for (const subscriber of this.subscribers) {
       if (subscriber.source !== source || subscriber.timer === null) continue;
-      this.environment.clearTimeout(subscriber.timer);
+      clearTimeout(subscriber.timer);
       subscriber.timer = null;
     }
     this.successfulSources.add(source);
@@ -94,18 +91,18 @@ export class ConnectivityHints {
 
   private queueRetry(): void {
     if (this.burst !== null) return;
-    this.burst = this.environment.setTimeout(() => {
+    this.burst = setTimeout(() => {
       this.burst = null;
-      const { now, random, setTimeout } = this.environment;
+      const { random } = this.environment;
       for (const subscriber of this.subscribers) {
         if (this.successfulSources.has(subscriber.source) || subscriber.timer !== null) continue;
         subscriber.timer = setTimeout(
           () => {
             subscriber.timer = null;
-            subscriber.lastRetry = now();
+            subscriber.lastRetry = Date.now();
             subscriber.listener("retry-now");
           },
-          Math.max(0, 2_000 - (now() - subscriber.lastRetry)) + random() * 300,
+          Math.max(0, 2_000 - (Date.now() - subscriber.lastRetry)) + random() * 300,
         );
       }
       this.successfulSources.clear();
@@ -113,11 +110,11 @@ export class ConnectivityHints {
   }
 
   private cancelPending(): void {
-    if (this.burst !== null) this.environment.clearTimeout(this.burst);
+    if (this.burst !== null) clearTimeout(this.burst);
     this.burst = null;
     this.successfulSources.clear();
     for (const subscriber of this.subscribers) {
-      if (subscriber.timer !== null) this.environment.clearTimeout(subscriber.timer);
+      if (subscriber.timer !== null) clearTimeout(subscriber.timer);
       subscriber.timer = null;
     }
   }
