@@ -5,8 +5,13 @@ import { ReverseThreadContextError } from "../contracts.js";
 import type { NamespaceChanges } from "./namespace-changes.js";
 import { createTurnReversalService } from "./turn-reversal-service.js";
 
-/** A thread with no creates, moves or deletes in any turn. */
+/** A thread with no creates, moves or deletes in any turn, so no tree to change. */
 const NO_NAMESPACE_CHANGES = { forTurn: async () => [] } as unknown as NamespaceChanges;
+const NO_TREE = {
+  namespaceTree: async () => {
+    throw new Error("No turn here changes the tree");
+  },
+};
 
 function createService(input: {
   agentReverse?: ReturnType<typeof vi.fn>;
@@ -54,7 +59,7 @@ function createService(input: {
     threadContext: {
       requireThreadOwner: async () => ({ projectId: "project-1" as never }),
       resolveContextDocument,
-      namespaceTree: vi.fn(),
+      ...NO_TREE,
     },
     namespaceChanges: NO_NAMESPACE_CHANGES,
   });
@@ -178,7 +183,7 @@ describe("cross-scope reversal", () => {
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
-        namespaceTree: vi.fn(),
+        ...NO_TREE,
       },
       namespaceChanges: NO_NAMESPACE_CHANGES,
     });
@@ -251,7 +256,7 @@ describe("cross-scope reversal", () => {
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
         resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
-        namespaceTree: vi.fn(),
+        ...NO_TREE,
       },
       namespaceChanges: NO_NAMESPACE_CHANGES,
     });

@@ -194,21 +194,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(notes)).toContain(`See [One](${RENAMED}).`);
     });
 
-    it("deletes a chapter: it leaves ls and read", async () => {
-      const { script } = await start();
-      const reply = await script.begin();
-      const deleted = await reply.call("write", { command: "delete", path: CHAPTER });
-      expect(text(deleted)).toMatch(
-        /^status: success; path: manuscript:\/\/chapter\.md; write: w\d+; version: live; deleted/,
-      );
-      await reply.save();
-
-      expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
-      const { call } = await script.begin();
-      expect(text(await call("ls", { path: "manuscript://" }))).not.toContain("chapter.md");
-      expect((await call("read", { path: CHAPTER })).isError).toBe(true);
-    });
-
     it("refuses uploads for every agent (D15), and a folder", async () => {
       const { runtime, script } = await start();
       const { call } = await script.begin();
@@ -226,7 +211,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "permission_denied",
         reason: "uploads_read_only",
       });
+      await call("read", { path: CHAPTER });
+      const intoUploads = await call("write", {
+        command: "move",
+        from: { path: CHAPTER },
+        path: "uploads://x.md",
+      });
+      expect(intoUploads.result).toMatchObject({
+        status: "permission_denied",
+        reason: "uploads_read_only",
+      });
       expect(await documentRow(UPLOAD_ID)).toMatchObject({ name: "notes", deletedAt: null });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
 
       const inArc = await runtime.app.contextPorts
         .forProject(PROJECT_ID, USER_ID, new Map())
@@ -424,12 +420,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(change?.status).toBe("active");
     });
 
-    it("undoes a delete, then redoes it", async () => {
+    it("deletes a chapter so it leaves ls and read, undoes the delete, then redoes it", async () => {
       const { script } = await start();
-      await script.reply(async (call) => {
-        await call("read", { path: CHAPTER });
-        await call("write", { command: "delete", path: CHAPTER });
-      });
+      const reply = await script.begin();
+      await reply.call("read", { path: CHAPTER });
+      const deleted = await reply.call("write", { command: "delete", path: CHAPTER });
+      expect(text(deleted)).toMatch(
+        /^status: success; path: manuscript:\/\/chapter\.md; write: w1; version: live; deleted/,
+      );
+      await reply.save();
+      expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
+      const { call } = await script.begin();
+      expect(text(await call("ls", { path: "manuscript://" }))).not.toContain("chapter.md");
+      expect((await call("read", { path: CHAPTER })).isError).toBe(true);
 
       const undo = await script.begin();
       const undone = await undo.call("write", { command: "undo", path: CHAPTER });

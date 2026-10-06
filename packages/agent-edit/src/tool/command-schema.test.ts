@@ -62,8 +62,6 @@ describe("command schemas", () => {
     expect(sectioned.error?.issues).toEqual([
       expect.objectContaining({ path: ["path"], message: expect.stringContaining("`remove`") }),
     ]);
-    const move = { command: "move", from: { path: "a.md" }, path: "b.md" };
-    expect(WriteToolInputSchema.parse(move)).toEqual(move);
     expect(WriteCommandSchema.safeParse({ command: "delete", file: "c.md" }).success).toBe(false);
   });
 });
