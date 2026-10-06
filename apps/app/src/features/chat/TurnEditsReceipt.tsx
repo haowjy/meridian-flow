@@ -19,6 +19,7 @@ import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
+import { documentLocationPath } from "./document-display-name";
 import { DraftStatsLabel } from "./draft-stats";
 import { NamespaceChangeLine } from "./NamespaceChangeRow";
 import type { WorkReceipt } from "./tool-command";
@@ -163,7 +164,9 @@ export function TurnEditsReceipt({
         restored.length > 0 &&
         (status === "nothing_to_undo" || status === "nothing_to_redo");
       const refusal = status && !documentHalfEmpty ? status : null;
-      setCommandRefusal(refusal ? { direction, status: refusal } : null);
+      setCommandRefusal(
+        refusal ? { direction, status: refusal, uri: refusedDocumentUri(outcome, refusal) } : null,
+      );
       setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
       if (refusal || restored.length > 0) setExpanded(true);
     } catch {
@@ -322,17 +325,37 @@ export function TurnEditsReceipt({
 /** A reversal the writer asked for and did not get, plus the direction they asked in — the direction the receipt carries can flip under a refusal, and the copy has to name the comm.... */
 type ReversalRefusal = {
   direction: ReversalDirection;
-  status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
+  status:
+    | Exclude<ReversalOutcome["status"], SuccessfulReversalStatus>
+    | NamespaceRefusalStatus
+    | "request_failed";
+  /** The document the refusal is about, when the outcome names one. */
+  uri?: string;
 };
 
 type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
 
+/**
+ * A move or delete the turn can't put back: something else is at its old
+ * place, or its folder is gone. The server's turn reversal names these
+ * statuses; until the contract lists them they arrive as unknown strings.
+ */
+type NamespaceRefusalStatus = "location_taken" | "folder_missing";
+
 /** The reversal statuses that mean the manuscript changed as asked. */
 function refusedReversalStatus(
-  status: ReversalOutcome["status"],
+  status: ReversalOutcome["status"] | NamespaceRefusalStatus,
 ): ReversalRefusal["status"] | null {
   if (status === "success" || status === "reversed" || status === "reconciled") return null;
   return status;
+}
+
+/** The document the outcome refused with this status. */
+function refusedDocumentUri(
+  outcome: ReversalOutcome,
+  status: ReversalRefusal["status"],
+): string | undefined {
+  return outcome.documents.find((document) => (document.status as string) === status)?.uri;
 }
 
 /** Writer-facing copy for a refused reversal. */
@@ -344,6 +367,12 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
       return t`Undo is no longer available.`;
     case "cant_undo_dependent":
       return dependentChangeCopy();
+    case "location_taken":
+      return locationTakenCopy(refusal.direction, refusal.uri);
+    case "folder_missing":
+      return refusal.direction === "redo"
+        ? t`Couldn't redo. Its folder is gone.`
+        : t`Couldn't undo. Its folder is gone.`;
     case "expired":
       return t`This change is no longer reversible.`;
     case "partial":
@@ -371,6 +400,18 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
       return reversalRetryCopy(refusal.direction);
     }
   }
+}
+
+function locationTakenCopy(direction: ReversalDirection, uri: string | undefined): string {
+  if (!uri) {
+    return direction === "redo"
+      ? t`Couldn't redo. Something else is in its place now.`
+      : t`Couldn't undo. Something else is in its place now.`;
+  }
+  const path = documentLocationPath(uri);
+  return direction === "redo"
+    ? t`Couldn't redo. Something else is at ${path} now.`
+    : t`Couldn't undo. Something else is at ${path} now.`;
 }
 
 /** The one sentence for "later live edits depend on this", wherever it surfaces. */

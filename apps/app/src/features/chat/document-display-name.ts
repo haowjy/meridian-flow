@@ -58,6 +58,11 @@ function skillFileDisplayName(uriOrPath: string): string | null {
   return t`${name} (${skill})`;
 }
 
+/** Where a document sits in its section, the way the writer's tree shows it ("archive/ch3.md"). */
+export function documentLocationPath(uriOrPath: string): string {
+  return parseContextLocation(uriOrPath).path.replace(/^\/+/, "");
+}
+
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
   const segments = path.split("/").filter(Boolean);

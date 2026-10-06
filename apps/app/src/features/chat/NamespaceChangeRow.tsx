@@ -11,7 +11,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { JsonValue, TurnNamespaceChangeItem } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 
@@ -22,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { ActivityRow } from "./ActivityRow";
 import { descriptorFor, moveDestinationName } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
-import { documentDisplayName } from "./document-display-name";
+import { documentDisplayName, documentLocationPath } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { sourcePath, stringInput, toolInputObject } from "./tool-command";
 
@@ -228,7 +227,7 @@ function restoreNote(
 ): string | null {
   switch (outcome) {
     case "location_taken": {
-      const place = documentPath(path);
+      const place = documentLocationPath(path);
       return t`Couldn't restore it. Something else is at ${place} now.`;
     }
     case "folder_missing":
@@ -240,12 +239,6 @@ function restoreNote(
     default:
       return null;
   }
-}
-
-/** The document's place in its section, the way the writer's tree shows it. */
-function documentPath(uri: string): string {
-  const parsed = parseUnifiedContextUri(uri);
-  return (parsed.ok ? parsed.value.path : uri).replace(/^\/+/, "");
 }
 
 /** One row line: the sentence, then a quiet status word when the change was put back. */
