@@ -11,10 +11,7 @@ function setup(random = 0) {
   const hints = new ConnectivityHints({
     browser,
     document,
-    now: () => Date.now(),
     random: () => random,
-    setTimeout,
-    clearTimeout,
   });
   hints.start();
   return { browser, document, hints };

@@ -11,10 +11,7 @@ export function ConnectivityProvider({ children }: { children: ReactNode }) {
       : new ConnectivityHints({
           browser: window,
           document: window.document,
-          now: () => Date.now(),
           random: () => Math.random(),
-          setTimeout: globalThis.setTimeout.bind(globalThis),
-          clearTimeout: globalThis.clearTimeout.bind(globalThis),
         }),
   );
   useEffect(() => {
