@@ -12,7 +12,11 @@ import {
   splitDocumentFile,
   writeHandle,
 } from "@meridian/agent-edit/integration";
-import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
+import type {
+  ContextError,
+  ContextPort,
+  FileRef,
+} from "../../domains/context/ports/context-port.js";
 import {
   type FileDestination,
   type FileGrant,
@@ -52,12 +56,33 @@ function aboutSource(input: NamespaceInput, message: string): string {
   return input.command === "move" ? `from ${input.from.path}: ${message}` : message;
 }
 
+/** Whether `uri` names a folder: its parent lists a folder by that name. */
+async function isFolder(port: ContextPort, uri: string): Promise<boolean> {
+  const trimmed = uri.replace(/\/+$/, "");
+  const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  if (!name || trimmed.endsWith(":/")) return false;
+  const listing = await port.list(trimmed.slice(0, trimmed.length - name.length));
+  return (
+    listing.ok &&
+    listing.value.entries.some(
+      (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "").endsWith(`/${name}`),
+    )
+  );
+}
+
 async function resolveSource(
   call: ToolCall,
   input: NamespaceInput,
 ): Promise<(FileRef & { documentId: string }) | WriteToolErrorOutput> {
   const path = sourcePath(input);
-  const ref = await call.context.port.stat(splitDocumentFile(path).filePath);
+  const filePath = splitDocumentFile(path).filePath;
+  const ref = await call.context.port.stat(filePath);
+  if (!ref.ok && ref.error.code === "not_found" && (await isFolder(call.context.port, filePath))) {
+    return writeToolError(
+      input.command,
+      `${filePath} is a folder; \`move\` and \`delete\` take a document.`,
+    );
+  }
   if (!ref.ok) {
     return ref.error.code === "not_found"
       ? writeToolError(

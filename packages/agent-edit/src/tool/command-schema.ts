@@ -185,13 +185,14 @@ const MUTATION_BRANCHES = {
 const NAMESPACE_BRANCHES = {
   move: {
     description:
-      "Rename or move the document at `from.path` to `path`. A rename is a move within its folder. Document identity, content and history stay.",
+      "Rename or move the document at `from.path` to `path`. A rename is a move within its folder. Document identity, content and history stay. Links to it follow the move.",
     fields: {
       from: z.object({ path: SOURCE_PATH }).strict().describe("The document to move."),
     },
   },
   delete: {
-    description: "Delete the whole document at `path`; to remove part of a document, use `remove`.",
+    description:
+      "Delete the whole document at `path`; to remove part of a document, use `remove`. Links to it stop resolving.",
     fields: {},
   },
 } as const;

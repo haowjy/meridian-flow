@@ -209,8 +209,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await call("read", { path: CHAPTER })).isError).toBe(true);
     });
 
-    it("refuses uploads for every agent (D15)", async () => {
-      const { script } = await start();
+    it("refuses uploads for every agent (D15), and a folder", async () => {
+      const { runtime, script } = await start();
       const { call } = await script.begin();
       const deleted = await call("write", { command: "delete", path: "uploads://notes.md" });
       expect(deleted.result).toMatchObject({
@@ -227,6 +227,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         reason: "uploads_read_only",
       });
       expect(await documentRow(UPLOAD_ID)).toMatchObject({ name: "notes", deletedAt: null });
+
+      const inArc = await runtime.app.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .createTrackedDocument("manuscript://arc/one.md", "One.");
+      if (!inArc.ok) throw new Error(JSON.stringify(inArc.error));
+      const folder = await call("write", { command: "delete", path: "manuscript://arc" });
+      expect(text(folder)).toContain(
+        "manuscript://arc is a folder; `move` and `delete` take a document.",
+      );
+      const missing = await call("write", { command: "delete", path: "manuscript://missing.md" });
+      expect(missing.result).toMatchObject({ status: "document_not_found" });
     });
 
     it("refuses in a draft-mode Work, a half-drafted move (D45), and after the mode changes until the model reads again (D41)", async () => {
