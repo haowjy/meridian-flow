@@ -60,14 +60,8 @@ describe("document tool rows", () => {
     expect(toolCommand(rename)).toBe("move");
     expect(toolCommand(deletion)).toBe("delete");
     // A rename names the new name; a move to another folder names the folder.
-    expect(toolActivityPhrase(rename)).toEqual({
-      verb: "Moved ch3.md to",
-      parameter: "ch3-old.md",
-    });
-    expect(toolActivityPhrase(refile)).toEqual({
-      verb: "Moved ch3.md to",
-      parameter: "archive/ch3.md",
-    });
+    expect(toolActivityPhrase(rename)).toEqual({ verb: "Moved ch3 to", parameter: "ch3-old" });
+    expect(toolActivityPhrase(refile)).toEqual({ verb: "Moved ch3 to", parameter: "archive/ch3" });
     expect(toolActivityPhrase(deletion)).toEqual({ verb: "Deleted", parameter: "ch3.md" });
   });
 

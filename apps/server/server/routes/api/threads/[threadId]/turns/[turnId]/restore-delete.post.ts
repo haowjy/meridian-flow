@@ -1,8 +1,8 @@
 /**
  * POST /api/threads/[threadId]/turns/[turnId]/restore-delete: the writer
  * restores a document the agent deleted live in this turn, named by the
- * delete receipt's `documentId`. 409 when its location is taken or its
- * folder is gone.
+ * delete receipt's `documentId`. 409 when its location is taken, its folder
+ * is gone, or the turn has no delete of it still applied (`not_applied`).
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import {

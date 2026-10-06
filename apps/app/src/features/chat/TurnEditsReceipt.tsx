@@ -19,6 +19,7 @@ import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
+import { documentLocationPath } from "./document-display-name";
 import { DraftStatsLabel } from "./draft-stats";
 import { NamespaceChangeLine } from "./NamespaceChangeRow";
 import type { WorkReceipt } from "./tool-command";
@@ -163,7 +164,9 @@ export function TurnEditsReceipt({
         restored.length > 0 &&
         (status === "nothing_to_undo" || status === "nothing_to_redo");
       const refusal = status && !documentHalfEmpty ? status : null;
-      setCommandRefusal(refusal ? { direction, status: refusal } : null);
+      setCommandRefusal(
+        refusal ? { direction, status: refusal, uri: refusedDocumentUri(outcome, refusal) } : null,
+      );
       setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
       if (refusal || restored.length > 0) setExpanded(true);
     } catch {
@@ -295,9 +298,9 @@ export function TurnEditsReceipt({
               {namespaceChanges.map((change) => (
                 <li
                   key={`${change.documentId}:${change.wId}`}
-                  className="flex min-h-6 min-w-0 items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+                  className="flex min-h-6 min-w-0 flex-col justify-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
                 >
-                  <NamespaceChangeLine change={change} />
+                  <NamespaceChangeLine change={change} threadId={threadId} turnId={turn.id} />
                 </li>
               ))}
             </ul>
@@ -323,6 +326,8 @@ export function TurnEditsReceipt({
 type ReversalRefusal = {
   direction: ReversalDirection;
   status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
+  /** The document the refusal is about, when the outcome names one. */
+  uri?: string;
 };
 
 type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
@@ -335,6 +340,14 @@ function refusedReversalStatus(
   return status;
 }
 
+/** The document the outcome refused with this status. */
+function refusedDocumentUri(
+  outcome: ReversalOutcome,
+  status: ReversalRefusal["status"],
+): string | undefined {
+  return outcome.documents.find((document) => document.status === status)?.uri;
+}
+
 /** Writer-facing copy for a refused reversal. */
 function reversalRefusalCopy(refusal: ReversalRefusal): string {
   switch (refusal.status) {
@@ -344,11 +357,13 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
       return t`Undo is no longer available.`;
     case "cant_undo_dependent":
       return dependentChangeCopy();
-    case "expired":
-    // A turn's create, move or delete whose location is taken or whose folder is gone.
-    // The app lane gives these their own copy.
     case "location_taken":
+      return locationTakenCopy(refusal.direction, refusal.uri);
     case "folder_missing":
+      return refusal.direction === "redo"
+        ? t`Couldn't redo. Its folder is gone.`
+        : t`Couldn't undo. Its folder is gone.`;
+    case "expired":
       return t`This change is no longer reversible.`;
     case "partial":
     case "partial_failure":
@@ -375,6 +390,18 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
       return reversalRetryCopy(refusal.direction);
     }
   }
+}
+
+function locationTakenCopy(direction: ReversalDirection, uri: string | undefined): string {
+  if (!uri) {
+    return direction === "redo"
+      ? t`Couldn't redo. Something else is in its place now.`
+      : t`Couldn't undo. Something else is in its place now.`;
+  }
+  const path = documentLocationPath(uri);
+  return direction === "redo"
+    ? t`Couldn't redo. Something else is at ${path} now.`
+    : t`Couldn't undo. Something else is at ${path} now.`;
 }
 
 /** The one sentence for "later live edits depend on this", wherever it surfaces. */

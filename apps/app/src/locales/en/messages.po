@@ -1290,6 +1290,18 @@ msgstr "Couldn't read report from {line}"
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Its folder is gone."
+msgstr "Couldn't redo. Its folder is gone."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Something else is at {path} now."
+msgstr "Couldn't redo. Something else is at {path} now."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Something else is in its place now."
+msgstr "Couldn't redo. Something else is in its place now."
+
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Couldn't refresh chats."
 msgstr "Couldn't refresh chats."
@@ -1418,6 +1430,18 @@ msgstr "Couldn't switch, so you're still in Draft."
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Its folder is gone."
+msgstr "Couldn't undo. Its folder is gone."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Something else is at {path} now."
+msgstr "Couldn't undo. Something else is at {path} now."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Something else is in its place now."
+msgstr "Couldn't undo. Something else is in its place now."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"

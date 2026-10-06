@@ -524,7 +524,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
       const { call } = await script.begin();
       expect(text(await call("ls", { path: "manuscript://" }))).toContain("chapter.md");
-      await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
+      await expect(restore()).resolves.toEqual({ status: "not_applied" });
     });
 
     it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {

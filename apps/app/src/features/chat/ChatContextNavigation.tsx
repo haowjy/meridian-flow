@@ -14,23 +14,33 @@ export type ContextPassageAnchor = { blockHash: string; term: string };
 
 export type OpenContextUri = (uri: string, passage?: ContextPassageAnchor) => void;
 export type CanOpenContextUri = (uri: string) => boolean;
+/**
+ * Opens a document by id, wherever it is now; `uri` is where the transcript
+ * saw it, the fallback when the id leads nowhere.
+ */
+export type OpenContextDocument = (documentId: string, uri: string) => void;
 
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);
 const ChatContextRoutabilityContext = createContext<CanOpenContextUri | null>(null);
+const ChatContextDocumentContext = createContext<OpenContextDocument | null>(null);
 
 export function ChatContextNavigationProvider({
   onOpenContextUri,
   canOpenContextUri,
+  onOpenContextDocument,
   children,
 }: {
   onOpenContextUri?: OpenContextUri | null;
   canOpenContextUri?: CanOpenContextUri | null;
+  onOpenContextDocument?: OpenContextDocument | null;
   children: ReactNode;
 }) {
   return (
     <ChatContextNavigationContext.Provider value={onOpenContextUri ?? null}>
       <ChatContextRoutabilityContext.Provider value={canOpenContextUri ?? null}>
-        {children}
+        <ChatContextDocumentContext.Provider value={onOpenContextDocument ?? null}>
+          {children}
+        </ChatContextDocumentContext.Provider>
       </ChatContextRoutabilityContext.Provider>
     </ChatContextNavigationContext.Provider>
   );
@@ -38,6 +48,10 @@ export function ChatContextNavigationProvider({
 
 export function useChatContextNavigation(): OpenContextUri | null {
   return useContext(ChatContextNavigationContext);
+}
+
+export function useChatContextDocumentNavigation(): OpenContextDocument | null {
+  return useContext(ChatContextDocumentContext);
 }
 
 export function useChatContextRoutability(): CanOpenContextUri | null {

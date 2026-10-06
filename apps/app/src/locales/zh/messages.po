@@ -1290,6 +1290,18 @@ msgstr "无法读取来自 {line} 的报告"
 msgid "Couldn't redo"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Its folder is gone."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Something else is at {path} now."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't redo. Something else is in its place now."
+msgstr ""
+
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Couldn't refresh chats."
 msgstr ""
@@ -1417,6 +1429,18 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Its folder is gone."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Something else is at {path} now."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Couldn't undo. Something else is in its place now."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts

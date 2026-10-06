@@ -11,11 +11,11 @@
  */
 import { type ReactNode, useCallback } from "react";
 import { useWorks } from "@/client/query/useWorks";
-
 import {
   ChatContextNavigationProvider,
   type ContextPassageAnchor,
 } from "@/features/chat/ChatContextNavigation";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import {
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
@@ -51,6 +51,28 @@ export function ProjectChatContextNavigationProvider({
     },
     [activeWork, availableWorks, noWorkId, doorOpened, onOpenContextTarget],
   );
+  const openDocument = useOpenProjectDocument(projectId);
+  // The id finds the document after a move. One that is gone leads nowhere,
+  // so the door falls back to where the transcript saw it, which says so.
+  const openContextDocument = useCallback(
+    (documentId: string, uri: string) => {
+      if (!onOpenContextTarget || !activeWork || !noWorkId) return;
+      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId);
+      if (target) doorOpened({ ...target, uri });
+      void openDocument({ documentId, workId: target?.workId ?? undefined }).then((result) => {
+        if (result.kind === "unavailable") openContextUri(uri);
+      });
+    },
+    [
+      activeWork,
+      availableWorks,
+      noWorkId,
+      doorOpened,
+      onOpenContextTarget,
+      openDocument,
+      openContextUri,
+    ],
+  );
   const canOpenContextUri = useCallback(
     (uri: string) =>
       !!activeWork && !!noWorkId && isContextUriRoutable(uri, activeWork, availableWorks, noWorkId),
@@ -61,6 +83,7 @@ export function ProjectChatContextNavigationProvider({
     <ChatContextNavigationProvider
       onOpenContextUri={onOpenContextTarget ? openContextUri : null}
       canOpenContextUri={onOpenContextTarget ? canOpenContextUri : null}
+      onOpenContextDocument={onOpenContextTarget ? openContextDocument : null}
     >
       {children}
     </ChatContextNavigationProvider>

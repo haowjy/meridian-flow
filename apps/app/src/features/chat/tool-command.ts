@@ -51,6 +51,18 @@ export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
 }
 
+/**
+ * The document a read or write acted on, by id, from the server's revision
+ * evidence. A door with it follows the document after a later move.
+ */
+export function toolDocumentId(tool: ToolView): string | undefined {
+  const revisions = tool.metadata?.documentRevisions;
+  if (!Array.isArray(revisions) || revisions.length !== 1) return undefined;
+  const [revision] = revisions;
+  if (!revision || typeof revision !== "object" || Array.isArray(revision)) return undefined;
+  return typeof revision.documentId === "string" ? revision.documentId : undefined;
+}
+
 /** Every factual Work receipt a turn's tool results carry, in block order. */
 export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
   return groupDeliverySegments(blocks).flatMap((segment) => {

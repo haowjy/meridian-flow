@@ -20,7 +20,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { documentFileName, folderDisplayName } from "./document-display-name";
+import { documentDisplayName, documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   humanizeSkillSlug,
@@ -306,33 +306,50 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
   };
 }
 
-/** A move's phrases: the document in the verb, where it went as the parameter. */
+/**
+ * A move's phrases: the document in the verb, where it went as the parameter.
+ * Names follow a read row's: file names while it runs, titles once done.
+ */
 function moveTenses(tool: ToolView): ToolActivityVocabulary {
   const input = toolInputObject(tool);
   const from = sourcePath(input);
   const destination = documentTarget(input);
   if (!from) return documentTenses(tool, t`Moving`, t`Moved`);
-  const source = documentFileName(from);
-  const active = t`Moving ${source} to`;
-  const complete = t`Moved ${source} to`;
+  const active = movingVerb(documentFileName(from));
+  const complete = movedVerb(documentDisplayName(from));
   if (!destination) return tenses(`${active}…`, complete);
-  const place = moveDestinationName(from, destination);
+  const activePlace = moveDestinationName(from, destination, documentFileName);
   return {
-    active: { verb: active, parameter: `${place}…` },
-    complete: { verb: complete, parameter: place },
+    active: { verb: active, parameter: `${activePlace}…` },
+    complete: {
+      verb: complete,
+      parameter: moveDestinationName(from, destination, documentDisplayName),
+    },
   };
 }
 
+function movingVerb(source: string): string {
+  return t`Moving ${source} to`;
+}
+
+function movedVerb(source: string): string {
+  return t`Moved ${source} to`;
+}
+
 /**
- * Where a move put the document. A rename keeps its folder, so the new name
- * says it all; a move to another folder keeps its name, so only the folder's
- * path tells the writer where it went.
+ * Where a move put the document, named by `name`. A rename keeps its folder,
+ * so the new name says it all; a move to another folder keeps its name, so
+ * the folder's path in front of it tells the writer where it went.
  */
-export function moveDestinationName(from: string, to: string): string {
+export function moveDestinationName(
+  from: string,
+  to: string,
+  name: (uriOrPath: string) => string,
+): string {
   const destination = contextLocation(to);
-  return contextLocation(from).folder === destination.folder
-    ? documentFileName(to)
-    : destination.path;
+  if (contextLocation(from).folder === destination.folder) return name(to);
+  const folder = destination.path.slice(0, destination.path.lastIndexOf("/") + 1);
+  return `${folder}${name(to)}`;
 }
 
 /** A document's path without its scheme, and the folder it sits in (scheme included). */
