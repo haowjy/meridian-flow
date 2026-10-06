@@ -395,4 +395,47 @@ describe("projectAddressMatchesContextTarget", () => {
       false,
     );
   });
+  describe("with document identity", () => {
+    const named = (documentId: string, addressDocumentId?: string) =>
+      projectAddressMatchesContextTarget(
+        address({ kind: "none" }),
+        { ...target(noWorkId), documentId },
+        noWorkId,
+        addressDocumentId,
+      );
+
+    it("lets identity decide once both sides know it", () => {
+      // The same path reused by another document is not the same document.
+      expect(named("document-a", "document-b")).toBe(false);
+      // A renamed document is the same one, whatever path the request carries.
+      expect(
+        projectAddressMatchesContextTarget(
+          address({ kind: "none" }),
+          {
+            scheme: "manuscript",
+            path: "/old-name.md",
+            workId: noWorkId,
+            documentId: "document-a",
+          },
+          noWorkId,
+          "document-a",
+        ),
+      ).toBe(true);
+    });
+
+    it("falls back to the path while the address is unresolved", () => {
+      expect(named("document-a")).toBe(true);
+    });
+
+    it("still requires the Work to match when identity agrees", () => {
+      expect(
+        projectAddressMatchesContextTarget(
+          address({ kind: "none" }),
+          { ...target("work-1"), documentId: "document-a" },
+          noWorkId,
+          "document-a",
+        ),
+      ).toBe(false);
+    });
+  });
 });

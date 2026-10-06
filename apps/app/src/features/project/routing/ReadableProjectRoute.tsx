@@ -493,7 +493,22 @@ export function ReadableProjectRoute({
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
       const resolvedWorkId = request.workId ?? current.editorWorkId;
       const target = { ...request, workId: resolvedWorkId ?? undefined };
-      const next = contextDestination(target, options?.tab, options?.draftId);
+      // Identity decides sameness once the address has resolved; the path is
+      // only the fallback before that.
+      const sameDocument = projectAddressMatchesContextTarget(
+        current.address,
+        target,
+        current.noWorkId,
+        addressDocumentIdRef.current,
+      );
+      // Re-opening the document the address names (a rename or move following
+      // its own placement, a review re-launch) keeps the review the address
+      // carries; any other document starts without one.
+      const next = contextDestination(
+        target,
+        options?.tab,
+        options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
+      );
       const tab = next.tab;
       // Install the prepared tab and select it in its own Work. A Review launch
       // re-admits its pending draft, so Back cannot keep the address closed.
@@ -522,8 +537,7 @@ export function ReadableProjectRoute({
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
-        (projectAddressMatchesContextTarget(current.address, target, current.noWorkId) ||
-          (target.documentId !== undefined && target.documentId === addressDocumentIdRef.current))
+        sameDocument
       ) {
         const replacement = await current.navigation.replaceIfCurrent(
           current.navigation.capture(),

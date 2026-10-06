@@ -23,26 +23,32 @@ export function canonicalDocumentPath(path: string): string {
 }
 
 /**
- * Whether the address already names this document: same scheme and path in the
- * Work the target resolves to. Open requests carry no Work until the route
- * boundary resolves it, so an unresolved target never matches.
+ * Whether the address already names this document, in the Work the target
+ * resolves to. Open requests carry no Work until the route boundary resolves
+ * it, so an unresolved target never matches. When both sides know the document,
+ * identity alone decides: a reused path never makes two documents one. The path
+ * is only the fallback while either identity is unresolved.
  */
 export function projectAddressMatchesContextTarget(
   address: ProjectAddress,
-  target: { scheme: string; path: string; workId?: string },
+  target: { scheme: string; path: string; workId?: string; documentId?: string },
   noWorkId: string | null,
+  /** The document the address resolved to, absent while it is still resolving. */
+  addressDocumentId?: string,
 ): boolean {
   const destination = address.destination;
+  if (destination.kind !== "document") return false;
+  const work = workSelectionFor(destination, target.workId, noWorkId);
   if (
-    destination.kind !== "document" ||
-    destination.scheme !== target.scheme ||
-    canonicalDocumentPath(destination.path) !== canonicalDocumentPath(target.path)
+    work.kind !== address.work.kind ||
+    (work.kind === "id" && !(address.work.kind === "id" && address.work.id === work.id))
   )
     return false;
-  const work = workSelectionFor(destination, target.workId, noWorkId);
+  if (target.documentId !== undefined && addressDocumentId !== undefined)
+    return target.documentId === addressDocumentId;
   return (
-    work.kind === address.work.kind &&
-    (work.kind !== "id" || (address.work.kind === "id" && address.work.id === work.id))
+    destination.scheme === target.scheme &&
+    canonicalDocumentPath(destination.path) === canonicalDocumentPath(target.path)
   );
 }
 

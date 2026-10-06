@@ -144,6 +144,7 @@ describe("EditorReviewAddressOwner", () => {
     await withReactRoot(
       <Harness
         activePath="chapters/b.md"
+        activeDocumentId="document-b"
         onSetDraftId={setDraftId}
         exitInlineReview={exit}
         openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
@@ -239,5 +240,77 @@ describe("EditorReviewAddressOwner", () => {
         await act(async () => pending);
       },
     );
+  });
+  it("keeps a requested draft while the address is still resolving a renamed document", async () => {
+    // The draft list already names the new path; the old alias in the address has not resolved.
+    const setDraftId = vi.fn();
+    const navigate = vi.fn(async () => ({ kind: "applied" as const }));
+    let resolveAddress!: () => void;
+    function Resolving() {
+      const [documentId, setDocumentId] = useState<string>();
+      resolveAddress = () => setDocumentId(draft.documentId);
+      return (
+        <Harness
+          requestedDraftId={draft.draftId}
+          activePath="chapters/old-name.md"
+          activeDocumentId={documentId}
+          onSetDraftId={setDraftId}
+          openContextRoute={navigate}
+        />
+      );
+    }
+    await withReactRoot(<Resolving />, async () => {
+      await act(async () => undefined);
+      expect(setDraftId).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+
+      await act(async () => resolveAddress());
+      expect(setDraftId).not.toHaveBeenCalled();
+      // Launched from the address's own locator, not the draft list's.
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: draft.documentId, path: "chapters/old-name.md" }),
+        expect.objectContaining({ draftId: draft.draftId, replaceIfSameDocument: true }),
+      );
+    });
+  });
+
+  it("drops a requested draft once the address resolves to another document", async () => {
+    const setDraftId = vi.fn();
+    await withReactRoot(
+      <Harness
+        requestedDraftId={draft.draftId}
+        activePath="chapters/old-name.md"
+        activeDocumentId="document-b"
+        onSetDraftId={setDraftId}
+        openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+      />,
+      async () => expect(setDraftId).toHaveBeenCalledWith(null),
+    );
+  });
+
+  it("keeps an open review while its address resolves, then follows the decision", async () => {
+    const exit = vi.fn();
+    let resolveAddress!: (documentId: string) => void;
+    function Resolving() {
+      const [documentId, setDocumentId] = useState<string>();
+      resolveAddress = setDocumentId;
+      return (
+        <Harness
+          activePath="chapters/renamed.md"
+          activeDocumentId={documentId}
+          onSetDraftId={vi.fn()}
+          exitInlineReview={exit}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        />
+      );
+    }
+    await withReactRoot(<Resolving />, async () => {
+      await act(async () => setInline?.({ documentId: draft.documentId, draftId: draft.draftId }));
+      expect(exit).not.toHaveBeenCalled();
+      await act(async () => resolveAddress(draft.documentId));
+      expect(exit).not.toHaveBeenCalled();
+      await act(async () => resolveAddress("document-b"));
+      expect(exit).toHaveBeenCalledOnce();
+    });
   });
 });

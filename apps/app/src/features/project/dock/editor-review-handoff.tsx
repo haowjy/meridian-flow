@@ -165,15 +165,17 @@ export function usePendingEditorReviewDraftId(): string | null {
   return useContext(EditorReviewIntentContext)?.routingDraftId ?? null;
 }
 
-/** Mount inside the Editor review boundary, beside the active viewer/editor. */
+/**
+ * Mount inside the Editor review boundary, beside the active viewer/editor. The
+ * Work, document and draft decide the claim; the address path is only a label
+ * that a rename can change between the launch and the claim.
+ */
 export function EditorReviewIntentClaimant({
   editorWorkId,
   activeScheme,
-  activePath,
 }: {
   editorWorkId: string | null;
   activeScheme: string | null;
-  activePath: string | null;
 }) {
   const handoff = useContext(EditorReviewIntentContext);
   const intent = handoff?.intent ?? null;
@@ -182,13 +184,13 @@ export function EditorReviewIntentClaimant({
   useEffect(() => {
     if (!intent) return;
     if (editorWorkId !== intent.workId) return;
-    if (activeScheme !== "manuscript" || activePath !== intent.contextPath) return;
+    if (activeScheme !== "manuscript") return;
     if (review.activeEditorDocumentId !== intent.documentId) return;
     const group = review.groupForDocument(intent.documentId);
     if (group?.draft.draftId !== intent.draftId) return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
     handoff?.claim(intent.sequence);
-  }, [activePath, activeScheme, editorWorkId, handoff, intent, review]);
+  }, [activeScheme, editorWorkId, handoff, intent, review]);
 
   return null;
 }

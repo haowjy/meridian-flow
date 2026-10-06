@@ -266,7 +266,6 @@ function renderActiveView(
           <EditorReviewIntentClaimant
             editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}
-            activePath={props.activeContextPath}
           />
           {props.activeContextPath || localTab ? (
             <MobileDocumentHost
