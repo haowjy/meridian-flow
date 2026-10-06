@@ -420,3 +420,86 @@ it.each([
     dialog.toggle.mockReset();
   }
 });
+
+it.each(["recovered", "closed"] as const)("Create after a held Unarchive: %s", async (scenario) => {
+  const archived = { id: "work", slug: "serial", name: "Serial", archivedAt: "2026-01-01" } as Work;
+  const active = { ...archived, archivedAt: null };
+  let refresh!: () => void;
+  let settle!: (failure: Error | null) => void;
+  const held = new Promise<Error | null>((done) => {
+    settle = done;
+  });
+  let open = true;
+  dialog.works.mockReturnValue({ works: [archived], noWork });
+  dialog.toggle.mockImplementation(() => {
+    dialog.works.mockReturnValue({ works: [active], noWork });
+    refresh();
+    return held;
+  });
+  resources.reserveDocument.mockClear();
+  resources.setLocation.mockClear();
+  const onOpen = vi.fn();
+  function Probe() {
+    const [, rerender] = useState(0);
+    refresh = () => rerender((value) => value + 1);
+    return open ? (
+      <Dialog>
+        <FollowOutcomeContent
+          outcome={{
+            state: "missing",
+            address: "scratch://@serial/scene.md",
+            target: { kind: "scheme", uri: "scratch://@serial/scene.md" },
+          }}
+          projectId="project"
+          workId="work"
+          onClose={() => {
+            open = false;
+            refresh();
+          }}
+          onRetry={() => {}}
+          onOpen={onOpen}
+        />
+      </Dialog>
+    ) : null;
+  }
+  try {
+    await withReactRoot(
+      <I18nProvider i18n={setupI18n({ locale: "en", messages: { en: {} } })}>
+        <Probe />
+      </I18nProvider>,
+      async () => {
+        const press = async (label: string) => {
+          const button = Array.from(document.querySelectorAll("button")).find((candidate) =>
+            candidate.textContent?.startsWith(label),
+          );
+          if (!button) throw new Error(`Missing ${label}`);
+          await act(async () => button.click());
+        };
+        await press("Unarchive");
+        await press("Create");
+        if (scenario === "closed") {
+          await press("Close");
+          await act(async () => {
+            settle(null);
+            await held;
+          });
+          expect(resources.reserveDocument).not.toHaveBeenCalled();
+          expect(onOpen).not.toHaveBeenCalled();
+          return;
+        }
+        // The Unarchive reports a failure, yet the Works snapshot shows the Work active.
+        await act(async () => {
+          settle(new Error("lost response"));
+          await held;
+        });
+        expect(resources.reserveDocument).not.toHaveBeenCalled();
+        await press("Create");
+        expect(resources.reserveDocument).toHaveBeenCalledTimes(1);
+        expect(onOpen).toHaveBeenCalledWith({ documentId: "document" });
+      },
+    );
+  } finally {
+    dialog.works.mockReset();
+    dialog.toggle.mockReset();
+  }
+});

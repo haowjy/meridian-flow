@@ -16,7 +16,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { Button } from "@/components/ui/button";
@@ -117,7 +117,21 @@ export function FollowOutcomeContent({
   const archivedWork = creation?.kind === "archived" ? creation.work : null;
   const workName = archivedWork?.name ?? "";
   const toggleArchive = useWorkArchiveToggle(projectId ?? "");
+  // The Unarchive this dialog started and is still waiting on; a settled one is dropped.
   const unarchive = useRef<ReturnType<typeof toggleArchive> | null>(null);
+  const trackUnarchive = (pending: ReturnType<typeof toggleArchive>) => {
+    unarchive.current = pending;
+    void pending.then(() => {
+      if (unarchive.current === pending) unarchive.current = null;
+    });
+  };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [waitingForUnarchive, setWaitingForUnarchive] = useState(false);
   const unarchiveFailure = useWorkCommandFailures(projectId ?? "", UNARCHIVE).get(
     archivedWork?.id ?? "",
@@ -152,9 +166,7 @@ export function FollowOutcomeContent({
       {unarchiveFailure ? (
         <WorkCommandFailureRow
           failure={unarchiveFailure}
-          onRetry={() => {
-            unarchive.current = unarchiveFailure.retry();
-          }}
+          onRetry={() => trackUnarchive(unarchiveFailure.retry())}
         />
       ) : null}
 
@@ -175,14 +187,16 @@ export function FollowOutcomeContent({
             disabled={creating || waitingForUnarchive || creation.kind === "loading"}
             onClick={async () => {
               if (archivedWork) {
-                unarchive.current = toggleArchive(archivedWork);
+                trackUnarchive(toggleArchive(archivedWork));
                 return;
               }
               if (creating || waitingForUnarchive || creation.kind !== "create") return;
               setWaitingForUnarchive(true);
               try {
                 // Create is offered optimistically, but depends on this dialog's Unarchive.
+                // A closed dialog has nobody to open the note for.
                 if (unarchive.current && (await unarchive.current)) return;
+                if (!mounted.current) return;
                 const documentId = await create(creation);
                 if (!documentId) return;
                 onClose();
