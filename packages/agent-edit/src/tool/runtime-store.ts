@@ -10,9 +10,10 @@ import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
   type InternalWriteResult,
+  internalResultError,
   isInternalWriteResult,
 } from "./internal-result.js";
-import type { WriteCommand } from "./types.js";
+import type { DocumentCommandName } from "./types.js";
 
 export interface RuntimeDocumentState {
   doc: Y.Doc;
@@ -24,7 +25,7 @@ export interface RuntimeRecoveryDocument {
   docId: string;
   session: ActorSession;
   runtime: RuntimeDocumentState;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
 }
 
 export interface RuntimeStore {
@@ -44,32 +45,26 @@ export interface RuntimeStore {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-    options?: RuntimeRestoreOptions,
+    commandName: DocumentCommandName,
   ): Promise<InternalWriteResult | null>;
   recoverCommittedResponseProjection(documents: readonly RuntimeRecoveryDocument[]): Promise<void>;
   syncLocalFromLive(
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }>;
   requireSynced(
     session: ActorSession,
     docId: string,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
-    filePath?: string,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
 }
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
-}
-
-export interface RuntimeRestoreOptions {
-  filePath?: string;
 }
 
 export function createRuntimeStore(deps: {
@@ -165,26 +160,18 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
-    options: RuntimeRestoreOptions = {},
+    commandName: DocumentCommandName,
   ): Promise<InternalWriteResult | null> {
-    const filePath = options.filePath ?? docId;
     if (staleLiveDocs.has(docId)) {
-      const recovered = await recoverLiveDocFromJournal(docId, commandName, filePath);
+      const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return recovered;
     }
-    const response = await withLiveDocument(
-      coordinator,
-      docId,
-      commandName,
-      filePath,
-      (liveDoc) => {
-        const restored = createRuntimeDoc();
-        Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
-        runtime.doc = restored;
-        return null;
-      },
-    );
+    const response = await withLiveDocument(coordinator, docId, commandName, (liveDoc) => {
+      const restored = createRuntimeDoc();
+      Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+      runtime.doc = restored;
+      return null;
+    });
     if (isInternalWriteResult(response)) return response;
     markSynced(session, docId, runtime);
     return null;
@@ -201,7 +188,7 @@ export function createRuntimeStore(deps: {
         document.runtime,
         document.commandName,
       );
-      if (isInternalWriteResult(restored)) throw new Error(restored.text);
+      if (isInternalWriteResult(restored)) throw internalResultError(restored);
       attachRuntime(document.session, document.docId, document.runtime);
     }
   }
@@ -222,23 +209,17 @@ export function createRuntimeStore(deps: {
     _session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId)) {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return { ok: false, response: recovered };
     }
-    const response = await withLiveDocument(
-      coordinator,
-      docId,
-      commandName,
-      docId,
-      async (liveDoc) => {
-        const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
-        applyYjsUpdateIfEffective(runtime.doc, update, { type: "system" });
-        return null;
-      },
-    );
+    const response = await withLiveDocument(coordinator, docId, commandName, async (liveDoc) => {
+      const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
+      applyYjsUpdateIfEffective(runtime.doc, update, { type: "system" });
+      return null;
+    });
     if (isInternalWriteResult(response)) return { ok: false, response };
     return { ok: true };
   }
@@ -247,7 +228,7 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     const merged = await mergeLiveIntoRuntime(session, docId, runtime, commandName);
     if (!merged.ok) return merged;
@@ -258,14 +239,11 @@ export function createRuntimeStore(deps: {
   async function requireSynced(
     session: ActorSession,
     docId: string,
-    commandName: WriteCommand["command"],
+    commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
-    filePath = docId,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId)) {
-      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
-        filePath,
-      });
+      const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
       if (isInternalWriteResult(restored)) return { ok: false, response: restored };
       return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
@@ -273,9 +251,7 @@ export function createRuntimeStore(deps: {
     const state = session.documents.get(docId);
     if (state) return { ok: true, stateVector: state.stateVector };
 
-    const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
-      filePath,
-    });
+    const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
     if (isInternalWriteResult(restored)) return { ok: false, response: restored };
     return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
   }
@@ -287,15 +263,14 @@ export function createRuntimeStore(deps: {
 
   async function recoverLiveDocFromJournal(
     docId: string,
-    commandName: WriteCommand["command"],
-    filePath = docId,
+    commandName: DocumentCommandName,
   ): Promise<InternalWriteResult | null> {
     try {
       await coordinator.recover(docId);
       staleLiveDocs.delete(docId);
       return null;
     } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, filePath);
+      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName);
       throw cause;
     }
   }

@@ -57,6 +57,7 @@ describe("thread context-port resolution", () => {
         threads: { findById: async () => thread() },
         threadWorks: { findPrimary: async () => ({ workId: WORK_ID }) },
         works: {
+          findById: async () => null,
           listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
         workAuthorityResolver: resolver({ [WORK_ID]: "current-work" }),
@@ -67,8 +68,12 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
-      forWork: (authority, projectId, _userId, _workMemberships, threadId) => {
-        calls.push({ workId: authority.workId, projectId, ...(threadId ? { threadId } : {}) });
+      forWork: (authority, projectId, _userId, _workMemberships, thread) => {
+        calls.push({
+          workId: authority.workId,
+          projectId,
+          ...(thread ? { threadId: thread.threadId } : {}),
+        });
         return {} as ContextPort;
       },
       forProject: () => {
@@ -89,6 +94,7 @@ describe("thread context-port resolution", () => {
         threads: { findById: async () => thread() },
         threadWorks: { findPrimary: async () => ({ workId: noWorkId }) },
         works: {
+          findById: async () => null,
           listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
         workAuthorityResolver: {
@@ -154,6 +160,7 @@ describe("project recovery context-port resolution", () => {
       deps: {
         contextPorts,
         works: {
+          findById: async () => null,
           listByProject: async () =>
             ["work-1", "work-2"].map((id, index) => ({
               id,
@@ -189,6 +196,7 @@ describe("project recovery context-port resolution", () => {
       deps: {
         contextPorts,
         works: {
+          findById: async () => null,
           listByProject: async () =>
             [{ id: WORK_ID, slug: "current-work" }] as Awaited<
               ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>

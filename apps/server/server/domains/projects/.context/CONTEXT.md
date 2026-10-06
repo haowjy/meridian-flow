@@ -38,10 +38,16 @@ translate those to `title` and `description` in `ProjectDto`.
 | `setWorkArchived(workId, archived)` | Archive lifecycle only (`archivedAt`); never touches the AI-owned `status` text. Locks the row, refuses a deleted or missing Work with `WorkLifecycleUnavailableError`, and calls `workChanged(workId)` after a real change. |
 | `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops. Delete enqueues no Work context (its chats are deleted with it); restore calls `workChanged(workId)` after a real change in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
-| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping: 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's user-facing copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
+| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping for Work mutations (file routes map an archived Work's files to 403 through the file policy): 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's user-facing copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
 
 ## Invariants
 
+- The Drizzle `WorkRepository`'s `archive`, `unarchive`, `softDelete` and
+  `restore` are the only writes of `archived_at`/`deleted_at`, and each
+  publishes `{ workId }` on `FileAccessChanges` inside its transaction, so open
+  live rooms of that Work's scratch and drafts reconnect at their new level
+  ([file policy](../../file-policy/.context/CONTEXT.md#live-rooms)). A new
+  lifecycle write must publish too.
 - The bootstrap transaction takes a Postgres advisory lock scoped to the user id
   so concurrent first-load requests converge.
 - Ordinary project creation persists its project-scoped Manuscript source, locked No Work, and catalog lifecycle state in the same transaction as the project row.
@@ -66,8 +72,8 @@ translate those to `title` and `description` in `ProjectDto`.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked
-  No Work as primary. Human Chat rebind and model `work.switch` remain explicit,
-  separate commands.
+  No Work as primary. Only the writer's Chat rebind changes a chat's Work; the
+  model's `work switch` never rebinds ([rule](../../runtime/.context/tools.md#permissions)).
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.

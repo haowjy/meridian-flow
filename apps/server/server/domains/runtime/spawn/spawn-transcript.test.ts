@@ -87,7 +87,11 @@ describe("persistReturnResult", () => {
     });
 
     expect(settled.endTurn).toBe(false);
-    expect(settled.block.content).toMatchObject({ output: { ok: false }, isError: true });
+    expect(settled.block.content).toMatchObject({
+      output: "A different return_result was already accepted",
+      result: { ok: false },
+      isError: true,
+    });
     expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
       capture: { summary: "kept" },
       captureToolCallId: "first",

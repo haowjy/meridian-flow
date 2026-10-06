@@ -5,33 +5,48 @@
  * `countFoldTools` holds the counting rule as a pure, macro-free core so it can
  * be unit-tested; `thinkingDigest` only formats its result.
  */
+import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
-import { type ToolCommand, toolCommand } from "./tool-command";
+import {
+  humanizeSkillSlug,
+  skillFile,
+  stringInput,
+  type ToolCommand,
+  toolCommand,
+  toolInputObject,
+} from "./tool-command";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
 export type FoldToolCounts = {
+  /** Skill slugs the fold loaded, in call order. */
+  invokedSkills: Set<string>;
   readDocuments: Set<string>;
   editedDocuments: Set<string>;
   steps: number;
 };
 
 export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
+  const invokedSkills = new Set<string>();
   const readDocuments = new Set<string>();
   const editedDocuments = new Set<string>();
   let steps = 0;
 
   for (const tool of tools) {
-    const path = stringField(inputObject(tool), "path");
-    // The writer-facing command, not the raw tool name, decides the bucket: a
-    // `write(command:"diff")` is a review of changes, not an edit or a document
-    // read, and must not be summarized as one.
+    const path = stringInput(toolInputObject(tool), "path");
+    // `read` calls count as reads and `write` calls as edits. A write command
+    // the app doesn't know is a step.
     const command = toolCommand(tool);
+    const skill = stringInput(toolInputObject(tool), "name");
 
-    if (!tool.isError && path && isReadCommand(command)) {
+    if (!tool.isError && command === "skill" && skill) {
+      invokedSkills.add(skill);
+      continue;
+    }
+    // A skill's own files are not the writer's documents; reading one is a step.
+    if (!tool.isError && path && isReadCommand(command) && !skillFile(path)) {
       readDocuments.add(documentIdentity(path));
       continue;
     }
@@ -39,12 +54,12 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
       editedDocuments.add(documentIdentity(path));
       continue;
     }
-    // Failed, non-document (`search`, `ls`, `work`), read-only reviews, and
+    // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
     // pathless operations are uncountable: they contribute a step instead.
     steps += 1;
   }
 
-  return { readDocuments, editedDocuments, steps };
+  return { invokedSkills, readDocuments, editedDocuments, steps };
 }
 
 /** A command that only looked at a document. */
@@ -54,15 +69,31 @@ function isReadCommand(command: ToolCommand): boolean {
 
 /** A command that changed a document, including putting a change back. */
 function isEditCommand(command: ToolCommand): boolean {
-  return command === "create" || command === "edit" || command === "undo" || command === "redo";
+  return (
+    command === "create" ||
+    command === "copy" ||
+    command === "edit" ||
+    command === "undo" ||
+    command === "redo"
+  );
 }
 
 export function thinkingDigest(
   tools: readonly ToolView[],
   writeMode: ThinkingDigestWriteMode,
 ): string | null {
-  const { readDocuments, editedDocuments, steps } = countFoldTools(tools);
+  const { invokedSkills, readDocuments, editedDocuments, steps } = countFoldTools(tools);
   const clauses: string[] = [];
+
+  if (invokedSkills.size > 0) {
+    // The quotes ride inside the value: an apostrophe in an ICU message
+    // escapes the placeholder next to it.
+    const skills = new Intl.ListFormat(i18n.locale || undefined, {
+      style: "long",
+      type: "conjunction",
+    }).format([...invokedSkills].map((slug) => `'${humanizeSkillSlug(slug)}'`));
+    clauses.push(t`Invoked ${skills}`);
+  }
 
   if (readDocuments.size > 0) {
     clauses.push(
@@ -101,29 +132,6 @@ export function thinkingDigest(
 
   const digest = clauses.join(", ");
   return digest ? capitalizeFirst(digest) : null;
-}
-
-function inputObject(tool: ToolView): Record<string, JsonValue> {
-  const raw = tool.input;
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, JsonValue>;
-  }
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw) as JsonValue;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, JsonValue>;
-      }
-    } catch {
-      return {};
-    }
-  }
-  return {};
-}
-
-function stringField(input: Record<string, JsonValue>, field: string): string | null {
-  const value = input[field];
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function documentIdentity(uriOrPath: string): string {

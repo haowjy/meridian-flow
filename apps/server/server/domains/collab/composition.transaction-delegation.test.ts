@@ -1,155 +1,98 @@
 /** Unit contract for thread-peer response transaction delegation and ownership settlement. */
-import type { AgentEditCore } from "@meridian/agent-edit/integration";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import { describe, expect, it, vi } from "vitest";
+
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { describe, expect, it } from "vitest";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import { asLiveAgentEditCore } from "./domain/agent-edit-cores.js";
-import {
-  enlistResponseParticipant,
-  runResponseTransaction,
-} from "./domain/response-transaction.js";
 import { createThreadPeerAgentEditCore } from "./domain/thread-peer-core-pool.js";
+import {
+  createFakeThreadPeerCores,
+  inProcessResponseTransactions,
+} from "./test-support/thread-peer-pool-fakes.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
-const threadPeerPoolDefaults = {
-  shouldUseLiveReversal: async () => false,
-  discardThreadPeerBranches: async () => {},
-  pullThreadPeer: async () => undefined,
-  responseTransactionSettlement: {
-    deferUntilCommit: () => false,
-    deferUntilRollback: () => false,
-  },
-  responseTransactions: {
-    enlist: enlistResponseParticipant,
-    run: runResponseTransaction,
-  },
-};
+const DRAFT = { kind: "draft", workId: "work-1" as WorkId, workSlug: "work" } as const;
+
+function createCore(
+  cores = createFakeThreadPeerCores(),
+  commitThreadResponseAtomically: <T>(operation: () => Promise<T>) => Promise<T> = (operation) =>
+    operation(),
+) {
+  const core = createThreadPeerAgentEditCore({
+    liveUtilityCore: asLiveAgentEditCore(cores.liveCore.asCore()),
+    createThreadCore: () => cores.threadCore.asCore(),
+    reversalHistory: cores.history.reader,
+    liveHistory: cores.history.liveHistory,
+    discardThreadPeerBranches: async () => {},
+    pullThreadPeer: cores.history.pullThreadPeer,
+    commitThreadResponseAtomically,
+    ...inProcessResponseTransactions,
+    fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
+  });
+  return { core, ...cores };
+}
 
 describe("thread-peer response transaction delegation", () => {
-  it("routes reversals without active Draft history through the live core", async () => {
-    const liveWrite = vi.fn(async () => ({ status: "reconciled", isError: false, text: "" }));
-    const threadWrite = vi.fn(async () => ({ status: "reconciled", isError: false, text: "" }));
-    const coreShape = {
-      commitResponse: vi.fn(),
-      hasResponseDocument: vi.fn(() => false),
-      withResponseDocument: vi.fn(async () => null),
-      responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
-      invalidateThread: vi.fn(async () => {}),
-    };
-    const liveCore = { ...coreShape, write: liveWrite } as unknown as AgentEditCore;
-    const threadCore = { ...coreShape, write: threadWrite } as unknown as AgentEditCore;
-    const shouldUseLiveReversal = vi.fn(async () => true);
-    const core = createThreadPeerAgentEditCore({
-      ...threadPeerPoolDefaults,
-      liveUtilityCore: asLiveAgentEditCore(liveCore),
-      createThreadCore: () => threadCore,
-      shouldUseLiveReversal,
-      pullThreadPeer: async () => ({
-        branchGeneration: 2,
-        attributionBaseline: new Uint8Array(),
-      }),
-      commitThreadResponseAtomically: async (operation) => operation(),
-    });
-
-    await core.write(
-      { command: "undo", file: "alpha.md", all: true },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-post-apply" },
-    );
-
-    expect(shouldUseLiveReversal).toHaveBeenCalledWith({
-      documentId: "alpha.md",
-      threadId: THREAD_ID,
-    });
-    expect(liveWrite).toHaveBeenCalledWith(
-      expect.objectContaining({ command: "undo" }),
-      expect.not.objectContaining({
-        interactionContext: expect.objectContaining({ mode: "threadPeer" }),
-      }),
-    );
-    expect(threadWrite).not.toHaveBeenCalled();
-  });
-
   it("does not let a live reversal route a later response write around Draft", async () => {
-    const liveWrite = vi.fn(async () => ({ status: "reconciled", isError: false, text: "" }));
-    const threadWrite = vi.fn(async () => ({ status: "success", isError: false, text: "" }));
-    const coreShape = {
-      commitResponse: vi.fn(async () => ({ status: "committed" })),
-      hasResponseDocument: vi.fn(() => false),
-      withResponseDocument: vi.fn(async () => null),
-      responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
-      invalidateThread: vi.fn(async () => {}),
-    };
-    const liveCore = { ...coreShape, write: liveWrite } as unknown as AgentEditCore;
-    const threadCore = { ...coreShape, write: threadWrite } as unknown as AgentEditCore;
-    const core = createThreadPeerAgentEditCore({
-      ...threadPeerPoolDefaults,
-      liveUtilityCore: asLiveAgentEditCore(liveCore),
-      createThreadCore: () => threadCore,
-      shouldUseLiveReversal: async () => true,
-      commitThreadResponseAtomically: async (operation) => operation(),
-    });
+    const { core, liveCore, threadCore } = createCore();
     const context = {
       threadId: THREAD_ID,
       sessionId: THREAD_ID,
       turnId: "turn-live-then-draft",
       responseId: "response-live-then-draft",
+      grant: testFileGrant(DRAFT),
     };
 
     await core.write({ command: "undo", file: "alpha.md", all: true }, context);
     await core.write({ command: "insert", file: "alpha.md", content: "Draft content." }, context);
     await core.commitResponse(context.responseId);
 
-    expect(liveWrite).toHaveBeenCalledOnce();
-    expect(threadWrite).toHaveBeenCalledOnce();
-    expect(coreShape.commitResponse).toHaveBeenCalledOnce();
+    expect(liveCore.write).toHaveBeenCalledOnce();
+    expect(threadCore.write).toHaveBeenCalledOnce();
+    expect(threadCore.commitResponse).toHaveBeenCalledOnce();
+    expect(liveCore.commitResponse).not.toHaveBeenCalled();
   });
 
   it("rolls back the document commit when tool-result finalization fails", async () => {
     const durable: string[] = [];
-    const result = {
-      status: "committed" as const,
-      responseId: "response-finalize",
-      documentCount: 1,
-      updateCount: 1,
-      documents: [],
-      stagedCreates: { committed: [], discarded: [] },
-    };
-    const threadCore = {
-      write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
-      commitResponse: vi.fn(async () => {
-        durable.push("document");
-        return result;
-      }),
-      hasResponseDocument: vi.fn(() => false),
-      withResponseDocument: vi.fn(async () => null),
-      responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
-      invalidateThread: vi.fn(async () => {}),
-    } as unknown as AgentEditCore;
-    const core = createThreadPeerAgentEditCore({
-      ...threadPeerPoolDefaults,
-      liveUtilityCore: asLiveAgentEditCore(threadCore),
-      createThreadCore: () => threadCore,
-      commitThreadResponseAtomically: async (operation) => {
-        const before = [...durable];
-        try {
-          return await operation();
-        } catch (cause) {
-          durable.splice(0, durable.length, ...before);
-          throw cause;
-        }
-      },
+    const responseId = "response-finalize";
+    const cores = createFakeThreadPeerCores();
+    cores.threadCore.commitResponse.mockImplementation(async (id) => {
+      durable.push("document");
+      return {
+        status: "committed",
+        responseId: id,
+        documentCount: 1,
+        updateCount: 1,
+        documents: [],
+        stagedCreates: { committed: [], discarded: [] },
+      };
+    });
+    const { core } = createCore(cores, async (operation) => {
+      const before = [...durable];
+      try {
+        return await operation();
+      } catch (cause) {
+        durable.splice(0, durable.length, ...before);
+        throw cause;
+      }
     });
     await core.write(
-      { command: "read", file: "alpha.md" },
+      { command: "insert", file: "alpha.md", content: "Draft content." },
       {
         threadId: THREAD_ID,
         sessionId: THREAD_ID,
         turnId: "turn-finalize",
-        responseId: result.responseId,
+        responseId,
+        grant: testFileGrant(DRAFT),
       },
     );
 
     await expect(
-      core.commitResponse(result.responseId, {
+      core.commitResponse(responseId, {
         beforeTransactionCommit: async () => {
           durable.push("tool-result");
           throw new Error("injected finalization crash");
@@ -160,56 +103,32 @@ describe("thread-peer response transaction delegation", () => {
   });
 
   it("releases facade ownership when a degraded raw rollback completes honestly", async () => {
-    const threadRollback = vi.fn(
-      async (
-        _responseId: string,
-        options?: {
-          deferFinalization?(participant: {
-            commit(): void | Promise<void>;
-            abort(): void | Promise<void>;
-          }): void;
-        },
-      ) => {
-        options?.deferFinalization?.({
-          commit: () => {},
-          abort: () => {},
-        });
-        // The real committer returns this after evicting runtimes when restoration fails.
-        return {
-          status: "rolledBackDegraded" as const,
-          responseId: "response-rollback",
-          stagedCreates: { committed: [], discarded: [] },
-          restorationFailed: true as const,
-        };
-      },
-    );
-    const liveRollback = vi.fn(async () => ({
-      status: "rolledBack" as const,
-      responseId: "response-rollback",
-      stagedCreates: { committed: [], discarded: [] },
-    }));
-    const threadCore = {
-      write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
-      rollbackResponse: threadRollback,
-      hasResponseDocument: vi.fn(() => false),
-      withResponseDocument: vi.fn(async () => null),
-      responseDocuments: vi.fn(() => ({ staged: [], created: [] })),
-      invalidateThread: vi.fn(async () => {}),
-    } as unknown as AgentEditCore;
-    const liveCore = {
-      ...threadCore,
-      rollbackResponse: liveRollback,
-    } as unknown as AgentEditCore;
-    const core = createThreadPeerAgentEditCore({
-      ...threadPeerPoolDefaults,
-      liveUtilityCore: asLiveAgentEditCore(liveCore),
-      createThreadCore: () => threadCore,
-      commitThreadResponseAtomically: async (operation) => operation(),
-    });
     const responseId = "response-rollback";
+    const cores = createFakeThreadPeerCores();
+    cores.threadCore.rollbackResponse.mockImplementation(async (id, options) => {
+      (
+        options as
+          | { deferFinalization?(participant: { commit(): void; abort(): void }): void }
+          | undefined
+      )?.deferFinalization?.({ commit: () => {}, abort: () => {} });
+      // The real committer returns this after evicting runtimes when restoration fails.
+      return {
+        status: "rolledBackDegraded",
+        responseId: id,
+        stagedCreates: { committed: [], discarded: [] },
+        restorationFailed: true,
+      } as never;
+    });
+    const { core, liveCore, threadCore } = createCore(cores);
     await core.write(
-      { command: "read", file: "alpha.md" },
-      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-rollback", responseId },
+      { command: "insert", file: "alpha.md", content: "Draft content." },
+      {
+        threadId: THREAD_ID,
+        sessionId: THREAD_ID,
+        turnId: "turn-rollback",
+        responseId,
+        grant: testFileGrant(DRAFT),
+      },
     );
 
     await expect(core.rollbackResponse(responseId)).resolves.toMatchObject({
@@ -218,7 +137,7 @@ describe("thread-peer response transaction delegation", () => {
     });
     await core.rollbackResponse(responseId);
 
-    expect(threadRollback).toHaveBeenCalledOnce();
-    expect(liveRollback).toHaveBeenCalledOnce();
+    expect(threadCore.rollbackResponse).toHaveBeenCalledOnce();
+    expect(liveCore.rollbackResponse).toHaveBeenCalledOnce();
   });
 });

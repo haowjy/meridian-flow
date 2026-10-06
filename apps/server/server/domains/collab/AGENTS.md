@@ -32,6 +32,12 @@ editor UI or transport-shell policy.
   struct history.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
+- Model reads and writes go through the thread-peer pool with a caller-computed
+  destination; nothing in collab decides live versus draft from a thread's
+  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
+  throws if asked to.
+- A reply saves once: every document it wrote, live or drafted, in one
+  transaction. Live text reaches open editors only after commit.
 - Derive live read models from a journal-locked durable cut, never a warm room
   paired with a database watermark. The recovery sweep owns freshness; triggers
   only reduce latency. Push derivation joins its completion transaction.

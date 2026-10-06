@@ -176,7 +176,7 @@ describe("reversal planner", () => {
   it.each([
     ["latest", { kind: "latest" }],
     ["single", { kind: "single", to: "w1" }],
-    ["range", { kind: "range", from: "w1", to: "w2" }],
+    ["range", { kind: "range", since: "w1", to: "w2" }],
     ["all", { kind: "all" }],
     ["turn", { kind: "turn", turnId: "turn-b" }],
   ] as const)("expands undo %s selections to the active grouped-redo boundary", async (_name, selection) => {
@@ -233,7 +233,7 @@ describe("reversal planner", () => {
   it.each([
     ["all", { kind: "all" }],
     ["turn", { kind: "turn", turnId: "turn-b" }],
-    ["range", { kind: "range", from: "w1", to: "w2" }],
+    ["range", { kind: "range", since: "w1", to: "w2" }],
   ] as const)("expands redo %s selections to the grouped undo boundary", async (_name, selection) => {
     const store = fakeReversalStore({
       snapshot: snapshotWithSeqs([1, 2, 3, 4]),

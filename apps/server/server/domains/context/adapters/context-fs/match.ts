@@ -22,7 +22,7 @@
  * so nothing downstream has to know the hashline format to show a sentence to
  * a writer. Plain schemes are unaffected: their body is the whole entry.
  */
-import { splitHashline } from "@meridian/agent-edit";
+import { markdownPlainText, splitHashline } from "@meridian/agent-edit";
 
 /** How many passages one document contributes before the count speaks for the rest. */
 export const PASSAGE_CAP = 3;
@@ -57,7 +57,9 @@ export function matchDocument(
   query: string,
   options: { hashlines: boolean },
 ): DocumentMatch | null {
-  const needle = query.toLowerCase();
+  // Bodies are serialized markdown; compare the writer's text on both sides so
+  // `LIVE_ONLY` and the escaped `LIVE\_ONLY` a read showed both match.
+  const needle = markdownPlainText(query).toLowerCase();
   if (needle.length === 0) return null;
 
   const matches: MatchedPassage[] = [];
@@ -79,7 +81,7 @@ export function matchDocument(
 
 /** Non-overlapping occurrences of an already-lowercased needle. */
 function countOccurrences(text: string, needle: string): number {
-  const haystack = text.toLowerCase();
+  const haystack = markdownPlainText(text).toLowerCase();
   let count = 0;
   let from = 0;
   for (;;) {

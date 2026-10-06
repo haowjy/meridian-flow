@@ -1,11 +1,15 @@
 /** F4 identity-backed late image byte adapter. */
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
+import { type FileAccess, isFileAccessDenied } from "../../file-policy/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 
 export function createContextImageAssetPort(deps: {
+  /** The writer's read grant on each image a prompt carries (file-access §4). */
+  fileAccess: Pick<FileAccess, "authorize">;
   identities: UploadIdentityPort;
   availability: ProjectContextAvailabilityPort;
   objects: ObjectStorePort;
@@ -37,6 +41,12 @@ export function createContextImageAssetPort(deps: {
             `Image asset resolution is indeterminate: ${reference.uri}`,
           );
         if (available?.kind !== "available" || available.entry.uri !== reference.uri) return null;
+        const grant = await deps.fileAccess.authorize(
+          { accountId: context.actorUserId as UserId },
+          { kind: "document", documentId: reference.documentId as DocumentId },
+          "read",
+        );
+        if (isFileAccessDenied(grant)) return null;
         const identity = await deps.identities.lookupDocument(reference.documentId);
         if (!identity) return null;
         const mediaType = identity.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";

@@ -1,11 +1,12 @@
 ---
 name: Critic
 description: Adversarial craft critique. Reads the manuscript; does not edit it.
+permission: read
 mode: primary
-tools:
-  edit: deny
-  ask_user: allow
-skills: []
+skills:
+  available:
+    - writing-principles
+    - story-review
 subagents: []
 effort: medium
 ---

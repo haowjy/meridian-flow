@@ -15,7 +15,6 @@ import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn"
 import type {
   Block,
   CurrentToolCall,
-  JsonValue,
   OrchestratorEvent,
   Thread,
   Turn,
@@ -24,8 +23,7 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import { readThreadActivity } from "../../threads/index.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
-import { readThreadReport } from "../spawn/read-thread-report.js";
-import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
+import { readModelThreadReport } from "../spawn/model-thread-report.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
   SpawnToolArgs,
@@ -171,7 +169,7 @@ export async function dispatchToolCall(
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             from: spawnInput.from,
-            description: spawnInput.description,
+            name: spawnInput.name,
             ...(spawnInput.append_system_prompt !== undefined
               ? { appendSystemPrompt: spawnInput.append_system_prompt }
               : {}),
@@ -212,7 +210,7 @@ export async function dispatchToolCall(
                     callerTurnId: ctx.state.currentTurn.id,
                     toolCallId: call.id,
                     cardBlockId: null,
-                    origin: "foreground_message" as const,
+                    origin: "message" as const,
                     deliveryMode: "direct" as const,
                   },
                 }
@@ -229,10 +227,9 @@ export async function dispatchToolCall(
   const threadReport =
     call.name === "thread_report"
       ? (reportInput: ThreadReportArgs) =>
-          readThreadReport({
+          readModelThreadReport({
             callerThreadId: ctx.thread.id as never,
             ref: reportInput.ref,
-            run: reportInput.run,
             repos: {
               threads: deps.persistenceDeps.repos.threads,
               executionReports: deps.executionReports,
@@ -291,14 +288,10 @@ export async function dispatchToolCall(
       ...(settled.endTurn ? { endTurn: true as const } : {}),
     };
   }
-  const persistedOutput: JsonValue =
-    call.name === "spawn" || call.name === "thread_message"
-      ? spawnOutputForTranscript(execResult.output, {
-          queuedNoReply: call.name === "thread_message",
-        })
-      : execResult.output;
+  const persistedOutput = execResult.output;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
+  const persistedResult = execResult.result;
 
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
@@ -312,6 +305,7 @@ export async function dispatchToolCall(
         content: {
           toolCallId: execResult.toolCallId,
           output: persistedOutput,
+          result: persistedResult,
           ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
@@ -325,6 +319,7 @@ export async function dispatchToolCall(
             type: "tool.result",
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
+            result: persistedResult,
             isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },

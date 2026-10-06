@@ -120,4 +120,5 @@ const bindingConfiguration = {
   model: "mock-model",
   skills: { load: [], available: [] },
   namedTargets: [],
+  permission: "edit" as const,
 };

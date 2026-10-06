@@ -73,7 +73,11 @@ async function fixture(
   const gateway =
     gatewayOverride ??
     scriptedGateway({ onStream, usage: { inputTokens: 1000, outputTokens: 100 } });
-  const workContext = createWorkContextReader({ ...repos, works });
+  const workContext = createWorkContextReader({
+    ...repos,
+    works,
+    readChainPermission: async () => "edit" as const,
+  });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const rig = createRuntimeHarness({
     repos,
@@ -817,6 +821,7 @@ describe("frozen prompt provider requests", () => {
         model: "gpt-4.1-mini",
         skills: { load: [], available: [] },
         namedTargets: [],
+        permission: "edit",
       },
       null,
     );

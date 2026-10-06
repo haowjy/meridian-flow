@@ -25,7 +25,7 @@ dependency). `spawn/child-run-driver.ts` supplies admission input to the shared
 run session, binds the parent card before execution, then reads the exact saved
 result and publishes after the session releases. It owns no lease or terminal
 report policy. `loop/execution-finalizer.ts`
-owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
+owns immutable terminal transaction A.
 `spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
 original card in place with `block.updated`, appends body-free
 `agent.run_completed`, queues compact child-provenance notice text for
@@ -40,7 +40,7 @@ traversal boundary, including compaction selectors.
 
 The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
-`SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
+`SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, scalar `model`/`effort` replace, `permission` only lowers, `disallowed-tools` adds to the child's denials and never lifts one) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key. A patch has no `tools` allow-list. Spawn's `disallowed_tools` takes real tool names checked against `TOOL_CATALOG`, with no alias fold. Before the merge, `resolve-child-invocation` refuses a permission raise and any child tool the parent lacks, both as `invalid_arguments` the model can fix: the coordinator returns the typed `InvalidArgumentsResult` beside `SpawnResult` (`ChildRunResult`), and the spawn tool renders it like the executor's parse refusal. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
 
@@ -59,7 +59,15 @@ ref → `thread_message_target_not_found`; an out-of-lineage/out-of-subtree ref 
 the coordinator enqueues one `agent`-provenance `message` through the
 producer-facing `RuntimeDelivery` (idempotency key `thread-message:<toolCallId>`)
 and returns `{ status: "background" }` without driving anything — the target's
-own run drains it and wakes if asleep. Foreground is the existing child wait
+own run drains it and wakes if asleep. When the caller is the target's parent
+(a re-task), the message's provenance carries `notify: { turnId, toolCallId }`
+and the result carries `notifiesCaller: true`. The drain run that adopts such a
+message admits its report as `origin: "message"`,
+`deliveryMode: "background_notification"` (`spawn/retask-correlation.ts`), so
+publication B sends the parent the same completion notice a background spawn
+gets. A message to any other thread admits an ordinary `thread_run` and promises
+nothing. A re-task adopted mid-run by an already admitted execution joins that
+execution and inherits its delivery mode. Foreground is the existing child wait
 path: the coordinator's `prepareForegroundMessage` loads the target's frozen
 binding for `resolvedSlug` only and never re-resolves configuration — so
 `thread_message` carries no configuration patch and cannot escalate the target's
@@ -85,13 +93,14 @@ report body. A spawned background
 execution returns only after execution admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
-`thread_message` remains queue-only with no promised execution or reply. The
+`thread_message` returns no execution and gets no card; only a parent's re-task
+promises a completion notice. `thread_report` promises a notice only when the
+latest run reports back to the reading caller. The
 original card is bound at admission and terminally replaced by B; a missing card is not recreated,
 but a live caller still receives the notification. `return_result` captures
 candidate content with its successful ordinary `tool_result` in one
 transaction; capture alone never makes success. `spawn_status` remains a
-lifecycle hint for activity readers, while the removed `spawn_result` column is
-not a competing body store. Every child run publishes neutral, body-free
+lifecycle hint for activity readers, not a body store. Every child run publishes neutral, body-free
 `agent.run_completed` metadata; there is no spawn-named completion event.
 
 ## Activity
@@ -106,9 +115,8 @@ subagent response streams, the first `tool_call.delta` records its call name
 and best-effort partial input on the lease (`thread_run_leases.current_tool`,
 via `RunClaim.setCurrentTool`); one further refresh records the target once a
 document path/URI, search pattern, or spawn agent arrives. A `write` skips the
-first-delta record and waits for its command as well as its path, because the
-same tool reads, diffs, and edits; labeled early, every read would flash as a
-write. Other deltas do not write activity. Tool dispatch still records the full input and appends the same
+first-delta record and waits for its command as well as its path, because its
+verb comes from the command; a `read` labels as soon as its path arrives. Other deltas do not write activity. Tool dispatch still records the full input and appends the same
 activity fact only when the call changed. The
 create-side append is strict (a failure fails the spawn), while terminal and
 wake appends are best-effort: a read-model failure is reported to the
@@ -125,10 +133,11 @@ Named targets resolve by name within the parent binding's roster; a target with
 An omitted or empty `agent` creates an agent-less child: the binding has no
 Agent revision (`definitionRevisionId` null), the body is the host-owned empty
 `GENERIC_AGENT_BODY`, and the child copies the caller's resolved configuration,
-including `tools`, `disallowed-tools`, and `effort`. Named children resolve
-those fields from their own retained revision. A nested generic keeps the
-ancestor's write deny because it copies that configuration. Turn context reads
-tools and effort from configuration only.
+including `tools`, `disallowed-tools`, `effort` and `permission`. Named
+children resolve those fields from their own retained revision. A nested
+generic keeps every ancestor denial and a `read` permission because it copies
+that configuration; the chain minimum caps it anyway. Turn context reads tools
+and effort from configuration only.
 Max spawn depth defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
 prompt; ordinary turn preparation adds its retained persona and mandatory report
@@ -144,6 +153,8 @@ A child run's report is admitted once, finalized with its terminal turn, and
 published to the parent from that durable row. `ChildDriveInput.reportCorrelation`
 carries only the caller/turn/tool/card and origin/delivery metadata; the
 child's `executionTurnId` is assigned only after turn admission. The model reads
-a report with `thread_report` ([history tools](history-tools.md)); tool and API
-responses share the `ThreadReportResult` contracts schema, including
-`childThreadId`, and the app projects both through `toReportContentValue`.
+a report with `thread_report` ([history tools](history-tools.md)). The API
+route returns `ThreadReportResult` (with `childThreadId` and `run`); the tool
+returns the compact `ModelThreadReportResult` (no `run`, plus `running` and
+`message`). One contracts parser accepts both, and the app projects either
+through `toReportContentValue`.

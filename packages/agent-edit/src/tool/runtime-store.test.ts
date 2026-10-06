@@ -57,7 +57,7 @@ describe("runtime store", () => {
 
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       { ...context, turnId: "turn-before-invalidate" },
@@ -82,7 +82,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("commits a fresh-process destructive write and reports the writer sweep", async () => {
+  it("commits a fresh-process destructive write without calling its own edit a sweep", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const responseContext = {
       ...context,
@@ -110,9 +110,7 @@ describe("runtime store", () => {
     );
 
     expect(outcomeText(edit)).toContain("status: success");
-    expect(outcomeText(edit)).toContain("swept:");
-    expect(outcomeText(edit)).toContain("Alpha sword.");
-    expect(outcomeText(edit)).toContain("Beta shield.");
+    expect(outcomeText(edit)).not.toContain("swept");
     expect(
       edit.result.blocks?.some((group) =>
         group.items.some((block) => block.body === "Beta shield."),
@@ -123,7 +121,7 @@ describe("runtime store", () => {
 
   it("auto-resyncs stale scoped replacement and preserves the writer's concurrent edit", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
 
@@ -139,10 +137,10 @@ describe("runtime store", () => {
 
   it("auto-resyncs stale numeric-scope deletion", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await appendHumanPrefixAndInvalidate(ctx, "chapter.md");
 
-    const deleted = await ctx.core.write({ command: "delete", file: "chapter.md", in: 2 }, context);
+    const deleted = await ctx.core.write({ command: "remove", file: "chapter.md", in: 2 }, context);
 
     expect(deleted.status).toBe("success");
     expect(outcomeText(deleted)).not.toContain("unsafe");
@@ -151,14 +149,14 @@ describe("runtime store", () => {
 
   it("keeps non-destructive stale-doc operations on the auto-rebuild path", async () => {
     const readCtx = harness({ "chapter.md": "Alpha sword." });
-    await readCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await readCtx.core.read({ file: "chapter.md" }, context);
     await appendHumanPrefixAndInvalidate(readCtx, "chapter.md");
-    const read = await readCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    const read = await readCtx.core.read({ file: "chapter.md" }, context);
     expect(read.status).toBe("success");
     expect(outcomeText(read)).toContain("Human Alpha sword.");
 
     const insertCtx = harness({ "chapter.md": "Alpha sword.\n\nOmega." });
-    await insertCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await insertCtx.core.read({ file: "chapter.md" }, context);
     const alphaHash = hashAt(insertCtx.liveDoc("chapter.md"), 0);
     await appendHumanPrefixAndInvalidate(insertCtx, "chapter.md");
     const insert = await insertCtx.core.write(
@@ -173,7 +171,7 @@ describe("runtime store", () => {
     ]);
 
     const replaceCtx = harness({ "chapter.md": "Alpha sword." });
-    await replaceCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await replaceCtx.core.read({ file: "chapter.md" }, context);
     await appendHumanPrefixAndInvalidate(replaceCtx, "chapter.md");
     const replace = await replaceCtx.core.write(
       { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
@@ -187,7 +185,7 @@ describe("runtime store", () => {
     const turnId = "thread-a:chapter.md:turn-restart-redo";
 
     async function writeThenUndo(ctx: ReturnType<typeof harness>) {
-      await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+      await ctx.core.read({ file: "chapter.md" }, context);
       await ctx.core.write(
         { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
         { ...context, turnId },
@@ -195,7 +193,7 @@ describe("runtime store", () => {
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
 
       const undo = await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
-      expect(outcomeText(undo)).toContain("status: reconciled");
+      expect(outcomeText(undo)).toContain("status: reversed");
       expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
       const [reversal] = await ctx.journal.readReversals("chapter.md", {
@@ -220,7 +218,7 @@ describe("runtime store", () => {
       { command: "redo", file: "chapter.md" },
       context,
     );
-    expect(outcomeText(baselineRedo)).toContain("status: reconciled");
+    expect(outcomeText(baselineRedo)).toContain("status: reversed");
     const baselineTexts = blockTexts(baseline.liveDoc("chapter.md"));
     const baselineBytes = documentBytes(baseline.liveDoc("chapter.md"));
 
@@ -232,9 +230,9 @@ describe("runtime store", () => {
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
-    expect(
-      outcomeText(await restarted.write({ command: "read", file: "chapter.md" }, context)),
-    ).toContain("Alpha sword.");
+    expect(outcomeText(await restarted.read({ file: "chapter.md" }, context))).toContain(
+      "Alpha sword.",
+    );
 
     const restartedRedo = await restarted.write(
       { command: "redo", file: "chapter.md" },
@@ -248,7 +246,7 @@ describe("runtime store", () => {
         },
       },
     );
-    expect(outcomeText(restartedRedo)).toContain("status: reconciled");
+    expect(outcomeText(restartedRedo)).toContain("status: reversed");
     expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
     expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
 
@@ -273,10 +271,10 @@ describe("runtime store", () => {
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
-    await secondRestart.write({ command: "read", file: "chapter.md" }, context);
+    await secondRestart.read({ file: "chapter.md" }, context);
 
     const doubleRedo = await secondRestart.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo");
+    expect(outcomeText(doubleRedo)).toBe("status: nothing_to_redo; path: chapter.md");
     expect(blockTexts(restartedCoordinator.require("chapter.md"))).toEqual(baselineTexts);
     expect(documentBytes(restartedCoordinator.require("chapter.md"))).toEqual(baselineBytes);
   });
@@ -284,14 +282,14 @@ describe("runtime store", () => {
   it("consumes durable redo once across concurrent restarted sessions", async () => {
     const turnId = "thread-a:chapter.md:turn-concurrent-redo";
     const initial = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
-    await initial.core.write({ command: "read", file: "chapter.md" }, context);
+    await initial.core.read({ file: "chapter.md" }, context);
     await initial.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       { ...context, turnId },
     );
     expect(
       outcomeText(await initial.core.write({ command: "undo", file: "chapter.md" }, context)),
-    ).toContain("status: reconciled");
+    ).toContain("status: reversed");
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha sword."]);
 
     const coreA = createAgentEditCore({
@@ -311,12 +309,12 @@ describe("runtime store", () => {
       undoClientId: REVERSAL_CLIENT_ID,
     });
 
-    expect(
-      outcomeText(await coreA.write({ command: "read", file: "chapter.md" }, context)),
-    ).toContain("Alpha sword.");
-    expect(
-      outcomeText(await coreB.write({ command: "read", file: "chapter.md" }, context)),
-    ).toContain("Alpha sword.");
+    expect(outcomeText(await coreA.read({ file: "chapter.md" }, context))).toContain(
+      "Alpha sword.",
+    );
+    expect(outcomeText(await coreB.read({ file: "chapter.md" }, context))).toContain(
+      "Alpha sword.",
+    );
 
     const redoA = await coreA.write(
       { command: "redo", file: "chapter.md" },
@@ -330,9 +328,9 @@ describe("runtime store", () => {
         },
       },
     );
-    expect(outcomeText(redoA)).toContain("status: reconciled");
+    expect(outcomeText(redoA)).toContain("status: reversed");
     const redoB = await coreB.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redoB)).toBe("status: nothing_to_redo");
+    expect(outcomeText(redoB)).toBe("status: nothing_to_redo; path: chapter.md");
 
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha blade."]);
     expect(
@@ -351,7 +349,7 @@ describe("runtime store", () => {
 
   it("re-syncs undo and redo before marking the snapshot synced", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
-    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,
@@ -370,7 +368,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Writer Alpha sword."]);
 
     const redoCtx = harness({ "chapter.md": "Alpha sword." });
-    await redoCtx.core.write({ command: "read", file: "chapter.md" }, context);
+    await redoCtx.core.read({ file: "chapter.md" }, context);
     await redoCtx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       context,

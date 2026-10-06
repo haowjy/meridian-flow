@@ -4,7 +4,7 @@
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
+import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
@@ -29,6 +29,10 @@ import {
 } from "../adapters/in-memory/loop-ports.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
+import {
+  resolveThreadModelAvailableSkills,
+  resolveThreadPreloadedSkills,
+} from "../loop/available-skills.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
@@ -91,7 +95,7 @@ function stubOrchestrator(
           cardBlockId: null,
         }),
         agentSlug: input.executionReport?.agentSlug ?? null,
-        description: input.executionReport?.description ?? null,
+        name: input.executionReport?.name ?? null,
       });
       return {
         userTurnId: userTurn.id,
@@ -155,7 +159,7 @@ async function fixture(
           name: "Critic",
           model: "critic-model",
           mode: "primary",
-          tools: { edit: "deny", ask_user: "allow" },
+          permission: "read",
         },
         "You are Critic.",
       ),
@@ -163,6 +167,10 @@ async function fixture(
         { name: "Hidden", model: "hidden-model", "model-invocable": false },
         "",
       ),
+      "skills/continuity/SKILL.md":
+        "---\nname: continuity\ndescription: Check facts against canon.\n---\n\ncontinuity body.\n",
+      "skills/story-review/SKILL.md":
+        "---\nname: story-review\ndescription: Review drafts after prose exists.\n---\n\nstory-review body.\n",
     },
     dependencies: {},
   });
@@ -179,7 +187,7 @@ async function fixture(
           name: "Parent",
           model: "parent-model",
           effort: "high",
-          tools: { edit: "deny" },
+          "disallowed-tools": ["ask_user"],
         },
         "",
       ),
@@ -198,7 +206,8 @@ async function fixture(
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
-    tools: { edit: "deny" } as const,
+    permission: "edit" as const,
+    "disallowed-tools": ["ask_user"],
     effort: "high" as const,
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
@@ -272,42 +281,49 @@ async function fixture(
     eventSink,
   });
   let invocation = 0;
+  // Override refusals come back typed; `runChild` is for tests that expect a run.
+  const runChildOrRefusal = async (
+    request: Parameters<typeof coreCoordinator.runChild>[0],
+    options: Parameters<typeof coreCoordinator.runChild>[1],
+  ) => {
+    if (request.kind === "message" && options.mode === "background") {
+      return coreCoordinator.runChild(request, options);
+    }
+    if (!(await repos.turns.findById(request.parentTurnId))) {
+      const thread = await repos.threads.findById(request.parentThread.id);
+      await repos.turns.create({
+        id: request.parentTurnId,
+        threadId: request.parentThread.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+        prevTurnId: thread?.activeLeafTurnId ?? null,
+      });
+    }
+    invocation += 1;
+    return coreCoordinator.runChild(
+      {
+        ...request,
+        reportCorrelation: request.reportCorrelation ?? {
+          callerThreadId: request.parentThread.id,
+          callerTurnId: request.parentTurnId,
+          toolCallId:
+            request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
+          cardBlockId: null,
+          origin: request.kind === "spawn" ? "spawn" : "message",
+          deliveryMode: options.mode === "background" ? "background_notification" : "direct",
+        },
+      },
+      options,
+    );
+  };
   const coordinator = {
     ...coreCoordinator,
-    async runChild(
-      request: Parameters<typeof coreCoordinator.runChild>[0],
-      options: Parameters<typeof coreCoordinator.runChild>[1],
-    ) {
-      if (request.kind === "message" && options.mode === "background") {
-        return coreCoordinator.runChild(request, options);
-      }
-      if (!(await repos.turns.findById(request.parentTurnId))) {
-        const thread = await repos.threads.findById(request.parentThread.id);
-        await repos.turns.create({
-          id: request.parentTurnId,
-          threadId: request.parentThread.id,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-          prevTurnId: thread?.activeLeafTurnId ?? null,
-        });
-      }
-      invocation += 1;
-      return coreCoordinator.runChild(
-        {
-          ...request,
-          reportCorrelation: request.reportCorrelation ?? {
-            callerThreadId: request.parentThread.id,
-            callerTurnId: request.parentTurnId,
-            toolCallId:
-              request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
-            cardBlockId: null,
-            origin: request.kind === "spawn" ? "spawn" : "foreground_message",
-            deliveryMode: options.mode === "background" ? "background_notification" : "direct",
-          },
-        },
-        options,
-      );
+    runChildOrRefusal,
+    async runChild(...args: Parameters<typeof runChildOrRefusal>): Promise<SpawnResult> {
+      const result = await runChildOrRefusal(...args);
+      if ("issues" in result) throw new Error(`Refused: ${JSON.stringify(result.issues)}`);
+      return result;
     },
   };
 
@@ -559,7 +575,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.tools).toEqual({ edit: "deny" });
+      expect(binding?.configuration["disallowed-tools"]).toEqual(["ask_user"]);
       expect(binding?.configuration.effort).toBe("high");
     }
   });
@@ -574,7 +590,8 @@ describe("ChildRunCoordinator spawn selection", () => {
       model: "parent-model",
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
-      tools: { edit: "deny" } as const,
+      permission: "edit" as const,
+      tools: ["read", "ls"],
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
@@ -712,6 +729,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
     const context = await resolveAgentThreadTurnContext({
       thread: childThread,
       agentRevisions: revisions,
+      threads: repos.threads,
       toolRegistry: createToolRegistry(),
       baseTools: undefined,
     });
@@ -724,8 +742,46 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(composed).toContain("Custom child prompt");
   });
 
-  it("rejects an out-of-scope tool grant before creating the child", async () => {
-    const { coordinator, revisions, repos, journal } = await fixture();
+  it("binds skill overrides on the child so its own catalog and preload read them", async () => {
+    const { coordinator, parent, revisions, repos } = await fixture();
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        overrides: { skills: { load: ["continuity"], available: ["story-review"] } },
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.configuration.skills.load.map((skill) => skill.path)).toEqual([
+      "skills/continuity/SKILL.md",
+    ]);
+    expect(binding?.configuration.skills.available.map((skill) => skill.path)).toEqual([
+      "skills/story-review/SKILL.md",
+    ]);
+
+    const child = await repos.threads.findById(result.report.threadId);
+    if (!child) throw new Error("Missing spawned child thread");
+    expect(
+      (await resolveThreadModelAvailableSkills({ thread: child, agentRevisions: revisions })).map(
+        (skill) => skill.slug,
+      ),
+    ).toEqual(["story-review"]);
+    expect(
+      (await resolveThreadPreloadedSkills({ thread: child, agentRevisions: revisions })).map(
+        (skill) => skill.body,
+      ),
+    ).toEqual(["continuity body.\n"]);
+  });
+
+  it("refuses a named child with a tool its parent lacks until the spawn denies it", async () => {
+    const { coordinator, revisions, repos, critic, journal } = await fixture();
     const restrictedParent = await repos.threads.create({
       userId: "user-1",
       projectId: "project-1",
@@ -736,28 +792,98 @@ describe("ChildRunCoordinator invocation overlay", () => {
       {
         model: "parent-model",
         skills: { load: [], available: [] },
-        namedTargets: [],
-        tools: { edit: "deny" },
+        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
+        permission: "edit" as const,
+        "disallowed-tools": ["write"],
       },
       null,
     );
-    const result = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: restrictedParent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        overrides: { tools: { edit: "allow" } },
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.error.code).toBe("spawn_invocation_authority_denied");
-    }
+    const spawn = (overrides?: { "disallowed-tools": string[] }) =>
+      coordinator.runChildOrRefusal(
+        {
+          kind: "spawn",
+          parentThread: restrictedParent,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug: "critic",
+          prompt,
+          ...(overrides ? { overrides } : {}),
+          budget,
+        },
+        { mode: "foreground" },
+      );
+    const refused = await spawn();
+    expect(refused).toEqual({
+      error: "invalid_arguments",
+      issues: [
+        {
+          path: "overrides.disallowed_tools",
+          message: 'critic has "write" and you don\'t; add it here',
+        },
+      ],
+    });
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+
+    const narrowed = await spawn({ "disallowed-tools": ["write"] });
+    if (!("status" in narrowed) || narrowed.status !== "completed")
+      throw new Error("Expected a run");
+    const binding = await revisions.readThreadBinding(narrowed.report.threadId);
+    expect(binding?.configuration["disallowed-tools"]).toEqual(["write"]);
+  });
+
+  it("lets overrides.permission lower to read and refuses a raise as invalid arguments", async () => {
+    const { coordinator, revisions, repos, parent, journal } = await fixture();
+    const spawn = (parentThread: typeof parent, agentSlug: string, permission: "read" | "edit") =>
+      coordinator.runChildOrRefusal(
+        {
+          kind: "spawn",
+          parentThread,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug,
+          prompt,
+          overrides: { permission },
+          budget,
+        },
+        { mode: "foreground" },
+      );
+
+    const lowered = await spawn(parent, "", "read");
+    if (!("status" in lowered) || lowered.status !== "completed") throw new Error("Expected a run");
+    const loweredBinding = await revisions.readThreadBinding(lowered.report.threadId);
+    expect(loweredBinding?.configuration.permission).toBe("read");
+
+    const spawnsBefore = journal.filter((event) => event.type === "agent.spawn").length;
+    const readParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const parentBinding = await revisions.readThreadBinding(parent.id);
+    if (!parentBinding) throw new Error("Missing parent binding");
+    await revisions.bindThread(
+      readParent.id,
+      null,
+      { ...parentBinding.configuration, permission: "read" },
+      null,
+    );
+    const underReadParent = await spawn(readParent, "", "edit");
+    const overReadProfile = await spawn(parent, "critic", "edit");
+    expect([underReadParent, overReadProfile]).toEqual([
+      {
+        error: "invalid_arguments",
+        issues: [
+          {
+            path: "overrides.permission",
+            message: 'can only lower permission, and yours is "read"',
+          },
+        ],
+      },
+      {
+        error: "invalid_arguments",
+        issues: [
+          {
+            path: "overrides.permission",
+            message: 'can only lower permission, and critic\'s is "read"',
+          },
+        ],
+      },
+    ]);
+    expect(journal.filter((event) => event.type === "agent.spawn")).toHaveLength(spawnsBefore);
   });
 
   it("rejects an unresolvable typed override before creating a child", async () => {
@@ -779,38 +905,6 @@ describe("ChildRunCoordinator invocation overlay", () => {
       expect(result.error.code).toBe("spawn_invocation_patch_invalid");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
-  });
-
-  it("persists an in-scope named grant when the caller holds the tool", async () => {
-    const { coordinator, revisions, repos, critic } = await fixture();
-    const writerParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    await revisions.bindThread(
-      writerParent.id,
-      null,
-      {
-        model: "parent-model",
-        skills: { load: [], available: [] },
-        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-        tools: { edit: "allow", ask_user: "allow" },
-      },
-      null,
-    );
-    const result = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: writerParent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "critic",
-        prompt,
-        overrides: { tools: { edit: "allow" } },
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    expect(result.status).toBe("completed");
-    if (result.status !== "completed") return;
-    const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.configuration.tools).toEqual({ edit: "allow", ask_user: "allow" });
   });
 
   it("rejects an agentless child whose overridden model is unavailable", async () => {
@@ -1331,16 +1425,24 @@ describe("ChildRunCoordinator thread_message", () => {
       },
       { mode: "background" },
     );
-    expect(background.status).toBe("background");
-    if (background.status !== "background") return;
-    expect(background.handle).toBe(spawned.report.handle);
+    expect(background).toMatchObject({
+      status: "background",
+      handle: spawned.report.handle,
+      agentSlug: "critic",
+      notifiesCaller: true,
+    });
 
     const pending = await inbox.selectPending(childId);
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       threadId: childId,
       intent: "message",
-      provenance: { kind: "agent", threadId: parent.id },
+      // The parent re-tasked its own child, so the woken run reports back to it.
+      provenance: {
+        kind: "agent",
+        threadId: parent.id,
+        notify: { turnId: "turn-2", toolCallId: "call-bg" },
+      },
       body: { kind: "text", text: "run in the background" },
       idempotencyKey: "thread-message:call-bg",
     });

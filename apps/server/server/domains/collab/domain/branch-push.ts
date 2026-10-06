@@ -332,9 +332,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       if (source.rows.length === 0) return mapNoActiveRows(await noActiveRows(source.branch));
       const batch = buildWholeBranchCandidates({
         source,
-        ...((pushInput.resetPolicy ?? source.branch.pushPolicy) === "auto"
-          ? { resetPolicy: "auto" as const }
-          : {}),
+        ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
         ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
       });
       const result = await executeCandidateBatch(
@@ -379,10 +377,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     );
 
   const workPushPolicy = createWorkPushPolicy({
-    branchStore: input.branchStore,
     workPushPolicyStore: input.workPushPolicyStore,
     workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
-    pushToLive,
     applyPendingDraft: ({ draft, pushedByUserId }) =>
       draft.manifestEntry
         ? pushToLiveWithManifestEntry({

@@ -92,4 +92,5 @@ const bindingConfiguration = {
   model: "test-model",
   skills: { load: [], available: [] },
   namedTargets: [],
+  permission: "edit" as const,
 };

@@ -24,14 +24,17 @@ export function block(
 export function toolView({
   toolCallId,
   toolName,
-  output,
+  result,
+  isError = false,
   sequence = 1,
   input = null,
   message = null,
 }: {
   toolCallId: string;
   toolName: string;
-  output: JsonValue;
+  /** The typed result; the app never reads the model's `output` text. */
+  result: JsonValue | null;
+  isError?: boolean;
   sequence?: number;
   input?: JsonValue | null;
   message?: string | null;
@@ -40,9 +43,9 @@ export function toolView({
     toolCallId,
     toolName,
     input,
-    output,
+    result,
     status: "complete",
-    isError: false,
+    isError,
     message,
     streamedOutput: null,
     metadata: null,

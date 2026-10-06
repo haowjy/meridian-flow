@@ -1,6 +1,6 @@
 // Top-level demo UI: command panel, output log, block hash overlay, scripted
 // tour. All mutations go through `core.write()` — the editor is read-only.
-import type { WriteCommand } from "@meridian/agent-edit";
+import type { ReadCommand, WriteCommand } from "@meridian/agent-edit";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Y from "yjs";
 
@@ -16,6 +16,8 @@ The sword hummed beneath the old shrine.
 Moonlight pooled across the floor.`;
 
 type CommandKind = "create" | "read" | "insert" | "replace" | "undo" | "redo";
+/** The panel runs reads and writes through their own entry points. */
+type PlaygroundCommand = WriteCommand | ({ command: "read" } & ReadCommand);
 
 interface LogEntry {
   id: number;
@@ -97,10 +99,14 @@ export function App() {
     setLog((prev) => [{ id, label, body, ok }, ...prev].slice(0, 50));
   }
 
-  async function runWrite(command: WriteCommand, label: string, turnId?: string) {
+  async function runWrite(command: PlaygroundCommand, label: string, turnId?: string) {
     const ctx = turnId ? { ...env.defaultContext, turnId } : env.defaultContext;
     try {
-      const response = await env.core.write(command, ctx);
+      const { command: name, ...read } = command;
+      const response =
+        name === "read"
+          ? await env.core.read(read as ReadCommand, ctx)
+          : await env.core.write(command as WriteCommand, ctx);
       appendLog(label, response.text, !response.isError);
       return response.text;
     } catch (cause) {
@@ -197,7 +203,7 @@ interface CommandPanelProps {
   docId: string;
   setDocId: (next: string) => void;
   blocks: BlockLine[];
-  onRun: (command: WriteCommand, label: string, turnId?: string) => Promise<string>;
+  onRun: (command: PlaygroundCommand, label: string, turnId?: string) => Promise<string>;
   disabled: boolean;
 }
 
@@ -414,7 +420,7 @@ function buildCommand(input: {
   around: string;
   all: boolean;
   viewFormat: "full" | "outline";
-}): WriteCommand | null {
+}): PlaygroundCommand | null {
   const { kind, docId } = input;
   switch (kind) {
     case "create":
@@ -461,8 +467,8 @@ function buildCommand(input: {
   }
 }
 
-function describeCommand(command: WriteCommand): string {
-  const parts: string[] = [`write(${command.command}`];
+function describeCommand(command: PlaygroundCommand): string {
+  const parts: string[] = [command.command === "read" ? "read(" : `write(${command.command}`];
   if ("file" in command) parts.push(`file=${command.file}`);
   if ("find" in command && command.find) parts.push(`find="${command.find}"`);
   if ("after" in command && command.after) parts.push(`after=${command.after}`);

@@ -12,7 +12,7 @@ import { selectUndoClosure } from "./reversal-lineage.js";
 export type ReversalSelection =
   | { kind: "latest" }
   | { kind: "single"; to: string }
-  | { kind: "range"; from: string; to: string }
+  | { kind: "range"; since: string; to: string }
   | { kind: "last"; count: number }
   | { kind: "all" }
   | { kind: "turn"; turnId?: string };
@@ -112,13 +112,15 @@ export async function planRedo(input: {
   excludeUndoUpdateSeqs?: ReadonlySet<number>;
 }): Promise<ReversalPlan> {
   const state = await loadState(input.reversalStore, input.docId, input.threadId);
-  const groups = redoGroups(state, input.now ?? new Date()).filter(
+  const eligibleGroups = redoGroups(state, input.now ?? new Date());
+  const groups = eligibleGroups.filter(
     (group) => !input.excludeUndoUpdateSeqs?.has(group.undoUpdateSeq),
   );
   const selected = await selectRedoGroup({
     reversalStore: input.reversalStore,
     docId: input.docId,
     threadId: input.threadId,
+    eligibleGroups,
     groups,
     selection: input.selection,
   });
@@ -284,6 +286,9 @@ async function selectRedoGroup(input: {
   reversalStore: ReversalStore;
   docId: string;
   threadId: string;
+  /** Every redo group, including ones this run already planned; `last` counts over these. */
+  eligibleGroups: readonly RedoGroup[];
+  /** Groups still to plan, oldest undo first. */
   groups: readonly RedoGroup[];
   selection: ReversalSelection;
 }): Promise<
@@ -292,7 +297,21 @@ async function selectRedoGroup(input: {
 > {
   const { groups, selection } = input;
   if (selection.kind === "latest") return { ok: true, group: groups.at(-1) };
-  if (selection.kind === "last") return { ok: true, group: groups.slice(-selection.count).at(0) };
+  if (selection.kind === "last") {
+    // The N most recently undone write handles, so `last: 1` redoes what a
+    // plain redo does. `last` counts handles, the same unit as undo. A group
+    // holding any of them is redone whole; callers plan the groups oldest first.
+    const handles = new Set(
+      input.eligibleGroups
+        .flatMap((group) => group.writeIds)
+        .reverse()
+        .slice(0, selection.count),
+    );
+    return {
+      ok: true,
+      group: groups.find((group) => group.writeIds.some((handle) => handles.has(handle))),
+    };
+  }
   if (selection.kind === "all") return { ok: true, group: groups.at(0) };
   if (selection.kind === "turn") {
     if (selection.turnId === undefined) {
@@ -350,16 +369,16 @@ function selectByHandle<
       ...(targetTurnId !== undefined && targetTurnId !== null ? { scopeTurnId: targetTurnId } : {}),
     };
   }
-  const from = parseWriteHandle(selection.from);
+  const since = parseWriteHandle(selection.since);
   const to = parseWriteHandle(selection.to);
-  if (from === undefined || to === undefined || from > to) {
+  if (since === undefined || to === undefined || since > to) {
     return { ok: false, status: "invalid_write", message: "Invalid write range" };
   }
   return {
     ok: true,
     items: items.filter((item) => {
       const ordinal = parseWriteHandle(item.handle);
-      return ordinal !== undefined && ordinal >= from && ordinal <= to;
+      return ordinal !== undefined && ordinal >= since && ordinal <= to;
     }),
   };
 }
@@ -376,12 +395,12 @@ function handlesOverlapSelection(
   selection: Extract<ReversalSelection, { kind: "single" | "range" }>,
 ): boolean {
   if (selection.kind === "single") return handles.includes(selection.to);
-  const from = parseWriteHandle(selection.from);
+  const since = parseWriteHandle(selection.since);
   const to = parseWriteHandle(selection.to);
-  if (from === undefined || to === undefined) return false;
+  if (since === undefined || to === undefined) return false;
   return handles.some((handle) => {
     const ordinal = parseWriteHandle(handle);
-    return ordinal !== undefined && ordinal >= from && ordinal <= to;
+    return ordinal !== undefined && ordinal >= since && ordinal <= to;
   });
 }
 

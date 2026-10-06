@@ -18,6 +18,15 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   getDetached(lease: LiveDocumentSessionLease): DocumentSession;
   attachDetached(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
+  /**
+   * The registry drops a live room whose pending edits the server refused
+   * (4409): it revokes each lease's access, which tears the session down and
+   * clears its local copy, so the next open loads the server's state instead
+   * of replaying them. This is that drop while it runs, so a host can unbind
+   * and reopen after; `null` before a refusal and once the drop has settled,
+   * whether or not it removed the session. Never rejects.
+   */
+  whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null;
   retain(
     ownerId: string,
     leases: Iterable<LiveDocumentSessionLease>,
@@ -34,6 +43,13 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
     observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void;
   getBranchRoom(roomKey: string): DocumentSession;
+  /** Follows whichever session backs a branch room, across rebuilds; never creates one. */
+  observeBranchRoom(
+    roomKey: string,
+    observer: (snapshot: DocumentSessionSnapshot) => void,
+  ): () => void;
+  /** A fresh session for a branch room whose last one reset, synced from the server alone. */
+  rebuildBranchRoom(roomKey: string): Promise<DocumentSession>;
   retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void;
   releaseBranchRooms(ownerId: string): void;
 }

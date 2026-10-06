@@ -511,7 +511,7 @@ else
         childThreadId: ids.child,
         executionTurnId: ids.nextExecution,
         handle: "p1",
-        origin: "foreground_message",
+        origin: "message",
         deliveryMode: "direct",
         callerThreadId: ids.caller,
         callerTurnId: ids.callerTurn,

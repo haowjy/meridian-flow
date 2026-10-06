@@ -237,7 +237,7 @@ live in direct mode. Every arrow into a Y.Doc is journaled first.
   <tr>
     <td>threads and runtime</td>
     <td>The frozen <code>ThreadExecutionContext</code> and the write tool wiring.</td>
-    <td><code>agentEdit(context)</code> picks the core; <code>finalizeResponseCommit</code> closes a reply. <span class="ref"><code>composition.ts</code>, <code>lib/wired-core-tools.ts</code></span></td>
+    <td><code>agentEdit(context)</code> picks the core; <code>finalizeResponseCommit</code> closes a reply. <span class="ref"><code>composition.ts</code>, <code>lib/model-tools/response-write-lifecycle.ts</code></span></td>
   </tr>
 </table>
 </div>
@@ -345,13 +345,14 @@ every journal read: which run of history is current? Three fields carry that.
 </div>
 <p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>allocateDocumentAdmission</code>, <code>packages/database/src/schema/yjs.ts</code> (<code>document_yjs_updates_authority_admission</code> unique index), <code>adapters/drizzle-journal.ts</code> <code>read</code> and <code>compact</code></p>
 <p>
-Every live journal append runs in a transaction that first takes
+Every live journal append runs in a transaction that checks an agent write's
+grant, locks the bound grants' Works, then takes
 <code>pg_advisory_xact_lock</code> on <code>document-mutation:&lt;documentId&gt;</code>,
 then allocates the admission, inserts the row, and joins any unresolved push
 settlement for that document. That lock is the cross-process serialization
 point for live content; the in-process coordinator mutex is not
 (<a href="#writer">section 4</a>).
-<span class="ref"><code>adapters/drizzle-document-mutation-lock.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendUpdate</code></span>
+<span class="ref"><code>../../shared/document-mutation-lock.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>enterJournalSeam</code> and <code>appendUpdate</code></span>
 </p>
 <p>
 "Document authority" names the durable head and nothing else. The operation
@@ -997,7 +998,7 @@ specific write paths, and some write paths do not refresh it at all.
   </tr>
   <tr>
     <td>AI write tool outside a reply, and tool <code>undo</code>/<code>redo</code></td>
-    <td>Refreshed immediately by re-reading live. <span class="ref"><code>lib/wired-core-tools.ts</code> <code>refreshProjectionAfterToolWrite</code></span></td>
+    <td>Refreshed immediately by re-reading live. <span class="ref"><code>lib/model-tools/document-tools.ts</code> (<code>documentSync.refreshDocumentProjection</code>)</span></td>
   </tr>
   <tr>
     <td>AI writes staged in a reply</td>

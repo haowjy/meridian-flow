@@ -3,9 +3,9 @@ import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
+  Copy,
   FilePlus2,
   FolderTree,
-  History,
   Layers,
   List,
   type LucideIcon,
@@ -20,6 +20,7 @@ import {
 import { documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
+  copySourcePath,
   humanizeSkillSlug,
   stringInput,
   type ToolCommand,
@@ -51,9 +52,9 @@ export type CommandExpand =
   /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
   /** The passage the model read, as quoted prose. */
-  | "output-preview"
+  | "result-preview"
   /** The headings a skim saw, as a list. */
-  | "output-outline"
+  | "result-outline"
   /** What the model submitted, read from the tool input. */
   | "submitted-content"
   /** Curated per-tool content the registry builds itself. */
@@ -89,24 +90,24 @@ function workTenses(tool: ToolView, active: string, complete: string): ToolActiv
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   read: {
     Icon: BookOpen,
-    phrases: (tool) => documentReadTenses(tool, t`Reading`, t`Read`),
+    phrases: (tool) => documentTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-preview",
+    expand: "result-preview",
   },
   // An outline read returns heading structure, not prose. A row saying "Read"
   // over that payload claims the model saw the words.
   skim: {
     Icon: List,
-    phrases: (tool) => documentReadTenses(tool, t`Skimming`, t`Skimmed`),
+    phrases: (tool) => documentTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
-    expand: "output-outline",
+    expand: "result-outline",
   },
   create: {
     Icon: FilePlus2,
     phrases: (tool, writeMode) =>
-      documentWriteTenses(
+      documentTenses(
         tool,
         writeMode === "draft" ? t`Drafting` : t`Writing`,
         writeMode === "draft" ? t`Drafted` : t`Wrote`,
@@ -115,10 +116,20 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
     expand: "submitted-content",
   },
+  // The destination rides the row's document door, so the verb names the source
+  // and the direction: a whole-document copy reads "Copied a.md to", a block
+  // copy "Copied from a.md into". The model's `from` stays the only input read.
+  copy: {
+    Icon: Copy,
+    phrases: copyTenses,
+    failureVerb: () => t`Couldn't copy`,
+    pathlessTitle: () => t`Copied file`,
+    expand: "none",
+  },
   edit: {
     Icon: PenLine,
     phrases: (tool, writeMode) =>
-      documentWriteTenses(
+      documentTenses(
         tool,
         writeMode === "draft" ? t`Drafting` : t`Editing`,
         writeMode === "draft" ? t`Drafted` : t`Edited`,
@@ -141,13 +152,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     Icon: Redo2,
     phrases: () => tenses(t`Redoing…`, t`Redid`),
     failureVerb: () => t`Couldn't redo`,
-    pathlessTitle: null,
-    expand: "none",
-  },
-  review: {
-    Icon: History,
-    phrases: () => tenses(t`Checking recent changes…`, t`Checked recent changes`),
-    failureVerb: () => t`Couldn't check recent changes`,
     pathlessTitle: null,
     expand: "none",
   },
@@ -182,17 +186,21 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
-  invoke: {
+  // A `skill` call loads that skill's SKILL.md. The row names the skill, not
+  // the file: the writer never opens a skill body as a document.
+  skill: {
     Icon: Sparkles,
     phrases: (tool) => {
-      const slug = stringInput(toolInputObject(tool), "skillname");
+      const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
-      const skill = humanizeSkillSlug(slug);
-      return tenses(t`Invoking the ${skill} skill…`, t`Invoked the ${skill} skill`);
+      // The quotes ride inside the value: an apostrophe in an ICU message
+      // escapes the placeholder next to it.
+      const skill = `'${humanizeSkillSlug(slug)}'`;
+      return tenses(t`Invoking ${skill}…`, t`Invoked ${skill}`);
     },
     failureVerb: () => t`Couldn't run that skill`,
     pathlessTitle: null,
-    expand: "renderer",
+    expand: "none",
   },
   // Work commands manage the writer's Works, never their manuscript, and the
   // whole family wears the Work glyph (Layers — the same mark that rides
@@ -246,22 +254,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
 };
 
-function documentReadTenses(
-  tool: ToolView,
-  activeVerb: string,
-  completeVerb: string,
-): ToolActivityVocabulary {
-  const input = toolInputObject(tool);
-  const file = documentTarget(input);
-  if (!file) return tenses(`${activeVerb}…`, completeVerb);
-  const name = documentFileName(file);
-  return {
-    active: { verb: activeVerb, parameter: `${name}…` },
-    complete: { verb: completeVerb, parameter: name },
-  };
-}
-
-function documentWriteTenses(
+/** A document command's phrases, naming the document it acted on. */
+function documentTenses(
   tool: ToolView,
   activeVerb: string,
   completeVerb: string,
@@ -272,6 +266,24 @@ function documentWriteTenses(
   return {
     active: { verb: activeVerb, parameter: `${name}…` },
     complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+/** A copy's phrases: the source in the verb, the destination as the parameter. */
+function copyTenses(tool: ToolView): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const sourcePath = copySourcePath(input);
+  const destination = documentTarget(input);
+  if (!sourcePath) return documentTenses(tool, t`Copying`, t`Copied`);
+  const source = documentFileName(sourcePath);
+  const wholeDocument = stringInput(input, "command") === "copy";
+  const active = wholeDocument ? t`Copying ${source} to` : t`Copying from ${source} into`;
+  const complete = wholeDocument ? t`Copied ${source} to` : t`Copied from ${source} into`;
+  if (!destination) return tenses(`${active}…`, complete);
+  const name = documentFileName(destination);
+  return {
+    active: { verb: active, parameter: `${name}…` },
+    complete: { verb: complete, parameter: name },
   };
 }
 
@@ -309,7 +321,7 @@ export function liveToolActivityLabel(toolName: string, input: unknown): string 
     toolCallId: null,
     toolName,
     input: (input ?? null) as ToolView["input"],
-    output: null,
+    result: null,
     status: "partial",
     isError: false,
     message: null,
