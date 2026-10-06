@@ -92,9 +92,24 @@ export function ContextViewerSurfaceController({
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
       : null;
-  const workspaceRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
-  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const removalState = useContextRemovalProject(projectId);
+  const routeSelection = removalState.selection;
+  const boundDocumentId =
+    locator !== null &&
+    routeSelection.status === "bound" &&
+    routeSelection.identity.kind === "server" &&
+    routeSelection.locator.scheme === locator.scheme &&
+    routeSelection.locator.path === locator.path &&
+    routeSelection.locator.workId === locator.workId
+      ? routeSelection.identity.documentId
+      : null;
+  const workspaceRoute = resolveWorkspaceRoute({
+    tabs,
+    selectedDocumentId,
+    locator,
+    boundDocumentId,
+  });
+  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;

@@ -92,9 +92,7 @@ export function EditorReviewAddressOwner({
       workId: review.controller.workId,
       documentId: group.documentId,
       draftId: requestedDraftId,
-      // The draft list's path can predate a rename; once the address has resolved
-      // the document, the address path is its current locator.
-      contextPath: activeDocumentId && activePath ? activePath : group.contextPath,
+      contextPath: group.contextPath,
       documentName: group.documentName ?? undefined,
       isNewDocument: draft.isNewDocument === true,
     }).catch((error) => {

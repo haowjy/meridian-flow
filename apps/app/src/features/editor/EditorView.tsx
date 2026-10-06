@@ -123,7 +123,6 @@ let editorSessionOwnerSequence = 0;
 function mountIdentity(props: EditorViewProps, surface: "live" | "review"): EditorMountIdentity {
   const shared = {
     documentId: props.documentId,
-    bindingKey: props.bindingKey,
     projectId: props.projectId,
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
@@ -134,8 +133,15 @@ function mountIdentity(props: EditorViewProps, surface: "live" | "review"): Edit
     throw new Error("Review editor requires a reviewDraftId with its reviewRoomName");
   }
   return surface === "review" && reviewDraftId && reviewRoomName
-    ? { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
-    : { ...shared, surface: "live", detached: props.detached ?? false };
+    ? // A branch room is its own session: the live binding's identity (which a
+      // rename can re-mint) must not rebuild the review.
+      { ...shared, surface: "review", roomName: reviewRoomName, draftId: reviewDraftId }
+    : {
+        ...shared,
+        bindingKey: props.bindingKey,
+        surface: "live",
+        detached: props.detached ?? false,
+      };
 }
 
 export function EditorView(props: EditorViewProps) {

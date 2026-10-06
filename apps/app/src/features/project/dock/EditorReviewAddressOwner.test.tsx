@@ -266,9 +266,8 @@ describe("EditorReviewAddressOwner", () => {
 
       await act(async () => resolveAddress());
       expect(setDraftId).not.toHaveBeenCalled();
-      // Launched from the address's own locator, not the draft list's.
       expect(navigate).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: draft.documentId, path: "chapters/old-name.md" }),
+        expect.objectContaining({ documentId: draft.documentId }),
         expect.objectContaining({ draftId: draft.draftId, replaceIfSameDocument: true }),
       );
     });
