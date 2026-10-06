@@ -104,7 +104,12 @@ function launchLocator(
     return { ...routeTargetForTab(tab, requested.workId), documentId: requested.documentId };
   }
   if (addressNamesIt && addressed.kind === "document") {
-    return { ...requested, scheme: addressed.scheme, path: addressed.path };
+    // The address spells its path without the leading slash; routes, tabs and launches spell it with.
+    return {
+      ...requested,
+      scheme: addressed.scheme,
+      path: `/${canonicalDocumentPath(addressed.path)}`,
+    };
   }
   return requested;
 }
