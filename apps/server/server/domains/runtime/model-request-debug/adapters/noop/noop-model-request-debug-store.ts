@@ -5,7 +5,6 @@
 import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
-  ProviderErrorResponse,
 } from "@meridian/contracts/threads";
 import type { ModelRequestDebugCaptureInput } from "../../build-record.js";
 import type { ModelRequestDebugStore } from "../../ports/model-request-debug-store.js";
@@ -14,10 +13,6 @@ export class NoopModelRequestDebugStore implements ModelRequestDebugStore {
   readonly captureEnabled = false;
 
   capture(_input: ModelRequestDebugCaptureInput): void {
-    // intentionally empty
-  }
-
-  recordProviderError(_gatewayCallId: string, _error: ProviderErrorResponse): void {
     // intentionally empty
   }
 

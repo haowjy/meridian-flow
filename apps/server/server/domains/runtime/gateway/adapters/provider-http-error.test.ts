@@ -1,4 +1,4 @@
-/** Provider SDK errors map to one retry policy and keep the provider's response as evidence. */
+/** Provider SDK errors map to one retry policy and keep the provider's status and message as evidence. */
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,14 +61,12 @@ describe("provider HTTP failures", () => {
   it.each([
     ["OpenAI", openAI402],
     ["Anthropic", anthropic402],
-  ])("does not retry a %s 402 and keeps its status, message and body", (_provider, err) => {
-    const mapped = mapProviderHttpError(err);
-    expect(mapped).toMatchObject({
+  ])("does not retry a %s 402 and keeps its status and message", (_provider, err) => {
+    expect(mapProviderHttpError(err)).toMatchObject({
       code: "provider_error",
       retryable: false,
-      providerResponse: { status: 402, message: "Insufficient Balance" },
+      providerError: { status: 402, message: "Insufficient Balance" },
     });
-    expect(mapped.providerResponse?.body).toContain("Insufficient Balance");
   });
 
   it.each([404, 409, 413, 422])("does not retry an unnamed %i", (status) => {
@@ -87,13 +85,12 @@ describe("provider HTTP failures", () => {
     });
     const offline = mapProviderHttpError(new TypeError("fetch failed"));
     expect(offline).toMatchObject({ code: "network_error", retryable: true });
-    expect(offline.providerResponse).toBeUndefined();
+    expect(offline.providerError).toBeUndefined();
   });
 
-  it("keeps the exact body text an OpenAI or Anthropic providerFetch client received", async () => {
-    // Spacing the SDKs' parsed view would not reproduce, so only the exact text matches.
-    const body =
-      '{ "error": { "message": "Insufficient Balance", "type": "unknown_error" },\n  "request_id": "r1" }';
+  it("reads the provider's message from the body an OpenAI or Anthropic providerFetch client received", async () => {
+    // No `error` key: OpenAI's SDK alone would report "402 status code (no body)".
+    const body = '{ "message": "Insufficient Balance", "request_id": "r1" }';
     vi.stubGlobal("fetch", async () => new Response(body, { status: 402 }));
     try {
       const openai = new OpenAI({
@@ -120,7 +117,7 @@ describe("provider HTTP failures", () => {
         expect(mapProviderHttpError(err)).toMatchObject({
           code: "provider_error",
           retryable: false,
-          providerResponse: { status: 402, message: "Insufficient Balance", body },
+          providerError: { status: 402, message: "Insufficient Balance" },
         });
       }
     } finally {
@@ -147,11 +144,5 @@ describe("provider HTTP failures", () => {
         ANTHROPIC_ERROR_PATTERNS,
       ).code,
     ).toBe("invalid_request");
-  });
-
-  it("caps the stored body at 4,096 characters", () => {
-    const html = `<html>${"x".repeat(10_000)}</html>`;
-    const mapped = mapProviderHttpError({ status: 502, message: "bad gateway", error: html });
-    expect(mapped.providerResponse?.body).toHaveLength(4_096);
   });
 });

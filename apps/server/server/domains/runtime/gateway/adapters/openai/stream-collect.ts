@@ -26,7 +26,6 @@
  */
 
 import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
-import { providerErrorResponse } from "@meridian/contracts/threads";
 import type OpenAI from "openai";
 import type {
   ContentPart,
@@ -474,11 +473,7 @@ export function* eventsFromResponseStreamEvent(
               : "provider_error",
           message: response.error.message,
           retryable: false,
-          providerResponse: providerErrorResponse({
-            status: null,
-            message: response.error.message,
-            rawBody: JSON.stringify(response.error),
-          }),
+          providerError: { status: null, message: response.error.message },
           result: buildGenerateResult(acc),
         };
       }

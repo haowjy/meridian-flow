@@ -5,7 +5,6 @@ import type {
   JsonObject,
   JsonValue,
   ProviderErrorResponse,
-  ReplyProviderError,
   Turn,
 } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -291,19 +290,16 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
   };
 }
 
-/** Cap on the provider message kept on a failed reply; the full response lives in dev capture. */
+/** Cap on the provider message kept on a failed reply. */
 const REPLY_PROVIDER_MESSAGE_LIMIT = 1_000;
-
-/** A provider's failure answer and the call it answered, as the runtime hands it over. */
-export type ReplyProviderFailure = ProviderErrorResponse & { gatewayCallId: string };
 
 /**
  * Failed-reply metadata: the terminal reason, the gateway's retry verdict when the
- * failure carried one, and the provider's response when it gave one.
+ * failure carried one, and the provider's status and capped message when it answered.
  */
 export function replyFailureMetadata(
   metadata: JsonValue | null | undefined,
-  failure: { reason: string; retryable?: boolean; providerError?: ReplyProviderFailure },
+  failure: { reason: string; retryable?: boolean; providerError?: ProviderErrorResponse },
 ): JsonObject {
   const previous =
     metadata && typeof metadata === "object" && !Array.isArray(metadata)
@@ -312,22 +308,20 @@ export function replyFailureMetadata(
   const preserved = { ...previous };
   delete preserved.retryable;
   delete preserved.providerError;
+  const { providerError } = failure;
   return {
     ...preserved,
     reason: failure.reason,
     ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
-    ...(failure.providerError
-      ? { providerError: replyProviderEvidence(failure.providerError) }
+    ...(providerError
+      ? {
+          providerError: {
+            status: providerError.status,
+            message: providerError.message.slice(0, REPLY_PROVIDER_MESSAGE_LIMIT),
+          },
+        }
       : {}),
   };
-}
-
-/** The body stays in dev capture; the reply keeps status, a capped message, and the call id. */
-function replyProviderEvidence({
-  body: _body,
-  ...evidence
-}: ReplyProviderFailure): ReplyProviderError {
-  return { ...evidence, message: evidence.message.slice(0, REPLY_PROVIDER_MESSAGE_LIMIT) };
 }
 
 /** Replace failure fields without disturbing the placeholder's control metadata. */

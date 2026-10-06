@@ -52,17 +52,7 @@ function compact(event: EventRecord, full: boolean): EventRecord {
 
 function renderLine(event: EventRecord, full: boolean): string {
   const correlation = Object.entries(event.correlation ?? {})
-    .filter(([key]) =>
-      [
-        "threadId",
-        "turnId",
-        "traceId",
-        "toolName",
-        "errorCode",
-        "providerStatus",
-        "gatewayCallId",
-      ].includes(key),
-    )
+    .filter(([key]) => ["threadId", "turnId", "traceId", "toolName", "errorCode"].includes(key))
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
   const payload =

@@ -321,9 +321,8 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
-  it("keeps the provider's answer on the failed reply and in capture, beside generic copy", async () => {
+  it("keeps the provider's answer on the failed reply, beside generic copy", async () => {
     const providerMessage = `Insufficient Balance ${"x".repeat(1_200)}`;
-    const body = JSON.stringify({ error: { message: providerMessage, type: "unknown_error" } });
     const f = await fixture((deps) => {
       deps.gateway.stream = async function* () {
         yield {
@@ -331,7 +330,7 @@ describe("RunSession", () => {
           code: "provider_error",
           message: `402 ${providerMessage}`,
           retryable: false,
-          providerResponse: { status: 402, message: providerMessage, body },
+          providerError: { status: 402, message: providerMessage },
         };
       };
     });
@@ -344,16 +343,10 @@ describe("RunSession", () => {
       `402 ${providerMessage}`,
       "provider_error",
     );
-    const [captured] = f.deps.modelRequestDebug.listByTurn(f.thread.id, run.executionTurnId);
-    expect(captured?.providerError).toEqual({ status: 402, message: providerMessage, body });
     const turn = await f.repos.turns.findById(run.executionTurnId);
     expect(turn?.metadata).toMatchObject({
       retryable: false,
-      providerError: {
-        status: 402,
-        message: providerMessage.slice(0, 1_000),
-        gatewayCallId: captured?.gatewayCallId,
-      },
+      providerError: { status: 402, message: providerMessage.slice(0, 1_000) },
     });
   });
 

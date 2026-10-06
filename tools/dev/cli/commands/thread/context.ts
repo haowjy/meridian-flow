@@ -24,9 +24,7 @@ type ContextView = "readable" | "raw" | "summary";
 function formatContext(views: readonly ModelRequestDebugView[], kind: ContextView) {
   return views.map((view) => {
     const debug = summarizeModelRequestDebugView(view);
-    if (kind === "raw") {
-      return { request: view.record.request, providerError: view.record.providerError, debug };
-    }
+    if (kind === "raw") return { request: view.record.request, debug };
     if (kind === "summary") return { debug };
     return { markdown: renderModelRequestDebugMarkdown(view), debug };
   });

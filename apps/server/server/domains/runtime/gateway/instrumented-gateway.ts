@@ -46,7 +46,6 @@ function errorCodeFrom(error: unknown): string | undefined {
 
 interface CallEventMetadata {
   errorCode?: string;
-  providerStatus?: number;
   chunk?: { messageClass: StreamEvent["type"]; bytes?: number };
 }
 
@@ -75,10 +74,6 @@ function createCallEmitter(
           ...(route.provider ? { provider: route.provider } : {}),
           ...(route.model ? { model: route.model } : {}),
           ...(metadata?.errorCode ? { errorCode: metadata.errorCode } : {}),
-          // The provider's response body stays in dev capture (`thread context --call`).
-          ...(metadata?.providerStatus === undefined
-            ? {}
-            : { providerStatus: metadata.providerStatus }),
         };
         emitEvent(deps.sink, {
           level,
@@ -145,7 +140,7 @@ function streamClosePayload(input: {
 
 type StreamTerminal =
   | { type: "end"; at: number; result: GenerateResult }
-  | { type: "error"; at: number; errorCode?: string; providerStatus?: number; cause?: unknown };
+  | { type: "error"; at: number; errorCode?: string; cause?: unknown };
 
 function elapsedMs(startedAt: number, endedAt: number): number {
   return Math.max(0, Math.round(endedAt - startedAt));
@@ -184,7 +179,6 @@ function createStreamObservation(input: {
     const terminalAt = terminal?.at ?? performance.now();
     const outcome = classifyTerminalOutcome(terminal ?? { type: "none" }, input.request.signal);
     const errorCode = terminal?.type === "error" ? terminal.errorCode : undefined;
-    const providerStatus = terminal?.type === "error" ? terminal.providerStatus : undefined;
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
@@ -197,7 +191,7 @@ function createStreamObservation(input: {
         errorCode,
       }),
       route,
-      { errorCode, providerStatus },
+      { errorCode },
     );
   }
 
@@ -227,13 +221,7 @@ function createStreamObservation(input: {
           const endedAt = performance.now();
           terminal = { type: "end", result: event.result, at: endedAt };
         } else if (terminal === undefined && event.type === "error") {
-          const providerStatus = event.providerResponse?.status ?? undefined;
-          terminal = {
-            type: "error",
-            errorCode: event.code,
-            at: performance.now(),
-            ...(providerStatus === undefined ? {} : { providerStatus }),
-          };
+          terminal = { type: "error", errorCode: event.code, at: performance.now() };
         }
 
         if (input.verboseChunks) {

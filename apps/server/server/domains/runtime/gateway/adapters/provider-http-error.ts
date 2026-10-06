@@ -1,13 +1,12 @@
 /**
  * Shared provider SDK error mapping: one HTTP-status retry policy for every adapter,
- * the provider's retry headers, and the provider's own response (status, message, capped
- * body) as debug evidence.
+ * the provider's retry headers, and the provider's own status and message as debug
+ * evidence.
  *
  * Retry policy: network errors, status-less SDK failures, 408, 429 and 5xx retry. Every
  * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
  * model, 413/422 rejected payload); sending it again gets the same answer.
  */
-import { providerErrorResponse } from "@meridian/contracts/threads";
 import type { ErrorCode, ProviderErrorResponse } from "../domain/index.js";
 
 type MappedProviderError = {
@@ -15,7 +14,7 @@ type MappedProviderError = {
   message: string;
   retryable: boolean;
   retryAfterMs?: number;
-  providerResponse?: ProviderErrorResponse;
+  providerError?: ProviderErrorResponse;
 };
 
 /** Both matched against the lowercased 400 message. */
@@ -83,7 +82,11 @@ function errorMessage(err: unknown): string {
 // SDK error carries the same Headers object as the Response, so it keys the text.
 const failureBodies = new WeakMap<Headers, string>();
 
-/** `fetch` for provider SDK clients: records each failed response's exact body text. */
+/**
+ * `fetch` for provider SDK clients: records each failed response's exact body text, so
+ * the provider's message survives where the SDK's parse drops it (OpenAI's reads a body
+ * without `error` as "402 status code (no body)").
+ */
 export const providerFetch: typeof fetch = async (input, init) => {
   const response = await fetch(input, init);
   if (!response.ok) {
@@ -101,27 +104,33 @@ function exactFailureBody(err: unknown): string | undefined {
   return headers instanceof Headers ? failureBodies.get(headers) : undefined;
 }
 
+function bodyMessage(body: unknown): string | undefined {
+  const fields = record(body);
+  if (typeof fields?.message === "string") return fields.message;
+  const nested = record(fields?.error)?.message;
+  return typeof nested === "string" ? nested : undefined;
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * The provider's response: the exact body text when the client used `providerFetch`,
- * otherwise the SDK's parsed view (OpenAI-shaped SDKs keep the body's `error`
- * object, Anthropic the whole body). Absent when the SDK never received a response.
+ * The provider's status and message, read from the exact body when the client used
+ * `providerFetch`, otherwise from the SDK's parsed view (OpenAI-shaped SDKs keep only
+ * the body's `error`). Absent when the SDK never received a response.
  */
-function providerResponseOf(err: unknown): ProviderErrorResponse | undefined {
+function providerErrorOf(err: unknown): ProviderErrorResponse | undefined {
   const status = httpStatus(err);
-  const parsed = record(err)?.error;
-  if (status === undefined && parsed === undefined) return undefined;
-  const message = errorMessage(err);
-  const nested = record(parsed);
-  const providerMessage =
-    typeof nested?.message === "string"
-      ? nested.message
-      : typeof record(nested?.error)?.message === "string"
-        ? String(record(nested?.error)?.message)
-        : message;
-  const rawBody =
-    exactFailureBody(err) ??
-    (parsed === undefined ? message : typeof parsed === "string" ? parsed : JSON.stringify(parsed));
-  return providerErrorResponse({ status: status ?? null, message: providerMessage, rawBody });
+  const exact = exactFailureBody(err);
+  const parsed = exact === undefined ? record(err)?.error : parseJson(exact);
+  if (status === undefined && parsed === undefined && exact === undefined) return undefined;
+  const message = bodyMessage(parsed) ?? (exact?.trim() || errorMessage(err));
+  return { status: status ?? null, message };
 }
 
 export function mapProviderHttpError(
@@ -158,7 +167,7 @@ export function mapProviderHttpError(
     }
     return { code: "provider_error", message, retryable: true };
   })();
-  const providerResponse = providerResponseOf(err);
+  const providerError = providerErrorOf(err);
   const headers = responseHeaders(err);
   const retryAfter = retryAfterMs(headers, Date.now());
   const shouldRetry = header(headers, "x-should-retry")?.trim().toLowerCase();
@@ -166,6 +175,6 @@ export function mapProviderHttpError(
     ...mapped,
     ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
     ...(shouldRetry === "false" ? { retryable: false } : {}),
-    ...(providerResponse ? { providerResponse } : {}),
+    ...(providerError ? { providerError } : {}),
   };
 }

@@ -332,7 +332,7 @@ export type StreamEvent =
       retryable: boolean;
       retryAfterMs?: number;
       /** Present when the provider answered; absent for network, timeout, and local failures. */
-      providerResponse?: ProviderErrorResponse;
+      providerError?: ProviderErrorResponse;
     };
 
 /**
