@@ -18,16 +18,16 @@ CREATE TABLE "agent_namespace_changes" (
 --> statement-breakpoint
 ALTER TABLE "agent_edit_mutations" DROP CONSTRAINT "agent_edit_mutations_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
+ALTER TABLE "agent_edit_mutations" RENAME COLUMN "authoring_response_id" TO "edit_scope_id"; /* -- migration-lint: skip RENAME_COLUMN (no deployed data; every read renamed in the same change) */--> statement-breakpoint
 ALTER TABLE "document_yjs_reversals" DROP CONSTRAINT "document_yjs_reversals_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
-ALTER TABLE "document_yjs_reversals" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" RENAME COLUMN "authoring_response_id" TO "edit_scope_id"; /* -- migration-lint: skip RENAME_COLUMN (no deployed data; every read renamed in the same change) */--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" DROP CONSTRAINT "document_yjs_updates_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
-ALTER TABLE "document_yjs_updates" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
-ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_draft_branch_id_document_branches_id_fk" FOREIGN KEY ("draft_branch_id") REFERENCES "public"."document_branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_namespace_changes_document_thread_w_id" ON "agent_namespace_changes" USING btree ("document_id","thread_id","w_id");--> statement-breakpoint
-CREATE INDEX "agent_namespace_changes_thread_turn" ON "agent_namespace_changes" USING btree ("thread_id","turn_id");
+ALTER TABLE "document_yjs_updates" RENAME COLUMN "authoring_response_id" TO "edit_scope_id"; /* -- migration-lint: skip RENAME_COLUMN (no deployed data; every read renamed in the same change) */--> statement-breakpoint
+ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action; /* -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (table created empty in this migration; nothing to scan) */--> statement-breakpoint
+ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action; /* -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (table created empty in this migration; nothing to scan) */--> statement-breakpoint
+ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action; /* -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (table created empty in this migration; nothing to scan) */--> statement-breakpoint
+ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_draft_branch_id_document_branches_id_fk" FOREIGN KEY ("draft_branch_id") REFERENCES "public"."document_branches"("id") ON DELETE cascade ON UPDATE no action; /* -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (table created empty in this migration; nothing to scan) */--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_namespace_changes_document_thread_w_id" ON "agent_namespace_changes" USING btree ("document_id","thread_id","w_id"); /* -- migration-lint: skip INDEX_NOT_CONCURRENTLY (table created empty in this migration; nothing to scan) */--> statement-breakpoint
+CREATE INDEX "agent_namespace_changes_thread_turn" ON "agent_namespace_changes" USING btree ("thread_id","turn_id"); /* -- migration-lint: skip INDEX_NOT_CONCURRENTLY (table created empty in this migration; nothing to scan) */
