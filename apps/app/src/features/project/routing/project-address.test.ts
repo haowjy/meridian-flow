@@ -141,6 +141,27 @@ describe("readable project addresses", () => {
     });
   });
 
+  it("states No Work on a review address so a copied link opens its own Work's draft", () => {
+    // A live No Work document keeps a clean URL (history state pins it); a review address is
+    // shared, so it names its Work itself. `?work=` reads back as No Work, never as absent.
+    const live = parse(`${P}/editor/manuscript/chapter.md?work=`);
+    if (live.kind !== "valid") throw new Error(live.reason);
+    const review = { ...live.address, draftId: "draft-one" };
+    expect(projectAddressHref(review)).toBe(
+      `${P}/editor/manuscript/chapter.md?work=&draft=draft-one`,
+    );
+    expect(parse(projectAddressHref(review))).toMatchObject({
+      kind: "valid",
+      address: { work: { kind: "none" }, draftId: "draft-one" },
+    });
+    // The address already says No Work, so no history-state pin repeats it (and no write is needed).
+    expect(projectAddressState(review)).toMatchObject({ meridianProjectEmptySelection: undefined });
+    expect(projectAddressState(live.address).meridianProjectEmptySelection).toBeDefined();
+    expect(projectAddressHref({ ...live.address, work: { kind: "none" } })).toBe(
+      `${P}/editor/manuscript/chapter.md`,
+    );
+  });
+
   it("preserves absent, explicitly empty, and malformed editing contexts", () => {
     expect(parse(`${P}/editor`)).toMatchObject({ address: { work: { kind: "absent" } } });
     expect(parse(`${P}/editor?work=`)).toMatchObject({

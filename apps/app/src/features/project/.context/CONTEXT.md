@@ -456,7 +456,11 @@ are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
 `?draft=` belongs only to a document destination. It names a pending draft in
-the addressed Work and document, never a separate document. A cross-document
+the addressed Work and document, never a separate document. A review address
+is self-describing: the draft belongs to exactly one Work, so a No Work review
+states `?work=` (empty) instead of leaving it to history state or to whichever
+Work this browser last selected. A copied No Work review link therefore opens the
+same draft after any Work selection. A live No Work document keeps its clean URL. A cross-document
 review launch pushes history; a launch on the current document replaces the
 entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
 Work: the same path under another Work is a different destination. The review address owner replaces the current

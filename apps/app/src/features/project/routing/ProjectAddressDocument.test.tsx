@@ -374,7 +374,8 @@ it("keeps a draft-only document out of the live view and repairs only its review
       expect(openTab).not.toHaveBeenCalled();
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
-      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?draft=draft-1`);
+      // A No Work review address names its Work itself, so a copy opens the same draft.
+      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&draft=draft-1`);
     },
   );
   navigation.dispose();
