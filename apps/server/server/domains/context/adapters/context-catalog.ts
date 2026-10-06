@@ -34,6 +34,7 @@ import {
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type {
   ContextCatalog,
   ContextCatalogMutationPort,
@@ -359,6 +360,8 @@ export function createDrizzleContextCatalog(
     manifestMembership?: ManifestMembershipResolver;
     eventSink?: EventSink;
     delay?: (milliseconds: number) => Promise<void>;
+    /** Owns the post-commit repair so shutdown and test resets can drain it. */
+    backgroundTasks?: DetachedWorkTracker;
   } = {},
 ): ContextCatalog &
   ContextCatalogMutationPort &
@@ -668,10 +671,14 @@ export function createDrizzleContextCatalog(
             throw cause;
           }
         };
+        // Tracked from launch, not from the immediate: a drain between the two must wait.
         const launchRepair = () => {
-          setImmediate(() => {
-            void repair().catch(() => undefined);
-          });
+          void (options.backgroundTasks ?? processDetachedWork).track(
+            new Promise<void>((resolve) => {
+              setImmediate(() => resolve(repair().catch(() => undefined)));
+            }),
+            "context catalog repair",
+          );
         };
         if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
         await repair();

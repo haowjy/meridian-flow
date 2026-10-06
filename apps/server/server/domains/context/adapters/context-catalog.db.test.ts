@@ -22,6 +22,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
+import { createDetachedWorkTracker } from "../../runtime/detached-work.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDocumentAddressResolver } from "../document-address.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
@@ -340,6 +341,53 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "DeferredRefreshFailure",
         }),
       );
+    });
+
+    it("registers the post-commit repair with the background tracker from launch until it settles", async () => {
+      const db = database.current;
+      await seedProject(db, "catalog-repair-tracked");
+      await db.insert(documents).values({
+        id: DOCUMENT_ID,
+        contextSourceId: SOURCE_ID,
+        name: "chapter",
+        extension: "md",
+      });
+      let releaseMembership!: () => void;
+      const membership = new Promise<void>((resolve) => {
+        releaseMembership = resolve;
+      });
+      const backgroundTasks = createDetachedWorkTracker();
+      const catalog = createDrizzleContextCatalog(db, undefined, {
+        backgroundTasks,
+        delay: async () => {},
+        manifestMembership: {
+          async resolveManifestMembership() {
+            await membership;
+            throw new Error("manifest offline");
+          },
+        },
+      });
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db)
+          .update(documents)
+          .set({ name: "renamed" })
+          .where(eq(documents.id, DOCUMENT_ID));
+        await catalog.refreshSources([SOURCE_ID]);
+        expect(backgroundTasks.pendingCount).toBe(0);
+      });
+
+      // The repair has not started (it runs on the next turn), yet a drain must already wait for it.
+      expect(backgroundTasks.pendingTasks).toEqual(["context catalog repair"]);
+      const drained = backgroundTasks.drain();
+      let settled = false;
+      void drained.then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(settled).toBe(false);
+      releaseMembership();
+      await expect(drained).resolves.toBe(true);
+      expect(backgroundTasks.pendingCount).toBe(0);
     });
 
     it("rolls catalog state back and excludes manifests and content-only changes", async () => {
