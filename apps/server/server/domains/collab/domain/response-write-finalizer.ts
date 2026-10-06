@@ -155,7 +155,7 @@ export function createResponseWriteFinalizer(input: {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
           direction: "undo",
-          actor: { type: "agent", responseId },
+          actor: { type: "agent", responseId, turnId: ctx.turnId },
         },
       );
       return { stagedCreates: result.stagedCreates };

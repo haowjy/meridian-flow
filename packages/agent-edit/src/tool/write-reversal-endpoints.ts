@@ -115,23 +115,22 @@ export function createWriteReversalEndpoints(deps: {
       direction,
       selection,
       filePath: address.filePath,
-      actor:
-        context.actor?.kind === "human"
-          ? { type: "user", userId: context.actor.userId }
-          : {
-              type: "agent",
-              ...((context.actor?.kind === "agent" ? context.actor.responseId : context.responseId)
-                ? {
-                    responseId:
-                      context.actor?.kind === "agent"
-                        ? context.actor.responseId
-                        : context.responseId,
-                  }
-                : {}),
-            },
+      actor: reversalActorFor(context),
       interactionContext: context.interactionContext,
     });
     return result;
+  }
+
+  function reversalActorFor(context: WriteContext): ReversalActor {
+    if (context.actor?.kind === "human") return { type: "user", userId: context.actor.userId };
+    const agent = context.actor?.kind === "agent" ? context.actor : undefined;
+    const responseId = agent ? agent.responseId : context.responseId;
+    const turnId = agent ? agent.turnId : context.turnId;
+    return {
+      type: "agent",
+      ...(responseId ? { responseId } : {}),
+      ...(turnId ? { turnId } : {}),
+    };
   }
 
   async function runHostedReversal(

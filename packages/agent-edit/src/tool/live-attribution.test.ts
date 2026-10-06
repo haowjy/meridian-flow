@@ -63,3 +63,34 @@ describe("live attribution", () => {
     expect(saved.documents[0]?.concurrentEdits).toBeUndefined();
   });
 });
+
+describe("reversal rows", () => {
+  it("credits another thread's undo to its agent turn, not to the writer", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+    const threadA = { sessionId: "session-a", threadId: "thread-a" };
+    const threadB = { sessionId: "session-b", threadId: "thread-b" };
+    await ctx.core.read({ file: "chapter.md" }, threadA);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Gamma.", content: "Gamma agent." },
+      { ...threadA, turnId: "turn-a-write" },
+    );
+    await ctx.core.read({ file: "chapter.md" }, threadB);
+    const undone = await ctx.core.write(
+      { command: "undo", file: "chapter.md" },
+      { ...threadA, turnId: "turn-a-undo" },
+    );
+    const responseId = "response-b";
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Alpha model." },
+      { ...threadB, turnId: "turn-b", responseId },
+    );
+    const saved = await ctx.core.commitResponse(responseId);
+
+    expectOutcome(undone, "reversed");
+    const undoRow = (await ctx.journal.read("chapter.md")).updates.at(-2);
+    expect(undoRow?.meta).toMatchObject({ origin: "system", actorTurnId: "turn-a-undo" });
+    expect(saved.documents[0]?.concurrentEdits?.human ?? []).toEqual([]);
+    expect(saved.documents[0]?.concurrentEdits?.agent).toHaveLength(1);
+  });
+});

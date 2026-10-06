@@ -789,6 +789,9 @@ export function createWriteReversal(deps: {
                 ...(input.actor.type === "agent" && input.actor.responseId
                   ? { authoringResponseId: input.actor.responseId }
                   : {}),
+                ...(input.actor.type === "agent" && input.actor.turnId
+                  ? { actorTurnId: input.actor.turnId }
+                  : {}),
                 seq: 0,
               },
             },

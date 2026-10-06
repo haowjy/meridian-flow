@@ -1440,6 +1440,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             origin: "system",
             reversalActor: actor,
             authoringResponseId: records[0]?.authoringResponseId,
+            ...(actor.type === "agent" && actor.turnId ? { actorTurnId: actor.turnId } : {}),
             seq: 0,
           })
         ).seq;

@@ -210,6 +210,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         ...(records[0]?.authoringResponseId
           ? { authoringResponseId: records[0].authoringResponseId }
           : {}),
+        ...(actor.type === "agent" && actor.turnId ? { actorTurnId: actor.turnId } : {}),
         seq: 0,
       },
       storedAt,

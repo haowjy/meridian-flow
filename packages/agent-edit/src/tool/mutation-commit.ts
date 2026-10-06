@@ -654,9 +654,18 @@ async function journaledUpdatesIn(
     .map((row) => ({ update: row.update, origin: journalOrigin(row.meta) }));
 }
 
-/** A journal row's origin as concurrent attribution reads it (`UpdateMeta.origin`). */
+/**
+ * A journal row's origin as concurrent attribution reads it (`UpdateMeta.origin`).
+ * Undo and redo rows are stored as `system`; their reversal actor says whose they are.
+ */
 function journalOrigin(meta: UpdateMeta): ConcurrentUpdateOrigin {
   if (meta.origin === "link-update") return { type: "link-update" };
+  if (meta.reversalActor?.type === "agent") {
+    return { type: "agent", actorTurnId: meta.actorTurnId ?? "reversal" };
+  }
+  if (meta.reversalActor?.type === "user") {
+    return { type: "human", userId: meta.reversalActor.userId };
+  }
   if (meta.origin.startsWith("agent:")) {
     return { type: "agent", actorTurnId: meta.actorTurnId ?? meta.origin.slice("agent:".length) };
   }

@@ -57,8 +57,8 @@ export interface CompactionResult {
 export type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 
 export type ReversalActor =
-  | { type: "agent"; responseId?: string }
-  | { type: "user"; userId: string };
+  /** `turnId` is the turn that asked for the reversal; its rows carry it as `actorTurnId`. */
+  { type: "agent"; responseId?: string; turnId?: string } | { type: "user"; userId: string };
 
 /**
  * Durable metadata linking an agent turn to its persisted undo update.
