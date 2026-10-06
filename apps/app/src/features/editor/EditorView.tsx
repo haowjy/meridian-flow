@@ -516,6 +516,7 @@ function ActiveSessionEditorView({
           mounts through the host above. */}
         <ProjectLinkRuntime
           editor={editor}
+          documentId={documentId}
           baseUri={holderUri}
           index={linkableDocuments}
           active={active}

@@ -61,7 +61,7 @@ export function LeftSidebar({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId });
+    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
   };
 
   return (

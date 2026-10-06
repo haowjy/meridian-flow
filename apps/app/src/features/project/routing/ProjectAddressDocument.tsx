@@ -9,10 +9,11 @@ import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
-import { contextTabFromFile, editorTabWorkId } from "../context/context-tab-from-file";
+import { contextTabFromFile } from "../context/context-tab-from-file";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
-import { type ProjectAddress, projectAddressHref, workIdSelection } from "./project-address";
+import { type ProjectAddress, projectAddressHref } from "./project-address";
+import { workSelectionFor } from "./project-address-resolution";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -30,6 +31,7 @@ export function ProjectAddressDocument({
   result,
   localFile,
   workId,
+  noWorkId,
   navigation,
   onAdmission,
 }: {
@@ -40,6 +42,7 @@ export function ProjectAddressDocument({
   result: DocumentAddressResult | undefined;
   localFile?: CatalogFile;
   workId: string | null;
+  noWorkId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
@@ -51,7 +54,7 @@ export function ProjectAddressDocument({
   const admissionFingerprint = JSON.stringify({ result, localFile });
   useEffect(() => {
     const { address, result, localFile } = admissionInput.current;
-    if (!navigation || !result || result.kind === "unavailable") return;
+    if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
     const identity = { href, key: entryKey, documentId: result.document.documentId };
@@ -66,16 +69,7 @@ export function ProjectAddressDocument({
       return;
     }
     const scope = document.scope;
-    // A No Work Scratch tab carries no Work, so it stays in the No Work
-    // Editor's strip; the address below still carries the row's id, which is
-    // that document's identity.
-    const { authority } = result.document;
-    const tabWorkId =
-      scope.kind !== "work"
-        ? workId
-        : authority.kind === "work"
-          ? editorTabWorkId(authority)
-          : null;
+    const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
     void (async () => {
       const installed = openTab(
         projectId,
@@ -98,10 +92,12 @@ export function ProjectAddressDocument({
           scheme: uri.value.scheme,
           path: document.path.join("/"),
         },
-        work: workIdSelection(
+        work: workSelectionFor(
+          { kind: "document", scheme: uri.value.scheme, path: document.path.join("/") },
           scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
             ? scope.workId
             : workId,
+          noWorkId,
         ),
       };
       if (projectAddressHref(next) !== href) {
@@ -119,6 +115,16 @@ export function ProjectAddressDocument({
       if (!controller.signal.aborted && navigation.isCurrent(ticket)) publish("error");
     });
     return () => controller.abort();
-  }, [projectId, href, entryKey, admissionFingerprint, workId, navigation, openTab, onAdmission]);
+  }, [
+    projectId,
+    href,
+    entryKey,
+    admissionFingerprint,
+    workId,
+    noWorkId,
+    navigation,
+    openTab,
+    onAdmission,
+  ]);
   return null;
 }

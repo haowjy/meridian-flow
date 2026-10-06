@@ -103,7 +103,7 @@ export function convergeThreadWorkBinding(
       const catalog = client.getQueryData<ListWorksResponse>(
         projectQueryKeys.works(signal.projectId),
       );
-      const work = workFromSnapshot(catalog, projectedWorkId);
+      const work = projectedWorkId ? workFromSnapshot(catalog, projectedWorkId) : null;
       client.setQueryData(cursorKey, { seq, workId: work?.id ?? projectedWorkId });
       if (work) {
         patchThreadInProjectCaches(client, signal.threadId, {

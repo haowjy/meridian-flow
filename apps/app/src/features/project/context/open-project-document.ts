@@ -1,4 +1,3 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -28,7 +27,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 
 import {
   isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -193,8 +191,8 @@ export class ProjectDocumentLiveOpener {
 
 export type OpenProjectDocumentRequest = {
   documentId: string;
-  /** Host Work context for project-scoped files; resolved Work/no-Work authority wins. */
-  workId?: string | null;
+  /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
+  workId?: string;
   disposition?: "current" | "background";
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
@@ -272,7 +270,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId = null, disposition = "current", signal }: OpenProjectDocumentRequest,
+    { documentId, workId, disposition = "current", signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -395,18 +393,12 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string;
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
-    routeWorkId: string | null;
+    routeWorkId: string | undefined;
     disposition: "current" | "background";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const uri = parseContextUri(input.file.uri);
-    const tabWorkId =
-      isWorkScopedProjectContextScheme(input.scheme) &&
-      uri.ok &&
-      uri.value.authority.kind === "none"
-        ? null
-        : input.routeWorkId;
+    const tabWorkId = input.routeWorkId;
     const tab = isEditorScheme(input.scheme)
       ? contextTabFromFile(input.scheme, input.file, tabWorkId)
       : undefined;

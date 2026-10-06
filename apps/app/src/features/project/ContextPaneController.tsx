@@ -33,7 +33,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
-  editorWorkId: string | null;
+  editorWorkId: string;
   /** The Editor's Work; its archived state makes its files read-only. */
   editorWork: Work | null;
   localDocumentId?: string;
@@ -83,7 +83,7 @@ export function ContextViewerSurfaceController({
   const postApplyCommands = useOptionalProjectDraftApplyRecovery();
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
+  const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId];
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
@@ -95,7 +95,7 @@ export function ContextViewerSurfaceController({
   const workspaceRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
   const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const removalState = useContextRemovalProject(projectId);
-  const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;
+  const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;
 
@@ -123,7 +123,7 @@ export function ContextViewerSurfaceController({
     const routedFile = routed?.kind === "file" ? routed : null;
     if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
       if (workspaceRoute.identity.kind === "server") {
-        selectTab(projectId, routeWorkId ?? "", workspaceRoute.tab.documentId);
+        selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId);
       }
       contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
     } else if (workspaceRoute.kind === "materialized-local") {
@@ -381,7 +381,12 @@ export function ContextViewerSurfaceController({
 
   useEffect(() => {
     for (const tab of tabs) {
-      const projection = projectResourceTab(projectId, tab, resourceProjection.records);
+      const projection = projectResourceTab(
+        projectId,
+        tab,
+        resourceProjection.records,
+        resourceProjection.folders,
+      );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
         void availability
@@ -436,6 +441,7 @@ export function ContextViewerSurfaceController({
     projectId,
     reconcileResourceTab,
     resourceProjection.records,
+    resourceProjection.folders,
     routeWorkId,
     selectedDocumentId,
     tabs,
@@ -508,14 +514,14 @@ export function ContextViewerSurfaceController({
         if (
           identityCommitMayNavigate(
             ownership,
-            getContextTabs(projectId).selectedTabIdByWork[routeWorkId ?? ""],
+            getContextTabs(projectId).selectedTabIdByWork[routeWorkId],
             documentId,
           )
         ) {
           onOpenContextTarget({
             path: next.path,
             scheme: next.scheme,
-            workId: next.routeWorkId,
+            workId: next.routeWorkId ?? undefined,
           });
         }
       }}

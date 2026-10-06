@@ -67,9 +67,10 @@ pointer, and calls into it.
   Registering the port starts a generation that owns its answers, its one
   question per href, its queue, and its in-flight counter; a question settles
   against the generation that asked it, never against whatever is waiting under
-  that href now. The app registers again when the scope or the project's
-  document catalog changes, so there is no `refresh`-shaped verb to call and no
-  reason for a mutation site to reach in here. A question a click waits on
+  that href now. The app registers again when the scope, the project's
+  document catalog, or the holding document's text changes, so there is no
+  `refresh`-shaped verb to call and no reason for a mutation site to reach in
+  here. A question a click waits on
   (`resolve()`) is carried into the next generation and asked again; one only
   the decorations asked is dropped with its generation.
 - **No resolution is ever stored.** The state rides a decoration, not a schema

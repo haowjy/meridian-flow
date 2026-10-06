@@ -212,6 +212,7 @@ export type MarkdownDocumentStore = {
 };
 
 export type DocumentProjectionRefresher = {
+  rewriteDocumentLinks: import("./domain/ports/document-link-rewrite.js").RewriteDocumentLinks;
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };

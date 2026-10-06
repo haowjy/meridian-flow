@@ -15,8 +15,22 @@ export interface ResolveDocumentLinkInput {
   userId: string;
   workId?: string | null;
   target: DocumentLinkTarget;
+  holder?: { documentId: string; href: string };
 }
 
 export interface DocumentLinkResolver {
   resolve(input: ResolveDocumentLinkInput): Promise<ResolvedDocumentLink | null>;
+}
+
+/** A present redirect suppresses address fallback even when its target is unavailable. */
+export interface DocumentLinkHistory {
+  redirect(input: ResolveDocumentLinkInput): Promise<{ uri: string | null } | null>;
+  previous(
+    input: ResolveDocumentLinkInput,
+    address: {
+      scope: import("@meridian/contracts/protocol").CatalogScope;
+      scheme: import("@meridian/contracts").ContextUriScheme;
+      path: string;
+    },
+  ): Promise<string | null>;
 }

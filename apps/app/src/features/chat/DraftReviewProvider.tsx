@@ -128,6 +128,7 @@ function useDraftReviewScopeOwner(
     `draft-review-projection:${++reviewProjectionOwnerSequence}`,
   );
   const effectiveProjectId = projectId ?? "";
+  // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
   const rawGroups = drafts.groups ?? [];

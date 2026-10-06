@@ -4,11 +4,11 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 
 ## Link navigation versus editor admission
 
-Resolved No Work survives routing in browser-entry state without an empty query parameter. Work-capable tabs without a
-`workId` belong to No Work; viewer reads and route matching must not inherit the
-host Chat Work. Nullable authority is ready for Context bootstrap and removal
-host registration, not a loading/missing-Work state. No-Work server tabs use
-route selection; the selected-tab map uses the empty-string key for shared project scope.
+The ready Editor Work and Work-scoped tabs carry their Work row id, including
+No Work. Viewer reads and route matching use that ownership, never the host
+Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
+removal host. The selected-tab map is keyed by Work row id; project-scoped
+files retain the Editor's Work context.
 
 `ProjectDocumentNavigationAdapter` opens both tracked editors and existing
 read-only Context viewers through the one stable-ID opener. Its lower-level

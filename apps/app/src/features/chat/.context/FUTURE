@@ -16,14 +16,10 @@
   until the next catalog change or a reload. Refresh on a document lifecycle
   event instead of the catalog projection when one exists.
 
-- `chatLinkScope`'s `worksSettled` in `useChatLinkFollowing.ts` misreads two
-  `useWorks` statuses. `disabled` (the project's creation is pending or
-  failed) reads as not settled, so in a project whose creation failed a link
-  click stays on "checking" until Cancel. `error` reads as settled with no
-  No Work row, so a No Work thread's scope is `{ workId: null }` until a
-  refetch recovers and names the row; the follower reads that as a Work change
-  and drops a click in flight. Both are hard to reach; treat `disabled` as
-  settled-without-Works, and key the No Work scope on one stable value.
+- `chatLinkScope` treats `useWorks` status `disabled` as pending. In a
+  project whose creation failed, a link click stays on "checking" until Cancel.
+  Distinguish pending creation from failed creation so the latter can report
+  failure without guessing a Work.
 
 - Spawn/agent UI follow-ups stay tracked in the docs work item
   ([`complete-implementation-todo.md`](https://github.com/haowjy/meridian-flow-docs/blob/main/work/implement-agents/design/complete-implementation-todo.md#milestone-3)),
