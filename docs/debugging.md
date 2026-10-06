@@ -82,8 +82,6 @@ Contract:
   result can name the run's first turn with a null `finalText` instead of the
   reply that answered: read the answer with `./mf thread view`
   ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
-- `thread view` prints a failed reply's provider status and message
-  ([Provider Failures](#provider-failures)).
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
@@ -141,31 +139,11 @@ its status and message:
   provider error (402): Insufficient Balance
 ```
 
-- **The failed reply** keeps `metadata.providerError`: `{ status, message }`,
-  with the provider's message capped at 1,000 characters. It is owner-scoped
-  like the transcript and survives restarts. Beside it, `metadata.retryable`
-  is the failure's own retry verdict when it carried one; `false` with a
-  `providerError` means resending fails the same way. The app renders that
-  reply as a provider-declined block with no Retry: "The AI provider turned
-  this request down. Trying again won't help until that's fixed." on the
-  latest turn, and only the first sentence in history. It never shows the
-  provider's message. `thread view` truncates the message to 300 characters;
-  `--full` prints all of it. `turn.error` stays the writer-facing copy.
-- **The message** is read from the response text exactly as the provider sent
-  it: provider SDK clients use `providerFetch`, which keeps a failed
-  response's text before the SDK parses it.
-- **Server events** carry only `errorCode` and `gatewayCallId`. Provider text
-  never enters `EventSink`, JSONL, or model context.
-
-`status` is null when the provider reported the failure inside a successful
-stream (OpenAI Responses `response.failed`). Network failures and timeouts
-have no provider response.
-
-Retry policy: the gateway retries network failures, failures with no response,
-408, 429, and 5xx. Any other 4xx (402 out of balance, 404, 409, 413, 422) is the
-provider refusing the request, so it fails on the first attempt with
-`provider_error` (or the code it maps to: `auth_error`, `invalid_request`,
-`context_overflow`, `content_filtered`).
+The failed reply's `metadata.providerError` is `{ status, message }`, with
+the message capped at 1,000 characters; `status` is null for a failure reported
+inside the stream. Server events keep only `errorCode`, so provider text never
+enters `EventSink`, JSONL, or model context. The retry policy is in the
+[gateway context](../apps/server/server/domains/runtime/gateway/.context/CONTEXT.md#provider-errors).
 
 ## Debug Gate
 
