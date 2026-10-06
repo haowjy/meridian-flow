@@ -56,6 +56,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
+import { captureReview, FrozenReview, type FrozenReviewMarkup } from "./FrozenReview";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
@@ -156,6 +157,11 @@ export function EditorView(props: EditorViewProps) {
   // The review mount whose editor exists. Until then the live editor stays on
   // screen, so entering review never shows an empty body.
   const [paintedReviewKey, setPaintedReviewKey] = useState<string | null>(null);
+  // The painted review while its refused room is rebuilt: an inert copy, so neither the
+  // live prose nor an empty shell shows under a review the writer is still in.
+  const [replacedReview, setReplacedReview] = useState<FrozenReviewMarkup | null>(null);
+  const reviewHostRef = useRef<HTMLDivElement | null>(null);
+  const reviewPaintedRef = useRef(false);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
@@ -163,6 +169,7 @@ export function EditorView(props: EditorViewProps) {
     if (!inReview) {
       setBoundSession(null);
       setPaintedReviewKey(null);
+      setReplacedReview(null);
       return;
     }
     const ownerId = sessionOwnerIdRef.current;
@@ -188,11 +195,17 @@ export function EditorView(props: EditorViewProps) {
         // Only the refused characters are lost: the review stays open on a
         // fresh session synced from the server.
         rebuilding = true;
-        // Unbind before the retired session's Y.Doc is destroyed under the editor.
+        // Hold what is painted, then unbind before the retired session's Y.Doc is destroyed
+        // under the editor. A replacement still waiting to paint keeps the copy already held.
+        if (reviewPaintedRef.current) {
+          const held = captureReview(reviewHostRef.current);
+          if (held) setReplacedReview(held);
+        }
         setBoundSession(null);
-        void registry
-          .rebuildBranchRoom(roomKey)
-          .then(setBoundSession, () => props.onReviewSessionUnavailable?.());
+        void registry.rebuildBranchRoom(roomKey).then(setBoundSession, () => {
+          setReplacedReview(null);
+          props.onReviewSessionUnavailable?.();
+        });
         return;
       }
       if (
@@ -211,11 +224,18 @@ export function EditorView(props: EditorViewProps) {
   const reviewKey =
     inReview && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
   const reviewVisible = reviewSession !== null && paintedReviewKey === reviewKey;
+  reviewPaintedRef.current = reviewVisible;
+  // Until the replacement paints, the copy stands in for the review it replaces.
+  const replacing = inReview && !reviewVisible && replacedReview !== null;
   // With no live editor underneath, the branch's own shell (or notice) is all
   // there is to see, so it shows from its first render.
-  const reviewShown = reviewVisible || !liveSession;
+  const reviewShown = reviewVisible || (!liveSession && !replacing);
 
-  if (!liveSession && !reviewSession) return <PendingEditorShell {...props} />;
+  useEffect(() => {
+    if (reviewVisible) setReplacedReview(null);
+  }, [reviewVisible]);
+
+  if (!liveSession && !reviewSession && !replacing) return <PendingEditorShell {...props} />;
 
   // The one place an editor's lifetime is decided. Every input a session lookup
   // reads is part of its key, so a session swap always arrives with a fresh
@@ -226,7 +246,7 @@ export function EditorView(props: EditorViewProps) {
   return (
     <>
       {liveSession ? (
-        <div className={reviewVisible ? "hidden" : "contents"}>
+        <div className={reviewVisible || replacing ? "hidden" : "contents"}>
           <SessionEditorView
             key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
             {...props}
@@ -238,8 +258,9 @@ export function EditorView(props: EditorViewProps) {
           />
         </div>
       ) : null}
+      {replacing && replacedReview ? <FrozenReview markup={replacedReview} /> : null}
       {reviewSession && reviewKey ? (
-        <div className={reviewShown ? "contents" : "hidden"}>
+        <div ref={reviewHostRef} className={reviewShown ? "contents" : "hidden"}>
           <SessionEditorView
             key={reviewKey}
             {...props}
