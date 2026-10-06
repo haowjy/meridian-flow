@@ -321,14 +321,16 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
-  it("keeps a provider cause diagnostic while storing generic reply copy", async () => {
+  it("keeps the provider's answer on the failed reply, beside generic copy", async () => {
+    const providerMessage = `Insufficient Balance ${"x".repeat(1_200)}`;
     const f = await fixture((deps) => {
       deps.gateway.stream = async function* () {
         yield {
           type: "error",
           code: "provider_error",
-          message: "provider credentials were rejected",
+          message: `402 ${providerMessage}`,
           retryable: false,
+          providerError: { status: 402, message: providerMessage },
         };
       };
     });
@@ -338,9 +340,14 @@ describe("RunSession", () => {
     await expectDiagnosticFailure(
       f,
       run.executionTurnId,
-      "provider credentials were rejected",
+      `402 ${providerMessage}`,
       "provider_error",
     );
+    const turn = await f.repos.turns.findById(run.executionTurnId);
+    expect(turn?.metadata).toMatchObject({
+      retryable: false,
+      providerError: { status: 402, message: providerMessage.slice(0, 1_000) },
+    });
   });
 
   it("keeps a thrown execution cause diagnostic while storing generic reply copy", async () => {

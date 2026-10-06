@@ -287,7 +287,7 @@ it("remints a received create conflict while retaining exact content and attempt
     },
   });
   expect(reminted.next.intents).toMatchObject([
-    { intentId: "create-a", state: "settled", attempts: [{ outcome: { kind: "create" } }] },
+    { intentId: "create-a", state: "superseded", attempts: [{ outcome: { kind: "create" } }] },
     { intentId: "create-b", state: "pending", identityRevision: 2, attempts: [] },
   ]);
 });
@@ -359,7 +359,7 @@ it("retries past the earliest failed placement and supersedes queued locations",
   if (!retry) throw new Error("Expected retry");
   expect(retry.next.intents.map(({ intentId, state }) => ({ intentId, state }))).toEqual([
     { intentId: "create-a", state: "settled" },
-    { intentId: "failed-a", state: "settled" },
+    { intentId: "failed-a", state: "superseded" },
     { intentId: "queued-b", state: "cancelled" },
     { intentId: "retry-c", state: "pending" },
   ]);
@@ -409,7 +409,7 @@ it("rebases queued placement behind the retry when creation remints", () => {
   if (!reminted) throw new Error("Expected remint");
   validateResourceRecordUpdate(received.next, reminted.next);
   expect(reminted.next.intents).toMatchObject([
-    { intentId: "create-a", state: "settled", identityRevision: 1 },
+    { intentId: "create-a", state: "superseded", identityRevision: 1 },
     { intentId: "place-a", state: "cancelled", identityRevision: 1 },
     { intentId: "create-b", state: "pending", identityRevision: 2 },
     { intentId: "place-b", state: "pending", identityRevision: 2 },

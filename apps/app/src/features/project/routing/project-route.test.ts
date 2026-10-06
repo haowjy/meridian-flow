@@ -26,7 +26,7 @@ describe("guarded context route repair", () => {
       path: "/deleted.md",
     },
     expectedSelection: { kind: "removed-binding" as const, revision: 4, documentId: "document-a" },
-    next: { scheme: "manuscript" as const, path: "/next.md", workId: null },
+    next: { scheme: "manuscript" as const, path: "/next.md", workId: "no-work" },
   };
 
   it("repairs the exact latest search", () => {
@@ -40,7 +40,7 @@ describe("guarded context route repair", () => {
       screen: "context",
       scheme: "manuscript",
       path: "/next.md",
-      work: "none",
+      work: "no-work",
     });
   });
 

@@ -6,6 +6,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { ServerContextTab } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 
 export type MobileDocumentRoute = Readonly<{
   requested: boolean;
@@ -22,6 +23,12 @@ export function resolveMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  /**
+   * The document this route is bound to. A rename of it or a folder above it (or that
+   * rename's rollback) changes its projected path at once, so the host finds it by identity
+   * while the readable route repairs the URL to the same projected path.
+   */
+  boundDocumentId?: string | null;
   catalog: CatalogContextView | null;
   isError: boolean;
   isFetching: boolean;
@@ -38,9 +45,15 @@ export function resolveMobileDocumentRoute(input: {
       isFetching: false,
     };
   }
+  // The bound document is the route's document wherever its placement goes, even when another
+  // document now holds the path the URL names.
+  const bound = input.boundDocumentId
+    ? (input.catalog?.findDocument(input.boundDocumentId) ?? null)
+    : null;
   const found = input.catalog?.findPath(input.path);
-  const file = found?.kind === "file" ? found : null;
-  const resolved = file ? contextTabFromFile(input.scheme, file, input.workId) : null;
+  const file = bound ?? (found?.kind === "file" ? found : null);
+  const resolved =
+    file && input.workId ? contextTabFromFile(input.scheme, file, input.workId) : null;
   return {
     requested: true,
     scheme: input.scheme,
@@ -60,6 +73,15 @@ export function useMobileDocumentRoute(input: {
   workId: string | null;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
+  const { selection } = useContextRemovalProject(input.projectId);
+  const boundDocumentId =
+    selection.status === "bound" &&
+    selection.identity.kind === "server" &&
+    selection.locator.scheme === input.scheme &&
+    selection.locator.path === input.path &&
+    selection.locator.workId === input.workId
+      ? selection.identity.documentId
+      : null;
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,
     input.scheme ?? "kb",
@@ -72,10 +94,20 @@ export function useMobileDocumentRoute(input: {
         scheme: input.scheme,
         path: input.path,
         workId: input.workId,
+        boundDocumentId,
         catalog,
         isError,
         isFetching,
       }),
-    [catalog, input.enabled, input.path, input.scheme, input.workId, isError, isFetching],
+    [
+      boundDocumentId,
+      catalog,
+      input.enabled,
+      input.path,
+      input.scheme,
+      input.workId,
+      isError,
+      isFetching,
+    ],
   );
 }

@@ -1,5 +1,9 @@
 /** Authenticated-account scope for the project feature lifetime. */
-import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import type {
+  FolderNamespaceRecord,
+  ResourceProjectionSnapshot,
+  ResourceRecord,
+} from "@meridian/resource-replica";
 import { resourceVisibleInProject } from "@meridian/resource-replica";
 import {
   createContext,
@@ -176,6 +180,7 @@ export function useOptionalAccountResourceReplica(): AccountResourceReplica | nu
 
 export function useAccountResourceProjection(projectId: string): {
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   snapshot: ResourceProjectionSnapshot | null;
   error: unknown;
 } {
@@ -189,6 +194,7 @@ export function useObservedResourceProjection(
   projectId: string,
 ): {
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   snapshot: ResourceProjectionSnapshot | null;
   error: unknown;
 } {
@@ -214,7 +220,14 @@ export function useObservedResourceProjection(
       ) ?? [],
     [projectId, snapshot],
   );
-  return { records, snapshot, error };
+  const folders = useMemo(
+    () =>
+      snapshot?.folders.filter(
+        (folder) => folder.projectId === null || folder.projectId === projectId,
+      ) ?? [],
+    [projectId, snapshot],
+  );
+  return { records, folders, snapshot, error };
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";

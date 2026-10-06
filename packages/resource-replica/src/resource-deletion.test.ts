@@ -151,7 +151,7 @@ it("lets delete supersede a failed location and dispatch next", () => {
   if (!deletion) throw new Error("Expected deletion");
   expect(deletion.next.intents.map(({ state }) => state)).toEqual([
     "settled",
-    "settled",
+    "superseded",
     "pending",
   ]);
   expect(

@@ -11,6 +11,7 @@ import {
   mergeLocalResourceState,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
+  routeContinuityDocumentId,
 } from "./local-document-address";
 
 function catalog(localContent: boolean): CatalogContextView {
@@ -236,6 +237,25 @@ it("uses local content through lookup failure, then yields to a successful canon
   });
 });
 
+it("keeps the path of the writer's unconfirmed move over a server alias for the same document", () => {
+  const local = resolveLocalDocumentAddress(
+    "project-id",
+    { kind: "document", scheme: "kb", path: "Cached.md" },
+    null,
+    catalog(true),
+  );
+  if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");
+  // A rename back to a name the server still redirects answers with an alias of this document.
+  const alias = { kind: "alias" as const, document: local.result.document };
+  const pending = { ...local, file: { ...local.file, placementPending: true as const } };
+
+  expect(reconcileDocumentAddress(pending, alias)).toEqual({
+    result: local.result,
+    localFile: pending.file,
+  });
+  expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
+});
+
 it("keeps local ownership while canonical metadata replaces a stale same-ID path", () => {
   const local = catalog(true).findDocument("document-id");
   if (!local) throw new Error("Expected local file");
@@ -320,4 +340,31 @@ describe("gateLiveView", () => {
         .result,
     ).toBe(resolved);
   });
+});
+
+const kbRoute = { kind: "document" as const, scheme: "kb" as const, path: "Original.md" };
+function bound(workId: string, documentId = "doc-a") {
+  return {
+    status: "bound" as const,
+    revision: 1,
+    locator: { scheme: "kb" as const, path: "/Original.md", workId },
+    identity: { kind: "server" as const, documentId },
+  };
+}
+
+it.each([
+  [null, "no-work", "no-work", null],
+  ["doc-b", "no-work", "no-work", null],
+  ["doc-a", "no-work", "no-work", "doc-a"],
+  ["doc-a", "work-1", "work-1", "doc-a"],
+  ["doc-a", "work-1", "no-work", null],
+])("requires admission %s and matching Editor context %s / %s", (admittedDocumentId, editorWorkId, selectionWork, expected) => {
+  expect(
+    routeContinuityDocumentId({
+      destination: kbRoute,
+      admittedDocumentId,
+      editorWorkId,
+      selection: bound(selectionWork),
+    }),
+  ).toBe(expected);
 });

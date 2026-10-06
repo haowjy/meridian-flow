@@ -604,6 +604,7 @@ it("releases every project registry ownership after the final shared-content lea
           invalidatedEntryIds: [],
         },
         resources: [],
+        folders: [],
       }),
     ).toBe("committed");
   }

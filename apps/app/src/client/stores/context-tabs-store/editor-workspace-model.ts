@@ -100,13 +100,13 @@ export type EditorTabCandidate =
   | { kind?: "tracked" | "viewer"; scheme: ProjectContextTreeScheme; workId?: string | null };
 
 /**
- * Whether the Editor of `workId` (null: No Work) shows this tab: any Editor
+ * Whether the Editor of `workId` (null: unresolved) shows this tab: any Editor
  * scheme, and a Work's scratch only in that Work's Editor.
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
   if (!isEditorScheme(tab.scheme)) return false;
-  return !isWorkScopedProjectContextScheme(tab.scheme) || (tab.workId ?? null) === workId;
+  return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
 }
 
 /**

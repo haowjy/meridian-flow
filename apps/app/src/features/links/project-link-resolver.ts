@@ -13,7 +13,7 @@ import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/conte
 import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLink } from "@/client/api/document-links-api";
-import { documentLinkTarget, type InternalLinkResolver } from "@/core/editor/links";
+import { documentLinkTarget, type InternalLinkResolver, linkTargetHref } from "@/core/editor/links";
 
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
 
@@ -23,10 +23,23 @@ import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocum
  */
 export type LinkResolutionScope = {
   projectId: string;
-  /** Named Work or No Work row id; null is public No Work (`@/`). */
-  workId: string | null;
+  /** Resolved Work row id, including No Work; unresolved surfaces use a pending scope. */
+  workId: string;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
+  /**
+   * The document holding the links, when the scope is one document's text.
+   * A server fallback names it, so the server can answer a link the holder
+   * has not been rewritten for yet through its pending redirect. Chat holds no
+   * links, so it has none.
+   */
+  holderDocumentId?: string | null;
+  /**
+   * How many times the holder's text has changed in this editor. Local, never
+   * sent: it is only a reason to register again, so an answer cannot outlive
+   * the text it answered once a rewrite (or any edit) has landed.
+   */
+  documentRevision?: number;
 };
 
 /** The document at the address, or null when only the server can say. */
@@ -48,7 +61,7 @@ export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
 ): InternalLinkResolver {
-  const { projectId, workId, baseUri } = scope;
+  const { projectId, workId, baseUri, holderDocumentId } = scope;
   return async (target) => {
     const request = documentLinkTarget(target, baseUri ?? "");
     // A relative path is meaningless without the URI of the document holding
@@ -62,7 +75,14 @@ export function createProjectLinkResolver(
     }
     const local = projectLinkAnswer(index, request);
     if (local) return local;
-    const { document } = await resolveDocumentLink(projectId, { workId, target: request });
+    const holder = holderDocumentId
+      ? { documentId: holderDocumentId, href: linkTargetHref(target) }
+      : undefined;
+    const { document } = await resolveDocumentLink(projectId, {
+      workId,
+      ...(holder ? { holder } : {}),
+      target: request,
+    });
     return document;
   };
 }

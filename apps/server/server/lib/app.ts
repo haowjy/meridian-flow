@@ -61,6 +61,7 @@ async function createAppServices(): Promise<AppServices> {
         delayMs: 10000,
         run: app.documentSync.documentDerivations.sweep,
       },
+      { name: "link-updates", delayMs: SYSTEM_UPDATE_SWEEP_MS, run: app.linkUpdates.sweep },
       { name: "change-trail", delayMs: CHANGE_TRAIL_POLL_MS, run: app.changeTrailDelivery.drain },
     ],
     eventSink,

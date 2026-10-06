@@ -36,6 +36,7 @@ import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js
 import { deriveDocument } from "../domain/document-derivations.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import type {
@@ -49,7 +50,6 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
@@ -107,6 +107,7 @@ export function createDrizzlePendingSettlementStore(
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
+  derivationStore: DocumentDerivationStore,
   notices?: NoticePort,
   eventSink?: EventSink,
 ): PendingSettlementStore {
@@ -209,6 +210,7 @@ export function createDrizzlePendingSettlementStore(
             input.documentId,
             durableProjectionSerializer,
             projectionEffects,
+            derivationStore,
           );
           const result = complete();
           if (result !== "applied" && result !== "already_applied" && result !== "retry") {
@@ -385,6 +387,7 @@ async function completeStagedPush(
   documentId: DocumentId,
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
+  derivationStore: DocumentDerivationStore,
 ): Promise<void> {
   const [staged] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -496,7 +499,7 @@ async function completeStagedPush(
   }
   const derivation = await deriveDocument(
     {
-      store: createDrizzleDocumentDerivationStore(db as Database),
+      store: derivationStore,
       serializer: durableProjectionSerializer,
     },
     documentId,

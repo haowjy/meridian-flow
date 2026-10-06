@@ -2,8 +2,8 @@
  * Which context catalogs the scope's document index walks.
  *
  * The project catalog (manuscript, kb, and Unfiled, whatever the Work), the
- * writer's user catalog, and the current Work's catalog, where a null Work
- * means the project's locked No Work row. These are the catalogs a contextual
+ * writer's user catalog, and the current Work's catalog by row id (including
+ * No Work). Unresolved surfaces have no scope. These are the catalogs a contextual
  * address resolves in on the server
  * (`apps/server/server/domains/context/document-link-resolution.ts`), so the
  * local index can answer any address they hold.
@@ -23,9 +23,8 @@ export const LINKABLE_SCHEMES = [
 export type LinkableCatalogScopes = {
   projectId: string;
   /**
-   * The Work whose Scratch and Uploads the index holds: the selected Work, or
-   * the No Work row. Null while the No Work row is not known yet, which leaves
-   * those catalogs unasked and the index incomplete.
+   * The row whose Scratch and Uploads the index holds, including No Work.
+   * The resolver returns no scope until the surface's Work is known.
    */
   workId: string | null;
 };
@@ -34,12 +33,10 @@ export type LinkableCatalogScopes = {
 export function linkableCatalogScopes({
   projectId,
   workId,
-  noWorkId,
 }: {
   projectId: string | null;
   workId: string | null;
-  noWorkId: string | null;
 }): LinkableCatalogScopes | null {
-  if (!projectId) return null;
-  return { projectId, workId: workId ?? noWorkId };
+  if (!projectId || !workId) return null;
+  return { projectId, workId };
 }

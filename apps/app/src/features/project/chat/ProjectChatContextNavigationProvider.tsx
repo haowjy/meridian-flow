@@ -10,6 +10,7 @@
  * opens its document.
  */
 import { type ReactNode, useCallback } from "react";
+import { useWorks } from "@/client/query/useWorks";
 
 import {
   ChatContextNavigationProvider,
@@ -19,10 +20,10 @@ import {
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { usePassageDoors } from "./usePassageDoors";
 
-type OpenContextTarget = (target: ContextRouteTarget) => void;
+type OpenContextTarget = (target: ContextRouteRequest) => void;
 
 export function ProjectChatContextNavigationProvider({
   projectId,
@@ -32,25 +33,28 @@ export function ProjectChatContextNavigationProvider({
   children,
 }: {
   projectId: string;
-  activeWork: { id: string; slug: string } | null;
-  availableWorks: readonly { id: string; slug: string }[];
+  activeWork: { id: string; slug: string | null } | null;
+  availableWorks: readonly { id: string; slug: string | null }[];
   onOpenContextTarget?: OpenContextTarget;
   children: ReactNode;
 }) {
+  const { noWork } = useWorks(projectId);
+  const noWorkId = noWork?.id;
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
-      if (!onOpenContextTarget) return;
-      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks);
+      if (!onOpenContextTarget || !activeWork || !noWorkId) return;
+      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId);
       if (!target) return;
-      onOpenContextTarget(target);
+      onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
       doorOpened({ ...target, uri }, passage);
     },
-    [activeWork, availableWorks, doorOpened, onOpenContextTarget],
+    [activeWork, availableWorks, noWorkId, doorOpened, onOpenContextTarget],
   );
   const canOpenContextUri = useCallback(
-    (uri: string) => isContextUriRoutable(uri, activeWork, availableWorks),
-    [activeWork, availableWorks],
+    (uri: string) =>
+      !!activeWork && !!noWorkId && isContextUriRoutable(uri, activeWork, availableWorks, noWorkId),
+    [activeWork, availableWorks, noWorkId],
   );
 
   return (

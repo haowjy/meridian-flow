@@ -99,9 +99,9 @@ itself fails (authority unreachable or the handoff errors), the adopter reports
 it to the session, which records the failure only while it is `detached` with no
 transport. The snapshot's `adoptionStalled` is derived from that: true only
 while `detached`, cleared by attaching a transport or a successful adoption,
-and never alongside a terminal state. `SyncStatus` shows "Saved locally
-(offline)" for it; elapsed detached time alone shows nothing, because a session
-merely awaiting its transport is healthy.
+and never alongside a terminal state. `SyncStatus` treats it as an outage
+(see `core/editor/.context/CONTEXT.md`); elapsed detached time alone shows
+nothing, because a session merely awaiting its transport is healthy.
 
 A tab that loses its resource handle but keeps its document (a review launch
 re-opens it without one) keeps painting its cached session while the exact
