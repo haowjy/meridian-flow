@@ -79,7 +79,7 @@ export interface WriteReversal {
 }
 
 function emptyAfterUndoMessage(path: string): string {
-  return `The document at ${path} is empty but still exists. To remove it, use \`delete\`.`;
+  return `The document at ${path} is empty but still exists.`;
 }
 
 export interface WriteReversalRunInput {
@@ -289,8 +289,8 @@ export function createWriteReversal(deps: {
       writeIds: reversal.writeIds,
       sync,
     });
-    // Undoing a create leaves the document in place; say so, so the model
-    // doesn't report it gone. The host deletes an undone copy and drops this.
+    // An undo that empties a document leaves it in place; say so, so the model
+    // doesn't report it gone. Live, the host deletes a created one itself.
     if (input.direction === "undo" && input.filePath && isEmptyDocument(input.runtime.doc)) {
       return {
         ...result,
@@ -474,7 +474,9 @@ export function createWriteReversal(deps: {
   // Undo plans a whole selection at once; redo plans one undo group at a time,
   // so every multi-write selection keeps planning until no selected group is left.
   function plansEveryGroup(direction: "undo" | "redo", selection: ReversalSelection): boolean {
-    if (selection.kind === "turn" || selection.kind === "all") return true;
+    if (selection.kind === "turn" || selection.kind === "all" || selection.kind === "handles") {
+      return true;
+    }
     return direction === "redo" && (selection.kind === "range" || selection.kind === "last");
   }
 

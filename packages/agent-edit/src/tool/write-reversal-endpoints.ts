@@ -106,7 +106,7 @@ export function createWriteReversalEndpoints(deps: {
         `Invariant violation: ${direction} ran in response ${context.responseId} with staged writes; save the reply first.`,
       );
     }
-    const selection = commandSelection(command);
+    const selection = commandSelection(command, context);
 
     const result = await writeReversal.run({
       docId: address.documentId,
@@ -198,8 +198,15 @@ export function createWriteReversalEndpoints(deps: {
   }
 }
 
-/** Maps a parsed command to its selection; the schema already enforced the selector rule. */
-export function commandSelection(command: UndoCommand | RedoCommand): ReversalSelection {
+/**
+ * Maps a parsed command to its selection; the schema already enforced the
+ * selector rule. Handles the host chose replace the command's selector.
+ */
+export function commandSelection(
+  command: UndoCommand | RedoCommand,
+  context: Pick<WriteContext, "reversalHandles"> = {},
+): ReversalSelection {
+  if (context.reversalHandles) return { kind: "handles", ids: context.reversalHandles };
   if (command.all === true) return { kind: "all" };
   if (command.last !== undefined) return { kind: "last", count: command.last };
   if (command.to === undefined) return { kind: "latest" };

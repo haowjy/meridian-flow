@@ -99,6 +99,8 @@ function selectCandidates(selection: ReversalSelection, candidates: Candidate[])
       return candidates.slice(-selection.count);
     case "single":
       return candidates.filter((candidate) => candidate.handle === selection.to);
+    case "handles":
+      return candidates.filter((candidate) => selection.ids.includes(candidate.handle));
     case "range": {
       const since = parseWriteHandle(selection.since);
       const to = parseWriteHandle(selection.to);

@@ -15,7 +15,9 @@ export type ReversalSelection =
   | { kind: "range"; since: string; to: string }
   | { kind: "last"; count: number }
   | { kind: "all" }
-  | { kind: "turn"; turnId?: string };
+  | { kind: "turn"; turnId?: string }
+  /** Exactly these handles, as a host chose them across its own handles too. */
+  | { kind: "handles"; ids: readonly string[] };
 
 export type ReversalPlanStatus =
   | "nothing_to_undo"
@@ -345,7 +347,7 @@ async function selectRedoGroup(input: {
   return { ok: true, group: selected[0] };
 }
 
-function selectByHandle<
+export function selectByHandle<
   T extends { handle: string; writeId?: string; turnId: string | null; createdSeq: number },
 >(
   items: readonly T[],
@@ -361,6 +363,9 @@ function selectByHandle<
     };
   if (selection.kind === "all") return { ok: true, items: [...items] };
   if (selection.kind === "last") return { ok: true, items: items.slice(-selection.count) };
+  if (selection.kind === "handles") {
+    return { ok: true, items: items.filter((item) => selection.ids.includes(item.handle)) };
+  }
   if (selection.kind === "turn") {
     const targetTurnId = selection.turnId ?? latestByCreatedSeq(items)?.turnId;
     return {
@@ -392,9 +397,10 @@ function latestByCreatedSeq<T extends { createdSeq: number }>(items: readonly T[
 
 function handlesOverlapSelection(
   handles: readonly string[],
-  selection: Extract<ReversalSelection, { kind: "single" | "range" }>,
+  selection: Extract<ReversalSelection, { kind: "single" | "range" | "handles" }>,
 ): boolean {
   if (selection.kind === "single") return handles.includes(selection.to);
+  if (selection.kind === "handles") return handles.some((handle) => selection.ids.includes(handle));
   const since = parseWriteHandle(selection.since);
   const to = parseWriteHandle(selection.to);
   if (since === undefined || to === undefined) return false;

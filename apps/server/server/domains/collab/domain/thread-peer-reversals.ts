@@ -142,7 +142,11 @@ export function createThreadPeerReversals(input: {
       const histories = await loadHistories(documentId, context.threadId);
       const outcomes: WriteOutcome[] = [];
       const refused: { writeIds: string[]; denial: FileAccessDenied }[] = [];
-      for (const [side, route] of routes(histories, command.command, commandSelection(command))) {
+      for (const [side, route] of routes(
+        histories,
+        command.command,
+        commandSelection(command, context),
+      )) {
         const sideGrant = await grantAt(grant, side);
         try {
           if (isFileAccessDenied(sideGrant)) throw new FileEditRefusedError([sideGrant]);

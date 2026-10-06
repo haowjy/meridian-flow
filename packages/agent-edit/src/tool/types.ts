@@ -195,6 +195,8 @@ export interface WriteContext {
    * source (D23, D24). They become the command's content as nodes.
    */
   copiedNodes?: readonly Block[];
+  /** An undo's or redo's exact write handles, chosen by the host; replaces the command's selector. */
+  reversalHandles?: readonly string[];
 }
 
 export type MutationActor =

@@ -115,8 +115,13 @@ export {
 } from "./undo/persist-undo-watermark.js";
 export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
-export type { ReversalPlan, ReversalSelection } from "./undo/reversal-plan.js";
-export { planRedo, planUndo } from "./undo/reversal-plan.js";
+export {
+  planRedo,
+  planUndo,
+  type ReversalPlan,
+  type ReversalSelection,
+  selectByHandle,
+} from "./undo/reversal-plan.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,
