@@ -15,7 +15,7 @@ const draftId = "draft-a";
 const workId = "work-1";
 
 describe("review restoration after a rename", () => {
-  it("enters review at the renamed address although the draft list still names the old path", async () => {
+  it("enters review at a renamed address although the draft list still names the old path", async () => {
     const enterInlineReview = vi.fn();
     const group = {
       documentId,
@@ -57,7 +57,7 @@ describe("review restoration after a rename", () => {
       async () => {
         await act(async () => undefined);
         expect(navigate).toHaveBeenCalledWith(
-          expect.objectContaining({ documentId, path: "chapters/renamed.md" }),
+          expect.objectContaining({ documentId }),
           expect.objectContaining({ draftId, replaceIfSameDocument: true }),
         );
         expect(enterInlineReview).toHaveBeenCalledWith(documentId, draftId);

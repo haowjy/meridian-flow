@@ -492,15 +492,23 @@ export function ReadableProjectRoute({
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
       const resolvedWorkId = request.workId ?? current.editorWorkId;
-      const target = { ...request, workId: resolvedWorkId ?? undefined };
+      const requested = { ...request, workId: resolvedWorkId ?? undefined };
       // Identity decides sameness once the address has resolved; the path is
       // only the fallback before that.
       const sameDocument = projectAddressMatchesContextTarget(
         current.address,
-        target,
+        requested,
         current.noWorkId,
         addressDocumentIdRef.current,
       );
+      // A review launch of the document the address already names rewrites only
+      // `?draft=`: the launcher's path (a draft list can predate a rename) never
+      // moves the address.
+      const addressed = current.address.destination;
+      const target =
+        sameDocument && options?.replaceIfSameDocument === true && addressed.kind === "document"
+          ? { ...requested, scheme: addressed.scheme, path: addressed.path }
+          : requested;
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
@@ -765,7 +773,14 @@ export function ReadableProjectRoute({
                       path: next.path,
                       workId: next.work,
                     },
-                    { replace: true },
+                    {
+                      replace: true,
+                      // The coordinator relocates the document the address names,
+                      // or falls back to another. Either way the review follows
+                      // the address until EditorReviewAddressOwner, which knows
+                      // the document's identity, decides it no longer applies.
+                      draftId: address.draftId,
+                    },
                   );
                 else if (next.screen === "work")
                   void go(toDestination({ kind: "works" }), { replace: true });

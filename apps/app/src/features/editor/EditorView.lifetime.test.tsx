@@ -368,6 +368,44 @@ describe("editor lifetime", () => {
     });
   });
 
+  it("keeps the painted review editor when the live binding is re-minted under it", async () => {
+    // A rename re-mints the host's binding key for the live session. The branch
+    // review has its own session, so it must neither remount nor hand the screen
+    // back to the live text.
+    const documentId = "rename-review-doc";
+    const roomName = "branch:rename-review-doc:gen:1";
+    sessionHorizons.set(roomName, {
+      localPersistence: Promise.resolve(),
+      firstServerSync: Promise.resolve(),
+    });
+    const initial = {
+      documentId,
+      projectId: "project-1",
+      session: sessionFor(documentId),
+      bindingKey: "binding-1",
+    };
+    await withReactRoot(<Harness initial={initial} />, async () => {
+      await act(async () => {
+        applyProps({ reviewDraftId: "draft-1", reviewRoomName: roomName });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const painted = [...document.querySelectorAll<HTMLElement>(".ProseMirror")].filter(
+        (dom) => !dom.closest(".hidden"),
+      );
+      expect(painted).toHaveLength(1);
+
+      await act(async () => {
+        applyProps({ bindingKey: "binding-2" });
+      });
+      const after = [...document.querySelectorAll<HTMLElement>(".ProseMirror")].filter(
+        (dom) => !dom.closest(".hidden"),
+      );
+      expect(after).toHaveLength(1);
+      expect(after[0]).toBe(painted[0]);
+    });
+  });
+
   it("keeps the live manuscript painted but read-only from the Review click until the branch editor paints", async () => {
     const documentId = "pending-review-doc";
     const roomName = "branch:pending-review-doc:gen:1";

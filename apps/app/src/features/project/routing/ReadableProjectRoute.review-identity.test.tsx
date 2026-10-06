@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import type { ContextRemovalRoutePort } from "../context/context-removal-coordinator";
 import { identityCommitRoute } from "../context/use-identity-commit";
 import { useOpenContextRoute } from "./ProjectNavigationContext";
 import { ReadableProjectRoute } from "./ReadableProjectRoute";
@@ -72,12 +73,14 @@ vi.mock("../context/open-project-document", () => ({
 }));
 vi.mock("./ProjectAddressDocument", () => ({ ProjectAddressDocument: () => null }));
 vi.mock("../ProjectView", () => ({
-  ProjectView: () => {
+  ProjectView: (props: { contextRemovalRoute: ContextRemovalRoutePort }) => {
     openRoute = useOpenContextRoute();
+    removalRoute = props.contextRemovalRoute;
     return null;
   },
 }));
 
+let removalRoute: ContextRemovalRoutePort | undefined;
 let openRoute: ReturnType<typeof useOpenContextRoute>;
 const open: NonNullable<typeof openRoute> = (...args) => {
   if (!openRoute) throw new Error("The route's open command is not mounted");
@@ -175,5 +178,31 @@ it("drops the review when the open command names another document", async () => 
   await withRoute("manuscript/a.md?work=&draft=draft-a", "document-a", "/a.md", async (history) => {
     await open({ documentId: "document-c", scheme: "manuscript", path: "/c.md", workId });
     expect(history.location.search).not.toContain("draft=");
+  });
+});
+
+it("keeps the review when the removal coordinator relocates the address's document", async () => {
+  // The coordinator replays a move of the document the address names; the review
+  // stays until the owner, which knows identity, decides it no longer applies.
+  await withRoute("manuscript/a.md?work=&draft=draft-a", "document-a", "/a.md", async (history) => {
+    const before = history.length;
+    removalRoute?.updateSearch(projectId, (search) => ({ ...search, path: "/moved.md" }));
+    await vi.waitFor(() => expect(history.location.pathname).toContain("moved.md"));
+    expect(history.length).toBe(before);
+    expect(history.location.search).toContain("draft=draft-a");
+  });
+});
+
+it("launches a review of the address's own document without moving the address to a stale path", async () => {
+  // The draft list still names the document's old path.
+  await withRoute("manuscript/renamed.md?work=", "document-a", "/renamed.md", async (history) => {
+    const before = history.length;
+    await open(
+      { documentId: "document-a", scheme: "manuscript", path: "/old-name.md", workId },
+      { draftId: "draft-a", replaceIfSameDocument: true },
+    );
+    expect(history.length).toBe(before);
+    expect(history.location.pathname).toContain("renamed.md");
+    expect(history.location.search).toContain("draft=draft-a");
   });
 });
