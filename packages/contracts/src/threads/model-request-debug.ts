@@ -4,7 +4,6 @@
  * through the same pure functions so diagnostic evidence cannot drift.
  */
 import type { JsonObject, JsonValue } from "./index.js";
-import type { ProviderErrorResponse } from "./provider-error.js";
 
 const MAX_READABLE_PART_BYTES = 32 * 1024;
 const MAX_READABLE_LABEL_BYTES = 256;
@@ -37,7 +36,7 @@ export type ModelRequestDebugCapture =
 
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
-  schema: "meridian.model-request-debug.v3";
+  schema: "meridian.model-request-debug.v2";
   gatewayCallId: string;
   threadId: string;
   /** Assistant turn the request belongs to. */
@@ -55,8 +54,6 @@ export type ModelRequestDebugRecord = {
   request: ModelRequestDebugRequest | null;
   skills: { slug: string; layer: string }[];
   toolRegistrations: { name: string; source: string; capability: string | null }[];
-  /** Set when the call failed with a provider response; null until then and on success. */
-  providerError: ProviderErrorResponse | null;
 };
 
 export type ModelRequestDebugRetention = {
@@ -332,23 +329,6 @@ export function summarizeModelRequestDebugView(
   };
 }
 
-function providerErrorMarkdown(error: ProviderErrorResponse): string {
-  const status = error.status === null ? "in-stream (no HTTP status)" : `HTTP ${error.status}`;
-  return [
-    "# Provider error response",
-    "",
-    status,
-    "",
-    boundedReadablePart(error.body, (visible, omittedBytes) =>
-      fencedBody(
-        omittedBytes
-          ? `${visible}\n[${omittedBytes} bytes omitted from readable view; use the raw view for exact data]`
-          : visible,
-      ),
-    ),
-  ].join("\n");
-}
-
 export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): string {
   const { record } = view;
   const lines = ["# Messages sent to the model"];
@@ -359,7 +339,6 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
       "",
       `The canonical request exceeded the ${record.capture.status === "omitted" ? record.capture.maxRequestBytes : "configured"}-byte capture limit. Open Debug for its retained metadata and digest.`,
     );
-    if (record.providerError) lines.push("", providerErrorMarkdown(record.providerError));
     return lines.join("\n");
   }
 
@@ -381,8 +360,6 @@ export function renderModelRequestDebugMarkdown(view: ModelRequestDebugView): st
       lines.push("", fencedJson(tool, `### ${name}\n\n`));
     }
   }
-
-  if (record.providerError) lines.push("", "---", "", providerErrorMarkdown(record.providerError));
 
   return lines.join("\n");
 }

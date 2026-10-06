@@ -23,7 +23,6 @@ describe("thread transcript compaction failures", () => {
         providerError: {
           status: 402,
           message: `Insufficient Balance ${"x".repeat(400)}`,
-          gatewayCallId: "call-1",
         },
       },
       createdAt: "2026-09-27T00:00:00.000Z",
@@ -61,7 +60,6 @@ describe("thread transcript compaction failures", () => {
     expect(text).toContain("failure reason: provider_error");
     expect(text).toContain("provider error (402): Insufficient Balance");
     expect(text).toContain("--full to show");
-    expect(text).toContain("./mf thread context thread-id --call call-1");
   });
 
   it("shows a failed compaction's reason and phase in JSON and text output", () => {

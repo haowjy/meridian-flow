@@ -86,11 +86,11 @@ explicitly; `turn.error` stores only that copy while raw causes remain in journa
 diagnostics, logs, and `./mf`. A failed reply's metadata carries `reason`, the
 gateway's `retryable` verdict when the failure carried one, and, when a
 provider answered, `providerError` (`status`, message capped at 1,000
-characters, `gatewayCallId`) as debug evidence only. `replyFailureMetadata` is
-the only writer. The codec lives in `@meridian/contracts/threads` so the app
-reads the same shape: a reply with `retryable: false` and a `providerError`
-renders as a provider-declined block with no Retry. Event
-logs carry its status and call id, never its message. A completed
+characters) as debug evidence only. `replyFailureMetadata` is the only writer.
+The codec lives in `@meridian/contracts/threads` so the app reads the same
+shape: a reply with `retryable: false` and a `providerError` renders as a
+provider-declined block with no Retry. The provider's message never enters
+event logs. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and
 `controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or

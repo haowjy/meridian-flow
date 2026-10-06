@@ -75,15 +75,13 @@ of balance, is `provider_error` with `retryable: false`: the provider refused
 this request and will refuse it again. There is no separate code for an
 exhausted account. `x-should-retry: false` still overrides.
 
-An error event carries `providerResponse: { status, message, body }` when the
-provider answered: a `ProviderErrorResponse` from `@meridian/contracts/threads`,
-whose one constructor caps the body at 4,096 characters. SDK clients are built
-with `providerFetch`, which keeps a failed response's body text keyed by the
-`Headers` object the SDK error carries, because SDKs keep only part of a parsed
-body. Without it the body falls back to the SDK's parsed view. `stream.close`
-logs only `providerStatus`, in its correlation beside `errorCode`. The runtime
-keeps status and message on the failed reply's metadata and the whole response
-on the dev capture record; see
+An error event carries `providerError: { status, message }` when the provider
+answered: a `ProviderErrorResponse` from `@meridian/contracts/threads`. SDK
+clients are built with `providerFetch`, which keeps a failed response's body
+text keyed by the `Headers` object the SDK error carries, and the message is
+read from that text. SDKs keep only part of a parsed body: OpenAI's reads a body
+without `error` as "402 status code (no body)". The runtime keeps status and
+message on the failed reply's metadata, and nowhere else; see
 [Provider Failures](../../../../../../../docs/debugging.md#provider-failures).
 
 ## Context-window errors

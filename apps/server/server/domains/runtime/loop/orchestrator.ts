@@ -93,7 +93,7 @@ import {
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
-import { guardDebugCapture, type ModelRequestDebugStore } from "../model-request-debug/index.js";
+import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
@@ -1935,11 +1935,7 @@ async function executeLoop({
           });
         }
 
-        const debugCapture = {
-          source: "runtime.orchestrator",
-          correlation: { threadId: input.threadId, turnId: currentTurn.id, gatewayCallId },
-        };
-        guardDebugCapture(eventSink, debugCapture, () =>
+        try {
           deps.modelRequestDebug.capture({
             gatewayCallId,
             threadId: input.threadId,
@@ -1948,8 +1944,18 @@ async function executeLoop({
             agentSlug: built.agentSlug,
             request,
             toolRegistry: deps.toolRegistry,
-          }),
-        );
+          });
+        } catch (cause) {
+          eventSink.emit({
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "model_request_debug.capture_failed",
+            sensitivity: "safe",
+            correlation: { threadId: input.threadId, turnId: currentTurn.id },
+            payload: unknownToEventPayload(cause),
+          });
+        }
 
         // The gateway yields a self-terminating stream: a sequence of
         // text/reasoning/tool_call deltas followed by exactly one 'end'
@@ -2035,12 +2041,6 @@ async function executeLoop({
             if (cancelRequested) {
               break;
             }
-            const { providerResponse } = event;
-            if (providerResponse) {
-              guardDebugCapture(eventSink, debugCapture, () =>
-                deps.modelRequestDebug.recordProviderError(gatewayCallId, providerResponse),
-              );
-            }
             if (event.code === "context_overflow") {
               // Partial output from the rejected request is not a completed tool group.
               // Keep its paid usage, but only prior completed responses remain in A.
@@ -2086,9 +2086,7 @@ async function executeLoop({
               kind: "failed",
               reason: event.code,
               error: meridianErrorFromGateway(event.code, event.message, event.retryable),
-              ...(providerResponse
-                ? { providerError: { ...providerResponse, gatewayCallId } }
-                : {}),
+              ...(event.providerError ? { providerError: event.providerError } : {}),
             });
           }
         }

@@ -109,9 +109,9 @@ describe("AssistantTurn failure", () => {
     expect(html).toContain("data-reply-retry");
   });
 
-  it("offers no Retry on a reply the provider declined, and Retry when the gateway would retry", () => {
+  it("says the provider declined with no Retry, and keeps Retry when the gateway would retry", () => {
     const retry = { onRetry: () => undefined, refused: false, requestLost: false };
-    const providerError = { status: 402, message: "Insufficient Balance", gatewayCallId: "c1" };
+    const providerError = { status: 402, message: "Insufficient Balance" };
     const declinedTurn = {
       ...failedTurn,
       metadata: { reason: "provider_error", retryable: false, providerError },

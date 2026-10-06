@@ -1,7 +1,7 @@
 /** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
 
 import type { Usage } from "@meridian/contracts/runtime";
-import type { EventSink } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
@@ -9,7 +9,7 @@ import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
-import { guardDebugCapture, type ModelRequestDebugStore } from "../model-request-debug/index.js";
+import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type {
   ConversationSummarizer,
   SummaryOutcome,
@@ -185,27 +185,25 @@ export function createConversationSummarizer(
               signal: input.signal,
               correlation: { ...input.owner, gatewayCallId, iteration: row.sequence },
             };
-            guardDebugCapture(
-              deps.eventSink,
-              {
+            try {
+              deps.modelRequestDebug.capture({
+                gatewayCallId,
+                threadId: input.owner.threadId,
+                turnId: input.owner.turnId,
+                iteration: row.sequence,
+                agentSlug: null,
+                request: requestWithCorrelation,
+                toolRegistry: deps.toolRegistry,
+              });
+            } catch (cause) {
+              emitEvent(deps.eventSink, {
+                level: "warn",
                 source: "runtime.summarizer",
-                correlation: {
-                  threadId: input.owner.threadId,
-                  turnId: input.owner.turnId,
-                  gatewayCallId,
-                },
-              },
-              () =>
-                deps.modelRequestDebug.capture({
-                  gatewayCallId,
-                  threadId: input.owner.threadId,
-                  turnId: input.owner.turnId,
-                  iteration: row.sequence,
-                  agentSlug: null,
-                  request: requestWithCorrelation,
-                  toolRegistry: deps.toolRegistry,
-                }),
-            );
+                name: "model_request_debug.capture_failed",
+                correlation: { threadId: input.owner.threadId, turnId: input.owner.turnId },
+                payload: unknownToEventPayload(cause),
+              });
+            }
             for await (const event of gateway.stream(requestWithCorrelation)) {
               if (event.type === "start") {
                 row.model = event.model;
