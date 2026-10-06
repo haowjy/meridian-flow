@@ -2,7 +2,8 @@
  * Production-composed `write` `move` and `delete` on live documents: identity,
  * content and links follow a move, a delete leaves `ls` and `read`, uploads
  * and a stale read are refused, and a rolled-back reply puts both back (D66).
- * `undo` and `redo` count them with content writes, and an undone copy goes.
+ * `undo` and `redo` count them with content writes, an undone copy goes, and
+ * the writer restores an agent's delete from its turn.
  */
 
 import { eq } from "drizzle-orm";
@@ -23,6 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../test-support/drizzle-reset.js"
     );
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
+    const { restoreAgentDelete } = await import("./thread-context-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000f01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000f02";
@@ -343,6 +345,50 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await redo.save();
       expect((await documentRow(copy.id))?.deletedAt).toBeNull();
       expect(await script.text(COPY)).toContain("Chapter one text.");
+    });
+
+    it("lets the writer restore the agent's delete from its turn, unless its path is taken", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "delete", path: CHAPTER });
+      });
+      const app = runtime.app;
+      const deps = {
+        contextPorts: app.contextPorts,
+        fileAccess: app.fileAccess,
+        threads: app.threadRepos.threads,
+        threadWorks: app.threadRepos.threadWorks,
+        works: app.workRepo,
+        workAuthorityResolver: app.workAuthorityResolver,
+        namespaceChanges: app.namespaceChanges,
+      };
+      const restore = () =>
+        restoreAgentDelete(deps, {
+          threadId: THREAD.threadId as never,
+          turnId: THREAD.turnId,
+          documentId: DOC_ID,
+          userId: USER_ID as never,
+        });
+      const port = app.contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      const squatter = await port.createTrackedDocument(CHAPTER, "Another chapter.");
+      if (!squatter.ok) throw new Error(JSON.stringify(squatter.error));
+
+      await expect(restore()).resolves.toEqual({ status: "location_taken", uri: CHAPTER });
+      expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
+
+      const removed = await port.delete(CHAPTER, {
+        expected: { kind: "file", documentId: squatter.value.documentId ?? "" },
+      });
+      expect(removed.ok).toBe(true);
+      await expect(restore()).resolves.toEqual({
+        status: "restored",
+        documentId: DOC_ID,
+        uri: CHAPTER,
+      });
+      expect((await documentRow(DOC_ID))?.deletedAt).toBeNull();
+      expect(await script.text(CHAPTER)).toContain("Chapter one text.");
+      await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it("cleans up a document created then moved in a reply whose save refuses it", async () => {

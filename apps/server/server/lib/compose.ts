@@ -21,6 +21,7 @@ import {
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import {
+  type AgentNamespaceChanges,
   type CollabDomain,
   createCollabDomain,
   createDrizzleAgentNamespaceChanges,
@@ -291,6 +292,8 @@ export type AppServices = {
   toolExecutor: ToolExecutor;
   /** Each model reply's save and rollback of the writes its tool calls staged. */
   responseWrites: AgentEditResponseWriteLifecycle;
+  /** The model's moves and deletes, for the writer's restore of a delete. */
+  namespaceChanges: AgentNamespaceChanges;
   modelRequestDebug: ModelRequestDebugStore;
   /** Dev-only scripted replies for the in-process mock model; null with real providers. */
   mockModelScript: MockScriptQueue | null;
@@ -1068,6 +1071,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     toolExecutor,
     responseWrites,
+    namespaceChanges,
     modelRequestDebug: ports.modelRequestDebug,
     mockModelScript: ports.mockModelScript,
     objectStore: ports.objectStore,
@@ -1556,6 +1560,32 @@ export function createInMemoryAppServices(): AppServices {
       },
       async rollbackResponse() {
         throw new Error("in-memory response writes are not implemented");
+      },
+    },
+    namespaceChanges: {
+      async record() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async discard() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async history() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async findDeletedAt() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async findTurnDelete() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async transition() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async recordDiscardedCopy() {
+        throw new Error("in-memory namespace changes are not implemented");
+      },
+      async forgetDiscardedCopy() {
+        throw new Error("in-memory namespace changes are not implemented");
       },
     },
     objectStore: {

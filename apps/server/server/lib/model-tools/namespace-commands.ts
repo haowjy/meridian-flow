@@ -289,7 +289,7 @@ export async function runNamespaceCommand(
       },
     }),
     // A change the reply can still roll back: an undo or redo saves the reply first. The
-    // document id is what the writer's restore of a delete names (POST …/turns/:turnId/restore).
+    // document id is what the writer's restore of a delete names (POST …/turns/:turnId/restore-delete).
     metadata: { stagedNamespaceChange: true, documentId: source.documentId },
   };
 }

@@ -1,5 +1,6 @@
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type { AgentNamespaceChanges } from "../domains/collab/index.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -11,6 +12,7 @@ import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads
 import { contextErrorToHttp } from "./context-error-http.js";
 import { requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { documentTarget, threadContainerTarget } from "./file-targets.js";
+import { applyNamespaceChange } from "./model-tools/namespace-commands.js";
 import { requireRequestId } from "./request-id.js";
 
 export interface ThreadContextRouteDeps {
@@ -102,4 +104,54 @@ export async function writeThreadContextDocument(
     markdown: result.value.markdown ?? input.markdown,
     updateSeq: result.value.updateSeq ?? 0,
   };
+}
+
+export type RestoreAgentDeleteResult =
+  | { status: "restored"; documentId: string; uri: string }
+  /** Another file took its place. */
+  | { status: "location_taken"; uri: string }
+  /** The folder it was in is gone. */
+  | { status: "folder_missing"; uri: string };
+
+/**
+ * The writer brings back a document the agent deleted live in this turn, from
+ * the turn's delete receipt (D66). The same restore the model's `undo` makes,
+ * through the thread's live port; it needs edit on the folder the document
+ * returns to. The delete's handle goes with it, so the model's `redo` can't
+ * delete the document again.
+ */
+export async function restoreAgentDelete(
+  deps: ThreadContextRouteDeps & { namespaceChanges: AgentNamespaceChanges },
+  input: { threadId: ThreadId; turnId: string; documentId: string; userId: UserId },
+): Promise<RestoreAgentDeleteResult> {
+  const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
+  const turnId = requireRequestId(input.turnId, "turnId");
+  const documentId = requireRequestId(input.documentId, "documentId");
+  const context = await resolveThreadContextPort(deps, threadId, input.userId);
+  const change = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
+  if (!change) throw createError({ statusCode: 404, message: "No delete to restore" });
+  const container = await threadContainerTarget(deps.works, context.resolution, change.fromUri);
+  if (!container) throw createError({ statusCode: 404, message: "No delete to restore" });
+  const grant = await requireFileGrant(deps.fileAccess, input.userId, container, "edit");
+  if (!(await deps.namespaceChanges.transition(change.id, "active"))) {
+    throw createError({ statusCode: 404, message: "No delete to restore" });
+  }
+  const port = contextPortForThread(deps.contextPorts, context.resolution, { liveWrites: true });
+  let restored: Awaited<ReturnType<typeof applyNamespaceChange>>;
+  try {
+    restored = await withEditGrants(deps.fileAccess, [grant], () =>
+      applyNamespaceChange(port, documentId, change, "undo"),
+    );
+  } catch (cause) {
+    await deps.namespaceChanges.transition(change.id, "reversed");
+    throw cause;
+  }
+  if (restored.ok) {
+    await deps.namespaceChanges.discard(change.id);
+    return { status: "restored", documentId, uri: change.fromUri };
+  }
+  await deps.namespaceChanges.transition(change.id, "reversed");
+  if (restored.error.code === "conflict") return { status: "location_taken", uri: change.fromUri };
+  if (restored.error.code === "not_found") return { status: "folder_missing", uri: change.fromUri };
+  contextErrorToHttp(restored.error);
 }
