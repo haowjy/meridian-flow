@@ -36,14 +36,40 @@ export type MobileDocumentHostProps = {
 };
 
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
-  return props.localTab ? (
-    <MobileLocalDocumentHost
-      projectId={props.projectId}
-      workId={props.editorWorkId}
-      tab={props.localTab}
+  if (props.localTab)
+    return (
+      <MobileLocalDocumentHost
+        projectId={props.projectId}
+        workId={props.editorWorkId}
+        tab={props.localTab}
+      />
+    );
+  const tab = props.route.tab;
+  // A pending new-document draft has no live room and the server refuses one: its
+  // branch is hosted alone, exactly as the desktop does.
+  if (tab?.kind === "tracked" && tab.draftOnly)
+    return <MobileDraftOnlyDocumentHost {...props} tab={tab} />;
+  return <MobileServerDocumentHost {...props} />;
+}
+
+function MobileDraftOnlyDocumentHost({
+  projectId,
+  editorWorkId,
+  route,
+  tab,
+}: MobileDocumentHostProps & { tab: Extract<ContextTab, { kind: "tracked" }> }) {
+  // The route is bound to the draft's document, but never remembered or activated: its
+  // path dies if the draft is discarded.
+  useMobileRouteBinding({ projectId, workId: editorWorkId, route, activate: false });
+  return (
+    <ContextEditorMountHost
+      projectId={projectId}
+      workId={editorWorkId}
+      trackedTabs={[tab]}
+      activeTabId={tab.documentId}
+      active
+      readOnly
     />
-  ) : (
-    <MobileServerDocumentHost {...props} />
   );
 }
 
@@ -105,12 +131,23 @@ function MobileLocalDocumentHost({
   );
 }
 
-function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
-  const workId = editorWorkId;
-  const projectionOwner = useRef({});
+/**
+ * Binds the routed locator to the document the route resolved to, or rejects it once the
+ * catalog has settled without one. `activate` marks the route as the one to remember.
+ */
+function useMobileRouteBinding({
+  projectId,
+  workId,
+  route,
+  activate,
+}: {
+  projectId: string;
+  workId: string;
+  route: MobileDocumentRoute;
+  activate: boolean;
+}) {
   const contextRemoval = useContextRemovalCoordinator();
   const removalState = useContextRemovalProject(projectId);
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = route.requested;
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
@@ -127,12 +164,15 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       selection.locator.workId !== workId
     )
       return;
-    if (activeTab && !isFetching && !isError) {
+    // The live catalog says nothing about a pending draft: its tab is the identity.
+    const catalogSettled = !isFetching && !isError;
+    const draftOnly = activeTab?.kind === "tracked" && activeTab.draftOnly === true;
+    if (activeTab && (draftOnly || catalogSettled)) {
       contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: activeTab.documentId,
       });
-    } else if (selection.status === "candidate" && catalogResolved && !isFetching && !isError) {
+    } else if (selection.status === "candidate" && catalogResolved && catalogSettled) {
       contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
   }, [
@@ -151,6 +191,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
 
   useLayoutEffect(() => {
     if (
+      !activate ||
       !activeTab ||
       removalState.selection.status !== "bound" ||
       activeTab.documentId !== removalState.selection.identity.documentId
@@ -164,7 +205,18 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       identity: removalState.selection.identity,
       owner: { kind: "route-only" },
     });
-  }, [activeTab, contextRemoval, projectId, removalState]);
+  }, [activate, activeTab, contextRemoval, projectId, removalState]);
+}
+
+function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
+  const workId = editorWorkId;
+  const projectionOwner = useRef({});
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const activeContextScheme = route.scheme;
+  const activeContextPath = route.path;
+  const activeTab = route.tab;
+  const { catalogResolved, isError, isFetching } = route;
+  useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   const selectedReviewDraftId =
