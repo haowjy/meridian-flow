@@ -38,6 +38,7 @@ export type ContextTargetExpectation =
 interface PreparedContextMoveBase {
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
+  mover?: { userId: string; turnId?: string | null; responseId?: string | null };
   /** Destination context_sources.id selected by URI routing. */
   destinationSourceId: string;
   /** Final normalized target path after Unix mv basename/directory resolution. */
@@ -82,6 +83,7 @@ export type ContextTreeMutationError =
 export interface ContextTreeMutationResult {
   /** Moved document id for files, or moved root folder id for directory moves. */
   movedNodeId: string;
+  linkUpdate?: { links: number; documents: number };
 }
 
 export interface ContextTreeDeleteResult {

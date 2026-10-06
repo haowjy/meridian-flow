@@ -13,11 +13,14 @@ import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
+import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
+import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
   useIdentityCommit,
 } from "./use-identity-commit";
+import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
@@ -44,12 +47,21 @@ export function DocumentIdentityBar({
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const commit = useIdentityCommit({
+  const noteOperationId = useRenameOperation(tab.documentId);
+  const commitIdentity = useIdentityCommit({
     projectId,
     tab,
     editorWorkId: editorWorkId,
     onCommitted,
   });
+  // Only a rename made here shows the note here; the tree shows its own. The rename
+  // re-resolves the tab and remounts this bar, so the operation outlives it.
+  const commit: typeof commitIdentity = async (target) => {
+    const outcome = await commitIdentity(target);
+    if (outcome.status === "committed" && outcome.operationId)
+      rememberRenameOperation(tab.documentId, outcome.operationId);
+    return outcome;
+  };
 
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
@@ -65,9 +77,11 @@ export function DocumentIdentityBar({
     repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
       ? ({ kind: "error", name: repair.name } as const)
       : null;
-  useEffect(() => {
-    if (identityFailure) setFieldOpen(true);
-  }, [identityFailure]);
+  const failureAt =
+    repair?.kind === "set-location"
+      ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+      : undefined;
+  useRepairOnFreshFailure(identityFailure ? failureAt : undefined, () => setFieldOpen(true));
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.
@@ -105,9 +119,30 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <IdentityPath location={location} />
+          <>
+            <IdentityPath location={location} />
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "file", id: tab.documentId }}
+              operationId={noteOperationId}
+              className="ml-3 font-sans text-ink-muted"
+            />
+          </>
         )}
         <span className="min-w-1 flex-1" />
+        {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
+        {repair?.kind === "set-location" && !fieldOpen ? (
+          <button
+            type="button"
+            className="focus-ring flex min-w-0 items-center rounded-md"
+            onClick={() => {
+              setDismissedRepairId(null);
+              setFieldOpen(true);
+            }}
+          >
+            <NamespaceFailureMark failure="set-location" labelled />
+          </button>
+        ) : null}
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}

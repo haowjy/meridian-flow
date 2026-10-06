@@ -12,6 +12,10 @@ import {
   catalogResponseMatchesRequest,
   sameCatalogProjectionScope,
 } from "./catalog-scope";
+import {
+  folderObservationFence,
+  planFolderCatalogInstallation,
+} from "./folder-catalog-installation";
 import type {
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
@@ -66,7 +70,7 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
       classification: structuredClone(resource.classification),
     });
   }
-  return { resources };
+  return { resources, folders: folderObservationFence(snapshot.folders) };
 }
 
 function revision(value: string): bigint | null {
@@ -151,11 +155,23 @@ export class ResourceCatalogAcquisition {
         view,
         observedAfter: fence,
       });
-      if (plan.resources.length === 0 && checkpointMatchesView(previous, view)) return "committed";
+      const folders = planFolderCatalogInstallation({
+        projectId,
+        folders: snapshot.folders,
+        view,
+        fence,
+      });
+      if (
+        plan.resources.length === 0 &&
+        folders.length === 0 &&
+        checkpointMatchesView(previous, view)
+      )
+        return "committed";
       const result = await this.metadata.commitCatalog({
         expectedRevision: previous?.revision ?? null,
         next: plan.checkpoint,
         resources: plan.resources,
+        folders,
       });
       this.assertCurrent(epoch);
       if (result === "committed") return result;

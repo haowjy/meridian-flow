@@ -2,6 +2,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -215,6 +216,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           serializer,
           createDrizzleDocumentProjectionEffects(db),
           changeTrails,
+          createDrizzleDocumentDerivationStore(db, (tx, id) =>
+            resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+          ),
         ),
       };
     };

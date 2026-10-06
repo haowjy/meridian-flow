@@ -22,9 +22,13 @@ type CatalogFileBase = {
   resourceOrigin?: "local";
   /** Exact device content can open without a fresh server read. */
   localContent?: true;
+  /** The writer's own move of this document, or of a folder above it, is not yet confirmed. */
+  placementPending?: true;
   /** Durable namespace work that needs the writer to retry. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;
+  /** When the refusal settled locally; separates a fresh failure from one already there on load. */
+  namespaceFailureAt?: number;
 };
 
 export type CatalogFile =
@@ -48,6 +52,10 @@ export type CatalogDirectory = {
   name: string;
   path: string;
   uri: string;
+  /** A refused rename or move put this folder back; the writer retries from here. */
+  namespaceFailure?: "set-location";
+  namespaceRepairName?: string;
+  namespaceFailureAt?: number;
 };
 
 export type CatalogNode = CatalogDirectory | CatalogFile;

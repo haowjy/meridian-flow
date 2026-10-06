@@ -26,9 +26,12 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
+import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
 export type MobileContextBrowserProps = Pick<
@@ -287,7 +290,7 @@ function FolderListingBody({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId });
+    void openDocument({ documentId: file.documentId, workId: workId ?? undefined });
   }
 
   const siblingNames = children.map((child) => child.name);
@@ -296,7 +299,7 @@ function FolderListingBody({
     <ul className="flex flex-col">
       {folders.map((child) => (
         <MobileFolderRow
-          key={child.path}
+          key={child.entryId}
           dir={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
@@ -308,7 +311,7 @@ function FolderListingBody({
       ))}
       {files.map((child) => (
         <MobileFileRow
-          key={child.path}
+          key={child.entryId}
           file={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
@@ -382,6 +385,8 @@ function MobileFolderRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
 
   if (renaming) {
     return (
@@ -393,9 +398,11 @@ function MobileFolderRow({
           entryId={dir.entryId}
           path={dir.path}
           currentName={dir.name}
+          repairName={dir.namespaceRepairName}
           siblingNames={siblingNames}
           kind="folder"
           icon={Folder}
+          onRenamed={setNoteOperationId}
           onDone={() => setRenaming(false)}
         />
       </li>
@@ -408,13 +415,23 @@ function MobileFolderRow({
         icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
         label={dir.name}
         trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-            }}
-          />
+          <span className="flex items-center">
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "folder", id: dir.entryId }}
+              operationId={noteOperationId}
+            />
+            {dir.namespaceFailure ? (
+              <NamespaceFailureMark failure={dir.namespaceFailure} folder />
+            ) : null}
+            <MobileEntryActionsMenu
+              allowDelete={scheme !== "uploads"}
+              onAction={(action) => {
+                if (action === "rename") setRenaming(true);
+                else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
+              }}
+            />
+          </span>
         }
         onClick={onDrill}
       />
@@ -441,7 +458,9 @@ function MobileFileRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
   const FileIcon = fileKindIcon(file);
+  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
 
   if (renaming) {
     return (
@@ -453,9 +472,11 @@ function MobileFileRow({
           entryId={file.documentId}
           path={file.path}
           currentName={file.name}
+          repairName={file.namespaceRepairName}
           siblingNames={siblingNames}
           kind="file"
           icon={FileIcon}
+          onRenamed={setNoteOperationId}
           onDone={() => setRenaming(false)}
         />
       </li>
@@ -468,19 +489,29 @@ function MobileFileRow({
         icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
         label={file.name}
         trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else
-                onRequestDelete({
-                  name: file.name,
-                  path: file.path,
-                  kind: "file",
-                  documentId: file.documentId,
-                });
-            }}
-          />
+          <span className="flex items-center">
+            <LinkUpdateNote
+              projectId={projectId}
+              subject={{ kind: "file", id: file.documentId }}
+              operationId={noteOperationId}
+            />
+            {file.namespaceFailure ? (
+              <NamespaceFailureMark failure={file.namespaceFailure} />
+            ) : null}
+            <MobileEntryActionsMenu
+              allowDelete={scheme !== "uploads"}
+              onAction={(action) => {
+                if (action === "rename") setRenaming(true);
+                else
+                  onRequestDelete({
+                    name: file.name,
+                    path: file.path,
+                    kind: "file",
+                    documentId: file.documentId,
+                  });
+              }}
+            />
+          </span>
         }
         onClick={onOpen}
       />
@@ -496,9 +527,11 @@ function MobileRenameRow({
   entryId,
   path,
   currentName,
+  repairName,
   siblingNames,
   kind,
   icon: Icon,
+  onRenamed,
   onDone,
 }: {
   projectId: string;
@@ -507,9 +540,11 @@ function MobileRenameRow({
   entryId: string;
   path: string;
   currentName: string;
+  repairName?: string;
   siblingNames: readonly string[];
   kind: ContextCreateKind;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({
@@ -519,8 +554,10 @@ function MobileRenameRow({
     entryId,
     path,
     currentName,
+    repairName,
     siblingNames,
     kind,
+    onRenamed,
     onDone,
   });
 

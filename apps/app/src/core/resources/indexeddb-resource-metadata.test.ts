@@ -1,6 +1,10 @@
 /** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
 import "fake-indexeddb/auto";
-import type { ResourceRecord, ResourceWrite } from "@meridian/resource-replica";
+import {
+  planFolderLocation,
+  type ResourceRecord,
+  type ResourceWrite,
+} from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
@@ -124,6 +128,7 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
       expectedRevision: null,
       next: checkpoint,
       resources: [{ expectedRevision: null, next: resource() }],
+      folders: [],
     }),
   ).toBe("committed");
   expect(
@@ -131,11 +136,13 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
       expectedRevision: 1,
       next: { ...checkpoint, revision: 2, cursor: "cursor-2" },
       resources: [{ expectedRevision: null, next: resource("doc", 2) }],
+      folders: [],
     }),
   ).toBe("stale");
   expect(await store.readCatalog("project", scope)).toEqual(checkpoint);
   expect(await store.readProjection("project")).toEqual({
     records: [resource()],
+    folders: [],
     catalogs: [checkpoint],
   });
 });
@@ -191,6 +198,7 @@ it("rolls back resource, intent, and checkpoint writes when the outer transactio
         invalidatedEntryIds: [],
       },
       resources: [{ expectedRevision: null, next: invalid }],
+      folders: [],
     }),
   ).rejects.toThrow();
   expect(await store.readResource({ handle: "doc" })).toBeNull();
@@ -220,12 +228,13 @@ it("shares one account resource while qualifying the User catalog per consuming 
       expectedRevision: null,
       next: first,
       resources: [{ expectedRevision: null, next: resource() }],
+      folders: [],
     }),
   ).toBe("committed");
   const second = { ...first, projectId: "project-b", cursor: "cursor-b" };
-  expect(await store.commitCatalog({ expectedRevision: null, next: second, resources: [] })).toBe(
-    "committed",
-  );
+  expect(
+    await store.commitCatalog({ expectedRevision: null, next: second, resources: [], folders: [] }),
+  ).toBe("committed");
 
   const requestScope = { kind: "user" as const, userId: "self" };
   expect(await store.readCatalog("project-a", requestScope)).toEqual(first);
@@ -281,6 +290,83 @@ it("rejects rewriting the project authority of recorded namespace work", async (
     "cannot be replaced",
   );
   expect(await store.readResource(next.resource)).toEqual(next);
+});
+
+it("publishes folder placement through the shared stream and installs a refresh atomically with its catalog", async () => {
+  const store = open();
+  const scope = { kind: "project" as const, projectId: "project" };
+  const published: number[] = [];
+  store.observeProjection("project", ({ folders }) => published.push(folders.length), vi.fn());
+  const canonical = {
+    scheme: "user" as const,
+    path: "/chapters",
+    name: "chapters",
+    workId: null,
+  };
+  const move = planFolderLocation({
+    projectId: "project",
+    handle: "folder:chapters",
+    folderId: "chapters",
+    source: canonical,
+    destination: { scheme: "user", folderPath: "/", name: "volume", workId: null },
+    intentId: "move",
+    operationId: "move",
+  });
+  if (!move) throw new Error("Missing folder move");
+  expect(await store.commitFolder(move)).toBe("committed");
+  expect(await store.commitFolder(move)).toBe("stale");
+  await vi.waitFor(() => expect(published).toContain(1));
+
+  const refresh = {
+    expectedRevision: move.next.revision,
+    next: {
+      ...move.next,
+      revision: move.next.revision + 1,
+      canonical: { ...canonical, path: "/volume", name: "volume" },
+    },
+  };
+  const catalog = (resources: readonly ResourceWrite[]) => ({
+    expectedRevision: null,
+    next: {
+      projectId: "project",
+      scope,
+      revision: 1,
+      generation: "generation",
+      appliedRevision: "1",
+      observedHeadRevision: "1",
+      cursor: "cursor",
+      entries: [],
+      invalidatedEntryIds: [],
+    },
+    resources,
+    folders: [refresh],
+  });
+  expect(await store.commitCatalog(catalog([{ expectedRevision: 5, next: resource() }]))).toBe(
+    "stale",
+  );
+  expect((await store.readFolder({ handle: "folder:chapters" }))?.canonical.path).toBe("/chapters");
+  expect(await store.readCatalog("project", scope)).toBeNull();
+  expect(await store.commitCatalog(catalog([]))).toBe("committed");
+  expect((await store.readFolder({ handle: "folder:chapters" }))?.canonical.path).toBe("/volume");
+  expect(await store.readFolders("project")).toHaveLength(1);
+  expect((await store.readFolders("other-project")).map((folder) => folder.folderId)).toEqual([
+    "chapters",
+  ]);
+  const shared = (await store.readFolders("other-project"))[0];
+  if (!shared) throw new Error("Missing shared personal folder");
+  const next = planFolderLocation({
+    record: shared,
+    projectId: "other-project",
+    handle: shared.handle,
+    folderId: shared.folderId,
+    source: shared.canonical,
+    destination: { scheme: "user", folderPath: "", name: "from-b", workId: null },
+    intentId: "from-b",
+    operationId: "from-b",
+  });
+  if (!next) throw new Error("Missing shared folder command");
+  expect(await store.commitFolder(next)).toBe("committed");
+  expect((await store.readFolders("project"))[0]?.intents.at(-1)?.projectId).toBe("other-project");
 });
 
 it("observes committed records across instances and stops admission before draining", async () => {
@@ -467,6 +553,7 @@ it("notifies project observers after a catalog-only commit", async () => {
       invalidatedEntryIds: [],
     },
     resources: [],
+    folders: [],
   });
   await vi.waitFor(() => expect(observed).toContain("new-catalog"));
   expect(onError).not.toHaveBeenCalled();

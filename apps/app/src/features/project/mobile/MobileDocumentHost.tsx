@@ -29,7 +29,7 @@ import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
   projectId: string;
-  editorWorkId: string | null;
+  editorWorkId: string;
   route: MobileDocumentRoute;
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>;
 };
@@ -52,7 +52,7 @@ function MobileLocalDocumentHost({
   tab,
 }: {
   projectId: string;
-  workId: string | null;
+  workId: string;
   tab: Extract<ContextTab, { kind: "new" | "tracked" }>;
 }) {
   const removal = useContextRemovalCoordinator();

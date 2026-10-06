@@ -134,7 +134,7 @@ export type ProjectViewProps = {
   routeWork: RouteWorkResolution;
   /** Validated browser-local Work offered as the collection's return destination. */
   rememberedWork: AddressableWork | null;
-  editorRouteWork?: RouteWorkResolution;
+  editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   addressOwnsDocumentAdmission?: boolean;
@@ -267,11 +267,11 @@ export function ProjectView(props: ProjectViewProps) {
   // both go to null there, even though the current chat stays warm behind it.
   const displayedChatThread = displayedChatThreadId(props.chatDisplay);
   const chatThread = projectThreads?.find((thread) => thread.id === displayedChatThread);
-  const chatWork = chatThread
-    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
+  const chatWork = chatThread?.workId
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
   const chatWorkId = chatWork?.id ?? null;
-  const editorRouteWork = props.editorRouteWork ?? props.routeWork;
+  const editorRouteWork = props.editorRouteWork;
   const editorScope = resolveEditorWorkScope(editorRouteWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   const editorWork = editorRouteWork.status === "present" ? editorRouteWork.work : null;
@@ -305,7 +305,7 @@ export function ProjectView(props: ProjectViewProps) {
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
       if (editorScope.status !== "ready" || !scheme) return;
-      void props.onOpenContextTarget({ path, scheme, workId: editorWorkId }, options);
+      void props.onOpenContextTarget({ path, scheme, workId: editorScope.workId }, options);
     },
     [editorWorkId, editorScope.status, props.onOpenContextTarget],
   );
@@ -327,13 +327,13 @@ export function ProjectView(props: ProjectViewProps) {
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
         <>
-          {resolvedProps.contextLive ? (
+          {resolvedProps.contextLive && editorScope.status === "ready" ? (
             <ProjectContextRemovalController
               projectId={props.projectId}
               activeScreen={props.activeScreen}
               activeContextScheme={props.activeContextScheme}
               activeContextPath={props.activeContextPath}
-              editorWorkId={editorWorkId}
+              editorWorkId={editorScope.workId}
               localDocumentId={props.activeLocalDocumentId}
               route={props.contextRemovalRoute}
             />
@@ -522,23 +522,30 @@ function expandToggle(
 
 /** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
-  const priorEditor = useRef<Pick<
-    ReviewScopedProjectProps,
-    | "editorReview"
-    | "editorWorkId"
-    | "editorWork"
-    | "activeContextScheme"
-    | "activeContextPath"
-    | "activeLocalDocumentId"
-  > | null>(null);
+  const priorEditor = useRef<
+    | (Pick<
+        ReviewScopedProjectProps,
+        | "editorReview"
+        | "editorWorkId"
+        | "editorWork"
+        | "activeContextScheme"
+        | "activeContextPath"
+        | "activeLocalDocumentId"
+      > & { editorWorkId: string })
+    | null
+  >(null);
   const editorActive =
     props.activeScreen === "context" &&
     props.editorScope.status === "ready" &&
     props.contextLive &&
     !props.routeIssues?.editor;
-  const mountedEditor = editorActive ? props : priorEditor.current;
+  const mountedEditor =
+    editorActive && props.editorScope.status === "ready"
+      ? { ...props, editorWorkId: props.editorScope.workId }
+      : priorEditor.current;
   useLayoutEffect(() => {
-    if (editorActive) priorEditor.current = props;
+    if (editorActive && props.editorScope.status === "ready")
+      priorEditor.current = { ...props, editorWorkId: props.editorScope.workId };
   });
 
   // Inline review on the Editor screen holds the left rail collapsed to give
@@ -640,7 +647,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             <DraftReviewBoundary value={mountedEditor.editorReview}>
               {editorActive ? (
                 <EditorReviewIntentClaimant
-                  editorWorkId={props.editorWorkId}
+                  editorWorkId={mountedEditor.editorWorkId}
                   activeScheme={props.activeContextScheme}
                   activePath={props.activeContextPath}
                 />

@@ -30,8 +30,11 @@ runtime shapes, and observability records.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.
 - `document-href.ts` is the one place a standard Markdown link's destination
-  is resolved (`resolveDocumentHref`), spelled (`spellDocumentHref`), and
-  matched to a catalog path (`matchDocumentPath`). Both link resolvers, the
+  is resolved (`resolveDocumentHref`), spelled (`spellDocumentHref`),
+  respelt while preserving style (`respellDocumentHref`), and matched to a
+  catalog path (`matchDocumentPath` through `documentPathKey`). Address-index
+  keys come only from `documentAddressKey`, which requires explicit Work authority.
+  Both link resolvers, the
   Editor clipboard, `@` insertion, LinkForm and the composer's reference
   spelling call it. Never format a destination from a raw URI or
   re-implement relative resolution: two copies of it once disagreed, and a raw

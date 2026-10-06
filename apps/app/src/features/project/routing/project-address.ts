@@ -57,7 +57,9 @@ function uuid(value: string | undefined): string | null {
 }
 
 /** A nullable Work id as a selection: no id selects no Work. */
-export function workIdSelection(workId: string | null): AddressSelection {
+export function workIdSelection(
+  workId: string | null,
+): Exclude<AddressSelection, { kind: "absent" }> {
   if (workId === null) return { kind: "none" };
   const id = parseRequestId(workId);
   return id ? { kind: "id", id } : { kind: "malformed", value: workId };

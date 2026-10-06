@@ -9,6 +9,7 @@ import {
   WorkPickerPanel,
 } from "./WorkPickerPanel";
 
+const noWork = { id: "no-work", name: "No Work", isNoWork: true } as Work;
 const operation = { currentWorkId: "a", targetId: null, pending: false, failure: null } as const;
 const archived = {
   id: "b",
@@ -64,11 +65,10 @@ describe("WorkPickerPanel", () => {
     const chooseNone = vi.fn();
     await withReactRoot(
       <WorkPickerPanel
-        view={view({ status: "ready", works: [], refreshing: false })}
-        operation={{ currentWorkId: "", targetId: null, pending: false, failure: null }}
+        view={view({ status: "ready", noWork, works: [], refreshing: false })}
+        operation={{ currentWorkId: noWork.id, targetId: null, pending: false, failure: null }}
         onQueryChange={() => {}}
-        onChoose={() => {}}
-        onChooseNone={chooseNone}
+        onChoose={chooseNone}
       />,
       () => {
         expect(document.body.textContent).not.toContain("No Work matches your search.");
@@ -86,13 +86,13 @@ describe("WorkPickerPanel", () => {
   it("does not offer an archived Work, which a chat cannot be bound to", async () => {
     await withReactRoot(
       <WorkPickerPanel
-        view={view({ status: "ready", works: [archived], refreshing: false }, "Second")}
+        view={view({ status: "ready", noWork, works: [archived], refreshing: false }, "Second")}
         operation={operation}
         onQueryChange={() => {}}
         onChoose={() => {}}
       />,
       () => {
-        expect(document.querySelector("[data-work-choice]")).toBeNull();
+        expect(document.querySelectorAll("[data-work-choice]")).toHaveLength(1);
         expect(document.body.textContent).toContain("No Work matches your search.");
       },
     );
@@ -108,7 +108,7 @@ describe("WorkPickerPanel", () => {
     } as Work;
     await withReactRoot(
       <WorkPickerPanel
-        view={view({ status: "ready", works: [current], refreshing: false })}
+        view={view({ status: "ready", noWork, works: [current], refreshing: false })}
         operation={operation}
         onQueryChange={() => {}}
         onChoose={() => {}}
@@ -116,7 +116,9 @@ describe("WorkPickerPanel", () => {
       () => {
         expect(document.querySelector("label[for]")?.textContent).toBe("Search Work");
         expect(document.querySelector("section")?.getAttribute("aria-label")).toBe("Active Work");
-        const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
+        const row = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("[data-work-choice]"),
+        ).at(-1);
         const search = document.querySelector<HTMLInputElement>('input[type="search"]');
         expect(row?.className).toContain("px-2");
         expect(row?.className).toContain("dropdown-focus-ring");
@@ -135,7 +137,12 @@ describe("WorkPickerPanel", () => {
     await withReactRoot(
       <WorkPickerPanel
         view={view(
-          { status: "ready", works: [{ ...archived, archivedAt: null }], refreshing: false },
+          {
+            status: "ready",
+            noWork,
+            works: [{ ...archived, archivedAt: null }],
+            refreshing: false,
+          },
           "",
           true,
         )}
@@ -144,7 +151,9 @@ describe("WorkPickerPanel", () => {
         onChoose={() => {}}
       />,
       () => {
-        const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
+        const row = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("[data-work-choice]"),
+        ).at(-1);
         const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
         expect(accessibleHelp?.textContent).toContain("Goal: Climb");
         expect(row?.textContent).toContain("Changing work");

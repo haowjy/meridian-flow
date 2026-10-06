@@ -54,7 +54,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     text: "Draft the fight scene tonight",
     submissionId: "sub-1",
     agent,
-    workId: null,
+    workId: "no-work",
     ...overrides,
     threadActions,
     selectChat,
@@ -144,7 +144,7 @@ describe("sendProjectChat", () => {
       text: "Keep this first send",
       submissionId: "dock-reload",
       agent,
-      workId: null,
+      workId: "no-work",
       threadActions: actions(),
       selectChat: (threadId) => writeCurrentChat(ACCOUNT, projectId, threadId),
     });

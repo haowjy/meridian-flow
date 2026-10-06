@@ -2,12 +2,25 @@
 
 ## [Unreleased]
 
+- The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
+
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
 
 - Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
+
+- Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
+
+- Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
+- Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
+
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+
+- Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
+
+- A rename the server refused no longer comes back under the refused name after a later delete of the same document is also refused.
 
 - No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
@@ -23,7 +36,8 @@
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.
 
 - Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.
-- Editor: after any change elsewhere in the project, reopening a document could show its saved copy and silently keep your typing in the browser only, never reaching the server, even after reload. It now reconnects, typing reaches the server, and text stranded this way syncs on the next load. A document whose reconnection to the server fails shows "Saved locally (offline)" instead of nothing, and the label clears once it connects.
+- Editor: after any change elsewhere in the project, reopening a document could show its saved copy and silently keep your typing in the browser only, never reaching the server, even after reload. It now reconnects, typing reaches the server, and text stranded this way syncs on the next load. A document whose reconnection to the server fails shows "Saved locally (offline)" instead of nothing.
+- Editor: after a lost connection, or a document that could not reconnect to the server on reopening, the "Saved locally (offline)" pill stays through the reconnect until the server has acknowledged every change made offline, then reads "Back online (all changes saved)" for three seconds. It never appears on a first load, and a new drop returns it to the offline label, and typing again during the confirmation hides it at once.
 - Keep explicit bracket links through Markdown and MDX round trips when their words match their destination, including aligned paragraphs. Always serialize links as bracket resource links; angle autolinks remain links on Markdown ingress and literal text on MDX ingress.
 
 - Links to a document that does not exist yet say so in plain words: the follow dialog reads “Chapter 2” doesn't exist yet, shows the area and folder it would be made in (as do "Opening the link" and "That link could not be checked", which no longer show the address), and offers Create “Chapter 2”; a link that cannot be created says it can't be found. The Editor's hover hint and link menu, and the chat chip's screen-reader label, say "Doesn't exist yet".

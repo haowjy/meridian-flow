@@ -44,7 +44,7 @@ export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options: { enabled?: boolean; workId: string | null },
+  options: { enabled?: boolean; workId: string | null | undefined },
 ): ContextReadStatus {
   const workId = options.workId;
   const callerEnabled = options.enabled ?? true;

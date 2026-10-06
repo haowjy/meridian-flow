@@ -4,17 +4,23 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
+  documentDerivations,
+  documentLinks,
   documents,
   documentYjsCheckpoints,
+  documentYjsUpdates,
+  folders,
   projects,
   users,
 } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
+import { resolveDocumentUri } from "../../context/document-uri-resolver.js";
+import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -29,6 +35,7 @@ import {
   replaceDocumentAuthorityHeadGeneration,
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
+import { createDrizzleDocumentLinkRewrite } from "./drizzle-document-link-rewrite.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
@@ -43,7 +50,9 @@ describe("durable document derivations", () => {
   const sourceId = randomUUID();
   const documentId = randomUUID();
   const persistence = createDrizzleCollabPersistence(db);
-  const store = createDrizzleDocumentDerivationStore(db);
+  const store = createDrizzleDocumentDerivationStore(db, (tx, id) =>
+    resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+  );
   let fail = false;
   const service = createDocumentDerivationService({
     deferred: () => {},
@@ -86,9 +95,8 @@ describe("durable document derivations", () => {
   });
 
   async function append(doc: Y.Doc, text: string) {
-    const before = Y.encodeStateVector(doc);
     doc.getText("prose").insert(doc.getText("prose").length, text);
-    return persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+    return persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc), {
       origin: `human:${userId}`,
       seq: 0,
     });
@@ -219,7 +227,7 @@ describe("durable document derivations", () => {
     if (!oldCut) throw new Error("Missing old cut");
     await append(doc, " new");
     await service.derive(documentId);
-    expect(await store.certify(oldCut, { markdown: "old" }, new Date())).toBe(false);
+    expect(await store.certify(oldCut, { markdown: "old", links: [] }, new Date())).toBe(false);
     expect(await projection()).toBe("old new");
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
@@ -233,8 +241,144 @@ describe("durable document derivations", () => {
         "/renamed.md",
       );
     });
-    expect(await store.certify(preMove, { markdown: "wrong folder" }, new Date())).toBe(false);
+    expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
+      false,
+    );
     expect(await projection()).toBe("old new");
+    doc.destroy();
+  });
+
+  async function links() {
+    return db.select().from(documentLinks).where(eq(documentLinks.sourceDocumentId, documentId));
+  }
+
+  it("certifies projection and links atomically, rejects stale cuts, and re-keys a moved holder", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+    const text = new Y.XmlText();
+    paragraph.push([text]);
+    text.insert(0, "next", { link: { href: "next.md" } });
+    await append(doc, "old");
+    const oldCut = await store.capture(documentId);
+    if (!oldCut) throw new Error("Missing old cut");
+    await append(doc, " new");
+    await service.derive(documentId);
+    const expected = [
+      {
+        sourceDocumentId: documentId,
+        href: "next.md",
+        targetKey: "manuscript://next.md",
+        targetProjectId: projectId,
+        occurrences: 1,
+      },
+    ];
+    expect(await links()).toEqual(expected);
+    expect(await store.certify(oldCut, { markdown: "old", links: [] }, new Date())).toBe(false);
+    expect(await links()).toEqual(expected);
+    await expect(
+      runInDrizzleTransaction(db, async () => {
+        text.format(0, text.length, { link: { href: "wrong.md" } });
+        await append(doc, " rolled back");
+        await service.derive(documentId);
+        throw new Error("rollback certification");
+      }),
+    ).rejects.toThrow("rollback certification");
+    expect(await links()).toEqual(expected);
+    expect(await projection()).toBe("old new");
+    const preMove = await store.capture(documentId);
+    if (!preMove) throw new Error("Missing location cut");
+    const folderId = randomUUID();
+    await runInDrizzleTransaction(db, async () => {
+      await currentDrizzleDb(db)
+        .insert(folders)
+        .values({ id: folderId, contextSourceId: sourceId, name: "moved" });
+      await currentDrizzleDb(db)
+        .update(documents)
+        .set({ folderId })
+        .where(eq(documents.id, documentId));
+      await recordDocumentMove(
+        db,
+        sourceId,
+        sourceId,
+        [{ id: documentId, path: "/chapter.md", kind: "file" }],
+        "/chapter.md",
+        "/moved/chapter.md",
+      );
+    });
+    expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
+      false,
+    );
+    expect(await store.stale({ projectId })).toEqual([documentId]);
+    await service.flush({ projectId });
+    expect(await store.stale({ projectId })).toEqual([]);
+    const [watermark] = await db
+      .select()
+      .from(documentDerivations)
+      .where(eq(documentDerivations.documentId, documentId));
+    expect(await projection()).toBe("old new");
+    expect(await links()).toEqual([{ ...expected[0], targetKey: "manuscript://moved/next.md" }]);
+    expect(watermark?.linksLocationVersion).toBe(1n);
+    expect(watermark?.linksExtractorVersion).toBe(2);
+    await db
+      .update(documentDerivations)
+      .set({ linksExtractorVersion: 1 })
+      .where(eq(documentDerivations.documentId, documentId));
+    expect(await store.stale({ projectId })).toEqual([documentId]);
+    await service.flush({ projectId });
+    expect(await store.stale({ projectId })).toEqual([]);
+    doc.destroy();
+  });
+
+  it("rolls back rejected certification and failed consumption without publishing", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+    const text = new Y.XmlText();
+    paragraph.push([text]);
+    text.insert(0, "next", { link: { href: "next.md" } });
+    await append(doc, "before");
+    await service.derive(documentId);
+    const beforeRows = await db.select().from(documentYjsUpdates);
+    const beforeLinks = await links();
+    const beforeWatermarks = await db.select().from(documentDerivations);
+    let publications = 0;
+    const rewrite = createDrizzleDocumentLinkRewrite({
+      db,
+      resolveUri: (tx, id) =>
+        resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+      serializer: { serializeDocument: async () => "rewritten" },
+      publish: () => {
+        publications++;
+      },
+    });
+    for (const rejection of [false, true]) {
+      await expect(
+        rewrite({
+          documentId,
+          claim: async () => {
+            // Change the locked cut to force a real certification rejection.
+            if (rejection)
+              await currentDrizzleDb(db)
+                .update(documents)
+                .set({ locationVersion: 1n })
+                .where(eq(documents.id, documentId));
+            return {
+              substitutions: new Map([["next.md", { href: "renamed.md" }]]),
+              mover: { type: "user", actorUserId: userId },
+              consume: async () => {
+                throw new Error("consume failed");
+              },
+            };
+          },
+        }),
+      ).rejects.toThrow(rejection ? "certification rejected" : "consume failed");
+      expect(await db.select().from(documentYjsUpdates)).toEqual(beforeRows);
+      expect(await links()).toEqual(beforeLinks);
+      expect(await db.select().from(documentDerivations)).toEqual(beforeWatermarks);
+      expect(await projection()).toBe("before");
+      expect(publications).toBe(0);
+    }
     doc.destroy();
   });
 

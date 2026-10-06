@@ -112,7 +112,7 @@ router resolves to exact project-scoped Work authority before dispatch.
   by more than one asset resolves to nothing: the id direction is unique, the
   path direction is not.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
-  resolution boundary for wikilink titles/aliases, all six canonical Context
+  resolution boundary for standard Markdown hrefs, all six canonical Context
   schemes, and relative paths. The domain reads the existing Context catalog
   and resolves Work qualifiers through project Work authority; it has no separate
   candidate loader or resolution cache. Personal scope comes from authenticated
@@ -141,12 +141,39 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
-| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target })` returns one canonical Context document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, holder? })` returns one canonical Context document or `null`. A target is a discriminated `scheme` or `relative` value. Pending redirects for the exact holder/href win; requests without a holder fall back to previous locations only after a current miss. |
+
+## Pending link redirects
+
+Moves flush the project's certified derivations before entering the namespace
+transaction. Personal moves flush every project of the owner. Failed document
+derives log and retain last-good rows rather than blocking the move.
+
+The move locks all mutated documents (moved identities plus any overwrite victim),
+sorted by identity, `FOR NO KEY UPDATE`, then redirects whose holder
+or target moved `FOR UPDATE`, ordered by holder and href (the worker's order). The weaker document lock
+keeps journal FK insertion compatible. Address candidates use the shared
+`documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
+Moved holders' relative links retain their pre-move target (or intended URI).
+Moving a holder into `user://` respells project targets as contextual full URIs;
+keeping its old relative path would incorrectly resolve inside personal space.
+Existing `(source_document_id, href)` redirects win and keep their original
+mover. `linkUpdate` counts newly inserted occurrences and distinct eligible
+holders; archived/deleted Works and manifests do not count. A target moved into
+another non-personal project cannot be named from a project holder; those
+occurrences (and holders without any representable rewrites) do not count in
+the receipt. The worker drops that target's redirect
+without rewriting, leaving the old href visibly unresolved rather than silently
+naming a different document in the holder's project. If any target is unavailable,
+the worker defers the entire holder batch without rewriting, consuming, or
+setting failure backoff. Restore makes it eligible on the next sweep.
+A post-commit kick
+is a no-op until the rewrite worker is composed; no holder content is edited
+inside a move transaction.
 
 ## Browser document addresses
 
-`document_previous_locations` is direct-to-identity bookmark history, not a
-second wikilink resolver. Moves capture only their file/subtree before DML and
+`document_previous_locations` is direct-to-identity bookmark and chat history. Moves capture only their file/subtree before DML and
 record each vacated file path. Successful file/folder claims consume the exact
 previous location. Failed inserts and rolled-back commands consume nothing.
 Bootstrap uses the same store; hidden manifest identities are outside this
@@ -186,11 +213,8 @@ currently available to the request owner in the requested project.
   `kb://`, `user://`, `unfiled://` carry no Work authority. Scratch and uploads
   are Work-scoped only.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
-- Wikilink title/alias matching is case-insensitive and trims outer whitespace.
-  Scheme and relative paths are exact (an omitted final extension may match);
-  relative traversal cannot escape its scheme root. Wiki names search durable
-  project and authenticated personal files plus the selected Work/no-Work scope,
-  never another Work's titles. Canonical qualifiers may explicitly name another
+- Scheme and relative paths are exact (an omitted final extension may match);
+  relative traversal cannot escape its scheme root. Canonical qualifiers may explicitly name another
   non-deleted Work in the project. Contextual scratch/uploads use the selected
   scope; `@/` always means No Work. Legacy `work://` is not accepted.
   Archived Work identity still parses/resolves as authority and its Work-scoped

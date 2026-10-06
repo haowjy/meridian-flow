@@ -1,6 +1,7 @@
 /** Writer-facing location of an open tab, shared by the identity bar's surfaces. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
 
 import type { ContextTab } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
@@ -46,6 +47,22 @@ export function identityDestination(
     folderPath: choice?.folderPath ?? location.parentPath,
     ...(workId ? { workId } : {}),
   };
+}
+
+/** Resolve a placement's Work from the project snapshot; null while no known Work owns it. */
+export function destinationWorkAuthority(
+  destination: Pick<IdentityDestination, "scheme" | "workId">,
+  works: readonly { id: string; slug: string | null }[] | null | undefined,
+  noWork: { id: string } | null | undefined,
+): ResourceWorkAuthority | null {
+  if (destination.scheme !== "scratch" && !destination.workId) return { workId: null };
+  const workId = destination.workId;
+  if (!workId || !noWork) return null;
+  try {
+    return resourceWorkAuthorityFor(workId, { works: works ?? [], noWork });
+  } catch {
+    return null;
+  }
 }
 
 /** Local documents acquire their first durable location in the project Unfiled source. */
