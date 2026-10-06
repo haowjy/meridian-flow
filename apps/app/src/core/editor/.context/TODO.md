@@ -10,9 +10,11 @@ stale-peer timer are already gone. Keep the provider/Awareness stable while
 replacing or pausing only the room socket, or make provider ownership explicit;
 then probe remote caret disappearance and restoration across terminal recovery.
 
-Also surface an authorized editable session that remains `detached`;
-`SyncStatus.tsx` currently hides it, which made a permanently local-only
-manuscript indistinguishable from a healthy one.
+Also surface an authorized editable session that remains `detached` with no
+adoption failure to report. `SyncStatus.tsx` shows only `adoptionStalled` (a
+reported failure), because a timer would flash a false offline label during a
+healthy cold load; a session stuck `detached` silently is still
+indistinguishable from a healthy one.
 
 Affected paths: `apps/app/src/core/editor/document-session.ts` and
 `apps/app/src/features/editor/SyncStatus.tsx`.

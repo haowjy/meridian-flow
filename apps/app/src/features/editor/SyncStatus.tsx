@@ -1,19 +1,22 @@
 /**
  * SyncStatus — collaboration sync indicator pill for the document editor.
  *
- * Subscribes to a `DocumentSession` snapshot and renders a localized status
- * badge. Labels are derived from the session's status semantics (see
+ * Subscribes to a `DocumentSession` snapshot and renders at most one localized
+ * label, derived from the session's status semantics (see
  * `core/editor/document-session.ts`). `synced` only means the connection is up
  * and its handshake is done, not that the server has the latest edits, so the
  * pill says nothing in healthy use:
- *   - `detached` / `synced` / `syncing` → no indicator
- *   - `offline`   → "Saved locally (offline)" (buffered until reconnect)
- *   - after an outage, the offline label stays through the reconnect until the
- *     server has acknowledged every local change (`serverHasLocalChanges`),
- *     then it swaps in place to "Back online (all changes saved)" for a few
- *     seconds and hides. Never shown on a first load.
- *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial)
- *   - `destroyed` → "Closed"                  (session torn down)
+ *   - `destroyed`   → "Closed" (session torn down); always wins
+ *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins
+ *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
+ *     It begins when the status is `offline` or when `adoptionStalled` (a cached
+ *     session that is `detached` because adopting it failed). It stays through
+ *     the reconnect until the server has acknowledged every local change
+ *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
+ *     changes saved)" for a few seconds and hides.
+ *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
+ *     spends about a second there), so there is no timer and a first load never
+ *     shows a label.
  * Pure presentational leaf; owns only the pill chrome, its subscription, and
  * the confirmation timer.
  */
@@ -30,16 +33,18 @@ type OutagePhase = "idle" | "awaiting" | "confirmed";
 
 /**
  * Advance on every snapshot, so the offline→confirmation swap is one state
- * change and no render exists between the two labels. A drop while confirmed
- * (any non-synced status) returns to awaiting. A local edit while confirmed
- * (the server no longer has everything) ends the confirmation and hides the
- * pill: the connection is healthy, so it is not "offline" again, and waiting to
- * re-show the confirmation would flicker on every keystroke.
+ * change and no render exists between the two labels. Terminal states reset to
+ * idle. An outage (offline, or a stalled adoption) always means awaiting. A
+ * drop while confirmed (any non-synced status) returns to awaiting. A local
+ * edit while confirmed (the server no longer has everything) ends the
+ * confirmation and hides the pill: the connection is healthy, so it is not
+ * "offline" again, and waiting to re-show the confirmation would flicker on
+ * every keystroke.
  */
 function nextPhase(phase: OutagePhase, snapshot: DocumentSessionSnapshot): OutagePhase {
-  if (snapshot.status === "offline") return "awaiting";
-  if (phase === "idle") return phase;
   if (snapshot.status === "access-lost" || snapshot.status === "destroyed") return "idle";
+  if (snapshot.status === "offline" || snapshot.adoptionStalled) return "awaiting";
+  if (phase === "idle") return phase;
   if (phase === "awaiting") return snapshot.serverHasLocalChanges ? "confirmed" : "awaiting";
   if (snapshot.status !== "synced") return "awaiting";
   return snapshot.serverHasLocalChanges ? "confirmed" : "idle";
@@ -52,11 +57,11 @@ type Tracked = {
   phase: OutagePhase;
 };
 
-const trackSession = (session: DocumentSession): Tracked => ({
-  session,
-  snapshot: session.getSnapshot(),
-  phase: "idle",
-});
+/** A session already offline or stalled when the pill mounts shows its label on the first render. */
+function trackSession(session: DocumentSession): Tracked {
+  const snapshot = session.getSnapshot();
+  return { session, snapshot, phase: nextPhase("idle", snapshot) };
+}
 
 export type SyncStatusProps = {
   session: DocumentSession;
@@ -99,16 +104,20 @@ export function SyncStatus({ session }: SyncStatusProps) {
     return () => clearTimeout(timer);
   }, [phase, session]);
 
-  const { status } = snapshot;
-  const terminal = status === "access-lost" || status === "destroyed";
-  const savedOffline = status === "offline" || (phase === "awaiting" && !terminal);
-  const confirmed = phase === "confirmed" && !terminal;
-
-  // Autosync is assumed, so the healthy and transient states say nothing —
-  // "no news is good news." We only surface a state the user might actually
-  // act on: edits buffered locally while offline (and the all-clear after),
-  // or a torn-down session. Rendered as a quiet floating pill by EditorView.
-  if (!savedOffline && !confirmed && !terminal) return null;
+  // Autosync is assumed, so the healthy and transient states say nothing:
+  // "no news is good news." Terminal states win over any outage phase. Rendered
+  // as a quiet floating pill by EditorView.
+  const label =
+    snapshot.status === "destroyed" ? (
+      <Trans>Closed</Trans>
+    ) : snapshot.status === "access-lost" ? (
+      <Trans>Access lost (not saving to the server)</Trans>
+    ) : phase === "awaiting" ? (
+      <Trans>Saved locally (offline)</Trans>
+    ) : phase === "confirmed" ? (
+      <Trans>Back online (all changes saved)</Trans>
+    ) : null;
+  if (!label) return null;
 
   return (
     <div
@@ -117,10 +126,7 @@ export function SyncStatus({ session }: SyncStatusProps) {
       aria-live="polite"
     >
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
-      {savedOffline ? <Trans>Saved locally (offline)</Trans> : null}
-      {confirmed ? <Trans>Back online (all changes saved)</Trans> : null}
-      {status === "access-lost" ? <Trans>Access lost (not saving to the server)</Trans> : null}
-      {status === "destroyed" ? <Trans>Closed</Trans> : null}
+      {label}
     </div>
   );
 }

@@ -1,15 +1,19 @@
 /**
- * SyncStatus contract: after an outage the pill keeps saying "Saved locally
- * (offline)" until the server has acknowledged every local change, swaps to
- * the confirmation in place, and then hides. Healthy use shows nothing.
+ * SyncStatus contract: the pill renders exactly one label. An outage (offline,
+ * or a detached session whose adoption stalled) keeps saying "Saved locally
+ * (offline)" until the server has acknowledged every local change, swaps to the
+ * confirmation in place, and then hides. "Closed" and "Access lost" always win.
+ * Healthy use, including a cold load's brief detached phase, shows nothing.
  */
 import { act, useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
+import {
   DocumentSession,
-  DocumentSessionSnapshot,
-  DocumentSessionStatus,
+  type DocumentSessionConnectionState,
+  type DocumentSessionSnapshot,
+  type DocumentSessionStatus,
+  type DocumentSessionTransportProvider,
 } from "@/core/editor/document-session";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { SyncStatus } from "./SyncStatus";
@@ -21,6 +25,7 @@ function fakeSession(initial: Partial<DocumentSessionSnapshot> = {}) {
     room: { kind: "live", documentId: "doc-1" },
     status: "synced",
     serverHasLocalChanges: false,
+    adoptionStalled: false,
     connectionState: null,
     localPersistenceSynced: true,
     schemaFence: null,
@@ -44,6 +49,32 @@ function fakeSession(initial: Partial<DocumentSessionSnapshot> = {}) {
         for (const listener of listeners) listener(snapshot);
       });
     },
+  };
+}
+
+/** Controllable transport for a real DocumentSession: connect, finish the handshake, acknowledge. */
+function controllableTransport() {
+  let onStatus: (state: DocumentSessionConnectionState) => void = () => {};
+  let onAcknowledged: (acknowledged: boolean) => void = () => {};
+  const provider: DocumentSessionTransportProvider = {
+    synced: true,
+    whenSynced: Promise.resolve(),
+    subscribeStatus(listener) {
+      onStatus = listener;
+      listener({ kind: "connecting", attempt: 1 });
+      return () => {};
+    },
+    subscribeServerAcknowledgement(listener) {
+      onAcknowledged = listener;
+      listener(false);
+      return () => {};
+    },
+    destroy() {},
+  };
+  return {
+    factory: () => provider,
+    connect: () => onStatus({ kind: "connected" }),
+    acknowledge: () => onAcknowledged(true),
   };
 }
 
@@ -185,6 +216,91 @@ describe("SyncStatus", () => {
       expect(committed.some((text) => text?.includes(OFFLINE))).toBe(false);
       healthy.set("synced", true);
       expect(pill()).toBeNull();
+    });
+  });
+
+  it("shows only 'Closed' for a session destroyed after an adoption failure", async () => {
+    const session = new DocumentSession({
+      roomKey: "doc-sync-status",
+      persistence: { kind: "none" },
+    });
+    session.reportAdoptionStalled(true);
+
+    await withReactRoot(<SyncStatus session={session} />, async () => {
+      expect(document.body.textContent).toBe(OFFLINE);
+      await act(async () => {
+        await session.destroy();
+      });
+      expect(document.body.textContent).toBe("Closed");
+    });
+  });
+
+  it("treats a stalled adoption as an outage: offline label until the server has everything, one confirmation, then hides", async () => {
+    const session = new DocumentSession({
+      roomKey: "doc-stalled-recovery",
+      persistence: { kind: "none" },
+    });
+    const transport = controllableTransport();
+
+    await withReactRoot(<SyncStatus session={session} />, async () => {
+      // A healthy cold load is detached for a while: no label, and no timer turns it into one.
+      expect(pill()).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(pill()).toBeNull();
+
+      act(() => session.reportAdoptionStalled(true));
+      const stalledPill = pill();
+      expect(stalledPill?.textContent).toContain(OFFLINE);
+
+      // Transport attaches and finishes its handshake, but nothing is acknowledged yet.
+      await act(async () => {
+        session.attachTransport(transport.factory);
+        transport.connect();
+        await session.whenSynced();
+      });
+      expect(session.getSnapshot()).toMatchObject({
+        status: "synced",
+        adoptionStalled: false,
+        serverHasLocalChanges: false,
+      });
+      expect(pill()).toBe(stalledPill);
+      expect(pill()?.textContent).toContain(OFFLINE);
+
+      act(() => transport.acknowledge());
+      expect(pill()).toBe(stalledPill);
+      expect(pill()?.textContent).toContain(CONFIRMED);
+      act(() => {
+        vi.advanceTimersByTime(3_100);
+      });
+      expect(pill()).toBeNull();
+
+      // The confirmation is a one-off: nothing brings it back.
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(pill()).toBeNull();
+    });
+  });
+
+  it("shows the offline label on the first render for a session already stalled when the pill mounts", async () => {
+    const session = new DocumentSession({
+      roomKey: "doc-stalled-mounted",
+      persistence: { kind: "none" },
+    });
+    session.reportAdoptionStalled(true);
+
+    const committed: Array<string | null | undefined> = [];
+    const Probe = () => {
+      useLayoutEffect(() => {
+        committed.push(pill()?.textContent);
+      });
+      return <SyncStatus session={session} />;
+    };
+
+    await withReactRoot(<Probe />, () => {
+      expect(committed[0]).toContain(OFFLINE);
     });
   });
 });

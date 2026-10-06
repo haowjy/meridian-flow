@@ -120,8 +120,13 @@ lifetime.
   diff re-sends whatever the server lost. The
   transport counts frames on its own socket (`core/transport/server-acknowledgement.ts`)
   because Hocuspocus' `unsyncedChanges` resets to one on every handshake.
-  `SyncStatus.tsx` uses the signal to confirm "Back online (all changes saved)"
-  after an outage; healthy sessions and first loads show nothing.
+  `SyncStatus.tsx` renders one label from it: "Closed" and "Access lost" always
+  win; otherwise an outage (`offline`, or `adoptionStalled`, a `detached`
+  session whose cache adoption failed) shows "Saved locally (offline)" until the
+  server has acknowledged every local change, then "Back online (all changes
+  saved)" for three seconds. Healthy sessions and first loads show nothing, and
+  there is no detached-duration timer: a healthy cold load is `detached` for
+  about a second.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation. Every session receives
