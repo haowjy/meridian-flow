@@ -28,7 +28,11 @@ Addresses are unique, so there is no "several documents" answer.
 needs it, and without one the resolver THROWS rather than answering null: an
 unasked question must not render as a missing document.
 
-`workId` is the Work row id, including No Work. Unresolved surfaces have
+`workId` is the Work row id, including No Work. In the Editor it is the
+holder's projected resource location `workId` for Scratch/Uploads, and the
+project's No Work row for manuscript/kb/user/unfiled. Editor route or remembered
+Work never supplies link scope; `baseUri` is not parsed to infer it. Chat
+continues to use the thread's Work. Unresolved surfaces have
 no scope. Contextual `scratch://` and `uploads://` links use that Work;
 `@/` names the locked No Work row and canonical `@<slug>` names a Work
 through Project Work authority.
@@ -50,7 +54,7 @@ finds the newer registration and does nothing; on unmount it still runs.
 |---|---|
 | A scope change re-registers the resolver | `registerResolver` forgets every answer and every failure in one step, so no later request can be served from the previous scope. The alternative was a scope key inside the cache, which is a second invalidation concept for one rule. |
 | A catalog change is a scope change | A link is spelled the same after a create, move, or delete, and the answer it already has is a door onto the wrong document (or onto nothing). `revision` is the index's identity for the documents it walked, so create, rename, delete, and move all re-ask; nothing else in the app holds a line that invalidates this cache. |
-| Nothing here remounts the editor | Work is runtime scope (`features/editor/editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
+| Nothing here remounts the editor | The holder's location is runtime scope (`features/editor/editor-scope.tsx`). Destroying a collaborative editor and its UndoManager to change a resolver would be the expensive way to invalidate a cache. |
 | A base URI arriving IS a scope change | A relative link asked before the tree settles throws and lands in the resolution store's `failed` set, which the automatic `request()` path then skips forever. Re-registering clears it, and the store's publish makes the decoration plugin ask the same links again. |
 | A click survives a registration | A `resolve()` waiter whose generation retires is asked again in the new one, so a rename or a catalog refetch during a follow opens the right document instead of reporting "could not be checked". Questions only the decorations asked are dropped; the next scan asks them again. |
 | A resolved link paints plain for a frame after a switch | Answers are gone before the new ones land, which is the honest state: in the new Work nobody has asked yet. The base normally settles from cache before the document renders, so this is a deliberate Work switch and not opening a document. |

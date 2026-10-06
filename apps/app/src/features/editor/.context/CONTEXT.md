@@ -138,20 +138,19 @@ is the resolver's own candidate set
 
 ## The editor's scope
 
-One value, `{ projectId, workId }`, provided by `EditorView` around everything it
-renders (`editor-scope.tsx`) and read with `useEditorScope()`. It answers the
-questions the document itself cannot:
+One plain value, `{ projectId, workId }`, provided by `EditorView` around
+its host (`editor-scope.tsx`) and read with `useEditorScope()`. The Editor has
+no Work: for links, Scratch and Uploads holders use the replica's projected
+resource location `workId` (including No Work); manuscript, kb, user, and
+unfiled holders use the project's No Work row. Until the location or No Work
+row is known, the scope is unresolved. Neither `?work`, remembered Work, nor
+`baseUri` supplies a fallback.
 
-| Consumer | What the Work decides |
-|---|---|
-| `useLinkableDocuments` | the `[[` menu offers that Work's Scratch and Uploads (No Work's by its row id) beside the project's documents; a null Work is unresolved, and the index has no scope until it resolves |
-| `ResolveDocumentLinkRequest.workId` | a contextual `scratch://` or `uploads://` link resolves in that Work |
-| `useOpenProjectDocument` | a followed link opens with that Work still selected |
-
-`workId` arrives as a prop (the active thread's Work, or the project's default)
-and is deliberately NOT part of `EditorMountIdentity`: it is runtime scope, and
-remounting a collaborative editor destroys its UndoManager. `reviewWorkId` is a
-different fact — the Work that owns a draft under review — and stays separate.
+This same value drives the local link index, `@` and LinkForm catalogs,
+resolution/cache registration, contextual Create, and link destinations.
+Scope is deliberately NOT part of `EditorMountIdentity`: moving a holder
+must not destroy its collaborative editor or UndoManager. Route `workId`
+and `reviewWorkId` remain separate inputs for draft navigation and review.
 
 The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
 are ports and render nothing; the surfaces those lanes show the writer mount
