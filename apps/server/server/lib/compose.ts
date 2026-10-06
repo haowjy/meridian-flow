@@ -124,7 +124,10 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { createDetachedWorkTracker } from "../domains/runtime/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+} from "../domains/runtime/detached-work.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
@@ -315,6 +318,8 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** Detached work any port started; the composed app drains it at shutdown. */
+  backgroundTasks: DetachedWorkTracker;
   /** A thread's delegation chain, read fresh (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
   /** The chain's effective permission, from the lighter lineage walk. */
@@ -443,12 +448,14 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
+  const backgroundTasks = createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
     eventSink,
+    backgroundTasks,
     manifestMembership: {
       resolveManifestMembership: (input) => {
         if (!boundManifestMembership) {
@@ -615,6 +622,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    backgroundTasks,
     runClaim,
     statusReader,
     gateway,
@@ -674,7 +682,7 @@ export async function createProductionAppPorts(input: {
 
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
-  const backgroundTasks = createDetachedWorkTracker();
+  const { backgroundTasks } = ports;
   const shutdown = { started: false };
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
