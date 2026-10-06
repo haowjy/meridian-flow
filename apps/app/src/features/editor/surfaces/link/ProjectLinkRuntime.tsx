@@ -82,11 +82,15 @@ export function ProjectLinkRuntime({
 
   const documentRevision = useDocumentRevision(editor);
 
-  const scope = useMemo<LinkResolutionScope | null>(
+  // The holder's Work arrives with its resource record. Until then the scope is
+  // pending, so a click waits for the real scope instead of being dropped.
+  const scope = useMemo<LinkResolutionScope | "pending" | null>(
     () =>
-      active && projectId && workId
-        ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
-        : null,
+      !active || !projectId
+        ? null
+        : workId
+          ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+          : "pending",
     [active, baseUri, documentId, documentRevision, projectId, workId],
   );
   const reporter = useMemo<FollowReporter>(
@@ -96,7 +100,7 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  // Inactive is scope null: the follower aborts and dismisses on its own.
+  // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
   const follower = useLinkFollower({ scope, index, resolution, open, reporter });
 
   useEffect(() => {

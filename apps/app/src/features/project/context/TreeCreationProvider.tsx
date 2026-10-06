@@ -6,7 +6,6 @@ import type { ContextCreateKind } from "./context-create-kind";
 export type TreeCreationRequest = {
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
-  workId: string | null;
   /** Target folder path (`""` = scheme root) the inline create row nests under. */
   parentPath: string;
 };

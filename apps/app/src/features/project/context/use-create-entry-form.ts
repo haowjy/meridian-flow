@@ -7,11 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  classifyFiletype,
-  filetypeForPath,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
@@ -19,17 +15,14 @@ import { useCallback } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
-import { useWorks } from "@/client/query/useWorks";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import { destinationWorkAuthority } from "./identity-location";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
-  workId: string | null;
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
   /** Parent folder path. Defaults to `""` (scheme root). */
@@ -56,7 +49,6 @@ export function usesResourceDocumentCreate(path: string): boolean {
 
 export function useCreateEntryForm({
   projectId,
-  workId,
   scheme,
   kind,
   parent = "",
@@ -67,22 +59,11 @@ export function useCreateEntryForm({
   const mutation = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId);
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
       if (kind === "file" && usesResourceDocumentCreate(path)) {
-        const authority = destinationWorkAuthority(
-          {
-            scheme,
-            workId: isWorkScopedProjectContextScheme(scheme) ? (workId ?? undefined) : undefined,
-          },
-          works,
-          noWork,
-        );
-        if (!authority || (isWorkScopedProjectContextScheme(scheme) && !authority.workId))
-          throw new Error(t`Couldn't create this file.`);
         const reservation = await resources.reserveDocument(projectId, parent);
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
         try {
@@ -90,7 +71,7 @@ export function useCreateEntryForm({
             scheme,
             folderPath: parent,
             name: trimmed,
-            ...authority,
+            workId: null,
           });
         } finally {
           reservation.content.handle.release();
@@ -99,30 +80,14 @@ export function useCreateEntryForm({
         // entry stays out of the cached catalog until we drop it here; without
         // this, the tree and any catalog-driven open lag behind the create.
         void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextCatalogView(
-            projectId,
-            scheme,
-            isWorkScopedProjectContextScheme(scheme) ? workId : undefined,
-          ),
+          queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, undefined),
         });
       } else {
-        await mutation.mutateAsync({ scheme, type: kind, path, workId });
+        await mutation.mutateAsync({ scheme, type: kind, path, workId: null });
       }
       onCreated?.(path);
     },
-    [
-      mutation,
-      queryClient,
-      projectId,
-      scheme,
-      kind,
-      parent,
-      onCreated,
-      resources,
-      workId,
-      works,
-      noWork,
-    ],
+    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources],
   );
 
   const form = useInlineEdit({
