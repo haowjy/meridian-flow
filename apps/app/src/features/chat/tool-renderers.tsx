@@ -24,7 +24,13 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { sourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import {
+  sourcePath,
+  stringInput,
+  toolDocumentId,
+  toolInputObject,
+  type WriteMode,
+} from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -336,7 +342,12 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
   // move landed.
   const target = asString(inputObject(tool).path);
   if (!target) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
-  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={target} />} />;
+  return (
+    <CommandTitle
+      verb={phrase.verb}
+      parameter={<DocumentName path={target} documentId={toolDocumentId(tool)} />}
+    />
+  );
 }
 
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
@@ -366,7 +377,8 @@ function resultPreview(tool: ToolView): ToolExpand | null {
   const markup = readPayloadMarkup(tool.result);
   if (!markup) return null;
   const path = readPath(tool);
-  return () => <QuotedPreview markup={markup} path={path} />;
+  const documentId = toolDocumentId(tool);
+  return () => <QuotedPreview markup={markup} path={path} documentId={documentId} />;
 }
 
 function resultOutline(tool: ToolView): ToolExpand | null {
@@ -383,9 +395,10 @@ function submittedContent(tool: ToolView): ToolExpand | null {
   const content = asString(inputObject(tool).content);
   if (!content) return null;
   const path = readPath(tool);
+  const documentId = toolDocumentId(tool);
   return () => (
     <div className="chat-card [--chat-card-border:var(--color-border-subtle)] bg-muted">
-      <QuotedPreview markup={content} path={path} />
+      <QuotedPreview markup={content} path={path} documentId={documentId} />
     </div>
   );
 }
@@ -410,21 +423,29 @@ function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
   );
 }
 
-function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
+function QuotedPreview({
+  markup,
+  path,
+  documentId,
+}: {
+  markup: string;
+  path?: string;
+  documentId?: string;
+}) {
   return (
     <ClippedProse
       className="text-tier-quoted"
-      footer={path ? <OpenDocumentDoor path={path} /> : null}
+      footer={path ? <OpenDocumentDoor path={path} documentId={documentId} /> : null}
     >
       <Markdown>{markup}</Markdown>
     </ClippedProse>
   );
 }
 
-function OpenDocumentDoor({ path }: { path: string }) {
+function OpenDocumentDoor({ path, documentId }: { path: string; documentId?: string }) {
   return (
     <span className="flex min-w-0 text-meta">
-      <DocumentName path={path} label="open" />
+      <DocumentName path={path} label="open" documentId={documentId} />
     </span>
   );
 }

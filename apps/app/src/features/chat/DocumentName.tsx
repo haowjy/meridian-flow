@@ -2,7 +2,11 @@
 import { t } from "@lingui/core/macro";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
-import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
+import {
+  useChatContextDocumentNavigation,
+  useChatContextNavigation,
+  useChatContextRoutability,
+} from "./ChatContextNavigation";
 import { documentDisplayName } from "./document-display-name";
 
 export type DocumentNameProps = {
@@ -13,6 +17,8 @@ export type DocumentNameProps = {
   label?: "name" | "open";
   /** The name as the row needs it, when the title alone won't do (a move's new folder). */
   text?: string;
+  /** The document's id, when known: the door then opens it wherever it is now. */
+  documentId?: string;
 };
 
 export function DocumentName({
@@ -20,8 +26,10 @@ export function DocumentName({
   insideDoor = false,
   label = "name",
   text,
+  documentId,
 }: DocumentNameProps) {
   const openContextUri = useChatContextNavigation();
+  const openContextDocument = useChatContextDocumentNavigation();
   const canOpenContextUri = useChatContextRoutability();
   const title = text ?? documentDisplayName(path);
 
@@ -48,7 +56,8 @@ export function DocumentName({
       // fold the row open.
       onClick={(event) => {
         event.stopPropagation();
-        openContextUri(uri);
+        if (documentId && openContextDocument) openContextDocument(documentId, uri);
+        else openContextUri(uri);
       }}
       // `-my-2 py-[var(--chat-card-pad-y)]` grows the touch target to ~37px without changing row
       // rhythm. The overflow lands inside the row's own 8px bottom padding, so
