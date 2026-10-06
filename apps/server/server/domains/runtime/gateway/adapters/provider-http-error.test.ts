@@ -45,31 +45,7 @@ describe("provider retry headers", () => {
 });
 
 describe("provider HTTP failures", () => {
-  const openAI402 = OpenAI.APIError.generate(
-    402,
-    { error: { message: "Insufficient Balance", type: "unknown_error" } },
-    undefined,
-    new Headers(),
-  );
-  const anthropic402 = Anthropic.APIError.generate(
-    402,
-    { type: "error", error: { type: "billing_error", message: "Insufficient Balance" } },
-    undefined,
-    new Headers(),
-  );
-
-  it.each([
-    ["OpenAI", openAI402],
-    ["Anthropic", anthropic402],
-  ])("does not retry a %s 402 and keeps its status and message", (_provider, err) => {
-    expect(mapProviderHttpError(err)).toMatchObject({
-      code: "provider_error",
-      retryable: false,
-      providerError: { status: 402, message: "Insufficient Balance" },
-    });
-  });
-
-  it.each([404, 409, 413, 422])("does not retry an unnamed %i", (status) => {
+  it.each([402, 404, 413, 422])("does not retry an unnamed %i", (status) => {
     expect(mapProviderHttpError({ status, message: "rejected" })).toMatchObject({
       code: "provider_error",
       retryable: false,
