@@ -1,41 +1,17 @@
 // @vitest-environment jsdom
 /** Recovery hints exercise the real Hocuspocus retry loop with socket-boundary fakes. */
-import { MessageType } from "@hocuspocus/provider";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import type { ConnectivityHint, ConnectivityHintsPort } from "./connectivity-hints";
 
-const sockets = vi.hoisted(() => [] as FakeSocket[]);
-class FakeSocket extends EventTarget {
-  static OPEN = 1;
-  static CONNECTING = 0;
-  readyState = 0;
-  stallClose = false;
-  binaryType = "arraybuffer";
-  constructor(_url: string | URL, _protocols?: string | string[]) {
-    super();
-    sockets.push(this);
-  }
-  send() {}
-  close(code = 1000, reason = "") {
-    this.readyState = this.stallClose ? 2 : 3;
-    if (this.stallClose) return;
-    this.dispatchEvent(new CloseEvent("close", { code, reason }));
-  }
-  connected() {
-    this.readyState = 1;
-    this.dispatchEvent(new Event("open"));
-    // Hocuspocus resolves connection attempts on the first server frame (Ping).
-    this.dispatchEvent(
-      new MessageEvent("message", { data: new Uint8Array([MessageType.Ping]).buffer }),
-    );
-  }
-}
-vi.mock("./tapped-websocket", () => ({
-  TappedWebSocket: FakeSocket,
-  notifyYjsRoomAttached: () => {},
-}));
+import { DocumentSocketHarness, sentSyncKinds } from "./test-support/DocumentSocketHarness";
+
+const sockets = DocumentSocketHarness.instances;
+vi.mock("./tapped-websocket", async () => {
+  const { DocumentSocketHarness } = await import("./test-support/DocumentSocketHarness");
+  return { TappedWebSocket: DocumentSocketHarness, notifyYjsRoomAttached: () => {} };
+});
 vi.mock("./dev-transport", () => ({ buildSameOriginWsUrl: () => "wss://test/yjs" }));
 const { createHocuspocusDocumentTransport } = await import("./hocuspocus-document-transport");
 let cleanup: () => void;
@@ -71,12 +47,12 @@ function setup() {
     awareness.destroy();
     document.destroy();
   };
-  return { transport, hints, hint: (hint: ConnectivityHint) => callback(hint) };
+  return { document, transport, hints, hint: (hint: ConnectivityHint) => callback(hint) };
 }
 it("cancels backoff and connects immediately without leaving a second retry loop", async () => {
   const { hint } = setup();
   await vi.advanceTimersByTimeAsync(0);
-  sockets[0].close(1006);
+  sockets[0].deliverClose(1006);
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets).toHaveLength(1);
   hint("retry-now");
@@ -94,7 +70,7 @@ it("keeps healthy sockets and closes them immediately on offline", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets).toHaveLength(1);
   expect(sockets[0].readyState).toBe(1);
-  sockets[0].stallClose = true;
+  vi.spyOn(sockets[0], "close").mockImplementation(() => sockets[0].stallClose());
   hint("suspect-offline");
   expect(sockets[0].readyState).toBe(2);
   expect(hints.reportConnected).toHaveBeenCalled();
@@ -106,11 +82,11 @@ it("keeps healthy sockets and closes them immediately on offline", async () => {
 it.each(["terminal", "destroyed"])("never resurrects a %s room", async (state) => {
   const { hint, transport } = setup();
   await vi.advanceTimersByTimeAsync(0);
-  sockets[0].close(1006);
+  sockets[0].deliverClose(1006);
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets).toHaveLength(2);
-  if (state === "terminal") sockets[1].close(4406, "client-schema-superseded");
+  if (state === "terminal") sockets[1].deliverClose(4406, "client-schema-superseded");
   else transport.destroy();
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(5_000);
@@ -121,7 +97,7 @@ it("fences the delayed close retry while a hinted replacement is still connectin
   const { hint } = setup();
   await vi.advanceTimersByTimeAsync(0);
   sockets[0].connected();
-  sockets[0].close(1006);
+  sockets[0].deliverClose(1006);
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(2_000);
   expect(sockets).toHaveLength(2);
@@ -130,9 +106,8 @@ it("fences the delayed close retry while a hinted replacement is still connectin
 it("fences the pre-first-message retry after a hinted replacement becomes healthy", async () => {
   const { hint } = setup();
   await vi.advanceTimersByTimeAsync(0);
-  sockets[0].readyState = 1;
-  sockets[0].dispatchEvent(new Event("open"));
-  sockets[0].close(1006);
+  sockets[0].open();
+  sockets[0].deliverClose(1006);
   await vi.advanceTimersByTimeAsync(0);
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(0);
@@ -140,4 +115,43 @@ it("fences the pre-first-message retry after a hinted replacement becomes health
   await vi.advanceTimersByTimeAsync(2_000);
   expect(sockets).toHaveLength(2);
   expect(sockets[1].readyState).toBe(1);
+});
+
+it("clears saved before offline status and restores it after hinted reconnect acknowledgements", async () => {
+  const { document, transport, hint } = setup();
+  let acknowledged = false;
+  const events: string[] = [];
+  transport.subscribeServerAcknowledgement?.((value) => {
+    acknowledged = value;
+    events.push(`saved:${value}`);
+  });
+  transport.subscribeStatus?.((state) => events.push(`${state.kind}:${acknowledged}`));
+  const handshake = (socket: DocumentSocketHarness) => {
+    socket.open();
+    socket.syncStep1("document-1", document);
+    socket.syncStep2("document-1", document, Y.encodeStateVector(document));
+  };
+  await vi.advanceTimersByTimeAsync(0);
+  handshake(sockets[0]);
+  sockets[0].acknowledge("document-1");
+  expect(acknowledged).toBe(true);
+
+  events.length = 0;
+  vi.spyOn(sockets[0], "close").mockImplementation(() => sockets[0].stallClose());
+  hint("suspect-offline");
+  expect(events).toEqual(["saved:false", "disconnected:false"]);
+  expect(sockets[0].readyState).toBe(2);
+
+  hint("retry-now");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets).toHaveLength(2);
+  handshake(sockets[1]);
+  expect(acknowledged).toBe(false);
+  sockets[1].acknowledge("document-1");
+  expect(acknowledged).toBe(true);
+  document.getText("body").insert(0, "typed after reconnect");
+  expect(sentSyncKinds(sockets[1])).toEqual(["step2", "update"]);
+  expect(acknowledged).toBe(false);
+  sockets[1].acknowledge("document-1");
+  expect(acknowledged).toBe(true);
 });
