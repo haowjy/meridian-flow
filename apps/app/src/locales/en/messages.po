@@ -562,6 +562,10 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
+#: src/features/editor/SyncStatus.tsx
+msgid "Back online (all changes saved)"
+msgstr "Back online (all changes saved)"
+
 #: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr "Back to {title}"
