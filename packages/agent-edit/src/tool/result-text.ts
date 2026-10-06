@@ -52,6 +52,7 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
+  if (result.namespace) facts.push(namespaceFact(result.namespace));
   if (result.reversal && result.reversal.writes.length > 0) {
     facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
   }
@@ -65,6 +66,10 @@ function statusLine(result: AgentEditResultV1): string {
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
+}
+
+function namespaceFact(namespace: NonNullable<AgentEditResultV1["namespace"]>): string {
+  return namespace.kind === "moved" ? `moved from ${namespace.from}` : "deleted";
 }
 
 function blockCount(count: number): string {
@@ -86,6 +91,7 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (result.destination === "draft" && result.draftWork !== undefined)
     facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
+  if (result.namespace) facts.push(namespaceFact(result.namespace));
   if (result.reversal && result.reversal.writes.length > 0)
     facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
   if (result.read) {

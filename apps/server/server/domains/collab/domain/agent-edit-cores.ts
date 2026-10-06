@@ -1,6 +1,7 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
+  DocumentCommandName,
   ReadCommand,
   ResponseCommitSuccessResult,
   WriteCommand,
@@ -59,6 +60,18 @@ export type LiveAgentEditCore = AgentEditCore & {
 export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "commitResponse"> & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
+  /**
+   * D41 for a change that doesn't go through `write` (a `move` or `delete`):
+   * the `read_required` outcome when the model last read the document in
+   * another version than `destination`.
+   */
+  requireCurrentRead(input: {
+    threadId: string;
+    documentId: string;
+    command: DocumentCommandName;
+    path: string;
+    destination: FileDestination;
+  }): WriteOutcome | undefined;
   /** Where this reply's writes to a document go, once it has written there. */
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(

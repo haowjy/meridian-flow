@@ -56,4 +56,14 @@ describe("command schemas", () => {
     expect(parsed.error?.issues.map((issue) => issue.path)).toEqual([["path"]]);
     expect(ReadToolInputSchema.safeParse({ path: "c.md", documentId: "d" }).success).toBe(false);
   });
+
+  it("points a sectioned delete to `remove`, and keeps move and delete out of the engine", () => {
+    const sectioned = WriteToolInputSchema.safeParse({ command: "delete", path: "c.md#scene" });
+    expect(sectioned.error?.issues).toEqual([
+      expect.objectContaining({ path: ["path"], message: expect.stringContaining("`remove`") }),
+    ]);
+    const move = { command: "move", from: { path: "a.md" }, path: "b.md" };
+    expect(WriteToolInputSchema.parse(move)).toEqual(move);
+    expect(WriteCommandSchema.safeParse({ command: "delete", file: "c.md" }).success).toBe(false);
+  });
 });

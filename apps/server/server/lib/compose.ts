@@ -23,6 +23,7 @@ import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizz
 import {
   type CollabDomain,
   createCollabDomain,
+  createDrizzleAgentNamespaceChanges,
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
@@ -225,6 +226,7 @@ import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
+  type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
   createModelToolRegistrations,
   createReferenceReader,
@@ -287,6 +289,8 @@ export type AppServices = {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
+  /** Each model reply's save and rollback of the writes its tool calls staged. */
+  responseWrites: AgentEditResponseWriteLifecycle;
   modelRequestDebug: ModelRequestDebugStore;
   /** Dev-only scripted replies for the in-process mock model; null with real providers. */
   mockModelScript: MockScriptQueue | null;
@@ -719,14 +723,17 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
+  const namespaceChanges = createDrizzleAgentNamespaceChanges(ports.db);
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
+    namespaceChanges,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
     responseWrites,
+    namespaceChanges,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
@@ -1060,6 +1067,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runClaim: ports.runClaim,
     toolRegistry,
     toolExecutor,
+    responseWrites,
     modelRequestDebug: ports.modelRequestDebug,
     mockModelScript: ports.mockModelScript,
     objectStore: ports.objectStore,
@@ -1538,6 +1546,16 @@ export function createInMemoryAppServices(): AppServices {
     toolExecutor: {
       async executeTool() {
         throw new Error("in-memory tool executor is not implemented");
+      },
+    },
+    responseWrites: {
+      trackStagedCreate() {},
+      trackStagedNamespaceChange() {},
+      async commitResponse() {
+        throw new Error("in-memory response writes are not implemented");
+      },
+      async rollbackResponse() {
+        throw new Error("in-memory response writes are not implemented");
       },
     },
     objectStore: {

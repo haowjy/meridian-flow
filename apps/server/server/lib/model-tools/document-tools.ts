@@ -47,6 +47,11 @@ import {
   withDraftWork,
   withRefusedWrites,
 } from "./file-access.js";
+import {
+  isNamespaceCommand,
+  type NamespaceInput,
+  runNamespaceCommand,
+} from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import {
@@ -61,6 +66,9 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
+
+/** A `write` the engine runs: every command but the host's `move` and `delete`. */
+type ContentWriteInput = Exclude<WriteToolInput, NamespaceInput>;
 
 /** Resolves a model path to its tracked document; only `create` may make one. */
 export async function resolveDocumentAddress(
@@ -132,7 +140,7 @@ export async function resolveDocumentAddress(
 }
 
 function buildAgentWriteCommand(
-  input: WriteToolInput,
+  input: ContentWriteInput,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
 ): WriteCommand {
@@ -166,7 +174,7 @@ function withDestination(outcome: WriteOutcome, destination: FileDestination): W
 async function writeUnderGrant(
   deps: ToolWiringDeps,
   principal: Principal,
-  parsed: WriteToolInput,
+  parsed: ContentWriteInput,
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
@@ -236,6 +244,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(parsed.command, call.output.message);
+    // Move and delete change where a document lives, so the host runs them, not the engine.
+    if (isNamespaceCommand(parsed)) return runNamespaceCommand(deps, call, parsed, ctx);
     const { context, principal } = call;
     const creates = parsed.command === "create" || parsed.command === "copy";
     // A create or copy needs edit on the folder it makes the file in, at the

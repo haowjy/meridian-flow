@@ -3,6 +3,7 @@ import {
   type AgentEditCodec,
   type AgentEditCore,
   createAgentEditCore,
+  type DocumentCommandName,
   type DocumentCoordinator,
   type DocumentLifecycle,
   modelResult,
@@ -305,6 +306,23 @@ export function createThreadPeerCorePool(input: {
     return `${threadId}\0${documentId}`;
   }
 
+  /**
+   * D41: a change to a document the model last read in another version
+   * (live, or a Work's draft) is refused until it reads it again. No prior
+   * read lets it through.
+   */
+  function requireCurrentRead(input: {
+    threadId: string;
+    documentId: string;
+    command: DocumentCommandName;
+    path: string;
+    destination: FileDestination;
+  }): WriteOutcome | undefined {
+    const seen = lastSeen.get(seenKey(input.threadId, input.documentId as DocumentId));
+    if (!seen || sameDestination(seen, input.destination)) return undefined;
+    return readRequired(input.command, input.path, seen, input.destination);
+  }
+
   function coreForDestination(destination: FileDestination, threadId: string | undefined) {
     return destination.kind === "live" ? input.liveUtilityCore : coreFor(threadId);
   }
@@ -398,10 +416,14 @@ export function createThreadPeerCorePool(input: {
     // mid-reply mode switch never splits it across two saves.
     const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
-      const seen = lastSeen.get(seenKey(context.threadId, documentId));
-      if (seen && !sameDestination(seen, destination)) {
-        return readRequired(command, seen, destination);
-      }
+      const refused = requireCurrentRead({
+        threadId: context.threadId,
+        documentId,
+        command: command.command,
+        path: splitDocumentFile(command.file).filePath,
+        destination,
+      });
+      if (refused) return refused;
     }
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
     if (record) {
@@ -510,6 +532,7 @@ export function createThreadPeerCorePool(input: {
   return asThreadPeerAgentEditCore({
     read,
     write,
+    requireCurrentRead,
     recover(docId) {
       return Promise.all([
         input.liveUtilityCore.recover(docId),
@@ -717,19 +740,19 @@ function mergeRollbackResults(
 
 /** D41: the write targets a different version than the model last read. */
 function readRequired(
-  command: WriteCommand,
+  command: DocumentCommandName,
+  path: string,
   seen: FileDestination,
   destination: FileDestination,
 ): WriteOutcome {
-  const path = splitDocumentFile(command.file).filePath;
   const message = `You last read ${path} ${versionPhrase(seen, "in")}, but your writes now go ${versionPhrase(destination, "to")}. Read it again before editing.`;
   return {
     status: "read_required",
     isError: true,
     revision: null,
-    command: command.command,
+    command,
     result: modelResult({
-      command: command.command,
+      command,
       status: "read_required",
       payload: { path, message },
     }),

@@ -3,7 +3,10 @@
 // Each contract is built twice from the same fields: the model-facing tool input
 // names the document `path`, and the engine command names it `file` and adds the
 // host-only `documentId` and `tool_use_id`. Neither projection renames fields.
+// `move` and `delete` change where a document lives, not its content, so only the
+// tool input has them: the host runs them, never the engine.
 import { z } from "zod";
+import { splitDocumentFile } from "../document-address.js";
 import { type CopySourceFields, copySourceIssues } from "./copy-rules.js";
 import {
   type ReversalSelectorFields,
@@ -165,7 +168,7 @@ const MUTATION_BRANCHES = {
   },
   remove: {
     description:
-      "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
+      "Remove the blocks selected by `in` or a `#heading-slug` in `path`; to delete the whole document, use `delete`.",
     fields: { in: BlockSelectorSchema.optional() },
   },
   undo: {
@@ -175,6 +178,21 @@ const MUTATION_BRANCHES = {
   redo: {
     description: "Redo undone writes.",
     fields: WRITE_HANDLE_SELECTOR_FIELDS,
+  },
+} as const;
+
+/** Whole-document namespace commands (D25, D38): the host runs them; the engine never sees them. */
+const NAMESPACE_BRANCHES = {
+  move: {
+    description:
+      "Rename or move the document at `from.path` to `path`. A rename is a move within its folder. Document identity, content and history stay.",
+    fields: {
+      from: z.object({ path: SOURCE_PATH }).strict().describe("The document to move."),
+    },
+  },
+  delete: {
+    description: "Delete the whole document at `path`; to remove part of a document, use `remove`.",
+    fields: {},
   },
 } as const;
 
@@ -203,7 +221,7 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
     );
 }
 
-function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
+function mutationBranches<Target extends z.ZodRawShape>(target: Target) {
   const branch = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
     z
       .object({
@@ -213,38 +231,89 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       })
       .strict()
       .describe(MUTATION_BRANCHES[command].description);
-  return z
-    .discriminatedUnion("command", [
-      branch("create"),
-      branch("copy"),
-      branch("insert"),
-      branch("replace"),
-      branch("remove"),
-      branch("undo"),
-      branch("redo"),
-    ])
-    .superRefine((value, ctx) => {
-      const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
-      const command = fields.command;
-      if (command === "insert" || command === "replace" || command === "remove") {
-        addSelectorIssues(ctx, command, fields, targetKey);
-      }
-      if (command === "insert" || command === "replace" || command === "copy") {
-        for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
-          ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
-        }
-      }
-      if (command === "undo" || command === "redo") {
-        for (const issue of reversalSelectorIssues(fields as ReversalSelectorFields)) {
-          ctx.addIssue({
-            code: "custom",
-            path: [issue.field],
-            message: issue.message,
-            input: value,
-          });
-        }
-      }
+  return [
+    branch("create"),
+    branch("copy"),
+    branch("insert"),
+    branch("replace"),
+    branch("remove"),
+    branch("undo"),
+    branch("redo"),
+  ] as const;
+}
+
+function namespaceBranches<Target extends z.ZodRawShape>(target: Target) {
+  const branch = <Command extends keyof typeof NAMESPACE_BRANCHES>(command: Command) =>
+    z
+      .object({
+        command: z.literal(command),
+        ...target,
+        ...(NAMESPACE_BRANCHES[command].fields as (typeof NAMESPACE_BRANCHES)[Command]["fields"]),
+      })
+      .strict()
+      .describe(NAMESPACE_BRANCHES[command].description);
+  return [branch("move"), branch("delete")] as const;
+}
+
+/** A namespace command names whole documents, so neither of its paths takes a `#fragment`. */
+function addNamespaceIssues(
+  ctx: z.RefinementCtx,
+  value: { command: string; path?: string; from?: { path: string } },
+): void {
+  const at = (path: string | undefined) =>
+    path === undefined ? undefined : splitDocumentFile(path).fragment;
+  if (value.command === "delete" && at(value.path) !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["path"],
+      message:
+        "delete takes a whole document, so drop the #fragment; to remove a section, use `remove`.",
+      input: value,
     });
+  }
+  if (value.command !== "move") return;
+  if (at(value.from?.path) !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["from", "path"],
+      message: "move takes a whole document; drop the #fragment from from.path.",
+      input: value,
+    });
+  }
+  if (at(value.path) !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["path"],
+      message: "move takes a whole document; drop the #fragment from path.",
+      input: value,
+    });
+  }
+}
+
+function refineMutation(value: unknown, ctx: z.RefinementCtx, targetKey: TargetKey): void {
+  const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };
+  const command = fields.command;
+  if (command === "insert" || command === "replace" || command === "remove") {
+    addSelectorIssues(ctx, command, fields, targetKey);
+  }
+  if (command === "insert" || command === "replace" || command === "copy") {
+    for (const issue of copySourceIssues(command, fields as CopySourceFields)) {
+      ctx.addIssue({ code: "custom", path: issue.path, message: issue.message, input: value });
+    }
+  }
+  if (command === "undo" || command === "redo") {
+    for (const issue of reversalSelectorIssues(fields as ReversalSelectorFields)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [issue.field],
+        message: issue.message,
+        input: value,
+      });
+    }
+  }
+  if (command === "move" || command === "delete") {
+    addNamespaceIssues(ctx, value as Parameters<typeof addNamespaceIssues>[1]);
+  }
 }
 
 const ENGINE_TARGET = {
@@ -273,24 +342,33 @@ const WRITE_TARGET = {
 
 /** Engine read input: the document and which of its blocks to render. */
 export const ReadCommandSchema = readInput(ENGINE_TARGET, "file");
-/** Engine mutation input: every `write` command changes a document. */
-export const WriteCommandSchema = mutationUnion(ENGINE_TARGET, "file");
+/** Engine mutation input: every engine command changes a document's content. */
+export const WriteCommandSchema = z
+  .discriminatedUnion("command", mutationBranches(ENGINE_TARGET))
+  .superRefine((value, ctx) => refineMutation(value, ctx, "file"));
 
 /** The `read` tool's published input. */
 export const ReadToolInputSchema = readInput(READ_TARGET, "path");
-/** The `write` tool's published input. */
-export const WriteToolInputSchema = mutationUnion(WRITE_TARGET, "path");
+/** The `write` tool's published input: the engine's commands plus the host's `move` and `delete`. */
+export const WriteToolInputSchema = z
+  .discriminatedUnion("command", [
+    ...mutationBranches(WRITE_TARGET),
+    ...namespaceBranches(WRITE_TARGET),
+  ])
+  .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
 
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;
 export type WriteCommandName = WriteCommand["command"];
 export type ReadToolInput = z.output<typeof ReadToolInputSchema>;
 export type WriteToolInput = z.output<typeof WriteToolInputSchema>;
+/** `write`'s commands the host runs itself: they move or delete a whole document. */
+export type NamespaceCommandName = Extract<WriteToolInput["command"], "move" | "delete">;
 
-/** Every operation the engine reports a result for. */
-export type DocumentCommandName = "read" | WriteCommandName;
+/** Every operation a `read` or `write` result reports. */
+export type DocumentCommandName = "read" | WriteToolInput["command"];
 
-export function writeCommandName(input: unknown): WriteCommandName | undefined {
+export function writeCommandName(input: unknown): WriteToolInput["command"] | undefined {
   if (typeof input !== "object" || input === null || !("command" in input)) return undefined;
   const command = (input as { command?: unknown }).command;
   switch (command) {
@@ -301,6 +379,8 @@ export function writeCommandName(input: unknown): WriteCommandName | undefined {
     case "remove":
     case "undo":
     case "redo":
+    case "move":
+    case "delete":
       return command;
     default:
       return undefined;

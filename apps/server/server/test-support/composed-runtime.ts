@@ -127,7 +127,9 @@ export function useComposedRuntimes(db: () => Database) {
         );
       const save = () =>
         runtime.ports.documentSync.finalizeResponseCommit(responseId, thread as never);
-      return { responseId, call, save };
+      // A failed reply: what its tool calls staged or committed is undone.
+      const rollback = () => runtime.app.responseWrites.rollbackResponse(responseId, thread);
+      return { responseId, call, save, rollback };
     };
     const reply = async (steps: (call: ToolCallText) => Promise<void>) => {
       const { call, save } = await begin();

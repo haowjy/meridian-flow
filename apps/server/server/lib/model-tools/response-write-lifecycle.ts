@@ -1,6 +1,7 @@
 /**
- * The reply's write lifecycle (D42): staged creates to discard, the commit
- * that saves every staged write in one transaction, and the rollback.
+ * The reply's write lifecycle (D42): staged creates to discard, moves and
+ * deletes to reverse, the commit that saves every staged write in one
+ * transaction, and the rollback.
  */
 import type {
   ConcurrentEditInfo,
@@ -8,6 +9,7 @@ import type {
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { AgentNamespaceChanges } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -25,8 +27,21 @@ type StagedCreateCleanup = {
   documentId: string;
 };
 
+/**
+ * A move or delete committed when the tool was called (D66), reversed if its
+ * reply rolls back. `port` writes live, the version the change landed in.
+ */
+export type StagedNamespaceChange = {
+  responseId: string;
+  port: ContextPort;
+  documentId: string;
+  /** The change's handle record, forgotten once the change is reversed. */
+  recordId: number;
+} & ({ kind: "move"; fromUri: string; toUri: string } | { kind: "delete"; uri: string });
+
 export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
+  trackStagedNamespaceChange(input: StagedNamespaceChange): void;
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
@@ -70,10 +85,31 @@ export async function deleteCreatedTrackedDocument(input: {
   }
 }
 
+/** Puts a document back where it was before the change: moved back, or restored. */
+async function reverseNamespaceChange(change: StagedNamespaceChange): Promise<void> {
+  const reversed =
+    change.kind === "move"
+      ? await change.port.commitWriterLocation(change.toUri, change.fromUri, {
+          expected: { kind: "file", nodeId: change.documentId },
+        })
+      : await change.port.restore(change.uri, { documentId: change.documentId });
+  if (!reversed.ok) throw new Error(contextErrorMessage(reversed.error));
+}
+
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync">,
+  deps: Pick<ToolWiringDeps, "documentSync"> & { namespaceChanges: AgentNamespaceChanges },
 ): AgentEditResponseWriteLifecycle {
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
+  const stagedNamespaceChanges = new Map<string, StagedNamespaceChange[]>();
+
+  /** Newest first, so a document moved twice in one reply walks back to where it began. */
+  async function reverseStagedNamespaceChanges(responseId: string): Promise<void> {
+    const changes = stagedNamespaceChanges.get(responseId) ?? [];
+    for (const change of [...changes].reverse()) {
+      await reverseNamespaceChange(change);
+      await deps.namespaceChanges.discard(change.recordId);
+    }
+  }
 
   async function cleanupDiscardedStagedCreates(
     responseId: string,
@@ -98,6 +134,12 @@ export function createAgentEditResponseWriteLifecycle(
         records.push(input);
       }
       stagedCreates.set(input.responseId, records);
+    },
+
+    trackStagedNamespaceChange(input: StagedNamespaceChange): void {
+      const changes = stagedNamespaceChanges.get(input.responseId) ?? [];
+      changes.push(input);
+      stagedNamespaceChanges.set(input.responseId, changes);
     },
 
     async commitResponse(
@@ -134,6 +176,7 @@ export function createAgentEditResponseWriteLifecycle(
       );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
+      stagedNamespaceChanges.delete(responseId);
       return mapResult(result);
     },
 
@@ -143,9 +186,15 @@ export function createAgentEditResponseWriteLifecycle(
     ): Promise<void> {
       const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
       try {
-        await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
+        // Before the creates: a document created then moved is discarded from where it began.
+        await reverseStagedNamespaceChanges(responseId);
       } finally {
-        stagedCreates.delete(responseId);
+        stagedNamespaceChanges.delete(responseId);
+        try {
+          await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
+        } finally {
+          stagedCreates.delete(responseId);
+        }
       }
     },
   };

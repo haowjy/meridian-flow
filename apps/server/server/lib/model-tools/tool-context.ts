@@ -22,6 +22,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
+  AgentNamespaceChanges,
   CollabDrafts,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
@@ -63,7 +64,12 @@ export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
   documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
-  responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
+  responseWrites: Pick<
+    AgentEditResponseWriteLifecycle,
+    "trackStagedCreate" | "trackStagedNamespaceChange"
+  >;
+  /** Handles for the model's moves and deletes (`write` `move` and `delete`). */
+  namespaceChanges: AgentNamespaceChanges;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: WorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;

@@ -89,6 +89,7 @@ const expectedSuites = [
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",
   "apps/server/server/lib/compose.draft-mode-tools.db.test.ts",
+  "apps/server/server/lib/compose.namespace-tools.db.test.ts",
   "apps/server/server/lib/compose.file-access-tools.db.test.ts",
   "apps/server/server/lib/compose.live-reversal.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",
