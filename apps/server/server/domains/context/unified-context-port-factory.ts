@@ -13,7 +13,10 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
+import { projects } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { isDrafted, sourceDestination } from "../file-policy/index.js";
@@ -257,6 +260,9 @@ function buildUnifiedContextPort(input: {
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   operationReceipts?: ContextOperationReceipts;
+  moveLinks?: ConstructorParameters<
+    typeof import("./context/context-tree-mover.js").ContextTreeMover
+  >[2];
 }): ContextPort {
   const { scope, storeResolvers } = input;
   const assembly: AdapterAssembly = {
@@ -312,6 +318,7 @@ function buildUnifiedContextPort(input: {
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     operationReceipts: input.operationReceipts,
+    moveLinks: input.moveLinks,
   });
 }
 
@@ -346,6 +353,7 @@ function createProductionStoreResolvers(
   manifestMembership: ManifestMembershipPort,
   catalogMutations: ContextCatalogMutationPort,
   eventSink?: EventSink,
+  kickLinkUpdates?: () => void,
 ): ContextStoreResolvers {
   const membershipObserverFor = (
     manifestView: ManifestView,
@@ -401,6 +409,7 @@ function createProductionStoreResolvers(
         manifestView ? membershipObserverFor(manifestView) : undefined,
         catalogMutations,
         eventSink,
+        kickLinkUpdates,
       );
     },
   };
@@ -438,6 +447,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
   documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
+  documentDerivations?: Pick<DocumentDerivationService, "flush">;
+  kickLinkUpdates?: () => void;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
 }): UnifiedContextPortFactory {
@@ -451,7 +462,25 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.manifestMembership,
     catalogMutations,
     options.eventSink,
+    options.kickLinkUpdates,
   );
+
+  function moveLinks(projectId: string, userId: string, responseId?: string | null) {
+    return {
+      mover: { userId, responseId },
+      async flush(source: import("./context/context-tree-mover.js").ContextTreeDispatch) {
+        if (!options.documentDerivations) return;
+        const [project] = await options.db
+          .select({ personal: projects.isPersonal })
+          .from(projects)
+          .where(eq(projects.id, projectId));
+        await options.documentDerivations.flush({
+          projectId,
+          ...(source.scheme === "user" || project?.personal ? { personalOwnerId: userId } : {}),
+        });
+      },
+    };
+  }
 
   return {
     forProject(projectId, userId, workAuthorities) {
@@ -460,6 +489,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
+        moveLinks: moveLinks(projectId, userId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
@@ -478,6 +508,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
+        moveLinks: moveLinks(projectId, userId, thread?.responseId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),

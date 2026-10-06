@@ -1,6 +1,13 @@
 /** Stored link spelling and resolution must name the same document. */
 import { expect, it } from "vitest";
-import { resolveDocumentHref, spellDocumentHref } from "./document-href.js";
+import {
+  documentAddressKey,
+  documentPathKey,
+  matchDocumentPath,
+  resolveDocumentHref,
+  respellDocumentHref,
+  spellDocumentHref,
+} from "./document-href.js";
 
 it.each([
   ["manuscript://v/base.md", "manuscript://v/next.md", "next.md"],
@@ -56,4 +63,50 @@ it.each([
 
 it.each(["https://example.com/a.md", "manuscript://"])("never spells non-document %s", (target) => {
   expect(() => spellDocumentHref(null, target)).toThrow(RangeError);
+});
+
+// One row per stored-spelling rule, not per move scenario.
+it.each([
+  ["chapter.md", "manuscript://v/base.md", "manuscript://new/gate.md", "../new/gate.md"],
+  ["next%20name.md#s", "kb://base.md", "kb://next name.md", "next%20name.md#s"],
+  ["kb://old.md", "kb://base.md", "kb://gate.md", "kb://gate.md"],
+  ["./old.md", "kb://gate.md", "kb://gate.md", "./gate.md"],
+  ["old.md", "manuscript://base.md", "kb://gate.md", "kb://gate.md"],
+  ["old.md", "scratch://@first/base.md", "scratch://@second/gate.md", "scratch://@second/gate.md"],
+  ["old", "kb://base.md", "kb://plan.json", "plan"],
+  ["old", "manuscript://base.md", "kb://gate.md", "kb://gate"],
+  ["old?view=outline#scene", "kb://base.md", "kb://gate.md", "gate?view=outline#scene"],
+  ["old%23.md#s", "kb://base.md", "kb://100%#?.md", "100%25%23%3F.md#s"],
+  ["../../unwritten.md", "manuscript://base.md", "manuscript://unwritten.md", "unwritten.md"],
+])("respells %s from %s to %s as %s", (href, holderUri, targetUri, expected) => {
+  expect(respellDocumentHref(href, { holderUri, targetUri })).toBe(expected);
+});
+
+it.each([
+  ["chapter.md", ["chapter.md", "chapter.json"], "chapter.md"],
+  ["chapter", ["chapter.md"], "chapter.md"],
+  ["chapter", ["chapter", "chapter.md"], "chapter"],
+  ["chapter", ["chapter.md", "chapter.json"], null],
+  ["Chapter.md", ["chapter.md"], null],
+  ["v/chapter", ["chapter.md"], null],
+])("matches the catalog path %s", (path, candidates, expected) => {
+  expect(documentPathKey(path)).toBe(path);
+  expect(matchDocumentPath(candidates, path, (candidate) => candidate)).toBe(expected);
+});
+
+it.each([
+  ["manuscript:////v/./chapter.md", "manuscript://v/chapter.md"],
+  ["scratch://@arc/notes/chapter.md", "scratch://@arc/notes/chapter.md"],
+  ["uploads://@/image.png", "uploads://@/image.png"],
+  ["user://preferences.md", "user://preferences.md"],
+])("keys explicit address %s as %s", (uri, key) => {
+  expect(documentAddressKey(uri)).toBe(key);
+});
+it.each([
+  "scratch://chapter.md",
+  "uploads://image.png",
+  "https://example.com",
+  "manuscript://",
+])("rejects non-address key %s", (uri) => {
+  expect(() => documentAddressKey(uri)).toThrow(RangeError);
 });

@@ -82,7 +82,39 @@ document removal.
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
 
-File rename and the identity bar share the durable resource-location command.
-Folder rename alone retains `context-identity-mutation.ts`. Inline operations
-keep stable entry identity. Work selection is attached only to Scratch/Uploads,
-never project-owned Manuscript/KB/User paths.
+Every rename is local first. File rename (any area, any Work) and the identity bar
+share the durable resource-location command; folder rename admits a folder
+namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
+and its descendants show their new place at once in the tree, open tabs and
+routes, and so does the phone. One placement source, the projected catalog, serves
+every surface, and a route resolves its open document by identity: the document the
+route holds by continuity (`routeContinuityDocumentId`: bound in the removal
+coordinator's Editor-context locator, whatever Work the Editor selects, and actually
+admitted by this surface; a binding a cached tab guessed before the server answered
+is not continuity) is found by id, so a
+move of it or a folder above it, that move's rollback after a refusal, or another
+document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
+returns it as `bound` and it outranks the server's answer for that path; admission
+then repairs the URL (and, on the phone, the crumbs) to its projected path, and the
+phone host finds the same document by identity meanwhile. A document under a pending
+move carries `placementPending` for the same reason: a server alias for the path the
+writer just gave it cannot pull the route back.
+
+A refused rename returns the entry to its old name with `NamespaceFailureMark` on
+the row (in the identity bar, a button that reopens the repair field). The repair
+field opens once, as the refusal arrives (`use-repair-on-fresh-failure.ts`): a
+failure already there on mount, a remount, or one that lands while another input is
+active leaves only the mark; blur dismisses the field without retrying and Enter
+retries.
+
+The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
+return the operation id issued at admission; `LinkUpdateNote` reads that receipt
+through `settledNamespaceReceipt` and shows "Updated N links" on its own line under
+the name in the tree, drawer and Work Files rows, inline in the phone listing, or
+after the identity path in the identity bar (for renames made there). It mounts and
+watches nothing until a rename returns an operation id, lives until the receipt's
+own deadline (settlement plus four seconds, however often its row remounts), ends
+its watch there, and announces once per operation through the app's polite region.
+Zero links, a refused move and a move without `linkUpdate` show nothing. Inline
+operations keep stable entry identity. Work selection is attached only to
+Scratch/Uploads, never project-owned Manuscript/KB/User paths.

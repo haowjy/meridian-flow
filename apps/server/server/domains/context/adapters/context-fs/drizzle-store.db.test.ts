@@ -332,7 +332,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(documents)
         .where(eq(documents.id, DOC_ROLLBACK_TARGET_ID));
 
-      expect(result).toEqual({ ok: true, value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID } });
+      expect(result).toEqual({
+        ok: true,
+        value: { movedNodeId: DOC_ROLLBACK_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
+      });
       expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
       expect(observer.documentDeleted).toHaveBeenCalledWith(DOC_ROLLBACK_TARGET_ID);
     });
@@ -439,7 +442,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         ok: true,
-        value: { movedNodeId: DOC_MOVE_SOURCE_ID },
+        value: { movedNodeId: DOC_MOVE_SOURCE_ID, linkUpdate: { links: 0, documents: 0 } },
       });
       await Promise.all(observerWork);
 

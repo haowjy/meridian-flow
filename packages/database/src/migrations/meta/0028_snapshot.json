@@ -1,6 +1,6 @@
 {
-  "id": "5a9e6349-f6cc-4e3f-b413-e1404f93d059",
-  "prevId": "67cf381a-e88c-42c3-9a37-4e0cdadd9446",
+  "id": "71b9a6aa-9a54-4fbc-8071-5bea08fb400f",
+  "prevId": "f4691616-6d0d-45fd-bc8c-709da2c6a568",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -844,13 +844,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "invoked_skills": {
-          "name": "invoked_skills",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -4160,6 +4153,102 @@
       },
       "isRLSEnabled": false
     },
+    "public.document_links": {
+      "name": "document_links",
+      "schema": "",
+      "columns": {
+        "source_document_id": {
+          "name": "source_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "href": {
+          "name": "href",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_project_id": {
+          "name": "target_project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_key": {
+          "name": "target_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurrences": {
+          "name": "occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "document_links_target_project": {
+          "name": "document_links_target_project",
+          "columns": [
+            {
+              "expression": "target_project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "document_links_target_key": {
+          "name": "document_links_target_key",
+          "columns": [
+            {
+              "expression": "target_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hash",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "document_links_source_document_id_documents_id_fk": {
+          "name": "document_links_source_document_id_documents_id_fk",
+          "tableFrom": "document_links",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "source_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "document_links_source_document_id_href_pk": {
+          "name": "document_links_source_document_id_href_pk",
+          "columns": [
+            "source_document_id",
+            "href"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.document_previous_locations": {
       "name": "document_previous_locations",
       "schema": "",
@@ -4829,6 +4918,137 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.link_redirects": {
+      "name": "link_redirects",
+      "schema": "",
+      "columns": {
+        "source_document_id": {
+          "name": "source_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "href": {
+          "name": "href",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_document_id": {
+          "name": "target_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intended_uri": {
+          "name": "intended_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "old_filename": {
+          "name": "old_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mover_user_id": {
+          "name": "mover_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mover_turn_id": {
+          "name": "mover_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "retry_after": {
+          "name": "retry_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "link_redirects_target_document": {
+          "name": "link_redirects_target_document",
+          "columns": [
+            {
+              "expression": "target_document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "link_redirects_source_document_id_documents_id_fk": {
+          "name": "link_redirects_source_document_id_documents_id_fk",
+          "tableFrom": "link_redirects",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "source_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "link_redirects_target_document_id_documents_id_fk": {
+          "name": "link_redirects_target_document_id_documents_id_fk",
+          "tableFrom": "link_redirects",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "target_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "link_redirects_source_document_id_href_pk": {
+          "name": "link_redirects_source_document_id_href_pk",
+          "columns": [
+            "source_document_id",
+            "href"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "link_redirects_target": {
+          "name": "link_redirects_target",
+          "value": "(\"link_redirects\".\"target_document_id\" IS NULL) <> (\"link_redirects\".\"intended_uri\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.projects": {
@@ -8252,6 +8472,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "push_policy": {
+          "name": "push_policy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -8471,6 +8698,10 @@
           "name": "document_branches_kind_valid",
           "value": "\"document_branches\".\"kind\" IN ('work_draft', 'thread_peer')"
         },
+        "document_branches_push_policy_valid": {
+          "name": "document_branches_push_policy_valid",
+          "value": "\"document_branches\".\"push_policy\" IN ('manual', 'auto')"
+        },
         "document_branches_status_valid": {
           "name": "document_branches_status_valid",
           "value": "\"document_branches\".\"status\" IN ('active', 'closed')"
@@ -8515,6 +8746,30 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "links_generation": {
+          "name": "links_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "links_admission_sequence": {
+          "name": "links_admission_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "links_location_version": {
+          "name": "links_location_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "links_extractor_version": {
+          "name": "links_extractor_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

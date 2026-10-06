@@ -243,6 +243,7 @@ export async function commitContextMove(input: {
   }
   return {
     status: "moved",
+    ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
     scheme: input.move.destination.scheme,
     path: result.value.destinationPath,
     name: basename(result.value.destinationPath),

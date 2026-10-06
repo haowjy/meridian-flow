@@ -142,6 +142,7 @@ export type MoveContextEntryRequest = {
 };
 
 export type MoveContextEntrySuccess = {
+  linkUpdate?: { links: number; documents: number };
   status: "moved";
   scheme: ProjectContextTreeScheme;
   path: string;

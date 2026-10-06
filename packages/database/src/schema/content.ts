@@ -17,6 +17,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -374,5 +375,55 @@ export const documentPreviousLocations = pgTable(
     index("document_previous_locations_path").using("hash", table.path),
     index("document_previous_locations_source").on(table.contextSourceId),
     index("document_previous_locations_document").on(table.documentId),
+  ],
+);
+
+/** Internal hrefs derived from the same durable cut as the document projection. */
+export const documentLinks = pgTable(
+  "document_links",
+  {
+    sourceDocumentId: uuid("source_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    href: text("href").notNull(),
+    targetProjectId: uuid("target_project_id").$type<ProjectId>(),
+    targetKey: text("target_key"),
+    occurrences: integer("occurrences").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
+    index("document_links_target_project").on(table.targetProjectId),
+    index("document_links_target_key").using("hash", table.targetKey),
+  ],
+);
+
+/** Pending identity redirects consumed only after collaborative link rewrites commit. */
+export const linkRedirects = pgTable(
+  "link_redirects",
+  {
+    sourceDocumentId: uuid("source_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    href: text("href").notNull(),
+    targetDocumentId: uuid("target_document_id")
+      .$type<DocumentId>()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    intendedUri: text("intended_uri"),
+    oldFilename: text("old_filename").notNull(),
+    moverUserId: uuid("mover_user_id").$type<UserId>(),
+    moverTurnId: uuid("mover_turn_id"),
+    createdAt: createdAt(),
+    attempts: integer("attempts").notNull().default(0),
+    retryAfter: timestamp("retry_after", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
+    check(
+      "link_redirects_target",
+      sql`(${table.targetDocumentId} IS NULL) <> (${table.intendedUri} IS NULL)`,
+    ),
+    index("link_redirects_target_document").on(table.targetDocumentId),
   ],
 );

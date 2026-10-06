@@ -28,12 +28,10 @@ Addresses are unique, so there is no "several documents" answer.
 needs it, and without one the resolver THROWS rather than answering null: an
 unasked question must not render as a missing document.
 
-`workId` is the named Work id, or null for public No Work encoding (`@/`).
-The server resolves null to the locked row for omitted `scratch://` or
-`uploads://` authority; `@/` is explicit No Work and a canonical `@<slug>`
-resolves through Project Work authority. Dropping nullable scope would make
-contextual links resolve against the wrong authority even though the route
-contract carries the distinction.
+`workId` is the Work row id, including No Work. Unresolved surfaces have
+no scope. Contextual `scratch://` and `uploads://` links use that Work;
+`@/` names the locked No Work row and canonical `@<slug>` names a Work
+through Project Work authority.
 
 ## Resolution scope: what an answer is true of
 
@@ -170,10 +168,10 @@ link-ahead address is already taken.
 
 `linkableCatalogScopes` names the catalogs: the project catalog (manuscript,
 kb, and Unfiled, whatever the Work), the user catalog, and the current Work's
-Scratch and Uploads, where a null Work means the No Work row from `useWorks`.
-These are the catalogs a contextual address resolves in on the server. Until
-the No Work row is known, Scratch and Uploads are unasked and the index is not
-`complete`, so every link asks the server.
+Scratch and Uploads by row id, including No Work.
+These are the catalogs a contextual address resolves in on the server.
+An unresolved surface has no catalog scope; the follower waits for its Work
+rather than resolving against a guessed authority.
 
 A Work-qualified URI outside the selected Work (`scratch://@other-work/…`) is
 outside the index: it has no local match and always asks the server, which

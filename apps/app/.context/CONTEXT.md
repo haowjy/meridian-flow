@@ -349,14 +349,13 @@ context URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work
 creation dialog, distinct from every UUID-addressed Work. Documents and folders
 live under `/editor/…`; the Editor's `?work=<work-UUID>` is the Work context,
 and for Scratch and Uploads it is required because the Work is the file's
-identity. No Work has one Editor identity, none: the locked No Work row's id
-(which a No Work chat is bound to and a No Work Scratch address carries)
-resolves to No Work, and a No Work Scratch tab carries no Work, so it stays in
-the No Work Editor's strip however the Editor was reached. A tab carries a
-Work only when its location names one by slug (`editorTabWorkId`); every
-resource location states its Work's slug, null only for the No Work row
-(`ResourceWorkAuthority`). The recognized query keys are `work`, `settings`,
-`results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
+identity. Inside the client, No Work is the locked row's id, including the
+Editor's Work. Work-scoped tabs always carry their Work id.
+Only `workSelectionFor` spells No Work as `none` for project-content
+addresses; Scratch and Uploads addresses carry the row id.
+Work-scoped resource locations carry their Work id and slug; the No Work
+row's slug is null (`ResourceWorkAuthority`). The recognized query keys are
+`work`, `settings`, `results`, and `view`. Selectors distinguish omitted, explicit no-Work (empty),
 a Work ID, and malformed input; duplicate recognized keys and malformed
 encodings are invalid rather than normalized into another destination. Older
 shapes have no alias and render the unavailable state. Case and trailing-slash

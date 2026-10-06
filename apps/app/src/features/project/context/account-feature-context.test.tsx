@@ -45,7 +45,12 @@ describe("AccountFeatureTestProvider", () => {
       useContextProjectAuthority({
         projectId: "project-1",
         workspaceHydrated: false,
-        editorScope: { status: "ready", workId: null, source: "route" },
+        editorScope: {
+          status: "ready",
+          workId:
+            "00000000-0000-4000-8000-000000000009" as import("@meridian/contracts/request-id").ParsedRequestId,
+          source: "route",
+        },
       });
       return <p>Project shell</p>;
     }
@@ -126,7 +131,7 @@ describe("AccountFeatureTestProvider", () => {
       await act(async () => fail?.(new Error("temporary projection failure")));
       expect(observed.at(-1)?.error).toBeInstanceOf(Error);
 
-      await act(async () => publish?.({ records: [], catalogs: [] }));
+      await act(async () => publish?.({ records: [], folders: [], catalogs: [] }));
       expect(observed.at(-1)).toMatchObject({ error: null, records: [] });
     });
   });
@@ -151,7 +156,7 @@ describe("AccountFeatureTestProvider", () => {
       const pending = records;
       await act(async () => rerender());
       expect(records).toBe(pending);
-      await act(async () => publish?.({ records: [], catalogs: [] }));
+      await act(async () => publish?.({ records: [], folders: [], catalogs: [] }));
       const loaded = records;
       await act(async () => rerender());
       expect(records).toBe(loaded);

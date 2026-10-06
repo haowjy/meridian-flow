@@ -29,6 +29,7 @@ export interface ResolvedDocumentLink {
 /** POST `/api/projects/:projectId/links/resolve`. */
 export interface ResolveDocumentLinkRequest {
   workId?: string | null;
+  holder?: { documentId: string; href: string };
   target: DocumentLinkTarget;
 }
 

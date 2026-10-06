@@ -46,6 +46,7 @@ import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextPortRouterDeps {
+  moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** Canonical Work authority for Work-scoped adapters already present in the base map. */
@@ -188,7 +189,11 @@ export function unknownWorkMessage(slug: string): string {
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
-  const treeMover = new ContextTreeMover(deps.commandTransaction, deps.operationReceipts);
+  const treeMover = new ContextTreeMover(
+    deps.commandTransaction,
+    deps.operationReceipts,
+    deps.moveLinks,
+  );
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);

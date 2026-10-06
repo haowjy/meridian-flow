@@ -22,6 +22,8 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { desc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { resolveDocumentUri } from "../context/document-uri-resolver.js";
+import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
@@ -31,6 +33,7 @@ import {
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
+import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -192,6 +195,9 @@ describe("branch-push durable projection", () => {
         durableProjectionSerializer,
         createDrizzleDocumentProjectionEffects(db),
         changeTrails,
+        createDrizzleDocumentDerivationStore(db, (tx, id) =>
+          resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+        ),
       ),
       branchCoordinator,
       journal: persistence.journal,
@@ -374,6 +380,9 @@ describe("branch-push durable projection", () => {
       serializer,
       createDrizzleDocumentProjectionEffects(db),
       changeTrails,
+      createDrizzleDocumentDerivationStore(db, (tx, id) =>
+        resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+      ),
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
@@ -596,6 +605,9 @@ describe("branch-push durable projection", () => {
         engine,
         createDrizzleDocumentProjectionEffects(db),
         changeTrails,
+        createDrizzleDocumentDerivationStore(db, (tx, id) =>
+          resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
+        ),
       ),
       branchCoordinator,
       journal: persistence.journal,

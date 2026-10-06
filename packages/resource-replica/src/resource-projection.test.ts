@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
 import { projectResourceLocation, resourceForDocumentIdentity } from "./resource-projection";
 import { planResourceLocation, reserveResourceDocument } from "./resource-state";
 
@@ -40,6 +41,42 @@ it("projects only the requesting project's durable location intention", () => {
   expect(projectResourceLocation("project-b", placed.next)).toMatchObject({
     scheme: "user",
     path: "/shared.md",
+  });
+  // Lowest-level contract: naming remains complete after placement ownership retires.
+  const settled = placed.next;
+  settled.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  settled.intents = settled.intents.map((intent) =>
+    intent.desired.kind === "create" ? { ...intent, state: "settled" } : intent,
+  );
+  const submitted = prepareNamespaceAttempt(settled, { attemptId: "file", operationId: "file" });
+  if (!submitted) throw new Error("Missing placement attempt");
+  const received = recordNamespaceOutcome(submitted.next, "place", "file", {
+    kind: "operation",
+    receipt: {
+      operationId: "file",
+      command: {
+        kind: "move",
+        sourceUri: "user://shared.md",
+        destinationUri: "manuscript://chapters/opening.md",
+        expected: { kind: "file", nodeId: "document" },
+      },
+      result: { ok: true, value: { destinationPath: "chapters/opening.md" } },
+    },
+  });
+  if (!received) throw new Error("Missing filing outcome");
+  // Model the post-refresh state: the historical intent no longer owns placement.
+  const intent = received.next.intents.find((intent) => intent.desired.kind === "set-location");
+  if (!intent) throw new Error("Missing settled placement");
+  intent.state = "settled";
+  received.next.resource.canonical = {
+    scheme: "manuscript",
+    path: "/moved/opening.md",
+    name: "opening.md",
+    workId: null,
+  };
+  expect(projectResourceLocation("project-a", received.next)).toMatchObject({
+    path: "/moved/opening.md",
+    provisional: false,
   });
 });
 

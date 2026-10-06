@@ -31,9 +31,9 @@ export type WorkCatalogView =
   | { status: "loading" }
   | { status: "error"; retry: () => void }
   | { status: "empty" }
-  | { status: "ready"; works: Work[]; refreshing: boolean };
+  | { status: "ready"; works: Work[]; noWork: Work; refreshing: boolean };
 export type WorkPickerOperation = {
-  currentWorkId: string;
+  currentWorkId: string | null;
   targetId: string | null;
   pending: boolean;
   failure: WorkPickerFailure | null;
@@ -51,7 +51,7 @@ export type WorkPickerViewModel = WorkPickerRows &
     | { status: "loading" }
     | { status: "error"; retry: () => void }
     | { status: "empty" }
-    | { status: "ready"; refreshing: boolean }
+    | { status: "ready"; noWork: Work; refreshing: boolean }
   );
 
 export function deriveWorkPickerViewModel(
@@ -75,7 +75,7 @@ export function deriveWorkPickerViewModel(
     enabledIds: catalog.status === "ready" && !pending ? works.map(({ id }) => id) : [],
   };
   if (catalog.status === "ready")
-    return { ...rows, status: "ready", refreshing: catalog.refreshing };
+    return { ...rows, status: "ready", noWork: catalog.noWork, refreshing: catalog.refreshing };
   if (catalog.status === "error") return { ...rows, status: "error", retry: catalog.retry };
   return { ...rows, status: catalog.status };
 }
@@ -101,7 +101,6 @@ export function WorkPickerPanel({
   operation,
   onQueryChange,
   onChoose,
-  onChooseNone,
   searchRef,
   focusRefs,
 }: {
@@ -110,7 +109,6 @@ export function WorkPickerPanel({
   operation: WorkPickerOperation;
   onQueryChange: (query: string) => void;
   onChoose: (work: Work) => void;
-  onChooseNone?: () => void;
   searchRef?: RefObject<HTMLInputElement | null>;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
@@ -172,17 +170,17 @@ export function WorkPickerPanel({
         />
       </div>
       <div className={`${dropdownResultsClass} space-y-[var(--chat-space-row)]`}>
-        {view.status === "ready" && onChooseNone ? (
+        {view.status === "ready" ? (
           <Button
-            ref={operation.currentWorkId === "" ? focusRefs?.selected : undefined}
+            ref={operation.currentWorkId === view.noWork.id ? focusRefs?.selected : undefined}
             type="button"
             variant="ghost"
             className={cn(dropdownRowVariants(), "w-full justify-start")}
             data-work-choice
             disabled={!view.enabled}
-            onClick={onChooseNone}
+            onClick={() => onChoose(view.noWork)}
           >
-            {operation.currentWorkId === "" ? (
+            {operation.currentWorkId === view.noWork.id ? (
               <Check className="size-4" aria-hidden />
             ) : (
               <span className="size-4" />

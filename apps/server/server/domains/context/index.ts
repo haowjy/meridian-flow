@@ -8,6 +8,7 @@ export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
@@ -37,6 +38,7 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export { createLinkUpdateWorker, type LinkUpdateWorker } from "./links/link-update-worker.js";
 export type {
   AdapterFault,
   AdapterFileEntry,

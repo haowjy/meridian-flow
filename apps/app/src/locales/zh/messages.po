@@ -255,6 +255,10 @@ msgstr ""
 msgid "{hours}h"
 msgstr "{hours}小时"
 
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
 msgstr ""
@@ -1284,6 +1288,10 @@ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
+msgstr ""
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't rename this folder. Try again."
 msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
@@ -3688,10 +3696,6 @@ msgstr ""
 msgid "That location does not exist"
 msgstr ""
 
-#: src/features/project/context/use-rename-entry-form.ts
-msgid "That name is already in use."
-msgstr ""
-
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
 msgstr ""
@@ -3748,10 +3752,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
-msgstr ""
-
-#: src/features/project/context/use-rename-entry-form.ts
-msgid "The location changed. Try again."
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
@@ -3976,6 +3976,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder is empty."
+msgstr ""
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "This folder is unavailable. Refresh and try again."
 msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx

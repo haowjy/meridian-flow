@@ -14,7 +14,7 @@ function address(href: string) {
 }
 function setup(
   initial: string,
-  displayed: DisplayedProjectSelection = { workId: null },
+  displayed: DisplayedProjectSelection = { work: { kind: "none" } },
   restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
@@ -108,7 +108,7 @@ describe("project navigation", () => {
     const { history, navigation, changes } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
       {
-        workId: "123e4567-e89b-42d3-a456-426614174000" as ParsedRequestId,
+        work: { kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" as ParsedRequestId },
       },
     );
     await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
@@ -273,7 +273,7 @@ describe("project navigation", () => {
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
     const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor", {
-      workId: null,
+      work: { kind: "none" },
       local,
     });
     await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000"), {

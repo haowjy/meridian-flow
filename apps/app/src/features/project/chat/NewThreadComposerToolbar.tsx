@@ -23,6 +23,7 @@ export function NewThreadComposerToolbar({
   work,
   selectedWorkId,
   works,
+  noWork,
   worksStatus,
   agent: selectedAgent,
   disabled,
@@ -35,11 +36,12 @@ export function NewThreadComposerToolbar({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
   disabled: boolean;
   onAgentChange(agent: CreationAgent): void;
-  onWorkChange(work: Work | null): void;
+  onWorkChange(work: Work): void;
   onRetryWorks(): void;
   onModePendingChange(pending: boolean): void;
 }) {
@@ -54,6 +56,7 @@ export function NewThreadComposerToolbar({
     work,
     selectedWorkId,
     works,
+    noWork,
     worksStatus,
     disabled,
     onWorkChange,
@@ -116,6 +119,7 @@ function useProspectiveWorkControl({
   work,
   selectedWorkId,
   works,
+  noWork,
   worksStatus,
   disabled,
   onWorkChange,
@@ -124,9 +128,10 @@ function useProspectiveWorkControl({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   disabled: boolean;
-  onWorkChange(work: Work | null): void;
+  onWorkChange(work: Work): void;
   onRetryWorks(): void;
 }): ComposerToolbarControl {
   const [query, setQuery] = useState("");
@@ -135,13 +140,13 @@ function useProspectiveWorkControl({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const catalog =
-    worksStatus === "loading"
-      ? { status: "loading" as const }
-      : worksStatus === "error"
-        ? { status: "error" as const, retry: onRetryWorks }
-        : { status: "ready" as const, works, refreshing: false };
+    worksStatus === "error"
+      ? { status: "error" as const, retry: onRetryWorks }
+      : worksStatus === "loading" || !noWork
+        ? { status: "loading" as const }
+        : { status: "ready" as const, works, noWork, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
-  const noneSelected = !selectedWorkId || Boolean(work?.isNoWork);
+
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`No Work`;
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
@@ -171,7 +176,7 @@ function useProspectiveWorkControl({
           view.status === "ready"
             ? [
                 { key: "search", ref: searchRef },
-                { key: `selected:${noneSelected ? "none" : selectedWorkId}`, ref: selectedRef },
+                { key: `selected:${selectedWorkId}`, ref: selectedRef },
                 { key: `first:${view.enabledIds[0] ?? "none"}`, ref: firstRef },
               ]
             : view.status === "error"
@@ -184,7 +189,7 @@ function useProspectiveWorkControl({
           purposeLabel={t`Choose Work for new chat`}
           view={view}
           operation={{
-            currentWorkId: noneSelected ? "" : selectedWorkId,
+            currentWorkId: selectedWorkId,
             targetId: null,
             pending: false,
             failure: null,
@@ -192,10 +197,6 @@ function useProspectiveWorkControl({
           onQueryChange={setQuery}
           onChoose={(next) => {
             onWorkChange(next);
-            terminalClose();
-          }}
-          onChooseNone={() => {
-            onWorkChange(null);
             terminalClose();
           }}
           searchRef={searchRef}

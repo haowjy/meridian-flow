@@ -243,6 +243,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
+    it("keeps an AI write undoable after retargeting and relabeling", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      const written = await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "AI paragraph [ch5](ch5.md) and [custom](ch6.md).",
+        },
+        {
+          sessionId: "links",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
+      );
+      expect(written.status).toBe("success");
+      const [draft] = await activeWorkDraft();
+      await collab.pushToLive({ branchId: draft.id });
+      await expectMarkdown(collab, DOC_ID, "[ch5](ch5.md)");
+      await collab.rewriteDocumentLinks({
+        documentId: DOC_ID as never,
+        claim: async () => ({
+          substitutions: new Map([
+            ["ch5.md", { href: "ch6.md", oldFilename: "ch5.md", newFilename: "ch6.md" }],
+            ["ch6.md", { href: "ch7.md" }],
+          ]),
+          mover: { type: "user", actorUserId: USER_ID as never },
+          consume: async () => {},
+        }),
+      });
+      await expectMarkdown(collab, DOC_ID, "[ch6](ch6.md) and [custom](ch7.md)");
+      const reversed = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(reversed.status).toBe("reversed");
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
+    });
+
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
