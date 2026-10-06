@@ -1,5 +1,7 @@
 /** No Work link creation uses local admission, not a server acknowledgement. */
 
+import { setupI18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
@@ -10,22 +12,32 @@ import {
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import {
   accessibleResourceCatalogView,
   projectCatalogFile,
 } from "@/client/query/useContextCatalog";
+import { Dialog } from "@/components/ui/dialog";
 import { ProjectDocumentNavigationAdapter } from "@/features/project/context/open-project-document";
 import { useIdentityCommit } from "@/features/project/context/use-identity-commit";
 import { resolveLocalDocumentAddress } from "@/features/project/routing/local-document-address";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { FollowOutcomeContent } from "./FollowOutcomeContent";
 import {
   type CreateLinkedDocument,
   planLinkCreation,
   useCreateLinkedDocument,
 } from "./use-create-linked-document";
+
+const dialog = vi.hoisted(() => ({ toggle: vi.fn(), works: vi.fn(), failures: new Map() }));
+vi.mock("@/features/project/work/useWorkArchiveToggle", () => ({
+  useWorkArchiveToggle: () => dialog.toggle,
+}));
+vi.mock("@/client/query/work-command-selectors", () => ({
+  useWorkCommandFailures: () => dialog.failures,
+}));
 
 const noWork = { id: "123e4567-e89b-42d3-a456-426614174000", archivedAt: null } as Work;
 
@@ -45,7 +57,9 @@ const resources = vi.hoisted(() => ({
 }));
 // A server response that never arrives: local creation must not depend on it.
 vi.mock("@/client/api/projects-api", () => ({ createContextEntry: () => new Promise(() => {}) }));
-vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ works: [], noWork }) }));
+vi.mock("@/client/query/useWorks", () => ({
+  useWorks: () => dialog.works() ?? { works: [], noWork },
+}));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountResourceReplica: () => resources,
 }));
@@ -282,4 +296,127 @@ it("settles an Uploads background open without admitting an Editor tab", async (
     result,
   );
   expect(openTab).not.toHaveBeenCalled();
+});
+
+it.each([
+  false,
+  true,
+])("waits for pending Unarchive before Create (refused: %s)", async (refused) => {
+  const archived = { id: "work", slug: "serial", name: "Serial", archivedAt: "2026-01-01" } as Work;
+  let refresh!: () => void;
+  let resolve!: (failure: Error | null) => void;
+  let pending = new Promise<Error | null>((done) => {
+    resolve = done;
+  });
+  dialog.works.mockReturnValue({ works: [archived], noWork });
+  dialog.toggle.mockImplementation(() => {
+    dialog.works.mockReturnValue({ works: [{ ...archived, archivedAt: null }], noWork });
+    refresh();
+    return pending;
+  });
+  resources.reserveDocument.mockClear();
+  resources.setLocation.mockClear();
+  resources.setLocation.mockResolvedValue({ isLatest: true });
+  const onOpen = vi.fn();
+  function Probe() {
+    const [, rerender] = useState(0);
+    refresh = () => rerender((value) => value + 1);
+    return (
+      <Dialog>
+        <FollowOutcomeContent
+          outcome={{
+            state: "missing",
+            address: "scratch://@serial/scene.md",
+            target: { kind: "scheme", uri: "scratch://@serial/scene.md" },
+          }}
+          projectId="project"
+          workId="work"
+          onClose={() => {}}
+          onRetry={() => {}}
+          onOpen={onOpen}
+        />
+      </Dialog>
+    );
+  }
+  try {
+    await withReactRoot(
+      <I18nProvider i18n={setupI18n({ locale: "en", messages: { en: {} } })}>
+        <Probe />
+      </I18nProvider>,
+      async () => {
+        const action = () => {
+          const button = Array.from(document.querySelectorAll("button")).find(
+            (button) =>
+              button.textContent === "Unarchive" || button.textContent?.startsWith("Create"),
+          );
+          if (!button) throw new Error("Missing primary action");
+          return button;
+        };
+        expect(action().textContent).toBe("Unarchive");
+        await act(async () => {
+          action().click();
+        });
+        expect(action().textContent).toContain("Create");
+        await act(async () => {
+          action().click();
+        });
+        expect(resources.reserveDocument).not.toHaveBeenCalled();
+        expect(resources.setLocation).not.toHaveBeenCalled();
+        await act(async () => {
+          if (refused) {
+            const error = new Error("Unarchive refused");
+            dialog.works.mockReturnValue({ works: [archived], noWork });
+            dialog.failures.set(archived.id, {
+              workId: archived.id,
+              operation: "unarchive",
+              error,
+              retry: dialog.toggle,
+              dismiss() {},
+            });
+            refresh();
+            resolve(error);
+          } else resolve(null);
+          await pending;
+        });
+        if (refused) {
+          expect(resources.reserveDocument).not.toHaveBeenCalled();
+          expect(resources.setLocation).not.toHaveBeenCalled();
+          expect(onOpen).not.toHaveBeenCalled();
+          expect(action().textContent).toBe("Unarchive");
+          expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+            "Work couldn’t be unarchived",
+          );
+          pending = new Promise<Error | null>((done) => {
+            resolve = done;
+          });
+          const retry = Array.from(document.querySelectorAll("button")).find(
+            (button) => button.textContent === "Retry",
+          );
+          if (!retry) throw new Error("Missing Unarchive retry");
+          await act(async () => {
+            retry.click();
+          });
+          await act(async () => {
+            action().click();
+          });
+          expect(resources.reserveDocument).not.toHaveBeenCalled();
+          await act(async () => {
+            resolve(null);
+            await pending;
+          });
+          expect(resources.reserveDocument).toHaveBeenCalledTimes(1);
+          expect(resources.setLocation).toHaveBeenCalledTimes(1);
+          expect(onOpen).toHaveBeenCalledWith({ documentId: "document" });
+        } else {
+          expect(resources.reserveDocument).toHaveBeenCalledTimes(1);
+          expect(resources.setLocation).toHaveBeenCalledTimes(1);
+          expect(onOpen).toHaveBeenCalledWith({ documentId: "document" });
+        }
+      },
+    );
+  } finally {
+    dialog.failures.clear();
+    dialog.works.mockReset();
+    dialog.toggle.mockReset();
+  }
 });

@@ -121,8 +121,6 @@ export type NamespaceIntent = ResourceKey & {
     | {
         kind: "set-location";
         destination: ResourceDestination;
-        /** This address, not content, admitted the reservation's first Create. */
-        initializesReservation?: true;
       }
     | { kind: "set-folder-location"; destination: ResourceDestination }
     | { kind: "delete" };

@@ -55,8 +55,6 @@ function linkCreationTarget(address: string | null): LinkCreationTarget | null {
   return { scheme, folderPath: folders.join("/"), name, authority };
 }
 
-type CreationWork = ResourceWorkAuthority | { workId: null };
-
 /**
  * What the dialog can offer for a missing address, decided once from the
  * Works snapshot: Create (with the Work it lands in), Unarchive first (an
@@ -64,7 +62,7 @@ type CreationWork = ResourceWorkAuthority | { workId: null };
  * address whose Work the snapshot has not delivered yet.
  */
 export type LinkCreation =
-  | { kind: "create"; target: LinkCreationTarget; work: CreationWork }
+  | { kind: "create"; target: LinkCreationTarget; work: ResourceWorkAuthority }
   | { kind: "archived"; target: LinkCreationTarget; work: Work }
   | { kind: "loading"; target: LinkCreationTarget };
 

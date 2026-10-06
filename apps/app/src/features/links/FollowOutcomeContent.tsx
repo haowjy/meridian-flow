@@ -16,7 +16,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,8 @@ export function FollowOutcomeContent({
   const archivedWork = creation?.kind === "archived" ? creation.work : null;
   const workName = archivedWork?.name ?? "";
   const toggleArchive = useWorkArchiveToggle(projectId ?? "");
+  const unarchive = useRef<ReturnType<typeof toggleArchive> | null>(null);
+  const [waitingForUnarchive, setWaitingForUnarchive] = useState(false);
   const unarchiveFailure = useWorkCommandFailures(projectId ?? "", UNARCHIVE).get(
     archivedWork?.id ?? "",
   );
@@ -147,7 +149,14 @@ export function FollowOutcomeContent({
         </p>
       ) : null}
 
-      {unarchiveFailure ? <WorkCommandFailureRow failure={unarchiveFailure} /> : null}
+      {unarchiveFailure ? (
+        <WorkCommandFailureRow
+          failure={unarchiveFailure}
+          onRetry={() => {
+            unarchive.current = unarchiveFailure.retry();
+          }}
+        />
+      ) : null}
 
       <DialogFooter>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
@@ -163,16 +172,24 @@ export function FollowOutcomeContent({
           <Button
             type="button"
             size="sm"
-            disabled={creating || creation.kind === "loading"}
+            disabled={creating || waitingForUnarchive || creation.kind === "loading"}
             onClick={async () => {
-              if (archivedWork) return void toggleArchive(archivedWork);
-              if (creating || creation.kind !== "create") return;
-              // Both steps are local commits, so this resolves at once; the
-              // server catches up in the background.
-              const documentId = await create(creation);
-              if (!documentId) return;
-              onClose();
-              await onOpen({ documentId });
+              if (archivedWork) {
+                unarchive.current = toggleArchive(archivedWork);
+                return;
+              }
+              if (creating || waitingForUnarchive || creation.kind !== "create") return;
+              setWaitingForUnarchive(true);
+              try {
+                // Create is offered optimistically, but depends on this dialog's Unarchive.
+                if (unarchive.current && (await unarchive.current)) return;
+                const documentId = await create(creation);
+                if (!documentId) return;
+                onClose();
+                await onOpen({ documentId });
+              } finally {
+                setWaitingForUnarchive(false);
+              }
             }}
           >
             {archivedWork ? t`Unarchive` : t`Create “${name}”`}

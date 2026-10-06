@@ -77,7 +77,8 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   Scratch address is decided up front against the Works snapshot
   (`planLinkCreation`): an archived Work takes no new notes, so the dialog
   offers Unarchive (the Work's title in the sentence) and Create follows the
-  moment it lands; a deleted Work or a name no Work has is "can't be found".
+  moment it projects locally. Create waits for this dialog's pending Unarchive
+  to succeed before reserving the note; a deleted Work or a name no Work has is "can't be found".
   Every state of the dialog shows where the
   link points, worded as the `@` menu words a row's location
   (`documentLocation`); the full address is only a tooltip.

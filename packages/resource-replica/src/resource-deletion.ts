@@ -56,34 +56,3 @@ export function planResourceDeletion(
     },
   };
 }
-
-/** A refused first placement has no accepted file to restore, only a server reservation. */
-export function planRejectedReservationDeletion(
-  record: ResourceRecord,
-  intentId: string,
-): ResourceWrite | null {
-  if (record.resource.canonical?.scheme !== "unfiled") return null;
-  const created = record.intents.some(
-    (intent) => intent.desired.kind === "create" && intent.state === "settled",
-  );
-  const acceptedPlacement = record.intents.some(
-    (intent) => intent.desired.kind === "set-location" && intent.state === "settled",
-  );
-  const failed = record.intents.find(
-    (intent) =>
-      intent.desired.kind === "set-location" &&
-      intent.desired.initializesReservation === true &&
-      intent.state === "needs-repair",
-  );
-  const outcome = failed?.attempts.at(-1)?.outcome;
-  if (
-    !created ||
-    acceptedPlacement ||
-    !failed ||
-    !outcome ||
-    outcome.kind === "create" ||
-    (outcome.kind === "operation" && outcome.receipt.result.ok)
-  )
-    return null;
-  return planResourceDeletion(record, failed.projectId, intentId);
-}
