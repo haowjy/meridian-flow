@@ -109,6 +109,33 @@ describe("AssistantTurn failure", () => {
     expect(html).toContain("data-reply-retry");
   });
 
+  it("says the provider declined with no Retry, and keeps Retry when the gateway would retry", () => {
+    const retry = { onRetry: () => undefined, refused: false, requestLost: false };
+    const providerError = { status: 402, message: "Insufficient Balance" };
+    const declinedTurn = {
+      ...failedTurn,
+      metadata: { reason: "provider_error", retryable: false, providerError },
+    } as unknown as Turn;
+    const declined = renderToStaticMarkup(
+      <AssistantTurn turn={declinedTurn} endsTranscript replyRetry={retry} />,
+    );
+    expect(declined).toContain(
+      "The AI provider turned this request down. Trying again won&#x27;t help until that&#x27;s fixed.",
+    );
+    expect(declined).not.toContain("data-reply-retry");
+    expect(declined).not.toContain("Insufficient Balance");
+
+    const exhausted = {
+      ...failedTurn,
+      metadata: { reason: "rate_limited", retryable: true, providerError },
+    } as unknown as Turn;
+    const html = renderToStaticMarkup(
+      <AssistantTurn turn={exhausted} endsTranscript replyRetry={retry} />,
+    );
+    expect(html).toContain("This response failed.");
+    expect(html).toContain("data-reply-retry");
+  });
+
   it("shows a lost Retry's stand-in as a retry that never started, with no action row", () => {
     const html = renderToStaticMarkup(
       <AssistantTurn

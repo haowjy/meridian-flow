@@ -135,6 +135,7 @@ export {
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
+  replyFailureMetadata,
   SavedSubagentReportMetadataCodec,
   SteerMetadataCodec,
   SystemUpdateMetadataCodec,

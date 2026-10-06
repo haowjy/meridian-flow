@@ -2127,10 +2127,12 @@ async function executeLoop({
               );
               return true;
             }
-            return exitRun(
-              false,
-              errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
-            );
+            return exitRun(false, {
+              kind: "failed",
+              reason: event.code,
+              error: meridianErrorFromGateway(event.code, event.message, event.retryable),
+              ...(event.providerError ? { providerError: event.providerError } : {}),
+            });
           }
         }
 

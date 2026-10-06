@@ -11,6 +11,7 @@ reply itself.
 | Latest turn | Tinted block: "This response failed." with **Retry** beside it |
 | Not the latest turn | The quiet line "This response failed.", with no action |
 | Its Retry was refused | Adds the muted note "Couldn't retry." while it is the latest turn |
+| The provider declined it | "The AI provider turned this request down." with no Retry |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
 divider counts as a row. The client does not gate Retry on the chat being
@@ -20,9 +21,14 @@ shows the refused note below. A failed first send (`failedSendRetry`) keeps its 
 send." Retry, and an inherited failed reply stays read-only.
 
 Every failed reply reads the same, whatever ended it: a reply cut off by a
-shutdown or crash is an ordinary failed reply. `ErrorBlock`'s kind comes from
-turn status and the local Retry state only, never from `turn.error` text; the
-cause stays in turn metadata for diagnostics.
+shutdown or crash is an ordinary failed reply. The one exception is a provider
+that declined the request when the gateway judged a resend futile
+(`metadata.retryable === false` with `metadata.providerError`,
+`isProviderDeclined`): it reads as `provider-declined`, and `AssistantTurn`
+omits its Retry. `replyErrorKind` in `AssistantTurn.tsx` picks the kind from
+turn status, the local Retry state and that verdict, never from `turn.error`
+text; the provider's own message stays in turn metadata for diagnostics.
+"Refused" in this component means only the server refusing a Retry.
 
 ## Retry, optimistically
 

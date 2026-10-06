@@ -15,8 +15,11 @@
  *                   completed yet, or the transport is actively reconnecting
  *                   after a drop.
  *   - `synced`    — local persistence is loaded AND the server transport is
- *                   currently connected & synced (edits are safe on the
- *                   server). Only this state may claim "synced".
+ *                   currently connected and has completed its handshake. This
+ *                   does NOT say the server has the writer's latest edits:
+ *                   Hocuspocus sets `synced` on the server's SyncStep2 and its
+ *                   own docs say it "does not mean all updates from the client
+ *                   have been persisted". Use `serverHasLocalChanges` for that.
  *   - `offline`   — local persistence is loaded but the socket is
  *                   disconnected (edits are buffered in IndexedDB and may
  *                   upload after reconnect).
@@ -26,6 +29,15 @@
  *
  * `access` is separate from status: the server's scope for this room. A `read`
  * room stays live (peers' changes still arrive) but takes no local edits.
+ *
+ * `serverHasLocalChanges` is separate from `status`: true only while `synced`
+ * AND the server has acknowledged every local change on the current
+ * connection (for a live room it journaled each update and applied it to its
+ * in-memory document before replying; only the debounced full-document store
+ * is asynchronous, and the next handshake re-sends anything lost). It
+ * turns false on the next local edit and on any disconnect, then true again
+ * after the acknowledgements arrive, so subscribers can show "back online and
+ * saved" after an outage.
  */
 import {
   type ChangeEventWsMessage,
@@ -79,6 +91,8 @@ export type DocumentSessionSnapshot = {
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
+  /** Server acknowledged every local change on this connection (see file header). */
+  serverHasLocalChanges: boolean;
   connectionState: DocumentSessionConnectionState | null;
   /**
    * The scope the server last named for this room, kept across reconnects and
@@ -124,14 +138,13 @@ export type DocumentSessionTransportProvider = {
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
-   * Resolves after initial reconciliation and after the server's SyncStatus
-   * acknowledgement has reduced the provider's unsynced update count to zero.
-   *
-   * Meridian's collaboration server journals an inbound Yjs update before it
-   * sends that acknowledgement, so this is the transport's durable-upload
-   * barrier. Hocuspocus' initial `whenSynced` is not such a barrier.
+   * Re-armable signal: the server has acknowledged the handshake and every
+   * document update sent on the current connection. False on any local change,
+   * on disconnect, and in terminal states; never inferred from the provider's
+   * `unsyncedChanges` counter, which a reconnect resets mid-flight. Emits the
+   * current value synchronously on subscribe, then on every change.
    */
-  whenDurablySynced?: Promise<void>;
+  subscribeServerAcknowledgement?: (listener: (acknowledged: boolean) => void) => () => void;
   /**
    * Subscribe to live connection-state updates from the underlying socket.
    * Implementations MUST emit the current state synchronously on subscribe
@@ -190,14 +203,17 @@ export class DocumentSession {
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeTransportAccess: (() => void) | null = null;
   private unsubscribeChangeEvents: (() => void) | null = null;
+  private unsubscribeAcknowledgement: (() => void) | null = null;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
   private destroyStages: DestroyStage[] | null = null;
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
-  private transportDurableSyncComplete = false;
+  /** Raw transport signal; the snapshot exposes it only while `status` is `synced`. */
+  private transportAcknowledged = false;
   private status: DocumentSessionStatus = "detached";
+  private serverHasLocalChanges = false;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -311,8 +327,12 @@ export class DocumentSession {
             if (message.documentId === this.documentId) this.markerStore.replaceGroup(message);
           }) ?? null)
         : null;
+    this.unsubscribeAcknowledgement =
+      this.transportProvider.subscribeServerAcknowledgement?.((acknowledged) => {
+        this.transportAcknowledged = acknowledged;
+        this.recomputeStatus();
+      }) ?? null;
     void this.watchTransportSync(this.transportProvider);
-    void this.watchTransportDurableSync(this.transportProvider);
     this.recomputeStatus();
     this.emit();
   }
@@ -330,14 +350,17 @@ export class DocumentSession {
     this.unsubscribeTransportStatus?.();
     this.unsubscribeTransportAccess?.();
     this.unsubscribeChangeEvents?.();
+    this.unsubscribeAcknowledgement?.();
     this.unsubscribeTransportStatus = null;
     this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
+    this.unsubscribeAcknowledgement = null;
     this.transportProvider = null;
     this.transportState = null;
     this.transportInitialSyncComplete = false;
-    this.transportDurableSyncComplete = false;
+    this.transportAcknowledged = false;
     this.status = "detached";
+    this.serverHasLocalChanges = false;
     await previous?.destroy();
     await this.localPeers?.drain();
     this.localPeers = null;
@@ -373,6 +396,7 @@ export class DocumentSession {
       roomKey: this.roomKey,
       room: this.room,
       status: this.status,
+      serverHasLocalChanges: this.serverHasLocalChanges,
       connectionState: this.transportState,
       access: this.access,
       localPersistenceSynced: this.localPersistenceSynced,
@@ -461,35 +485,6 @@ export class DocumentSession {
         }
       });
     });
-  }
-
-  /**
-   * Settle once every update present at attachment is server-acknowledged, or
-   * once terminal denial/destruction makes that impossible. Callers must
-   * inspect the snapshot afterwards before treating the upload as durable.
-   */
-  waitForDurableSync(): Promise<void> {
-    if (
-      this.transportDurableSyncComplete ||
-      this.status === "access-lost" ||
-      this.status === "destroyed"
-    ) {
-      return Promise.resolve();
-    }
-    const durableSequence = async () => {
-      await this.localPersistenceSyncedPromise;
-      await this.transportAttachedPromise;
-      await this.transportProvider?.whenDurablySynced;
-    };
-    const terminal = new Promise<void>((resolve) => {
-      let unsubscribe: (() => void) | null = null;
-      unsubscribe = this.subscribe((snapshot) => {
-        if (snapshot.status !== "access-lost" && snapshot.status !== "destroyed") return;
-        unsubscribe?.();
-        resolve();
-      });
-    });
-    return Promise.race([durableSequence(), terminal, this.lifecycleCompletedPromise]);
   }
 
   /** Local-only same-session identity change used by conflict remint. */
@@ -591,6 +586,7 @@ export class DocumentSession {
       this.resolveTransportAttached();
       this.resolveLifecycleCompleted();
       this.status = "destroyed";
+      this.serverHasLocalChanges = false;
       this.destroyStages = [
         { settled: false, run: () => this.emit() },
         { settled: false, run: () => this.markerStore.clear() },
@@ -607,6 +603,7 @@ export class DocumentSession {
         { settled: false, run: () => this.unsubscribeTransportStatus?.() },
         { settled: false, run: () => this.unsubscribeTransportAccess?.() },
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
+        { settled: false, run: () => this.unsubscribeAcknowledgement?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },
         { settled: false, run: () => this.localPeers?.drain() },
         {
@@ -684,29 +681,25 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  private async watchTransportDurableSync(
-    provider: DocumentSessionTransportProvider,
-  ): Promise<void> {
-    await provider.whenDurablySynced;
-    if (this.destroyed || provider !== this.transportProvider) return;
-    this.transportDurableSyncComplete = true;
-  }
-
   /**
    * Single derivation site for `status`. Called on every input change —
    * local persistence load, transport connection-state transition, transport
    * first-sync resolution — so the indicator never freezes on a startup value.
    *
-   * Honesty matters here: only emit `synced` when edits are actually on the
-   * server (transport connected AND first sync complete). When the transport
-   * has no server channel, it remains explicitly detached rather than
-   * presenting local persistence as a successful server sync.
+   * Honesty matters here: `synced` means the transport is connected and its
+   * first handshake is complete, not that the server holds the latest edits;
+   * `serverHasLocalChanges` carries that and is derived here too so both
+   * change together. When the transport has no server channel, it remains
+   * explicitly detached rather than presenting local persistence as a
+   * successful server sync.
    */
   private recomputeStatus(): void {
     if (this.destroyed) return;
     const next = this.deriveStatus();
-    if (next === this.status) return;
+    const acknowledged = next === "synced" && this.transportAcknowledged;
+    if (next === this.status && acknowledged === this.serverHasLocalChanges) return;
     this.status = next;
+    this.serverHasLocalChanges = acknowledged;
     this.emit();
   }
 

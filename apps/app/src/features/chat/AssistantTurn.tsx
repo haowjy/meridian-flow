@@ -1,7 +1,12 @@
 /** AssistantTurn — single render path for assistant turns. */
 
 import { Trans } from "@lingui/react/macro";
-import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  isProviderDeclined,
+  isTerminalTurnStatus,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
@@ -12,7 +17,7 @@ import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
-import { ErrorBlock } from "./ErrorBlock";
+import { ErrorBlock, type ErrorBlockKind } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
@@ -114,7 +119,14 @@ function AssistantTurnComponent({
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
   const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
   const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
-  const isErrored = turn.status === "error";
+  const errorKind =
+    turn.status === "error"
+      ? replyErrorKind({
+          requestLost: replyRetry?.requestLost ?? false,
+          failedSend: failedSendRetry !== undefined,
+          metadata: turn.metadata,
+        })
+      : null;
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
@@ -174,11 +186,15 @@ function AssistantTurnComponent({
           />
         ) : null}
 
-        {isErrored ? (
+        {errorKind ? (
           <ErrorBlock
             isLatest={endsTranscript}
-            kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
-            onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
+            kind={errorKind}
+            onRetry={
+              endsTranscript && errorKind !== "provider-declined"
+                ? (failedSendRetry ?? replyRetry?.onRetry)
+                : undefined
+            }
             retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
@@ -195,6 +211,22 @@ function AssistantTurnComponent({
       {showsInkDrop ? <InkDrop /> : null}
     </div>
   );
+}
+
+/** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
+function replyErrorKind({
+  requestLost,
+  failedSend,
+  metadata,
+}: {
+  requestLost: boolean;
+  failedSend: boolean;
+  metadata: Turn["metadata"];
+}): ErrorBlockKind {
+  if (requestLost) return "retry";
+  if (failedSend) return "send";
+  if (isProviderDeclined(metadata)) return "provider-declined";
+  return "generation";
 }
 
 function InkDrop() {
