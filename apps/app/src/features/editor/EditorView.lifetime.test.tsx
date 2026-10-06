@@ -59,7 +59,7 @@ function sessionFor(roomKey: string): DocumentSession {
     awareness,
     presence: createLocalPresence(awareness),
     markerStore: new SessionMarkerStore("writer"),
-    refusedLocalEdits: () => false,
+    refusedLocalEdits: () => refusedRooms.has(roomKey),
     whenLocalPersistenceSynced: () =>
       sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),
     whenSynced: () => sessionHorizons.get(roomKey)?.firstServerSync ?? Promise.resolve(),
@@ -99,7 +99,22 @@ function setConnectionState(
   for (const listener of sessionListeners.get(roomKey) ?? []) listener(next);
 }
 
+/** Rooms whose pending edits the server refused: the review rebuilds them from server state. */
+const refusedRooms = new Set<string>();
+let rebuild: { resolve: (session: DocumentSession) => void; reject: () => void } | null = null;
+/** A fresh session for `roomKey`: the rebuild's result once the server state has synced. */
+function finishRebuild(roomKey: string): void {
+  refusedRooms.delete(roomKey);
+  sessions.delete(roomKey);
+  rebuild?.resolve(sessionFor(roomKey));
+  rebuild = null;
+}
+
 const registry = {
+  rebuildBranchRoom: () =>
+    new Promise<DocumentSession>((resolve, reject) => {
+      rebuild = { resolve, reject };
+    }),
   retain: () => {},
   release: () => {},
   getRoom: sessionFor,
@@ -507,6 +522,109 @@ describe("editor lifetime", () => {
       expect(unavailable?.hasAttribute("class")).toBe(false);
       expect(document.querySelector(".ProseMirror")).toBeNull();
       expect(sessionSnapshots.get("document-stale")?.schemaFence).toBeNull();
+    });
+  });
+
+  describe("a refused branch room rebuilt under a painted review", () => {
+    const visibleEditors = () =>
+      [...document.querySelectorAll<HTMLElement & { editor?: Editor }>(".ProseMirror")].filter(
+        (dom) => !dom.closest(".hidden"),
+      );
+    const visibleText = () =>
+      [...document.querySelectorAll<HTMLElement>(".meridian-editor-shell")]
+        .filter((shell) => !shell.closest(".hidden"))
+        .map((shell) => shell.textContent);
+    async function refuse(roomName: string) {
+      refusedRooms.add(roomName);
+      await act(async () => {
+        setConnectionState(roomName, { kind: "reset", reason: "access-changed", code: 4409 });
+      });
+    }
+
+    it("keeps the review on screen, inert, until the rebuilt room paints, and never shows live prose", async () => {
+      const documentId = "rebuild-live-doc";
+      const roomName = "branch:rebuild-live-doc:gen:1";
+      const initial = { documentId, session: sessionFor(documentId) };
+      await withReactRoot(<Harness initial={initial} />, async () => {
+        await act(async () => {
+          mountedEditor().commands.insertContent("LIVE MANUSCRIPT");
+        });
+        await act(async () => {
+          applyProps({ reviewDraftId: "draft-rebuild", reviewRoomName: roomName });
+        });
+        await act(async () => {
+          visibleEditors()[0]?.editor?.commands.insertContent("DRAFT REVIEW");
+        });
+        expect(visibleText()).toEqual(["DRAFT REVIEW"]);
+
+        await refuse(roomName);
+        // The replacement is still syncing: the review as painted stays, and nothing can type into it.
+        expect(visibleText().join("")).toContain("DRAFT REVIEW");
+        expect(visibleText().join("")).not.toContain("LIVE MANUSCRIPT");
+        const held = document.querySelector("[data-review-replacing]");
+        expect(held?.hasAttribute("inert")).toBe(true);
+        expect(held?.getAttribute("aria-hidden")).toBe("true");
+        expect(document.querySelectorAll("[data-review-replacing] .ProseMirror")).toHaveLength(1);
+        expect(visibleEditors().filter((dom) => !dom.closest("[data-review-replacing]"))).toEqual(
+          [],
+        );
+
+        // The rebuilt room paints: the held copy is gone and the review is a live editor again.
+        await act(async () => {
+          finishRebuild(roomName);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(document.querySelector("[data-review-replacing]")).toBeNull();
+        expect(visibleEditors()).toHaveLength(1);
+        expect(visibleEditors()[0]?.closest(".hidden")).toBeNull();
+        expect(visibleText().join("")).not.toContain("LIVE MANUSCRIPT");
+      });
+    });
+
+    it("holds the review for a draft-only document, which has no live prose to fall back to", async () => {
+      const roomName = "branch:rebuild-draft-only:gen:1";
+      await withReactRoot(
+        <Harness
+          initial={{
+            documentId: "rebuild-draft-only",
+            reviewDraftId: "draft-only-rebuild",
+            reviewRoomName: roomName,
+          }}
+        />,
+        async () => {
+          await act(async () => {
+            visibleEditors()[0]?.editor?.commands.insertContent("DRAFT ONLY REVIEW");
+          });
+          await refuse(roomName);
+          expect(document.querySelectorAll(".meridian-editor-shell")).toHaveLength(1);
+          expect(document.querySelector("[data-review-replacing]")?.textContent).toContain(
+            "DRAFT ONLY REVIEW",
+          );
+        },
+      );
+    });
+
+    it("hands the screen back to the live prose when the review is actually left", async () => {
+      const documentId = "rebuild-leave-doc";
+      const roomName = "branch:rebuild-leave-doc:gen:1";
+      await withReactRoot(
+        <Harness initial={{ documentId, session: sessionFor(documentId) }} />,
+        async () => {
+          await act(async () => {
+            mountedEditor().commands.insertContent("LIVE MANUSCRIPT");
+          });
+          await act(async () => {
+            applyProps({ reviewDraftId: "draft-leave", reviewRoomName: roomName });
+          });
+          await refuse(roomName);
+          await act(async () => {
+            applyProps({ reviewDraftId: null, reviewRoomName: null });
+          });
+          expect(document.querySelector("[data-review-replacing]")).toBeNull();
+          expect(visibleText().join("")).toContain("LIVE MANUSCRIPT");
+        },
+      );
     });
   });
 });
