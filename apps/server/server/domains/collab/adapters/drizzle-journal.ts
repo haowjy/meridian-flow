@@ -21,7 +21,7 @@ import {
   unwrapDoc,
   writeHandle,
 } from "@meridian/agent-edit/integration";
-import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
+import type { DocumentAuthorityId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -118,7 +118,6 @@ export type DrizzleCollabPersistence = {
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
 const asTurnId = (value: string) => value as TurnId;
-const asModelResponseId = (value: string | undefined) => value as ModelResponseId | undefined;
 const asOptionalTurnId = (value: string | undefined) => value as TurnId | undefined;
 const asUserId = (value: string | undefined) => value as UserId | undefined;
 
@@ -246,7 +245,7 @@ function metaFromUpdateRow(
       return {
         origin: `agent:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
-        ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
+        ...(row.editScopeId ? { editScopeId: row.editScopeId } : {}),
         ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
@@ -266,7 +265,7 @@ function metaFromUpdateRow(
   return {
     origin: "system",
     ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
-    ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
+    ...(row.editScopeId ? { editScopeId: row.editScopeId } : {}),
     ...(reversalActor ? { reversalActor } : {}),
     seq: row.id,
   };
@@ -506,7 +505,7 @@ async function appendUpdate(
       originType: origin.originType,
       actorUserId: origin.actorUserId ?? null,
       actorTurnId: origin.actorTurnId ?? null,
-      authoringResponseId: asModelResponseId(meta.authoringResponseId) ?? null,
+      editScopeId: meta.editScopeId ?? null,
       reversalActorType: origin.reversalActorType ?? null,
       reversalActorUserId: origin.reversalActorUserId ?? null,
     })
@@ -808,7 +807,7 @@ async function persistRedoEntries(
       .update(documentYjsReversals)
       .set({
         status: "redone",
-        authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
+        editScopeId: entry.meta.editScopeId ?? null,
         redoUpdateSeq: seq,
       })
       .where(
@@ -905,7 +904,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
                 originType: origin.originType,
                 actorUserId: origin.actorUserId ?? null,
                 actorTurnId: origin.actorTurnId ?? null,
-                authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
+                editScopeId: entry.meta.editScopeId ?? null,
               };
             }),
           )
@@ -930,7 +929,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           wId: number;
           threadId: string;
           turnId: string | null;
-          authoringResponseId?: string;
+          editScopeId?: string;
           actorKind: "agent" | "human" | "system";
           userId?: string;
           writeId: string;
@@ -952,9 +951,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
             wId,
             threadId: entry.mutation.threadId,
             turnId: entry.mutation.turnId,
-            ...(entry.mutation.authoringResponseId
-              ? { authoringResponseId: entry.mutation.authoringResponseId }
-              : {}),
+            ...(entry.mutation.editScopeId ? { editScopeId: entry.mutation.editScopeId } : {}),
             actorKind: entry.mutation.actorKind,
             ...(entry.mutation.userId ? { userId: entry.mutation.userId } : {}),
             writeId:
@@ -971,7 +968,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
               documentId: asDocumentId(mv.docId),
               threadId: asThreadId(mv.threadId),
               turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
-              authoringResponseId: asModelResponseId(mv.authoringResponseId) ?? null,
+              editScopeId: mv.editScopeId ?? null,
               actorKind: mv.actorKind,
               userId: mv.userId ?? null,
               writeId: mv.writeId,
@@ -1439,7 +1436,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           await appendUpdate(txDb, docId, undoUpdate, {
             origin: "system",
             reversalActor: actor,
-            authoringResponseId: records[0]?.authoringResponseId,
+            editScopeId: records[0]?.editScopeId,
             ...(actor.type === "agent" && actor.turnId ? { actorTurnId: actor.turnId } : {}),
             seq: 0,
           })
@@ -1452,7 +1449,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
                 documentId: asDocumentId(docId),
                 threadId: asThreadId(record.threadId),
                 turnId: record.turnId === null ? null : asTurnId(record.turnId),
-                authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
+                editScopeId: record.editScopeId ?? null,
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
@@ -1469,7 +1466,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
                 ],
                 set: {
                   status: record.status,
-                  authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
+                  editScopeId: record.editScopeId ?? null,
                   undoUpdateSeq,
                   redoUpdateSeq: null,
                   expiresAt: record.expiresAt ?? null,

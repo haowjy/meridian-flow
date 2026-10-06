@@ -628,7 +628,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
    * Stages one write each to alpha and beta in one reply, both drafted. With
    * `liveBeta`, beta's write goes live and is staged first, so a save that
    * fails at alpha's branch journal fails after beta's live append ran. A live
-   * write records its authoring response, so `responseId` must then be a UUID.
+   * write records its edit scope in a uuid column, so `responseId` must then be a UUID.
    */
   async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
     await collab.writeDocument({
@@ -655,18 +655,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await collab
       .agentEdit()
       .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
-    if (options.liveBeta) {
-      await db.insert(schema.modelResponses).values({
-        id: responseId as never,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-    }
     const betaContext = options.liveBeta
       ? { ...context, grant: testFileGrant({ kind: "live" }) }
       : context;
@@ -756,18 +744,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       createdDocument: false,
     };
     await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
-    if (writerEditBeforeWrite) {
-      await db.insert(schema.modelResponses).values({
-        id: responseId as never,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
-    }
     const applyWriterEdit = () =>
       liveCoordinator.withDocument(documentId, async (doc) => {
         const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];

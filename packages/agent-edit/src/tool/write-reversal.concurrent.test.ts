@@ -206,7 +206,7 @@ describe("write reversal under concurrent edits", () => {
     );
     expect(
       await scenario.ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID }),
-    ).toMatchObject([{ status: "reversed", authoringResponseId: "frozen-response" }]);
+    ).toMatchObject([{ status: "reversed", editScopeId: "frozen-response" }]);
     expect(scenario.blockTexts()).toEqual(["Base."]);
     await expect(
       scenario.ctx.core.write(

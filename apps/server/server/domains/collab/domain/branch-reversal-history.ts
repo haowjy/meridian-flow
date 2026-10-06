@@ -128,12 +128,12 @@ export function stageBranchReversal(input: {
 }): void {
   const turnId =
     input.operation.direction === "undo" ? (input.operation.records[0]?.turnId ?? null) : null;
-  const authoringResponseId = input.actor.type === "agent" ? input.actor.responseId : undefined;
+  const editScopeId = input.actor.type === "agent" ? input.actor.responseId : undefined;
   const meta: BranchReversalMeta = {
     origin: "system",
     seq: 0,
     reversalActor: input.actor,
-    ...(authoringResponseId ? { authoringResponseId } : {}),
+    ...(editScopeId ? { editScopeId } : {}),
     branchReversal: input.operation,
   };
   input.pending.push({
@@ -151,7 +151,7 @@ export function stageBranchReversal(input: {
       threadId: input.threadId,
       turnId,
       systemOrigin: input.operation.direction,
-      ...(authoringResponseId ? { authoringResponseId } : {}),
+      ...(editScopeId ? { editScopeId } : {}),
     },
   });
 }
@@ -165,7 +165,7 @@ export function serializeBranchReversalRecord(
     threadId: record.threadId,
     writeIds: [...record.writeIds],
     status: record.status,
-    ...(record.authoringResponseId ? { authoringResponseId: record.authoringResponseId } : {}),
+    ...(record.editScopeId ? { editScopeId: record.editScopeId } : {}),
     ...(record.reversedByUserId ? { reversedByUserId: record.reversedByUserId } : {}),
     ...(record.reversedAt ? { reversedAt: record.reversedAt.toISOString() } : {}),
     ...(record.expiresAt ? { expiresAt: record.expiresAt.toISOString() } : {}),
@@ -324,7 +324,7 @@ export function branchRowAsPersistedUpdate(row: BranchJournalRow): PersistedUpda
         (row.source === "agent" ? `agent:${row.turnId ?? row.threadId ?? "branch"}` : "system"),
       seq: row.id,
       ...(stored.actorTurnId ? { actorTurnId: stored.actorTurnId } : {}),
-      ...(stored.authoringResponseId ? { authoringResponseId: stored.authoringResponseId } : {}),
+      ...(stored.editScopeId ? { editScopeId: stored.editScopeId } : {}),
       ...(stored.reversalActor ? { reversalActor: stored.reversalActor } : {}),
     },
   };

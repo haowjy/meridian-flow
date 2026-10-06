@@ -207,9 +207,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       {
         origin: "system",
         reversalActor: actor,
-        ...(records[0]?.authoringResponseId
-          ? { authoringResponseId: records[0].authoringResponseId }
-          : {}),
+        ...(records[0]?.editScopeId ? { editScopeId: records[0].editScopeId } : {}),
         ...(actor.type === "agent" && actor.turnId ? { actorTurnId: actor.turnId } : {}),
         seq: 0,
       },
@@ -314,9 +312,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
             ...stored.record,
             status: "redone",
             redoUpdateSeq: seq,
-            ...(redo.meta.authoringResponseId
-              ? { authoringResponseId: redo.meta.authoringResponseId }
-              : {}),
+            ...(redo.meta.editScopeId ? { editScopeId: redo.meta.editScopeId } : {}),
           },
         });
         for (const writeId of stored.record.writeIds) {
@@ -709,7 +705,7 @@ function copyReversalRecord(record: ReversalRecord): ReversalRecord {
     documentId: record.documentId,
     turnId: record.turnId,
     threadId: record.threadId,
-    ...(record.authoringResponseId ? { authoringResponseId: record.authoringResponseId } : {}),
+    ...(record.editScopeId ? { editScopeId: record.editScopeId } : {}),
     writeIds: [...record.writeIds],
     status: record.status,
     undoUpdateSeq: record.undoUpdateSeq,

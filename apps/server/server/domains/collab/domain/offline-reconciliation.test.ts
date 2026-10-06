@@ -54,7 +54,7 @@ describe("offline reconciliation", () => {
     const scenario = await setup({
       origin: "human:writer",
       editDeletedBlock: true,
-      authoringResponseId: null,
+      editScopeId: null,
     });
     await scenario.reconcile();
     expect(scenario.changes).toHaveLength(1);
@@ -65,7 +65,7 @@ describe("offline reconciliation", () => {
 async function setup(input: {
   origin: string;
   editDeletedBlock: boolean;
-  authoringResponseId?: string | null;
+  editScopeId?: string | null;
 }) {
   const journal = createInMemoryJournal();
   const initial = docFromMarkdown("Writer original");
@@ -81,9 +81,7 @@ async function setup(input: {
   await journal.append(DOCUMENT_ID, agentUpdate, {
     origin: `agent:${TURN_ID}`,
     actorTurnId: TURN_ID,
-    ...(input.authoringResponseId === null
-      ? {}
-      : { authoringResponseId: input.authoringResponseId ?? RESPONSE_ID }),
+    ...(input.editScopeId === null ? {} : { editScopeId: input.editScopeId ?? RESPONSE_ID }),
     seq: 0,
   });
 

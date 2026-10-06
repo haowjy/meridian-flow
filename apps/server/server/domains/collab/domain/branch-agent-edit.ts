@@ -376,7 +376,7 @@ export function createBranchAgentEditJournal(input: {
     async appendBatch(entries) {
       for (const entry of entries) {
         input.pendingJournalEntries?.push(entry);
-        const groupId = entry.meta.authoringResponseId ?? entry.mutation?.turnId;
+        const groupId = entry.meta.editScopeId ?? entry.mutation?.turnId;
         if (groupId)
           groupedOrdinals.delete(groupedOrdinalKey(entry.docId, input.threadId, groupId));
       }

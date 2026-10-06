@@ -1,7 +1,7 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
-  ModelResponseId,
+  EditScopeId,
   ThreadId,
   TurnId,
   UserId,
@@ -487,11 +487,7 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
-    /**
-     * The reply's edit scope: its model response's id until a save boundary
-     * rotates it mid-reply, so not a `model_responses` reference.
-     */
-    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
+    editScopeId: uuid("edit_scope_id").$type<EditScopeId>(),
     reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
     reversalActorUserId: uuid("reversal_actor_user_id")
       .$type<UserId>()
@@ -524,11 +520,7 @@ export const documentYjsReversals = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
-    /**
-     * The reply's edit scope: its model response's id until a save boundary
-     * rotates it mid-reply, so not a `model_responses` reference.
-     */
-    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
+    editScopeId: uuid("edit_scope_id").$type<EditScopeId>(),
     // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
@@ -604,11 +596,7 @@ export const agentEditMutations = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
-    /**
-     * The reply's edit scope: its model response's id until a save boundary
-     * rotates it mid-reply, so not a `model_responses` reference.
-     */
-    authoringResponseId: uuid("authoring_response_id").$type<ModelResponseId>(),
+    editScopeId: uuid("edit_scope_id").$type<EditScopeId>(),
     actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
     userId: text("user_id"),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.

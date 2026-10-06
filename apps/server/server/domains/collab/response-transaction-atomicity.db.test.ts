@@ -38,7 +38,7 @@ async function currentDraftId(
   return draft.draftId;
 }
 
-// A live write records its authoring response, so this reply is a real response row.
+// A live write records its edit scope in a uuid column, so this reply id is a UUID.
 const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
 
 describe("change trail (postgres)", () => {

@@ -748,7 +748,7 @@ export function createWriteReversal(deps: {
           ...(input.actor.type === "user"
             ? { reversedByUserId: input.actor.userId }
             : input.actor.responseId
-              ? { authoringResponseId: input.actor.responseId }
+              ? { editScopeId: input.actor.responseId }
               : {}),
         })),
       );
@@ -787,7 +787,7 @@ export function createWriteReversal(deps: {
                 origin: "system",
                 reversalActor: input.actor,
                 ...(input.actor.type === "agent" && input.actor.responseId
-                  ? { authoringResponseId: input.actor.responseId }
+                  ? { editScopeId: input.actor.responseId }
                   : {}),
                 ...(input.actor.type === "agent" && input.actor.turnId
                   ? { actorTurnId: input.actor.turnId }

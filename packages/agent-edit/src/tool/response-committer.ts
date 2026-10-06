@@ -998,7 +998,7 @@ export function createResponseCommitter(deps: {
       mutation: {
         threadId: input.session.threadId,
         turnId: input.turnId,
-        authoringResponseId: input.actor.responseId,
+        editScopeId: input.actor.responseId,
         actorKind: "agent",
         writeId:
           input.durableWriteId ??

@@ -18,10 +18,13 @@ CREATE TABLE "agent_namespace_changes" (
 --> statement-breakpoint
 ALTER TABLE "agent_edit_mutations" DROP CONSTRAINT "agent_edit_mutations_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
+ALTER TABLE "agent_edit_mutations" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
 ALTER TABLE "document_yjs_reversals" DROP CONSTRAINT "document_yjs_reversals_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
+ALTER TABLE "document_yjs_reversals" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" DROP CONSTRAINT "document_yjs_updates_authoring_response_id_model_responses_id_fk";
 --> statement-breakpoint
+ALTER TABLE "document_yjs_updates" RENAME COLUMN "authoring_response_id" TO "edit_scope_id";--> statement-breakpoint
 ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_namespace_changes" ADD CONSTRAINT "agent_namespace_changes_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

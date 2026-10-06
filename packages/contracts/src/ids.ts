@@ -18,6 +18,11 @@ export type TurnBlockId = string;
 export const asTurnBlockId = (s: string) => s as TurnBlockId;
 export type ModelResponseId = string;
 export const asModelResponseId = (s: string) => s as ModelResponseId;
+/**
+ * A reply's edit scope: its model response's id until a save boundary rotates
+ * it mid-reply, so not a `model_responses` reference.
+ */
+export type EditScopeId = string;
 export type UserSubscriptionId = string;
 export const asUserSubscriptionId = (s: string) => s as UserSubscriptionId;
 export type CreditLotId = string;

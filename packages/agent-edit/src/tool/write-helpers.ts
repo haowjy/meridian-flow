@@ -83,12 +83,12 @@ export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function agentMeta(turnId: string, authoringResponseId?: string): UpdateMeta {
+export function agentMeta(turnId: string, editScopeId?: string): UpdateMeta {
   return {
     origin: `agent:${turnId}`,
     actorTurnId: turnId,
     seq: 0,
-    ...(authoringResponseId ? { authoringResponseId } : {}),
+    ...(editScopeId ? { editScopeId } : {}),
   };
 }
 

@@ -149,17 +149,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: "assistant",
         status: "complete",
       });
-      // A write called outside a reply records its turn as the authoring response.
-      await db.insert(schema.modelResponses).values({
-        id: TURN_ID,
-        turnId: TURN_ID,
-        sequence: 1,
-        provider: "fixture",
-        model: "fixture",
-        requestMessageCount: 1,
-        predictedCacheState: "cold",
-        predictedCacheReason: "facts_unavailable",
-      });
       await db.insert(schema.threadWorks).values({
         threadId: THREAD_ID,
         workId: NO_WORK_ID,

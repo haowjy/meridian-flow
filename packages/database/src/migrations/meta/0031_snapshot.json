@@ -7021,8 +7021,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "authoring_response_id": {
-          "name": "authoring_response_id",
+        "edit_scope_id": {
+          "name": "edit_scope_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -9353,8 +9353,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "authoring_response_id": {
-          "name": "authoring_response_id",
+        "edit_scope_id": {
+          "name": "edit_scope_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -9589,8 +9589,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "authoring_response_id": {
-          "name": "authoring_response_id",
+        "edit_scope_id": {
+          "name": "edit_scope_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
