@@ -11,7 +11,7 @@ CREATE TABLE "agent_namespace_changes" (
 	"status" text DEFAULT 'active' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"reversed_at" timestamp with time zone,
-	CONSTRAINT "agent_namespace_changes_kind_valid" CHECK ("agent_namespace_changes"."kind" IN ('move', 'delete')),
+	CONSTRAINT "agent_namespace_changes_kind_valid" CHECK ("agent_namespace_changes"."kind" IN ('move', 'delete', 'discard')),
 	CONSTRAINT "agent_namespace_changes_move_target" CHECK (("agent_namespace_changes"."kind" = 'move') = ("agent_namespace_changes"."to_uri" IS NOT NULL)),
 	CONSTRAINT "agent_namespace_changes_status_valid" CHECK ("agent_namespace_changes"."status" IN ('active', 'reversed'))
 );

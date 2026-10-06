@@ -79,7 +79,7 @@ export interface WriteReversal {
 }
 
 function emptyAfterUndoMessage(path: string): string {
-  return `The document at ${path} is empty but still exists until document delete ships.`;
+  return `The document at ${path} is empty but still exists. To remove it, use \`delete\`.`;
 }
 
 export interface WriteReversalRunInput {
@@ -289,8 +289,8 @@ export function createWriteReversal(deps: {
       writeIds: reversal.writeIds,
       sync,
     });
-    // Undoing a create or copy leaves the document in place; say so, so the
-    // model doesn't report it gone. Removed with this note when delete ships.
+    // Undoing a create leaves the document in place; say so, so the model
+    // doesn't report it gone. The host deletes an undone copy and drops this.
     if (input.direction === "undo" && input.filePath && isEmptyDocument(input.runtime.doc)) {
       return {
         ...result,

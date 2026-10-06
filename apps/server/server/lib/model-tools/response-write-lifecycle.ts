@@ -18,11 +18,13 @@ import {
   isPermissionDenial,
   permissionDeniedMessage,
 } from "../file-access-denial-copy.js";
+import { applyNamespaceChange, type NamespaceChangeShape } from "./namespace-commands.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 
 type StagedCreateCleanup = {
   responseId: string;
   port: ContextPort;
+  /** Where the document is now: a move in the same reply carries it along. */
   path: string;
   documentId: string;
 };
@@ -37,7 +39,7 @@ export type StagedNamespaceChange = {
   documentId: string;
   /** The change's handle record, forgotten once the change is reversed. */
   recordId: number;
-} & ({ kind: "move"; fromUri: string; toUri: string } | { kind: "delete"; uri: string });
+} & NamespaceChangeShape;
 
 export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
@@ -80,20 +82,11 @@ export async function deleteCreatedTrackedDocument(input: {
   const deleted = await input.port.delete(input.path, {
     expected: { kind: "file", documentId: input.documentId },
   });
-  if (!deleted.ok && deleted.error.code !== "not_found" && deleted.error.code !== "stale_target") {
+  // An archived Work changes nothing, so a create refused there stays until it's unarchived.
+  const gone = ["not_found", "stale_target", "context_unavailable"];
+  if (!deleted.ok && !gone.includes(deleted.error.code)) {
     throw new Error(contextErrorMessage(deleted.error));
   }
-}
-
-/** Puts a document back where it was before the change: moved back, or restored. */
-async function reverseNamespaceChange(change: StagedNamespaceChange): Promise<void> {
-  const reversed =
-    change.kind === "move"
-      ? await change.port.commitWriterLocation(change.toUri, change.fromUri, {
-          expected: { kind: "file", nodeId: change.documentId },
-        })
-      : await change.port.restore(change.uri, { documentId: change.documentId });
-  if (!reversed.ok) throw new Error(contextErrorMessage(reversed.error));
 }
 
 export function createAgentEditResponseWriteLifecycle(
@@ -102,11 +95,24 @@ export function createAgentEditResponseWriteLifecycle(
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
   const stagedNamespaceChanges = new Map<string, StagedNamespaceChange[]>();
 
+  /** A staged create's document follows its moves, so its cleanup finds it (by id, wherever it is). */
+  function relocateStagedCreate(responseId: string, documentId: string, uri: string): void {
+    for (const record of stagedCreates.get(responseId) ?? []) {
+      if (record.documentId === documentId) record.path = uri;
+    }
+  }
+
   /** Newest first, so a document moved twice in one reply walks back to where it began. */
   async function reverseStagedNamespaceChanges(responseId: string): Promise<void> {
     const changes = stagedNamespaceChanges.get(responseId) ?? [];
     for (const change of [...changes].reverse()) {
-      await reverseNamespaceChange(change);
+      // The writer may have restored a delete already; only a change still in effect goes back.
+      if (await deps.namespaceChanges.transition(change.recordId, "active")) {
+        const reversed = await applyNamespaceChange(change.port, change.documentId, change, "undo");
+        if (!reversed.ok) throw new Error(contextErrorMessage(reversed.error));
+        if (change.kind === "move")
+          relocateStagedCreate(responseId, change.documentId, change.fromUri);
+      }
       await deps.namespaceChanges.discard(change.recordId);
     }
   }
@@ -117,6 +123,10 @@ export function createAgentEditResponseWriteLifecycle(
   ): Promise<void> {
     const records = stagedCreates.get(responseId) ?? [];
     const discarded = new Set(discardedDocumentIds);
+    // A discarded document's moves and deletes go with it; no handle names them.
+    for (const change of stagedNamespaceChanges.get(responseId) ?? []) {
+      if (discarded.has(change.documentId)) await deps.namespaceChanges.discard(change.recordId);
+    }
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
       await deleteCreatedTrackedDocument(record);
@@ -137,6 +147,8 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     trackStagedNamespaceChange(input: StagedNamespaceChange): void {
+      if (input.kind === "move")
+        relocateStagedCreate(input.responseId, input.documentId, input.toUri);
       const changes = stagedNamespaceChanges.get(input.responseId) ?? [];
       changes.push(input);
       stagedNamespaceChanges.set(input.responseId, changes);

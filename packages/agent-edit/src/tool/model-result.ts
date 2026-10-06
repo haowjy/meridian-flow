@@ -80,8 +80,11 @@ export interface AgentEditModelPayload {
     from: string;
     blocks?: number;
   };
-  /** A namespace change's receipt: the document's old path for a move, or that it was deleted. */
-  namespace?: { kind: "moved"; from: string } | { kind: "deleted" };
+  /**
+   * A namespace change's receipt, or an undo's or redo's: the document's old
+   * path for a move, or that it was deleted or brought back.
+   */
+  namespace?: { kind: "moved"; from: string } | { kind: "deleted" } | { kind: "restored" };
   reversal?: {
     direction: "undo" | "redo";
     /** Write handles actually reversed, oldest first; group atomicity can add to the selection. */

@@ -1395,21 +1395,28 @@ function createResponseScope(input: {
   >();
   let id = input.responseId;
   let active = true;
+  // A move or delete is live at once but rolls back with the reply until it saves.
+  let namespaceChanged = false;
   return {
     get id() {
       return id;
     },
     get hasWrites() {
-      return writes.size > 0;
+      return writes.size > 0 || namespaceChanged;
     },
     rotate() {
       // Durable tool blocks keep the provider response id; only edit identity rotates.
       id = crypto.randomUUID();
       writes.clear();
+      namespaceChanged = false;
       active = true;
     },
     stage(dispatched: Extract<Awaited<ReturnType<typeof dispatchToolCall>>, { block: Block }>) {
       const metadata = dispatched.metadata;
+      if (metadata?.stagedNamespaceChange === true) {
+        namespaceChanged = true;
+        return;
+      }
       if (metadata?.stagedWrite !== true || typeof metadata.documentId !== "string") return;
       if (typeof metadata.writeId !== "string" || typeof metadata.settlementId !== "string")
         throw new Error(

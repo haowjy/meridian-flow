@@ -484,18 +484,29 @@ export function createThreadPeerCorePool(input: {
    * documents' mutation locks in id order, before any participant commits. A
    * refused document leaves the reply; the rest saves (D29, D42).
    */
-  async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
+  async function confirmReply(
+    responseId: string,
+    record: ResponseRecord,
+  ): Promise<{ refused: RefusedResponseDocument[]; discardedCreates: string[] }> {
     const pinned = [...record.documents, ...record.reversals];
-    if (pinned.length === 0) return [];
+    if (pinned.length === 0) return { refused: [], discardedCreates: [] };
     const grants = pinned.map(([, entry]) => entry.grant);
     await input.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
     const refused = await input.fileAccess.confirmEdit(grants);
     const refusals = new Map<DocumentId, FileAccessDenied>();
     for (const denial of refused) refusals.set(targetDocumentId(denial.target), denial);
+    // A refused document this reply created is discarded with its writes, even
+    // when its core leaves the save and so never reports it.
+    const discardedCreates: string[] = [];
     for (const documentId of refusals.keys()) {
       for (const documents of [record.documents, record.reversals]) {
         const entry = documents.get(documentId);
         if (!entry) continue;
+        if (
+          entry.core.responseDocuments(responseId, record.threadId).created.includes(documentId)
+        ) {
+          discardedCreates.push(documentId);
+        }
         documents.delete(documentId);
         if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
       }
@@ -516,7 +527,10 @@ export function createThreadPeerCorePool(input: {
         .map(([documentId]) => documentId)
         .sort(),
     );
-    return [...refusals].map(([documentId, denial]) => ({ documentId, denial }));
+    return {
+      refused: [...refusals].map(([documentId, denial]) => ({ documentId, denial })),
+      discardedCreates,
+    };
   }
 
   function finalizeOptions() {
@@ -555,7 +569,7 @@ export function createThreadPeerCorePool(input: {
           // reply on its side; only a reply that never wrote falls back to the
           // live core, which closes it.
           const wrote = record.participants.size > 0;
-          const refused = await confirmReply(record);
+          const { refused, discardedCreates } = await confirmReply(responseId, record);
           const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
           const results: ResponseCommitSuccessResult[] = [];
           for (const core of participants) {
@@ -566,7 +580,7 @@ export function createThreadPeerCorePool(input: {
               .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
               .map(([documentId]) => documentId),
           );
-          const saved = mergeSaveResults(responseId, results, drafted, refused);
+          const saved = mergeSaveResults(responseId, results, drafted, refused, discardedCreates);
           await options?.beforeTransactionCommit?.(saved);
           input.responseTransactions.enlist({
             commit: async () => {
@@ -699,6 +713,7 @@ function mergeSaveResults(
   results: readonly ResponseCommitSuccessResult[],
   drafted: ReadonlySet<DocumentId>,
   refused: RefusedResponseDocument[],
+  discardedCreates: readonly string[] = [],
 ): ResponseSaveResult {
   const documents = results.flatMap((result) => result.documents);
   const discardedClaims = results.flatMap((result) => result.discardedClaims ?? []);
@@ -710,7 +725,12 @@ function mergeSaveResults(
     documents,
     stagedCreates: {
       committed: results.flatMap((result) => result.stagedCreates.committed),
-      discarded: results.flatMap((result) => result.stagedCreates.discarded),
+      discarded: [
+        ...new Set([
+          ...results.flatMap((result) => result.stagedCreates.discarded),
+          ...discardedCreates,
+        ]),
+      ],
     },
     ...(results.some((result) => result.awarenessDegraded) ? { awarenessDegraded: true } : {}),
     ...(discardedClaims.length > 0 ? { discardedClaims } : {}),

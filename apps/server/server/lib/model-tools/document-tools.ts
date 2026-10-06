@@ -52,6 +52,7 @@ import {
   type NamespaceInput,
   runNamespaceCommand,
 } from "./namespace-commands.js";
+import { runReversal } from "./namespace-reversal.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import {
@@ -247,6 +248,21 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     // Move and delete change where a document lives, so the host runs them, not the engine.
     if (isNamespaceCommand(parsed)) return runNamespaceCommand(deps, call, parsed, ctx);
     const { context, principal } = call;
+    if (parsed.command === "undo" || parsed.command === "redo") {
+      const command = parsed.command;
+      return runReversal(deps, call, parsed, ctx, {
+        resolve: (path) => resolveDocumentAddress(context, command, path),
+        run: (address, fields) =>
+          writeUnderGrant(
+            deps,
+            principal,
+            { command, path: parsed.path, ...fields },
+            address,
+            undefined,
+            ctx,
+          ),
+      });
+    }
     const creates = parsed.command === "create" || parsed.command === "copy";
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
@@ -346,9 +362,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
-    // Undo and redo apply at once; every other write stages until the response commits.
-    const stagedWrite =
-      ctx.responseId !== undefined && parsed.command !== "undo" && parsed.command !== "redo";
+    // A write stages until the response commits.
+    const stagedWrite = ctx.responseId !== undefined;
     if (!stagedWrite) {
       await deps.documentSync.refreshDocumentProjection({
         documentId: address.documentId,

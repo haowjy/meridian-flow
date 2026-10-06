@@ -5,13 +5,17 @@
  * drops a delete, and is reversed if its reply rolls back (D66). Each gets a
  * write handle on the document's sequence.
  */
-import type { WriteToolInput } from "@meridian/agent-edit/integration";
+import type { DocumentCommandName, WriteToolInput } from "@meridian/agent-edit/integration";
 import {
   documentNotFoundMessage,
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
+import type {
+  ContextError,
+  ContextPort,
+  FileRef,
+} from "../../domains/context/ports/context-port.js";
 import {
   type FileDestination,
   type FileGrant,
@@ -19,6 +23,7 @@ import {
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import type { Result } from "../../shared/result.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import {
@@ -74,17 +79,30 @@ async function resolveSource(
  * A draft-mode Work holds every change to the project's files, but a draft
  * can't hold a move or delete yet, so the change isn't made.
  */
-function draftRefusal(
-  input: NamespaceInput,
+export function draftRefusal(
+  command: DocumentCommandName,
+  doing: string,
   destinations: readonly FileDestination[],
 ): WriteToolErrorOutput | undefined {
   const draft = destinations.find((destination) => destination.kind === "draft");
   if (draft?.kind !== "draft") return undefined;
-  const verb = input.command === "move" ? "Moving" : "Deleting";
   return writeToolError(
-    input.command,
-    `${verb} documents in @${draft.workSlug ?? "/"}'s draft isn't supported yet, so nothing changed.`,
+    command,
+    `${doing} in @${draft.workSlug ?? "/"}'s draft isn't supported yet, so nothing changed.`,
   );
+}
+
+/** Edit on the folder `uri` lands in; null when the path names no Work or scheme (the port says which). */
+export async function containerGrant(
+  deps: ToolWiringDeps,
+  call: ToolCall,
+  command: DocumentCommandName,
+  uri: string,
+): Promise<FileGrant<"edit"> | WriteToolErrorOutput | null> {
+  const target = await threadContainerTarget(deps.works, call.context.resolution, uri);
+  if (!target) return null;
+  const container = await deps.fileAccess.authorize(call.principal, target, "edit");
+  return isFileAccessDenied(container) ? fileAccessDeniedError(command, container, uri) : container;
 }
 
 function namespaceErrorMessage(input: NamespaceInput, error: ContextError): string {
@@ -103,19 +121,46 @@ function namespaceErrorMessage(input: NamespaceInput, error: ContextError): stri
 }
 
 /** Runs `operation` under the grants; a seam's refusal under its locks is the tool's error. */
-async function underGrants<T>(
+export async function underGrants<T>(
   deps: ToolWiringDeps,
-  input: NamespaceInput,
+  command: DocumentCommandName,
+  path: string,
   grants: FileGrant<"edit">[],
   operation: () => Promise<T>,
 ): Promise<T | WriteToolErrorOutput> {
   const result = await runWithEditGrants(deps.fileAccess, grants, operation);
   return result.ok
     ? result.value
-    : fileAccessDeniedError(input.command, firstRefusal(result.refusal), sourcePath(input));
+    : fileAccessDeniedError(command, firstRefusal(result.refusal), path);
 }
 
-type Committed = { kind: "move"; fromUri: string; toUri: string } | { kind: "delete"; uri: string };
+/** A recorded move or delete, enough to apply it either way. */
+export type NamespaceChangeShape =
+  | { kind: "move"; fromUri: string; toUri: string }
+  | { kind: "delete"; fromUri: string };
+
+/**
+ * Applies a move or delete (`redo`) or puts the document back (`undo`), on a
+ * live port: a move goes through `ContextTreeMover` so links follow (#694),
+ * and an undone delete is restored where it was.
+ */
+export function applyNamespaceChange(
+  port: ContextPort,
+  documentId: string,
+  change: NamespaceChangeShape,
+  direction: "undo" | "redo",
+): Promise<Result<unknown, ContextError>> {
+  if (change.kind === "move") {
+    const [from, to] =
+      direction === "undo" ? [change.toUri, change.fromUri] : [change.fromUri, change.toUri];
+    return port.commitWriterLocation(from, to, { expected: { kind: "file", nodeId: documentId } });
+  }
+  return direction === "undo"
+    ? port.restore(change.fromUri, { documentId })
+    : port.delete(change.fromUri, { expected: { kind: "file", documentId } });
+}
+
+type Committed = NamespaceChangeShape;
 
 async function commitMove(
   deps: ToolWiringDeps,
@@ -125,7 +170,7 @@ async function commitMove(
   grants: FileGrant<"edit">[],
 ): Promise<Committed | WriteToolErrorOutput> {
   const port = call.context.livePort();
-  const moved = await underGrants(deps, input, grants, () =>
+  const moved = await underGrants(deps, input.command, input.from.path, grants, () =>
     port.commitWriterLocation(source.uri, input.path, {
       expected: { kind: "file", nodeId: source.documentId },
     }),
@@ -147,7 +192,7 @@ async function commitDelete(
   source: FileRef & { documentId: string },
   grants: FileGrant<"edit">[],
 ): Promise<Committed | WriteToolErrorOutput> {
-  const deleted = await underGrants(deps, input, grants, () =>
+  const deleted = await underGrants(deps, input.command, input.path, grants, () =>
     call.context
       .livePort()
       .delete(source.uri, { expected: { kind: "file", documentId: source.documentId } }),
@@ -155,19 +200,7 @@ async function commitDelete(
   if (isToolError(deleted)) return deleted;
   if (!deleted.ok)
     return writeToolError(input.command, namespaceErrorMessage(input, deleted.error));
-  return { kind: "delete", uri: source.uri };
-}
-
-/** Undoes a committed change at once, when its handle can't be recorded. */
-async function reverseNow(call: ToolCall, documentId: string, change: Committed): Promise<void> {
-  const port = call.context.livePort();
-  if (change.kind === "move") {
-    await port.commitWriterLocation(change.toUri, change.fromUri, {
-      expected: { kind: "file", nodeId: documentId },
-    });
-  } else {
-    await port.restore(change.uri, { documentId });
-  }
+  return { kind: "delete", fromUri: source.uri };
 }
 
 /**
@@ -194,18 +227,13 @@ export async function runNamespaceCommand(
   if (isToolError(grant)) return grant;
   const grants: FileGrant<"edit">[] = [grant];
   if (input.command === "move") {
-    const target = await threadContainerTarget(deps.works, call.context.resolution, input.path);
-    // No target means the path names no Work or scheme; the port says which.
-    if (target) {
-      const container = await deps.fileAccess.authorize(call.principal, target, "edit");
-      if (isFileAccessDenied(container)) {
-        return fileAccessDeniedError(input.command, container, input.path);
-      }
-      grants.push(container);
-    }
+    const container = await containerGrant(deps, call, input.command, input.path);
+    if (isToolError(container)) return container;
+    if (container) grants.push(container);
   }
   const refused = draftRefusal(
-    input,
+    input.command,
+    `${input.command === "move" ? "Moving" : "Deleting"} documents`,
     grants.map((granted) => granted.destination),
   );
   if (refused) return refused;
@@ -231,12 +259,10 @@ export async function runNamespaceCommand(
       threadId: ctx.threadId,
       turnId: ctx.turnId ?? null,
       responseId: ctx.responseId ?? null,
-      ...(committed.kind === "move"
-        ? { kind: "move", fromUri: committed.fromUri, toUri: committed.toUri }
-        : { kind: "delete", fromUri: committed.uri }),
+      ...committed,
     });
   } catch (cause) {
-    await reverseNow(call, source.documentId, committed);
+    await applyNamespaceChange(call.context.livePort(), source.documentId, committed, "undo");
     throw cause;
   }
   if (ctx.responseId !== undefined) {
@@ -262,5 +288,8 @@ export async function runNamespaceCommand(
           input.command === "move" ? { kind: "moved", from: input.from.path } : { kind: "deleted" },
       },
     }),
+    // A change the reply can still roll back: an undo or redo saves the reply first. The
+    // document id is what the writer's restore of a delete names (POST …/turns/:turnId/restore).
+    metadata: { stagedNamespaceChange: true, documentId: source.documentId },
   };
 }

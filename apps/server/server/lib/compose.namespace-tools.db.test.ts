@@ -2,6 +2,7 @@
  * Production-composed `write` `move` and `delete` on live documents: identity,
  * content and links follow a move, a delete leaves `ls` and `read`, uploads
  * and a stale read are refused, and a rolled-back reply puts both back (D66).
+ * `undo` and `redo` count them with content writes, and an undone copy goes.
  */
 
 import { eq } from "drizzle-orm";
@@ -37,6 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const CHAPTER = "manuscript://chapter.md";
     const RENAMED = "manuscript://renamed.md";
     const HOLDER = "manuscript://holder.md";
+    const COPY = "manuscript://copy.md";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
@@ -123,7 +125,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID,
         markdown: "Chapter one text.",
         origin: { type: "user", actorUserId: USER_ID },
-        threadId: THREAD.threadId,
       });
       await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
         projectId: PROJECT_ID,
@@ -237,6 +238,145 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
       expect(await script.text(HOLDER)).toContain(`[One](${CHAPTER})`);
+      expect(await db.select().from(schema.agentNamespaceChanges)).toEqual([]);
+    });
+
+    it("undo last: 1 after a move moves it back, not the content write before it, and links follow", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "insert", path: CHAPTER, find: "text.", content: " More." });
+      });
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      await runtime.app.linkUpdates.sweep();
+      expect(await script.text(HOLDER)).toContain(`[One](${RENAMED})`);
+
+      const reply = await script.begin();
+      const undone = await reply.call("write", { command: "undo", path: RENAMED, last: 1 });
+      expect(text(undone)).toBe(
+        "status: reversed; path: manuscript://chapter.md; moved from manuscript://renamed.md; undo: w2",
+      );
+      await reply.save();
+
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+      expect(await script.text(CHAPTER)).toContain("Chapter one text. More.");
+      await runtime.app.linkUpdates.sweep();
+      expect(await script.text(HOLDER)).toContain(`[One](${CHAPTER})`);
+    });
+
+    it("refuses to undo a move whose old path is taken", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      const squatter = await runtime.app.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .createTrackedDocument(CHAPTER, "Another chapter.");
+      if (!squatter.ok) throw new Error(JSON.stringify(squatter.error));
+
+      const { call } = await script.begin();
+      const refused = await call("write", { command: "undo", path: RENAMED });
+      expect(refused.isError).toBe(true);
+      expect(text(refused)).toContain(
+        "Can't undo w1: manuscript://chapter.md already exists. Move or rename that document first.",
+      );
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
+      const [change] = await db.select().from(schema.agentNamespaceChanges);
+      expect(change?.status).toBe("active");
+    });
+
+    it("undoes a delete, then redoes it", async () => {
+      const { script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "delete", path: CHAPTER });
+      });
+
+      const undo = await script.begin();
+      const undone = await undo.call("write", { command: "undo", path: CHAPTER });
+      expect(text(undone)).toBe(
+        "status: reversed; path: manuscript://chapter.md; restored; undo: w1",
+      );
+      await undo.save();
+      expect((await documentRow(DOC_ID))?.deletedAt).toBeNull();
+      expect(await script.text(CHAPTER)).toContain("Chapter one text.");
+
+      const redo = await script.begin();
+      const redone = await redo.call("write", { command: "redo", path: CHAPTER });
+      expect(text(redone)).toBe(
+        "status: reversed; path: manuscript://chapter.md; deleted; redo: w1",
+      );
+      await redo.save();
+      expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
+    });
+
+    it("undo of a copy leaves no document, and redo brings it back", async () => {
+      const { script } = await start();
+      await script.reply(async (call) => {
+        await call("write", { command: "copy", from: { path: CHAPTER }, path: COPY });
+      });
+      const [copy] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "copy"));
+      if (!copy) throw new Error("copy missing");
+
+      const undo = await script.begin();
+      const undone = await undo.call("write", { command: "undo", path: COPY });
+      expect(text(undone)).toMatch(
+        /^status: reversed; path: manuscript:\/\/copy\.md; deleted; undo: w1$/m,
+      );
+      await undo.save();
+      expect((await documentRow(copy.id))?.deletedAt).not.toBeNull();
+      const { call } = await script.begin();
+      expect((await call("read", { path: COPY })).isError).toBe(true);
+
+      const redo = await script.begin();
+      const redone = await redo.call("write", { command: "redo", path: COPY });
+      expect(text(redone)).toMatch(
+        /^status: reversed; path: manuscript:\/\/copy\.md; restored; redo: w1/,
+      );
+      await redo.save();
+      expect((await documentRow(copy.id))?.deletedAt).toBeNull();
+      expect(await script.text(COPY)).toContain("Chapter one text.");
+    });
+
+    it("cleans up a document created then moved in a reply whose save refuses it", async () => {
+      const { script } = await start();
+      const reply = await script.begin();
+      const created = await reply.call("write", {
+        command: "create",
+        path: "manuscript://fresh.md",
+        content: "Fresh.",
+      });
+      expect(created.isError).toBeFalsy();
+      const moved = await reply.call("write", {
+        command: "move",
+        from: { path: "manuscript://fresh.md" },
+        path: "manuscript://kept.md",
+      });
+      expect(moved.isError).toBeFalsy();
+      // Rebound read-only before the save: the save refuses the manuscript create.
+      const [binding] = await db.select().from(schema.threadAgentBindings);
+      await db
+        .update(schema.threadAgentBindings)
+        .set({ configuration: { ...binding?.configuration, permission: "read" } as never })
+        .where(eq(schema.threadAgentBindings.threadId, THREAD.threadId));
+
+      const saved = await script.runtime.app.responseWrites.commitResponse(
+        reply.responseId,
+        THREAD,
+      );
+      expect(saved).toMatchObject({ status: "committed", refused: [expect.anything()] });
+      const [kept] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "kept"));
+      expect(kept?.deletedAt).not.toBeNull();
       expect(await db.select().from(schema.agentNamespaceChanges)).toEqual([]);
     });
   });

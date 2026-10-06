@@ -672,7 +672,12 @@ export const agentNamespaceChanges = pgTable(
     responseId: uuid("response_id")
       .$type<ModelResponseId>()
       .references(() => modelResponses.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<"move" | "delete">().notNull(),
+    /**
+     * `move` and `delete` are the model's handles. `discard` is no handle: an
+     * undo of the write that copied the document in (its `w_id`) deleted it,
+     * and a redo of that write brings it back.
+     */
+    kind: text("kind").$type<"move" | "delete" | "discard">().notNull(),
     /** Where the document was: a move's old location, or the deleted document's path. */
     fromUri: text("from_uri").notNull(),
     /** A move's new location. */
@@ -688,7 +693,10 @@ export const agentNamespaceChanges = pgTable(
       table.wId,
     ),
     index("agent_namespace_changes_thread_turn").on(table.threadId, table.turnId),
-    check("agent_namespace_changes_kind_valid", sql`${table.kind} IN ('move', 'delete')`),
+    check(
+      "agent_namespace_changes_kind_valid",
+      sql`${table.kind} IN ('move', 'delete', 'discard')`,
+    ),
     check(
       "agent_namespace_changes_move_target",
       sql`(${table.kind} = 'move') = (${table.toUri} IS NOT NULL)`,

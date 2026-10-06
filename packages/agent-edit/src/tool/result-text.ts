@@ -69,7 +69,7 @@ function statusLine(result: AgentEditResultV1): string {
 }
 
 function namespaceFact(namespace: NonNullable<AgentEditResultV1["namespace"]>): string {
-  return namespace.kind === "moved" ? `moved from ${namespace.from}` : "deleted";
+  return namespace.kind === "moved" ? `moved from ${namespace.from}` : namespace.kind;
 }
 
 function blockCount(count: number): string {
