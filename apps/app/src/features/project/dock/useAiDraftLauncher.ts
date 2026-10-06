@@ -6,6 +6,8 @@
  * the matching Editor scope claim it after the route and document commit. The
  * launcher never commands an ambient review controller or changes dock state.
  * Review entry preserves the writer's collapsed/open dock and selected view.
+ * A failed launch is held on the draft's command record (by the handoff), where
+ * each surface's row shows it; this hook only logs it for diagnostics.
  */
 import { useCallback } from "react";
 

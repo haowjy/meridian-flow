@@ -10,6 +10,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  clearDraftCommandFailure,
+  failDraftReviewLaunch,
+} from "@/client/query/draft-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
@@ -78,6 +82,14 @@ export function EditorReviewHandoffProvider({
 
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
+      const draft = {
+        projectId,
+        workId: target.workId,
+        documentId: target.documentId,
+        draftId: target.draftId,
+      };
+      // A new attempt retires the previous attempt's message.
+      clearDraftCommandFailure(draft);
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -130,6 +142,8 @@ export function EditorReviewHandoffProvider({
           latest.current = null;
           setIntent(null);
         }
+        // The failure belongs on the draft the writer tried to open.
+        failDraftReviewLaunch(draft);
         throw error;
       } finally {
         if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {

@@ -6,8 +6,8 @@
  * - `pending`: an Apply or Discard is dispatched. Every surface of that Work
  *   disables, and a second dispatch for the same draft is refused instead of
  *   sent twice.
- * - `failed`: a Discard was refused, or an Apply response was lost
- *   (`apply-unknown`). The draft is still listed, so its row shows the message.
+ * - `failed`: a Discard was refused, an Apply response was lost
+ *   (`apply-unknown`), or opening Review failed (`review-failed`). The draft is still listed, so its row shows the message.
  *   It clears on the next action on the draft (Discard retry, Apply, opening
  *   Review), and when a later draft-list read no longer lists the draft. That
  *   absence is not evidence of Apply (a remote Discard looks the same), so the
@@ -28,7 +28,7 @@ type DraftScope = { projectId: string; workId: string };
 type DraftRef = DraftScope & { documentId: string; draftId: string };
 type ListedDraft = { documentId: string; draftId: string };
 
-export type DraftCommandFailureCode = "apply-unknown" | "discard-offline";
+export type DraftCommandFailureCode = "apply-unknown" | "discard-offline" | "review-failed";
 
 type DraftCommandRecord =
   | { phase: "pending" }
@@ -86,6 +86,11 @@ export function releaseDraftCommand(draft: DraftRef): void {
 
 export function failDraftCommand(draft: DraftRef, code: DraftCommandFailureCode): void {
   setRecord(draft, (at) => ({ phase: "failed", code, at }), true);
+}
+
+/** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
+export function failDraftReviewLaunch(draft: DraftRef): void {
+  if (recordFor(draft)?.phase !== "pending") failDraftCommand(draft, "review-failed");
 }
 
 /** Drop a held failure (opening Review, dismissing it); never touches a claim. */
