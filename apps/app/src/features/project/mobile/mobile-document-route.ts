@@ -4,7 +4,8 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import type { ServerContextTab } from "@/client/stores";
+import { type ContextTab, type ServerContextTab, useContextTabs } from "@/client/stores";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 
@@ -29,6 +30,12 @@ export function resolveMobileDocumentRoute(input: {
    * while the readable route repairs the URL to the same projected path.
    */
   boundDocumentId?: string | null;
+  /**
+   * The Editor workspace's tabs. Only a draft-only review tab is read from it: a pending
+   * new-document draft is not in the live catalog, so the tab the review launch installed
+   * is the document's admission.
+   */
+  workspaceTabs?: readonly ContextTab[];
   catalog: CatalogContextView | null;
   isError: boolean;
   isFetching: boolean;
@@ -58,11 +65,34 @@ export function resolveMobileDocumentRoute(input: {
     requested: true,
     scheme: input.scheme,
     path: input.path,
-    tab: resolved?.kind === "new" ? null : resolved,
+    tab:
+      resolved?.kind === "new" ? null : (resolved ?? draftOnlyTab(input, input.scheme, input.path)),
     catalogResolved: input.catalog !== null,
     isError: input.isError,
     isFetching: input.isFetching,
   };
+}
+
+/** The draft-only review tab that owns this route, by identity before locator. */
+function draftOnlyTab(
+  input: {
+    workId: string | null;
+    boundDocumentId?: string | null;
+    workspaceTabs?: readonly ContextTab[];
+  },
+  scheme: ProjectContextTreeScheme,
+  path: string,
+): ServerContextTab | null {
+  if (!input.workId) return null;
+  const owner = resolveWorkspaceRoute({
+    tabs: (input.workspaceTabs ?? []).filter(
+      (tab) => tab.kind !== "new" && tab.draftOnly === true && tab.reviewWorkId === input.workId,
+    ),
+    selectedDocumentId: undefined,
+    locator: { scheme, path, workId: input.workId },
+    boundDocumentId: input.boundDocumentId,
+  });
+  return owner.kind === "owner" && owner.tab.kind !== "new" ? owner.tab : null;
 }
 
 export function useMobileDocumentRoute(input: {
@@ -73,6 +103,7 @@ export function useMobileDocumentRoute(input: {
   workId: string | null;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
+  const { tabs: workspaceTabs } = useContextTabs(input.projectId);
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
     selection.status === "bound" &&
@@ -95,12 +126,14 @@ export function useMobileDocumentRoute(input: {
         path: input.path,
         workId: input.workId,
         boundDocumentId,
+        workspaceTabs,
         catalog,
         isError,
         isFetching,
       }),
     [
       boundDocumentId,
+      workspaceTabs,
       catalog,
       input.enabled,
       input.path,

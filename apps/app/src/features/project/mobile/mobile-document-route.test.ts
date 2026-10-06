@@ -49,3 +49,62 @@ describe("mobile document route composition", () => {
     });
   });
 });
+
+describe("phone draft-only review route", () => {
+  const draftTab = {
+    kind: "tracked",
+    documentId: "document-draft",
+    scheme: "manuscript",
+    path: "/new-chapter.md",
+    name: "new-chapter.md",
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+    draftOnly: true,
+    reviewWorkId: "work-a",
+    reviewDraftId: "draft-a",
+  } as const;
+  const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
+  const route = (
+    overrides: Partial<Parameters<typeof resolveMobileDocumentRoute>[0]> = {},
+  ): ReturnType<typeof resolveMobileDocumentRoute> =>
+    resolveMobileDocumentRoute({
+      enabled: true,
+      scheme: "manuscript",
+      path: "/new-chapter.md",
+      workId: "work-a",
+      workspaceTabs: [draftTab],
+      catalog: emptyCatalog,
+      isError: false,
+      isFetching: false,
+      ...overrides,
+    });
+
+  it("resolves a pending new document, which the live catalog never lists, from its review tab", () => {
+    expect(route().tab).toMatchObject({ documentId: "document-draft", draftOnly: true });
+  });
+
+  it("follows the bound document when its path has moved", () => {
+    expect(route({ path: "/renamed.md", boundDocumentId: "document-draft" }).tab).toMatchObject({
+      documentId: "document-draft",
+    });
+    expect(route({ path: "/renamed.md" }).tab).toBeNull();
+  });
+
+  it("is never another Work's draft, and never a live tab", () => {
+    expect(route({ workId: "work-b" }).tab).toBeNull();
+    expect(route({ workspaceTabs: [{ ...draftTab, draftOnly: undefined }] }).tab).toBeNull();
+  });
+
+  it("prefers the live document once the catalog lists it", () => {
+    const live = { ...file, documentId: "document-draft", path: "/new-chapter.md" };
+    const tab = route({
+      catalog: {
+        findPath: (path: string) => (path === live.path ? live : null),
+        findDocument: () => null,
+      } as never,
+    }).tab;
+    expect(tab).toMatchObject({ documentId: "document-draft" });
+    expect(tab).not.toHaveProperty("draftOnly", true);
+  });
+});
