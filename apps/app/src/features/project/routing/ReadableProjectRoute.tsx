@@ -242,6 +242,9 @@ export function ReadableProjectRoute({
     editorWorkId: workId,
     noWorkId,
   };
+  // The document the address resolved to: a review of it stays on this address
+  // through a rename, whatever path the launcher read.
+  const addressDocumentIdRef = useRef<string | undefined>(undefined);
   const captureNavigation = useCallback(() => {
     const current = latest.current.navigation;
     const ticket = current?.beginIntent();
@@ -346,6 +349,11 @@ export function ReadableProjectRoute({
     editorDrafts,
     (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
   );
+  const addressDocumentId =
+    documentResult && documentResult.kind !== "unavailable"
+      ? documentResult.document.documentId
+      : undefined;
+  addressDocumentIdRef.current = addressDocumentId;
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -514,7 +522,8 @@ export function ReadableProjectRoute({
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
-        projectAddressMatchesContextTarget(current.address, target, current.noWorkId)
+        (projectAddressMatchesContextTarget(current.address, target, current.noWorkId) ||
+          (target.documentId !== undefined && target.documentId === addressDocumentIdRef.current))
       ) {
         const replacement = await current.navigation.replaceIfCurrent(
           current.navigation.capture(),
@@ -755,6 +764,7 @@ export function ReadableProjectRoute({
             activeContextFolder={search.folder ?? null}
             activeContextPath={search.path ?? null}
             reviewDraftId={address.draftId}
+            reviewAddressDocumentId={addressDocumentId}
             resultsOpen={address.results}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}

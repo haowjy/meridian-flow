@@ -9,10 +9,12 @@ import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
   gateLiveView,
   mergeLocalResourceState,
+  projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
   routeContinuityDocumentId,
 } from "./local-document-address";
+import type { ProjectAddress } from "./project-address";
 
 function catalog(localContent: boolean): CatalogContextView {
   const scope = { kind: "project" as const, projectId: "project-id" };
@@ -367,4 +369,30 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
+});
+
+describe("projectAddressMatchesContextTarget", () => {
+  const noWorkId = "no-work";
+  const address = (work: ProjectAddress["work"]): ProjectAddress => ({
+    projectId: "project-id",
+    destination: { kind: "document", scheme: "manuscript", path: "a.md" },
+    work,
+    results: false,
+  });
+  const target = (workId?: string) => ({ scheme: "manuscript", path: "/a.md", workId });
+
+  it("names a No Work document by its row id, whatever the address spells", () => {
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "none" }), target(noWorkId), noWorkId),
+    ).toBe(true);
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "none" }), target("work-1"), noWorkId),
+    ).toBe(false);
+  });
+
+  it("never matches a request whose Work is not yet resolved", () => {
+    expect(projectAddressMatchesContextTarget(address({ kind: "none" }), target(), noWorkId)).toBe(
+      false,
+    );
+  });
 });

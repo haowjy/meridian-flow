@@ -11,6 +11,7 @@ export function EditorReviewAddressOwner({
   activeScreen,
   activeScheme,
   activePath,
+  activeDocumentId,
   onSetDraftId,
 }: {
   review: DraftReviewContextValue;
@@ -18,12 +19,20 @@ export function EditorReviewAddressOwner({
   activeScreen: ScreenKey;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
+  /**
+   * The document the address resolved to. A review follows its document through
+   * a rename or move, so identity decides when it is known; the path is only the
+   * fallback while the address is still resolving.
+   */
+  activeDocumentId?: string | null;
   onSetDraftId: (draftId: string | null) => void;
 }) {
   const openReview = useOpenEditorReview();
   const pendingDraftId = usePendingEditorReviewDraftId();
   const restoring = useRef<string | null>(null);
   const ownedReview = useRef(false);
+  const addressNames = (documentId: string, contextPath: string | null | undefined) =>
+    activeDocumentId ? activeDocumentId === documentId : contextPath === activePath;
 
   useEffect(() => {
     const inline = review.controller.inlineReview;
@@ -34,7 +43,8 @@ export function EditorReviewAddressOwner({
       const ownsAddress =
         activeScreen === "context" &&
         activeScheme === "manuscript" &&
-        group?.contextPath === activePath;
+        group !== null &&
+        addressNames(inline.documentId, group.contextPath);
       if (!ownsAddress) {
         review.controller.exitInlineReview();
         return;
@@ -64,7 +74,7 @@ export function EditorReviewAddressOwner({
     if (review.drafts.status !== "ready" && review.drafts.status !== "empty") return;
     const group = review.groups.find((candidate) => candidate.draft.draftId === requestedDraftId);
     const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
-    if (!group?.contextPath || !draft || group.contextPath !== activePath) {
+    if (!group?.contextPath || !draft || !addressNames(group.documentId, group.contextPath)) {
       restoring.current = null;
       onSetDraftId(null);
       return;
@@ -83,6 +93,7 @@ export function EditorReviewAddressOwner({
       console.error("[editor-review] address restore failed", error);
     });
   }, [
+    activeDocumentId,
     activePath,
     activeScheme,
     activeScreen,

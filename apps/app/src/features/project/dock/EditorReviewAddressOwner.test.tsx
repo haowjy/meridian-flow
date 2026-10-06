@@ -34,6 +34,7 @@ function Harness({
   activeScreen = "context",
   activeScheme = "manuscript",
   activePath = draft.contextPath,
+  activeDocumentId,
   onSetDraftId,
   exitInlineReview,
   openContextRoute,
@@ -42,6 +43,7 @@ function Harness({
   activeScreen?: "chat" | "work" | "context";
   activeScheme?: "manuscript" | null;
   activePath?: string | null;
+  activeDocumentId?: string;
   onSetDraftId: (draftId: string | null) => void;
   exitInlineReview?: () => void;
   openContextRoute: OpenContextRoute;
@@ -93,6 +95,7 @@ function Harness({
         activeScreen={activeScreen}
         activeScheme={activeScheme}
         activePath={activePath}
+        activeDocumentId={activeDocumentId}
         onSetDraftId={onSetDraftId}
       />
     </EditorReviewHandoffProvider>
@@ -151,6 +154,46 @@ describe("EditorReviewAddressOwner", () => {
         );
         expect(exit).toHaveBeenCalledOnce();
         expect(setDraftId).not.toHaveBeenCalledWith(draft.draftId);
+      },
+    );
+  });
+
+  it("keeps an open review and its draft identity when its document is renamed", async () => {
+    const exit = vi.fn();
+    const setDraftId = vi.fn();
+    await withReactRoot(
+      <Harness
+        requestedDraftId={draft.draftId}
+        activePath="chapters/renamed.md"
+        activeDocumentId={draft.documentId}
+        onSetDraftId={setDraftId}
+        exitInlineReview={exit}
+        openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+      />,
+      async () => {
+        await act(async () =>
+          setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+        );
+        expect(exit).not.toHaveBeenCalled();
+        expect(setDraftId).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it("exits inline review when the address resolves to another document at the same path", async () => {
+    const exit = vi.fn();
+    await withReactRoot(
+      <Harness
+        activeDocumentId="document-b"
+        onSetDraftId={vi.fn()}
+        exitInlineReview={exit}
+        openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+      />,
+      async () => {
+        await act(async () =>
+          setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+        );
+        expect(exit).toHaveBeenCalledOnce();
       },
     );
   });

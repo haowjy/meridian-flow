@@ -153,6 +153,8 @@ export type ProjectViewProps = {
   activeContextPath: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewDraftId?: string;
+  /** Document the Editor address resolved to; a review follows it through a rename. */
+  reviewAddressDocumentId?: string;
   /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
@@ -503,6 +505,7 @@ function HydratedReviewControllers({
         activeScreen={props.activeScreen}
         activeScheme={props.activeContextScheme}
         activePath={props.activeContextPath}
+        activeDocumentId={props.reviewAddressDocumentId}
         onSetDraftId={props.onSetEditorReviewDraftId}
       />
       {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
