@@ -3,6 +3,7 @@
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
+import { linkAheadAddress } from "@/core/editor/links";
 import { ProjectDocumentNavigationAdapter } from "@/features/project/context/open-project-document";
 import { useIdentityCommit } from "@/features/project/context/use-identity-commit";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -42,6 +43,8 @@ it("plans Create for a manuscript address and none for Scratch, whatever its Wor
   expect(linkCreationTarget("scratch://@/scene.md")).toBeNull();
   expect(linkCreationTarget("scratch://scene.md")).toBeNull();
   expect(linkCreationTarget("uploads://@live/map.png")).toBeNull();
+  // The `@` menu's link-ahead row from a Scratch note names the manuscript, not its own folder.
+  expect(linkAheadAddress("scratch://@live/notes/a.md", "Ch 2")).toBe("manuscript://Ch 2.md");
 });
 
 it("keeps the locked No Work row in the destination after an Editor identity rename", async () => {
