@@ -97,6 +97,14 @@ export type ContextTreeDeleteCommand = {
   mode: "recursive";
 };
 
+/** Brings back one soft-deleted file, in its source, at the location it was deleted from. */
+export type ContextTreeRestoreCommand = { sourceId: string; documentId: string };
+
+export interface ContextTreeRestoreResult {
+  restoredDocumentId: string;
+  availabilityGeneration: string;
+}
+
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
   /** Clear provisional naming under the same location CAS used by tree mutations. */
@@ -109,4 +117,11 @@ export interface ContextTreeMutationStore {
   commitRecursiveDelete(
     command: ContextTreeDeleteCommand,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>>;
+  /**
+   * `not_found` when no deleted file has that id in the source or its folder
+   * is gone; `conflict` when another file or folder now holds its location.
+   */
+  commitRestore(
+    command: ContextTreeRestoreCommand,
+  ): Promise<Result<ContextTreeRestoreResult, ContextTreeMutationError>>;
 }

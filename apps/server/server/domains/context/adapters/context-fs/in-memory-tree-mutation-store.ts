@@ -5,7 +5,7 @@
 import { isContentDocumentKind } from "@meridian/database/schema";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
+import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -17,6 +17,8 @@ import {
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
+  type ContextTreeRestoreCommand,
+  type ContextTreeRestoreResult,
 } from "../../ports/context-tree-mutation-store.js";
 import {
   claimLocation,
@@ -115,10 +117,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
 
   constructor(
     private readonly backing: InMemoryContextDocumentStoreBacking,
-    private readonly membershipObserver?: Pick<
-      ContextDocumentMembershipObserver,
-      "documentDeleted"
-    >,
+    private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly eventSink?: EventSink,
   ) {}
 
@@ -579,14 +578,62 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     });
     if (result.ok && this.membershipObserver) {
       await dispatchMembershipEvents({
-        observer: {
-          documentCreated: () => undefined,
-          documentDeleted: (documentId) => this.membershipObserver?.documentDeleted(documentId),
-        },
+        observer: this.membershipObserver,
         events: result.value.deletedDocumentIds.map((documentId) => ({
           method: "documentDeleted" as const,
           documentId,
         })),
+        commandId: createMembershipCommandId(),
+        eventSink: this.eventSink,
+      });
+    }
+    return result;
+  }
+
+  async commitRestore(
+    command: ContextTreeRestoreCommand,
+  ): Promise<Result<ContextTreeRestoreResult, ContextTreeMutationError>> {
+    const result = await this.atomic(async () => {
+      const doc = this.backing.documents.get(command.documentId);
+      if (
+        !doc ||
+        doc.contextSourceId !== command.sourceId ||
+        !isContentDocumentKind(doc.kind) ||
+        doc.deletedAt === null
+      ) {
+        return Err({ code: "not_found" });
+      }
+      if (doc.folderId !== null && this.backing.folders.get(doc.folderId)?.deletedAt !== null) {
+        return Err({ code: "not_found" });
+      }
+      const filename = renderFilename(doc.name, doc.extension);
+      const taken = [...this.backing.documents.values()].some(
+        (row) =>
+          row.contextSourceId === command.sourceId &&
+          row.folderId === doc.folderId &&
+          renderFilename(row.name, row.extension) === filename &&
+          isContentDocumentKind(row.kind) &&
+          row.deletedAt === null,
+      );
+      if (
+        taken ||
+        hasOppositeEntry(this.backing, command.sourceId, doc.folderId, filename, "file")
+      ) {
+        return Err({ code: "conflict" });
+      }
+      doc.deletedAt = null;
+      doc.updatedAt = this.nextTimestamp();
+      this.markMutatorWrite();
+      this.backing.availabilityGeneration.value += 1n;
+      return Ok({
+        restoredDocumentId: doc.id,
+        availabilityGeneration: String(this.backing.availabilityGeneration.value),
+      });
+    });
+    if (result.ok && this.membershipObserver) {
+      await dispatchMembershipEvents({
+        observer: this.membershipObserver,
+        events: [{ method: "documentCreated", documentId: command.documentId }],
         commandId: createMembershipCommandId(),
         eventSink: this.eventSink,
       });

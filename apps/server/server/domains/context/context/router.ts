@@ -532,6 +532,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.delete(r.value, options);
     },
 
+    async restore(uri, options) {
+      const r = await resolveMutation(uri);
+      if (!r.ok) return r;
+      if (!r.value.adapter.capabilities.writable) {
+        return Err({ code: "permission_denied", uri: r.value.canonical });
+      }
+      return treeMover.restore(r.value, options.documentId);
+    },
+
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
       const r = await resolveMutation(uri);
       if (!r.ok) return r;

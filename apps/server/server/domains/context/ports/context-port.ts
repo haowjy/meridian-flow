@@ -230,6 +230,10 @@ export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
 }
 
+export interface ContextRestoreResult {
+  availabilityGeneration: string;
+}
+
 export interface ContextDeleteOptions extends ContextWriteOptions {
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
@@ -320,6 +324,16 @@ export interface ContextPort {
     uri: string,
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
+
+  /**
+   * Bring back the file `documentId` deleted from this URI's source, at the
+   * location it was deleted from. `not_found` when there's no such deleted
+   * file or its folder is gone; `conflict` when its location is taken.
+   */
+  restore(
+    uri: string,
+    options: { documentId: string },
+  ): Promise<Result<ContextRestoreResult, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 

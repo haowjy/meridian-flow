@@ -5,13 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import {
-  classifyFiletype,
-  type Filetype,
-  filetypeForKnownPath,
-  filetypeForPath,
-  type YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
+import { classifyFiletype, type Filetype, filetypeForPath } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -31,11 +25,9 @@ import {
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
 import type {
-  AdapterDeleteResult,
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
-  AdapterMoveResult,
   AdapterSearchHit,
   ContextSchemeAdapter,
   ContextTreeAdapter,
@@ -52,13 +44,8 @@ import type {
   ContextWriteOptions,
   ThreadContextView,
 } from "../../ports/context-port.js";
-import type {
-  ContextLocationToken,
-  ContextTreeDeleteCommand,
-  ContextTreeMutationError,
-  ContextTreeMutationStore,
-  PreparedContextMove,
-} from "../../ports/context-tree-mutation-store.js";
+import type { ContextTreeMutationStore } from "../../ports/context-tree-mutation-store.js";
+import { createContextFsTree, trackedSchemaForPersistedFiletype } from "./context-fs-tree.js";
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
@@ -109,52 +96,6 @@ function binaryTrackedWriteFault(path: string): AdapterFault {
   };
 }
 
-function trackedSchemaForPersistedFiletype(
-  filetype: string | null | undefined,
-): Result<YjsTrackedSchemaType, AdapterFault> {
-  const classification = classifyFiletype(filetype);
-  if (classification.kind === "tracked") return Ok(classification.schemaType);
-  if (classification.kind === "unknown") return Ok("document");
-  return Err({
-    code: "io_error",
-    message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
-  });
-}
-
-function moveFiletypeTransition(
-  source: Extract<ContextLocationToken, { kind: "file" }>,
-  destinationPath: string,
-): Result<Filetype | null, AdapterFault> {
-  if (source.filetype === null) {
-    const knownDestinationFiletype = filetypeForKnownPath(destinationPath);
-    if (knownDestinationFiletype === null) return Ok(null);
-    const destination = classifyFiletype(knownDestinationFiletype);
-    if (destination.kind !== "tracked") return Ok(null);
-    return Err({
-      code: "invalid_operation",
-      message: `Cannot rename storage-backed file ${source.path} to ${destinationPath} because tracked documents require a Yjs schema`,
-    });
-  }
-
-  const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
-  if (!sourceSchema.ok) return sourceSchema;
-  const destinationFiletype = filetypeForPath(destinationPath);
-  const destination = classifyFiletype(destinationFiletype);
-  if (destination.kind !== "tracked") {
-    return Err({
-      code: "invalid_operation",
-      message: `Cannot rename tracked document ${source.path} to ${destinationPath} because binary and custom files use a different storage model`,
-    });
-  }
-  if (destination.schemaType !== sourceSchema.value) {
-    return Err({
-      code: "invalid_operation",
-      message: `Cannot rename ${source.path} to ${destinationPath} because changing the Yjs schema from ${sourceSchema.value} to ${destination.schemaType} requires an explicit conversion`,
-    });
-  }
-  return Ok(destinationFiletype);
-}
-
 /**
  * Store-backed file tree for project and work context schemes.
  * Owns path ↔ folder-tree resolution and folder auto-creation; delegates
@@ -181,17 +122,17 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
 
-  readonly tree: ContextTreeAdapter = {
-    inspectMovable: (path) => this.inspectMovable(path),
-    commitProvisionalGraduation: (source) => this.commitProvisionalGraduation(source),
-    commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
-    commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),
-  };
+  readonly tree: ContextTreeAdapter;
 
   constructor(deps: ContextFSDeps) {
     this.capabilities = schemeCapabilities(deps.scheme);
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
+    this.tree = createContextFsTree({
+      mutationStore: deps.mutationStore,
+      contextSourceId: () => this.store.contextSourceId(),
+      isVisibleDocument: (documentId) => this.isVisibleDocument(documentId),
+    });
     this.documentSync = deps.documentSync;
     this.documentCreation =
       deps.documentCreation ??
@@ -950,96 +891,5 @@ export class ContextFS implements ContextSchemeAdapter {
     const rows = await this.store.listDocuments(folderId);
     if (!membership) return rows;
     return rows.filter((row) => membership.has(row.id));
-  }
-
-  private mutationFault(error: ContextTreeMutationError): AdapterFault {
-    switch (error.code) {
-      case "stale_source":
-        return { code: "stale_source" };
-      case "stale_target":
-        return { code: "stale_target" };
-      case "conflict":
-        return { code: "conflict" };
-      case "invalid_operation":
-      case "not_found":
-        return { code: "invalid_operation" };
-    }
-  }
-
-  private async inspectMovable(
-    path: string,
-  ): Promise<Result<ContextLocationToken | null, AdapterFault>> {
-    const sourceId = await this.store.contextSourceId();
-    const token = await this.mutationStore.inspect(sourceId, path);
-    if (token?.kind === "file" && !(await this.isVisibleDocument(token.nodeId))) return Ok(null);
-    return Ok(token);
-  }
-
-  private async commitPreparedMove(
-    prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    if (prepared.source.kind === "file") {
-      // The mover found the source through its own adapter's inspectMovable,
-      // which filters by that source's view in this transaction.
-      const source = prepared.source;
-      const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
-      if (!destinationFiletype.ok) return destinationFiletype;
-      const committed = await this.mutationStore.commitMove({
-        source,
-        mover: prepared.mover,
-        destinationSourceId: prepared.destinationSourceId,
-        destinationPath: prepared.destinationPath,
-        expectedTarget: prepared.expectedTarget,
-        overwrite: prepared.overwrite,
-        graduateProvisionalName:
-          "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
-        destinationFiletype: destinationFiletype.value,
-      });
-      if (!committed.ok) return Err(this.mutationFault(committed.error));
-      return Ok({
-        movedNodeId: committed.value.movedNodeId,
-        ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-        path: prepared.destinationPath,
-      });
-    }
-    const source = prepared.source;
-    const committed = await this.mutationStore.commitMove({
-      source,
-      mover: prepared.mover,
-      destinationSourceId: prepared.destinationSourceId,
-      destinationPath: prepared.destinationPath,
-      expectedTarget: prepared.expectedTarget,
-      overwrite: prepared.overwrite,
-    });
-    if (!committed.ok) return Err(this.mutationFault(committed.error));
-    return Ok({
-      movedNodeId: committed.value.movedNodeId,
-      ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-      path: prepared.destinationPath,
-    });
-  }
-
-  private async commitProvisionalGraduation(
-    source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<void, AdapterFault>> {
-    if (!(await this.isVisibleDocument(source.nodeId))) {
-      return Err({ code: "invalid_operation" });
-    }
-    const committed = await this.mutationStore.commitProvisionalGraduation(source);
-    if (!committed.ok) return Err(this.mutationFault(committed.error));
-    return Ok(undefined);
-  }
-
-  private async commitRecursiveDelete(
-    command: ContextTreeDeleteCommand,
-  ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
-    if (command.root.kind === "file" && !(await this.isVisibleDocument(command.root.nodeId)))
-      return Err({ code: "invalid_operation" });
-    const committed = await this.mutationStore.commitRecursiveDelete(command);
-    if (!committed.ok) return Err(this.mutationFault(committed.error));
-    return Ok({
-      deletedDocumentIds: committed.value.deletedDocumentIds,
-      availabilityGeneration: committed.value.availabilityGeneration,
-    });
   }
 }

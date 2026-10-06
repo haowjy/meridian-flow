@@ -23,6 +23,7 @@ import type {
   ContextLocationOptions,
   ContextMoveOptions,
   ContextMoveResult,
+  ContextRestoreResult,
   ContextScheme,
 } from "../ports/context-port.js";
 import type {
@@ -255,6 +256,30 @@ export class ContextTreeMover {
           },
         ],
       )
+      .catch((error) => lifecycleCommandFailure(error, target.canonical));
+  }
+
+  /** Brings back a file deleted from `target`'s source, at the location it was deleted from. */
+  async restore(
+    target: ContextTreeDispatch,
+    documentId: string,
+  ): Promise<Result<ContextRestoreResult, ContextError>> {
+    return this.commandExecutor
+      .run(async (): Promise<Result<ContextRestoreResult, ContextError>> => {
+        const tree = target.adapter.tree;
+        if (!target.adapter.capabilities.writable || !tree) {
+          return Err({ code: "permission_denied", uri: target.canonical });
+        }
+        const result = await callAdapter(target.canonical, () => tree.commitRestore(documentId));
+        if (!result.ok) return result;
+        if (result.value === null) return Err({ code: "not_found", uri: target.canonical });
+        return Ok(result.value);
+      }, [
+        {
+          scheme: target.scheme,
+          workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+        },
+      ])
       .catch((error) => lifecycleCommandFailure(error, target.canonical));
   }
 

@@ -102,6 +102,8 @@ export type AdapterDeleteResult = {
   availabilityGeneration: string;
 };
 
+export type AdapterRestoreResult = { availabilityGeneration: string };
+
 export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitProvisionalGraduation(
@@ -113,6 +115,8 @@ export interface ContextTreeAdapter {
   commitRecursiveDelete(
     command: ContextTreeDeleteCommand,
   ): Promise<Result<AdapterDeleteResult, AdapterFault>>;
+  /** Brings back a file this source soft-deleted; null when there's none to restore. */
+  commitRestore(documentId: string): Promise<Result<AdapterRestoreResult | null, AdapterFault>>;
 }
 
 /**

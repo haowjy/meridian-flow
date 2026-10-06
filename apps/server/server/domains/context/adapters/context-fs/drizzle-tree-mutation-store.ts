@@ -7,7 +7,7 @@ import {
   documents,
   folders,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -16,7 +16,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
+import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import { recordMoveRedirects } from "../../links/move-redirects.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -29,6 +29,8 @@ import {
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
+  type ContextTreeRestoreCommand,
+  type ContextTreeRestoreResult,
 } from "../../ports/context-tree-mutation-store.js";
 import {
   claimDocumentLocation,
@@ -653,6 +655,62 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [token.nodeId],
       );
       return Ok({ deletedDocumentIds, availabilityGeneration });
+    });
+  }
+
+  async commitRestore(
+    command: ContextTreeRestoreCommand,
+  ): Promise<Result<ContextTreeRestoreResult, ContextTreeMutationError>> {
+    if (!this.catalogMutations) {
+      throw new Error("Restoring a file requires catalog generation authority");
+    }
+    const catalogMutations = this.catalogMutations;
+    return this.withMutationTransaction(async (events) => {
+      await lockContextSources(this.db, [command.sourceId]);
+      const tx = currentDrizzleDb(this.db);
+      const [row] = await tx
+        .select({
+          folderId: documents.folderId,
+          name: documents.name,
+          extension: documents.extension,
+        })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.id, command.documentId as never),
+            eq(documents.contextSourceId, command.sourceId as never),
+            contentDocumentPredicate(),
+            isNotNull(documents.deletedAt),
+          ),
+        );
+      if (!row) return Err({ code: "not_found" });
+      if (row.folderId !== null) {
+        const [folder] = await tx
+          .select({ id: folders.id })
+          .from(folders)
+          .where(and(eq(folders.id, row.folderId), isNull(folders.deletedAt)));
+        if (!folder) return Err({ code: "not_found" });
+      }
+      const filename = renderFilename(row.name, row.extension);
+      if (
+        await hasOppositeContextEntry(this.db, command.sourceId, row.folderId, filename, "file")
+      ) {
+        return Err({ code: "conflict" });
+      }
+      const now = new Date();
+      // A live file at the same name fails the active-name unique index: a conflict.
+      await tx
+        .update(documents)
+        .set({ deletedAt: null, deletedByWorkId: null, updatedAt: now })
+        .where(eq(documents.id, command.documentId as never));
+      events.push({ method: "documentCreated", documentId: command.documentId });
+      const availabilityGeneration = await catalogMutations.refreshSources(
+        [command.sourceId],
+        [command.documentId],
+      );
+      // Link redirects held back while their target was deleted can apply again.
+      runAfterDrizzleCommit(this.kickLinkUpdates);
+      return Ok({ restoredDocumentId: command.documentId, availabilityGeneration });
     });
   }
 }
