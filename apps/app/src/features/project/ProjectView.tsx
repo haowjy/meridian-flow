@@ -652,7 +652,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 <EditorReviewIntentClaimant
                   editorWorkId={mountedEditor.editorWorkId}
                   activeScheme={props.activeContextScheme}
-                  activePath={props.activeContextPath}
                 />
               ) : null}
               <ContextViewerSurfaceController

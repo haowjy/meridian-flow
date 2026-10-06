@@ -22,7 +22,7 @@ import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { identityCommitMayNavigate } from "./context/use-identity-commit";
+import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
@@ -483,11 +483,13 @@ export function ContextViewerSurfaceController({
             documentId,
           )
         ) {
-          onOpenContextTarget({
-            path: next.path,
-            scheme: next.scheme,
-            workId: next.routeWorkId ?? undefined,
-          });
+          const { request, options } = identityCommitRoute(documentId, next);
+          void onOpenContextTarget(request, options).then(
+            (settlement) => {
+              if (settlement.kind === "failed") reportError(settlement.error);
+            },
+            (error: unknown) => reportError(error),
+          );
         }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}

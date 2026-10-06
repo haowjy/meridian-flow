@@ -104,11 +104,7 @@ function Harness({
       ) : (
         <DraftReviewBoundary value={editorReview}>
           <ScopeProbe name="editor" />
-          <EditorReviewIntentClaimant
-            editorWorkId={view.target.workId}
-            activeScheme="manuscript"
-            activePath={view.target.contextPath}
-          />
+          <EditorReviewIntentClaimant editorWorkId={view.target.workId} activeScheme="manuscript" />
         </DraftReviewBoundary>
       )}
     </EditorReviewHandoffProvider>
