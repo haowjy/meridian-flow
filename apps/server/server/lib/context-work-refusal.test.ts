@@ -1,8 +1,9 @@
 /** Work lifecycle refusals are immutable outcomes, not infrastructure outages. */
 import type { ContextOperationReceipt, ContextOperationResult } from "@meridian/contracts/protocol";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ContextOperationReceipts } from "../domains/context/context/context-operation-receipts.js";
 import { contextErrorToHttp } from "./context-error-http.js";
+import { type ContextMoveRouteDeps, handleContextMoveRequest } from "./context-move-route.js";
 import { HTTP_INTERRUPT_ENVELOPE_KEY } from "./interrupt-boundary.js";
 
 it("records Work refusals and replays the same final HTTP code even after recovery", async () => {
@@ -51,4 +52,50 @@ it("records Work refusals and replays the same final HTTP code even after recove
     }));
     expect(saved).toBeNull();
   }
+});
+
+vi.mock("../domains/projects/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../domains/projects/index.js")>()),
+  requireProjectOwner: vi.fn(),
+}));
+
+it("finally refuses a missing Work locator before dispatch, identically on replay", async () => {
+  const byId = vi.fn(async () => null);
+  const listByProject = vi.fn();
+  const deps = {
+    projectRepo: {},
+    workRepo: { listByProject },
+    workAuthorityResolver: { byId },
+    contextPorts: {},
+  } as unknown as ContextMoveRouteDeps;
+  for (const scheme of ["scratch", "uploads"] as const) {
+    for (const missingSide of ["source", "destination"] as const) {
+      const request = {
+        projectId: "project",
+        userId: "writer",
+        sourceScheme: missingSide === "source" ? scheme : "unfiled",
+        body: {
+          operationId: "12345678-1234-4234-8234-123456789abc",
+          expected: { kind: "file", nodeId: "document" },
+          path: "note.md",
+          destinationScheme: scheme,
+          destinationFolderPath: "",
+          ...(missingSide === "source"
+            ? { sourceWorkId: "deleted-work" }
+            : { destinationWorkId: "deleted-work" }),
+        },
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await expect(handleContextMoveRequest(deps, request)).rejects.toMatchObject({
+          statusCode: 404,
+          data: {
+            [HTTP_INTERRUPT_ENVELOPE_KEY]: expect.objectContaining({
+              error: expect.objectContaining({ code: "work_missing", retryable: false }),
+            }),
+          },
+        });
+      }
+    }
+  }
+  expect(listByProject).not.toHaveBeenCalled();
 });
