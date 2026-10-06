@@ -115,6 +115,22 @@ for ~200ms).
    route does not match, or a phone host rejecting the route before the
    address admitted it).
 
+## Probe F — copied No Work review address, remote disposition, history writes
+
+1. Leave a pending new-document draft in No Work. Copy its review address
+   (`…/editor/manuscript/<name>.md?work=&draft=…`: the draft states its Work).
+   Select a named Work in this browser, then open the copied address cold, at
+   desktop width and as a phone.
+   PASS: the same draft opens in review, `?draft=` kept, no history write beyond the
+   router's startup one. FAIL: `?draft=` dropped or another document shown.
+2. Open a draft-only review in two pages. Apply all in one.
+   PASS: the other page leaves review in place within about a second and shows the
+   document live. Repeat with Discard all: the other page closes the draft-only tab.
+3. On a live No Work document opened from a copied URL (no `?work=`), click Review
+   draft. PASS: one `replaceState`, no `pushState`.
+4. With a review open, rename the document from the manuscript tree.
+   PASS: exactly one history write for the new address.
+
 ## History
 
 - 2026-07-07 — #151 combined quality-fixes probe (disposition lock, bulk pump

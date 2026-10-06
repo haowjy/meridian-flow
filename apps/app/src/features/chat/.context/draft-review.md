@@ -256,7 +256,11 @@ admission may enrich only the overlay with resolved live-resource metadata.
   acquisition could report the pre-Apply tree). Membership means the document is
   live and the tab is promoted; absence means a Discard and the tab closes. A
   failed read leaves the tab intact. The tab and the catalog are the whole
-  evidence: no account-level witness is kept.
+  evidence: no account-level witness is kept. The list only leaves when it is
+  re-read, and a page that did not dispose has no mutation to invalidate it: a
+  pulled catalog wake hint (`pullContextCatalogOnHint`) re-reads the project's
+  mounted draft lists, and an Apply or a Discard of a new document both move the
+  manifest, so the other page settles within about a second without a reload.
 - Draft-only tabs live only in the review overlay. The durable workspace never
   opens, persists, or restores one, and route continuity (the removal planner's
   route target and fallback) skips them, so a discarded path can't replay on
