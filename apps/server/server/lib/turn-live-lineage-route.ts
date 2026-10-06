@@ -2,6 +2,7 @@
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
+  TurnNamespaceChangeItem,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -67,7 +68,44 @@ export async function handleTurnLiveLineageRequest(
   return {
     documents: visibleDocuments.map(serializeLiveLineageDocument),
     receipt: receipt ?? workReceipt,
+    namespaceChanges: await listTurnNamespaceChanges(deps, threadId, turnId),
   };
+}
+
+/**
+ * The turn's moves and deletes in both states, so each tool row can say
+ * whether its change still stands. Not filtered by file access like the
+ * documents: a deleted document has no access to list, and these facts are
+ * the ones the owner's own tool results already show.
+ */
+async function listTurnNamespaceChanges(
+  deps: TurnLiveLineageRouteServices,
+  threadId: ThreadId,
+  turnId: TurnId,
+): Promise<TurnNamespaceChangeItem[]> {
+  const { namespaceChanges } = deps.documentSync;
+  const changes = (
+    await Promise.all([
+      namespaceChanges.forTurn(threadId, turnId, "active"),
+      namespaceChanges.forTurn(threadId, turnId, "reversed"),
+    ])
+  ).flat();
+  return changes
+    .sort((left, right) => left.id - right.id)
+    .flatMap((change): TurnNamespaceChangeItem[] =>
+      change.kind === "create"
+        ? []
+        : [
+            {
+              documentId: change.documentId,
+              wId: change.wId,
+              kind: change.kind,
+              fromUri: change.fromUri,
+              toUri: change.kind === "move" ? change.toUri : null,
+              status: change.status,
+            },
+          ],
+    );
 }
 
 /** The lineage's documents the writer can still read (file-access §6). */

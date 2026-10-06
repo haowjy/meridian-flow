@@ -4,6 +4,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
+  agentNamespaceChanges,
   branchWriteJournal,
   documentBranches,
 } from "@meridian/database/schema";
@@ -45,6 +46,7 @@ export function createDrizzleTurnReceiptStore(db: TurnReceiptDb): TurnReceiptSta
       const candidates = [
         ...(await liveStates(db, threadId, turnId)),
         ...(await branchStates(db, threadId, turnId)),
+        ...(await namespaceStates(db, threadId, turnId)),
       ];
       const state = selectTurnReceiptState(candidates);
       return state
@@ -88,6 +90,24 @@ async function liveStates(
     }),
   );
   return states;
+}
+
+/**
+ * The turn's moves and deletes, which turn undo and redo reverse with its
+ * content writes. A turn that only moved or deleted documents still offers them.
+ */
+async function namespaceStates(
+  db: TurnReceiptDb,
+  threadId: ThreadId,
+  turnId: TurnId,
+): Promise<TurnReceiptState[]> {
+  const rows = await db
+    .selectDistinct({ status: agentNamespaceChanges.status })
+    .from(agentNamespaceChanges)
+    .where(
+      and(eq(agentNamespaceChanges.threadId, threadId), eq(agentNamespaceChanges.turnId, turnId)),
+    );
+  return rows.map(({ status }) => (status === "active" ? "live-active" : "live-reversed"));
 }
 
 async function branchStates(

@@ -243,7 +243,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
         recordCreate: durableOnly,
         discard: durableOnly,
         history: durableOnly,
-        forTurn: durableOnly,
+        // Nothing records a change without Postgres, so every turn has none.
+        forTurn: async () => [],
         findDeletedAt: durableOnly,
         findTurnDelete: durableOnly,
         commit: durableOnly,

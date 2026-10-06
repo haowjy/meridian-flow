@@ -55,7 +55,32 @@ export interface TurnReceiptChip {
   control: TurnReceiptControl;
 }
 
+/**
+ * One move or delete the model made in the turn, on the write handle its tool
+ * result names (`w<wId>` on `documentId`). `reversed` once an undo, a turn
+ * undo or the writer's restore put it back.
+ */
+export interface TurnNamespaceChangeItem {
+  documentId: string;
+  wId: number;
+  kind: "move" | "delete";
+  /** Where the document was: a move's old location, or where it was deleted from. */
+  fromUri: string;
+  /** A move's new location. */
+  toUri: string | null;
+  status: "active" | "reversed";
+}
+
 export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];
   receipt: TurnReceiptChip | null;
+  namespaceChanges: TurnNamespaceChangeItem[];
 }
+
+/** POST …/turns/:turnId/restore-delete: 200 `restored`, 409 for the other two. */
+export type RestoreAgentDeleteResponse =
+  | { status: "restored"; documentId: string; uri: string }
+  /** Something else is at the document's old location now. */
+  | { status: "location_taken"; uri: string }
+  /** The folder it was in is gone. */
+  | { status: "folder_missing"; uri: string };

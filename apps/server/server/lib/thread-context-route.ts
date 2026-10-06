@@ -1,3 +1,4 @@
+import type { RestoreAgentDeleteResponse } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { NamespaceChanges, NamespaceTree } from "../domains/collab/index.js";
@@ -144,13 +145,6 @@ export async function writerNamespaceTree(
   };
 }
 
-export type RestoreAgentDeleteResult =
-  | { status: "restored"; documentId: string; uri: string }
-  /** Another file took its place. */
-  | { status: "location_taken"; uri: string }
-  /** The folder it was in is gone. */
-  | { status: "folder_missing"; uri: string };
-
 /**
  * The writer brings back a document the agent deleted live in this turn, from
  * the turn's delete receipt (D66): the delete's undo, as the model's `undo`
@@ -159,7 +153,7 @@ export type RestoreAgentDeleteResult =
 export async function restoreAgentDelete(
   deps: ThreadContextRouteDeps & { namespaceChanges: NamespaceChanges },
   input: { threadId: ThreadId; turnId: string; documentId: string; userId: UserId },
-): Promise<RestoreAgentDeleteResult> {
+): Promise<RestoreAgentDeleteResponse> {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId");
   const documentId = requireRequestId(input.documentId, "documentId");
