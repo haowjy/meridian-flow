@@ -116,7 +116,8 @@ export async function writeThreadContextDocument(
 
 /**
  * The thread's live tree for the writer's undo of the agent's creates, moves
- * and deletes: each change needs the writer's edit on the folder it lands in.
+ * and deletes: each change needs the writer's edit on the document and on the
+ * folder it lands in.
  */
 export async function writerNamespaceTree(
   deps: ThreadContextRouteDeps,
@@ -138,21 +139,31 @@ function writerTree(
   userId: UserId,
   tree: NamespaceTree<ContextError>,
 ): NamespaceTree<ContextError> {
-  const inFolder = async (
+  /** Edit on the folder `uri` is in and, while it's there, on the document. */
+  const granted = async (
     uri: string,
+    documentId: string | null,
     operation: () => Promise<Result<unknown, ContextError>>,
   ): Promise<Result<unknown, ContextError>> => {
     const folder = await threadContainerTarget(deps.works, resolution, uri);
-    if (!folder) return operation();
-    const grant = await deps.fileAccess.authorize({ accountId: userId }, folder, "edit");
-    if (isFileAccessDenied(grant)) return Err({ code: "permission_denied", uri });
-    const run = await runWithEditGrants(deps.fileAccess, [grant], operation);
+    const targets = [
+      ...(folder ? [folder] : []),
+      ...(documentId ? [documentTarget(documentId)] : []),
+    ];
+    const grants = [];
+    for (const target of targets) {
+      const grant = await deps.fileAccess.authorize({ accountId: userId }, target, "edit");
+      if (isFileAccessDenied(grant)) return Err({ code: "permission_denied", uri });
+      grants.push(grant);
+    }
+    const run = await runWithEditGrants(deps.fileAccess, grants, operation);
     return run.ok ? run.value : Err({ code: "permission_denied", uri });
   };
   return {
-    move: (from, to, documentId) => inFolder(to, () => tree.move(from, to, documentId)),
-    delete: (uri, documentId) => inFolder(uri, () => tree.delete(uri, documentId)),
-    restore: (uri, documentId) => inFolder(uri, () => tree.restore(uri, documentId)),
+    move: (from, to, documentId) => granted(to, documentId, () => tree.move(from, to, documentId)),
+    delete: (uri, documentId) => granted(uri, documentId, () => tree.delete(uri, documentId)),
+    // A deleted document has no grant to take; its folder's edit brings it back.
+    restore: (uri, documentId) => granted(uri, null, () => tree.restore(uri, documentId)),
     settleLinks: async (uris) => writerTree(deps, resolution, userId, await tree.settleLinks(uris)),
     lock: (uris) => tree.lock(uris),
   };
