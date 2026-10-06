@@ -345,6 +345,10 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "cant_undo_dependent":
       return dependentChangeCopy();
     case "expired":
+    // A turn's create, move or delete whose location is taken or whose folder is gone.
+    // The app lane gives these their own copy.
+    case "location_taken":
+    case "folder_missing":
       return t`This change is no longer reversible.`;
     case "partial":
     case "partial_failure":

@@ -474,7 +474,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(restore()).rejects.toMatchObject({ statusCode: 404 });
     });
 
-    it("the writer's turn undo puts back the turn's move and delete, and redo makes them again", async () => {
+    it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {
       const { runtime, script } = await start();
       await script.reply(async (call) => {
         await call("read", { path: CHAPTER });
@@ -495,6 +495,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           scope: "turn",
           selection: THREAD.turnId,
         });
+
+      const port = runtime.app.contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
+      const squatter = await port.createTrackedDocument(HOLDER, "The writer's own.");
+      if (!squatter.ok) throw new Error(JSON.stringify(squatter.error));
+      await expect(reverse("undo")).resolves.toEqual({
+        status: "location_taken",
+        documents: [{ uri: HOLDER, status: "location_taken" }],
+      });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
+      await port.delete(HOLDER, {
+        expected: { kind: "file", documentId: squatter.value.documentId ?? "" },
+      });
 
       await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
       expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });

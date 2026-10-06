@@ -141,6 +141,6 @@ export function aggregateStatus(
   return "partial";
 }
 
-export function isSuccessfulReversal(outcome: Pick<WriteOutcome, "status">): boolean {
+export function isSuccessfulReversal(outcome: Pick<DocumentReversalResult, "status">): boolean {
   return outcome.status === "reversed" || outcome.status === "reconciled";
 }

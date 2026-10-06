@@ -103,7 +103,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         ? { ok: false as const, error: { code: "dependent" } }
         : await input.namespaceChanges.reverse(namespace.tree, change, direction);
       if (!applied.ok) {
-        const status = turnRefusalStatus(applied.error.code);
+        const status = turnRefusalStatus(applied.error.code, change, direction);
         throw new CrossScopeReversalRefused({ status, documents: [{ uri, status }] });
       }
       documents.push({ uri, status: "reversed" });
@@ -394,11 +394,25 @@ async function laterHandleApplied(
   );
 }
 
-/** Why a turn's create, move or delete couldn't go back or again, as the writer's receipt reads it. */
-function turnRefusalStatus(code: string): "permission_denied" | "cant_undo_dependent" {
-  return code === "permission_denied" || code === "context_unavailable"
-    ? "permission_denied"
-    : "cant_undo_dependent";
+/**
+ * Why a turn's create, move or delete couldn't go back or again, as the
+ * writer's receipt reads it: its Work is archived, another document took its
+ * location, the folder it comes back into is gone, or a later change moved it on.
+ */
+function turnRefusalStatus(
+  code: string,
+  change?: NamespaceChangeRecord,
+  direction?: "undo" | "redo",
+): DocumentReversalResult["status"] {
+  if (code === "permission_denied" || code === "context_unavailable") return "permission_denied";
+  if (code === "conflict") return "location_taken";
+  const restoring =
+    change !== undefined &&
+    direction !== undefined &&
+    change.kind !== "move" &&
+    liveAfter(change, direction);
+  if (code === "not_found" && restoring) return "folder_missing";
+  return "cant_undo_dependent";
 }
 
 class CrossScopeReversalRefused extends Error {

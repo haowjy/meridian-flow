@@ -23,9 +23,16 @@ export type UndoRedoOutcome =
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
 export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
+/**
+ * A turn undo or redo refused because a create, move or delete can't go back
+ * or again: another document is at its location, or the folder it was in is
+ * gone. `uri` names the location.
+ */
+export type TreeReversalStatus = "location_taken" | "folder_missing";
+
 export interface DocumentReversalResult {
   uri: string;
-  status: WriteStatus;
+  status: WriteStatus | TreeReversalStatus;
   text?: string;
 }
 
@@ -39,7 +46,7 @@ export interface WorkReversalResult {
 }
 
 export interface ReversalOutcome {
-  status: WriteStatus;
+  status: WriteStatus | TreeReversalStatus;
   documents: DocumentReversalResult[];
   workReceipts?: WorkReversalResult[];
   workError?: "execution_failed";
