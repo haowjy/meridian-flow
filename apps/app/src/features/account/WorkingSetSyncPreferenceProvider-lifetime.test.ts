@@ -67,9 +67,7 @@ async function mount(strict = false) {
   });
   await act(() => root?.render(strict ? createElement(StrictMode, null, owner) : owner));
   hydrateWorkingSet("project", { status: "absent" }, true);
-  const route = buildWorkingSetRoute("doc", "unfiled", "/Chapter.md", null);
-  if (!route) throw new Error("Expected route");
-  replaceRecentRoutes("project", [route]);
+  replaceRecentRoutes("project", [route("doc")]);
 }
 it.each([
   "abort",
@@ -90,15 +88,35 @@ it.each([
 });
 it("committed subscription rebinds after StrictMode effect cleanup", async () => {
   await mount(true);
+  account.listener?.("suspect-offline");
+  expect(account.get).not.toHaveBeenCalled();
+  expect(account.put).not.toHaveBeenCalled();
   account.listener?.("retry-now");
   await vi.advanceTimersByTimeAsync(0);
+  expect(account.get).toHaveBeenCalledWith("project");
+  expect(account.put).toHaveBeenCalledWith(
+    "project",
+    { recentRoutes: [route("doc")] },
+    { keepalive: false },
+  );
   expect(account.put).toHaveBeenCalledTimes(1);
+  const stops = account.stop.mock.calls.length;
+  await unmount();
+  expect(account.stop).toHaveBeenCalledTimes(stops + 1);
 });
 
 function route(id: string) {
   const value = buildWorkingSetRoute(id, "unfiled", `/${id}.md`, null);
   if (!value) throw new Error("Expected route");
   return value;
+}
+function holdNextPut() {
+  let finish!: (response: { revision: number }) => void;
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  account.put.mockReturnValueOnce(pending);
+  return finish;
 }
 async function unmount() {
   account.epoch.abort();
@@ -109,13 +127,7 @@ it.each([
   false,
   true,
 ])("same-account remount preserves newer recency while the old PUT drains (StrictMode=%s)", async (strict) => {
-  let finish!: (response: { revision: number }) => void;
-  account.put.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  const finish = holdNextPut();
   await mount();
   replaceRecentRoutes("project", [route("old")]);
   window.dispatchEvent(new Event("pagehide"));
@@ -136,13 +148,7 @@ it.each([
   false,
   true,
 ])("account transition drains the new account queue after the old PUT (StrictMode=%s)", async (strict) => {
-  let finish!: (response: { revision: number }) => void;
-  account.put.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
+  const finish = holdNextPut();
   await mount();
   window.dispatchEvent(new Event("pagehide"));
   expect(account.put).toHaveBeenCalledTimes(1);

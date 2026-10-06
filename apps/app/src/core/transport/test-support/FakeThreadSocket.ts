@@ -2,7 +2,10 @@
 import { encodeWsServerMessage, parseWsClientMessage } from "@meridian/contracts/protocol";
 
 export class FakeThreadSocket extends EventTarget {
+  static OPEN = 1;
+  static CONNECTING = 0;
   readyState = 0;
+  stallClose = false;
   readonly sent: string[] = [];
 
   constructor(
@@ -22,9 +25,10 @@ export class FakeThreadSocket extends EventTarget {
     this.dispatchEvent(new Event("open"));
   }
 
-  close(): void {
-    this.readyState = 3;
-    this.dispatchEvent(new Event("close"));
+  close(code = 1000, reason = ""): void {
+    this.readyState = this.stallClose ? 2 : 3;
+    if (this.stallClose) return;
+    this.dispatchEvent(Object.assign(new Event("close"), { code, reason, wasClean: true }));
   }
 
   deliver(message: unknown): void {
