@@ -115,7 +115,12 @@ export type NamespaceIntent = ResourceKey & {
   identityRevision: number;
   desired:
     | { kind: "create"; folderPath: string; provisionalName?: string }
-    | { kind: "set-location"; destination: ResourceDestination }
+    | {
+        kind: "set-location";
+        destination: ResourceDestination;
+        /** This address, not content, admitted the reservation's first Create. */
+        initializesReservation?: true;
+      }
     | { kind: "set-folder-location"; destination: ResourceDestination }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
