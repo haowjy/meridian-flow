@@ -10,6 +10,7 @@ import {
   markResourceCreateEligible,
   planCachedSessionAdoption,
   planFolderLocation,
+  planRejectedReservationDeletion,
   planResourceDeletion,
   planResourceLocation,
   projectResourceLocation,
@@ -753,7 +754,17 @@ export class AccountResourceReplica {
         lock: this.lock,
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
-      if (namespace === "needs-repair" && (await this.remintCreateConflict(key))) continue;
+      if (namespace === "needs-repair") {
+        if (await this.remintCreateConflict(key)) continue;
+        // First placement refused: retire the never-filed reservation through
+        // the same durable deletion queue as any other document.
+        if (
+          (await this.commitPlan(key, (record) =>
+            planRejectedReservationDeletion(record, crypto.randomUUID()),
+          )) === "committed"
+        )
+          continue;
+      }
       await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
       const adoption = await this.adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
