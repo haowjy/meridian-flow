@@ -85,6 +85,42 @@ function screen(destination: ProjectDestination): ScreenKey {
   return "context";
 }
 
+/**
+ * Where the launched document is now: its workspace tab (kept current by renames and
+ * moves), else the address that names it, else the locator the launch captured.
+ */
+function launchLocator(
+  requested: ContextRouteRequest & { workId?: string },
+  projectId: string,
+  addressed: ProjectDestination,
+  addressNamesIt: boolean,
+): ContextRouteRequest {
+  const tab = requested.documentId
+    ? getContextTabs(projectId).tabs.find(
+        (candidate) => candidate.documentId === requested.documentId,
+      )
+    : undefined;
+  if (tab && tab.kind !== "new" && requested.workId) {
+    return { ...routeTargetForTab(tab, requested.workId), documentId: requested.documentId };
+  }
+  if (addressNamesIt && addressed.kind === "document") {
+    return { ...requested, scheme: addressed.scheme, path: addressed.path };
+  }
+  return requested;
+}
+
+/** A prepared tab states the locator the route will use, not the one it was built from. */
+function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
+  if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
+    return tab;
+  return {
+    ...tab,
+    scheme: locator.scheme,
+    path: locator.path,
+    name: locator.path.slice(locator.path.lastIndexOf("/") + 1),
+  };
+}
+
 export function ReadableProjectRoute({
   project,
   entryHydration,
@@ -501,20 +537,19 @@ export function ReadableProjectRoute({
         current.noWorkId,
         addressDocumentIdRef.current,
       );
-      // A review launch of the document the address already names rewrites only
-      // `?draft=`: the launcher's path (a draft list can predate a rename) never
-      // moves the address.
-      const addressed = current.address.destination;
+      // A review launch carries the locator its draft row captured, which a rename or a
+      // reused path can have outdated. Identity decides where that document is now.
       const target =
-        sameDocument && options?.replaceIfSameDocument === true && addressed.kind === "document"
-          ? { ...requested, scheme: addressed.scheme, path: addressed.path }
+        options?.replaceIfSameDocument === true
+          ? launchLocator(requested, projectId, current.address.destination, sameDocument)
           : requested;
+      const preparedTab = options?.tab ? tabAtLocator(options.tab, target) : undefined;
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
       const next = contextDestination(
         target,
-        options?.tab,
+        preparedTab,
         options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
       );
       const tab = next.tab;
@@ -522,8 +557,8 @@ export function ReadableProjectRoute({
       // re-admits its pending draft, so Back cannot keep the address closed.
       const settleTab = () => {
         let selected = tab;
-        if (options?.tab) {
-          const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
+        if (preparedTab) {
+          const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked")
             contextRemoval.admitDraftReview(projectId, installed.tab);

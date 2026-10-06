@@ -206,3 +206,61 @@ it("launches a review of the address's own document without moving the address t
     expect(history.location.search).toContain("draft=draft-a");
   });
 });
+
+function openDocumentA(path: string) {
+  useContextTabsStore.getState().openTab(projectId, {
+    kind: "tracked",
+    documentId: "document-a",
+    scheme: "manuscript",
+    path,
+    name: path.slice(path.lastIndexOf("/") + 1),
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  });
+}
+
+it("launches another document's review at its current path, not the path its draft row captured", async () => {
+  // A was renamed to /renamed.md and B took /a.md, which the address now shows. The
+  // launch still carries A's old path.
+  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
+    openDocumentA("/renamed.md");
+    const before = history.length;
+    await open(
+      { documentId: "document-a", scheme: "manuscript", path: "/a.md", workId },
+      { draftId: "draft-a", replaceIfSameDocument: true },
+    );
+    expect(history.length).toBe(before + 1);
+    expect(history.location.pathname).toContain("/manuscript/renamed.md");
+    expect(history.location.search).toContain("draft=draft-a");
+  });
+});
+
+it("does not let a launch's prepared tab move the document's open tab back to the captured path", async () => {
+  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async () => {
+    openDocumentA("/renamed.md");
+    await open(
+      { documentId: "document-a", scheme: "manuscript", path: "/a.md", workId },
+      {
+        draftId: "draft-a",
+        replaceIfSameDocument: true,
+        tab: {
+          kind: "tracked",
+          documentId: "document-a",
+          scheme: "manuscript",
+          path: "/a.md",
+          name: "a.md",
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+          reviewWorkId: workId,
+        },
+      },
+    );
+    const tabs = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
+    expect(tabs.find((tab) => tab.documentId === "document-a")).toMatchObject({
+      path: "/renamed.md",
+    });
+    expect(tabs.find((tab) => tab.documentId === "document-b")).toMatchObject({ path: "/a.md" });
+  });
+});
