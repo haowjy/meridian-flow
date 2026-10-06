@@ -32,15 +32,15 @@ export function resolveWorkspaceRoute({
   boundDocumentId?: string | null;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
-  const server =
-    (boundDocumentId
-      ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
-      : undefined) ??
-    tabs.find(
-      (tab) =>
-        tab.kind !== "new" &&
-        contextTabMatchesRoute(tab, locator.scheme, locator.path, locator.workId),
-    );
+  // Identity before path (see route-document-owner): a bound document's tab owns the route
+  // wherever the tab's path went, and no other tab may own it by holding the path.
+  const server = boundDocumentId
+    ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
+    : tabs.find(
+        (tab) =>
+          tab.kind !== "new" &&
+          contextTabMatchesRoute(tab, locator.scheme, locator.path, locator.workId),
+      );
   if (server) {
     return {
       kind: "owner",

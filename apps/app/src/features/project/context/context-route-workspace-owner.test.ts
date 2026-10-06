@@ -54,6 +54,16 @@ describe("resolveWorkspaceRoute", () => {
       }),
     ).toMatchObject({ kind: "owner", tab: { documentId: "doc" } });
   });
+  it("never lets another tab own the route by its path while the bound document has no tab", () => {
+    expect(
+      resolveWorkspaceRoute({
+        tabs: [tracked("other", "/old.md", "a")],
+        selectedDocumentId: "other",
+        locator: { scheme: "scratch", path: "/old.md", workId: "a" },
+        boundDocumentId: "doc",
+      }),
+    ).toEqual({ kind: "unowned" });
+  });
   it("uses the exact selected ID among multiple empty tabs", () => {
     const tabs = [local("first"), local("second")];
     expect(

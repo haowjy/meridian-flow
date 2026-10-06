@@ -1,8 +1,8 @@
 /** Retain usable content during document navigation; mask unavailable destinations. */
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
-
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { Button } from "@/components/ui/button";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
@@ -12,12 +12,15 @@ export function ProjectRouteBoundary({
   recovery,
   retainWhileLoading = false,
   destinationKey,
+  onRetry,
 }: {
   issue?: ProjectRouteIssue;
   children: ReactNode;
   recovery?: ReactNode;
   retainWhileLoading?: boolean;
   destinationKey?: string;
+  /** Offered with a failed destination: the address stays, only its reads run again. */
+  onRetry?: () => void;
 }) {
   const retainedPending = issue === "loading" && retainWhileLoading && !recovery;
   const blocked = (!!issue && !retainedPending) || !!recovery;
@@ -45,7 +48,16 @@ export function ProjectRouteBoundary({
           className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
           role="status"
         >
-          {issue === "resource-viewing" ? (
+          {issue === "error" && onRetry ? (
+            <div className="flex flex-col items-center gap-3">
+              <p>
+                <Trans>This destination couldn’t load.</Trans>
+              </p>
+              <Button size="sm" variant="outline" onClick={onRetry}>
+                <Trans>Retry</Trans>
+              </Button>
+            </div>
+          ) : issue === "resource-viewing" ? (
             <Trans>
               Viewing chat resources is not available yet. These files remain available to your
               chats and AI tools.

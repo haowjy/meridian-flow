@@ -152,7 +152,7 @@ function useMobileRouteBinding({
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
-  const { catalogResolved, addressPending, isError, isFetching } = route;
+  const { catalogResolved, addressState, isError, isFetching } = route;
 
   useLayoutEffect(() => {
     if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
@@ -176,7 +176,7 @@ function useMobileRouteBinding({
       selection.status === "candidate" &&
       catalogResolved &&
       catalogSettled &&
-      !addressPending
+      addressState === "settled"
     ) {
       contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
@@ -191,7 +191,7 @@ function useMobileRouteBinding({
     projectId,
     removalState.selection,
     catalogResolved,
-    addressPending,
+    addressState,
     workId,
   ]);
 
@@ -221,7 +221,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
-  const { catalogResolved, addressPending, isError, isFetching } = route;
+  const { catalogResolved, addressState, isError, isFetching } = route;
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
@@ -280,7 +280,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   if (!activeTab) {
-    if (addressPending || (isFetching && !catalogResolved)) {
+    if (addressState === "pending" || (isFetching && !catalogResolved)) {
       return (
         <DocumentStatus tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />

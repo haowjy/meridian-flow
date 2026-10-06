@@ -5,9 +5,17 @@ import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, type ServerContextTab, useContextTabs } from "@/client/stores";
-import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { resolveRouteDocumentOwner } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import type { ProjectRouteIssue } from "../routing/ProjectRouteBoundary";
+
+export type AddressState = "pending" | "failed" | "settled";
+
+/** The address verdict a route issue states: only loading is pending and only error failed. */
+export function addressStateOf(issue: ProjectRouteIssue | undefined): AddressState {
+  return issue === "loading" ? "pending" : issue === "error" ? "failed" : "settled";
+}
 
 export type MobileDocumentRoute = Readonly<{
   requested: boolean;
@@ -16,11 +24,12 @@ export type MobileDocumentRoute = Readonly<{
   tab: ServerContextTab | null;
   catalogResolved: boolean;
   /**
-   * The readable address has not admitted its document yet. Its verdict is the only
-   * evidence for or against the document; a catalog that lacks it, such as a pending
-   * new-document draft's, proves nothing until the address settles.
+   * The readable address's own verdict on its document. It is the only evidence for or
+   * against a document the live catalog lacks, such as a pending new-document draft's, so
+   * absence proves nothing until the address is `settled`. `failed` is a verdict the route
+   * boundary shows with its retry; the host neither waits on it nor rejects the route.
    */
-  addressPending: boolean;
+  addressState: AddressState;
   isError: boolean;
   isFetching: boolean;
 }>;
@@ -42,7 +51,7 @@ export function resolveMobileDocumentRoute(input: {
    * is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
-  addressPending?: boolean;
+  addressState?: AddressState;
   catalog: CatalogContextView | null;
   isError: boolean;
   isFetching: boolean;
@@ -55,53 +64,36 @@ export function resolveMobileDocumentRoute(input: {
       path: input.path,
       tab: null,
       catalogResolved: false,
-      addressPending: false,
+      addressState: "settled",
       isError: false,
       isFetching: false,
     };
   }
-  // The bound document is the route's document wherever its placement goes, even when another
-  // document now holds the path the URL names.
-  const bound = input.boundDocumentId
-    ? (input.catalog?.findDocument(input.boundDocumentId) ?? null)
-    : null;
-  const found = input.catalog?.findPath(input.path);
-  const file = bound ?? (found?.kind === "file" ? found : null);
+  // Identity before path, exactly as the desktop's route owner reads it.
+  const owner = input.workId
+    ? resolveRouteDocumentOwner({
+        locator: { scheme: input.scheme, path: input.path, workId: input.workId },
+        boundDocumentId: input.boundDocumentId,
+        catalog: input.catalog,
+        workspaceTabs: input.workspaceTabs,
+      })
+    : { kind: "absent" as const };
   const resolved =
-    file && input.workId ? contextTabFromFile(input.scheme, file, input.workId) : null;
+    owner.kind === "live" && input.workId
+      ? contextTabFromFile(input.scheme, owner.file, input.workId)
+      : owner.kind === "draft-only"
+        ? owner.tab
+        : null;
   return {
     requested: true,
     scheme: input.scheme,
     path: input.path,
-    tab:
-      resolved?.kind === "new" ? null : (resolved ?? draftOnlyTab(input, input.scheme, input.path)),
+    tab: resolved?.kind === "new" ? null : resolved,
     catalogResolved: input.catalog !== null,
-    addressPending: input.addressPending === true,
+    addressState: input.addressState ?? "settled",
     isError: input.isError,
     isFetching: input.isFetching,
   };
-}
-
-/** The draft-only review tab that owns this route, by identity before locator. */
-function draftOnlyTab(
-  input: {
-    workId: string | null;
-    boundDocumentId?: string | null;
-    workspaceTabs?: readonly ContextTab[];
-  },
-  scheme: ProjectContextTreeScheme,
-  path: string,
-): ServerContextTab | null {
-  if (!input.workId) return null;
-  const owner = resolveWorkspaceRoute({
-    tabs: (input.workspaceTabs ?? []).filter(
-      (tab) => tab.kind !== "new" && tab.draftOnly === true && tab.reviewWorkId === input.workId,
-    ),
-    selectedDocumentId: undefined,
-    locator: { scheme, path, workId: input.workId },
-    boundDocumentId: input.boundDocumentId,
-  });
-  return owner.kind === "owner" && owner.tab.kind !== "new" ? owner.tab : null;
 }
 
 export function useMobileDocumentRoute(input: {
@@ -110,7 +102,7 @@ export function useMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
-  addressPending?: boolean;
+  addressState?: AddressState;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
@@ -137,7 +129,7 @@ export function useMobileDocumentRoute(input: {
         workId: input.workId,
         boundDocumentId,
         workspaceTabs,
-        addressPending: input.addressPending,
+        addressState: input.addressState,
         catalog,
         isError,
         isFetching,
@@ -146,7 +138,7 @@ export function useMobileDocumentRoute(input: {
       boundDocumentId,
       workspaceTabs,
       catalog,
-      input.addressPending,
+      input.addressState,
       input.enabled,
       input.path,
       input.scheme,

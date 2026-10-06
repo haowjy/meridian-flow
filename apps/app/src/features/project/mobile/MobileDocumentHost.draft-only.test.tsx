@@ -82,7 +82,7 @@ describe("MobileDocumentHost draft-only review", () => {
           path: "/new-chapter.md",
           tab: draftTab,
           catalogResolved: true,
-          addressPending: false,
+          addressState: "settled" as const,
           isError: false,
           isFetching: false,
         }}
@@ -104,7 +104,7 @@ describe("MobileDocumentHost draft-only review", () => {
     );
   });
 
-  const unadmitted = (addressPending: boolean) => (
+  const unadmitted = (addressState: "pending" | "failed" | "settled") => (
     <MobileDocumentHost
       projectId="project-a"
       editorWorkId="work-a"
@@ -115,7 +115,7 @@ describe("MobileDocumentHost draft-only review", () => {
         tab: null,
         // The live catalog settled without the document, as it does for any pending draft.
         catalogResolved: true,
-        addressPending,
+        addressState,
         isError: false,
         isFetching: false,
       }}
@@ -124,7 +124,7 @@ describe("MobileDocumentHost draft-only review", () => {
 
   it("does not reject the route while the address has not admitted its document", async () => {
     coordinator.rejectRouteCandidate.mockClear();
-    await withReactRoot(unadmitted(true), async () => {
+    await withReactRoot(unadmitted("pending"), async () => {
       await act(async () => undefined);
       expect(coordinator.rejectRouteCandidate).not.toHaveBeenCalled();
       expect(document.body.textContent).not.toContain("Couldn't open this document.");
@@ -133,9 +133,18 @@ describe("MobileDocumentHost draft-only review", () => {
 
   it("rejects an absent document once the address has settled", async () => {
     coordinator.rejectRouteCandidate.mockClear();
-    await withReactRoot(unadmitted(false), async () => {
+    await withReactRoot(unadmitted("settled"), async () => {
       await act(async () => undefined);
       expect(coordinator.rejectRouteCandidate).toHaveBeenCalledWith("project-a", 3);
+    });
+  });
+
+  it("keeps the route, rejecting nothing, when the address failed to admit its document", async () => {
+    // The route boundary owns the failure and its retry; navigating away would lose the address.
+    coordinator.rejectRouteCandidate.mockClear();
+    await withReactRoot(unadmitted("failed"), async () => {
+      await act(async () => undefined);
+      expect(coordinator.rejectRouteCandidate).not.toHaveBeenCalled();
     });
   });
 });

@@ -83,7 +83,11 @@ import {
   useProjectSurfacePrefsStore,
 } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
-import { type MobileDocumentRoute, useMobileDocumentRoute } from "./mobile/mobile-document-route";
+import {
+  addressStateOf,
+  type MobileDocumentRoute,
+  useMobileDocumentRoute,
+} from "./mobile/mobile-document-route";
 import {
   type ChatDisplay,
   chatSurfaceThreadId,
@@ -140,6 +144,8 @@ export type ProjectViewProps = {
   addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
+  /** Re-read what a failed Editor address was waiting on. */
+  onRetryEditorRoute?: () => void;
   onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
@@ -414,7 +420,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.editorWorkId,
-    addressPending: props.routeIssues?.editor === "loading",
+    addressState: addressStateOf(props.routeIssues?.editor),
   });
   const priorMobile = useRef<{
     projectId: string;
@@ -638,6 +644,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
+          onRetry={props.onRetryEditorRoute}
           retainWhileLoading={
             !!priorEditor.current && priorEditor.current.editorWorkId === props.editorWorkId
           }
