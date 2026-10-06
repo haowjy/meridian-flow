@@ -197,6 +197,27 @@
       "when": 1791086977226,
       "tag": "0027_polite_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791250282989,
+      "tag": "0028_execution_report_name_and_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791250291477,
+      "tag": "0029_drop_branch_push_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791250295859,
+      "tag": "0030_invoked_skills",
+      "breakpoints": true
     }
   ]
 }

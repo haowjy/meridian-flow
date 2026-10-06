@@ -79,7 +79,6 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
     upstreamBranchId: null,
     workId: WORK_ID,
     threadId: null,
-    pushPolicy: "manual",
     status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),
@@ -156,6 +155,7 @@ function stores(
     commitDiscard: async () => {},
     commitPushBatch: async () => ({ pushes: [] }),
     commitTurnRedo: async () => {},
+    lockDraftWorks: async () => new Set<string>(),
     markRollbackPending: async () => 0,
   };
   const settlementStore: PendingSettlementStore = {

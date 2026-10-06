@@ -1,8 +1,11 @@
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
+import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -14,32 +17,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const {
-      agentEditMutations,
-      agentEditWidCounters,
-      branchPushOutboxUpdates,
-      branchPushSettlementOutbox,
       branchWriteJournal,
-      changeTrailDeliveryOutbox,
-      changeTrailDocumentDetails,
-      changeTrailDocumentOccurrences,
-      changeTrailShells,
       contextSources,
       documentBranches,
-      documentYjsCheckpoints,
-      documentYjsHeads,
-      documentYjsReversalOps,
       documentYjsReversals,
       documentYjsUpdates,
       documents,
-      folders,
       modelResponses,
       projects,
-      pushLineage,
-      pendingNotices,
       threadWorks,
       threads,
       turns,
-      turnTrailWork,
       users,
       works,
     } = await import("@meridian/database/schema");
@@ -47,10 +35,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -63,15 +52,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
     const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 
+    const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
-    const createTestCollab = () =>
-      createCollabDomain({
+    const collabs: Array<{ dispose(): void }> = [];
+    const createTestCollab = () => {
+      const collab = createCollabDomain({
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
+      collabs.push(collab);
+      return collab;
+    };
+
+    afterEach(() => {
+      for (const collab of collabs.splice(0)) collab.dispose();
+    });
+
+    /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
+    async function applyDraft(
+      collab: ReturnType<typeof createTestCollab>,
+      documentId: string,
+    ): Promise<void> {
+      const [draft] = await db
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, documentId as never),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        );
+      if (!draft) throw new Error(`missing Work draft for ${documentId}`);
+      await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
+    }
 
     async function currentDraftId(
       collab: ReturnType<typeof createTestCollab>,
@@ -88,35 +105,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       hocuspocus.documents.clear();
-      await deleteDrizzleRows(db, [
-        branchPushOutboxUpdates,
-        branchPushSettlementOutbox,
-        turnTrailWork,
-        changeTrailDeliveryOutbox,
-        changeTrailDocumentDetails,
-        changeTrailDocumentOccurrences,
-        changeTrailShells,
-        pendingNotices,
-        documentYjsReversalOps,
-        documentYjsReversals,
-        agentEditWidCounters,
-        agentEditMutations,
-        branchWriteJournal,
-        pushLineage,
-        documentBranches,
-        documentYjsCheckpoints,
-        documentYjsHeads,
-        documentYjsUpdates,
-        threadWorks,
-        turns,
-        threads,
-        folders,
-        documents,
-        contextSources,
-        works,
-        projects,
-        users,
-      ]);
+      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
       await db.insert(users).values(conformanceUserValues(USER_ID, "collab-reverse"));
       await db
         .insert(projects)
@@ -230,14 +219,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(
-          context.write("fresh.md", "Current café.", {
-            origin: {
-              type: "agent",
-              agentSlug: "writer",
-              turnId: TURN_ID as never,
-              threadId: THREAD_ID as never,
-            },
-          }),
+          asGrantedWriter(() =>
+            context.write("fresh.md", "Current café.", {
+              origin: {
+                type: "agent",
+                agentSlug: "writer",
+                turnId: TURN_ID as never,
+                threadId: THREAD_ID as never,
+              },
+            }),
+          ),
         ).resolves.toMatchObject({
           ok: true,
         });
@@ -268,7 +259,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "AI paragraph [ch5](ch5.md) and [custom](ch6.md).",
         },
-        { sessionId: "links", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "links",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
       );
       expect(written.status).toBe("success");
       const [draft] = await activeWorkDraft();
@@ -292,7 +288,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       });
-      expect(reversed.status).toBe("reversed");
+      // The rewrite edited the AI's own paragraph, so the undo merges with an
+      // edit it didn't make: reconciled, not refused.
+      expect(reversed.status).toBe("reconciled");
       expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
     });
 
@@ -313,7 +311,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Live undo target.",
         },
-        { sessionId: "session", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
       );
       expect(write.status).toBe("success");
       const [workDraft] = await db
@@ -380,7 +383,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           direction,
           actor: { type: "user", userId: USER_ID },
         });
-        expect(outcome.status).toBe(direction === "undo" ? "reversed" : "reconciled");
+        expect(outcome.status).toBe("reversed");
       }
       await expectMarkdown(collab, DOC_ID, "Live undo target.");
     });
@@ -398,19 +401,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [find, content] of [
         [fountain, gate],
         [gate, ""],
       ] as const) {
         await expect(
-          collab
-            .agentEdit()
-            .write(
-              { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
-              { sessionId: "session-overlap", threadId: THREAD_ID, turnId: TURN_ID },
-            ),
+          collab.agentEdit().write(
+            { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
+            {
+              sessionId: "session-overlap",
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              grant: testFileGrant(DRAFT_DESTINATION),
+            },
+          ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, DOC_ID);
       }
 
       const undo = await collab.reverseTurn({
@@ -428,7 +434,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "redo",
         actor: { type: "user", userId: USER_ID },
       });
-      expect(redo.status).toBe("reconciled");
+      expect(redo.status).toBe("reversed");
       expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
     });
 
@@ -442,7 +448,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" });
       for (const [documentId, markdown] of [
         [DOC_ID, "First base."],
         [CREATED_DOC_ID, "Second base."],
@@ -461,9 +466,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               documentId,
               content: `Turn edit for ${documentId}.`,
             },
-            { sessionId: "session-atomic-reversal", threadId: THREAD_ID, turnId: TURN_ID },
+            {
+              sessionId: "session-atomic-reversal",
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              grant: testFileGrant(DRAFT_DESTINATION),
+            },
           ),
         ).resolves.toMatchObject({ status: "success" });
+        await applyDraft(collab, documentId);
       }
       await collab.writeDocument({
         documentId: CREATED_DOC_ID as never,
@@ -504,12 +515,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
-      await collab
-        .agentEdit()
-        .write(
-          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
-          { sessionId: "session-writer-redo", threadId: THREAD_ID, turnId: TURN_ID },
-        );
+      await collab.agentEdit().write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
+        {
+          sessionId: "session-writer-redo",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
+      );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
       await collab.reverseTurn({
@@ -583,7 +597,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Agent paragraph.",
         },
-        { sessionId: "session-live-dependent", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session-live-dependent",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
       );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
@@ -626,7 +645,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           content: "Agent paragraph.",
         },
-        { sessionId: "session-live-independent", threadId: THREAD_ID, turnId: TURN_ID },
+        {
+          sessionId: "session-live-independent",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: testFileGrant(DRAFT_DESTINATION),
+        },
       );
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
@@ -654,6 +678,66 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
+    it("keeps a pending draft after switching to auto-apply and applies it later", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await expect(
+        collab.agentEdit().write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Drafted." },
+          {
+            sessionId: "session-keep",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            grant: testFileGrant(DRAFT_DESTINATION),
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" }),
+      ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 1 });
+      await expect(
+        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto", pending: "keep" }),
+      ).resolves.toEqual({ status: "updated", policy: "auto" });
+
+      const [work] = await db
+        .select({ aiWriteMode: works.aiWriteMode })
+        .from(works)
+        .where(eq(works.id, WORK_ID));
+      expect(work?.aiWriteMode).toBe("direct");
+      const draftId = await currentDraftId(collab, DOC_ID);
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId,
+      });
+      expect(preview.status).toBe("active");
+
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.\n\nLive.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
+
+      await collab.draftReview.applyWorkDraft({
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId,
+        userId: USER_ID as never,
+      });
+      const applied = await readMarkdown(collab, DOC_ID);
+      expect(applied).toContain("Base.");
+      expect(applied).toContain("Live.");
+      expect(applied).toContain("Drafted.");
+    });
+
     it("durably commits two same-response staged writes to one document", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -674,13 +758,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         {
           sessionId: "session-same-response-db",
+          grant: testFileGrant(DRAFT_DESTINATION),
           threadId: THREAD_ID,
           turnId: TURN_ID,
           responseId,
         },
       );
       if (stagedCreate.status !== "success") {
-        throw new Error(`staged create failed: ${stagedCreate.text}`);
+        throw new Error(`staged create failed: ${renderAgentEditResult(stagedCreate.result)}`);
       }
       await expect(
         collab.agentEdit().write(
@@ -692,6 +777,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-same-response-db",
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId,
@@ -740,6 +826,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseId: "response-reused-provider-tool-id-db-a",
@@ -762,6 +849,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
+            grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseId: "response-reused-provider-tool-id-db-b",

@@ -8,7 +8,6 @@ import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
-  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -75,7 +74,7 @@ export async function notifyMembershipObserver(
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        await observer[method](documentId);
         resolve();
       } catch (cause) {
         reject(cause);
@@ -238,6 +237,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           markdownProjection: input.markdown,
           sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
           provisionalName: input.provisionalName ?? false,
+          ...(input.metadata ? { metadata: input.metadata } : {}),
         })
         .onConflictDoNothing()
         .returning();
@@ -346,6 +346,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
           markdownProjection: "",
+          ...(input.metadata ? { metadata: input.metadata } : {}),
         })
         .returning();
       if (!row) throw new Error("Failed to create binary document");

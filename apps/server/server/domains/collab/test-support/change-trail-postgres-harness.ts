@@ -1,4 +1,5 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
+
 import {
   createAgentEditCodec,
   toDocHandle,
@@ -11,6 +12,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
@@ -24,20 +27,23 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 export const {
   deferUntilDrizzleCommit,
+  isInDrizzleTransaction,
   deferUntilDrizzleRollback,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
+  runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
-export const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
+export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
+  "../../../test-support/drizzle-reset.js"
+);
 const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
   createDrizzlePushCommitStore,
   createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
-const { createDrizzleTurnDiffQuery } = await import("../adapters/drizzle-turn-diff-query.js");
 const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
@@ -53,9 +59,11 @@ const { documentAuthority } = await import("../domain/document-handle.js");
 const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
-const { lockDocumentMutation } = await import("../adapters/drizzle-document-mutation-lock.js");
+const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
-const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
+const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
+  "../adapters/hocuspocus-coordinator.js"
+);
 const {
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
@@ -128,35 +136,7 @@ export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
 export async function resetDatabase(): Promise<void> {
   // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
-  await deleteDrizzleRows(db, [
-    schema.branchPushOutboxUpdates,
-    schema.branchPushSettlementOutbox,
-    schema.turnTrailWork,
-    schema.changeTrailDeliveryOutbox,
-    schema.changeTrailDocumentDetails,
-    schema.changeTrailDocumentOccurrences,
-    schema.changeTrailShells,
-    schema.pendingNotices,
-    schema.documentYjsReversalOps,
-    schema.documentYjsReversals,
-    schema.agentEditWidCounters,
-    schema.agentEditMutations,
-    schema.branchWriteJournal,
-    schema.pushLineage,
-    schema.documentBranches,
-    schema.documentYjsCheckpoints,
-    schema.documentYjsHeads,
-    schema.documentYjsUpdates,
-    schema.threadWorks,
-    schema.turns,
-    schema.threads,
-    schema.folders,
-    schema.documents,
-    schema.contextSources,
-    schema.works,
-    schema.projects,
-    schema.users,
-  ]);
+  await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
   await seedDatabase();
 }
 
@@ -272,7 +252,13 @@ export type MatrixDraftStep = {
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const DRAFT_DESTINATION = {
+    kind: "draft",
+    workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
+    workSlug: "atomicity-work",
+  } as const;
   const persistence = createDrizzleCollabPersistence(db);
+  const testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
@@ -289,10 +275,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchCriticalSections,
   );
   let journalInsertCount = 0;
-  const state = { failSecondJournalInsert: false };
+  // Which branch journal insert of the next save fails, counting from 1.
+  const state = { failJournalInsertAt: null as number | null };
   function injectSecondJournalFailure(): void {
-    if (++journalInsertCount === 2 && state.failSecondJournalInsert) {
-      throw new Error("injected second-document journal failure");
+    if (++journalInsertCount === state.failJournalInsertAt) {
+      throw new Error(
+        state.failJournalInsertAt === 2
+          ? "injected second-document journal failure"
+          : "injected branch journal failure",
+      );
     }
   }
   const branchStore = {
@@ -335,7 +326,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const branchPulls = createBranchPullService({
-    outsideTransaction: runOutsideDrizzleTransaction,
+    outsideTransaction: runOutsideWrite,
     rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
     branchCoordinator,
@@ -475,10 +466,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     criticalSections: branchCriticalSections,
   });
   const deliveredEvents: unknown[] = [];
-  const fences: Array<{ threadId: string; documentId: string }> = [];
-  let failNextTrailRetry = false;
-  let failAllTrailRetries = false;
-  let trailWorkTime = new Date(Date.now() + 60_000);
   const trailDelivery = createChangeTrailWorker({
     db,
     journalWriter: {
@@ -488,33 +475,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       },
     } as never,
     eventHub: { invalidateCommittedJournal() {} },
-    retryBranch: (branchId) => {
-      if (failAllTrailRetries || failNextTrailRetry) {
-        failNextTrailRetry = false;
-        throw new Error("injected retryable auto-push failure");
-      }
-      return realBranchPush.pushToLive({ branchId });
-    },
-    onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
-    turnTrailWorkSchedule: {
-      now: () => trailWorkTime,
-      retryDelayMs: (attempts) => Math.min(2 ** attempts, 30) * 1_000,
-      runningLeaseMs: 30_000,
-      successRetryMs: 1_000,
-    },
   });
-  const autoPushSchedules: string[] = [];
-  let suppressScheduledAutoPush = false;
-  const branchPush = {
-    ...realBranchPush,
-    async pushAutoBranchAfterThreadPeerWrite(input: { workDraftBranchId: string }) {
-      autoPushSchedules.push(input.workDraftBranchId);
-      if (suppressScheduledAutoPush) {
-        return { status: "skipped" as const, reason: "manual_policy" as const };
-      }
-      return realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
-    },
-  };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
   const eventSink: import("../../observability/index.js").EventSink = {
@@ -537,6 +498,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const runtime = createAgentEditRuntime({
     journal: persistence.journal,
     coordinator: liveCoordinator,
+    agentCoordinator: createDeferredLiveProjectionCoordinator({
+      hocuspocus: () => hocuspocus as never,
+      journal: persistence.journal,
+      live: liveCoordinator,
+      transactions: {
+        inTransaction: isInDrizzleTransaction,
+        outsideTransaction: runOutsideDrizzleTransaction,
+        afterCommit: deferUntilDrizzleCommit,
+      },
+    }),
     lifecycle: persistence.lifecycle,
     initialDocumentSeeds: persistence.lifecycle,
     runDocumentWriteHook,
@@ -545,6 +516,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const projections = { refresh: runDocumentWriteHook };
   const agentEdit = createBranchThreadPeerAgentEditCore({
+    fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
     liveUtilityCore: runtime.liveUtilityCore,
     journal: persistence.journal,
     liveCoordinator,
@@ -552,7 +526,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     branchCoordinator,
     branchPulls,
-    branchPush,
     branchJournal: durableBranchJournalReadStore,
     concurrentJournalWatermarks: watermarks,
     diagnostics: createBranchAgentEditDiagnostics(eventSink),
@@ -571,10 +544,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       enlist: enlistResponseParticipant,
       run: runResponseTransaction,
     },
-    turnDiffQuery: createDrizzleTurnDiffQuery(
-      db,
-      persistence.journal.documentsForTurn.bind(persistence.journal),
-    ),
   });
   const noLiveDependents = async () => ({
     hasDependents: false,
@@ -599,9 +568,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       documentUriResolver: resolveDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
+    deferUntilCommit: deferUntilDrizzleCommit,
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
+    fileAccess: createAllowAllFileAccess(),
+    atomic: (operation) => runInDrizzleTransaction(db, operation),
     live: {
       reversalStore: persistence.journal,
       agentEdit: runtime.liveUtilityCore,
@@ -625,7 +597,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,
-    branchPush,
+    branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
     liveCoordinator,
@@ -643,7 +615,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     ...drafts,
   };
 
-  async function seedAndStage(responseId: string) {
+  /**
+   * Stages one write each to alpha and beta in one reply, both drafted. With
+   * `liveBeta`, beta's write goes live and is staged first, so a save that
+   * fails at alpha's branch journal fails after beta's live append ran. A live
+   * write records its authoring response, so `responseId` must then be a UUID.
+   */
+  async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
     await collab.writeDocument({
       documentId: ALPHA_ID,
       markdown: "Alpha base.",
@@ -658,6 +636,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -666,17 +645,26 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     // The following staged write must capture that row as a pending watermark.
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseId: undefined },
-      );
+      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
+    if (options.liveBeta) {
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "fixture",
+        model: "fixture",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+    }
+    const betaContext = options.liveBeta
+      ? { ...context, grant: testFileGrant({ kind: "live" }) }
+      : context;
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "beta.md", documentId: BETA_ID },
-        { ...context, responseId: undefined },
-      );
-    for (const documentId of [ALPHA_ID, BETA_ID]) {
+      .read({ file: "beta.md", documentId: BETA_ID }, { ...betaContext, responseId: undefined });
+    for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID]) {
       const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
       model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
@@ -693,31 +681,39 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
       draft.doc.destroy();
     }
-    await expect(
-      collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "alpha.md",
-          documentId: ALPHA_ID,
-          content: "Agent alpha.",
-        },
-        context,
-      ),
-    ).resolves.toMatchObject({ status: "success", phase: "staged" });
-    await expect(
-      collab
-        .agentEdit()
-        .write(
-          { command: "insert", file: "beta.md", documentId: BETA_ID, content: "Agent beta." },
+    const stageAlpha = () =>
+      expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            content: "Agent alpha.",
+          },
           context,
         ),
-    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    const stageBeta = () =>
+      expect(
+        collab
+          .agentEdit()
+          .write(
+            { command: "insert", file: "beta.md", documentId: BETA_ID, content: "Agent beta." },
+            betaContext,
+          ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    if (options.liveBeta) {
+      await stageBeta();
+      await stageAlpha();
+    } else {
+      await stageAlpha();
+      await stageBeta();
+    }
     preCommitBranchHashes = await databaseBranchHashes();
     // Staging pulls legitimately publish into loaded branch rooms. Start the
     // measurement window after staging so it covers only the commit attempt.
     branchBroadcasts.length = 0;
     watermarkCommits.length = 0;
-    autoPushSchedules.length = 0;
     hocuspocus.broadcasts.length = 0;
     const workDrafts = await db
       .select({ id: schema.documentBranches.id })
@@ -735,7 +731,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     writerEditBeforeWrite = false,
     sameIdentityRewrite = false,
   ) {
-    suppressScheduledAutoPush = true;
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
     await collab.writeDocument({
       documentId,
@@ -745,15 +740,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
       createdDocument: false,
     };
-    await collab
-      .agentEdit()
-      .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
-    await db.update(schema.documentBranches).set({ pushPolicy: "manual" });
+    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
     if (writerEditBeforeWrite) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -833,11 +826,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         seq: 0,
       });
     });
-    const context = { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId };
+    const context = {
+      grant: testFileGrant(DRAFT_DESTINATION),
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    };
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
-    await collab
-      .agentEdit()
-      .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+    await collab.agentEdit().read({ file, documentId }, { ...context, responseId: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before destructive push");
@@ -890,13 +887,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
     };
-    await collab
-      .agentEdit()
-      .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, context);
+    await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
@@ -955,16 +951,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     });
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
     };
     await collab
       .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseId: undefined },
-      );
+      .read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId: undefined });
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
@@ -1063,7 +1057,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     const childUpdate = Y.encodeStateAsUpdate(source, parentVector);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       Y.applyUpdate(doc, childUpdate);
-      await persistence.journal.append(ALPHA_ID, childUpdate, {
+      await testJournal.append(ALPHA_ID, childUpdate, {
         origin: `agent:${TURN_ID}`,
         actorTurnId: TURN_ID,
         seq: 0,
@@ -1075,12 +1069,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       });
     });
     source.destroy();
-    await collab
-      .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId: undefined },
-      );
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        grant: testFileGrant(DRAFT_DESTINATION),
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: undefined,
+      },
+    );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     const staged = await branchCoordinator.readBranch(branch.branchId, async (doc, snapshot) => {
@@ -1119,12 +1117,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         seq: 0,
       });
     });
-    await collab
-      .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId },
-      );
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        grant: testFileGrant(DRAFT_DESTINATION),
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+      },
+    );
   }
 
   async function compactMixedProvenanceTwice(): Promise<{
@@ -1137,7 +1139,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Agent-only passage.");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
         origin: `agent:${TURN_ID}`,
         actorTurnId: TURN_ID,
         seq: 0,
@@ -1212,15 +1214,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
-      const baseSeq = await persistence.journal.append(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc, before),
-        {
-          origin: `agent:${TURN_ID}`,
-          actorTurnId: TURN_ID,
-          seq: 0,
-        },
-      );
+      const baseSeq = await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
       await persistence.journal.checkpoint(
         ALPHA_ID,
         Y.encodeStateAsUpdate(doc),
@@ -1399,17 +1397,18 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           },
         };
         createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(doc), ir, before);
-        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
           origin: `agent:${TURN_ID}`,
           actorTurnId: TURN_ID,
           seq: 0,
         });
       }
     });
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
+        grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseId: input.responseId,
@@ -1426,14 +1425,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     find: string;
     content: string;
   }): Promise<string> {
+    // Resolving the draft branch creates it before the write.
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    await db
-      .update(schema.documentBranches)
-      .set({ pushPolicy: "manual" })
-      .where(eq(schema.documentBranches.id, branch.branchId));
     branch.doc.destroy();
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId: input.responseId,
@@ -1570,16 +1567,17 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         },
         before,
       );
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
         origin: `agent:${TURN_ID}`,
         actorTurnId: TURN_ID,
         seq: 0,
       });
     });
-    await collab.agentEdit().write(
-      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
       {
         sessionId: THREAD_ID,
+        grant: testFileGrant(DRAFT_DESTINATION),
         threadId: THREAD_ID,
         turnId: TURN_ID,
         responseId,
@@ -1596,12 +1594,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
-    await collab
-      .agentEdit()
-      .write(
-        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID },
-      );
+    await collab.agentEdit().read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        grant: testFileGrant(DRAFT_DESTINATION),
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      },
+    );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const block = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("dependency draft block missing");
@@ -1677,10 +1678,16 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
 
   return {
     get failSecondJournalInsert() {
-      return state.failSecondJournalInsert;
+      return state.failJournalInsertAt === 2;
     },
     set failSecondJournalInsert(value: boolean) {
-      state.failSecondJournalInsert = value;
+      this.failJournalInsertAt = value ? 2 : null;
+    },
+    get failJournalInsertAt() {
+      return state.failJournalInsertAt;
+    },
+    set failJournalInsertAt(value: number | null) {
+      state.failJournalInsertAt = value;
       journalInsertCount = 0;
     },
     seedAndStage,
@@ -1703,13 +1710,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         2,
         true,
       ),
-    autoPush: (branchId: string) => realBranchPush.pushToLive({ branchId }),
+    push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
-    diff: () =>
-      collab
-        .agentEdit()
-        .write({ command: "diff" }, { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID }),
     seedDestructivePush,
     seedSweepClassificationPush,
     seedMatrixPush,
@@ -1725,7 +1728,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     crossWorkProbeFixture: () => ({
       runtime,
       branchPulls,
-      branchPush,
+      branchPush: realBranchPush,
       db,
       schema,
       persistence,
@@ -1742,25 +1745,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       deliveredEvents,
     }),
     pollTrails: () => trailDelivery.drain(),
-    advanceTrailWorkTime(milliseconds: number) {
-      trailWorkTime = new Date(trailWorkTime.getTime() + milliseconds);
-    },
-    deferTrailWork(milliseconds: number) {
-      return db.update(schema.turnTrailWork).set({
-        state: "pending",
-        nextAttemptAt: new Date(trailWorkTime.getTime() + milliseconds),
-      });
-    },
-    markTrailWorkRunning() {
-      return db.update(schema.turnTrailWork).set({ state: "running", updatedAt: trailWorkTime });
-    },
-    failNextTrailRetry() {
-      failNextTrailRetry = true;
-    },
-    failAllTrailRetries() {
-      failAllTrailRetries = true;
-    },
-    exhaustionFences: () => [...fences],
+    /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
+    cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
     workRows: () => db.select().from(schema.turnTrailWork),
     async branchGeneration(branchId: string) {
       const [branch] = await db
@@ -1796,8 +1782,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         staged.doc.destroy();
       }
     },
-    setPushPolicy: (pushPolicy: "auto" | "manual") =>
-      db.update(schema.documentBranches).set({ pushPolicy }),
     markTurnError: () =>
       db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
     rollbackResponse: (responseId: string) =>
@@ -1984,12 +1968,24 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     commit: (responseId: string) =>
       collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
     afterCommitEffects: () => ({
-      autoPushSchedules: [...autoPushSchedules].sort(),
       branchBroadcasts: [...branchBroadcasts].sort(),
       watermarkCommits: [...watermarkCommits].sort(),
     }),
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
+    /** Agent-origin live journal rows for a document. */
+    async liveAgentUpdateCount(documentId: DocumentId) {
+      const rows = await db
+        .select({ id: schema.documentYjsUpdates.id })
+        .from(schema.documentYjsUpdates)
+        .where(
+          and(
+            eq(schema.documentYjsUpdates.documentId, documentId),
+            eq(schema.documentYjsUpdates.originType, "agent"),
+          ),
+        );
+      return rows.length;
+    },
     stagedUpdates: (responseId: string) => [
       collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
       collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
@@ -2098,7 +2094,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         phase: "closed",
       });
       expect(branchBroadcasts).toHaveLength(2);
-      expect(autoPushSchedules).toHaveLength(2);
       expect(watermarkCommits).toHaveLength(2);
       expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     },

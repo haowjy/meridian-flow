@@ -4,13 +4,12 @@ The server collab domain supplies concrete Postgres/Hocuspocus adapters around
 `@meridian/agent-edit` and exposes `CollabDomain` to routes, runtime, context,
 and WebSocket callers.
 
-Model writes pass the frozen `ThreadExecutionContext` through `agentEdit`.
-Direct-mode contexts (`draftOwner === null`) select the live core and create no
-Work draft or thread-peer branch, including Auto-apply on No Work. Draft-mode
-contexts select the thread-peer core; Draft on No Work owns a Work draft keyed
-`(documentId, workId)`.
-Draft-only operations must cross `requireWorkDraftOwner` and return typed
-`work_required` rather than manufacturing an owner.
+Model reads and writes go through `agentEdit()`, the thread-peer core pool,
+with a destination per document (below). A `live` destination selects the
+live core and creates no Work draft or thread-peer branch: Auto-apply,
+Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
+`draft` destination selects the thread-peer core; Draft on No Work owns a Work
+draft keyed `(documentId, workId)`.
 
 ## Document revision identity
 
@@ -24,14 +23,48 @@ recovery returns null, never a later read's token.
 
 Effective markdown/hashline reads return content and revision from the same
 callback. `readEffectiveRevision` uses their synchronous pull/fallback chain.
-Context selects live authority for direct mode and the thread view for draft
-mode. A thread rebind is resolved anew on each query. A draft read with no
+Every effective read, `readEffectiveRevision` included, names a
+`destination`: `live` reads live authority (plus the reply's own staged live
+writes) and never touches a Work draft, kept or not; `draft` reads the thread
+view. A reply's staged writes overlay only reads of the destination they were
+pinned to, so a live read never shows the reply's drafted edits. A thread rebind is resolved anew on each query. A draft read with no
 thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
-state a later `write read` forks from.
+state a later `read` forks from.
 
-Direct response finalization invokes the receipt callback after the live core's
-durable commit; the thread-peer core invokes it inside its host transaction.
+## One save per reply
+
+The thread-peer pool is the only model read/write entry point. Each call
+carries the `FileGrant` the caller got from `domains/file-policy`; its
+destination routes the call. A write that commits now runs under
+`runWithEditGrants`; a reversal whose writes landed in the other journal gets
+a fresh grant at that destination (`authorizeAt`). A reply pins each document to its
+first grant (reads follow the pin, except a `liveVersion` read, which is
+`version: "live"` and always reads live; results report the version read in
+`read.version`), may
+own a live core and a thread core at once, and saves both, plus the reply's
+records and the receipt callback, in one response transaction. The live
+journal joins that transaction; the live agent-edit core's coordinator works
+on a private copy of the room inside it and publishes through `recover()`
+after commit, so a rollback shows nothing. The save first runs one
+`confirmEdit` over every grant the reply wrote under, drops refused documents
+(a Work archived mid-reply, D29) and reports them, then marks the rest
+confirmed for the journal's no-grant guard. The pool
+also records each document's last read version per thread (`live` or
+`draft` of a Work); a write against another version returns `read_required`.
+
+## Write mode and drafts
+
+The Work's write mode decides only where new AI writes go. A draft write
+never pushes itself live (D59): a reply that saves into the draft after the
+writer switched the Work to Auto-apply waits there like a kept change, and
+the dock shows it. Switching to Auto-apply with pending changes needs a
+choice (`work-push-policy.ts`, D40): `apply` pushes each pending draft once,
+then sets the mode; `keep` sets only the mode. An archived Work's `apply`
+refuses at its first push, under the Work lock (D30). Branches carry no push
+policy: turn trail work never pushes, and a due work row settles `no_op`
+(`adapters/drizzle-turn-trail-work.ts`); a push or discard completes it
+through the journal trigger.
 
 ## Pull and provisioning transactions
 
@@ -45,7 +78,18 @@ that safe:
   therefore resolves only on committed state, and a caller's rollback cannot
   undo it. Pulls also leave the response transaction context, so root-committed
   cache updates and broadcasts cannot be deferred to an aborting response.
-  Reruns and timer callbacks leave both initiating contexts.
+  Reruns and timer callbacks leave both initiating contexts. A live pull first
+  lists the document's active Work-draft branches outside any transaction and
+  stops when there are none. Otherwise it takes its live snapshot before
+  opening its root transaction, never while holding it: the snapshot needs its
+  own connection, and pulls that each hold one while waiting for another
+  exhaust the pool and deadlock. The root transaction lists the branches again,
+  since one can close in between.
+- **Room loads read in the caller's transaction.** A room opened under a
+  command transaction loads its journal snapshot and validates its handle's
+  authority generation through that transaction. The transaction may already
+  hold the authority head row from an admission, so a second connection would
+  wait on it forever.
 - **Joiners wait for the next run.** A caller that joins an in-flight live pull
   awaits one coalesced run that starts after its call. The in-flight snapshot
   may predate a writer edit the caller must observe.

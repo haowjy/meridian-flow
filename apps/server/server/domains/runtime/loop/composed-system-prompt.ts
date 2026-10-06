@@ -7,6 +7,7 @@
  * - Frozen at first context assembly, even if the gateway send fails or is cancelled.
  */
 
+import { type ActivatedSkillBody, formatInvokedSkills } from "./activated-skills.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-uris.js";
 
@@ -17,8 +18,11 @@ export interface AssembleComposedSystemPromptInput {
   appendPrompt?: string | null;
   workContext?: string;
   availableSkills?: readonly PromptInventoryListing[];
+  /** Preloaded (`skills.load`) bodies, frozen with the first bake. */
+  preloadedSkills?: readonly ActivatedSkillBody[];
   namedSubagents?: readonly PromptInventoryListing[];
   subagentGuidance?: string | null;
+  permissionGuidance?: string | null;
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
@@ -27,7 +31,12 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
     input.basePrompt,
     input.appendPrompt,
     input.workContext,
-    inventorySection("Available skills", input.availableSkills),
+    input.permissionGuidance,
+    inventorySection(
+      "Available skills\nLoad a skill with skill before doing work it covers.",
+      input.availableSkills,
+    ),
+    input.preloadedSkills?.length ? formatInvokedSkills(input.preloadedSkills) : undefined,
     inventorySection("Named subagents", input.namedSubagents),
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,

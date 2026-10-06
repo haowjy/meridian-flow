@@ -126,7 +126,7 @@ describe("buildContext system-turn history projection", () => {
           createdAt: "2026-01-01T00:00:00.000Z",
         },
       ],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual(["first", "second"]);
@@ -162,7 +162,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toContain(
@@ -183,7 +183,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual([]);
@@ -196,7 +196,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual([]);
@@ -217,7 +217,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("assistant")],
       blocks: [customBlock(content)],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
@@ -237,7 +237,7 @@ describe("buildContext system-turn history projection", () => {
       turns: [invalidNotification],
       blocks: [invalidCard],
       eventSink: sink,
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
 
     expect(sink.events.map((event) => event.payload.field).sort()).toEqual([
@@ -302,13 +302,13 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [],
       blocks: [],
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     });
     const messages = buildContext({
       thread: thread(),
       turns,
       blocks,
-      frozenSystemPrompt: "system prompt",
+      systemPrompt: "system prompt",
     }).messages;
     expect(messages.map((message) => message.role)).toEqual([
       "system",
@@ -348,7 +348,7 @@ it("keeps document revision metadata out of model request bytes", () => {
     blockType: "text",
   });
   const call: Block = {
-    ...customBlock({ toolCallId: "read-1", name: "write", input: { command: "read", path: uri } }),
+    ...customBlock({ toolCallId: "read-1", name: "read", input: { path: uri } }),
     id: "call",
     blockType: "tool_use",
   };
@@ -368,7 +368,7 @@ it("keeps document revision metadata out of model request bytes", () => {
         thread: thread(),
         turns: [user, assistant],
         blocks: [reference(revision ?? null), call, result(revision)],
-        frozenSystemPrompt: "Frozen system.",
+        systemPrompt: "Frozen system.",
       }).messages,
     );
   const withEvidence = bytes("y1:read-revision");

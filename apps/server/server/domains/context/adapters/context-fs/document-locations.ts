@@ -11,7 +11,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
+import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 
 function namespaceKey(input: {
@@ -25,26 +25,22 @@ function namespaceKey(input: {
     : `context-project:${input.projectId}:${input.workId ?? "none"}:${input.scheme}`;
 }
 
-/** Acquire every authority and absent-path lock before provisioning or publishing any source. */
+/**
+ * Seam C (file-access §5): Work rows in id order, the bound edit grants'
+ * confirmation, then every advisory lock sorted by key, before provisioning
+ * or publishing any source.
+ */
 export async function lockContextNamespaces(
   db: Database,
   owner: { projectId: string; userId: string },
   scopes: readonly ContextCommandScope[],
 ): Promise<void> {
-  if (scopes.some((scope) => scope.scheme === "user")) {
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${owner.userId}, 0::bigint))`,
-    );
-  }
-  const workIds = [
-    ...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : []))),
-  ].sort();
-  for (const workId of workIds) await requireLockedActiveWork(db, workId);
-  const keys = [...new Set(scopes.map((scope) => namespaceKey({ ...owner, ...scope })))].sort();
-  for (const key of keys)
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
-    );
+  const workIds = [...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])))];
+  await requireLockedActiveWorks(db, workIds);
+  await lockAdvisoryKeys(db, [
+    ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
+    ...scopes.map((scope) => namespaceKey({ ...owner, ...scope })),
+  ]);
 }
 
 /** Direct persistence callers use exactly the same logical locks as Context commands. */
@@ -52,8 +48,7 @@ export async function lockContextSources(
   db: Database,
   sourceIds: readonly string[],
 ): Promise<void> {
-  const tx = currentDrizzleDb(db);
-  const rows = await tx
+  const rows = await currentDrizzleDb(db)
     .select({
       projectId: contextSources.projectId,
       userId: projects.userId,
@@ -65,27 +60,28 @@ export async function lockContextSources(
     .leftJoin(projects, eq(projects.id, contextSources.projectId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  for (const userId of [
-    ...new Set(rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : []))),
-  ].sort()) {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`);
-  }
-  const workIds = [...new Set(rows.flatMap((row) => (row.workId ? [row.workId] : [])))].sort();
-  for (const workId of workIds) await requireLockedActiveWork(db, workId);
-  const keys = [
-    ...new Set(
-      rows.map((row) =>
-        namespaceKey({
-          projectId: (row.projectId ?? row.workProjectId) as string,
-          userId: row.userId ?? "",
-          workId: row.workId,
-          scheme: row.scheme,
-        }),
-      ),
+  await requireLockedActiveWorks(
+    db,
+    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
+  );
+  await lockAdvisoryKeys(db, [
+    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
+    ...rows.map((row) =>
+      namespaceKey({
+        projectId: (row.projectId ?? row.workProjectId) as string,
+        userId: row.userId ?? "",
+        workId: row.workId,
+        scheme: row.scheme,
+      }),
     ),
-  ].sort();
-  for (const key of keys)
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`);
+  ]);
+}
+
+async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {
+  for (const key of [...new Set(keys)].sort())
+    await currentDrizzleDb(db).execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
+    );
 }
 
 export type NamespaceLocation = { id: string; path: string; kind: "file" | "directory" };

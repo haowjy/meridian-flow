@@ -9,7 +9,7 @@ model-invocable: true
 # Story Review
 
 Analytical review of existing prose. This skill is for diagnosis, not
-rewriting. Keep `/reader-sim` separate when the task needs a felt first-time
+rewriting. Keep reader simulation separate when the task needs a felt first-time
 reader experience rather than analytical critique.
 
 Choose the review level before reading. Start big before small unless the

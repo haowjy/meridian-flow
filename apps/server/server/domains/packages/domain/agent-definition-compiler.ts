@@ -1,9 +1,9 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
 import {
   agentEffortAuthoringSchema,
-  type ToolPolicy,
-  toolReferencesSchema,
-  toolRepresentationSchema,
+  agentPermissionSchema,
+  toolAllowListSchema,
+  toolDenyListSchema,
 } from "@meridian/contracts/agents";
 import { z } from "zod";
 import { sha256 } from "./helpers.js";
@@ -24,10 +24,12 @@ const metadata = z.looseObject({
   model: reference.optional(),
   effort: agentEffortAuthoringSchema.optional(),
   mode: z.enum(["primary", "subagent"]).optional(),
+  // Presence-sensitive like every field: an unset permission resolves to the default.
+  permission: agentPermissionSchema.optional(),
   "model-invocable": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
-  tools: toolRepresentationSchema.optional(),
-  "disallowed-tools": toolReferencesSchema.optional(),
+  tools: toolAllowListSchema.optional(),
+  "disallowed-tools": toolDenyListSchema.optional(),
   subagents: references.optional(),
   skills: skills.optional(),
   approval: z.enum(["default", "auto", "confirm", "never"]).optional(),
@@ -38,8 +40,8 @@ const metadata = z.looseObject({
 const overlayMetadata = metadata.extend({
   tools: z
     .strictObject({
-      allowed: toolReferencesSchema.optional(),
-      disallowed: toolReferencesSchema.optional(),
+      allowed: toolAllowListSchema.optional(),
+      disallowed: toolDenyListSchema.optional(),
     })
     .optional(),
 });
@@ -87,27 +89,8 @@ export function compileAgentDefinition(source: {
   if (parsedMeta.data.skills && parsedOverlay.data.skills) {
     merged.skills = { ...parsedMeta.data.skills, ...parsedOverlay.data.skills };
   }
-  if (overlayTools?.allowed !== undefined) {
-    const baseTools = parsedMeta.data.tools;
-    const denials =
-      baseTools && !Array.isArray(baseTools) && overlayTools.disallowed === undefined
-        ? Object.entries(baseTools).filter(([, policy]) => policy === "deny")
-        : [];
-    merged.tools = denials.length
-      ? (Object.fromEntries([
-          ...overlayTools.allowed.map((tool) => [tool, "allow"] as const),
-          ...denials,
-        ]) as Record<string, ToolPolicy>)
-      : overlayTools.allowed;
-  }
-  if (overlayTools?.disallowed !== undefined) {
-    merged["disallowed-tools"] = overlayTools.disallowed;
-    if (merged.tools && !Array.isArray(merged.tools)) {
-      merged.tools = Object.fromEntries(
-        Object.entries(merged.tools).filter(([, policy]) => policy === "allow"),
-      );
-    }
-  }
+  if (overlayTools?.allowed !== undefined) merged.tools = overlayTools.allowed;
+  if (overlayTools?.disallowed !== undefined) merged["disallowed-tools"] = overlayTools.disallowed;
   const definition: CompiledAgentDefinition = {
     schemaVersion: 1,
     systemPrompt: source.body,

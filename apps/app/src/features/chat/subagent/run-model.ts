@@ -12,7 +12,8 @@ export type SubagentRun = {
   ref: string | null;
   execution: string | null;
   agentName: string;
-  description: string | null;
+  /** The writer-visible task label (spawn `name`, the child thread title). */
+  name: string | null;
   status: SubagentRunStatus;
   startedAt: string | null;
   endedAt: string | null;
@@ -55,7 +56,7 @@ export function runFromActivity(node: ThreadActivityNode): SubagentRun {
     ref: node.ref,
     execution: null,
     agentName: node.agentName?.trim() || "Subagent",
-    description: node.title?.trim() || null,
+    name: node.title?.trim() || null,
     status,
     startedAt: node.runStartedAt ?? null,
     endedAt: node.runEndedAt ?? null,
@@ -79,7 +80,7 @@ export function runFromThread(
     ref: null,
     execution: null,
     agentName: thread.agentName?.trim() || "Subagent",
-    description: thread.title?.trim() || null,
+    name: thread.title?.trim() || null,
     status: statusFromSources({
       savedRunning: savedStatus === "running",
       outcome:
@@ -136,7 +137,7 @@ export function buildSubagentRuns(
           ref: live?.ref ?? null,
           execution: card.execution ?? null,
           agentName: card.agentName || live?.agentName || "Subagent",
-          description: card.title?.trim() || live?.description || null,
+          name: card.title?.trim() || live?.name || null,
           status,
           startedAt: card.startedAt,
           endedAt: card.terminalAt ?? live?.endedAt ?? null,
@@ -160,7 +161,7 @@ export function buildSubagentRuns(
         ref: update.handle,
         execution: update.execution,
         agentName: update.agentName || live?.agentName || card?.agentName || "Subagent",
-        description: live?.description ?? card?.description ?? null,
+        name: live?.name ?? card?.name ?? null,
         status: statusFromSources({ outcome: update.outcome }),
         startedAt: live?.startedAt ?? card?.startedAt ?? null,
         endedAt: turn.completedAt ?? live?.endedAt ?? null,

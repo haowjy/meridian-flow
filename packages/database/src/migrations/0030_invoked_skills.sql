@@ -1,0 +1,1 @@
+ALTER TABLE "thread_agent_bindings" ADD COLUMN "invoked_skills" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -1,6 +1,5 @@
-/** Shared manifest visibility policy for manuscript observations. */
+/** Shared manifest visibility policy for the schemes that list through the project manifest. */
 import type { BranchPeerShadowAccess } from "../collab/contracts.js";
-import type { ContextScheme } from "./ports/context-port.js";
 
 export type ManifestMembershipResolver = Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
 
@@ -18,7 +17,6 @@ async function resolveMembership(input: {
 }
 
 export async function resolveVisibleDocumentMembership(input: {
-  scheme: ContextScheme;
   view?: {
     projectId: string;
     workId?: string | null;
@@ -27,7 +25,7 @@ export async function resolveVisibleDocumentMembership(input: {
   };
   resolver: ManifestMembershipResolver;
 }): Promise<Set<string> | null> {
-  if (input.scheme !== "manuscript" || !input.view) return null;
+  if (!input.view) return null;
   try {
     return await resolveMembership({ view: input.view, resolver: input.resolver });
   } catch {

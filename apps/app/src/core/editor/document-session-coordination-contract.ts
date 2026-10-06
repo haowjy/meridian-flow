@@ -145,3 +145,23 @@ export interface DocumentSessionCrossContextCoordination {
   beginClose(): void;
   close(): Promise<void>;
 }
+
+/** The registry's own refusals, and coordination refusals translated for its callers. */
+export class DocumentSessionAuthorityError extends Error {
+  constructor(
+    readonly kind:
+      | "account-unconfigured"
+      | "authority-unavailable"
+      | "account-mismatch"
+      | "generation-revoked"
+      | "stale-lease"
+      | "older-command"
+      | "command-collision"
+      | "purge-pending"
+      | "adoption-pending",
+    message: string,
+  ) {
+    super(message);
+    this.name = "DocumentSessionAuthorityError";
+  }
+}

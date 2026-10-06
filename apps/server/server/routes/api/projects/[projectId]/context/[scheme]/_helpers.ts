@@ -20,11 +20,18 @@ import {
   contextPortForProjectRecovery,
 } from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
+import type { FileTarget } from "../../../../../../domains/file-policy/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
+import {
+  containerTarget,
+  requireFileGrant,
+  withEditGrants,
+} from "../../../../../../lib/file-access-http.js";
 
 export { contextErrorToHttp } from "../../../../../../lib/context-error-http.js";
+export { documentTarget } from "../../../../../../lib/file-access-http.js";
 
 export function parseScheme(value: string): ProjectContextTreeScheme {
   if (isProjectContextTreeScheme(value)) return value;
@@ -45,6 +52,10 @@ export async function resolveContextRoute(
   workId: string | null;
   authority: CanonicalContextAuthority;
   port: ContextPort;
+  /** The folder this route's scheme names, for creates and uploads (file-access §4). */
+  container: FileTarget;
+  /** Runs a write under the writer's edit grants on these targets; refusals become 404 or 403. */
+  edit<T>(targets: readonly FileTarget[], operation: () => Promise<T>): Promise<T>;
 }> {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
@@ -77,5 +88,23 @@ export async function resolveContextRoute(
       authority = resolved;
     }
   }
-  return { app, userId: user.userId, projectId, scheme, workId, authority, port };
+  const container = await containerTarget(app.workRepo, { projectId, scheme, workId });
+  const edit = async <T>(targets: readonly FileTarget[], operation: () => Promise<T>) => {
+    const grants = [];
+    for (const target of targets) {
+      grants.push(await requireFileGrant(app.fileAccess, user.userId, target, "edit"));
+    }
+    return withEditGrants(app.fileAccess, grants, operation);
+  };
+  return {
+    app,
+    userId: user.userId,
+    projectId,
+    scheme,
+    workId,
+    authority,
+    port,
+    container,
+    edit,
+  };
 }

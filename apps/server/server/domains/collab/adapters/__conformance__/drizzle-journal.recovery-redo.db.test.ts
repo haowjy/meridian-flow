@@ -5,8 +5,10 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
   type ReversalStore,
+  renderAgentEditResult,
   type UpdateJournal,
   type WriteContext,
+  type WriteOutcome,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
@@ -76,7 +78,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { createDrizzleJournal: createUngrantedJournal } = await import("../drizzle-journal.js");
+    const { grantedJournal } = await import("../../../../test-support/file-grants.js");
+    // These cases drive the journal seam directly, as a granted tool call does.
+    const createDrizzleJournal = (...args: Parameters<typeof createUngrantedJournal>) =>
+      grantedJournal(createUngrantedJournal(...args));
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
@@ -241,9 +247,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -276,7 +280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual(["Alpha blade.", "Beta ward."]);
 
       const undoLater = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undoLater).toContain("status: reconciled");
+      expect(undoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta shield."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
         { wId: 1, status: "active" },
@@ -289,7 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "status: nothing_to_undo",
       );
       const redoLater = outcomeText(await core.write({ command: "redo", file: DOC_ID }, context));
-      expect(redoLater).toContain("status: reconciled");
+      expect(redoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta ward."]);
     });
 
@@ -309,9 +313,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
       const turnContext = { ...context, turnId: TURN_A };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -321,7 +323,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(
         outcomeText(
@@ -332,7 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
 
@@ -358,7 +360,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reconciled");
+      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reversed");
 
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
@@ -384,9 +386,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -401,7 +401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       const undo = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undo).toContain("status: reconciled");
+      expect(undo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "reversed", wId: 1, reversedBy: "agent" },
@@ -424,12 +424,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(
-        outcomeText(await restarted.write({ command: "read", file: DOC_ID }, context)),
-      ).toContain("Alpha sword.");
+      expect(outcomeText(await restarted.read({ file: DOC_ID }, context))).toContain(
+        "Alpha sword.",
+      );
 
       const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));
-      expect(redo).toContain("status: reconciled");
+      expect(redo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null, reversedBy: null },
@@ -481,8 +481,8 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 }
 
-function outcomeText(outcome: { text: string }): string {
-  return outcome.text;
+function outcomeText(outcome: WriteOutcome): string {
+  return renderAgentEditResult(outcome.result);
 }
 
 function createDoc(markdown: string, clientID: number): Y.Doc {

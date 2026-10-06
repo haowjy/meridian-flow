@@ -1,7 +1,9 @@
 /**
  * Renders the Editor destination and its active document. A file of an
- * archived Work opens read-only under the archived notice. The Editor shows
- * only its own Work's files, so the Editor's Work is that file's Work.
+ * archived Work, and a review of its draft, open read-only under the archived
+ * notice. The Editor shows only its own Work's files and drafts, so the
+ * Editor's Work is that file's Work. Archiving here freezes them at once; the
+ * server's own read-only scope follows.
  */
 import { Trans } from "@lingui/react/macro";
 import {
@@ -107,8 +109,6 @@ export function ContextViewer({
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
   const activeFileInWork =
     activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
-  const archivedWork =
-    activeFileInWork && editorWork && isWorkArchived(editorWork) ? editorWork : null;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
@@ -117,6 +117,12 @@ export function ContextViewer({
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
       : null;
+  const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
+  // Archiving freezes the Editor Work's own files and its drafts (D30). A
+  // review edits the draft, so its editor freezes and shows the notice; the
+  // reviewed file itself may be project-owned and keeps its identity bar.
+  const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
+  const editorFrozen = Boolean((activeFileInWork || activeReviewDraftId) && archivedEditorWork);
 
   return (
     <div
@@ -160,8 +166,12 @@ export function ContextViewer({
             }
           />
         ) : null}
-        {archivedWork ? (
-          <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
+        {archivedEditorWork && editorFrozen ? (
+          <ArchivedWorkNotice
+            projectId={projectId}
+            work={archivedEditorWork}
+            className="px-4 pt-3"
+          />
         ) : null}
         {/* Identity bar — the top edge of the page every open document
             shares. Keyed by document so edit state never crosses tabs. */}
@@ -171,7 +181,7 @@ export function ContextViewer({
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
-            readOnly={Boolean(archivedWork)}
+            readOnly={fileFrozen}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
@@ -193,7 +203,7 @@ export function ContextViewer({
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
               // Warm editors are hidden, so following the front tab is enough.
-              readOnly={Boolean(archivedWork)}
+              readOnly={editorFrozen}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
             />
           </div>

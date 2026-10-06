@@ -24,7 +24,7 @@ import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
 import type { WriteMode } from "./tool-command";
-import { rendererFor } from "./tool-renderers";
+import { rendererFor, toolRowFailed } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
@@ -35,7 +35,7 @@ export type ToolRowProps = {
 function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
-    tool.status === "partial" ? "running" : tool.isError ? "error" : "done";
+    tool.status === "partial" ? "running" : toolRowFailed(tool) ? "error" : "done";
   const presentation = useMemo(
     () => ({
       title: renderer.title(tool, { writeMode }),

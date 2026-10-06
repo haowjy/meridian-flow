@@ -31,8 +31,7 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
     const tool = call.content as JsonObject;
     const policy = policies(tool.toolName as string);
     const input = (tool.input ?? {}) as JsonObject;
-    const kind = policy?.kind(input);
-    return policy && kind && kind !== "none" ? [{ call, result, input, policy, kind }] : [];
+    return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
   });
 }
 
@@ -95,12 +94,14 @@ export function planModelElisions(input: {
     )) {
       const refs = recorded.get(result.id);
       const changed = changedDocuments(new Map([[result.id, refs]]), current);
-      const diff =
-        (call.content as JsonObject).toolName === "write" && toolInput.command === "diff";
-      if (!diff && refs !== undefined && changed.length === 0) continue;
+      if (refs !== undefined && changed.length === 0) continue;
       const uris = [...new Set(changed.flatMap((ref) => (ref.uri ? [ref.uri] : [])))];
       const replacement = policy.elide(
-        { input: toolInput, output: (result.content as JsonObject).output },
+        {
+          input: toolInput,
+          output: (result.content as JsonObject).output,
+          result: (result.content as JsonObject).result,
+        },
         changed,
         "stale",
       );

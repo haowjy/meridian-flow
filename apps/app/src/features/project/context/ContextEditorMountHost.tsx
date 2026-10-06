@@ -1,19 +1,30 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
 import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import type { DocumentSession } from "@/core/editor/document-session";
+import type {
+  DocumentSession,
+  DocumentSessionAccess,
+  DocumentSessionSnapshot,
+} from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
-import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
+import {
+  useAccountResourceProjection,
+  useAccountResourceReplica,
+  useLiveDocumentSessionRegistry,
+} from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
+import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -209,12 +220,20 @@ export function ContextEditorMountHost({
                 // screen (a draft-only tab has none, so its shell holds the place).
                 <>
                   {active && isActive ? (
-                    <ActiveEditorProjection
-                      documentId={tab.documentId}
-                      session={session}
-                      inReview={Boolean(reviewDraftId)}
-                      setProjection={setActiveEditorDocumentId}
-                    />
+                    <>
+                      <ActiveEditorProjection
+                        documentId={tab.documentId}
+                        session={session}
+                        inReview={Boolean(reviewDraftId)}
+                        setProjection={setActiveEditorDocumentId}
+                      />
+                      <RoomScopeCatalogCheck
+                        projectId={projectId}
+                        session={session}
+                        reviewRoomName={reviewRoomName}
+                        readOnly={readOnly}
+                      />
+                    </>
                   ) : null}
                   <PresenceSuspension
                     session={session}
@@ -231,7 +250,6 @@ export function ContextEditorMountHost({
                     active={active && isActive}
                     editable={!readOnly}
                     showToolbar={!readOnly}
-                    showCollaborationDecorations={!readOnly}
                     detached={tab.kind === "new"}
                     localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
@@ -268,15 +286,7 @@ export function ContextEditorMountHost({
   );
 }
 
-/** One stable host across local adoption; server retention lasts until the tab closes. */
-export function ContextTabSessionBoundary({
-  projectId,
-  documentId,
-  resourceHandle,
-  availabilityRevision,
-  liveRoom = true,
-  children,
-}: {
+type ContextTabSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
@@ -289,7 +299,28 @@ export function ContextTabSessionBoundary({
     localContentReady: boolean,
     retry: () => void,
   ) => ReactNode;
-}) {
+};
+
+/**
+ * One stable host across local adoption; server retention lasts until the tab
+ * closes. A room dropped because the server refused its edits reopens as a
+ * fresh session: local probe and server binding both start over.
+ */
+export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
+  const [opening, setOpening] = useState(0);
+  const reopen = useCallback(() => setOpening((value) => value + 1), []);
+  return <ContextTabSession key={opening} {...props} onReopen={reopen} />;
+}
+
+function ContextTabSession({
+  projectId,
+  documentId,
+  resourceHandle,
+  availabilityRevision,
+  liveRoom = true,
+  children,
+  onReopen,
+}: ContextTabSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
   const resourceIdentity = resourceHandle ?? documentId;
@@ -425,8 +456,9 @@ export function ContextTabSessionBoundary({
   const liveSession =
     state.kind === "opened" && state.documentId === documentId ? state.session : null;
   const selectedSession = liveSession ?? localSession;
+  const session = useRefusedEditsReopen(selectedSession, onReopen);
   return children(
-    selectedSession,
+    session,
     state.kind === "failed" && state.documentId === documentId,
     selectedSession !== null && selectedSession === localSession,
     binding.retry,
@@ -473,6 +505,46 @@ function ActiveEditorProjection({
     setProjection(documentId, session, inReview, owner.current);
     return () => setProjection(null, null, false, owner.current);
   }, [documentId, inReview, session, setProjection]);
+  return null;
+}
+
+/**
+ * A room's scope follows its Work: an archived Work's draft and scratch are
+ * read-only (D33). The front editor already follows its room; when the server
+ * names a scope that `readOnly` doesn't show, this tab's Works catalog is
+ * behind (another tab archived or unarchived the Work), and the archived
+ * notice, its Unarchive and `readOnly` all come from it. Asked on activation
+ * and on each named scope; this tab's own `readOnly` changes (its archive
+ * command) never ask, because the room's next scope confirms them. A review
+ * watches the draft's room, never the live one it reviews against.
+ */
+function RoomScopeCatalogCheck({
+  projectId,
+  session,
+  reviewRoomName,
+  readOnly,
+}: {
+  projectId: string;
+  /** Null while a draft-only document is hosted by its branch room alone. */
+  session: DocumentSession | null;
+  reviewRoomName: string | null;
+  readOnly: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const registry = useLiveDocumentSessionRegistry();
+  const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  useEffect(() => {
+    const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
+    return reviewRoomName
+      ? registry.observeBranchRoom(reviewRoomName, observer)
+      : session?.subscribe(observer);
+  }, [registry, reviewRoomName, session]);
+  useEffect(() => {
+    if (access === null || (access === "read") === readOnlyRef.current) return;
+    void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
+  }, [access, projectId, queryClient]);
   return null;
 }
 

@@ -4,6 +4,7 @@ import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
 export interface AgentEditCore {
+  read: ReturnType<typeof createWriteTool>["read"];
   write: ReturnType<typeof createWriteTool>["write"];
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
@@ -21,6 +22,7 @@ export interface AgentEditCore {
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
   const tool = createWriteTool(options);
   return {
+    read: tool.read,
     write: tool.write,
     recover: tool.recover,
     commitResponse: tool.commitResponse,
@@ -40,6 +42,7 @@ export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";
+export { markdownPlainText } from "./model/markdown-text-view.js";
 export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
 export {
   decodeNavigationPosition,
@@ -47,8 +50,29 @@ export {
   isBlockItemId,
   validateLiveBlockRange,
 } from "./model/navigation-target.js";
-export type { WriteCommand, WriteCommandName } from "./tool/command-schema.js";
-export { WriteCommandSchema, writeCommandName } from "./tool/command-schema.js";
+export {
+  markdownSections,
+  normalizeRequestedSlug,
+  sectionNotFoundMessage,
+} from "./resolver/heading-sections.js";
+export type {
+  DocumentCommandName,
+  DocumentVersion,
+  ReadCommand,
+  ReadToolInput,
+  WriteCommand,
+  WriteCommandName,
+  WriteToolInput,
+} from "./tool/command-schema.js";
+export {
+  DocumentVersionSchema,
+  ReadCommandSchema,
+  ReadToolInputSchema,
+  WriteCommandSchema,
+  WriteToolInputSchema,
+  writeCommandName,
+} from "./tool/command-schema.js";
+export { documentNotFoundMessage } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
@@ -64,8 +88,14 @@ export {
   modelConcurrentResult,
   modelResult,
 } from "./tool/model-result.js";
+export {
+  agentEditResultSummary,
+  readCall,
+  renderAgentEditResult,
+} from "./tool/result-text.js";
 export type {
   MutationActor,
+  ReadFunction,
   RedoResult,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,

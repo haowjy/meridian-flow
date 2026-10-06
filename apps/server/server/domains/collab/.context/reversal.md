@@ -36,8 +36,17 @@ stable reversal-result identity.
 - **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
   core, never the thread-peer branch committer. The host captures a live Yjs
   snapshot and live-journal sequence together before entering agent-edit.
-- **Work-draft write-command reversal is branch-scoped**: while the current Work-draft
-  generation has agent rows for the thread, `write(command="undo"|"redo")`
+- **Model undo and redo reverse each write where it landed**:
+  `thread-peer-reversals.ts` loads both histories once, `splitReversal`
+  (`reversal-routing.ts`) reads which selected
+  handles sit in the thread's Work-draft rows and which in the live journal,
+  and runs the selection once per journal with that journal's share (`last: N`
+  counts per journal). Each part carries a grant at its own destination, so a
+  drafted write in an archived Work is refused with `work_archived` while live
+  parts of the same call still reverse; `mergeReversals` makes a mixed result
+  `partial` and names the kept handles.
+- **Work-draft write-command reversal is branch-scoped**: for the drafted part of
+  a selection, `write(command="undo"|"redo")`
   reconstructs and stages reversals exclusively from those rows. The staged
   system row carries the Work-draft generation and becomes durable in the same
   branch commit that projects its Yjs update; it never writes the live journal.
@@ -74,8 +83,8 @@ stable reversal-result identity.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
   the dependency check (`hasDependentLaterRows` in
   `domain/journal-dependencies.ts`) inside the same transaction, under
-  `lockDocumentMutation` advisory lock. There is
-  no separate live `ReversalCommitGuard`. Work-draft reversal uses the generation and
+  `lockDocumentMutation` advisory lock; nothing else guards a live
+  reversal commit. Work-draft reversal uses the generation and
   journal-watermark fence above.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.

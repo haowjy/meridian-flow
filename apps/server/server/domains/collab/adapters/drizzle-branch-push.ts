@@ -9,9 +9,13 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
+import {
+  lockDraftBranchWorks,
+  runWithActiveWorkDrafts,
+} from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -31,7 +35,6 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -228,7 +231,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitDiscard(input) {
-      return runInDrizzleTransaction(db, () =>
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], () =>
           commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
         ),
@@ -245,6 +248,10 @@ export function createDrizzlePushCommitStore(
             await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
           }),
       );
+    },
+
+    async lockDraftWorks(branchIds) {
+      return lockDraftBranchWorks(db, branchIds);
     },
 
     async commitPushBatch(input) {
@@ -311,18 +318,8 @@ export function createDrizzleWorkPushPolicyStore(
   workProjection?: WorkProjectionMutation,
 ): WorkPushPolicyStore {
   return {
-    async updateWorkDraftPushPolicy(workId, policy) {
+    async setWorkWriteMode(workId, policy) {
       await runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .update(documentBranches)
-          .set({ pushPolicy: policy, updatedAt: new Date() })
-          .where(
-            and(
-              eq(documentBranches.workId, workId),
-              eq(documentBranches.kind, "work_draft"),
-              eq(documentBranches.status, "active"),
-            ),
-          );
         const [changed] = await currentDrizzleDb(db)
           .update(works)
           .set({

@@ -3,7 +3,7 @@
 ## Key invariants
 
 “Live” and “canonical” below mean the document supplied by this core's
-coordinator. A host may supply a branch rather than the published document.
+coordinator. A host may supply a branch rather than the live document.
 The memory-only runtime replica is distinct from that host-owned branch.
 
 - **Block identity and display address are different.** Canonical identity is the
@@ -33,8 +33,8 @@ The memory-only runtime replica is distinct from that host-owned branch.
 
 ### Destructive scope targeting and recovery
 
-`delete` is the structural block-removal command and requires an explicit `in`
-scope. `replace({ find, content: "" })` remains exact text-span deletion, while
+`remove` is the structural block-removal command and takes exactly one of `in`
+or a `#fragment` in the path; it never deletes the document. `replace({ find, content: "" })` remains exact text-span deletion, while
 an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
 confused with structural deletion.
 
@@ -120,16 +120,18 @@ going blind to a concurrent human edit.
   suffix but never rewrites the prefix it keeps. The tempting `\s+ → " "` cleanup
   reads as cosmetic and is not: find-all deletion legitimately leaves double
   spaces, and an agent retrying with what it was just shown then fails
-  deterministically (#383). Model-facing framing is a versioned JSON envelope:
-  groups carry `{ extent, relation, items: [{ hash, body }] }`, so each logical
-  block remains distinct without repeating shared semantics. Only full
-  document/changed/swept groups and prefix context groups exist. Concurrent
+  deterministically (#383). The typed result's groups carry
+  `{ extent, relation, items: [{ hash, body }] }`, so each logical block remains
+  distinct without repeating shared semantics; `renderAgentEditResult` renders
+  them to the text the model reads. Only full document/changed/swept groups and
+  prefix context/copied groups exist. Concurrent
   blocks and tombstones sit in `concurrent.runs`; placement, not another block
   relation, conveys their concurrent semantics.
-- **Tool results have one model representation.** Read, diff, mutation, undo,
-  redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
-  JSON-stringify that object; no provider receives the internal diagnostic
-  hashline stream or a parallel compatibility rendering.
+- **Tool results have one typed form and one rendering.** Read, mutation, undo,
+  redo, and write errors return a `meridian.agent-edit.v1` result.
+  `renderAgentEditResult` (`tool/result-text.ts`) is the only path from it to
+  the model's text: a status line, notes, then `hash|text` blocks. Hosts keep
+  the typed result beside the text and never parse the text back (D43).
 - **Convergence is not intent preservation.** Two edits to the same span can CRDT-merge at character level
   into garbled prose. Convergence does not guarantee intent preservation or that
   every concurrent word remains visible. The model is **told** via the echo,

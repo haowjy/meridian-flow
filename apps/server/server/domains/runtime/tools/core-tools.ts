@@ -10,65 +10,121 @@
  * of ContextPort or other app-layer adapter imports.
  */
 import {
+  type AgentEditResultCommand,
+  type AgentEditResultV1,
   agentEditResultCommand,
+  DocumentVersionSchema,
   modelResult,
-  WriteCommandSchema,
+  ReadToolInputSchema,
+  renderAgentEditResult,
+  WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
+import { askUserToolInputSchema } from "@meridian/contracts/components";
 import {
+  INVALID_WORK_NAME,
   INVALID_WORK_STATUS,
+  normalizeWorkGoal,
+  normalizeWorkName,
   normalizeWorkStatus,
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
 import { z } from "zod";
-import { searchDocumentText, writeDocumentText } from "./document-text.js";
-import { writeHistoryPreview } from "./history-previews.js";
+import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
+import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
+import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
+import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import { renderWorkResult } from "./work-result.js";
 
-const WorkSelectorSchema = z.object({ work: z.string().min(1).describe("Work slug.") });
+/** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
+const WorkRefSchema = z
+  .string()
+  .min(1)
+  .transform((raw, context) => {
+    const trimmed = raw.trim();
+    const slug = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+    if (!slug) {
+      context.addIssue({ code: "custom", message: 'must name a Work slug, e.g. "arc" or "@arc"' });
+      return z.NEVER;
+    }
+    return slug;
+  });
+
+const WorkNameSchema = z
+  .string()
+  .min(1)
+  .transform((raw, context) => {
+    const name = normalizeWorkName(raw);
+    if (name === INVALID_WORK_NAME) {
+      context.addIssue({ code: "custom", message: "must not be blank" });
+      return z.NEVER;
+    }
+    return name;
+  });
+
+const WorkGoalSchema = z.string().nullable().transform(normalizeWorkGoal);
+
+const WorkStatusSchema = z
+  .string()
+  .nullable()
+  .transform((raw, context) => {
+    const status = normalizeWorkStatus(raw);
+    if (status === INVALID_WORK_STATUS) {
+      context.addIssue({
+        code: "custom",
+        message: `must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
+      });
+      return z.NEVER;
+    }
+    return status;
+  });
+
+const WorkVerboseSchema = z
+  .boolean()
+  .describe("Add dates. Leave it off unless you need them.")
+  .optional();
+
+const WorkSelectorSchema = z.object({
+  work: WorkRefSchema.describe('Work slug, e.g. "arc" or "@arc".'),
+});
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
-    .object({ command: z.literal("list"), archived: z.boolean().optional() })
+    .object({
+      command: z.literal("list"),
+      archived: z.boolean().optional(),
+      verbose: WorkVerboseSchema,
+    })
     .strict()
     .describe("List Works: active, or archived when archived is true."),
-  WorkSelectorSchema.extend({ command: z.literal("show") })
+  WorkSelectorSchema.extend({ command: z.literal("show"), verbose: WorkVerboseSchema })
     .strict()
     .describe("Show one Work."),
   z
     .object({
       command: z.literal("create"),
-      name: z.string().min(1),
-      goal: z.string().optional(),
+      name: WorkNameSchema,
+      goal: WorkGoalSchema.describe("Omit, null or blank for no goal.").optional(),
     })
     .strict()
     .describe("Create a Work."),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
-    name: z.string().optional(),
-    goal: z.string().optional(),
-    status: z
-      .string()
-      .nullable()
-      .superRefine((value, context) => {
-        if (normalizeWorkStatus(value) === INVALID_WORK_STATUS) {
-          context.addIssue({
-            code: "custom",
-            message: `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
-          });
-        }
-      })
-      .optional()
-      .describe(
-        "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current; null clears it.",
-      ),
+    name: WorkNameSchema.optional(),
+    goal: WorkGoalSchema.describe("Omit to keep; null or blank clears it.").optional(),
+    status: WorkStatusSchema.describe(
+      "Where the Work stands in one to three words, e.g. Drafting, Blocked, Done. Set it when you start in a Work without one and keep it current. Omit to keep; null or blank clears it.",
+    ).optional(),
   })
     .strict()
     .describe("Change a Work's name, goal or status."),
   WorkSelectorSchema.extend({ command: z.literal("archive") })
     .strict()
-    .describe("Archive a Work. Its files and goal become read-only; its chats continue."),
+    .describe(
+      "Archive a Work. Its scratch://, draft and goal become read-only; its chats continue.",
+    ),
   WorkSelectorSchema.extend({ command: z.literal("unarchive") })
     .strict()
     .describe("Unarchive a Work so it can be changed again."),
@@ -78,23 +134,53 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("switch"),
-      target: z.string().min(1).nullable().optional().describe("Work slug; omit for No Work."),
+      work: WorkRefSchema.nullable()
+        .optional()
+        .describe('Work slug, e.g. "arc" or "@arc"; omit or null for No Work.'),
     })
     .strict()
-    .describe("Move this conversation to another Work."),
+    .describe("Move this conversation to another Work. Needs the user's approval."),
 ]);
 
-export type WorkCommand = z.infer<typeof WorkCommandSchema>;
-export type WorkCommandCategory = "read" | "mutate" | "binding";
+export type WorkCommand = z.output<typeof WorkCommandSchema>;
 
-export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
-  if (command.command === "list" || command.command === "show") return "read";
-  if (command.command === "switch") return "binding";
-  return "mutate";
-}
+const LsToolInputSchema = z
+  .object({
+    path: z
+      .string()
+      .min(1)
+      .describe("Folder path or context URI; omit to list the roots.")
+      .optional(),
+    verbose: z
+      .boolean()
+      .describe(
+        "Add each file's size and when it was last edited. Leave it off unless you need them.",
+      )
+      .optional(),
+    version: DocumentVersionSchema.optional(),
+  })
+  .strict();
+export type LsToolInput = z.output<typeof LsToolInputSchema>;
+
+const SearchToolInputSchema = z
+  .object({
+    pattern: z.string().min(1).describe("Literal text, not a regex."),
+    scope: z
+      .string()
+      .min(1)
+      .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
+      .optional(),
+    verbose: z
+      .boolean()
+      .describe("Show each matching block in full. Leave it off unless you need it.")
+      .optional(),
+    version: DocumentVersionSchema.optional(),
+  })
+  .strict();
+export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -105,71 +191,27 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
  */
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
-function writeToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
+/**
+ * The document tools' handlers and error formatter return agent-edit results,
+ * except a `skills://` read, whose text is already the model's (D52).
+ */
+/** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */
+function renderDocumentResult(tool: "read" | "write") {
+  return (result: unknown): string => {
+    if (typeof result === "string") return result;
+    if (isInvalidArgumentsResult(result)) return renderInvalidArguments(tool, result.issues);
+    return renderAgentEditResult(result as AgentEditResultV1);
+  };
 }
 
-function workToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(modelToolSchema(WorkCommandSchema));
-}
-
-function formatWriteExecutionError(error: ToolExecutionError) {
-  return modelResult({
-    command: agentEditResultCommand(error.arguments),
-    status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
-    payload: { message: error.message },
-  });
-}
-
-function packageSchemaToModelSchema(schema: unknown): Record<string, unknown> {
-  const transformed = renameSchemaProperty(schema, "file", "path") as Record<string, unknown>;
-  stripSchemaProperty(transformed, "documentId");
-  stripSchemaProperty(transformed, "tool_use_id");
-  // All gateway adapters forward this object as the provider JSON Schema:
-  // OpenAI Responses and OpenAI-compatible chat accept arbitrary schema records,
-  // while Anthropic's SDK type requires an object root and allows composition
-  // keywords. Keep the discriminated oneOf branches strict; do not seal the
-  // union wrapper itself, because that makes every branch unsatisfiable.
-  transformed.type = "object";
-  return transformed;
-}
-
-function renameSchemaProperty(schema: unknown, from: string, to: string): unknown {
-  if (Array.isArray(schema)) return schema.map((item) => renameSchemaProperty(item, from, to));
-  if (!schema || typeof schema !== "object") return schema;
-  const record = schema as Record<string, unknown>;
-  for (const [key, value] of Object.entries(record)) {
-    record[key] = renameSchemaProperty(value, from, to);
-  }
-  const properties = record.properties;
-  if (properties && typeof properties === "object" && from in properties) {
-    const propertyRecord = properties as Record<string, unknown>;
-    propertyRecord[to] = propertyRecord[from];
-    delete propertyRecord[from];
-  }
-  const required = record.required;
-  if (Array.isArray(required)) {
-    record.required = required.map((value) => (value === from ? to : value));
-  }
-  return record;
-}
-
-function stripSchemaProperty(schema: unknown, property: string): void {
-  if (Array.isArray(schema)) {
-    for (const item of schema) stripSchemaProperty(item, property);
-    return;
-  }
-  if (!schema || typeof schema !== "object") return;
-  const record = schema as Record<string, unknown>;
-  const properties = record.properties;
-  if (properties && typeof properties === "object") {
-    delete (properties as Record<string, unknown>)[property];
-  }
-  const required = record.required;
-  if (Array.isArray(required)) {
-    record.required = required.filter((value) => value !== property);
-  }
-  for (const value of Object.values(record)) stripSchemaProperty(value, property);
+/** Executor-owned failures in the document tools' own result protocol. */
+function documentExecutionError(command: (error: ToolExecutionError) => AgentEditResultCommand) {
+  return (error: ToolExecutionError) =>
+    modelResult({
+      command: command(error),
+      status: error.kind === "arguments_parse" ? "invalid_write" : "internal_error",
+      payload: { message: error.message },
+    });
 }
 
 export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
@@ -178,17 +220,41 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "write",
+        name: "read",
         description:
-          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the user.",
-        inputSchema: writeToolInputSchema(),
+          "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
+        inputSchema: modelToolSchema(ReadToolInputSchema),
       },
-      execution: { type: "server", handler: handlers.write },
-      documentText: writeDocumentText,
-      historyPreview: writeHistoryPreview,
+      input: ReadToolInputSchema,
+      execution: { type: "server", handler: handlers.read },
+      documentText: readDocumentText,
+      historySummary: documentHistorySummary,
+      historyKind: "routine",
+      // Reads run in call order with writes, so a read after a write sees it.
       sequential: true,
       timeoutMs: 30_000,
-      formatExecutionError: formatWriteExecutionError,
+      formatExecutionError: documentExecutionError(() => "read"),
+      renderResult: renderDocumentResult("read"),
+    },
+    {
+      source: "core",
+      definition: {
+        type: "function",
+        name: "write",
+        description:
+          "Change documents. In a draft-mode Work your changes go to the draft, except `scratch://`, which is always edited directly.",
+        inputSchema: modelToolSchema(WriteToolInputSchema),
+      },
+      input: WriteToolInputSchema,
+      execution: { type: "server", handler: handlers.write },
+      documentText: writeDocumentText,
+      historySummary: documentHistorySummary,
+      sequential: true,
+      timeoutMs: 30_000,
+      formatExecutionError: documentExecutionError((error) =>
+        agentEditResultCommand(error.arguments),
+      ),
+      renderResult: renderDocumentResult("write"),
     },
     {
       source: "core",
@@ -196,11 +262,16 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "work",
         description: "Manage the project's Works and which Work this conversation is in.",
-        inputSchema: workToolInputSchema(),
+        inputSchema: modelToolSchema(WorkCommandSchema),
       },
+      input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
+      historySummary: workHistorySummary,
+      historyKind: (input) =>
+        input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
+      renderResult: renderWorkResult,
     },
     {
       source: "core",
@@ -208,20 +279,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ls",
         description: "List files and folders.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Folder path or context URI; omit to list the roots.",
-            },
-          },
-          required: [],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(LsToolInputSchema),
       },
+      input: LsToolInputSchema,
       execution: { type: "server", handler: handlers.ls },
+      historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderLsResult,
     },
     {
       source: "core",
@@ -229,26 +293,14 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description: "Search document text across all context files.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            pattern: {
-              type: "string",
-              description: "Literal text, not a regex.",
-            },
-            scope: {
-              type: "string",
-              description: "URI prefix to search under, e.g. kb:// or kb://protocols.",
-            },
-          },
-          required: ["pattern"],
-          additionalProperties: false,
-        },
+        inputSchema: modelToolSchema(SearchToolInputSchema),
       },
+      input: SearchToolInputSchema,
       execution: { type: "server", handler: handlers.search },
       documentText: searchDocumentText,
-      historyPreview: (input) => String(input.pattern ?? ""),
+      historyKind: "routine",
       timeoutMs: 30_000,
+      renderResult: renderSearchResult,
     },
     {
       source: "core",
@@ -256,8 +308,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ask_user",
         description: "Ask the user a question and wait for the answer.",
-        inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
+        inputSchema: modelToolSchema(askUserToolInputSchema),
       },
+      input: askUserToolInputSchema,
       execution: { type: "server", handler: handlers.ask_user },
       capability: "interrupt",
     },

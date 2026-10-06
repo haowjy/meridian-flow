@@ -28,6 +28,8 @@ export type WorkDraftLookup = {
 
 export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
+  /** Drops debounced pulls that haven't started; in-flight pulls finish. */
+  cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
     branchGeneration: number;
@@ -89,6 +91,26 @@ export function createBranchPullService(input: {
     return doc;
   }
 
+  async function pullLive(documentId: DocumentId): Promise<void> {
+    // Most documents have no Work draft; skip the snapshot (a room open and
+    // release) for them. The root transaction re-lists: a branch can close in
+    // between, and one opened since waits for the next pull.
+    if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
+    // Snapshot before the root transaction opens: the snapshot takes its own
+    // connection, and taking it while holding the root's lets concurrent pulls
+    // hold every pooled connection and wait on each other forever.
+    const liveDoc = await liveSnapshot(documentId);
+    try {
+      await input.rootTransaction(async () => {
+        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+        }
+      });
+    } finally {
+      liveDoc.destroy();
+    }
+  }
+
   async function run(documentId: DocumentId): Promise<void> {
     const current = timers.get(documentId);
     if (current?.running) {
@@ -106,17 +128,7 @@ export function createBranchPullService(input: {
     }
     const entry = current ?? {};
     const running = outsideCallerTransactions(() =>
-      input
-        .rootTransaction(async () => {
-          const liveDoc = await liveSnapshot(documentId);
-          try {
-            for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-              await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-            }
-          } finally {
-            liveDoc.destroy();
-          }
-        })
+      pullLive(documentId)
         .then(() => {
           // A queued snapshot may include newer edits; its retries still need these timers.
           if (entry.queued) return;
@@ -157,6 +169,16 @@ export function createBranchPullService(input: {
         backgroundPull(documentId);
       }, maxDebounceMs);
       timers.set(documentId, entry);
+    },
+
+    cancelScheduledPulls() {
+      for (const [documentId, entry] of timers) {
+        if (entry.debounce) clearTimeout(entry.debounce);
+        if (entry.max) clearTimeout(entry.max);
+        entry.debounce = undefined;
+        entry.max = undefined;
+        if (!entry.running && !entry.queued) timers.delete(documentId);
+      }
     },
 
     flushLivePull(documentId) {

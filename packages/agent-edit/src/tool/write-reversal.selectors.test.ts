@@ -34,20 +34,20 @@ describe("write reversal selectors", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha sword."]);
 
     const redo = await ctx.core.write({ command: "redo", file: "chapter.md" }, context);
-    expect(outcomeText(redo)).toContain("status: reconciled");
+    expect(outcomeText(redo)).toContain("status: reversed");
     expect(scenario.blockTexts()).toEqual(["Alpha sword.", "Beta arrives."]);
   });
 
-  it("targets write ranges by numeric ordinal past w10", async () => {
+  it("undoes the range from since to to, by numeric ordinal past w10", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.appendBlocks(Array.from({ length: 11 }, (_, index) => `Block ${index + 1}.`));
 
     const undo = await scenario.ctx.core.write(
-      { command: "undo", file: "chapter.md", from: "w2", to: "w10" },
+      { command: "undo", file: "chapter.md", since: "w2", to: "w10" },
       context,
     );
 
-    expect(outcomeText(undo)).toContain("undo: 9 edit(s)");
+    expect(outcomeText(undo)).toContain("undo: w2, w3, w4, w5, w6, w7, w8, w9, w10");
     expect(scenario.blockTexts()).toEqual(["Base.", "Block 1.", "Block 11."]);
     expect(await scenario.mutationsFor("w10")).toMatchObject([{ status: "reversed" }]);
     expect(await scenario.mutationsFor("w11")).toMatchObject([{ status: "active" }]);
@@ -63,5 +63,28 @@ describe("write reversal selectors", () => {
     await all.appendBlocks(["One.", "Two.", "Three."]);
     await all.ctx.core.write({ command: "undo", file: "chapter.md", all: true }, context);
     expect(all.blockTexts()).toEqual(["Base."]);
+  });
+
+  /** Three independent writes, each undone on its own (w3, then w2, then w1). */
+  async function threeSeparatelyUndone(): Promise<ReversalScenario> {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.appendBlocks(["One.", "Two.", "Three."]);
+    for (let index = 0; index < 3; index += 1) {
+      await scenario.ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+    }
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+    return scenario;
+  }
+
+  it("redo last 2 redoes the two most recently undone handles", async () => {
+    const scenario = await threeSeparatelyUndone();
+
+    const redo = await scenario.ctx.core.write(
+      { command: "redo", file: "chapter.md", last: 2 },
+      context,
+    );
+
+    expect(outcomeText(redo)).toContain("redo: w1, w2");
+    expect(scenario.blockTexts()).toEqual(["Base.", "One.", "Two."]);
   });
 });

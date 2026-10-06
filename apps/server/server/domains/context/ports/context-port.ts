@@ -20,6 +20,8 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
+import type { WorkRef } from "../../file-policy/index.js";
+import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /**
  * Registered context URI schemes.
@@ -29,6 +31,20 @@ import type { Result } from "../../../shared/result.js";
  */
 export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
+
+/**
+ * How one thread reads every source through its port. Reads follow the
+ * version that thread's writes change, per document (D14, D20), or the
+ * live text, without draft changes, when `version` is `live`.
+ */
+export interface ThreadContextView {
+  threadId: string;
+  /** The reply in progress, whose own staged writes reads still see. */
+  responseId?: string | null;
+  /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
+  draftWork: WorkRef | null;
+  version?: "draft" | "live";
+}
 
 /** Schemes provisioned at project scope in the unified context port. */
 export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
@@ -98,6 +114,8 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
+  /** Words in the projection; set only when {@link ContextListOptions.wordCounts} asks. */
+  wordCount?: number;
 };
 
 export type BinaryFileEntry = BaseListEntry & {
@@ -112,6 +130,17 @@ export type DirectoryEntry = BaseListEntry & { kind: "directory" };
 export type ContextFileEntry = EditableFileEntry | BinaryFileEntry;
 export type ContextListEntry = DirectoryEntry | ContextFileEntry;
 export type FileEntry = ContextListEntry;
+
+/** A folder's entries and the folder's canonical URI; `uri` is null for the root listing. */
+export interface ContextListing {
+  uri: string | null;
+  entries: ContextListEntry[];
+}
+
+export interface ContextListOptions {
+  /** Count each text document's words from its projection (no extra query). */
+  wordCounts?: boolean;
+}
 
 interface BaseFileRef {
   uri: string;
@@ -149,8 +178,8 @@ export interface SearchMatch {
   /**
    * Hash of the block the excerpt came from, so a caller can navigate back to
    * the passage rather than to the top of the file. Present only for schemes
-   * whose documents are serialized as hashlines (manuscript); its absence
-   * elsewhere is the contract, not an error.
+   * whose documents are serialized as hashlines (drafted sources read
+   * through a thread view); its absence elsewhere is the contract, not an error.
    */
   blockHash?: string;
 }
@@ -188,6 +217,8 @@ export interface ContextWriteOptions {
    * the live Y.Doc before committed content is applied.
    */
   deferDocumentSync?: boolean;
+  /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
+  metadata?: DocumentCreationMetadata;
 }
 
 export interface ContextLocationOptions extends ContextWriteOptions {
@@ -290,7 +321,7 @@ export interface ContextPort {
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
-  list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;
+  list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
 
   /**
    * Create an empty directory at the URI, including any missing ancestors.

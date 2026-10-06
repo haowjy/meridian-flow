@@ -138,7 +138,12 @@ describe("resolveWrite", () => {
     });
     expect(resolve(doc, { command: "replace", content: "x", in: "deadbeef" })).toMatchObject({
       ok: false,
-      error: { code: "not_found", message: 'Block hash "deadbeef" was not found' },
+      error: {
+        code: "not_found",
+        message: expect.stringContaining(
+          'Block hash "deadbeef" was not found in the version your writes change',
+        ),
+      },
     });
     expect(
       resolve(doc, {
@@ -155,12 +160,17 @@ describe("resolveWrite", () => {
     expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
     for (const params of [
       { command: "replace" as const, content: "Replacement", in: "#cafe" },
-      { command: "delete" as const, in: "#cafe" },
+      { command: "remove" as const, in: "#cafe" },
       { command: "replace" as const, content: "Replacement", find: "Scene", in: "#cafe" },
     ]) {
       expect(resolve(doc, params)).toMatchObject({
         ok: false,
-        error: { code: "not_found", message: 'Block hash "cafe" was not found' },
+        error: {
+          code: "not_found",
+          message: expect.stringContaining(
+            'Block hash "cafe" was not found in the version your writes change',
+          ),
+        },
       });
     }
   });
@@ -202,25 +212,28 @@ describe("resolveWrite", () => {
     expect(edits[0]).toMatchObject({ kind: "text", block: beta, newText: "Gamma" });
   });
 
-  it("keeps delete on its single required in scope", () => {
+  it("removes the blocks selected by `in` or a path fragment", () => {
     const doc = createDoc("Alpha\n\nBeta");
     const [, beta] = model.getBlocks(doc);
     const hash = model.getBlockId(beta);
-
-    expect(
+    const address = (fragment?: string) => ({
+      documentId: "123e4567-e89b-12d3-a456-426614174000",
+      filePath: "chapter.md",
+      ...(fragment === undefined ? {} : { fragment }),
+    });
+    const remove = (fragment: string | undefined, scope: string | undefined) =>
       resolveWrite(
         { doc, model, codec },
         {
-          documentAddress: {
-            documentId: "123e4567-e89b-12d3-a456-426614174000",
-            filePath: "chapter.md",
-            fragment: hash,
-          },
-          command: "delete",
-          in: hash,
+          documentAddress: address(fragment),
+          command: "remove",
+          ...(scope === undefined ? {} : { in: scope }),
         },
-      ),
-    ).toMatchObject({ ok: false, error: { code: "invalid_write" } });
+      );
+
+    for (const removed of [remove(hash, undefined), remove(undefined, hash)]) {
+      expect(expectOk(removed).map((edit) => edit.kind)).toEqual(["delete"]);
+    }
   });
 
   it("returns an actionable ambiguous error for insert block anchors", () => {

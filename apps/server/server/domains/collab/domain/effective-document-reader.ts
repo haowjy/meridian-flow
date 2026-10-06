@@ -14,7 +14,6 @@ import type { BranchPeerShadowAccess, SyncError } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
-import type { AutoBranchPushPort } from "./branch-push-contracts.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -24,36 +23,48 @@ type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
   responseId?: string | null;
+  destination: "live" | "draft";
 };
 
 export function createEffectiveDocumentReader(input: {
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
   branchPulls: BranchPullService;
-  branchPush: AutoBranchPushPort;
   liveCoordinator: DocumentCoordinator;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "readVersionedMarkdown" | "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  deferUntilCommit?(callback: () => void | Promise<void>): boolean;
 }): BranchPeerShadowAccess {
+  /**
+   * Whether this reply's staged writes to the document belong to the version
+   * being read. A reply that drafted a document must not show those writes in
+   * a live read, and the reverse.
+   */
+  function stagedInVersion(command: EffectiveReadInput): command is EffectiveReadInput & {
+    responseId: string;
+  } {
+    if (!command.responseId) return false;
+    const staged = input.agentEdit.responseDestination(command.responseId, command.documentId);
+    return staged === undefined || staged.kind === command.destination;
+  }
+
   function readWithStagedResponseOverlay<T>(
     doc: Y.Doc,
-    command: { documentId: DocumentId; responseId?: string | null },
+    command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<T> {
-    if (!command.responseId) return read(toDocHandle(doc));
+    if (!stagedInVersion(command)) return read(toDocHandle(doc));
     return input.agentEdit
       .withResponseDocument(command.responseId, command.documentId, toDocHandle(doc), read)
       .then((staged) => staged ?? read(toDocHandle(doc)));
   }
 
   function readStagedResponseOnly<T>(
-    command: { documentId: DocumentId; responseId?: string | null },
+    command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<T> | null {
-    if (!command.responseId) return null;
+    if (!stagedInVersion(command)) return null;
     if (!input.agentEdit.hasResponseDocument(command.responseId, command.documentId)) return null;
     return input.agentEdit
       .withResponseDocument(command.responseId, command.documentId, null, read)
@@ -70,17 +81,32 @@ export function createEffectiveDocumentReader(input: {
     read: (doc: DocHandle) => Promise<T>,
     fallback: () => Promise<Result<T, E>>,
   ): Promise<Result<T, E>> {
-    if (command.threadId) {
-      const isStagedOnlyCreatedDocument = Boolean(
-        command.responseId &&
-          input.agentEdit
-            .responseDocuments(command.responseId, command.threadId)
-            .created.includes(command.documentId),
-      );
-      if (isStagedOnlyCreatedDocument) {
-        const stagedOnly = readStagedResponseOnly(command, read);
-        if (stagedOnly !== null) return Ok(await stagedOnly);
+    const isStagedOnlyCreatedDocument = Boolean(
+      command.responseId &&
+        input.agentEdit
+          .responseDocuments(command.responseId, command.threadId ?? undefined)
+          .created.includes(command.documentId),
+    );
+    if (isStagedOnlyCreatedDocument) {
+      const stagedOnly = readStagedResponseOnly(command, read);
+      if (stagedOnly !== null) return Ok(await stagedOnly);
+    }
+    if (command.destination === "live") {
+      // Live reads ignore any Work draft, kept or not (D40), but still see this
+      // reply's own staged writes.
+      if (
+        stagedInVersion(command) &&
+        input.agentEdit.hasResponseDocument(command.responseId, command.documentId)
+      ) {
+        return Ok(
+          await input.liveCoordinator.withDocument(command.documentId, (doc) =>
+            readWithStagedResponseOverlay(doc, command, read),
+          ),
+        );
       }
+      return fallback();
+    }
+    if (command.threadId) {
       try {
         const existingPeer = await input.branches.resolveThreadBranch(
           command.documentId,
@@ -130,20 +156,6 @@ export function createEffectiveDocumentReader(input: {
       );
     } finally {
       branch.doc.destroy();
-    }
-  }
-
-  async function pushManifestMutation(
-    mutation: { workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined,
-  ): Promise<void> {
-    if (mutation?.workDraftBranchId) {
-      const workDraftBranchId = mutation.workDraftBranchId;
-      const push = async () => {
-        await input.branchPush.pushAutoBranchAfterThreadPeerWrite({
-          workDraftBranchId,
-        });
-      };
-      if (!input.deferUntilCommit?.(push)) await push();
     }
   }
 
@@ -230,17 +242,13 @@ export function createEffectiveDocumentReader(input: {
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
     ) {
-      await pushManifestMutation(
-        await input.branches.recordManifestDocumentCreated(documentId, view),
-      );
+      await input.branches.recordManifestDocumentCreated(documentId, view);
     },
     async recordManifestDocumentDeleted(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
     ) {
-      await pushManifestMutation(
-        await input.branches.recordManifestDocumentDeleted(documentId, view),
-      );
+      await input.branches.recordManifestDocumentDeleted(documentId, view);
     },
   };
 }

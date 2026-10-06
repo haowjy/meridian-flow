@@ -22,6 +22,17 @@ It reports settled authority, not a response's staged overlay.
 
 Search results carry `documentId` and `revision` from the document scanned.
 Tool wiring moves these fields to result metadata, not model-facing search JSON.
+Each result also says which `version` it came from, `draft` or `live`.
+
+**Thread views (D14, D20).** A thread's port reads every source through its
+`ThreadContextView`: each document in the version that thread's writes change
+(`destination` from `domains/file-policy`), so drafted sources read the Work
+draft in draft mode and everything else reads live. Drafted sources this
+project stores (`isDrafted`, minus `user://`, which lives in the personal
+project's manifest) also list through the project manifest, so a draft-only
+create appears in `ls` and `search`. `version: "live"` on the view reads live text and the live
+manifest, and never touches a draft. `read`, `search` and `ls` build their port
+with the version the model named.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 
@@ -181,7 +192,8 @@ namespace. Project/Work restore changes availability, not file locations.
 
 The Context command transaction receives the complete resolved scheme/Work set.
 Personal User scopes first share the personal-project provisioning owner lock.
-Production then acquires sorted Work lifecycle locks and sorted logical namespace
+Production then acquires sorted Work lifecycle locks (through `lockSeamWorks`,
+which also confirms the caller's bound edit grants) and sorted logical namespace
 locks **before** source provisioning, preflight, or catalog publication. Logical
 keys exist before lazy source rows; direct Drizzle stores derive the same keys
 from backing ownership. Do not enter a single-source transaction and then issue
@@ -240,8 +252,8 @@ currently available to the request owner in the requested project.
 - A `SearchResult` reports the first matching passages of a file (capped by the
   adapter) plus `matchCount`, the occurrences of the query in that whole file,
   including any past the cap. Each passage carries the block's prose as
-  `excerpt` and, where documents serialize as hashlines (manuscript effective
-  views), the `blockHash` a caller navigates by; that absence elsewhere is the
+  `excerpt` and, where documents serialize as hashlines (reads through a
+  thread view), the `blockHash` a caller navigates by; that absence elsewhere is the
   contract. Hashline parsing lives once, in `adapters/context-fs/match.ts`,
   which scans one entry per block, matches against the body rather than the
   hash, and sends addressing and prose as separate values so nothing
@@ -293,8 +305,7 @@ currently available to the request owner in the requested project.
   checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
   manifest-aware view consistently, and observations fail closed when membership
   authority is unavailable. New non-empty content is parsed into a detached
-  initialize-only checkpoint; work/thread manifest auto-push also waits for the
-  aggregate commit.
+  initialize-only checkpoint.
   An older row missing membership is repaired on its next tracked-document touch;
   repair seeds absent Yjs state from the row projection and preserves existing
   canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project

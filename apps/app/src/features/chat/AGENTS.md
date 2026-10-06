@@ -55,14 +55,14 @@ combine launch, live current tool, and expandable result. `thread_report` is
 always a folded process step ("Read report from ..."), in either mode, because
 the card is the one surface per run: the step expands to the report, and its
 agent name links to the launch card (a `subagentBlock: "card"` reveal).
-Background `subagent_update` notices render as quiet rows ("<name>
-<description> finished"); adjacent completions merge into one disclosure.
+Background `subagent_update` notices render as quiet rows ("<agent>
+<run name> finished"); adjacent completions merge into one disclosure.
 Notice text is never repeated there.
 
 Every subagent surface (launch card, running panel, Subagents pop-up, finished
 row, report step, path row) builds on the normalized `subagent/SubagentRun`
 and the shared `subagent/SubagentRow` anatomy. The mark leads, then the agent
-name (generic runs read "Subagent"), then the description in muted text,
+name (generic runs read "Subagent"), then the run's `name` in muted text,
 separated only by spacing; never a raw ref. **Only the chat icon
 (`OpenSubagentChatButton`, labeled Open "<agent>") opens a child chat**, through
 the project chat navigation route, replacing the current chat; chat tabs are
@@ -71,8 +71,8 @@ within the current chat; it never switches threads. A pop-up row jumps through
 a block-level conversation reveal to the child's latest point: the finished
 row once it completed, else its launch card.
 
-Server activity (snapshot plus `meridian.subagent.activity`) is still the
-viewed thread's whole subtree. The shared `useThreadActivity` store owns the
+Server activity (snapshot plus `meridian.subagent.activity`) is the viewed
+thread's direct children (see `activity-row-anatomy.md`). The shared `useThreadActivity` store owns the
 cached live view and one transport subscription per thread; the running panel
 shows direct children running in the background, and the Subagents pop-up
 lists every direct child.
