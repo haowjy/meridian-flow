@@ -21,10 +21,18 @@ Apply, the committed receipt remains visible across reload.
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
-is not counted as an edit and offers no Undo. Undoing a text copy reverses its
-staged create and leaves an empty document, the same as undoing any create
-(document delete is not in the tool surface); the receipt shows it as undone
-and the document stays openable.
+is not counted as an edit and offers no Undo.
+
+The model's moves and deletes ride the same lineage read as
+`namespaceChanges`, each `active` or `reversed`. They count toward the
+header, which then reads "Changed" rather than "Edited", list as lines in the
+expanded receipt, and give a move-only or delete-only turn its receipt and
+whole-turn Undo. Their timeline rows (`NamespaceChangeRow`) read the same
+lineage, so a model `undo`/`redo`, the turn's Undo and the writer's Restore
+all reach the row one way: the lineage refetches. A model `undo`/`redo` result
+on the thread stream invalidates every turn's lineage, since it can reverse
+any earlier turn. Restore sits on a delete row while the delete is applied;
+it marks the lineage reversed at once and puts a refusal back on the row.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `branch-active`, reversed, dependent, or expired) decides whether

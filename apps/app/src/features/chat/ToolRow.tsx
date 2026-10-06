@@ -23,16 +23,19 @@ import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
-import type { WriteMode } from "./tool-command";
+import { NamespaceChangeRow } from "./NamespaceChangeRow";
+import { toolCommand, type WriteMode } from "./tool-command";
 import { rendererFor, toolRowFailed } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
   tool: ToolView;
   writeMode?: WriteMode;
+  /** The thread the turn belongs to; a finished move or delete reads its turn's lineage. */
+  threadId?: string;
 };
 
-function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
+function ToolRowComponent({ tool, writeMode = "direct", threadId }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : toolRowFailed(tool) ? "error" : "done";
@@ -44,6 +47,11 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
     [renderer, tool, writeMode],
   );
   if (!isToolViewVisible(tool)) return null;
+  // A finished move or delete may since have been put back, so its row reads
+  // the turn's lineage rather than the tool result alone.
+  if (threadId && tool.status === "complete" && !tool.isError && isNamespaceCommand(tool)) {
+    return <NamespaceChangeRow tool={tool} threadId={threadId} />;
+  }
 
   return (
     <ActivityRow
@@ -53,6 +61,11 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
       expand={presentation.expand}
     />
   );
+}
+
+function isNamespaceCommand(tool: ToolView): boolean {
+  const command = toolCommand(tool);
+  return command === "move" || command === "delete";
 }
 
 export const ToolRow = memo(ToolRowComponent);

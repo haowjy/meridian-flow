@@ -11,12 +11,19 @@ export type DocumentNameProps = {
   insideDoor?: boolean;
   /** `name` reads as prose mid-sentence ("Read ⟨Chapter 3⟩"). */
   label?: "name" | "open";
+  /** The name as the row needs it, when the title alone won't do (a move's new folder). */
+  text?: string;
 };
 
-export function DocumentName({ path, insideDoor = false, label = "name" }: DocumentNameProps) {
+export function DocumentName({
+  path,
+  insideDoor = false,
+  label = "name",
+  text,
+}: DocumentNameProps) {
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();
-  const title = documentDisplayName(path);
+  const title = text ?? documentDisplayName(path);
 
   // Bare paths (`chapter.md`) are what `write` input carries most of the time;
   // the route predicate requires a scheme, so normalize before asking.

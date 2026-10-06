@@ -6,6 +6,7 @@ import {
   isProviderDeclined,
   isTerminalTurnStatus,
   type Turn,
+  type TurnNamespaceChangeItem,
 } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
@@ -137,6 +138,7 @@ function AssistantTurnComponent({
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
   );
+  const namespaceChanges = liveLineage.namespaceChanges ?? NO_NAMESPACE_CHANGES;
   // Work mutations leave no document lineage; their receipts ride the turn's
   // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
   // Gated on settlement like document lineage: a receipt is a record of a
@@ -174,13 +176,19 @@ function AssistantTurnComponent({
           </div>
         ) : null}
 
-        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+        {hasTurnEditsReceiptContent(
+          liveLineageDocuments,
+          changeTrail,
+          workReceipts,
+          namespaceChanges,
+        ) ? (
           <TurnEditsReceipt
             threadId={resolvedThreadId}
             turn={turn}
             documents={liveLineageDocuments}
             receipt={liveLineage.receipt}
             workReceipts={workReceipts}
+            namespaceChanges={namespaceChanges}
             changeTrail={changeTrail}
             navigateToChange={navigateToChange}
           />
@@ -249,6 +257,8 @@ function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft
   }
   return [...byUri.values()];
 }
+
+const NO_NAMESPACE_CHANGES: readonly TurnNamespaceChangeItem[] = [];
 
 const TurnItemView = memo(function TurnItemView({
   item,
@@ -415,6 +425,7 @@ const DeliverySegments = memo(function DeliverySegments({
               key={blockRenderKey(segment.tool.keyBlock)}
               tool={segment.tool}
               writeMode={writeMode}
+              threadId={threadId}
             />,
           ];
         }
@@ -423,7 +434,12 @@ const DeliverySegments = memo(function DeliverySegments({
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
           return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+            <ToolRow
+              key={blockRenderKey(tool.keyBlock)}
+              tool={tool}
+              writeMode={writeMode}
+              threadId={threadId}
+            />
           ));
         }
         return [

@@ -24,7 +24,7 @@ import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { sourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -225,19 +225,32 @@ function documentFailureStatus(tool: ToolView): string | null {
 }
 
 function copySource(tool: ToolView): string | null {
-  const source = copySourcePath(inputObject(tool));
+  const source = sourcePath(inputObject(tool));
   return source ? documentDisplayName(source) : null;
 }
 
 function copyNotFoundCopy(tool: ToolView, source: string, destination: string | null): string {
-  if (stringInput(inputObject(tool), "command") === "copy") return t`Couldn't find ${source}.`;
+  // A whole-document copy or a move reads only its source; a block copy also
+  // needs the document it writes into.
+  const command = stringInput(inputObject(tool), "command");
+  if (command === "copy" || command === "move") return t`Couldn't find ${source}.`;
   return destination ? t`Couldn't find ${source} or ${destination}.` : t`Couldn't find ${source}.`;
 }
 
 function documentFailureDocumentName(tool: ToolView): string | null {
-  const path = asString(inputObject(tool).path);
+  const path = subjectPath(tool);
   if (!path) return null;
   return documentDisplayName(path);
+}
+
+/**
+ * The document the call acts on. A move's `path` is where the document goes,
+ * so the document itself is its `from`.
+ */
+function subjectPath(tool: ToolView): string | undefined {
+  const input = inputObject(tool);
+  if (stringInput(input, "command") === "move") return sourcePath(input);
+  return asString(input.path);
 }
 
 /**
@@ -303,7 +316,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
 
 function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
   const writeMode = context?.writeMode ?? "direct";
-  const path = asString(inputObject(tool).path);
+  const path = subjectPath(tool);
   const descriptor = descriptorFor(tool);
 
   if (isRereadPause(tool)) {
@@ -319,8 +332,11 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
   // A partial call has no settled path yet, so the row names no document —
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
-  if (!path) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
-  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
+  // The phrase's parameter names `path`: what was written, or where a copy or
+  // move landed.
+  const target = asString(inputObject(tool).path);
+  if (!target) return descriptor.pathlessTitle?.(writeMode) ?? <PhraseTitle phrase={phrase} />;
+  return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={target} />} />;
 }
 
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {

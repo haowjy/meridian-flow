@@ -15,6 +15,7 @@ import {
   reconcileTrailShells,
 } from "@/client/change-trails";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   convergeThreadWorkBinding,
   readStableThreadWorkBinding,
@@ -81,6 +82,22 @@ function decodeWorkReceipt(event: { type: string; metadata?: unknown }) {
   const metadata = event.metadata;
   if (!metadata || typeof metadata !== "object") return null;
   return parseWorkReceipt((metadata as Record<string, unknown>).workReceipt);
+}
+
+/**
+ * A model `undo` or `redo` that put something back. It can reverse a write
+ * from any earlier turn, so every turn's lineage (its receipt control, and
+ * whether its moves and deletes still stand) is stale once it lands.
+ */
+function isWriteReversal(event: { type: string; result?: unknown }): boolean {
+  if (event.type !== EventType.TOOL_CALL_RESULT) return false;
+  const result = event.result;
+  if (!result || typeof result !== "object") return false;
+  const { command, status } = result as Record<string, unknown>;
+  return (
+    (command === "undo" || command === "redo") &&
+    (status === "reversed" || status === "reconciled" || status === "partial")
+  );
 }
 
 export function useThreadDurableProjections({
@@ -203,6 +220,11 @@ export function useThreadDurableProjections({
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
         if (accountSignal?.aborted) return;
+        if (isWriteReversal(event)) {
+          void queryClient.invalidateQueries({
+            queryKey: threadQueryKeys.liveLineageRoot(threadId),
+          });
+        }
         const receipt = decodeWorkReceipt(event);
         if (projectId && receipt?.changed) {
           convergeWorkProjection(queryClient, {

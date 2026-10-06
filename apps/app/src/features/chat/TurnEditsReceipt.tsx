@@ -1,7 +1,12 @@
 /** Renders durable document and Work change receipts. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type {
+  ReversalOutcome,
+  Turn,
+  TurnNamespaceChangeItem,
+  TurnReceiptChip,
+} from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
@@ -15,6 +20,7 @@ import { useChatContextNavigation, useChatContextRoutability } from "./ChatConte
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
 import { DraftStatsLabel } from "./draft-stats";
+import { NamespaceChangeLine } from "./NamespaceChangeRow";
 import type { WorkReceipt } from "./tool-command";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
@@ -37,14 +43,16 @@ function hasTurnEditsReceiptDocuments(
   );
 }
 
-/** Whether this turn has a receipt to show at all: committed document edits, or a reversible Work mutation receipt. */
+/** Whether this turn has a receipt to show at all: committed document edits, moves or deletes, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   changeTrail: ChangeTrailShell | undefined,
   workReceipts: readonly WorkReceipt[],
+  namespaceChanges: readonly TurnNamespaceChangeItem[] = [],
 ): boolean {
   return (
     hasTurnEditsReceiptDocuments(documents, changeTrail) ||
+    namespaceChanges.length > 0 ||
     workReceipts.some(isReversibleWorkReceipt)
   );
 }
@@ -56,6 +64,8 @@ export type TurnEditsReceiptProps = {
   receipt: TurnReceiptChip | null;
   /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
   workReceipts?: readonly WorkReceipt[];
+  /** The turn's moves and deletes, from the same lineage read as `documents`. */
+  namespaceChanges?: readonly TurnNamespaceChangeItem[];
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
@@ -66,6 +76,7 @@ export function TurnEditsReceipt({
   documents,
   receipt,
   workReceipts = [],
+  namespaceChanges = [],
   changeTrail,
   navigateToChange,
 }: TurnEditsReceiptProps) {
@@ -95,8 +106,14 @@ export function TurnEditsReceipt({
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
-  // the expanded rows below, which already navigate.
-  const headerDocumentCount = (trailDocuments.length > 0 ? trailDocuments : liveDocuments).length;
+  // the expanded rows below, which already navigate. A document both edited
+  // and moved is one document.
+  const headerDocumentCount = new Set([
+    ...(trailDocuments.length > 0
+      ? trailDocuments.map((document) => document.documentId)
+      : liveDocuments.map((document) => document.documentId ?? document.uri)),
+    ...namespaceChanges.map((change) => change.documentId),
+  ]).size;
   const wordStats =
     changeTrail &&
     (typeof changeTrail.wordsAdded === "number" || typeof changeTrail.wordsRemoved === "number")
@@ -127,7 +144,9 @@ export function TurnEditsReceipt({
     if (receipt?.control !== "view_change") setCommandRefusal(null);
   }, [receipt?.control]);
 
-  if (!hasTurnEditsReceiptContent(documents, changeTrail, workReceipts)) return null;
+  if (!hasTurnEditsReceiptContent(documents, changeTrail, workReceipts, namespaceChanges)) {
+    return null;
+  }
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -193,7 +212,7 @@ export function TurnEditsReceipt({
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-prose-foreground">
               {headerDocumentCount > 0
-                ? documentCountLabel(headerDocumentCount)
+                ? documentCountLabel(headerDocumentCount, namespaceChanges.length > 0)
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
             {wordStats ? (
@@ -267,6 +286,18 @@ export function TurnEditsReceipt({
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {namespaceChanges.length > 0 ? (
+            <ul className="flex flex-col" data-receipt-namespace-changes>
+              {namespaceChanges.map((change) => (
+                <li
+                  key={`${change.documentId}:${change.wId}`}
+                  className="flex min-h-6 min-w-0 items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+                >
+                  <NamespaceChangeLine change={change} />
                 </li>
               ))}
             </ul>
@@ -495,7 +526,15 @@ function DocumentRow({
   );
 }
 
-function documentCountLabel(count: number) {
+/** "Changed" once a document moved or went away: "edited" would claim its words changed. */
+function documentCountLabel(count: number, relocated: boolean) {
+  if (relocated) {
+    return count === 1 ? (
+      <Trans>Changed 1 document</Trans>
+    ) : (
+      <Trans>Changed {count} documents</Trans>
+    );
+  }
   return count === 1 ? <Trans>Edited 1 document</Trans> : <Trans>Edited {count} documents</Trans>;
 }
 

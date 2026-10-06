@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toolActivityPhrase } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
 import { toolView } from "./report-test-fixtures";
+import { toolCommand } from "./tool-command";
 import { documentToolFailureCopy, rendererFor } from "./tool-renderers";
 
 function documentTool(args: {
@@ -32,6 +33,42 @@ describe("document tool rows", () => {
 
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Copied ch11.md to", parameter: "ch12.md" });
     expect(rendererFor("write").expand?.(tool)).toBeNull();
+  });
+
+  it("gives move and delete their own commands and phrases", () => {
+    const rename = documentTool({
+      toolName: "write",
+      input: {
+        command: "move",
+        from: { path: "manuscript://ch3.md" },
+        path: "manuscript://ch3-old.md",
+      },
+    });
+    const refile = documentTool({
+      toolName: "write",
+      input: {
+        command: "move",
+        from: { path: "manuscript://ch3.md" },
+        path: "manuscript://archive/ch3.md",
+      },
+    });
+    const deletion = documentTool({
+      toolName: "write",
+      input: { command: "delete", path: "manuscript://ch3.md" },
+    });
+
+    expect(toolCommand(rename)).toBe("move");
+    expect(toolCommand(deletion)).toBe("delete");
+    // A rename names the new name; a move to another folder names the folder.
+    expect(toolActivityPhrase(rename)).toEqual({
+      verb: "Moved ch3.md to",
+      parameter: "ch3-old.md",
+    });
+    expect(toolActivityPhrase(refile)).toEqual({
+      verb: "Moved ch3.md to",
+      parameter: "archive/ch3.md",
+    });
+    expect(toolActivityPhrase(deletion)).toEqual({ verb: "Deleted", parameter: "ch3.md" });
   });
 
   it("writes failure copy from the result's status", () => {

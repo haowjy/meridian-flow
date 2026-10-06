@@ -10,6 +10,8 @@ export type ToolCommand =
   | "skim"
   | "create"
   | "copy"
+  | "move"
+  | "delete"
   | "edit"
   | "undo"
   | "redo"
@@ -87,7 +89,8 @@ function workToolCommand(tool: ToolView): ToolCommand {
 /**
  * The writer-facing verb for one `write` call. Removing blocks is an edit. A
  * `copy`, or an `insert`/`replace` that takes its blocks from `from`, is a copy:
- * saying it wrote text would hide where the words came from. A call whose
+ * saying it wrote text would hide where the words came from. `move` and
+ * `delete` change where a whole document lives, not what it says. A call whose
  * command hasn't streamed in yet reads as writing; a command this list doesn't
  * know is `unknown`.
  */
@@ -98,9 +101,13 @@ function writeCommand(input: Record<string, JsonValue>): ToolCommand {
       return "create";
     case "copy":
       return "copy";
+    case "move":
+      return "move";
+    case "delete":
+      return "delete";
     case "insert":
     case "replace":
-      return copySourcePath(input) ? "copy" : "edit";
+      return sourcePath(input) ? "copy" : "edit";
     case "remove":
       return "edit";
     case "undo":
@@ -112,8 +119,8 @@ function writeCommand(input: Record<string, JsonValue>): ToolCommand {
   }
 }
 
-/** The document a `write` call copies from, as the model named it (`from.path`). */
-export function copySourcePath(input: Record<string, JsonValue>): string | undefined {
+/** The document a `write` call takes from, as the model named it (`from.path`): a copy's source, or the document a move moves. */
+export function sourcePath(input: Record<string, JsonValue>): string | undefined {
   const from = input.from;
   if (!from || typeof from !== "object" || Array.isArray(from)) return undefined;
   return stringInput(from as Record<string, JsonValue>, "path");

@@ -716,12 +716,20 @@ msgid "Change work for this chat, currently {0}"
 msgstr "Change work for this chat, currently {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} documents"
+msgstr "Changed {count} documents"
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {count} Work"
 msgstr "Changed {count} Work"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
 msgstr "Changed {relativeTime}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 document"
+msgstr "Changed 1 document"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed 1 Work"
@@ -1140,6 +1148,10 @@ msgstr "Couldn't create this fork."
 msgid "Couldn’t create this Work."
 msgstr "Couldn’t create this Work."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete"
+msgstr "Couldn't delete"
+
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Couldn't delete {title}"
 msgstr "Couldn't delete {title}"
@@ -1249,6 +1261,10 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't move"
+msgstr "Couldn't move"
+
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
@@ -1301,6 +1317,18 @@ msgstr "Couldn't rename this folder. Try again."
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
 msgstr "Couldn’t rename this Work. Try again."
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Its folder is gone."
+msgstr "Couldn't restore it. Its folder is gone."
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Something else is at {place} now."
+msgstr "Couldn't restore it. Something else is at {place} now."
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Try again."
+msgstr "Couldn't restore it. Try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -1527,13 +1555,22 @@ msgstr "Delete table"
 msgid "Delete Work"
 msgstr "Delete Work"
 
+#: src/features/chat/command-descriptor.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr "Deleted"
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Deleted {document}"
+msgstr "Deleted {document}"
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
 msgstr "Deleted {name}"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a document"
+msgstr "Deleted a document"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
@@ -1547,6 +1584,10 @@ msgstr "Deleted Work {name}"
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting"
+msgstr "Deleting"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -2140,6 +2181,10 @@ msgstr "Invoking a skill…"
 msgid "It may have moved or been removed."
 msgstr "It may have moved or been removed."
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "It's already restored."
+msgstr "It's already restored."
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2430,6 +2475,30 @@ msgstr "Move row up"
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved"
+msgstr "Moved"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved {source} to"
+msgstr "Moved {source} to"
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Moved {source} to {destination}"
+msgstr "Moved {source} to {destination}"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved a document"
+msgstr "Moved a document"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving"
+msgstr "Moving"
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving {source} to"
+msgstr "Moving {source} to"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -3129,6 +3198,7 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
+#: src/features/chat/NamespaceChangeRow.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -3137,6 +3207,14 @@ msgstr "Restore"
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
 msgstr "Restore {0}"
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Restore {name}"
+msgstr "Restore {name}"
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Restored"
+msgstr "Restored"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
@@ -4182,6 +4260,10 @@ msgstr "Undo is no longer available."
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
 msgstr "Undoing…"
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Undone"
+msgstr "Undone"
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"

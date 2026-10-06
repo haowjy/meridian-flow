@@ -2,6 +2,7 @@
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
+  TurnNamespaceChangeItem,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,8 @@ import { threadQueryKeys } from "./thread-query-keys";
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {
   documents: TurnLiveLineageDocumentItem[] | null;
   receipt: TurnReceiptChip | null;
+  /** The turn's moves and deletes; null until loaded. */
+  namespaceChanges: TurnNamespaceChangeItem[] | null;
 };
 
 export function useTurnLiveLineage(
@@ -41,6 +44,7 @@ export function useTurnLiveLineage(
       refetch: () => undefined,
       documents: null,
       receipt: null,
+      namespaceChanges: null,
     };
   }
 
@@ -61,5 +65,6 @@ export function useTurnLiveLineage(
     },
     documents,
     receipt: query.data?.receipt ?? null,
+    namespaceChanges: query.data?.namespaceChanges ?? null,
   };
 }

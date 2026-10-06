@@ -716,11 +716,19 @@ msgid "Change work for this chat, currently {0}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed {count} documents"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed {count} Work"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Changed {relativeTime}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Changed 1 document"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -1140,6 +1148,10 @@ msgstr ""
 msgid "Couldn’t create this Work."
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't delete"
+msgstr ""
+
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Couldn't delete {title}"
 msgstr ""
@@ -1249,6 +1261,10 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't move"
+msgstr ""
+
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Couldn't open review mode."
 msgstr ""
@@ -1300,6 +1316,18 @@ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Its folder is gone."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Something else is at {place} now."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Couldn't restore it. Try again."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -1527,12 +1555,21 @@ msgstr ""
 msgid "Delete Work"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr ""
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Deleted {document}"
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleted a document"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1546,6 +1583,10 @@ msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Deleting"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2140,6 +2181,10 @@ msgstr ""
 msgid "It may have moved or been removed."
 msgstr ""
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "It's already restored."
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2429,6 +2474,30 @@ msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved {source} to"
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Moved {source} to {destination}"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moved a document"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Moving {source} to"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -3129,6 +3198,7 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/chat/NamespaceChangeRow.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr ""
@@ -3136,6 +3206,14 @@ msgstr ""
 #. placeholder {0}: work.name
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Restore {name}"
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Restored"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -4181,6 +4259,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Undone"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
