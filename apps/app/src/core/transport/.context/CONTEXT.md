@@ -82,38 +82,30 @@ A gap burst coalesces into one resync rather than one per gap.
 ## Shared connectivity hints
 
 `ConnectivityProvider` owns one `ConnectivityHints` instance above authenticated
-account and transport composition. The browser, clock, random source, and timer
-functions are injected. Browser listeners exist only while the provider is
-mounted. Connections receive the port through their existing factories/owners,
-including registry room restarts; new connections must subscribe instead of
-adding window listeners.
+account composition. Browser/document targets and randomness are injected;
+clocks and timers use late-bound globals. Its listeners last until unmount.
+Connections receive the port through their factories, including room restarts.
 
-Online, focus, visible visibility changes, pageshow, and a connection's success
+Online, focus, visible visibility changes, pageshow, and connection success
 queue `retry-now`. A 50 ms burst window coalesces signals; each subscriber gets
-0–300 ms jitter and at least two seconds between retries. A signal during the
-cooldown schedules one deferred hint instead of losing recovery evidence.
-Success reports are transition-based and exclude the successful source.
-Offline cancels pending retries, resets the cooldown for the next network
-recovery, and immediately emits `suspect-offline`.
-A `retry-now` restarts a disconnected subscriber's backoff from its aggressive
-phase. Against a server that stays down, repeated focus changes therefore cost
-at most one attempt per connection per cooldown; that bound is intended.
+0–300 ms jitter and at least two seconds between retries. Cooldown signals
+schedule one deferred hint. Success reports are transition-based and exclude
+the successful source. Offline cancels pending retries, resets the cooldown,
+and immediately emits `suspect-offline`. Retry hints restart aggressive backoff,
+so repeated wakes against a down server cost at most one attempt per cooldown.
 
-Hints do not replace backoff or poll. Document and thread sockets leave healthy
-connections alone, fence terminal/destroyed owners, and take their normal close
-path immediately on offline, without waiting for a native close handshake.
-The room adapter owns reconnect generations: it cancels and fences the delayed
-close timer and retains Hocuspocus 4.3's abortable retry cancellation through
-native open until the first frame settles the attempt. A new generation settles
-the superseded attempt and cancels its retry before replacement. Library
-backoff, socket cleanup, message queues, and acknowledgement handling remain
-unchanged. Do not call `disconnect()` for browser offline (that disables the
-normal reconnect loop). Thread success is reported only on the server's
-`connected` frame through the socket lifecycle's canonical state publisher.
+Sockets leave healthy connections alone and fence terminal/destroyed owners.
+Offline takes the normal close path without awaiting a native handshake;
+`disconnect()` instead disables reconnection. Hocuspocus 4.3 has two retry races:
+native open clears the cancellation handle before the first frame settles the
+attempt, and post-settlement close schedules a delayed reconnect that can
+replace a still-CONNECTING hinted socket. The room adapter retains cancellation
+until settlement and owns/fences the delayed close timer. Superseded attempts
+settle and cancel before replacement; library queues and acknowledgements stay
+intact. Thread success requires the server's `connected` frame.
 
-The resource replica retains its 30-second retry interval: failed HTTP work can
-remain pending without another browser event or socket success. Working-set
-pagehide and hidden-visibility flushes remain persistence signals. Local document
-peers and session wakeup retain their lifecycle listeners: cross-tab content
-recovery is not network recovery and must not inherit retry jitter, cooldowns,
-or unrelated server-connection successes.
+The resource replica keeps its 30-second interval for pending HTTP work without
+new hints. Working-set pagehide/hidden-visibility flushes are persistence signals;
+its preference owner binds recovery only for the committed account epoch.
+Local document peers and session wakeup keep their content-recovery listeners,
+independent of network jitter, cooldowns, or unrelated connection successes.

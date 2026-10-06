@@ -64,5 +64,3 @@ the account epoch. Abort or unmount disposes only the subscription, so later
 hints cannot trigger recovery through that owner. Driver timers, in-flight
 requests, and keepalive flushes retain their independent lifetime. Effect replay
 rebinds the subscription without changing preference, hydration, or write lineage.
-`retry-now` marks baselines suspect and flushes pending reports; pagehide and
-hidden-visibility keepalive flushes remain local saving signals.
