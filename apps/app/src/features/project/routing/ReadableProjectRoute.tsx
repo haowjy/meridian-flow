@@ -630,8 +630,15 @@ export function ReadableProjectRoute({
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
+    const { address } = current;
+    // A review names its Work: an address that left it implicit states the Editor's own now.
+    const work =
+      draftId && address.work.kind === "absent" && current.editorWorkId
+        ? workSelectionFor(address.destination, current.editorWorkId, current.noWorkId)
+        : address.work;
     void current.navigation.replaceIfCurrent(ticket, {
-      ...current.address,
+      ...address,
+      work,
       draftId: draftId ?? undefined,
     });
   }, []);

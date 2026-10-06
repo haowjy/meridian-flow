@@ -189,12 +189,26 @@ export function parseProjectAddress(
   return { kind: "valid", address, href };
 }
 
+/**
+ * Whether the address itself says "No Work" (`?work=`) rather than leaving it to history state.
+ * A resource's Work is its identity. A review address is shared and reloaded outside its history
+ * entry, and its draft belongs to exactly one Work, so it states No Work instead of borrowing
+ * whichever Work is selected.
+ */
+function queryStatesNoWork(address: ProjectAddress): boolean {
+  return (
+    address.work.kind === "none" &&
+    (workIsIdentity(address.destination) ||
+      (address.destination.kind === "document" && address.draftId !== undefined))
+  );
+}
+
 function writeWork(query: URLSearchParams, address: ProjectAddress): void {
   const work = address.work;
   if (work.kind === "id") query.set("work", work.id);
   else if (work.kind === "malformed") query.set("work", work.value);
   // An Editor context of no Work is pinned by history state; a resource of No Work is `?work=`.
-  else if (work.kind === "none" && workIsIdentity(address.destination)) query.set("work", "");
+  else if (work.kind === "none" && queryStatesNoWork(address)) query.set("work", "");
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
@@ -248,7 +262,8 @@ export function projectAddressState(
   // Non-Editor destinations do not read an Editor Work selection back from history.
   const noWork =
     (destination === "editor" || destination === "document" || destination === "browse") &&
-    address.work.kind === "none";
+    address.work.kind === "none" &&
+    !queryStatesNoWork(address);
   return {
     ...state,
     meridianProjectEmptySelection: noWork
