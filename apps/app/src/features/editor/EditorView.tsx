@@ -158,8 +158,17 @@ export function EditorView(props: EditorViewProps) {
   // screen, so entering review never shows an empty body.
   const [paintedReviewKey, setPaintedReviewKey] = useState<string | null>(null);
   // The painted review while its refused room is rebuilt: an inert copy, so neither the
-  // live prose nor an empty shell shows under a review the writer is still in.
-  const [replacedReview, setReplacedReview] = useState<FrozenReviewMarkup | null>(null);
+  // live prose nor an empty shell shows under a review the writer is still in. It belongs to
+  // the one review identity (document, room, draft) it was copied from and renders for no other.
+  const reviewIdentity = inReview ? editorMountKey(identity) : null;
+  const [replaced, setReplaced] = useState<{
+    identity: string;
+    markup: FrozenReviewMarkup;
+  } | null>(null);
+  const replacedReview = replaced && replaced.identity === reviewIdentity ? replaced.markup : null;
+  // The rebuild in flight for the current review identity. Leaving or changing the review
+  // retires it, so a late completion or failure can neither bind nor report for another review.
+  const rebuildAttemptRef = useRef<symbol | null>(null);
   const reviewHostRef = useRef<HTMLDivElement | null>(null);
   const reviewPaintedRef = useRef(false);
   const sessionOwnerIdRef = useRef<string | null>(null);
@@ -169,7 +178,7 @@ export function EditorView(props: EditorViewProps) {
     if (!inReview) {
       setBoundSession(null);
       setPaintedReviewKey(null);
-      setReplacedReview(null);
+      setReplaced(null);
       return;
     }
     const ownerId = sessionOwnerIdRef.current;
@@ -183,7 +192,11 @@ export function EditorView(props: EditorViewProps) {
       throw error;
     }
     setBoundSession(session);
-    return () => registry.releaseBranchRooms(ownerId);
+    return () => {
+      rebuildAttemptRef.current = null;
+      setReplaced(null);
+      registry.releaseBranchRooms(ownerId);
+    };
   }, [inReview, registry, roomKey]);
 
   useEffect(() => {
@@ -199,13 +212,21 @@ export function EditorView(props: EditorViewProps) {
         // under the editor. A replacement still waiting to paint keeps the copy already held.
         if (reviewPaintedRef.current) {
           const held = captureReview(reviewHostRef.current);
-          if (held) setReplacedReview(held);
+          if (held && reviewIdentity) setReplaced({ identity: reviewIdentity, markup: held });
         }
         setBoundSession(null);
-        void registry.rebuildBranchRoom(roomKey).then(setBoundSession, () => {
-          setReplacedReview(null);
-          props.onReviewSessionUnavailable?.();
-        });
+        const attempt = Symbol("review-rebuild");
+        rebuildAttemptRef.current = attempt;
+        void registry.rebuildBranchRoom(roomKey).then(
+          (rebuilt) => {
+            if (rebuildAttemptRef.current === attempt) setBoundSession(rebuilt);
+          },
+          () => {
+            if (rebuildAttemptRef.current !== attempt) return;
+            setReplaced(null);
+            props.onReviewSessionUnavailable?.();
+          },
+        );
         return;
       }
       if (
@@ -217,7 +238,7 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey]);
+  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey, reviewIdentity]);
 
   const liveSession = props.session ?? null;
   const reviewSession = inReview && boundSession?.roomKey === roomKey ? boundSession : null;
@@ -232,7 +253,7 @@ export function EditorView(props: EditorViewProps) {
   const reviewShown = reviewVisible || (!liveSession && !replacing);
 
   useEffect(() => {
-    if (reviewVisible) setReplacedReview(null);
+    if (reviewVisible) setReplaced(null);
   }, [reviewVisible]);
 
   if (!liveSession && !reviewSession && !replacing) return <PendingEditorShell {...props} />;

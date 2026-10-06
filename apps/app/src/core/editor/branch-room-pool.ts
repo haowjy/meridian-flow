@@ -45,6 +45,9 @@ export class BranchRoomPool {
   async rebuild(roomKey: string): Promise<DocumentSession> {
     // A reset branch session is already retired; wait out its teardown quarantine.
     await this.deps.teardownOwner.drainRoom({ kind: "branch", roomKey });
+    // The last owner can leave while the drain waits. Reopening then would start a session
+    // nothing owns and nothing would ever tear down.
+    if (!this.isRetained(roomKey)) throw new Error(`Branch room was released: ${roomKey}`);
     return this.get(roomKey);
   }
 

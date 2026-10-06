@@ -110,6 +110,12 @@ function finishRebuild(roomKey: string): void {
   rebuild = null;
 }
 
+function failRebuild(): void {
+  rebuild?.reject();
+  rebuild = null;
+}
+
+const unavailable = vi.fn();
 const registry = {
   rebuildBranchRoom: () =>
     new Promise<DocumentSession>((resolve, reject) => {
@@ -623,6 +629,109 @@ describe("editor lifetime", () => {
           });
           expect(document.querySelector("[data-review-replacing]")).toBeNull();
           expect(visibleText().join("")).toContain("LIVE MANUSCRIPT");
+        },
+      );
+    });
+    it("never shows the previous review's frozen prose under a different review identity", async () => {
+      const roomA = "branch:frozen-switch-a:gen:1";
+      const roomB = "branch:frozen-switch-b:gen:1";
+      sessionHorizons.set(roomB, {
+        localPersistence: Promise.resolve(),
+        firstServerSync: new Promise(() => undefined),
+      });
+      await withReactRoot(
+        <Harness
+          initial={{
+            documentId: "freeze-switch",
+            reviewDraftId: "draft-a",
+            reviewRoomName: roomA,
+          }}
+        />,
+        async () => {
+          await act(async () => {
+            visibleEditors()[0]?.editor?.commands.insertContent("PRIVATE REVIEW A");
+          });
+          await refuse(roomA);
+          expect(document.querySelector("[data-review-replacing]")?.textContent).toContain(
+            "PRIVATE REVIEW A",
+          );
+          await act(async () => {
+            applyProps({ reviewDraftId: "draft-b", reviewRoomName: roomB });
+          });
+          expect(document.body.textContent).not.toContain("PRIVATE REVIEW A");
+        },
+      );
+    });
+
+    it("ignores a retired rebuild finishing after another review has bound", async () => {
+      const roomA = "branch:late-switch-a:gen:1";
+      const roomB = "branch:late-switch-b:gen:1";
+      await withReactRoot(
+        <Harness
+          initial={{ documentId: "late-switch", reviewDraftId: "draft-a", reviewRoomName: roomA }}
+        />,
+        async () => {
+          await refuse(roomA);
+          await act(async () => {
+            applyProps({ reviewDraftId: "draft-b", reviewRoomName: roomB });
+          });
+          await act(async () => {
+            visibleEditors()[0]?.editor?.commands.insertContent("REVIEW B");
+          });
+          await act(async () => {
+            finishRebuild(roomA);
+            await Promise.resolve();
+          });
+          expect(document.body.textContent).toContain("REVIEW B");
+        },
+      );
+    });
+
+    it("ignores a retired rebuild failing after the review was left", async () => {
+      const roomName = "branch:late-leave-failure:gen:1";
+      unavailable.mockClear();
+      await withReactRoot(
+        <Harness
+          initial={{
+            documentId: "late-leave-failure",
+            reviewDraftId: "draft-left",
+            reviewRoomName: roomName,
+            onReviewSessionUnavailable: unavailable,
+          }}
+        />,
+        async () => {
+          await refuse(roomName);
+          await act(async () => {
+            applyProps({ reviewDraftId: null, reviewRoomName: null });
+          });
+          await act(async () => {
+            failRebuild();
+            await Promise.resolve();
+          });
+          expect(unavailable).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    it("reports the failure of the rebuild that is still current", async () => {
+      const roomName = "branch:current-failure:gen:1";
+      unavailable.mockClear();
+      await withReactRoot(
+        <Harness
+          initial={{
+            documentId: "current-failure",
+            reviewDraftId: "draft-current",
+            reviewRoomName: roomName,
+            onReviewSessionUnavailable: unavailable,
+          }}
+        />,
+        async () => {
+          await refuse(roomName);
+          await act(async () => {
+            failRebuild();
+            await Promise.resolve();
+          });
+          expect(unavailable).toHaveBeenCalledOnce();
         },
       );
     });
