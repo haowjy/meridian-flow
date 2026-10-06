@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { compactTurn, renderThreadView } from "./transcript.js";
 
 describe("thread transcript compaction failures", () => {
-  it("shows an assistant failure reason in JSON and text output", () => {
+  it("shows an assistant failure reason and the provider's answer in JSON and text output", () => {
     const turn = {
       id: "assistant-id",
       threadId: "thread-id",
@@ -18,7 +18,13 @@ describe("thread transcript compaction failures", () => {
       finishReason: "error",
       model: null,
       error: "This response failed.",
-      metadata: { reason: "shutdown" },
+      metadata: {
+        reason: "provider_error",
+        providerError: {
+          status: 402,
+          message: `Insufficient Balance ${"x".repeat(400)}`,
+        },
+      },
       createdAt: "2026-09-27T00:00:00.000Z",
       inputTokens: 0,
       outputTokens: 0,
@@ -32,26 +38,28 @@ describe("thread transcript compaction failures", () => {
     } as Turn;
     const compact = compactTurn(turn, { full: false });
 
-    expect(compact.failureReason).toBe("shutdown");
-    expect(
-      renderThreadView({
-        thread: {
-          id: "thread-id",
-          ref: null,
-          title: null,
-          projectId: "project-id",
-          workId: null,
-          agentName: null,
-          status: "idle",
-          turnCount: 1,
-          totalCostUsd: "0",
-        },
-        live: { status: "asleep", runningTurnId: null, pending: 0, actionRequired: false },
-        turns: [compact],
-        showing: 1,
-        total: 1,
-      }),
-    ).toContain("failure reason: shutdown");
+    expect(compact.failureReason).toBe("provider_error");
+    expect(compactTurn(turn, { full: true }).providerError?.message).toHaveLength(421);
+    const text = renderThreadView({
+      thread: {
+        id: "thread-id",
+        ref: null,
+        title: null,
+        projectId: "project-id",
+        workId: null,
+        agentName: null,
+        status: "idle",
+        turnCount: 1,
+        totalCostUsd: "0",
+      },
+      live: { status: "asleep", runningTurnId: null, pending: 0, actionRequired: false },
+      turns: [compact],
+      showing: 1,
+      total: 1,
+    });
+    expect(text).toContain("failure reason: provider_error");
+    expect(text).toContain("provider error (402): Insufficient Balance");
+    expect(text).toContain("--full to show");
   });
 
   it("shows a failed compaction's reason and phase in JSON and text output", () => {
