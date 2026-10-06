@@ -10,22 +10,17 @@
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
  * and syncs in the background; the server's move creates any missing folders.
- * A later sync failure lands on the document itself. No Work's Scratch is the
- * one area the local replica cannot place a document in (its namespace
- * requests reject a Work id without a slug, so a local placement cannot name
- * No Work by its row id), so there Create asks the server first, the way the
- * Scratch tree's own New file does. Nothing about the link
- * changes on creation: the project now holds a document at that address, which
+ * A later sync failure lands on the document itself. Nothing about the link
+ changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
-import type { ResourceWorkAuthority } from "@meridian/resource-replica";
+import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 
-import { createContextEntry } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
 import { acquireWorksSnapshot } from "@/client/query/works-projection-acquisition";
@@ -99,7 +94,7 @@ export function useCreateLinkedDocument(
         // The Works list is still loading: a slug it will name is not missing.
         if (
           (work === "unknown" && works === null) ||
-          (isNoWorkScratch(target, work) && !noWorkId)
+          (target.scheme === "scratch" && work !== "unknown" && work.workId === null)
         ) {
           const snapshot = await queryClient.ensureQueryData({
             queryKey: projectQueryKeys.works(projectId),
@@ -109,28 +104,20 @@ export function useCreateLinkedDocument(
           work = scratchWork(target, workId, snapshot.works, noWorkId);
         }
         if (work === "unknown") throw new Error("The address names no Work this project has");
-        if (isNoWorkScratch(target, work)) {
-          if (!noWorkId) throw new Error("No Work is not known yet");
-          documentId = await createOnServer(projectId, target, noWorkId);
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.contextCatalogView(projectId, "scratch", noWorkId),
+        const reservation = await resources.reserveDocument(projectId);
+        if (reservation.content.kind !== "opened")
+          throw new Error("Local document content is unavailable");
+        reserved = { key: reservation.key };
+        documentId = reservation.content.handle.documentId;
+        try {
+          await resources.setLocation(projectId, reservation.key, {
+            scheme: target.scheme,
+            folderPath: target.folderPath,
+            name: target.name,
+            ...work,
           });
-        } else {
-          const reservation = await resources.reserveDocument(projectId);
-          if (reservation.content.kind !== "opened")
-            throw new Error("Local document content is unavailable");
-          reserved = { key: reservation.key };
-          documentId = reservation.content.handle.documentId;
-          try {
-            await resources.setLocation(projectId, reservation.key, {
-              scheme: target.scheme,
-              folderPath: target.folderPath,
-              name: target.name,
-              ...work,
-            });
-          } finally {
-            reservation.content.handle.release();
-          }
+        } finally {
+          reservation.content.handle.release();
         }
       } catch {
         documentId = null;
@@ -151,52 +138,23 @@ export function useCreateLinkedDocument(
   return { create, creating, failed };
 }
 
-function isNoWorkScratch(
-  target: LinkCreationTarget,
-  work: ReturnType<typeof scratchWork>,
-): boolean {
-  return target.scheme === "scratch" && work !== "unknown" && work.workId === null;
-}
-
-async function createOnServer(
-  projectId: string,
-  target: LinkCreationTarget,
-  noWorkId: string,
-): Promise<string> {
-  const path = [target.folderPath, target.name].filter(Boolean).join("/");
-  const result = await createContextEntry(
-    projectId,
-    "scratch",
-    { type: "file", path },
-    {
-      workId: noWorkId,
-    },
-  );
-  if (result.status !== "created" || !result.documentId)
-    throw new Error("No Work Scratch document was not created");
-  return result.documentId;
-}
-
-/**
- * The Work a Scratch document is created in. No Work travels as a null Work id
- * (the server resolves the locked row); a named Work needs its slug too, or the
- * move can never validate its canonical address. "unknown" when the list does
- * not name the Work (or has not loaded).
- */
+/** Resolve Scratch authority to its row id and canonical URI slug (null for No Work). */
 function scratchWork(
   target: LinkCreationTarget,
   surfaceWorkId: string | null,
   works: WorkList | null,
   noWorkId: string | null,
 ): ResourceWorkAuthority | "unknown" {
-  if (target.scheme !== "scratch" || target.authority.kind === "none") return { workId: null };
+  if (target.scheme !== "scratch") return { workId: null };
+  if (target.authority.kind === "none")
+    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
   const { authority } = target;
   if (authority.kind === "contextual" && (!surfaceWorkId || surfaceWorkId === noWorkId))
-    return { workId: null };
+    return noWorkId ? resourceWorkAuthorityFor(noWorkId, works, noWorkId) : { workId: null };
   const work = works?.find((candidate) =>
     authority.kind === "work"
       ? candidate.slug === authority.workSlug
       : candidate.id === surfaceWorkId,
   );
-  return work?.slug ? { workId: work.id, workSlug: work.slug } : "unknown";
+  return work ? resourceWorkAuthorityFor(work.id, works, noWorkId) : "unknown";
 }

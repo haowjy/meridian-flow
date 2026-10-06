@@ -32,12 +32,12 @@ export function resolveLocalDocumentAddress(
   else {
     if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
-    if (!uri.ok || uri.value.authority.kind !== "work") return undefined;
+    if (!uri.ok || uri.value.authority.kind === "contextual") return undefined;
     authority = {
       kind: "work",
       projectId,
       workId: entry.scope.workId,
-      workSlug: uri.value.authority.workSlug,
+      workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
     };
   }
   return {
