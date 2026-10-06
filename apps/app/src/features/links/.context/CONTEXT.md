@@ -157,7 +157,9 @@ the snapshot arrives; Create disabled), or null (not creatable). Deleted Works
 are absent from the live list, so they fall to null like a name no Work has.
 Unarchive uses `useWorkArchiveToggle`, which is optimistic: the snapshot
 projection flips the Work at once, the plan becomes `create`, and the one
-primary button (same element, so focus stays) reads Create. A refused Unarchive
+primary button (same element, so focus stays) reads Create. The dialog retains
+Unarchive's promise: a Create click waits for it before reserving or filing,
+and does not create if Unarchive fails. A refused Unarchive
 returns the Work and its failure shows on the dialog.
 
 It uses the reservation and `setLocation` primitive for every destination,

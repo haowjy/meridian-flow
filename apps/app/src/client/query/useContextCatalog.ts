@@ -134,7 +134,8 @@ function overlayResourceCatalogView(
     const installedMatches =
       installed?.kind === "file" &&
       installed.uri.startsWith(`${location?.scheme}://`) &&
-      `/${installed.path.join("/")}` === location?.path;
+      `/${installed.path.join("/")}` === location?.path &&
+      installed.provisionalName === location?.provisional;
     if (installed && !installedMatches) entries.delete(documentId);
     if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
 

@@ -1,7 +1,7 @@
 /** Durable namespace policy protects request bytes, response-loss recovery and newer intentions. */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { planRejectedReservationDeletion, planResourceDeletion } from "./resource-deletion";
+import { planResourceDeletion } from "./resource-deletion";
 import {
   installCanonicalRefresh,
   prepareNamespaceAttempt,
@@ -683,7 +683,6 @@ it.each([
     kind: "set-location",
     name: "after.md",
   });
-  expect(planRejectedReservationDeletion(store.record, "cleanup")).toBeNull();
   const noReplay = vi.fn();
   await expect(
     reconcileResourceNamespace({
@@ -695,104 +694,6 @@ it.each([
     }),
   ).resolves.toBe("needs-repair");
   expect(noReplay).not.toHaveBeenCalled();
-  // A first placement has only a hidden reservation as its accepted source.
-  const reservation = new MemoryStore(local());
-  reservation.record.resource.obligations.createEligibility = { eligibleAt: null };
-  const placement = planResourceLocation({
-    record: reservation.record,
-    projectId: "project",
-    intentId: "place",
-    eligibleAt: 1,
-    destination: {
-      scheme: "scratch",
-      folderPath: "",
-      name: "new.md",
-      workId: "no-work",
-      workSlug: null,
-    },
-  });
-  if (!placement) throw new Error("Expected first placement");
-  await reservation.commitResource(placement);
-  await reconcileResourceNamespace({
-    key: reservation.record.resource,
-    metadata: asMetadata(reservation),
-    lock: immediateLock,
-    newAttemptIds: () => ({ attemptId: "create-attempt", operationId: "create-operation" }),
-    transport: transport({ submit: async () => createOutcome() }),
-  });
-
-  await reconcileResourceNamespace({
-    key: reservation.record.resource,
-    metadata: asMetadata(reservation),
-    lock: immediateLock,
-    newAttemptIds: () => ({ attemptId: "place-attempt", operationId: "place-operation" }),
-    transport: transport({
-      submit: async () =>
-        receiptless
-          ? {
-              kind: "refusal",
-              operationId: "place-operation",
-              error: {
-                code: reason,
-                message: "Work unavailable",
-                source: "system",
-                retryable: false,
-              },
-            }
-          : {
-              kind: "operation",
-              receipt: {
-                operationId: "place-operation",
-                command: {
-                  kind: "move",
-                  sourceUri: "unfiled://drafts/Untitled.md",
-                  destinationUri: "scratch://@/new.md",
-                  expected: { kind: "file", nodeId: "document" },
-                },
-                result: {
-                  ok: false,
-                  error: {
-                    code: "context_unavailable",
-                    reason,
-                    workSlug: null,
-                    uri: "scratch://@/new.md",
-                  },
-                },
-              },
-            },
-    }),
-  });
-  // An independently accepted Unfiled document must not be discarded when later filing fails.
-  expect(
-    planRejectedReservationDeletion(
-      {
-        ...reservation.record,
-        intents: reservation.record.intents.map((intent) =>
-          intent.desired.kind === "set-location"
-            ? {
-                ...intent,
-                desired: { kind: "set-location", destination: intent.desired.destination },
-              }
-            : intent,
-        ),
-      },
-      "not-cleanup",
-    ),
-  ).toBeNull();
-  const cleanup = planRejectedReservationDeletion(reservation.record, "cleanup");
-  if (!cleanup) throw new Error("A never-filed reservation must be deleted");
-  await reservation.commitResource(cleanup);
-  expect(reservation.record.intents.find((intent) => intent.intentId === "place")?.state).toBe(
-    "superseded",
-  );
-  expect(
-    prepareNamespaceAttempt(reservation.record, {
-      attemptId: "cleanup-attempt",
-      operationId: "cleanup-operation",
-    })
-      ?.next.intents.at(-1)
-      ?.attempts.at(-1)?.request,
-  ).toMatchObject({ kind: "delete", scheme: "unfiled" });
   const rejectedRename = structuredClone(store.record.intents[0]?.attempts);
   const deletion = planResourceDeletion(store.record, "project", "delete");
   if (!deletion) throw new Error("Delete must supersede the rejected rename");

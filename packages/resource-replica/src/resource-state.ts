@@ -113,9 +113,6 @@ export function planResourceLocation(input: {
     desired: {
       kind: "set-location",
       destination: input.destination,
-      ...(record.resource.obligations.createEligibility?.eligibleAt === null
-        ? { initializesReservation: true as const }
-        : {}),
     },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
