@@ -4,7 +4,7 @@ import type { WorkId } from "@meridian/contracts/runtime";
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "../domains/projects/index.js";
-import { testWorkSlug } from "../test-support/work-slug.js";
+import { rebindThreadWork } from "../domains/threads/index.js";
 import {
   combineWorkReversalOutcome,
   getWorkReceiptReversalAvailability,
@@ -102,7 +102,6 @@ describe("Work receipt reversal", () => {
     await h.works.archive(work.id);
     const receipt: WorkReceipt = {
       operation: "update",
-      category: "mutate",
       changed: true,
       workId: work.id,
       workName: "Arc revised",
@@ -127,7 +126,6 @@ describe("Work receipt reversal", () => {
     await h.works.update(work.id, { name: "Arc revised" });
     const receipt: WorkReceipt = {
       operation: "update",
-      category: "mutate",
       changed: true,
       workId: work.id,
       workName: "Arc revised",
@@ -171,7 +169,6 @@ describe("Work receipt reversal", () => {
     await h.works.softDelete(work.id);
     const receipt: WorkReceipt = {
       operation: "delete",
-      category: "mutate",
       changed: true,
       workId: work.id,
       workName: work.name,
@@ -195,30 +192,6 @@ describe("Work receipt reversal", () => {
     ).resolves.toEqual([expect.objectContaining({ status: "unavailable" })]);
   });
 
-  it("ignores a factual switch receipt while reversing an update in the same turn", async () => {
-    const h = harness([]);
-    const updated = await h.works.create({ projectId: "project-1", name: "Original" });
-    const target = await h.works.create({ projectId: "project-1", name: "Other" });
-    await h.works.update(updated.id, { name: "Revised" });
-    const receipts: WorkReceipt[] = [
-      updateReceipt(updated.id, "Original", "Revised"),
-      switchReceipt({ ...updated, name: "Revised" }, target),
-    ];
-    Object.assign(h.deps.blocks, {
-      listByTurn: async () =>
-        receipts.map((workReceipt) => ({ content: { metadata: { workReceipt } } })) as never,
-    });
-
-    await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
-    ).resolves.toEqual([expect.objectContaining({ command: "update", status: "reversed" })]);
-    await expect(h.works.findById(updated.id)).resolves.toMatchObject({
-      name: "Original",
-      deletedAt: null,
-    });
-    expect(h.deps.workContextNotices.workChanged).toHaveBeenCalledOnce();
-  });
-
   it("deletes a created Work even while it remains the conversation binding", async () => {
     const h = harness([]);
     const original = await h.works.create({ projectId: "project-1", name: "Original" });
@@ -226,7 +199,6 @@ describe("Work receipt reversal", () => {
     const receipts: WorkReceipt[] = [
       {
         operation: "create",
-        category: "mutate",
         changed: true,
         workId: created.id,
         workName: created.name,
@@ -234,8 +206,23 @@ describe("Work receipt reversal", () => {
         after: state("New"),
         inverse: { command: "delete", workId: created.id },
       },
-      switchReceipt(original, created),
     ];
+    let bound: WorkId = original.id;
+    await rebindThreadWork(
+      {
+        threads: h.deps.threads,
+        works: h.works,
+        threadWorks: {
+          rebindPrimary: async (_threadId, next) => {
+            const previousWorkId = bound;
+            bound = next;
+            return { previousWorkId, changed: previousWorkId !== next };
+          },
+        },
+        workContextNotices: { threadChanged: vi.fn(async () => {}) },
+      },
+      { threadId: THREAD_ID, workId: created.id },
+    );
     Object.assign(h.deps.blocks, {
       listByTurn: async () =>
         receipts.map((workReceipt) => ({ content: { metadata: { workReceipt } } })) as never,
@@ -250,29 +237,11 @@ describe("Work receipt reversal", () => {
     expect(h.deps.workContextNotices.workChanged).not.toHaveBeenCalled();
   });
 
-  it("never exposes a switch-only turn through Undo or Redo", async () => {
-    const h = harness([]);
-    const a = await h.works.create({ projectId: "project-1", name: "A" });
-    const b = await h.works.create({ projectId: "project-1", name: "B" });
-    const receipt = switchReceipt(a, b);
-    Object.assign(h.deps.blocks, {
-      listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
-    });
-
-    await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, redo: false });
-    await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
-    ).resolves.toEqual([]);
-  });
-
   it("does not expose a no-op receipt and flips availability after undo", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     const receipt: WorkReceipt = {
       operation: "create",
-      category: "mutate",
       changed: true,
       workId: work.id,
       workName: work.name,
@@ -377,7 +346,6 @@ describe("Work receipt reversal", () => {
       updateReceipt(work.id, "A", "B"),
       {
         operation: "delete",
-        category: "mutate",
         changed: true,
         workId: work.id,
         workName: "B",
@@ -409,42 +377,14 @@ describe("Work receipt reversal", () => {
   });
 });
 
-function updateReceipt(
-  workId: WorkId,
-  before: string,
-  after: string,
-): Extract<WorkReceipt, { category: "mutate" }> {
+function updateReceipt(workId: WorkId, before: string, after: string): WorkReceipt {
   return {
     operation: "update",
-    category: "mutate",
     changed: true,
     workId,
     workName: after,
     before: state(before),
     after: state(after),
     inverse: { command: "update", workId, state: state(before) },
-  };
-}
-
-function switchReceipt(
-  before: { id: WorkId; name: string },
-  after: { id: WorkId; name: string },
-): WorkReceipt {
-  return {
-    operation: "switch",
-    category: "binding",
-    before: {
-      workId: before.id,
-      slug: testWorkSlug(before.name.toLowerCase().replaceAll(" ", "-")),
-      aiWriteMode: "direct",
-      ...state(before.name),
-    },
-    after: {
-      workId: after.id,
-      slug: testWorkSlug(after.name.toLowerCase().replaceAll(" ", "-")),
-      aiWriteMode: "direct",
-      ...state(after.name),
-    },
-    inverse: null,
   };
 }

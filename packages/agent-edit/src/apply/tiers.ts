@@ -316,6 +316,15 @@ function preflightInsert(
     const live = validateLiveBlock(doc, model, edit.after, "after");
     if (!live.ok) return live;
   }
+  if (edit.blocks) {
+    if (edit.blocks.length === 0) {
+      return { ok: false, code: "invalid_write", message: "insert produced no blocks" };
+    }
+    return {
+      ok: true,
+      plan: { kind: "insert", tier: 3, edit, parsed: { blocks: [...edit.blocks] } },
+    };
+  }
   if (edit.newText.length === 0) {
     return { ok: false, code: "invalid_write", message: "insert requires non-empty content" };
   }

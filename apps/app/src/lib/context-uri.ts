@@ -28,11 +28,16 @@ export function parseContextUri(uri: string): ContextUri | null {
   return { ...parsed.value, path: formatContextPath(parsed.value.path) };
 }
 
-export function contextUriFromWritePath(path: string): string {
+/**
+ * The context URI a tool path names: bare paths are manuscript paths. `null`
+ * for a path under a scheme that addresses no writer document (`skills://`),
+ * which must never be filed under the manuscript.
+ */
+export function contextUriFromWritePath(path: string): string | null {
   const parsed = parseUnifiedContextUri(path);
-  return parsed.ok
-    ? parsed.value.normalized
-    : canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
+  if (parsed.ok) return parsed.value.normalized;
+  if (parsed.error.unknownScheme !== undefined) return null;
+  return canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
 }
 
 export function contextRouteTargetFromUri(

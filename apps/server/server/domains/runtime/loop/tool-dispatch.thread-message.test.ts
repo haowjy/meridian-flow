@@ -1,7 +1,7 @@
 /**
  * `thread_message` dispatch wiring: the tool callback builds a message request,
  * routes foreground/background through the coordinator's single entrypoint,
- * and strips report cost from the transcript tool_result exactly as `spawn`.
+ * and persists the model's text beside the typed result exactly as `spawn`.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
@@ -30,11 +30,13 @@ const PARENT_THREAD_ID = "parent-thread" as ThreadId;
 
 const completedResult = {
   status: "completed",
+  execution: "execution-1",
+  outcome: "succeeded",
   report: {
     handle: "p1",
     threadId: "child-1",
+    source: "return_result",
     summary: "second report",
-    costMillicredits: 42,
   },
 } as unknown as SpawnResult;
 const backgroundResult = {
@@ -149,7 +151,7 @@ describe("dispatchToolCall thread_message routing", () => {
     const { deps, ctx, runChild } = harness();
     const result = await dispatchToolCall(
       deps,
-      spawnCall({ agent: "", prompt: "go", mode: "background" }),
+      spawnCall({ prompt: "go", mode: "background" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
@@ -162,7 +164,7 @@ describe("dispatchToolCall thread_message routing", () => {
     expect((options as ChildRunOptions).transcript).toBeDefined();
   });
 
-  it("strips report cost and threadId, keeping the handle, from the persisted tool_result", async () => {
+  it("persists the report as text for the model and the typed result for the app", async () => {
     const { deps, ctx } = harness();
     const result = await dispatchToolCall(
       deps,
@@ -171,11 +173,8 @@ describe("dispatchToolCall thread_message routing", () => {
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
 
-    const output = (result.block.content as { output: { report: Record<string, JsonValue> } })
-      .output;
-    expect(output.report).not.toHaveProperty("costMillicredits");
-    expect(output.report).not.toHaveProperty("threadId");
-    expect(output.report.handle).toBe("p1");
-    expect(output.report.summary).toBe("second report");
+    const content = result.block.content as { output: JsonValue; result: JsonValue };
+    expect(content.output).toBe("Subagent p1\nReport (completed)\nsecond report");
+    expect(content.result).toEqual(completedResult);
   });
 });

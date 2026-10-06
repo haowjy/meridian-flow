@@ -6,6 +6,7 @@ import { documents, documentYjsHeads } from "@meridian/database";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -21,7 +22,6 @@ import {
   captureDocumentDerivation,
   certifyDocumentDerivation,
 } from "./drizzle-document-derivations.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export function createDrizzleDocumentLinkRewrite(input: {

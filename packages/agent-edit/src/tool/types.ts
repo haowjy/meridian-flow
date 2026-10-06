@@ -1,22 +1,28 @@
-// LLM-facing write(command=...) contract types for the agent editing core.
+// Engine-facing read and write contract types for the agent editing core.
 
 import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { Block } from "../codec-types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { WriteCommand, WriteCommandName } from "./command-schema.js";
-import type { AgentEditResultV1, WriteStatus, WriteSuccessPhase } from "./model-result.js";
+import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
+import type {
+  AgentEditResultCommand,
+  AgentEditResultV1,
+  WriteStatus,
+  WriteSuccessPhase,
+} from "./model-result.js";
 
-export type { WriteCommand, WriteCommandName } from "./command-schema.js";
+export type {
+  DocumentCommandName,
+  ReadCommand,
+  WriteCommand,
+  WriteCommandName,
+} from "./command-schema.js";
 export type {
   UndoRedoOutcome,
   WriteErrorStatus,
   WriteStatus,
   WriteSuccessPhase,
 } from "./model-result.js";
-export type CreateCommand = Extract<WriteCommand, { command: "create" }>;
-export type ReadCommand = Extract<WriteCommand, { command: "read" }>;
-export type DiffCommand = Extract<WriteCommand, { command: "diff" }>;
-export type InsertCommand = Extract<WriteCommand, { command: "insert" }>;
-export type ReplaceCommand = Extract<WriteCommand, { command: "replace" }>;
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
@@ -26,19 +32,18 @@ export type WriteOutcome = WriteOutcomeBase &
 interface WriteOutcomeBase {
   /** Host-only identity; never included in the model result. */
   revision: string | null;
-  command: WriteCommandName;
+  command: AgentEditResultCommand;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
   /** Unique host-only correlation for replacing a staged result with its settled receipt. */
   settlementId?: string;
-  /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
+  /** Machine-readable error detail for host observability; the model reads the rendered `result`. */
   error?: WriteErrorDetail;
-  /** Canonical versioned JSON result presented to the model. */
+  /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
-  /** Host-facing diagnostic text; models receive only `result`. */
-  text: string;
-  /** Host metadata; never rendered independently of the tool result. */
+  /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
+  nodes?: readonly Block[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -90,7 +95,7 @@ export interface WriteIdempotencyHitDetail {
 /** Host-only evidence for a dispatch failure collapsed to the stable internal-error outcome. */
 export interface UnexpectedWriteErrorDetail {
   cause: unknown;
-  command: WriteCommandName;
+  command: DocumentCommandName;
   documentId?: string;
   sessionId: string;
   threadId: string;
@@ -183,6 +188,13 @@ export interface WriteContext {
   interactionContext?: InteractionContext;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
+  /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */
+  includeNodes?: boolean;
+  /**
+   * The blocks a `from` or `copy` write copies, read by the host from the
+   * source (D23, D24). They become the command's content as nodes.
+   */
+  copiedNodes?: readonly Block[];
 }
 
 export type MutationActor =
@@ -190,6 +202,7 @@ export type MutationActor =
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 
+export type ReadFunction = (command: ReadCommand, context?: WriteContext) => Promise<WriteOutcome>;
 export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,

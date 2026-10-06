@@ -30,6 +30,7 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
         {
           childThreadId: s.ids.child,
           deliveryMode: "none",
+          callerThreadId: null,
           admittedAt: second.admittedAt,
           terminalAt: null,
         },

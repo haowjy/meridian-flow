@@ -19,9 +19,8 @@ Document reads, search hits, and settled writes persist
 `tool_result.content.metadata.documentRevisions` entries. Writer-reference reads
 persist `read.revision` beside `read.result`. The model projection consumes only
 the result, never these tokens. Entries use the shared `DocumentRevisionEvidence` contract:
-URI is canonical at observation time, or null for ID-only folded diffs. Null
-revision means unverifiable (including diff, binary
-references, failed writes, and unverified recovery).
+URI is canonical at observation time. Null revision means unverifiable
+(including binary references, failed writes, and unverified recovery).
 
 Staged mutation results start with null. The response-settlement receipt supplies
 the token captured at apply; `persistCommittedWriteResult` copies it without a
@@ -38,10 +37,10 @@ failed edits with only a historical path.
 ## Tool-owned policy
 
 `ToolRegistration.documentText` (`tools/document-text.ts`) owns each tool's
-classification and replacement copy; `historyPreview`
-(`tools/history-previews.ts`) owns its compact navigation marker. `write` and
-`search` register policies; references use `reference-context`. Error pairs
-are outside the policy. `diff` always elides. Tool pairing, reasoning, writer
+classification and replacement copy; `historySummary`
+(`tools/history-summaries.ts`) owns what follows its history call line's `→`. `read`,
+`write` and `search` register policies, each with a fixed kind; references use
+`reference-context`. Error pairs are outside the policy. Tool pairing, reasoning, writer
 words, and fresh text stay. Missing tool pairing or registration fails closed
 on result text. The `stale` treatment preserves compaction's stub bytes; the
 `history` treatment preserves mutation inputs and stubs copies.

@@ -21,18 +21,19 @@ function card(mode = "direct", execution: string | null = "execution-1") {
   });
 }
 
-function toolResult(name: string, output: JsonValue, isError = false): [Block, Block] {
+function toolResult(name: string, result: JsonValue, isError = false): [Block, Block] {
   return [
     block("use", 1, "tool_use", {
       toolCallId: "call-1",
       toolName: name,
       input: {},
-      output: null,
+      result: null,
       isError: false,
     }),
     block("result", 2, "tool_result", {
       toolCallId: "call-1",
-      output,
+      output: "Subagent p3\n\nReport (completed)",
+      result,
       isError,
       message: isError ? "Tool failed" : null,
     }),
@@ -120,9 +121,9 @@ describe("direct invocation result join", () => {
       "cancelled",
       "",
     ],
-  ] as const)("preserves persisted %s settlement", (_label, output, outcome, summary) => {
+  ] as const)("preserves persisted %s settlement", (_label, typed, outcome, summary) => {
     for (const name of ["spawn", "thread_message"]) {
-      const [use, result] = toolResult(name, output, outcome !== "succeeded");
+      const [use, result] = toolResult(name, typed, outcome !== "succeeded");
       expect(resultFor([use, card(), result])).toMatchObject({ outcome, summary });
     }
   });
@@ -153,15 +154,15 @@ describe("direct invocation result join", () => {
     expect(resultFor([{ ...use, turnId: "other" }, card(), result])).toBeNull();
     expect(resultFor([use, card(), { ...result, turnId: "other" }])).toBeNull();
     expect(
-      resultFor([use, card(), { ...result, content: { toolCallId: "other", output: success } }]),
+      resultFor([use, card(), { ...result, content: { toolCallId: "other", result: success } }]),
     ).toBeNull();
   });
 
-  it("joins the live reducer's settled output on the named use", () => {
+  it("joins the live reducer's settled result on the named use", () => {
     const [use] = toolResult("spawn", success);
     const mergedUse = {
       ...use,
-      content: { toolCallId: "call-1", toolName: "spawn", output: success },
+      content: { toolCallId: "call-1", toolName: "spawn", output: "text", result: success },
     };
     expect(directResultsForTurn([mergedUse, card()]).get("card")?.summary).toBe(
       "First line.\nFull report.",
@@ -191,12 +192,13 @@ describe("direct invocation result join", () => {
       toolCallId: callId,
       toolName: "spawn",
       input: { mode: "foreground" },
-      output: null,
+      result: null,
       isError: false,
     });
     const result = block("p17-result", 3, "tool_result", {
       toolCallId: callId,
-      output: {
+      output: "Subagent p17",
+      result: {
         report: {
           handle: "p17",
           summary:
@@ -238,10 +240,19 @@ describe("direct invocation result join", () => {
       toolCallId: "call-1",
       toolName: "spawn",
       input: {},
-      output: null,
+      result: null,
       isError: false,
     });
     expect(resultFor([card(), use])).toBeNull();
+  });
+
+  it("never parses the model's text as a result", () => {
+    const [use, saved] = toolResult("spawn", null);
+    const textOnly = {
+      ...saved,
+      content: { toolCallId: "call-1", output: success, result: null },
+    };
+    expect(resultFor([use, card(), textOnly])).toBeNull();
   });
 
   it("keeps empty success truthful and does not borrow another execution or mode", () => {
@@ -259,7 +270,7 @@ describe("direct invocation result join", () => {
         card(),
         {
           ...result,
-          content: { toolCallId: "call-1", output: { ...success, execution: "other" } },
+          content: { toolCallId: "call-1", result: { ...success, execution: "other" } },
         },
       ]),
     ).toBeNull();

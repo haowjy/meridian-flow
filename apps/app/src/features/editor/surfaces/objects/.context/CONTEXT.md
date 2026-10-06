@@ -39,7 +39,7 @@ keep, so the source itself is revealed with the error.
 ## The palette
 
 Diagrams are drawn from the design tokens, read at render time
-(`core/editor/mermaid-theme.ts`), so a theme switch repaints them. Nothing in
+(`core/editor/diagrams/mermaid-theme.ts`), so a theme switch repaints them. Nothing in
 this lane names a color.
 
 The lightbox's own ⋮ is the mockup's three: Edit source / Hide source, Copy

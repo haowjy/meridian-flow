@@ -1,5 +1,5 @@
 /** Thread-owned trail reads that retain captured evidence when the live document is unavailable. */
-import type { UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
@@ -7,7 +7,7 @@ import {
   changeTrailShells,
 } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { FileAccess } from "../../file-policy/index.js";
 import type {
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
@@ -16,13 +16,7 @@ import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
 export function createDrizzleChangeTrailReader(
   db: Database,
-  documentAccess: {
-    lockDocumentAccessState(
-      tx: Pick<DrizzleDb, "select">,
-      userId: UserId,
-      documentId: string,
-    ): Promise<"available" | "deleted" | null>;
-  },
+  fileAccess: Pick<FileAccess, "historyAccess">,
 ) {
   async function listShells(threadId: string): Promise<ChangeTrailShellV1[]> {
     const rows = await db
@@ -93,10 +87,9 @@ export function createDrizzleChangeTrailReader(
           authorized.push({ kind: "unavailable", documentId: row.documentId });
           continue;
         }
-        const anchorState = await documentAccess.lockDocumentAccessState(
-          tx,
-          input.userId,
-          row.documentId,
+        const anchorState = await fileAccess.historyAccess(
+          { accountId: input.userId },
+          row.documentId as DocumentId,
         );
         authorized.push(
           anchorState ? { kind: "detail", documentId: row.documentId, anchorState } : null,

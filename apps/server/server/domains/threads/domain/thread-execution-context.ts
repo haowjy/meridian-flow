@@ -1,18 +1,5 @@
-/** Thread execution policy from a locked Work and the Work-branch-only guard. */
-import type { WorkId } from "@meridian/contracts/runtime";
+/** Thread execution policy from a locked Work. */
 import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
-
-export class WorkRequiredError extends Error {
-  readonly code = "work_required" as const;
-  constructor(readonly operation: string) {
-    super(
-      operation === "write.diff"
-        ? "A Work in draft write mode is required to inspect the diff."
-        : `Work required for ${operation}`,
-    );
-    this.name = "WorkRequiredError";
-  }
-}
 
 export function threadExecutionContext(
   work: Pick<Work, "id" | "slug" | "aiWriteMode">,
@@ -22,12 +9,4 @@ export function threadExecutionContext(
     aiWriteMode: work.aiWriteMode,
     draftOwner: work.aiWriteMode === "draft" ? { kind: "work", workId: work.id } : null,
   };
-}
-
-export function requireWorkDraftOwner(
-  context: ThreadExecutionContext,
-  operation: string,
-): { kind: "work"; workId: WorkId } {
-  if (!context.draftOwner) throw new WorkRequiredError(operation);
-  return context.draftOwner;
 }

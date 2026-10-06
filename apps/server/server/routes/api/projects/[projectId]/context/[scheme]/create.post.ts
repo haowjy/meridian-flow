@@ -52,14 +52,11 @@ export async function createContextEntry(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, authority, port } = await resolveContextRoute(event);
-  const result = await createContextEntry({
-    port,
-    userId,
-    scheme,
-    authority,
-    body: parseCreateContextEntryBody(await readBody(event)),
-  });
+  const { userId, scheme, authority, port, container, edit } = await resolveContextRoute(event);
+  const body = parseCreateContextEntryBody(await readBody(event));
+  const result = await edit([container], () =>
+    createContextEntry({ port, userId, scheme, authority, body }),
+  );
   if (result.status === "conflict") setResponseStatus(event, 409);
   return result;
 });

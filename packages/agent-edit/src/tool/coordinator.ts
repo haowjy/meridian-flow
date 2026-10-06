@@ -6,7 +6,7 @@ import {
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
-import type { WriteCommand } from "./types.js";
+import type { DocumentCommandName } from "./types.js";
 
 export type LiveDocumentCallback<T> = (
   doc: Y.Doc,
@@ -15,8 +15,7 @@ export type LiveDocumentCallback<T> = (
 export async function withLiveDocument<T>(
   coordinator: DocumentCoordinator,
   docId: string,
-  commandName: WriteCommand["command"],
-  filePath: string,
+  commandName: DocumentCommandName,
   fn: LiveDocumentCallback<T>,
   options?: import("../ports/document-coordinator.js").DocumentLockOptions,
 ): Promise<T | InternalWriteResult | null> {
@@ -55,7 +54,7 @@ export async function withLiveDocument<T>(
     );
     return await Promise.race([operation, cancellation]);
   } catch (cause) {
-    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, filePath);
+    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName);
     throw cause;
   } finally {
     if (timeout) clearTimeout(timeout);

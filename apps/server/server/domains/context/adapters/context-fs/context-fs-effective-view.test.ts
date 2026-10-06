@@ -1,4 +1,4 @@
-/** ContextFS agent effective-view contracts for manuscript membership and search/read bytes. */
+/** ContextFS agent effective-view contracts for drafted-source membership and search/read bytes. */
 import { describe, expect, it } from "vitest";
 import type { Result } from "../../../../shared/result.js";
 import { Ok } from "../../../../shared/result.js";
@@ -22,8 +22,10 @@ function okMarkdown(value: string): Result<string, SyncError> {
   return Ok(value);
 }
 
-describe("ContextFS manuscript effective view", () => {
-  it("lists and searches the resolved manifest branch, not the SQL document set", async () => {
+describe("ContextFS drafted-source effective view", () => {
+  // Every drafted source takes this path (D9); kb stands for manuscript too.
+  it("lists and searches kb through the resolved manifest branch, not the SQL document set", async () => {
+    const scheme = "kb";
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
     await store.createDocument({
@@ -46,8 +48,12 @@ describe("ContextFS manuscript effective view", () => {
     const fs = new ContextFS({
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
-      scheme: "manuscript",
+      scheme,
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
@@ -121,6 +127,10 @@ describe("ContextFS manuscript effective view", () => {
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",
       manifestView: { projectId: PROJECT_ID, workId: WORK_ID, threadId: THREAD_ID },
+      threadView: {
+        threadId: THREAD_ID,
+        draftWork: { id: "00000000-0000-4000-8000-0000000000aa" as never, slug: "draft" },
+      },
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),

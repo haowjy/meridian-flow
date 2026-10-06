@@ -1,17 +1,24 @@
 # collab TODO
 
-## Make archived Work documents read-only in live Yjs sessions
+## Paths that hold a pooled connection while taking another
 
-Archived Work documents remain readable and therefore pass document access and
-live-room admission. The app mounts the archived surface read-only, but the live
-Yjs writer-ingress path does not consult Work lifecycle, so a direct or already
-connected peer can still submit updates for durable journaling. Add a read-only
-lifecycle fact to live-session admission and fence updates without revoking the
-readable room.
+The live-pull deadlock (10 concurrent pulls each held a root transaction and
+waited for a second connection) is fixed by snapshotting first. These paths
+still hold one connection while acquiring another, on purpose for lock
+order, so enough concurrent callers can exhaust the pool the same way:
 
-Affected paths: `apps/server/server/lib/document-access.ts`,
-`apps/server/server/lib/yjs-ws-handler.ts`, project document opening, and live
-session availability contracts.
+- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
+  transaction: its live snapshots and its `run(...)` each need a connection.
+- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
+  thread in one transaction, then opens a separate root transaction.
+- `createDeferredLiveProjectionCoordinator.withDocument` in
+  `adapters/hocuspocus-coordinator.ts`: inside a response transaction, reads
+  committed state on a second connection.
+
+Reproduce each with more concurrent callers than the pool's size (the PR 2
+perf bench's item 9 shows how), then restructure so no path waits for a
+connection while holding one. See
+[file-policy performance](../../file-policy/.context/performance.md).
 
 ## Draft preview fails on empty paragraphs
 
@@ -59,12 +66,3 @@ A unified generation scheme or tiered invalidation API is the long-term shape.
 
 Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
 resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.
-
-## Live settlement receipt recovery
-
-`domain/response-write-finalizer.ts` commits the live agent-edit journal before
-calling the host result rewrite. If that callback fails, the edit remains
-applied but the staged result can later be falsely repaired as uncommitted.
-Recover the durable settled receipt on retry instead of inferring failure
-from a pending tool-result block. Branch-mode settlement already shares the
-host transaction; keep that distinction explicit.

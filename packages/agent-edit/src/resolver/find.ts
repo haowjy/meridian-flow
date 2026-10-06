@@ -1,5 +1,6 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import { markdownPlainText, markdownTextView } from "../model/markdown-text-view.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
@@ -56,10 +57,11 @@ function matchSerializedText(
   find: string,
   all: boolean,
 ): FindResult {
-  const normalized = normalizeWithOffsetMap(haystack);
-  const matches = nonOverlappingMatches(normalized.text, find.normalize("NFC")).map((match) => ({
-    start: normalized.originalStart[match.start],
-    end: normalized.originalEnd[match.end - 1],
+  const view = markdownTextView(haystack);
+  const needle = markdownPlainText(find);
+  const matches = nonOverlappingMatches(view.text, needle).map((match) => ({
+    start: view.start[match.start],
+    end: view.end[match.end - 1],
   }));
   if (matches.length === 0) return notFound(`Could not find "${find}" in the selected scope`);
   if (matches.length > 1 && !all) {
@@ -134,28 +136,6 @@ function nonOverlappingMatches(
     cursor = index + Math.max(needle.length, 1);
   }
   return matches;
-}
-
-function normalizeWithOffsetMap(input: string): {
-  text: string;
-  originalStart: number[];
-  originalEnd: number[];
-} {
-  const originalStart: number[] = [];
-  const originalEnd: number[] = [];
-  let text = "";
-  for (const match of input.matchAll(/\P{Mark}\p{Mark}*|\p{Mark}+/gu)) {
-    const source = match[0];
-    const start = match.index;
-    const end = start + source.length;
-    const normalized = source.normalize("NFC");
-    text += normalized;
-    for (let index = 0; index < normalized.length; index += 1) {
-      originalStart.push(start);
-      originalEnd.push(end);
-    }
-  }
-  return { text, originalStart, originalEnd };
 }
 
 function resolveMatch(

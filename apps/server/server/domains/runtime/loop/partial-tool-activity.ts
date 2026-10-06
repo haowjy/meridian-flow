@@ -2,10 +2,9 @@
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const ACTIVITY_FIELDS: Record<string, readonly string[]> = {
-  write: ["command", "path", "uri"],
-  edit: ["path", "uri"],
-  read: ["path", "uri"],
-  search: ["query", "pattern"],
+  write: ["command", "path"],
+  read: ["path"],
+  search: ["pattern"],
   spawn: ["agent"],
 };
 
@@ -122,13 +121,12 @@ export function hasPartialToolActivityTarget(
 
   switch (toolName) {
     case "write":
-      // `write` also reads and diffs; its verb comes from the command.
-      return hasText("command") && hasText("path", "uri");
-    case "edit":
+      // Every write changes a document; its verb (create, replace, remove…) comes from the command.
+      return hasText("command") && hasText("path");
     case "read":
-      return hasText("path", "uri");
+      return hasText("path");
     case "search":
-      return hasText("query", "pattern");
+      return hasText("pattern");
     case "spawn":
       return hasText("agent");
     default:
@@ -138,8 +136,8 @@ export function hasPartialToolActivityTarget(
 
 /**
  * Whether a call's first streamed chunk may show before its target. A `write`
- * waits for its command instead: labeled early, every read would flash as a
- * write. Its command and path arrive in the first few dozen characters.
+ * waits for its command instead, so a create doesn't flash as an edit. Its
+ * command and path arrive in the first few dozen characters; `read` labels at once.
  */
 export function showsPartialToolActivityBeforeTarget(toolName: string): boolean {
   return toolName !== "write";
