@@ -26,7 +26,6 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
-  agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversalOps,
@@ -69,6 +68,7 @@ import {
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
+import { reserveWriteOrdinal } from "./write-ordinals.js";
 
 type JournalDb = Pick<
   Database,
@@ -645,26 +645,6 @@ async function hasLaterWriterJournalUpdateAfter(
     .orderBy(asc(documentYjsUpdates.id))
     .limit(1);
   return row !== undefined;
-}
-
-async function reserveWriteOrdinal(
-  db: JournalDb,
-  input: { documentId: string; threadId: string },
-): Promise<number> {
-  const [counter] = await db
-    .insert(agentEditWidCounters)
-    .values({
-      documentId: asDocumentId(input.documentId),
-      threadId: asThreadId(input.threadId),
-      nextWid: 1,
-    })
-    .onConflictDoUpdate({
-      target: [agentEditWidCounters.documentId, agentEditWidCounters.threadId],
-      set: { nextWid: sql`${agentEditWidCounters.nextWid} + 1` },
-    })
-    .returning({ wId: agentEditWidCounters.nextWid });
-  if (!counter) throw new Error("Failed to allocate agent edit w-id");
-  return counter.wId;
 }
 
 async function reverseMutationsForWrite(

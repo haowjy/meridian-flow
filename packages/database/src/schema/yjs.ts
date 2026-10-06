@@ -647,6 +647,56 @@ export const pendingNotices = pgTable(
   (table) => [index("pending_notices_thread").on(table.threadId, table.createdAt, table.id)],
 );
 
+/**
+ * The model's moves and deletes of whole documents: write handles with no Yjs
+ * update. `w_id` comes from the same per-(document, thread) counter as
+ * `agent_edit_mutations`, so one document's handles form one sequence. Undo
+ * needs the old location of a move and where a deleted document was.
+ */
+export const agentNamespaceChanges = pgTable(
+  "agent_namespace_changes",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    wId: integer("w_id").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    responseId: uuid("response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"move" | "delete">().notNull(),
+    /** Where the document was: a move's old location, or the deleted document's path. */
+    fromUri: text("from_uri").notNull(),
+    /** A move's new location. */
+    toUri: text("to_uri"),
+    status: text("status").$type<MutationStatus>().notNull().default("active"),
+    createdAt: createdAt(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("agent_namespace_changes_document_thread_w_id").on(
+      table.documentId,
+      table.threadId,
+      table.wId,
+    ),
+    index("agent_namespace_changes_thread_turn").on(table.threadId, table.turnId),
+    check("agent_namespace_changes_kind_valid", sql`${table.kind} IN ('move', 'delete')`),
+    check(
+      "agent_namespace_changes_move_target",
+      sql`(${table.kind} = 'move') = (${table.toUri} IS NOT NULL)`,
+    ),
+    check("agent_namespace_changes_status_valid", sql`${table.status} IN ('active', 'reversed')`),
+  ],
+);
+
 export const agentEditWidCounters = pgTable(
   "agent_edit_wid_counters",
   {
