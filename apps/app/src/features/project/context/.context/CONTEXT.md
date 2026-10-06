@@ -14,7 +14,8 @@ route selection; the selected-tab map uses the empty-string key for shared proje
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
 Editor-eligible project binary/custom metadata still opens a viewer tab and route.
-Scratch/Uploads instead route to the deferred-viewing notice without opening a tab. The resolved file's
+Scratch documents open Editor tabs owned by their resolved Work (including No Work).
+Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
@@ -90,8 +91,8 @@ tab records once it is in front of the writer, including a local draft. That
 write lands in the account recents continuity record before the POST. A filed
 document navigates by its readable address. A local draft reopens through the
 empty-path local address (the same history pointer a new document uses), not a
-fabricated path. Scratch and uploads are not
-Editor tabs, so they are not recorded.
+fabricated path. Scratch documents participate in Editor recents; Uploads do not
+open Editor tabs and are not recorded.
 
 ## Reference pages
 

@@ -490,6 +490,13 @@ snapshot path freezes displayed choices before the destination push. Native
 history is flushed before matching workspace settlement, so immediate reload
 uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
+Locally created documents also retain their stable resource handle in that
+entry's history state when the URL is readable. Their exact local tab, not a
+server path lookup, owns selection until departure: an unacknowledged address
+may still be missing or occupied by another document. Background namespace
+rejection therefore stays on the acted-on document's existing identity field.
+Work-scoped tab ownership uses the named Work id or null for No Work, even when
+the public document route carries the No Work row id.
 
 A project address has explicit selections, not defaults: absent, no-Work,
 Work id, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.

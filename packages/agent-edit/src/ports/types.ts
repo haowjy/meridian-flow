@@ -31,6 +31,8 @@ export interface PersistedUpdate {
 
 /** Checkpoint plus ordered updates returned by journal read. */
 export interface JournalSnapshot {
+  /** Host authority captured with this snapshot, when the journal has generations. */
+  authority?: { authorityId: string; generation: bigint };
   /** Latest checkpoint bytes (full encoded Y.Doc state), or null if none. */
   checkpoint: Uint8Array | null;
   /** Updates in ascending sequence order, filtered by read opts when provided. */

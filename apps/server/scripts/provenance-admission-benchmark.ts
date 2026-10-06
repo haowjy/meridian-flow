@@ -128,10 +128,6 @@ async function runCurrentDay(): Promise<DayResult> {
   const counters = emptyCounters();
   const journal = countingJournal(counters);
   const port = createHocuspocusPersistenceService({
-    readCheckpointAuthority: async () => ({
-      authorityId: "test-authority" as never,
-      generation: 1n,
-    }),
     journal,
     hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
     metaForOrigin: () => ({ origin: "human:benchmark-user", seq: 0 }),

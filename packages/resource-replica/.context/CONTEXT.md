@@ -35,17 +35,21 @@ identity, gain remote authority or restart after acknowledgement. Namespace
 dispatch waits until the content adapter establishes the exact database marker and
 clears the reservation.
 
-A Work-scoped location (Scratch, Uploads) names its Work by id. A named Work
-also carries its slug; No Work carries its row id and no slug, which is how the
-catalog spells `@/`. `ResourceWorkAuthority` makes this a type rule: a Work
-id comes with its slug, `null` only for the No Work row, so a named Work's
-location cannot drop it. Catalog installation, canonical refresh and
-`authorityMatches` accept both shapes. Namespace requests do not: `requestFor`
-returns no request for a source or destination with a Work id and no slug, and
-the records policy rejects such an attempt. So a No Work Scratch document
-cannot be placed, moved or deleted through the replica, and creating one
-(a link's Create, the Scratch tree's New file) asks the server directly.
-Accepting the shape on the request side is issue #648.
+A Work-scoped location (Scratch, Uploads) retains its Work row id and slug;
+the locked No Work row uses a null slug and URI authority `@/`.
+`resourceWorkAuthorityFor` checks command construction against the known project
+Works snapshot and its separate locked No Work id. Link Create, tree Create and
+Editor identity commits use this boundary. `resourceContextAuthority` is the
+single durable authority rule used by catalog projection, receipt matching and
+tab ownership.
+
+The journal type and structural validator cannot prove that a row id is the
+project's locked row: they have no Works registry. Server catalog acquisition
+asserts that relationship through its Work-qualified scope and canonical URI;
+commands must use the checked snapshot constructor, not manufacture a nullable
+slug. This is a trusted-input boundary, not a type-only identity guarantee.
+No Work link Create and Editor identity rename use the same namespace journal
+as named Works. No Work has no exposed Scratch tree.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted

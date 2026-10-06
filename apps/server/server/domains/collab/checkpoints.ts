@@ -6,6 +6,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
+import { documentAuthority, RetiredDocumentHandleError } from "./domain/document-handle.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 import type { CheckpointAuthority } from "./domain/ports/checkpoint-authority.js";
 
@@ -42,7 +43,6 @@ type CheckpointMarkdownDocuments = {
 
 type CheckpointServiceDeps = {
   coordinator: DocumentCoordinator;
-  readCheckpointAuthority(documentId: string): Promise<CheckpointAuthority>;
   store: CheckpointStore;
   latestUpdateSeq(documentId: string): Promise<number>;
   markdownDocuments: CheckpointMarkdownDocuments;
@@ -61,7 +61,7 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         const { state, upToSeq, authority } = await deps.coordinator.withDocument(
           documentId,
           async (doc) => {
-            const authority = await deps.readCheckpointAuthority(documentId);
+            const authority = documentAuthority(doc);
             const upToSeq = await deps.latestUpdateSeq(documentId);
             // upToSeq must be ≤ the updates reflected in state; any later
             // update is replayed after the checkpoint, which is safe in Yjs.
@@ -71,6 +71,8 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         const id = await deps.store.createCheckpoint(documentId, state, reason, upToSeq, authority);
         return id === null ? Err({ code: "stale_generation", documentId }) : Ok(id);
       } catch (cause) {
+        if (cause instanceof RetiredDocumentHandleError)
+          return Err({ code: "stale_generation", documentId });
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         throw cause;
       }
