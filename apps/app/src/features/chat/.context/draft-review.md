@@ -63,7 +63,25 @@ the click (the host passes the intent before the room resolves), until the
 review room has bound and its editor exists, then swaps in one step; Apply, Discard and
 Back to live reveal the warm live editor instead of rebuilding one. No review
 transition shows an empty body. A draft-only tab has no live editor to keep, so
-its shell (or schema notice) is visible from the first render.
+its shell (or schema notice) is visible from the first render. The review editor
+is keyed by its own branch room, never by the live binding, so a rename (which
+re-mints the live binding) does not remount the painted review.
+
+Entering review on an existing document shows the read-only live text under the
+review header for about 110 ms, until the draft paints. That is the current
+trade (the alternative was a blank body). Whether to hold the whole live view,
+header included, until the draft paints is an open product question; see
+`features/editor/.context/TODO.md`.
+
+When the server refuses a review room's pending edits (4409), the room is
+rebuilt in place and the review stays open. While the rebuild runs, `EditorView`
+shows an inert copy of the painted review (`FrozenReviewMarkup`), detached from
+input before the retired Y.Doc is destroyed, so neither live prose nor an empty
+shell appears under a review the writer is still in. The copy belongs to one
+review identity (document, room, draft) and one rebuild attempt: it renders for
+no other review, and a retired attempt's completion or failure is ignored. Do
+not keep the old TipTap view mounted instead; the registry destroys the reset
+branch's Y.Doc, so that would need a new detach-and-retain contract.
 
 Review mode is a full-width Editor; the dock remains in the writer's chosen
 open/collapsed state and view. There is no in-editor review split.
@@ -178,10 +196,11 @@ desktop host opens no live binding for a `draftOnly` tab. The ordinary live room
 opens once Apply promotes the tab. There is no live version to go back to, so the
 header's exit for such a tab reads "Close review" and closes the tab (the draft
 stays in the Work's list to reopen), and a failed branch room offers Retry or
-closing the tab rather than falling back to an empty live editor. **The phone
-does not host a new-document draft review yet:** its route tab comes only from the
-live catalog, which does not list the document until Apply (tracked separately).
-Phone review works for drafts of documents that already exist. Its review tab
+closing the tab rather than falling back to an empty live editor. The phone
+hosts it the same way: the route finds the draft-only tab through the shared
+route-document order (`features/project/context/route-document-owner.ts`), and
+`MobileDraftOnlyDocumentHost` delegates to the desktop `ContextEditorMountHost`
+without acquiring a live room. Its review tab
 is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
 `draftOnly`, from the server's `isNewDocument` flag — derived per list
 request from manifest membership (in the work manifest, not the live one),
@@ -226,9 +245,12 @@ admission may enrich only the overlay with resolved live-resource metadata.
     starts later is authoritative, since the server reuses a draft id for a
     branch's next generation. The record is dropped once no earlier read is still
     in flight. The list then refreshes in the background.
-  - `failed`: a refused Discard (`discard-offline`) or a lost Apply response
-    (`apply-unknown`), shown on the draft by the header, the composer strip, and
-    the Work Files row. It clears on the next action on that draft (Discard
+  - `failed`: a refused Discard (`discard-offline`), a lost Apply response
+    (`apply-unknown`), or a Review launch that could not open
+    (`review-failed`, recorded by the editor handoff and never over a pending
+    command), shown on the draft by the header, the composer strip, the Work
+    Files row, the Changes view, and the identity-bar chip (which turns into a
+    retry). It clears on the next action on that draft (Discard
     retry, Apply, opening Review); Work Files also offers Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.

@@ -122,11 +122,13 @@ open has no in-place recovery yet.
 
 A draft-only tab (a new document proposed by a draft) opens no live binding at
 all: it has no live manifest membership and the server refuses a room for it,
-so desktop review hosts the draft branch room alone (`liveRoom={!branchOnly}`)
-and a failed branch room offers Retry or closing the tab, never a fallback to
-an empty live editor. The phone cannot host a new-document draft review yet: its
-route tab comes only from the live catalog (tracked in the draft-review-repair
-work item). Once the server confirms Apply the tab is promoted to a durable tab
+so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
+failed branch room offers Retry or closing the tab, never a fallback to an empty
+live editor. The phone hosts it through the same `ContextEditorMountHost`
+(`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
+shells find the tab through `route-document-owner.ts`, the bound identity in the
+live catalog and then the draft-only admission before any path occupant.
+Once the server confirms Apply the tab is promoted to a durable tab
 and this host opens its live room like any other document. Whether that open is
 slow, fails, or disconnects is the host's business and never changes whether
 Apply completed.

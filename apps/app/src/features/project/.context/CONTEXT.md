@@ -477,6 +477,20 @@ navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
 `ready`; a failed catalog or draft-list read ends the wait with the route
 boundary's error and Retry (address and `?draft=` kept), and the phone host
 treats a failed address as neither pending nor settled, so it never rejects the route.
+A launch that fails records `review-failed` on the draft's command record, so the
+row or chip the writer clicked shows it (`chat/.context/draft-review.md`).
+
+A path never refutes identity. Renaming or moving a document with its review
+open keeps the review: once the address has resolved, identity decides whether
+it still names the reviewed document, and while it resolves a different path is
+`pending`, not a different document (`EditorReviewAddressOwner`). A committed
+rename or move through the identity bar or the tree replaces the current entry
+with the new path in the same history entry, and `?draft=` is never dropped on
+the way. The removal coordinator's route repair carries the address's review, a
+review launch on the current document never moves the address, and replacing an
+entry with its own URL writes no history. Draft rows (composer strip, Work Files)
+take the name from the live catalog entry, so a rename shows there in the same
+frame; a draft-only document keeps its recorded label.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
