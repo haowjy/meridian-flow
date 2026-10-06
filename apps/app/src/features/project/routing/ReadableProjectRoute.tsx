@@ -278,6 +278,8 @@ export function ReadableProjectRoute({
       latest.current.address,
       target,
       latest.current.noWorkId,
+      undefined,
+      latest.current.editorWorkId,
     );
   }, []);
   const reportSelection = useCallback(
@@ -533,6 +535,7 @@ export function ReadableProjectRoute({
         requested,
         current.noWorkId,
         addressDocumentIdRef.current,
+        current.editorWorkId,
       );
       // A review launch carries the locator its draft row captured, which a rename or a
       // reused path can have outdated. Identity decides where that document is now.
