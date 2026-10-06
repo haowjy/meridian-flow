@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { ActivityRow } from "./ActivityRow";
 import { descriptorFor, moveDestinationName } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
-import { documentDisplayName, documentFileName } from "./document-display-name";
+import { documentDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { sourcePath, stringInput, toolInputObject } from "./tool-command";
 
@@ -74,12 +74,13 @@ function MoveTitle({ tool, change }: { tool: ToolView; change: TurnNamespaceChan
 }
 
 /**
- * "Moved ch3.md to ch3-old.md". Applied, the new place is the door; undone,
- * the old one is, since that is where the document is again.
+ * "Moved ch3 to ch3-old", named the way a read row names a document. Applied,
+ * the new place is the door; undone, the old one is, since that is where the
+ * document is again.
  */
 function MoveSentence({ from, to, undone }: { from: string; to: string; undone: boolean }) {
-  const fromName = documentFileName(from);
-  const toName = moveDestinationName(from, to);
+  const fromName = documentDisplayName(from);
+  const toName = moveDestinationName(from, to, documentDisplayName);
   const source = undone ? <DocumentName path={from} text={fromName} /> : <Plain>{fromName}</Plain>;
   const destination = undone ? <Plain>{toName}</Plain> : <DocumentName path={to} text={toName} />;
   return (
