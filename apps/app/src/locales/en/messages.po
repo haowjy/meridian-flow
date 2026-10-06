@@ -3135,6 +3135,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
+#: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
