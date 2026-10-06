@@ -3,28 +3,22 @@
  * there.
  *
  * The document goes at exactly the link's address: its scheme, its folders,
- * its filename (with `.md` when the link omitted the extension), and for
- * Scratch the Work its authority names (`@slug`, `@/` for No Work, or the
- * surface's own Work for a contextual `scratch://`). Uploads are files a writer
- * brings, never documents a link conjures, so they are not creatable here.
+ * and its filename (with `.md` when the link omitted the extension). Only
+ * manuscript, kb, and user documents are conjured by a link. Scratch notes are
+ * made from a Work's Files tab or by the AI, and Uploads are files a writer
+ * brings, so neither is creatable here.
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
  * and syncs in the background; the server's move creates any missing folders.
- * Whether the address can be created at all, and whether its Work can take a
- * note, is decided up front (`planLinkCreation`), when the dialog is shown, so
- * Create is only ever offered where it can succeed.
  * A later sync failure lands on the document itself. Nothing about the link
- changes on creation: the project now holds a document at that address, which
+ * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import { useCallback, useRef, useState } from "react";
 
-import { useWorks } from "@/client/query/useWorks";
 import {
   type CreatableLinkScheme,
   documentFileName,
@@ -36,15 +30,14 @@ export type LinkCreationTarget = {
   scheme: CreatableLinkScheme;
   folderPath: string;
   name: string;
-  authority: ParsedContextAuthority;
 };
 
 /** Where Create puts the document for this address, or null when it cannot. */
-function linkCreationTarget(address: string | null): LinkCreationTarget | null {
+export function linkCreationTarget(address: string | null): LinkCreationTarget | null {
   if (!address) return null;
   const parsed = parseContextUri(address);
   if (!parsed.ok) return null;
-  const { scheme, path, authority } = parsed.value;
+  const { scheme, path } = parsed.value;
   if (!isCreatableLinkScheme(scheme)) return null;
   const folders = path.split("/");
   const leaf = folders.pop();
@@ -52,64 +45,12 @@ function linkCreationTarget(address: string | null): LinkCreationTarget | null {
   const name = documentFileName(leaf);
   if (!name) return null;
   if (![...folders, name].every((segment) => validateContextEntryName(segment).ok)) return null;
-  return { scheme, folderPath: folders.join("/"), name, authority };
-}
-
-/**
- * What the dialog can offer for a missing address, decided once from the
- * Works snapshot: Create (with the Work it lands in), Unarchive first (an
- * archived Work takes no new notes), or nothing. `loading` is a Scratch
- * address whose Work the snapshot has not delivered yet.
- */
-export type LinkCreation =
-  | { kind: "create"; target: LinkCreationTarget; work: ResourceWorkAuthority }
-  | { kind: "archived"; target: LinkCreationTarget; work: Work }
-  | { kind: "loading"; target: LinkCreationTarget };
-
-/**
- * `surfaceWorkId` is the surface's Work (a named Work or the No Work row; null
- * while unresolved): what a contextual `scratch://` address means there.
- * `snapshot` is the live Works (deleted ones absent), or null while loading.
- * A Work that is deleted, or that no Work has the name of, offers nothing.
- */
-export function planLinkCreation(
-  address: string | null,
-  surfaceWorkId: string | null,
-  snapshot: { works: readonly Work[]; noWork: Work } | null,
-): LinkCreation | null {
-  const target = linkCreationTarget(address);
-  if (!target) return null;
-  if (target.scheme !== "scratch") return { kind: "create", target, work: { workId: null } };
-  const { authority } = target;
-  if (!snapshot || (authority.kind === "contextual" && !surfaceWorkId))
-    return { kind: "loading", target };
-  const work =
-    authority.kind === "none"
-      ? snapshot.noWork
-      : authority.kind === "contextual"
-        ? [snapshot.noWork, ...snapshot.works].find(({ id }) => id === surfaceWorkId)
-        : snapshot.works.find(({ slug }) => slug === authority.workSlug);
-  if (!work) return null;
-  if (isWorkArchived(work)) return { kind: "archived", target, work };
-  return { kind: "create", target, work: resourceWorkAuthorityFor(work.id, snapshot) };
-}
-
-/** `planLinkCreation` over the project's Works as this surface sees them. */
-export function useLinkCreation(
-  projectId: string | null,
-  workId: string | null,
-  address: string | null,
-): LinkCreation | null {
-  const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  return useMemo(
-    () => planLinkCreation(address, workId, works && noWork ? { works, noWork } : null),
-    [address, workId, works, noWork],
-  );
+  return { scheme, folderPath: folders.join("/"), name };
 }
 
 export type CreateLinkedDocument = {
   /** The new document's id, or null when it could not be created. */
-  create(creation: Extract<LinkCreation, { kind: "create" }>): Promise<string | null>;
+  create(target: LinkCreationTarget): Promise<string | null>;
   creating: boolean;
   failed: boolean;
 };
@@ -123,7 +64,7 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
   const inFlight = useRef(false);
 
   const create = useCallback(
-    async ({ target, work }: Extract<LinkCreation, { kind: "create" }>) => {
+    async (target: LinkCreationTarget) => {
       if (!projectId || inFlight.current) return null;
       inFlight.current = true;
       setFailed(false);
@@ -141,7 +82,7 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
             scheme: target.scheme,
             folderPath: target.folderPath,
             name: target.name,
-            ...work,
+            workId: null,
           });
         } finally {
           reservation.content.handle.release();

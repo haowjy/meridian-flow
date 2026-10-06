@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { LinkFollowOutcome } from "@/core/editor/links";
 import { linkTargetHref } from "@/core/editor/links";
 
-import { FollowOutcomeContent, FollowOutcomeTitle } from "./FollowOutcomeContent";
+import { FollowOutcomeContent, followOutcomeTitle } from "./FollowOutcomeContent";
 import type { FollowReporter, LinkDocumentRef } from "./follow-link";
 
 /** The outcome a follower reports into, and the reporter it reports through. */
@@ -33,14 +33,12 @@ export function useFollowOutcomeState(): {
 export function LinkFollowDialog({
   outcome,
   projectId,
-  workId,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome | null;
   projectId: string | null;
-  workId: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
@@ -58,13 +56,10 @@ export function LinkFollowDialog({
       }}
     >
       <DialogContent className="max-w-[calc(100vw-2rem)] rounded-lg sm:max-w-md">
-        <DialogTitle>
-          <FollowOutcomeTitle outcome={outcome} projectId={projectId} workId={workId} />
-        </DialogTitle>
+        <DialogTitle>{followOutcomeTitle(outcome)}</DialogTitle>
         <FollowOutcomeContent
           outcome={outcome}
           projectId={projectId}
-          workId={workId}
           onClose={onClose}
           onRetry={onRetry}
           onOpen={onOpen}

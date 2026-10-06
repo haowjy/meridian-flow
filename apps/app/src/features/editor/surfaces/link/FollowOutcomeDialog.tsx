@@ -13,7 +13,7 @@
 import type { Editor } from "@tiptap/core";
 
 import { linkTargetHref } from "@/core/editor/links";
-import { FollowOutcomeContent, FollowOutcomeTitle } from "@/features/links";
+import { FollowOutcomeContent, followOutcomeTitle } from "@/features/links";
 
 import { EditorDialog } from "../../chrome";
 import { useEditorScope } from "../../editor-scope";
@@ -23,7 +23,7 @@ import { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";
 export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
   const surface = useLinkSurface(editor);
   const { follow } = useLinkSurfaceState(editor);
-  const { projectId, workId } = useEditorScope();
+  const { projectId } = useEditorScope();
   const open = useEditorLinkDestination();
 
   // Mounted only while there is something to say. A dialog that sat closed in
@@ -45,12 +45,11 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
       }}
       showTitle
       className="sm:max-w-md"
-      title={<FollowOutcomeTitle outcome={follow} projectId={projectId} workId={workId} />}
+      title={followOutcomeTitle(follow)}
     >
       <FollowOutcomeContent
         outcome={follow}
         projectId={projectId}
-        workId={workId}
         onClose={() => surface.dismissFollow()}
         onRetry={() => surface.retryFollow()}
         onOpen={(document) => open(document, "current")}

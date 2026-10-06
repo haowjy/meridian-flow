@@ -74,8 +74,7 @@ the batch endpoint in [`FUTURE`](FUTURE).
 | resolved, already cached | the document opens, no surface at all |
 | resolved after a wait | the same, and the checking dialog closes if it appeared |
 | nothing at the address, creatable | "“{name}” doesn't exist yet", with `Create “{name}”` |
-| nothing at the address, in an archived Work's Scratch | "“{name}” doesn't exist yet" and that the Work (by title) is archived and can't take new notes, with Unarchive; Create replaces it as soon as the Unarchive shows |
-| nothing at the address, not creatable (Uploads, a non-document extension, a deleted Work, a Work name no Work has) | "“{name}” can't be found", no Create |
+| nothing at the address, not creatable (Scratch in any Work, Uploads, Unfiled, a non-document extension) | "“{name}” can't be found", no Create |
 | the request failed | "That link could not be checked", with Try again |
 | still in flight past 250ms | "Opening the link", with Cancel, which stops the follow |
 
@@ -144,30 +143,15 @@ their place to reach a document that was one tab away.
 
 Creating from the offer (`useCreateLinkedDocument`) makes the document at
 exactly the missing address (`linkCreationTarget`): its scheme (manuscript,
-kb, user, or scratch; never uploads, which are files a writer brings, and never
-Unfiled), its folders, and its filename, with `.md` added when the link omitted
-the extension (`documentFileName`, the same rule the Editor `@` menu's
-link-ahead row uses). Scratch goes to the Work its authority names: `@slug` by slug, `@/` as
-No Work, and a contextual `scratch://` in the surface's Work, which the host
-passes as `workId`. A named Work travels with its slug, or the background move
-could never validate its canonical address. An address that is not a legal
-path gets the dialog without the button.
+kb, or user), its folders, and its filename, with `.md` added when the link
+omitted the extension (`documentFileName`, the same rule the Editor `@` menu's
+link-ahead row uses). Never Uploads (files a writer brings), Unfiled, or
+Scratch: by owner direction, Scratch notes are made only by the Work's Files tab
+(New note) and the AI, so a link to a missing Scratch note, in a live, archived,
+deleted, or unknown Work, gets the dialog without the button. An address that is
+not a legal path gets the dialog without the button too.
 
-What the dialog offers is decided before Create, by `planLinkCreation` over the
-Works snapshot (`useLinkCreation`; the title and the content both read it):
-`create` (with the Work's authority), `archived` (the Work, by `isWorkArchived`,
-the same test Work Files uses to disable New note), `loading` (Scratch before
-the snapshot arrives; Create disabled), or null (not creatable). Deleted Works
-are absent from the live list, so they fall to null like a name no Work has.
-Unarchive uses `useWorkArchiveToggle`, which is optimistic: the snapshot
-projection flips the Work at once, the plan becomes `create`, and the one
-primary button (same element, so focus stays) reads Create. The dialog retains
-Unarchive's promise: a Create click waits for it before reserving or filing,
-and does not create if Unarchive fails. A refused Unarchive
-returns the Work and its failure shows on the dialog.
-
-It uses the reservation and `setLocation` primitive for every destination,
-including No Work Scratch (row id with null slug). Both steps commit locally, so the dialog closes and the document
+It uses the reservation and `setLocation` primitive. Both steps commit locally, so the dialog closes and the document
 opens through the host's `onOpen` at once,
 while the server's move (which creates any missing folders) catches up in the
 background. A local failure stays on the dialog ("The document could not be
