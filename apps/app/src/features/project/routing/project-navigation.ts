@@ -46,6 +46,15 @@ export type ProjectLeaveGuard = {
   cancel(): void;
 };
 
+/** Whether the entry already holds exactly this address, including its no-Work pin. */
+function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
+  return (
+    entry.href === projectAddressHref(address) &&
+    JSON.stringify(entry.state.meridianProjectEmptySelection) ===
+      JSON.stringify(projectAddressState(address).meridianProjectEmptySelection)
+  );
+}
+
 export function createProjectNavigation(
   port: ProjectNavigationPort,
   displayed: () => DisplayedProjectSelection,
@@ -165,6 +174,14 @@ export function createProjectNavigation(
             ? { ...address, settings: current.address.settings }
             : address;
         try {
+          // A replacement of the entry by itself: another writer (address admission following a
+          // rename) already put this address there. Writing it again only repeats the history
+          // write, so the destination is reached without one.
+          if (options.replace && !options.state && sameEntryAddress(port.read(), next)) {
+            prepared?.commit();
+            resolve({ kind: "applied" });
+            return;
+          }
           if (!options.replace) {
             departureWrite = true;
             try {
@@ -278,16 +295,9 @@ export function createProjectNavigation(
       // delayed repair must never retire that command or ask its leave guard.
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
-      const href = projectAddressHref(address);
-      const state = projectAddressState(address, entry.state);
-      if (
-        href === entry.href &&
-        JSON.stringify(state.meridianProjectEmptySelection) ===
-          JSON.stringify(entry.state.meridianProjectEmptySelection)
-      )
-        return { kind: "replaced" };
+      if (sameEntryAddress(entry, address)) return { kind: "replaced" };
       try {
-        port.replaceEntry(href, state);
+        port.replaceEntry(projectAddressHref(address), projectAddressState(address, entry.state));
         return { kind: "replaced" };
       } catch (error) {
         return { kind: "failed", error, ticket: capture() };

@@ -234,6 +234,23 @@ describe("project navigation", () => {
     ]);
     navigation.dispose();
   });
+  it("writes nothing for a replacement of the entry by the address it already holds", async () => {
+    // Address admission already followed a rename to this address; the rename's own
+    // replacement then asks for the same one.
+    const href =
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/renamed.md?work=123e4567-e89b-42d3-a456-426614174000&draft=branch_1";
+    const { navigation, changes } = setup(href);
+    const commit = vi.fn();
+    const result = await navigation.transition(
+      address(href),
+      { replace: true },
+      { isCurrent: () => true, commit },
+    );
+    expect(result).toEqual({ kind: "applied" });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(changes).toEqual([]);
+    navigation.dispose();
+  });
   it("never turns an explicit malformed or unavailable selection into a default", async () => {
     const { history, navigation } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad+work",
