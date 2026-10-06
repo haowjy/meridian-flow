@@ -17,6 +17,7 @@ import {
   type FileDestination,
   type FileGrant,
   isFileAccessDenied,
+  type Principal,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -95,10 +96,11 @@ export async function containerGrant(
   call: ToolCall,
   command: DocumentCommandName,
   uri: string,
+  principal: Principal = call.principal,
 ): Promise<FileGrant<"edit"> | WriteToolErrorOutput | null> {
   const target = await threadContainerTarget(deps.works, call.context.resolution, uri);
   if (!target) return null;
-  const container = await deps.fileAccess.authorize(call.principal, target, "edit");
+  const container = await deps.fileAccess.authorize(principal, target, "edit");
   return isFileAccessDenied(container) ? fileAccessDeniedError(command, container, uri) : container;
 }
 
@@ -220,6 +222,7 @@ export async function runNamespaceCommand(
         threadId: ctx.threadId,
         turnId: ctx.turnId ?? null,
         responseId: ctx.responseId ?? null,
+        draftBranchId: null,
       },
       () =>
         input.command === "move"

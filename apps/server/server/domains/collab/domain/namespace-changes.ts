@@ -5,9 +5,17 @@
  * and a new change is recorded in the transaction that makes it, so a
  * failure leaves neither a half-applied change nor a stale handle.
  */
+import { parseWriteHandle } from "@meridian/agent-edit/integration";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import {
+  type BranchReversalHistoryReader,
+  buildBranchReversalState,
+  resolveBranchReversalScope,
+} from "./branch-reversal-history.js";
 import type {
   AgentNamespaceChangeStore,
+  ContentWriteHandle,
   NamespaceChangeOwner,
   NamespaceChangeRecord,
   NamespaceChangeShape,
@@ -97,15 +105,66 @@ async function refusable<T, E>(
   }
 }
 
+/**
+ * The thread's content handles in its Work draft, as the engine's undo and
+ * redo route them (`thread-peer-reversals`): on the same `w_id` sequence as
+ * its live ones.
+ */
+async function draftedContent(
+  reader: BranchReversalHistoryReader,
+  documentId: string,
+  threadId: string,
+  now: Date,
+): Promise<ContentWriteHandle[]> {
+  const scope = await resolveBranchReversalScope({
+    documentId: documentId as DocumentId,
+    threadId: threadId as ThreadId,
+    ...reader,
+  });
+  if (!scope) return [];
+  const state = buildBranchReversalState(threadId as ThreadId, scope.rows);
+  const handles: ContentWriteHandle[] = [];
+  for (const write of state.activeWrites) {
+    const wId = parseWriteHandle(write.handle);
+    if (wId !== undefined) handles.push({ wId, status: "active", reversedAt: null });
+  }
+  for (const reversal of state.reversals) {
+    if (reversal.status !== "reversed" || (reversal.expiresAt && reversal.expiresAt <= now)) {
+      continue;
+    }
+    for (const handle of reversal.writeIds) {
+      const wId = parseWriteHandle(handle);
+      if (wId !== undefined) {
+        handles.push({ wId, status: "reversed", reversedAt: reversal.reversedAt ?? null });
+      }
+    }
+  }
+  return handles;
+}
+
 export function createNamespaceChanges(deps: {
   store: AgentNamespaceChangeStore;
   /** A transaction, or a savepoint inside the caller's, so a refusal rolls back only this step. */
   atomic<T>(operation: () => Promise<T>): Promise<T>;
+  /** The thread's Work-draft journal, so a walk counts drafted content writes too. */
+  draftHistory: BranchReversalHistoryReader;
 }): NamespaceChanges {
   const { store, atomic } = deps;
   const { record: _record, transition: _transition, ...reads } = store;
   return {
     ...reads,
+
+    async history(documentId, threadId) {
+      const [recorded, drafted] = await Promise.all([
+        store.history(documentId, threadId),
+        draftedContent(deps.draftHistory, documentId, threadId, new Date()),
+      ]);
+      if (drafted.length === 0) return recorded;
+      return {
+        namespace: recorded.namespace,
+        content: [...recorded.content, ...drafted].sort((left, right) => left.wId - right.wId),
+      };
+    },
 
     commit(owner, apply) {
       return refusable(atomic, async () => {

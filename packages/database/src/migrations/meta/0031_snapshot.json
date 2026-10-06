@@ -1,5 +1,5 @@
 {
-  "id": "f71f9f0d-2979-4097-8be3-d10384348a79",
+  "id": "9168da05-723c-40ae-bf07-2fd741b6afb8",
   "prevId": "dcb01017-9977-499e-ab5d-884eefefa0be",
   "version": "7",
   "dialect": "postgresql",
@@ -7379,6 +7379,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "draft_branch_id": {
+          "name": "draft_branch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -7496,6 +7502,19 @@
           "tableTo": "model_responses",
           "columnsFrom": [
             "response_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_namespace_changes_draft_branch_id_document_branches_id_fk": {
+          "name": "agent_namespace_changes_draft_branch_id_document_branches_id_fk",
+          "tableFrom": "agent_namespace_changes",
+          "tableTo": "document_branches",
+          "columnsFrom": [
+            "draft_branch_id"
           ],
           "columnsTo": [
             "id"

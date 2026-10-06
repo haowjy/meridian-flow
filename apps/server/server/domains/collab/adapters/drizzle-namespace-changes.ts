@@ -20,6 +20,7 @@ function toRecord(row: Row): NamespaceChangeRecord {
     documentId: row.documentId,
     wId: row.wId,
     turnId: row.turnId,
+    draftBranchId: row.draftBranchId,
     fromUri: row.fromUri,
     status: row.status,
     reversedAt: row.reversedAt,
@@ -35,6 +36,7 @@ function owner(change: NamespaceChangeOwner) {
     threadId: change.threadId as ThreadId,
     turnId: change.turnId as TurnId | null,
     responseId: change.responseId as ModelResponseId | null,
+    draftBranchId: change.draftBranchId,
   };
 }
 

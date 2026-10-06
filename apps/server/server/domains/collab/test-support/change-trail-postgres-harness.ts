@@ -579,6 +579,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     namespaceChanges: createNamespaceChanges({
       store: createDrizzleAgentNamespaceChanges(db),
       atomic: (operation) => runInDrizzleTransaction(db, operation),
+      draftHistory: { branches: branchStore, branchRows: durableBranchJournalReadStore },
     }),
     fileAccess: createAllowAllFileAccess(),
     atomic: (operation) => runInDrizzleTransaction(db, operation),

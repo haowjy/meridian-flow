@@ -14,6 +14,8 @@ export type NamespaceChangeOwner = {
   threadId: string;
   turnId: string | null;
   responseId: string | null;
+  /** The Work draft the change lands in; null for live. Undo reverses it where it landed. */
+  draftBranchId: string | null;
 };
 
 export type NamespaceChangeStatus = "active" | "reversed";
@@ -25,11 +27,16 @@ export type NamespaceChangeRecord = NamespaceChangeShape & {
   /** The write handle's ordinal (`w3`), on the same sequence as the document's content writes. */
   wId: number;
   turnId: string | null;
+  /** The Work draft it landed in; null when it landed live. */
+  draftBranchId: string | null;
   status: NamespaceChangeStatus;
   reversedAt: Date | null;
 };
 
-/** One content write handle on the document, by its rows in `agent_edit_mutations`. */
+/**
+ * One content write handle on the document: live by its rows in
+ * `agent_edit_mutations`, drafted by its rows in `branch_write_journal`.
+ */
 export type ContentWriteHandle = {
   wId: number;
   status: NamespaceChangeStatus;
@@ -51,6 +58,7 @@ export interface AgentNamespaceChangeStore {
   recordCreate(change: NamespaceChangeOwner & { wId: number; fromUri: string }): Promise<number>;
   /** Forgets changes whose reply rolled back, so no handle names them. */
   discard(ids: readonly number[]): Promise<void>;
+  /** The recorded changes and the live content handles; the facade adds drafted ones. */
   history(documentId: string, threadId: string): Promise<WriteHandleHistory>;
   /** The turn's changes in `status`, every document, by handle. */
   forTurn(

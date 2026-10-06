@@ -261,6 +261,7 @@ async function recordCreate(
     responseId: ctx.responseId ?? null,
     wId,
     fromUri: address.uri,
+    draftBranchId: null,
   });
 }
 

@@ -678,6 +678,10 @@ export const agentNamespaceChanges = pgTable(
     fromUri: text("from_uri").notNull(),
     /** A move's new location. */
     toUri: text("to_uri"),
+    /** The Work draft the change landed in; null when it landed live. Undo reverses it there. */
+    draftBranchId: text("draft_branch_id").references(() => documentBranches.id, {
+      onDelete: "cascade",
+    }),
     status: text("status").$type<MutationStatus>().notNull().default("active"),
     createdAt: createdAt(),
     reversedAt: timestamp("reversed_at", { withTimezone: true }),

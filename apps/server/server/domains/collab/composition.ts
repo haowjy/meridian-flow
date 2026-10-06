@@ -455,6 +455,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const namespaceChanges = createNamespaceChanges({
     store: createDrizzleAgentNamespaceChanges(deps.db),
     atomic: (operation) => runInDrizzleSavepoint(deps.db, operation),
+    draftHistory: { branches, branchRows: branchJournal },
   });
   const turnReversal = createTurnReversalService({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),

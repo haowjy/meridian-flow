@@ -23,8 +23,8 @@ import type { ContextError } from "../../domains/context/ports/context-port.js";
 import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { namespaceTree } from "../namespace-tree.js";
-import { documentGrant } from "./file-access.js";
-import { containerGrant, draftRefusal, underGrants } from "./namespace-commands.js";
+import { documentGrant, withDraftWork } from "./file-access.js";
+import { containerGrant, underGrants } from "./namespace-commands.js";
 import { planReversalWalk } from "./namespace-reversal-plan.js";
 import {
   contextErrorMessage,
@@ -154,39 +154,47 @@ export async function runReversal(
     return finishContent(deps, ctx, resolved, outcome);
   }
 
-  // Edit on the document if it's there, and on every folder a change puts it in.
-  const grants: FileGrant<"edit">[] = [];
-  if (start.live) {
-    const grant = await documentGrant(
-      deps,
-      call.principal,
+  // A recorded change is reversed where it landed (D66), whatever the thread's mode is now.
+  if (walk.steps.some((step) => step.kind === "namespace" && step.change.draftBranchId !== null)) {
+    return writeToolError(
       direction,
-      { documentId, filePath: input.path },
-      "edit",
+      `${direction === "undo" ? "Undoing" : "Redoing"} a create, move or delete made in a draft isn't supported yet, so nothing changed.`,
     );
-    if (isToolError(grant)) return grant;
-    grants.push(grant);
   }
-  const destinations = new Set(
-    walk.steps.flatMap((step) =>
-      step.kind === "namespace" && liveAfter(step.change, direction)
-        ? [locationAfter(step.change, direction)]
-        : [],
-    ),
-  );
-  for (const uri of destinations) {
-    const grant = await containerGrant(deps, call, direction, uri);
+  const live = withDraftWork(call.principal, null);
+  // Edit on every folder a change puts the document in, checked before any step runs.
+  const folders = new Map<string, FileGrant<"edit"> | null>();
+  for (const step of walk.steps) {
+    if (step.kind !== "namespace" || !liveAfter(step.change, direction)) continue;
+    const uri = locationAfter(step.change, direction);
+    if (folders.has(uri)) continue;
+    const grant = await containerGrant(deps, call, direction, uri, live);
     if (isToolError(grant)) return grant;
-    if (grant) grants.push(grant);
+    folders.set(uri, grant);
   }
-  const refused = draftRefusal(
-    direction,
-    direction === "undo"
-      ? "Undoing creates, moves and deletes"
-      : "Redoing creates, moves and deletes",
-    grants.map((grant) => grant.destination),
-  );
-  if (refused) return refused;
+  /** Edit on the document wherever it is now, and on the folder the change puts it in. */
+  const stepGrants = async (
+    change: NamespaceChangeRecord,
+    at: Location,
+  ): Promise<FileGrant<"edit">[] | WriteToolErrorOutput> => {
+    const grants: FileGrant<"edit">[] = [];
+    if (at.live) {
+      const grant = await documentGrant(
+        deps,
+        live,
+        direction,
+        { documentId, filePath: at.uri },
+        "edit",
+      );
+      if (isToolError(grant)) return grant;
+      grants.push(grant);
+    }
+    const folder = liveAfter(change, direction)
+      ? folders.get(locationAfter(change, direction))
+      : null;
+    if (folder) grants.push(folder);
+    return grants;
+  };
 
   const tree = namespaceTree(call.context.livePort());
   let location = start;
@@ -201,6 +209,8 @@ export async function runReversal(
   for (const step of walk.steps) {
     if (step.kind === "namespace") {
       const { change } = step;
+      const grants = await stepGrants(change, location);
+      if (isToolError(grants)) return withNote(grants, doneNote());
       const applied = await underGrants(deps, direction, input.path, grants, () =>
         changes.reverse(tree, change, direction),
       );

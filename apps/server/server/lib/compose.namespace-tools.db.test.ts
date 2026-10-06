@@ -269,6 +269,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(HOLDER)).toContain(`[One](${CHAPTER})`);
     });
 
+    it("after a switch to draft mode, undo takes the drafted write first, then moves the live move back live", async () => {
+      const { script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.works.id, WORK_ID));
+      await script.reply(async (call) => {
+        await call("read", { path: RENAMED });
+        const drafted = await call("write", {
+          command: "insert",
+          path: RENAMED,
+          find: "text.",
+          content: " Drafted.",
+        });
+        expect(drafted).toContain("write: w2; version: draft");
+      });
+
+      const draftUndo = await script.begin();
+      const undoneDraft = await draftUndo.call("write", {
+        command: "undo",
+        path: RENAMED,
+        last: 1,
+      });
+      expect(text(undoneDraft)).toMatch(/^status: reversed; .*undo: w2/);
+      await draftUndo.save();
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
+
+      const liveUndo = await script.begin();
+      const undoneMove = await liveUndo.call("write", { command: "undo", path: RENAMED, last: 1 });
+      expect(text(undoneMove)).toBe(
+        "status: reversed; path: manuscript://chapter.md; moved from manuscript://renamed.md; undo: w1",
+      );
+      await liveUndo.save();
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+    });
+
     it("refuses to undo a move whose old path is taken", async () => {
       const { runtime, script } = await start();
       await script.reply(async (call) => {
