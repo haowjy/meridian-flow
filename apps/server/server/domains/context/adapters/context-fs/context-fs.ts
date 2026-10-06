@@ -942,6 +942,7 @@ export class ContextFS implements ContextSchemeAdapter {
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
         source,
+        mover: prepared.mover,
         destinationSourceId: prepared.destinationSourceId,
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
@@ -953,12 +954,14 @@ export class ContextFS implements ContextSchemeAdapter {
       if (!committed.ok) return Err(this.mutationFault(committed.error));
       return Ok({
         movedNodeId: committed.value.movedNodeId,
+        ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
         path: prepared.destinationPath,
       });
     }
     const source = prepared.source;
     const committed = await this.mutationStore.commitMove({
       source,
+      mover: prepared.mover,
       destinationSourceId: prepared.destinationSourceId,
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
@@ -967,6 +970,7 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
+      ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
       path: prepared.destinationPath,
     });
   }

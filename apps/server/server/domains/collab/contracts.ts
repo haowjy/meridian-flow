@@ -105,7 +105,7 @@ export type CollabTransport = {
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
-  loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
+  loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusBranchState(
     branchId: string,
     generation: number,
@@ -118,6 +118,7 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitBranchWriterUpdate(input: {
     branchId: string;
     update: Uint8Array;
@@ -211,6 +212,7 @@ export type MarkdownDocumentStore = {
 };
 
 export type DocumentProjectionRefresher = {
+  rewriteDocumentLinks: import("./domain/ports/document-link-rewrite.js").RewriteDocumentLinks;
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };

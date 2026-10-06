@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { bindDocumentAuthority } from "../../domains/collab/domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
 import { admitWriterSync } from "../yjs-ws-handler.js";
 
@@ -21,10 +22,6 @@ describe("Yjs reconnect writer admission", () => {
     let websocketProvider: HocuspocusProviderWebsocket | undefined;
     let provider: HocuspocusProvider | undefined;
     const persistence = createHocuspocusPersistenceService({
-      readCheckpointAuthority: async () => ({
-        authorityId: "test-authority" as never,
-        generation: 1n,
-      }),
       journal,
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -40,7 +37,13 @@ describe("Yjs reconnect writer admission", () => {
         port: 0,
         quiet: true,
         stopOnSignals: false,
-        onLoadDocument: async () => Y.encodeStateAsUpdate(liveDocument),
+        onLoadDocument: async ({ document }) => {
+          bindDocumentAuthority(document, {
+            authorityId: "test-authority" as never,
+            generation: 1n,
+          });
+          return Y.encodeStateAsUpdate(liveDocument);
+        },
         beforeSync: async ({ documentName, document, type, payload }) => {
           const result = await admitWriterSync({
             services: { documentSync: persistence } as never,

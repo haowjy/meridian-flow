@@ -39,7 +39,7 @@ export type ChatDisplay =
 
 type NewChatRequest = {
   id: number;
-  workId: string | null | "unchanged";
+  workId: string | "unchanged";
 };
 
 /** The thread the persistent chat surface renders, warm behind the index too. */
@@ -64,7 +64,7 @@ export type ChatNavigation = {
   /** The Chat screen: the current chat, or the index when there is none. */
   showChatScreen: () => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
-  openNewChat: (workId?: string | null) => Promise<void>;
+  openNewChat: (workId?: string) => Promise<void>;
   openChatIndex: () => Promise<void>;
   /** Reveal the dock with the requested Work occupant view. */
   revealDock: (view: "chat" | "file") => void;
@@ -82,7 +82,7 @@ export type ChatNavigation = {
    */
   newChatFocusRequestId: number | null;
   /** Work explicitly selected by an in-context New chat action, if any. */
-  newChatWorkId: string | null | undefined;
+  newChatWorkId: string | undefined;
   consumeNewChatFocusRequest: (id: number) => void;
 };
 
@@ -156,7 +156,7 @@ export function useProjectChatNavigation({
       openChatIndex,
       revealDock: (view: "chat" | "file") => channels.dockReveal.request(view),
       showChatScreen,
-      openNewChat: async (workId?: string | null) => {
+      openNewChat: async (workId?: string) => {
         if (onChatScreen()) return openChatIndex();
         remember(null);
         channels.dockReveal.request("chat");

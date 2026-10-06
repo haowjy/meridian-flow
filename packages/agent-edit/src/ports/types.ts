@@ -10,10 +10,12 @@ export type UpdateOrigin =
 
 /** Metadata stored alongside each appended Yjs update. */
 export interface UpdateMeta {
-  /** Serialized origin: `agent:<turnId>` | `human:<userId>` | `system`. */
+  /** Serialized origin: `agent:<turnId>` | `human:<userId>` | `system` | `link-update`. */
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
+  /** Maintenance attribution, independent of semantic authorship. */
+  actorUserId?: string;
   /** Successful model response that authored an agent mutation or reversal. */
   authoringResponseId?: string;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
@@ -31,6 +33,8 @@ export interface PersistedUpdate {
 
 /** Checkpoint plus ordered updates returned by journal read. */
 export interface JournalSnapshot {
+  /** Host authority captured with this snapshot, when the journal has generations. */
+  authority?: { authorityId: string; generation: bigint };
   /** Latest checkpoint bytes (full encoded Y.Doc state), or null if none. */
   checkpoint: Uint8Array | null;
   /** Updates in ascending sequence order, filtered by read opts when provided. */

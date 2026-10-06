@@ -5,6 +5,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
+import { useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,10 @@ import {
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
 import { EntryNameField } from "../context/EntryNameField";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
+import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
 import { RowIcon } from "../RuledList";
@@ -67,6 +71,12 @@ export function ScratchFileRow({
     (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
   );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
+  const startRename = edit?.onRename;
+  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  // Like the tree, a refused rename offers its name field once, as the failure arrives.
+  useRepairOnFreshFailure(edit ? file.namespaceFailureAt : undefined, () =>
+    startRename?.(file.path),
+  );
   if (edit?.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -76,6 +86,7 @@ export function ScratchFileRow({
           workId={workId}
           file={file}
           siblingNames={siblingNames}
+          onRenamed={setNoteOperationId}
           onDone={() => edit.onRename(null)}
         />
       </div>
@@ -94,8 +105,17 @@ export function ScratchFileRow({
         <RowIcon icon={fileKindIcon(file)} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{file.name}</span>
+          <LinkUpdateNote
+            projectId={projectId}
+            subject={{ kind: "file", id: file.documentId }}
+            operationId={noteOperationId}
+            layout="stacked"
+          />
           {folder ? (
             <span className="block truncate text-xs text-muted-foreground">{folder}</span>
+          ) : null}
+          {file.namespaceFailure ? (
+            <NamespaceFailureMark failure={file.namespaceFailure} labelled />
           ) : null}
         </span>
       </button>
@@ -176,12 +196,14 @@ function InlineRename({
   workId,
   file,
   siblingNames,
+  onRenamed,
   onDone,
 }: {
   projectId: string;
   workId: string;
   file: CatalogFile;
   siblingNames: readonly string[];
+  onRenamed: (operationId: string) => void;
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({
@@ -191,8 +213,10 @@ function InlineRename({
     scheme: "scratch",
     path: file.path,
     currentName: file.name,
+    repairName: file.namespaceRepairName,
     siblingNames,
     kind: "file",
+    onRenamed,
     onDone,
   });
   return <EntryNameField form={form} label={t`File name`} />;

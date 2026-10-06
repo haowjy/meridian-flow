@@ -81,10 +81,6 @@ export function useComposerWorkToolbarControl({
             const lock = beginBlocking();
             if (lock.kind === "started") void controller.choose(target).then(lock.settle);
           }}
-          onChooseNone={() => {
-            const lock = beginBlocking();
-            if (lock.kind === "started") void controller.chooseNone().then(lock.settle);
-          }}
           searchRef={searchRef}
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
         />

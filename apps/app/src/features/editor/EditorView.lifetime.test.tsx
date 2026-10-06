@@ -42,8 +42,10 @@ function sessionFor(roomKey: string): DocumentSession {
     roomKey,
     room: { kind: "live", documentId: roomKey },
     status: "detached",
+    serverHasLocalChanges: false,
     connectionState: null,
     localPersistenceSynced: true,
+    adoptionStalled: false,
     schemaFence: null,
     schemaRepairs: [],
   };

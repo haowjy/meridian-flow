@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { ResourceCatalogAcquisition, type ResourceCatalogTransport } from "./catalog-acquisition";
 import { catalogProjectionKey } from "./catalog-scope";
 import type {
+  FolderNamespaceWrite,
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
   ResourceProjectionSnapshot,
@@ -88,6 +89,7 @@ class MemoryMetadata implements ResourceMetadataStore {
   async readProjection(project: string): Promise<ResourceProjectionSnapshot> {
     return structuredClone({
       records: [...this.records.values()],
+      folders: [],
       catalogs: [...this.catalogs.values()].filter((catalog) => catalog.projectId === project),
     });
   }
@@ -107,6 +109,7 @@ class MemoryMetadata implements ResourceMetadataStore {
     expectedRevision: number | null;
     next: ResourceCatalogCheckpoint;
     resources: readonly ResourceWrite[];
+    folders: readonly FolderNamespaceWrite[];
   }) {
     const key = catalogKey(input.next.projectId, input.next.scope);
     const current = this.catalogs.get(key);

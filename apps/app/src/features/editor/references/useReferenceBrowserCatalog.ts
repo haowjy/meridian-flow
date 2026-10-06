@@ -60,7 +60,13 @@ export function useReferenceBrowserCatalog(
                     projectQueryKeys.contextCatalog(projectId, scope),
                   );
               return view
-                ? projectResourceCatalogView(projectId, scope, view, snapshot?.records ?? [])
+                ? projectResourceCatalogView(
+                    projectId,
+                    scope,
+                    view,
+                    snapshot?.records ?? [],
+                    snapshot?.folders ?? [],
+                  )
                 : null;
             };
             return {
@@ -111,7 +117,13 @@ export function useReferenceBrowserCatalog(
                     contextCatalogQueryOptions(resources, projectId, scope),
                   );
                   snapshot = await resources.readProjection(projectId);
-                  return projectResourceCatalogView(projectId, scope, view, snapshot.records);
+                  return projectResourceCatalogView(
+                    projectId,
+                    scope,
+                    view,
+                    snapshot.records,
+                    snapshot.folders,
+                  );
                 },
               },
             };

@@ -25,7 +25,7 @@ import type { SchemaRepairEvent } from "./schema-repair-witness";
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: DocumentSessionConnectionState) => void;
   resolveFirstSync: () => void;
-  resolveDurableSync: () => void;
+  setAcknowledged: (acknowledged: boolean) => void;
   setSynced: (synced: boolean) => void;
   emitChange: (message: ChangeEventWsMessage) => void;
   destroyed: boolean;
@@ -44,10 +44,8 @@ function makeFakeTransport(
       const whenSynced = new Promise<void>((resolve) => {
         resolveSynced = resolve;
       });
-      let resolveDurableSynced!: () => void;
-      const whenDurablySynced = new Promise<void>((resolve) => {
-        resolveDurableSynced = resolve;
-      });
+      const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
+      let acknowledged = false;
       const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
       const changeListeners = new Set<(message: ChangeEventWsMessage) => void>();
       let latest = initial;
@@ -57,7 +55,11 @@ function makeFakeTransport(
           return synced;
         },
         whenSynced,
-        whenDurablySynced,
+        subscribeServerAcknowledgement(listener) {
+          acknowledgementListeners.add(listener);
+          listener(acknowledged);
+          return () => acknowledgementListeners.delete(listener);
+        },
         subscribeStatus(listener) {
           listeners.add(listener);
           listener(latest);
@@ -78,8 +80,9 @@ function makeFakeTransport(
           synced = true;
           resolveSynced();
         },
-        resolveDurableSync() {
-          resolveDurableSynced();
+        setAcknowledged(next) {
+          acknowledged = next;
+          for (const l of acknowledgementListeners) l(next);
         },
         setSynced(next) {
           synced = next;
@@ -347,6 +350,29 @@ describe("DocumentSession status derivation", () => {
     await session.destroy();
   });
 
+  it("reports a detached session as stalled only after an adoption failure, until it is attached or closed", async () => {
+    const { factory } = makeFakeTransport();
+    const session = new DocumentSession({ roomKey: "doc-stalled", persistence: { kind: "none" } });
+    expect(session.getSnapshot().adoptionStalled).toBe(false);
+
+    session.reportAdoptionStalled(true);
+    expect(session.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
+
+    session.attachTransport(factory);
+    expect(session.getSnapshot()).toMatchObject({ status: "syncing", adoptionStalled: false });
+    session.reportAdoptionStalled(true);
+    expect(session.getSnapshot()).toMatchObject({ status: "syncing", adoptionStalled: false });
+    await session.destroy();
+
+    const closed = new DocumentSession({
+      roomKey: "doc-stalled-closed",
+      persistence: { kind: "none" },
+    });
+    closed.reportAdoptionStalled(true);
+    await closed.destroy();
+    expect(closed.getSnapshot()).toMatchObject({ status: "destroyed", adoptionStalled: false });
+  });
+
   it("settles whenSynced when an attached session is destroyed before server sync", async () => {
     const { factory } = makeFakeTransport();
     const session = new DocumentSession({
@@ -361,42 +387,36 @@ describe("DocumentSession status derivation", () => {
     await expect(synced).resolves.toBeUndefined();
   });
 
-  it("waits for the server update acknowledgement after initial sync", async () => {
+  it("reports server acknowledgement only while synced, and re-arms it after an outage", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "doc-durable",
+      roomKey: "doc-acknowledged",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
+    const { snapshots } = track(session);
     current().emit({ kind: "connected" });
     current().resolveFirstSync();
     await session.whenSynced();
-
-    let durable = false;
-    void session.waitForDurableSync().then(() => {
-      durable = true;
-    });
     await flushMicrotasks();
-    expect(durable).toBe(false);
 
-    current().resolveDurableSync();
-    await session.waitForDurableSync();
-    expect(durable).toBe(true);
-    await session.destroy();
-  });
+    // Synced is a handshake fact, not an upload claim.
+    expect(snapshots.at(-1)).toMatchObject({ status: "synced", serverHasLocalChanges: false });
 
-  it("settles the durable wait on terminal denial", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-denied",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const durable = session.waitForDurableSync();
+    current().setAcknowledged(true);
+    expect(snapshots.at(-1)).toMatchObject({ status: "synced", serverHasLocalChanges: true });
 
-    current().emit({ kind: "unauthorized", reason: "expired", code: 4401 });
+    // A local edit clears it, then the next acknowledgement restores it.
+    current().setAcknowledged(false);
+    expect(snapshots.at(-1)?.serverHasLocalChanges).toBe(false);
+    current().setAcknowledged(true);
+    expect(snapshots.at(-1)?.serverHasLocalChanges).toBe(true);
 
-    await expect(durable).resolves.toBeUndefined();
+    // Never reported outside `synced`, even if the transport still says true.
+    current().emit({ kind: "disconnected" });
+    expect(snapshots.at(-1)).toMatchObject({ status: "offline", serverHasLocalChanges: false });
+    current().emit({ kind: "connecting", attempt: 1 });
+    expect(snapshots.at(-1)).toMatchObject({ status: "syncing", serverHasLocalChanges: false });
     await session.destroy();
   });
 
@@ -564,21 +584,6 @@ describe("DocumentSession status derivation", () => {
     expect(session.awareness.getLocalState()).toEqual({
       user: { name: "Writer" },
       imageUploads: [],
-    });
-    void session.destroy();
-  });
-
-  it("publishes a field first written while presence was suspended", () => {
-    const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
-    session.presence.setField("user", { name: "Writer" });
-
-    session.suspendPresence();
-    session.presence.setField("imageUploads", [{ token: "new" }]);
-    session.resumePresence();
-
-    expect(session.awareness.getLocalState()).toEqual({
-      user: { name: "Writer" },
-      imageUploads: [{ token: "new" }],
     });
     void session.destroy();
   });

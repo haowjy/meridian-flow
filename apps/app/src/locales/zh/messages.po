@@ -216,6 +216,10 @@ msgstr ""
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
 
+#: src/features/project/context/LinkUpdateNote.tsx
+#~ msgid "{count, plural, one {Updated # link} other {Updated # links}}"
+#~ msgstr ""
+
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
@@ -243,6 +247,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
+
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -556,6 +564,10 @@ msgstr ""
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Back"
+msgstr ""
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Back online (all changes saved)"
 msgstr ""
 
 #: src/features/project/shell/IndexTabChip.tsx
@@ -1104,7 +1116,7 @@ msgstr ""
 msgid "Couldn't delete this chat"
 msgstr ""
 
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't delete this document. Try again."
 msgstr ""
 
@@ -1230,12 +1242,16 @@ msgstr ""
 msgid "Couldn’t rename this chat. Try again."
 msgstr ""
 
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Couldn't rename this document. Try another name."
+msgstr ""
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't rename this folder. Try again."
 msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
@@ -3606,8 +3622,8 @@ msgid "That location does not exist"
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "That name is already in use."
-msgstr ""
+#~ msgid "That name is already in use."
+#~ msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
@@ -3668,8 +3684,8 @@ msgid "The header row stays first."
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "The location changed. Try again."
-msgstr ""
+#~ msgid "The location changed. Try again."
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -3895,6 +3911,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder is empty."
+msgstr ""
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "This folder is unavailable. Refresh and try again."
 msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx

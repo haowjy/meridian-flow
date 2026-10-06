@@ -89,6 +89,20 @@ first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.
 
+A cached session is adopted into the registry at the document's current
+admission generation, which advances on any project mutation. Its persistence
+incarnation keeps the generation it was captured at, exactly as a live `admit`
+reuses it, so adoption must accept an older bindable incarnation (only a newer
+one is a foreign lineage). Refusing it strands the cached session `detached`:
+local edits never reach the server and the pill stays silent. When adoption
+itself fails (authority unreachable or the handoff errors), the adopter reports
+it to the session, which records the failure only while it is `detached` with no
+transport. The snapshot's `adoptionStalled` is derived from that: true only
+while `detached`, cleared by attaching a transport or a successful adoption,
+and never alongside a terminal state. `SyncStatus` treats it as an outage
+(see `core/editor/.context/CONTEXT.md`); elapsed detached time alone shows
+nothing, because a session merely awaiting its transport is healthy.
+
 ## Unfiled materialization and recovery
 
 A new document is an account resource exposed to its creating project before it
@@ -112,15 +126,15 @@ opened as blank documents.
 
 ## Editor versus chat resources
 
-Editor tree and tabs admit project documents only. Scratch/Uploads remain valid
-storage and reference/tool schemes; direct resource URLs show an explicit
-viewing-not-available state. Persisted resource tab entries are removed without
-deleting resource documents or durable local content. The deferred chat-launched pane
-overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
+Editor trees list project document schemes; Scratch documents also open in
+Editor tabs through links and Work Files, with resolved Work ownership.
+No Work has no Scratch tree. Uploads remain storage and reference/tool resources;
+their direct URLs show the viewing-not-available state. The deferred chat-launched
+pane overlay is recorded in [TODO](TODO.md).
 
-Eligibility is enforced at every live workspace transition, including
-bootstrap, adoption and availability updates. Hiding a resource row alone is
-insufficient: a hidden tab must not remain eligible for close fallback.
+Eligibility is enforced at live workspace transitions, including bootstrap,
+adoption and availability updates. Hiding a row alone must not leave an
+ineligible tab available for close fallback.
 
 Every editable tab keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed tabs resolve through their stable resource handle before and after

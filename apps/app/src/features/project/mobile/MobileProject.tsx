@@ -264,21 +264,21 @@ function renderActiveView(
       return (
         <DraftReviewBoundary value={props.editorReview}>
           <EditorReviewIntentClaimant
-            editorWorkId={props.editorWorkId}
+            editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}
             activePath={props.activeContextPath}
           />
           {props.activeContextPath || localTab ? (
             <MobileDocumentHost
               projectId={props.projectId}
-              editorWorkId={props.editorWorkId}
+              editorWorkId={props.editorScope.workId}
               route={props.mobileDocumentRoute}
               localTab={localTab}
             />
           ) : (
             <MobileContextBrowser
               projectId={props.projectId}
-              editorWorkId={props.editorWorkId}
+              editorWorkId={props.editorScope.workId}
               activeContextScheme={props.activeContextScheme}
               activeContextFolder={props.activeContextFolder}
               onSelectContextScheme={props.onSelectContextScheme}
