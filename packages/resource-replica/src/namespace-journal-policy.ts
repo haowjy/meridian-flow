@@ -92,6 +92,13 @@ export function validateNamespaceJournal(input: {
           attempt.request.workSlug != null)
       )
         throw new Error("Namespace request Work authority is incomplete");
+      if (
+        attempt.outcome?.kind === "refusal" &&
+        (attempt.request.kind === "create" ||
+          attempt.outcome.operationId !== attempt.request.body.operationId ||
+          attempt.outcome.error.retryable)
+      )
+        throw new Error("Namespace refusal does not match submitted request");
       if (attempt.outcome?.kind === "operation") {
         const receipt = attempt.outcome.receipt;
         if (
@@ -135,8 +142,8 @@ export function validateNamespaceJournal(input: {
             const outcome = earlier.attempts.at(-1)?.outcome;
             return (
               followsLocationIntent(intent, earlier) &&
-              outcome?.kind === "operation" &&
-              !outcome.receipt.result.ok
+              (outcome?.kind === "refusal" ||
+                (outcome?.kind === "operation" && !outcome.receipt.result.ok))
             );
           }) &&
           !next.intents.some(
