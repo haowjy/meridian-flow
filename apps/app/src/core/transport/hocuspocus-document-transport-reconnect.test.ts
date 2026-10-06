@@ -49,35 +49,25 @@ function setup() {
   };
   return { document, transport, hints, hint: (hint: ConnectivityHint) => callback(hint) };
 }
-it("cancels backoff and connects immediately without leaving a second retry loop", async () => {
+it.each([
+  ["never opened; replacement receives first frame", "connecting", true],
+  ["opened without first frame; replacement receives first frame", "open", true],
+  ["received first frame; replacement remains CONNECTING", "connected", false],
+] as const)("cancels the old retry: %s", async (_label, phase, replacementHealthy) => {
   const { hint } = setup();
   await vi.advanceTimersByTimeAsync(0);
+  if (phase === "open") sockets[0].open();
+  if (phase === "connected") sockets[0].connected();
   sockets[0].deliverClose(1006);
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets).toHaveLength(1);
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets).toHaveLength(2);
-  sockets[1].connected();
+  if (replacementHealthy) sockets[1].connected();
   await vi.advanceTimersByTimeAsync(2_000);
   expect(sockets).toHaveLength(2);
-});
-it("keeps healthy sockets and closes them immediately on offline", async () => {
-  const { hint, hints } = setup();
-  await vi.advanceTimersByTimeAsync(0);
-  sockets[0].connected();
-  hint("retry-now");
-  await vi.advanceTimersByTimeAsync(0);
-  expect(sockets).toHaveLength(1);
-  expect(sockets[0].readyState).toBe(1);
-  vi.spyOn(sockets[0], "close").mockImplementation(() => sockets[0].stallClose());
-  hint("suspect-offline");
-  expect(sockets[0].readyState).toBe(2);
-  expect(hints.reportConnected).toHaveBeenCalled();
-  expect(hints.reportDisconnected).toHaveBeenCalled();
-  hint("retry-now");
-  await vi.advanceTimersByTimeAsync(0);
-  expect(sockets).toHaveLength(2);
+  expect(sockets[1].readyState).toBe(replacementHealthy ? 1 : 0);
 });
 it.each(["terminal", "destroyed"])("never resurrects a %s room", async (state) => {
   const { hint, transport } = setup();
@@ -93,32 +83,8 @@ it.each(["terminal", "destroyed"])("never resurrects a %s room", async (state) =
   expect(sockets).toHaveLength(2);
 });
 
-it("fences the delayed close retry while a hinted replacement is still connecting", async () => {
-  const { hint } = setup();
-  await vi.advanceTimersByTimeAsync(0);
-  sockets[0].connected();
-  sockets[0].deliverClose(1006);
-  hint("retry-now");
-  await vi.advanceTimersByTimeAsync(2_000);
-  expect(sockets).toHaveLength(2);
-  expect(sockets[1].readyState).toBe(0);
-});
-it("fences the pre-first-message retry after a hinted replacement becomes healthy", async () => {
-  const { hint } = setup();
-  await vi.advanceTimersByTimeAsync(0);
-  sockets[0].open();
-  sockets[0].deliverClose(1006);
-  await vi.advanceTimersByTimeAsync(0);
-  hint("retry-now");
-  await vi.advanceTimersByTimeAsync(0);
-  sockets[1].connected();
-  await vi.advanceTimersByTimeAsync(2_000);
-  expect(sockets).toHaveLength(2);
-  expect(sockets[1].readyState).toBe(1);
-});
-
 it("clears saved before offline status and restores it after hinted reconnect acknowledgements", async () => {
-  const { document, transport, hint } = setup();
+  const { document, transport, hint, hints } = setup();
   let acknowledged = false;
   const events: string[] = [];
   transport.subscribeServerAcknowledgement?.((value) => {
@@ -135,12 +101,18 @@ it("clears saved before offline status and restores it after hinted reconnect ac
   handshake(sockets[0]);
   sockets[0].acknowledge("document-1");
   expect(acknowledged).toBe(true);
+  hint("retry-now");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets).toHaveLength(1);
+  expect(sockets[0].readyState).toBe(1);
+  expect(hints.reportConnected).toHaveBeenCalled();
 
   events.length = 0;
   vi.spyOn(sockets[0], "close").mockImplementation(() => sockets[0].stallClose());
   hint("suspect-offline");
   expect(events).toEqual(["saved:false", "disconnected:false"]);
   expect(sockets[0].readyState).toBe(2);
+  expect(hints.reportDisconnected).toHaveBeenCalled();
 
   hint("retry-now");
   await vi.advanceTimersByTimeAsync(0);
