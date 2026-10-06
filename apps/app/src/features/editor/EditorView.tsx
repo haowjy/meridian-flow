@@ -35,7 +35,7 @@ import {
 import { useWorks } from "@/client/query/useWorks";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
-import { isCreatableLinkScheme, linkAheadAddress } from "@/core/editor/links";
+import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
   type EditorMountIdentity,
@@ -378,7 +378,7 @@ function ActiveSessionEditorView({
     () =>
       linkableDocuments.documents.flatMap((document) => {
         const parsed = parseContextUri(document.uri);
-        return parsed.ok && isCreatableLinkScheme(parsed.value.scheme) ? [document.uri] : [];
+        return parsed.ok && isLinkDocumentScheme(parsed.value.scheme) ? [document.uri] : [];
       }),
     [linkableDocuments],
   );

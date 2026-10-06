@@ -18,7 +18,6 @@ import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
 import { createProjectLinkResolver } from "@/features/links/project-link-resolver";
-import { planLinkCreation } from "@/features/links/use-create-linked-document";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
 import { type EditorScope, useEditorScope } from "./editor-scope";
@@ -419,7 +418,7 @@ describe("holder-owned Editor link scope", () => {
     "unfiled",
     "scratch",
     "uploads",
-  ])("%s links ignore the Editor route Work for resolution and creation", async (scheme) => {
+  ])("%s links ignore the Editor route Work for resolution", async (scheme) => {
     holderScheme = scheme;
     const expectedWork = scheme === "scratch" || scheme === "uploads" ? namedWork : noWork;
     await withReactRoot(
@@ -444,9 +443,6 @@ describe("holder-owned Editor link scope", () => {
           "project-1",
           expect.objectContaining({ workId: expectedWork.id }),
         );
-        expect(
-          planLinkCreation(target.uri, observedScope.workId, { noWork, works: [namedWork] }),
-        ).toMatchObject({ kind: "create", work: { workId: expectedWork.id } });
         await act(async () => applyProps({ workId: null }));
         expect(observedScope.workId).toBe(expectedWork.id);
         expect(indexedWorkId).toBe(expectedWork.id);

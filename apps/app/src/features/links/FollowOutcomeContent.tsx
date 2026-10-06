@@ -16,36 +16,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
-import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
 import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
-import { useWorkArchiveToggle } from "@/features/project/work/useWorkArchiveToggle";
-import { WorkCommandFailureRow } from "@/features/project/work/WorkCommandFailureRow";
 
 import type { LinkDocumentRef } from "./follow-link";
-import { useCreateLinkedDocument, useLinkCreation } from "./use-create-linked-document";
+import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
 
-const UNARCHIVE = ["unarchive"] as const;
-
-/** The host's dialog title. A component, because "doesn't exist yet" depends on the Work. */
-export function FollowOutcomeTitle({
-  outcome,
-  projectId,
-  workId,
-}: {
-  outcome: LinkFollowOutcome;
-  projectId: string | null;
-  workId: string | null;
-}): ReactNode {
-  const creation = useLinkCreation(
-    projectId,
-    workId,
-    outcome.state === "missing" ? outcome.address : null,
-  );
+export function followOutcomeTitle(outcome: LinkFollowOutcome): ReactNode {
   switch (outcome.state) {
     case "checking":
       return <Trans>Opening the link</Trans>;
@@ -53,7 +34,7 @@ export function FollowOutcomeTitle({
       return <Trans>That link could not be checked</Trans>;
     case "missing": {
       const name = targetName(outcome);
-      return creation ? (
+      return linkCreationTarget(outcome.address) ? (
         <Trans>“{name}” doesn't exist yet</Trans>
       ) : (
         <Trans>“{name}” can't be found</Trans>
@@ -94,48 +75,19 @@ function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
 export function FollowOutcomeContent({
   outcome,
   projectId,
-  workId,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
-  /** The surface's Work: where a contextual `scratch://` address is created. */
-  workId: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
   const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId);
-  const creation = useLinkCreation(
-    projectId,
-    workId,
-    outcome.state === "missing" ? outcome.address : null,
-  );
+  const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
   const name = outcome.state === "missing" ? targetName(outcome) : "";
-  const archivedWork = creation?.kind === "archived" ? creation.work : null;
-  const workName = archivedWork?.name ?? "";
-  const toggleArchive = useWorkArchiveToggle(projectId ?? "");
-  // The Unarchive this dialog started and is still waiting on; a settled one is dropped.
-  const unarchive = useRef<ReturnType<typeof toggleArchive> | null>(null);
-  const trackUnarchive = (pending: ReturnType<typeof toggleArchive>) => {
-    unarchive.current = pending;
-    void pending.then(() => {
-      if (unarchive.current === pending) unarchive.current = null;
-    });
-  };
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const [waitingForUnarchive, setWaitingForUnarchive] = useState(false);
-  const unarchiveFailure = useWorkCommandFailures(projectId ?? "", UNARCHIVE).get(
-    archivedWork?.id ?? "",
-  );
 
   return (
     <>
@@ -144,10 +96,6 @@ export function FollowOutcomeContent({
           <Trans>Looking for the document this link names.</Trans>
         ) : outcome.state === "failed" ? (
           <Trans>The project could not be reached. The link itself is fine.</Trans>
-        ) : archivedWork ? (
-          <Trans>
-            “{workName}” is archived, so it can't take new notes. Unarchive it to create this one.
-          </Trans>
         ) : creation ? (
           <Trans>Create it and this link opens it.</Trans>
         ) : (
@@ -163,13 +111,6 @@ export function FollowOutcomeContent({
         </p>
       ) : null}
 
-      {unarchiveFailure ? (
-        <WorkCommandFailureRow
-          failure={unarchiveFailure}
-          onRetry={() => trackUnarchive(unarchiveFailure.retry())}
-        />
-      ) : null}
-
       <DialogFooter>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           {outcome.state === "checking" ? t`Cancel` : t`Close`}
@@ -179,34 +120,22 @@ export function FollowOutcomeContent({
             {t`Try again`}
           </Button>
         ) : null}
-        {/* One button for both steps, so focus stays put when Unarchive turns into Create. */}
         {creation ? (
           <Button
             type="button"
             size="sm"
-            disabled={creating || waitingForUnarchive || creation.kind === "loading"}
+            disabled={creating}
             onClick={async () => {
-              if (archivedWork) {
-                trackUnarchive(toggleArchive(archivedWork));
-                return;
-              }
-              if (creating || waitingForUnarchive || creation.kind !== "create") return;
-              setWaitingForUnarchive(true);
-              try {
-                // Create is offered optimistically, but depends on this dialog's Unarchive.
-                // A closed dialog has nobody to open the note for.
-                if (unarchive.current && (await unarchive.current)) return;
-                if (!mounted.current) return;
-                const documentId = await create(creation);
-                if (!documentId) return;
-                onClose();
-                await onOpen({ documentId });
-              } finally {
-                setWaitingForUnarchive(false);
-              }
+              if (creating) return;
+              // Both steps are local commits, so this resolves at once; the
+              // server catches up in the background.
+              const documentId = await create(creation);
+              if (!documentId) return;
+              onClose();
+              await onOpen({ documentId });
             }}
           >
-            {archivedWork ? t`Unarchive` : t`Create “${name}”`}
+            {t`Create “${name}”`}
           </Button>
         ) : null}
       </DialogFooter>
