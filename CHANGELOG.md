@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
+
 - A link to a missing note in an archived Work's Scratch now offers Unarchive instead of a Create that fails; once the Work is unarchived, Create is there. A link into a deleted Work, or a Work name that does not exist, says it can't be found.
 
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.

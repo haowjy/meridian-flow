@@ -37,7 +37,15 @@ export function contextErrorToHttp(error: ContextError): never {
     case "not_found":
       throw createError({ statusCode: 404, message: "Context path not found" });
     case "context_unavailable":
-      throw createError({ statusCode: 503, message: "Context is unavailable" });
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          error.reason,
+          error.reason === "work_archived"
+            ? "This Work is archived and read-only."
+            : "Work not found.",
+        ),
+        error.reason === "work_archived" ? 409 : 404,
+      );
     case "io_error":
       throw createError({ statusCode: 502, message: error.message });
   }
