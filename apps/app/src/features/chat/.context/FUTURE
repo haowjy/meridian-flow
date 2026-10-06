@@ -2,7 +2,7 @@
 
 - Chat's document doors (transcript link follows in `useChatLinkFollowing.ts`,
   exact-reference chips, tool-row document names, composer `onOpenReference`)
-  each open the Editor with no Work. Whether the Editor should adopt the
+  each open the Editor in its current Work. Whether the Editor should adopt the
   chat's Work is one decision for all of them, with one open command (#625).
 
 - Chat follows every transcript link with the `current` gesture
