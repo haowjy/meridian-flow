@@ -243,6 +243,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await db.select().from(schema.agentNamespaceChanges)).toEqual([]);
     });
 
+    it("a rollback that can't put the delete back still puts the move back, and forgets both", async () => {
+      const { runtime, script } = await start();
+      const reply = await script.begin();
+      await reply.call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      await reply.call("write", { command: "delete", path: HOLDER });
+      const squatter = await runtime.app.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .createTrackedDocument(HOLDER, "The writer's own.");
+      if (!squatter.ok) throw new Error(JSON.stringify(squatter.error));
+      await reply.rollback();
+
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+      expect(await script.text(HOLDER)).toContain("The writer's own.");
+      expect(await db.select().from(schema.agentNamespaceChanges)).toEqual([]);
+    });
+
     it("undo last: 1 after a move moves it back, not the content write before it, and links follow", async () => {
       const { runtime, script } = await start();
       await script.reply(async (call) => {

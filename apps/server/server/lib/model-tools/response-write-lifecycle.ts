@@ -10,8 +10,9 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { NamespaceChangeRecord } from "../../domains/collab/index.js";
-import type { ContextPort } from "../../domains/context/ports/context-port.js";
+import type { ContextError, ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
+import { emitEvent, unknownToEventPayload } from "../../domains/observability/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import {
   deletedFileMessage,
@@ -20,6 +21,10 @@ import {
 } from "../file-access-denial-copy.js";
 import { namespaceTree } from "../namespace-tree.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
+
+function isContextError(value: unknown): value is ContextError {
+  return typeof value === "object" && value !== null && "code" in value && "uri" in value;
+}
 
 type StagedCreateCleanup = {
   responseId: string;
@@ -90,7 +95,7 @@ export async function deleteCreatedTrackedDocument(input: {
 }
 
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync">,
+  deps: Pick<ToolWiringDeps, "documentSync" | "eventSink">,
 ): AgentEditResponseWriteLifecycle {
   const { namespaceChanges } = deps.documentSync;
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
@@ -103,17 +108,47 @@ export function createAgentEditResponseWriteLifecycle(
     }
   }
 
-  /** Newest first, so a document moved twice in one reply walks back to where it began. */
-  async function reverseStagedNamespaceChanges(responseId: string): Promise<void> {
+  /**
+   * Newest first, so a document moved twice in one reply walks back to where
+   * it began. Every change gets its turn: one that can't go back (the writer
+   * took its old path, say) stays and is logged, and the rest still reverse.
+   * Every handle of the reply is forgotten, since the reply never happened.
+   */
+  async function reverseStagedNamespaceChanges(
+    responseId: string,
+    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ): Promise<void> {
     const staged = stagedNamespaceChanges.get(responseId) ?? [];
     for (const { port, change } of [...staged].reverse()) {
-      const reversed = await namespaceChanges.reverse(namespaceTree(port), change, "undo");
-      // The writer may have restored a delete already; only a change still in effect goes back.
-      if (!reversed.ok && reversed.error.code !== "claimed") {
-        throw new Error(contextErrorMessage(reversed.error));
+      let failure: unknown;
+      try {
+        const reversed = await namespaceChanges.reverse(namespaceTree(port), change, "undo");
+        // The writer may have restored a delete already; only a change still in effect goes back.
+        if (!reversed.ok && reversed.error.code !== "claimed") failure = reversed.error;
+      } catch (cause) {
+        failure = cause;
       }
-      if (change.kind === "move")
-        relocateStagedCreate(responseId, change.documentId, change.fromUri);
+      if (failure === undefined) {
+        if (change.kind === "move") {
+          relocateStagedCreate(responseId, change.documentId, change.fromUri);
+        }
+        continue;
+      }
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "lib.model-tools",
+        name: "response_rollback.failed",
+        correlation: { threadId: ctx.threadId, turnId: ctx.turnId ?? undefined },
+        payload: {
+          responseId,
+          documentId: change.documentId,
+          change: change.kind,
+          writeId: change.wId,
+          ...(isContextError(failure)
+            ? { reason: contextErrorMessage(failure) }
+            : unknownToEventPayload(failure)),
+        },
+      });
     }
     await namespaceChanges.discard(staged.map(({ change }) => change.id));
   }
@@ -206,7 +241,7 @@ export function createAgentEditResponseWriteLifecycle(
       const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
       try {
         // Before the creates: a document created then moved is discarded from where it began.
-        await reverseStagedNamespaceChanges(responseId);
+        await reverseStagedNamespaceChanges(responseId, ctx);
       } finally {
         stagedNamespaceChanges.delete(responseId);
         try {

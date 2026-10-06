@@ -725,6 +725,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
+    eventSink: ports.eventSink,
   });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
@@ -1545,7 +1546,10 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory tool executor is not implemented");
       },
     },
-    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
+    responseWrites: createAgentEditResponseWriteLifecycle({
+      documentSync,
+      eventSink: createNoopEventSink(),
+    }),
     objectStore: {
       async put() {
         throw new Error("in-memory object store is not implemented");
