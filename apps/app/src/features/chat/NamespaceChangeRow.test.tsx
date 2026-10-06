@@ -5,8 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ThreadStoreProvider } from "@/client/stores";
 import type { ToolView } from "./group-delivery-segments";
+import { NamespaceChangeLine } from "./NamespaceChangeRow";
 import { toolView } from "./report-test-fixtures";
 import { ToolRow } from "./ToolRow";
 
@@ -98,7 +100,12 @@ describe("a delete row's Restore", () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <ThreadStoreProvider now={0}>
-            <ToolRow tool={deleteCall()} threadId={THREAD} />
+            <div data-testid="row">
+              <ToolRow tool={deleteCall()} threadId={THREAD} />
+            </div>
+            <div data-testid="receipt">
+              <ReceiptLines />
+            </div>
           </ThreadStoreProvider>
         </QueryClientProvider>,
       ),
@@ -106,8 +113,14 @@ describe("a delete row's Restore", () => {
     await vi.waitFor(() => expect(restoreButton()).not.toBeNull());
   }
 
-  function restoreButton() {
-    return host.querySelector<HTMLButtonElement>('button[aria-label="Restore ch2"]');
+  function restoreButton(place: "row" | "receipt" = "row") {
+    return host.querySelector<HTMLButtonElement>(
+      `[data-testid="${place}"] button[aria-label="Restore ch2"]`,
+    );
+  }
+
+  function text(place: "row" | "receipt") {
+    return host.querySelector(`[data-testid="${place}"]`)?.textContent ?? "";
   }
 
   it("restores the document and the row says so", async () => {
@@ -123,6 +136,24 @@ describe("a delete row's Restore", () => {
 
     await vi.waitFor(() => expect(host.textContent).toContain("Restored"));
     expect(restoreButton()).toBeNull();
+    expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT }]);
+  });
+
+  it("restores from the turn's receipt, and the row follows", async () => {
+    const server = serve({
+      status: 200,
+      body: { status: "restored", documentId: DOCUMENT, uri: "manuscript://ch2.md" },
+      restores: true,
+    });
+    await renderRow();
+    expect(restoreButton("receipt")).not.toBeNull();
+
+    await act(async () => restoreButton("receipt")?.click());
+
+    await vi.waitFor(() => expect(text("receipt")).toContain("Restored"));
+    expect(text("row")).toContain("Restored");
+    expect(restoreButton("receipt")).toBeNull();
+    expect(restoreButton("row")).toBeNull();
     expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT }]);
   });
 
@@ -164,3 +195,16 @@ describe("a delete row's Restore", () => {
     expect(restoreButton()).not.toBeNull();
   });
 });
+
+/** The receipt's lines, fed the way the turn feeds them: from the turn's lineage. */
+function ReceiptLines() {
+  const lineage = useTurnLiveLineage(THREAD, TURN);
+  return lineage.namespaceChanges?.map((change) => (
+    <NamespaceChangeLine
+      key={`${change.documentId}:${change.wId}`}
+      change={change}
+      threadId={THREAD}
+      turnId={TURN}
+    />
+  ));
+}

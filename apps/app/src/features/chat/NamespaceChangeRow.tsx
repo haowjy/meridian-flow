@@ -6,7 +6,8 @@
  * writer's turn Undo and the writer's restore all reach the row the same way:
  * the lineage refetches and the row follows. The document's name is a door
  * only where the document is now. A delete still applied carries the
- * writer's Restore; its failure stays on the row, next to the control.
+ * writer's Restore, here and on the turn's receipt line; its failure stays
+ * next to the control the writer used.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -114,16 +115,36 @@ function DeleteSentence({
   );
 }
 
-/** A turn's move or delete as one line of its receipt, from the lineage alone. */
-export function NamespaceChangeLine({ change }: { change: TurnNamespaceChangeItem }) {
-  return change.kind === "move" ? (
-    <MoveSentence
-      from={change.fromUri}
-      to={change.toUri ?? ""}
-      undone={change.status === "reversed"}
-    />
-  ) : (
-    <DeleteSentence path={change.fromUri} restored={change.status === "reversed"} />
+/**
+ * A turn's move or delete as one line of its receipt, from the lineage alone.
+ * A delete that still stands offers the same Restore as its tool row.
+ */
+export function NamespaceChangeLine({
+  change,
+  threadId,
+  turnId,
+}: {
+  change: TurnNamespaceChangeItem;
+  threadId: string;
+  turnId: string;
+}) {
+  const restore = useRestoreControl(threadId, turnId, change);
+  if (change.kind === "move") {
+    return (
+      <MoveSentence
+        from={change.fromUri}
+        to={change.toUri ?? ""}
+        undone={change.status === "reversed"}
+      />
+    );
+  }
+  return (
+    <>
+      <DeleteSentence path={change.fromUri} restored={change.status === "reversed"}>
+        {restore.control}
+      </DeleteSentence>
+      {restore.note ? <RestoreNote className="text-ink-muted">{restore.note}</RestoreNote> : null}
+    </>
   );
 }
 
@@ -138,43 +159,64 @@ function DeleteRow({
   turnId: string;
   change: TurnNamespaceChangeItem | null;
 }) {
-  const restore = useRestoreDeleteMutation(threadId);
+  const restore = useRestoreControl(threadId, turnId, change);
   const path = change?.fromUri ?? stringInput(toolInputObject(tool), "path") ?? "";
-  const name = documentDisplayName(path);
-  const restored = change?.status === "reversed";
-  // The control needs the server's word that the delete still stands; an
-  // unloaded or rolled-back change offers nothing to act on.
-  const restorable = change?.status === "active" && !restore.isPending;
-  const note = restoreNote(restore.isError ? "request_failed" : restore.data, path);
-
   const title = (
-    <DeleteSentence path={path} restored={restored}>
-      {restorable ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          aria-label={t`Restore ${name}`}
-          onClick={() => {
-            restore.mutate({ turnId, documentId: change.documentId, wId: change.wId });
-          }}
-          // Pulled into the line box so the row keeps its rhythm.
-          className="-my-1 shrink-0 font-medium text-jade-text"
-        >
-          <Trans>Restore</Trans>
-        </Button>
-      ) : null}
+    <DeleteSentence path={path} restored={change?.status === "reversed"}>
+      {restore.control}
     </DeleteSentence>
   );
 
   return (
     <ActivityRow Icon={descriptorFor(tool).Icon} status="done" title={title}>
-      {note ? (
-        <p role="status" data-restore-note>
-          {note}
-        </p>
-      ) : null}
+      {restore.note ? <RestoreNote>{restore.note}</RestoreNote> : null}
     </ActivityRow>
+  );
+}
+
+/**
+ * The writer's Restore for one delete, wherever the delete is shown: its
+ * control while the delete stands, and what came of it. Each place keeps its
+ * own note, so a refusal lands where the writer clicked; the delete's status
+ * is the shared lineage, so every place follows it.
+ */
+function useRestoreControl(
+  threadId: string,
+  turnId: string,
+  change: TurnNamespaceChangeItem | null,
+): { control: ReactNode; note: string | null } {
+  const restore = useRestoreDeleteMutation(threadId);
+  const path = change?.fromUri ?? "";
+  const note = restoreNote(restore.isError ? "request_failed" : restore.data, path);
+  // The control needs the server's word that the delete still stands; an
+  // unloaded or rolled-back change offers nothing to act on.
+  if (change?.kind !== "delete" || change.status !== "active" || restore.isPending) {
+    return { control: null, note };
+  }
+  const name = documentDisplayName(path);
+  const control = (
+    <Button
+      type="button"
+      variant="quiet"
+      size="meta"
+      aria-label={t`Restore ${name}`}
+      onClick={() => {
+        restore.mutate({ turnId, documentId: change.documentId, wId: change.wId });
+      }}
+      // Pulled into the line box so the row keeps its rhythm.
+      className="-my-1 shrink-0 font-medium text-jade-text"
+    >
+      <Trans>Restore</Trans>
+    </Button>
+  );
+  return { control, note };
+}
+
+function RestoreNote({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <p role="status" data-restore-note className={className}>
+      {children}
+    </p>
   );
 }
 

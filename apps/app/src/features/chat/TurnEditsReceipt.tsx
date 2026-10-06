@@ -295,9 +295,9 @@ export function TurnEditsReceipt({
               {namespaceChanges.map((change) => (
                 <li
                   key={`${change.documentId}:${change.wId}`}
-                  className="flex min-h-6 min-w-0 items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+                  className="flex min-h-6 min-w-0 flex-col justify-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
                 >
-                  <NamespaceChangeLine change={change} />
+                  <NamespaceChangeLine change={change} threadId={threadId} turnId={turn.id} />
                 </li>
               ))}
             </ul>
