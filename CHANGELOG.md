@@ -46,6 +46,8 @@
 - Renaming a Work's Scratch document from the title bar keeps it in that Work and saves the new name.
 - Fix AI tools hanging on any project document (even `ls manuscript://`, in direct and draft mode): checking which documents a chat can see no longer deadlocks on the project manifest, and closing a live document never waits on a lock its caller holds.
 
+- Reclaim managed tmux sessions and owned process trees for deleted worktrees on dev startup or `dev:prune-worktrees -- --orphans`; isolate Git scope, recheck live panes throughout shutdown, track late descendants, and refuse changed captured identities before teardown. Route-prune failures warn without blocking startup.
+
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
 - Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.

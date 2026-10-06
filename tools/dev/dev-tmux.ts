@@ -14,7 +14,9 @@ import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
+import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import { TailscaleDevLifecycle } from "./lib/tailscale-lifecycle";
+import { collectOrphanDevSessions, stopOrphanDevSessions } from "./lib/worktree-cleanup-orphans";
 import { branchToPortlessPrefix } from "./portless-prefix";
 import {
   type ExpectedServiceName,
@@ -323,13 +325,7 @@ function teardownExistingSessions(tmuxStore: TmuxSessionStore, sessionNames: str
     killSessionIfPresent(tmuxStore, sessionName);
   }
 
-  const pruneResult = tmuxStore.run("pnpm", ["exec", "portless", "prune"]);
-  if (pruneResult.status !== 0) {
-    const stderr = pruneResult.stderr.trim();
-    if (stderr) {
-      console.warn(`portless prune warning: ${stderr}`);
-    }
-  }
+  prunePortlessRoutes(repoRoot);
 }
 
 async function releaseFixedBackendPorts(
@@ -421,6 +417,9 @@ async function main(): Promise<void> {
     console.log(`stopped · ${identity.sessionName}`);
     return;
   }
+
+  await stopOrphanDevSessions(repoRoot, collectOrphanDevSessions(repoRoot));
+  prunePortlessRoutes(repoRoot);
 
   applyDevEnvToProcess(repoRoot);
   const devCommand = createDevSessionCommand({
