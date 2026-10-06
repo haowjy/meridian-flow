@@ -18,6 +18,8 @@ import type {
   ResourceWrite,
 } from "./resource-records";
 
+import { resourceContextAuthority } from "./resource-work-authority";
+
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
   { request: { kind: Kind } }
@@ -96,8 +98,6 @@ function requestFor(
   const source = resource.canonical;
   if (!source) return null;
   if (intent.desired.kind === "delete") {
-    if (isWorkScopedProjectContextScheme(source.scheme) && source.workId && !source.workSlug)
-      return null;
     return {
       kind: "delete",
       scheme: source.scheme,
@@ -111,13 +111,6 @@ function requestFor(
     };
   }
   const destination = intent.desired.destination;
-  if (
-    (isWorkScopedProjectContextScheme(source.scheme) && source.workId && !source.workSlug) ||
-    (isWorkScopedProjectContextScheme(destination.scheme) &&
-      destination.workId &&
-      !destination.workSlug)
-  )
-    return null;
   return {
     kind: "move",
     scheme: source.scheme,
@@ -258,9 +251,12 @@ function authorityMatches(
   workId: string | null,
   workSlug: string | null,
 ): boolean {
-  if (!isWorkScopedProjectContextScheme(scheme)) return authority.kind === "contextual";
-  if (!workId || workSlug === null) return authority.kind === "none";
-  return authority.kind === "work" && authority.workSlug === workSlug;
+  const expected = resourceContextAuthority(scheme, { workId, workSlug });
+  return (
+    authority.kind === expected.kind &&
+    (authority.kind !== "work" ||
+      (expected.kind === "work" && authority.workSlug === expected.workSlug))
+  );
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(
