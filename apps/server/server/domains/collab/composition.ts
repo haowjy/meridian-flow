@@ -417,6 +417,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: runtime.model,
     agentEdit,
     resolveDocumentUri: documentUriResolver,
+    resolveThreadTitles: lookups.resolveThreadTitles,
     readLiveReviewCut: createDrizzleDraftReviewLive(deps.db, persistence.journal),
   });
   const branchPeers = createEffectiveDocumentReader({

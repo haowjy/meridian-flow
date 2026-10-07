@@ -40,6 +40,7 @@ export function createWorkDraftReviewService(input: {
   documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
+  resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   readLiveReviewCut(documentId: string): Promise<{ state: Uint8Array; revision: string }>;
 }): CollabDrafts {
@@ -143,6 +144,30 @@ export function createWorkDraftReviewService(input: {
           model: input.model,
           draftUpdates,
         });
+        const threadIds = [
+          ...new Set(
+            rows
+              .filter((row) => row.source === "agent" && row.threadId)
+              .map((row) => row.threadId as string),
+          ),
+        ];
+        const titles = await input.resolveThreadTitles(threadIds);
+        const operations = review.operations.map((operation) => {
+          if (operation.kind !== "agent") return operation;
+          const row = rows.find(
+            (row) =>
+              operation.sourceUpdateIds.includes(row.id as never) &&
+              row.source === "agent" &&
+              row.threadId,
+          );
+          return row?.threadId
+            ? {
+                ...operation,
+                actorThreadId: row.threadId,
+                ...(titles.has(row.threadId) ? { actorThreadTitle: titles.get(row.threadId) } : {}),
+              }
+            : operation;
+        });
         return {
           status: "active" as const,
           draftId: command.draftId,
@@ -153,7 +178,7 @@ export function createWorkDraftReviewService(input: {
           liveRevisionToken: liveState.revision,
           draftRevisionToken: draftReviewRevision(branch.generation, branch.doc, rows),
           inlineModelPresent: true as const,
-          operations: review.operations,
+          operations,
           hunks: review.hunks,
           ...(notice ? { notice } : {}),
         };

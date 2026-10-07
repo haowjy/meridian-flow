@@ -32,6 +32,34 @@ function createReviewHarness(options?: Parameters<typeof createHarness>[0]) {
 }
 
 describe("per-change Apply (postgres)", () => {
+  it("attributes agent operations to the chat's current title, not writer operations", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "chat-attribution");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    await stageText(fixture, branch.branchId, 1, " Writer", "writer");
+    await db
+      .update(schema.threads)
+      .set({ title: "Renamed chat" })
+      .where(eq(schema.threads.id, THREAD_ID));
+    const preview = await fixture.collab.draftReview.preview({
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+    });
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.operations.find((op) => op.kind === "agent")).toMatchObject({
+      actorThreadId: THREAD_ID,
+      actorThreadTitle: "Renamed chat",
+    });
+    const writer = preview.operations.find((op) => op.kind === "writer");
+    expect(writer).toBeDefined();
+    expect(writer).not.toHaveProperty("actorThreadId");
+    expect(writer).not.toHaveProperty("actorThreadTitle");
+  });
+
   it("publishes one closed group, removes it from review, then whole Apply publishes the rest once", async () => {
     const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "partial-apply-poc");

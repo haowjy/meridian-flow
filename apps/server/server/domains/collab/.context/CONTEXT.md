@@ -258,3 +258,10 @@ Insert inside the original run, delete around the insertion, then retarget;
 this ordering preserves concurrent manual retargeting. Snapshot creation,
 reserved client identity, journal origin, admission fencing, persistence and
 publication belong to the caller, not these pure traversal primitives.
+
+### Preview chat attribution
+
+Agent preview operations carry `actorThreadId` and the thread title at preview
+time (`actorThreadTitle`). The application service collects journal thread IDs
+and resolves titles with one batched lookup, never one query per operation.
+Writer operations carry neither field.
