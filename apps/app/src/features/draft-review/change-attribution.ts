@@ -12,7 +12,9 @@ import type { ReviewOperation } from "@meridian/contracts/drafts";
 export type ChangeAttribution =
   | { kind: "you" }
   | { kind: "chat"; threadId: string; title: string | null }
-  | { kind: "ai" };
+  | { kind: "ai" }
+  /** A difference the server could not attribute to anyone. Never given an invented author. */
+  | { kind: "unattributed" };
 
 export function changeAttribution(operations: readonly ReviewOperation[]): ChangeAttribution {
   const agentOps = operations.filter((op) => op.kind === "agent");

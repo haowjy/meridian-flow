@@ -582,6 +582,10 @@ msgstr "Apply all 1 draft"
 msgid "Apply draft"
 msgstr "Apply draft"
 
+#: src/features/draft-review/ReviewChangeBar.tsx
+msgid "Apply draft or Discard draft handles this."
+msgstr "Apply draft or Discard draft handles this."
+
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Applying"
@@ -1999,6 +2003,14 @@ msgstr "Fork from here"
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
+
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "Formatting changes remain"
+msgstr "Formatting changes remain"
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
+msgstr "Formatting changes remain. Apply draft or Discard draft finishes them."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -4300,6 +4312,10 @@ msgstr "Unarchive"
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Unattributed"
+msgstr "Unattributed"
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"

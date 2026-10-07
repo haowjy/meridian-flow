@@ -102,7 +102,8 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   change count, in a 48px row under the top bar. Apply draft, Discard draft, Show
   live version (Close review for a new document), the marks switch and Apply all /
   Discard all live in the switcher's menu, so the row stays short. A refused
-  whole-draft command and "No changes left" take a line under it.
+  whole-draft command, "No changes left" and "Formatting changes remain" take a
+  line under it.
 - **Bar** (`MobileChangeBar`): a tap on a change selects it (the editor's
   mousedown seam, the same as a click) and its bar sits at the bottom of the
   manuscript column, in the page's flow so nothing is hidden behind it. It clears

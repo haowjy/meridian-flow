@@ -45,6 +45,8 @@ const change = (classId: string, overrides: Partial<ReviewChange> = {}): ReviewC
     operations: [],
     operationIds: [classId],
     anchorOperationId: classId,
+    markKeys: [classId],
+    actionable: true,
     tone: "ai",
     includesWriterEdits: false,
     merged: false,
@@ -84,6 +86,7 @@ const view = vi.hoisted(() => ({
   canApply: true,
   locked: false,
   finished: false,
+  unlisted: false,
   completing: null as null | "apply" | "discard",
   focus: vi.fn(),
   step: vi.fn(),
@@ -119,6 +122,7 @@ beforeEach(() => {
     canApply: true,
     locked: false,
     finished: false,
+    unlisted: false,
     completing: null as null | "apply" | "discard",
   });
   for (const fn of [
@@ -281,6 +285,17 @@ describe("the phone review header", () => {
       },
       { onCloseDraftOnly },
     );
+  });
+
+  it("says formatting remains, not No changes left, and keeps the draft commands", async () => {
+    Object.assign(view, { items: [], unlisted: true });
+    await render(async () => {
+      expect(header()?.textContent).toContain("Formatting changes remain");
+      expect(header()?.textContent).not.toContain("No changes left");
+      await openSwitcher();
+      expect(menuItem("Apply draft")).toBeDefined();
+      expect(menuItem("Discard draft")).toBeDefined();
+    });
   });
 
   it("says No changes left with Next draft, and offers no draft commands", async () => {

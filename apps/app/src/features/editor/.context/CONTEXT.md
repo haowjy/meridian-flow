@@ -82,8 +82,9 @@ Two self-contained surfaces, both resolving their own state from
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
   prose), only once `inlineReview.shown`. One row: the draft
   switcher, the stepper, Show changes, Discard draft, Apply draft; a second line
-  appears only for a failed whole-draft command or when the last change is
-  handled ("No changes left" with Next draft). Its parts live in
+  appears only for a failed whole-draft command, when the last change is
+  handled ("No changes left" with Next draft), or when the draft is open with no
+  change to list ("Formatting changes remain", Apply draft and Discard draft kept). Its parts live in
   `features/draft-review`.
 - The focused change's bar is the `review-change-bar` chrome surface
   (`surfaces/review`). It never covers manuscript text. With room in the right

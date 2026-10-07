@@ -6,6 +6,8 @@
 
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
 - Discarding one change sends the preview you saw, as applying one does. If the change was updated meanwhile, it comes back with "This change was updated. Check it and discard again." instead of vanishing, and the draft is never treated as discarded or closed.
+- A change the server could not attribute to anyone is still shown in the review, listed as "Unattributed" with its full removed or inserted text, and has no Apply or Discard of its own: the bar says Apply draft or Discard draft handles it. A change that shares a class with one of these has no per-change buttons either.
+- Applying or discarding the last change that can be handled one by one no longer reads as finishing the draft while a change that can't is left. A draft whose only remaining difference is formatting says "Formatting changes remain" instead of "No changes left", with Apply draft and Discard draft still available.
 
 - Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
 - Draft review sends one command per draft at a time, whether it comes from the Editor or the Chat: while a change's Apply or Discard is in flight, the draft's Apply and Discard are disabled everywhere, and the other way round.

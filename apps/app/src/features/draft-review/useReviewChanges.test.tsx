@@ -351,8 +351,58 @@ describe("useReviewChanges", () => {
       );
     });
 
-    it("is finished when the server's own read shows no change and no command is hiding one", async () => {
-      await mount(inline(), async () => expect(latest.finished).toBe(true), preview([], []));
+    it("is not finished when the server's own read shows no change: the draft is still open, so formatting remains", async () => {
+      await mount(
+        inline(),
+        async () => {
+          expect(latest.finished).toBe(false);
+          expect(latest.unlisted).toBe(true);
+        },
+        preview([], []),
+      );
+    });
+
+    it("is not unlisted while a command still hides a change", async () => {
+      await mount(
+        inline(),
+        async () => {
+          await act(async () => {
+            beginChangeCommand(draft, latest.items[0].change, "discard");
+          });
+          expect(latest.unlisted).toBe(false);
+        },
+        last(),
+      );
+    });
+
+    it("is not unlisted once the server closed the draft", async () => {
+      await mount(
+        inline({ phase: "closed", documentName: "Chapter 12" }),
+        async () => expect(latest.unlisted).toBe(false),
+        preview([], []),
+      );
+    });
+
+    it("is not finished or unlisted while an unclassified hunk is the only thing left", async () => {
+      const loose = {
+        kind: "text",
+        hunkId: "h-loose",
+        operationIds: [],
+        unclassified: true,
+        anchor: { relStart: "", relEnd: "" },
+        spans: [],
+        deletedText: "Alpha",
+      } as ReviewHunk;
+      await mount(
+        inline(),
+        async () => {
+          expect(classIds()).toHaveLength(1);
+          expect(latest.items[0].change.attribution).toEqual({ kind: "unattributed" });
+          expect(latest.finished).toBe(false);
+          expect(latest.unlisted).toBe(false);
+        },
+        preview([], [loose]),
+      );
     });
 
     it("is not finished while changes remain", async () => {

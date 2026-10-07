@@ -13,7 +13,10 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
-import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
+import {
+  getInlineReviewPluginState,
+  isUnattributedHunkKey,
+} from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
@@ -65,9 +68,11 @@ export function useInlineReviewFocus({
       if (operationId === reported) return;
       reported = operationId;
       if (!operationId) return;
-      const classId = state?.model?.operations.find(
-        (operation) => operation.operationId === operationId,
-      )?.closureClassId;
+      // An unclassified hunk has no operation: its key is also its change's id.
+      const classId = isUnattributedHunkKey(operationId)
+        ? operationId
+        : state?.model?.operations.find((operation) => operation.operationId === operationId)
+            ?.closureClassId;
       if (classId) reportFocusedClass(documentId, draftId, classId);
     };
     live.on("transaction", onTransaction);
@@ -85,9 +90,7 @@ export function useInlineReviewFocus({
   );
   const pulsed = useMemo(
     () =>
-      changes
-        .filter((change) => arrived.has(change.classId))
-        .flatMap((change) => change.operationIds),
+      changes.filter((change) => arrived.has(change.classId)).flatMap((change) => change.markKeys),
     [changes, arrived],
   );
   useEffect(() => {

@@ -21,11 +21,12 @@ export const REMOVAL_TOGGLE_CLASS = "meridian-review-removal-toggle";
 export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
 export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
+export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-unattributed";
 
-/** A stretch of removed text and who took it out. */
+/** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
 export interface RemovalSegment {
   text: string;
-  kind: InlineReviewOperationKind;
+  kind: InlineReviewOperationKind | "unattributed";
 }
 
 /** One removal widget: the live text one or more adjacent hunks took out at a single position. */
@@ -193,6 +194,7 @@ export function createRemovalElement(
         del.className = [
           REMOVAL_TEXT_CLASS,
           segment.kind === "writer" ? REMOVAL_TEXT_WRITER_CLASS : "",
+          segment.kind === "unattributed" ? REMOVAL_TEXT_UNATTRIBUTED_CLASS : "",
         ]
           .filter(Boolean)
           .join(" ");

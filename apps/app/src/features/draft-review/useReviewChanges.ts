@@ -51,11 +51,16 @@ export type ReviewChangesView = {
    */
   completing: "apply" | "discard" | null;
   /**
-   * Nothing is left to review: the server closed the draft, or its own read
-   * shows no change and no command of ours is hiding one. Never from an
-   * optimistic projection that is waiting on a command.
+   * The server closed the draft: nothing is left to review. This is its answer
+   * (`draftClosed`) and nothing else, never how many changes the list shows.
    */
   finished: boolean;
+  /**
+   * The draft is still open, but its read lists no change and no command of
+   * ours is hiding one: what remains (formatting) has no per-change view.
+   * Apply draft and Discard draft are the way to finish it.
+   */
+  unlisted: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
   apply: (change: ReviewChange) => Promise<void>;
@@ -168,6 +173,8 @@ export function useReviewChanges(
       change: ReviewChange,
       command: (change: ReviewChange) => Promise<DraftCommandOutcome>,
     ) => {
+      // Apply draft and Discard draft handle what has no per-change commands.
+      if (!change.actionable) return;
       settleFocus(change);
       const outcome = await command(change);
       // The change is back (or was updated): the writer returns to it, where its reason is shown.
@@ -195,12 +202,13 @@ export function useReviewChanges(
       : preview?.status === "gone"
         ? "gone"
         : "loading";
-  const finished =
-    completion?.phase === "closed" ||
-    (status === "ready" &&
-      completing === null &&
-      items.length === 0 &&
-      (draftRef ? hiddenOperationIds(records, draftRef).size === 0 : true));
+  const finished = completion?.phase === "closed";
+  const unlisted =
+    !finished &&
+    status === "ready" &&
+    completing === null &&
+    items.length === 0 &&
+    (draftRef ? hiddenOperationIds(records, draftRef).size === 0 : true);
 
   return {
     documentId,
@@ -214,6 +222,7 @@ export function useReviewChanges(
     locked: controller.dispositionLocked,
     completing,
     finished,
+    unlisted,
     focus,
     step,
     apply,

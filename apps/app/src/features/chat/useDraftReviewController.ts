@@ -492,7 +492,8 @@ export function useDraftReviewController({
       // command is server-backed, so a list row works with no manuscript mounted.
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline) return { kind: "blocked" };
+      // A change with no operation of its own (an unclassified hunk) has nothing to send.
+      if (!inline || change.operationIds.length === 0) return { kind: "blocked" };
       const cached = queryClient.getQueryData<DraftPreviewResponse>(
         projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
       );
