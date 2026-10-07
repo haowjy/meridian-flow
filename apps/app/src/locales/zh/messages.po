@@ -2920,6 +2920,10 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
+#: src/features/project/dock/review-handover.tsx
+msgid "Opening {name}"
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Opening checkout…"
@@ -2927,6 +2931,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
+msgstr ""
+
+#: src/features/project/dock/review-handover.tsx
+msgid "Opening draft"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
