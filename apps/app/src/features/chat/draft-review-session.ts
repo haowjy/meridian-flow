@@ -1,4 +1,13 @@
 /** One command/state policy for Work-draft selection and disposition. */
+
+import type { DraftApplyChangesResponse } from "@meridian/contracts/drafts";
+import {
+  beginChangeCommand,
+  type ChangeFailureCode,
+  type ChangeRef,
+  failChangeCommand,
+  releaseChangeCommand,
+} from "@/client/query/change-command-record";
 import {
   beginDraftCommand,
   type DraftCommandFailureCode,
@@ -10,10 +19,10 @@ export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
   | { kind: "discard-draft"; documentId: string; draftId: string }
   | {
-      kind: "discard-operation";
+      kind: "apply-change" | "discard-change";
       documentId: string;
       draftId: string;
-      operationId: string;
+      classId: string;
     }
   | { kind: "batch"; mode: "apply" | "discard"; count: number };
 
@@ -72,9 +81,19 @@ export type DraftCommandOutcome =
   | { kind: "applied" }
   | { kind: "apply-outcome-unknown" }
   | { kind: "discarded" }
+  /** One change was applied or discarded; the rest of the draft is untouched. */
+  | { kind: "change-settled"; mode: "apply" | "discard" }
+  /** One change's command did not land; the reason is held on the change. */
+  | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
 export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
+
+export type ChangeApplyRequest = {
+  operationIds: string[];
+  liveRevisionToken: string;
+  draftRevisionToken: string;
+};
 
 export type DraftReviewCommandPorts = {
   /** The Work these commands act in; part of every command record's identity. */
@@ -82,7 +101,17 @@ export type DraftReviewCommandPorts = {
   /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
   apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
-  operationDiscardStarted: () => void;
+  /** Apply the complete classes `request` names; resolves with the server's answer, rejects when it got none. */
+  applyChanges: (
+    selection: DraftReviewSelection,
+    request: ChangeApplyRequest,
+  ) => Promise<DraftApplyChangesResponse>;
+  /** The server confirmed one change: drop it from the cached preview and refresh around it. */
+  changeConfirmed: (
+    selection: DraftReviewSelection,
+    change: ChangeRef,
+    mode: "apply" | "discard",
+  ) => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
@@ -110,25 +139,69 @@ export class DraftReviewSession {
     );
   }
 
-  discardOperation(
+  /**
+   * Apply one change (a complete server closure class) to live. The change
+   * leaves every surface at once; a refusal or a lost request brings it back
+   * with the reason held on it (`change-command-record`).
+   */
+  applyChange(
     selection: DraftReviewSelection,
-    operationId: string,
+    change: ChangeRef,
+    tokens: Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken">,
   ): Promise<DraftCommandOutcome> {
     return this.withReservation(
-      { kind: "discard-operation", ...selection, operationId },
+      { kind: "apply-change", ...selection, classId: change.classId },
       async (_reservation, ports) => {
         const draft = { ...ports.scope, ...selection };
-        if (!beginDraftCommand(draft)) return { kind: "blocked" };
+        if (!beginChangeCommand(draft, change, "apply")) return { kind: "blocked" };
         try {
-          ports.operationDiscardStarted();
-          await ports.discard(selection, {
-            operationIds: [operationId],
-          });
-          return { kind: "discarded" };
-        } catch {
-          return { kind: "failed", code: "discard-offline" };
+          let response: DraftApplyChangesResponse;
+          try {
+            response = await ports.applyChanges(selection, {
+              operationIds: [...change.operationIds],
+              ...tokens,
+            });
+          } catch {
+            failChangeCommand(draft, change, "apply", "offline");
+            return { kind: "change-refused", mode: "apply", code: "offline" };
+          }
+          if (response.status === "applied") {
+            ports.changeConfirmed(selection, change, "apply");
+            return { kind: "change-settled", mode: "apply" };
+          }
+          if (response.status === "gone") {
+            // Nothing to apply any more: the change leaves, with a word about it.
+            ports.changeConfirmed(selection, change, "apply");
+            return { kind: "change-refused", mode: "apply", code: "gone" };
+          }
+          const code = response.status === "draft_only" ? "draft-only" : "stale";
+          failChangeCommand(draft, change, "apply", code);
+          return { kind: "change-refused", mode: "apply", code };
         } finally {
-          releaseDraftCommand(draft);
+          releaseChangeCommand(draft, change);
+        }
+      },
+    );
+  }
+
+  /** Discard one change: its operations go in a selective Discard, the draft's text returns to live's. */
+  discardChange(selection: DraftReviewSelection, change: ChangeRef): Promise<DraftCommandOutcome> {
+    return this.withReservation(
+      { kind: "discard-change", ...selection, classId: change.classId },
+      async (_reservation, ports) => {
+        const draft = { ...ports.scope, ...selection };
+        if (!beginChangeCommand(draft, change, "discard")) return { kind: "blocked" };
+        try {
+          try {
+            await ports.discard(selection, { operationIds: [...change.operationIds] });
+          } catch {
+            failChangeCommand(draft, change, "discard", "offline");
+            return { kind: "change-refused", mode: "discard", code: "offline" };
+          }
+          ports.changeConfirmed(selection, change, "discard");
+          return { kind: "change-settled", mode: "discard" };
+        } finally {
+          releaseChangeCommand(draft, change);
         }
       },
     );
@@ -263,9 +336,9 @@ export type DraftReviewSelection = {
  * Stable identifiers for every writer-facing review message. The controller is
  * a state machine and must not carry localized copy; it emits a code and the
  * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
- * single source of message identity for both Apply messages and discard errors.
+ * single source of message identity for the review's whole-draft messages.
  */
-export type InlineReviewMessageCode = "apply-failed" | DraftCommandFailureCode | "discard-failed";
+export type InlineReviewMessageCode = "apply-failed" | DraftCommandFailureCode;
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
@@ -275,6 +348,14 @@ export type InlineReviewMessage = {
 export type InlineDraftReview = {
   kind: "inline";
   previewIdentity?: string;
+  /** The change (server closure class) the writer is looking at, if any. */
+  focusedClassId?: string | null;
+  /**
+   * The writer handled the last change. The draft now matches live and may
+   * already have left the server's list; the review stays open, saying so,
+   * until the writer moves on.
+   */
+  cleared?: boolean;
   /**
    * The review body has painted and the review chrome (header, chip swap)
    * may show with it. Until then the plain live view is held, header
@@ -285,11 +366,19 @@ export type InlineDraftReview = {
 
 export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 
+/** What a toast says; the render layer owns the words. */
+export type ReviewToastCode = "applied" | "discarded" | "change-gone";
+
+export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "error" };
+
 export type DraftReviewState = {
   surface: DraftReviewSurface;
   inlineReviewMessage: InlineReviewMessage | null;
-  inlineDiscardError: InlineReviewMessageCode | null;
   dockDispositionError: DraftBatchErrorCode | null;
+  /** The header's "Show changes": false hides every mark in the manuscript. */
+  marksVisible: boolean;
+  toast: ReviewToast | null;
+  toastSeq: number;
 };
 
 export type DraftReviewAction =
@@ -297,8 +386,11 @@ export type DraftReviewAction =
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
-  | { type: "discardStarted" }
-  | { type: "discardFailed"; code: InlineReviewMessageCode }
+  | { type: "changeFocused"; documentId: string; draftId: string; classId: string | null }
+  | { type: "reviewCleared"; documentId: string; draftId: string }
+  | { type: "marksVisible"; visible: boolean }
+  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
+  | { type: "toastDismissed"; id: number }
   | { type: "batchStarted" }
   | { type: "batchSettled"; error: DraftBatchErrorCode | null }
   | {
@@ -313,8 +405,10 @@ export type DraftReviewAction =
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
   inlineReviewMessage: null,
-  inlineDiscardError: null,
   dockDispositionError: null,
+  marksVisible: true,
+  toast: null,
+  toastSeq: 0,
 };
 
 export function draftReviewReducer(
@@ -327,7 +421,6 @@ export function draftReviewReducer(
         ...state,
         surface: inlineSurfaceForEnter(state.surface, action),
         inlineReviewMessage: null,
-        inlineDiscardError: null,
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
@@ -339,13 +432,31 @@ export function draftReviewReducer(
       return { ...state, surface: { ...state.surface, shown: action.shown } };
     case "applySucceeded":
       return clearDraftReviewState(state, action.draftId);
-    case "discardStarted":
+    case "changeFocused":
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      if ((state.surface.focusedClassId ?? null) === action.classId) return state;
+      return { ...state, surface: { ...state.surface, focusedClassId: action.classId } };
+    case "reviewCleared":
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      return state.surface.cleared
+        ? state
+        : { ...state, surface: { ...state.surface, cleared: true } };
+    case "marksVisible":
+      return state.marksVisible === action.visible
+        ? state
+        : { ...state, marksVisible: action.visible };
+    case "toast":
       return {
         ...state,
-        inlineDiscardError: null,
+        toastSeq: state.toastSeq + 1,
+        toast: { id: state.toastSeq + 1, code: action.code, tone: action.tone },
       };
-    case "discardFailed":
-      return { ...state, inlineDiscardError: action.code };
+    case "toastDismissed":
+      return state.toast?.id === action.id ? { ...state, toast: null } : state;
     case "batchStarted":
       return { ...state, dockDispositionError: null };
     case "batchSettled":
@@ -390,7 +501,6 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     inlineReviewMessage: currentDraftId === draftId ? null : state.inlineReviewMessage,
-    inlineDiscardError: currentDraftId === draftId ? null : state.inlineDiscardError,
   };
 }
 
@@ -409,12 +519,9 @@ function stateAfterInlineModelAvailable(
   return { ...state, surface: nextSurface };
 }
 
+/** Leaving review: its messages go with it, and the next review starts with its marks showing. */
 function clearInlineState(state: DraftReviewState): DraftReviewState {
-  return {
-    ...state,
-    inlineReviewMessage: null,
-    inlineDiscardError: null,
-  };
+  return { ...state, inlineReviewMessage: null, marksVisible: true };
 }
 
 function surfaceMatchesDraft(

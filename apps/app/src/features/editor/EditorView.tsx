@@ -72,6 +72,7 @@ import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
+import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
@@ -591,6 +592,13 @@ function ActiveSessionEditorView({
     enabled: inReview,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
     onReviewSessionUnavailable,
+  });
+
+  useInlineReviewFocus({
+    editor,
+    enabled: inReview,
+    documentId,
+    draftId: reviewDraftId,
   });
 
   useEffect(() => {

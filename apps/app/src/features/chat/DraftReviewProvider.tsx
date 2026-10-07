@@ -62,6 +62,31 @@ export function DraftReviewBoundary({
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
 }
 
+/**
+ * The Editor scope's review, offered to surfaces that live outside the Editor's
+ * boundary. A review runs in the Editor's scope (its controller owns the open
+ * draft and its commands), but the dock that lists its changes sits in the
+ * Chat's boundary; reading the ambient controller there showed a review that
+ * was never open.
+ */
+const EditorReviewContext = createContext<DraftReviewContextValue | null>(null);
+
+export function EditorReviewScope({
+  value,
+  children,
+}: {
+  value: DraftReviewContextValue;
+  children: ReactNode;
+}) {
+  return <EditorReviewContext.Provider value={value}>{children}</EditorReviewContext.Provider>;
+}
+
+/** The review of the Editor the writer is working in; falls back to the ambient scope when no Editor scope is offered. */
+export function useEditorDraftReview(): DraftReviewContextValue {
+  const ambient = useDraftReview();
+  return useContext(EditorReviewContext) ?? ambient;
+}
+
 export function useDraftReviewScopeValue({
   projectId,
   work,
@@ -146,6 +171,9 @@ export function useDraftReviewScopeValue({
   useEffect(() => {
     const selection = controller.inlineReview;
     if (!selection || controller.isDisposing) return;
+    // The writer handled the last change: the draft leaving the list is the
+    // result they just caused, and the review stays open to say so.
+    if (selection.cleared) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
       (draft) => draft.documentId === selection.documentId && draft.draftId === selection.draftId,

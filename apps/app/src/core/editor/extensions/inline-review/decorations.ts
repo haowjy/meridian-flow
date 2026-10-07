@@ -56,6 +56,8 @@ const WRITER_CLASS = "meridian-review-writer";
 /** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
 const MERGED_CLASS = "meridian-review-merged";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
+/** A change that arrived while the writer was reviewing pulses once. */
+const ARRIVED_CLASS = "meridian-review-arrived";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
 const HUNK_ATTR = "data-review-hunk";
@@ -64,6 +66,8 @@ const OPERATION_ATTR = "data-review-operations";
 /** What the painter needs besides the model: which change is selected and which folds are open. */
 export interface ReviewPaintState {
   activeOperationId: string | null;
+  /** Operations of changes that just arrived; their marks carry the pulse class. */
+  pulsedOperationIds: ReadonlySet<string>;
   expandedRemovals: ReadonlySet<string>;
   /** The removal whose fold the writer just used from the keyboard; its rebuilt widget takes focus. */
   refocusRemoval: string | null;
@@ -87,11 +91,13 @@ export function buildDecorations(
   const operationsById = indexOperations(model.operations);
   const focusedIds = changeOperationIds(model.operations, paint.activeOperationId);
   const isFocused = (ids: readonly string[]) => ids.some((id) => focusedIds.has(id));
+  const isPulsed = (ids: readonly string[]) => ids.some((id) => paint.pulsedOperationIds.has(id));
   const decorations: Decoration[] = [];
   const removals: RemovalInput[] = [];
 
   for (const hunk of model.hunks) {
     const focused = isFocused(hunk.operationIds);
+    const pulsed = isPulsed(hunk.operationIds);
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
@@ -109,7 +115,9 @@ export function buildDecorations(
     }
 
     if (hunk.kind === "block") {
-      decorations.push(...blockHunkDecorations(hunk, focused, startPos, operationsById, resolver));
+      decorations.push(
+        ...blockHunkDecorations(hunk, focused, pulsed, startPos, operationsById, resolver),
+      );
       continue;
     }
 
@@ -128,7 +136,7 @@ export function buildDecorations(
           startPos,
           endPos,
           {
-            class: classNames(MERGED_CLASS, focused && EMPHASIS_CLASS),
+            class: classNames(MERGED_CLASS, focused && EMPHASIS_CLASS, pulsed && ARRIVED_CLASS),
             [HUNK_ATTR]: hunk.hunkId,
             [OPERATION_ATTR]: hunk.operationIds.join(" "),
           },
@@ -150,7 +158,7 @@ export function buildDecorations(
               span.from,
               span.to,
               {
-                class: insertionClassName(kind, spanFocused),
+                class: insertionClassName(kind, spanFocused, pulsed),
                 [HUNK_ATTR]: hunk.hunkId,
                 [OPERATION_ATTR]: span.operationId,
               },
@@ -168,7 +176,7 @@ export function buildDecorations(
             startPos,
             endPos,
             {
-              class: insertionClassName(kind, focused),
+              class: insertionClassName(kind, focused, pulsed),
               [HUNK_ATTR]: hunk.hunkId,
               [OPERATION_ATTR]: hunk.operationIds.join(" "),
             },
@@ -184,6 +192,7 @@ export function buildDecorations(
 
   for (const plan of planRemovals(removals)) {
     const focused = isFocused(plan.operationIds);
+    const pulsed = isPulsed(plan.operationIds);
     const expanded = paint.expandedRemovals.has(plan.identity);
     decorations.push(
       Decoration.widget(
@@ -191,6 +200,7 @@ export function buildDecorations(
         (view) =>
           createRemovalElement(view.dom.ownerDocument, plan, {
             focused,
+            pulsed,
             expanded,
             refocusToggle: paint.refocusRemoval === plan.identity,
             handlers: handlersFor(view),
@@ -198,7 +208,7 @@ export function buildDecorations(
             operationAttr: OPERATION_ATTR,
           }),
         {
-          key: `removal:${plan.identity}:${plan.kind}:${focused ? "focused" : "idle"}:${expanded ? "open" : "folded"}`,
+          key: `removal:${plan.identity}:${plan.kind}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -230,6 +240,7 @@ function isBlockPosition(doc: PMNode, position: number): boolean {
 function blockHunkDecorations(
   hunk: ResolvedBlockReviewHunk,
   focused: boolean,
+  pulsed: boolean,
   startPos: number,
   operationsById: ReadonlyMap<string, import("@meridian/contracts/drafts").ReviewOperation>,
   resolver: DecorationResolver,
@@ -245,7 +256,7 @@ function blockHunkDecorations(
     if (endPos != null && endPos > startPos) {
       const kind = hunkKind(hunk, operationsById);
       const attrs = {
-        class: `${insertionClassName(kind, focused)} ${BLOCK_CLASS}`,
+        class: `${insertionClassName(kind, focused, pulsed)} ${BLOCK_CLASS}`,
         ...dataAttrs,
       };
       const node = resolver.doc.nodeAt(startPos);
@@ -328,9 +339,13 @@ function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver)
   return resolveRelativePosition(resolver, anchor);
 }
 
-function insertionClassName(kind: InlineReviewOperationKind, focused: boolean): string {
+function insertionClassName(
+  kind: InlineReviewOperationKind,
+  focused: boolean,
+  pulsed: boolean,
+): string {
   const base = kind === "writer" ? WRITER_CLASS : ADDED_CLASS;
-  return classNames(base, focused && EMPHASIS_CLASS);
+  return classNames(base, focused && EMPHASIS_CLASS, pulsed && ARRIVED_CLASS);
 }
 
 function classNames(...values: Array<string | false | undefined>): string {
@@ -343,5 +358,6 @@ export const inlineReviewClassNames = {
   writer: WRITER_CLASS,
   merged: MERGED_CLASS,
   emphasized: EMPHASIS_CLASS,
+  arrived: ARRIVED_CLASS,
   block: BLOCK_CLASS,
 } as const;

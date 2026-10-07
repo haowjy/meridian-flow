@@ -14,6 +14,7 @@ export {
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,
+  isUnsplittableMerge,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
