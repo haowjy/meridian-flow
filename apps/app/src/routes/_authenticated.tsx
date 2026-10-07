@@ -8,6 +8,7 @@ import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
+import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { bindAccountRecents } from "@/client/recents";
@@ -131,7 +132,9 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <AuthenticatedAccountProviderTree now={now} user={user} />
+      <ConnectivityProvider>
+        <AuthenticatedAccountProviderTree now={now} user={user} />
+      </ConnectivityProvider>
     </AppQueryProvider>
   );
 }

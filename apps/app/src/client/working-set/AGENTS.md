@@ -14,7 +14,7 @@ whole-snapshot PUTs with revision-checked acks. The server row is the
 Key rules:
 
 - Server wins on true conflict (base-revision mismatch); local wins on
-  plain outage. Recovery paths (PUT failure, offline→online, sync
+  plain outage. Recovery paths (PUT failure, shared connectivity retry hints, sync
   re-enable) mark the baseline suspect: fresh GET + the precedence
   reducer before any further push.
 - Sync consent fails closed — only a successfully resolved `true`

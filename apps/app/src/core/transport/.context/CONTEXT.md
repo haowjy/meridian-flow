@@ -114,3 +114,34 @@ to `toSeq` before re-subscribing, so the next read asks for history the server
 can serve. The truncated catch-up that follows is skipped by the monotonic seq
 guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
 A gap burst coalesces into one resync rather than one per gap.
+
+## Shared connectivity hints
+
+`ConnectivityProvider` owns one `ConnectivityHints` instance above authenticated
+account composition. Browser/document targets and randomness are injected;
+clocks and timers use late-bound globals. Its listeners last until unmount.
+Connections receive the port through their factories, including room restarts.
+
+Online, focus, visible visibility changes, pageshow, and connection success
+queue `retry-now`. A 50 ms burst window coalesces signals; each subscriber gets
+0–300 ms jitter and at least two seconds between retries. Cooldown signals
+schedule one deferred hint. Success reports are transition-based and exclude
+the successful source. Offline cancels pending retries, resets the cooldown,
+and immediately emits `suspect-offline`. Retry hints restart aggressive backoff,
+so repeated wakes against a down server cost at most one attempt per cooldown.
+
+Sockets leave healthy connections alone and fence terminal/destroyed owners.
+Offline takes the normal close path without awaiting a native handshake;
+`disconnect()` instead disables reconnection. Hocuspocus 4.3 has two retry races:
+native open clears the cancellation handle before the first frame settles the
+attempt, and post-settlement close schedules a delayed reconnect that can
+replace a still-CONNECTING hinted socket. The room adapter retains cancellation
+until settlement and owns/fences the delayed close timer. Superseded attempts
+settle and cancel before replacement; library queues and acknowledgements stay
+intact. Thread success requires the server's `connected` frame.
+
+The resource replica keeps its 30-second interval for pending HTTP work without
+new hints. Working-set pagehide/hidden-visibility flushes are persistence signals;
+its preference owner binds recovery only for the committed account epoch.
+Local document peers and session wakeup keep their content-recovery listeners,
+independent of network jitter, cooldowns, or unrelated connection successes.
