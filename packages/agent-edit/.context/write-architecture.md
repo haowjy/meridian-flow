@@ -122,3 +122,17 @@ serialization. That does **not** mean the package is ProseMirror-neutral.
 the kernel, and resolver code still inspects PM block shape (`type.name`,
 `isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
 deferred in [TODO.md](TODO.md).
+
+### Per-write journal deltas
+
+The write command captures the synchronous Yjs `update` events from content
+application and semantic certification, then merges them into one V1 update.
+This includes that write's structs and deletes, not tombstones inherited from
+earlier writes. The listener is detached before submission, peer synchronization,
+or recovery, including on failure. Full snapshots remain the rollback and cold
+reconstruction currency; a state-vector diff is not a per-write deletion delta.
+
+Dependencies remain in the original Yjs references and client clocks. Independent
+writes can be reviewed separately when their insertion clients differ. A read
+rebuilds the runtime with a new client; successive writes retaining one runtime
+still require same-client clock-prefix closure.

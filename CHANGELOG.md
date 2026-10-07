@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Independent AI replacements can be reviewed and applied separately instead of carrying earlier changes' deletions with them.
+
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
 
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
