@@ -1,4 +1,3 @@
-import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
@@ -54,6 +53,7 @@ import {
 } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDocumentLinkRewrite } from "./adapters/drizzle-document-link-rewrite.js";
+import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";

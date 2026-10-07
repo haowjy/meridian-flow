@@ -1,5 +1,3 @@
-import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
-import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -18,7 +16,9 @@ import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js"
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
 import {
   createDrizzleEmptyDraftSettlement,
   createDrizzleWorkDraftDiscard,
