@@ -16,49 +16,49 @@ import type { EventSink } from "../../observability/index.js";
 
 type ImageLocation = { id: string; path: string; deleted: boolean };
 
-function projectHost(project: AssetPathProject) {
-  if ("projectId" in project) {
-    return isUuid(project.projectId) ? sql`SELECT ${project.projectId}::uuid AS project_id` : null;
-  }
-  if ("threadId" in project) {
-    return isUuid(project.threadId)
-      ? sql`SELECT t.project_id FROM threads t WHERE t.id = ${project.threadId}`
-      : null;
-  }
-  if (!isUuid(project.documentId)) return null;
-  return sql`
-    SELECT COALESCE(cs.project_id, w.project_id) AS project_id
-    FROM documents d
-    JOIN context_sources cs ON cs.id = d.context_source_id
-    LEFT JOIN works w ON w.id = cs.work_id
-    WHERE d.id = ${project.documentId}`;
+async function resolveProjectId(db: Database, project: AssetPathProject): Promise<string | null> {
+  if ("projectId" in project) return isUuid(project.projectId) ? project.projectId : null;
+  const id = "threadId" in project ? project.threadId : project.documentId;
+  if (!isUuid(id)) return null;
+  const [row] = await currentDrizzleDb(db).execute<{ project_id: string | null }>(
+    "threadId" in project
+      ? sql`SELECT t.project_id::text AS project_id FROM threads t WHERE t.id = ${id}`
+      : sql`
+        SELECT COALESCE(cs.project_id, w.project_id)::text AS project_id
+        FROM documents d
+        JOIN context_sources cs ON cs.id = d.context_source_id
+        LEFT JOIN works w ON w.id = cs.work_id
+        WHERE d.id = ${id}`,
+  );
+  return row?.project_id ?? null;
 }
 
 /**
- * Every image in the project's manuscript, wherever it sits,
- * including deleted ones at the location they were deleted from. Paths are
+ * Every image in the project's manuscript, wherever it sits, including
+ * deleted ones at the location they were deleted from. Paths are
  * manuscript-root-relative: the bare spelling `parseContextUri` reads as
  * `manuscript://`, and the one figure upload has always written.
+ *
+ * Deleted rows count, so the partial `deleted_at IS NULL` indexes don't serve
+ * this; `folders_context_root`, `folders_parent` and `documents_context_images`
+ * keep it to the project's own rows.
  */
-async function loadImageLocations(
-  db: Database,
-  project: AssetPathProject,
-): Promise<ImageLocation[]> {
-  const host = projectHost(project);
-  if (!host) return [];
+async function loadImageLocations(db: Database, projectId: string): Promise<ImageLocation[]> {
   return currentDrizzleDb(db).execute<ImageLocation>(sql`
-    WITH RECURSIVE host AS (${host}),
-    manuscript AS (
-      SELECT cs.id FROM context_sources cs JOIN host ON cs.project_id = host.project_id
-      WHERE cs.slug = 'manuscript' AND cs.work_id IS NULL
+    WITH RECURSIVE manuscript AS (
+      SELECT cs.id FROM context_sources cs
+      WHERE cs.project_id = ${projectId} AND cs.slug = 'manuscript'
+        AND cs.work_id IS NULL AND cs.deleted_at IS NULL
     ),
     paths AS (
-      SELECT f.id, f.name AS path, f.deleted_at IS NOT NULL AS deleted
+      SELECT f.id, f.context_source_id, f.name AS path, f.deleted_at IS NOT NULL AS deleted
       FROM folders f
       WHERE f.parent_id IS NULL AND f.context_source_id IN (SELECT id FROM manuscript)
       UNION ALL
-      SELECT f.id, p.path || '/' || f.name, p.deleted OR f.deleted_at IS NOT NULL
-      FROM folders f JOIN paths p ON f.parent_id = p.id
+      SELECT f.id, f.context_source_id, p.path || '/' || f.name,
+        p.deleted OR f.deleted_at IS NOT NULL
+      FROM folders f JOIN paths p
+        ON f.parent_id = p.id AND f.context_source_id = p.context_source_id
     )
     SELECT d.id::text AS id,
       COALESCE(p.path || '/', '') || d.name ||
@@ -66,7 +66,7 @@ async function loadImageLocations(
       d.deleted_at IS NOT NULL OR COALESCE(p.deleted, false) AS deleted
     FROM documents d LEFT JOIN paths p ON p.id = d.folder_id
     WHERE d.context_source_id IN (SELECT id FROM manuscript)
-      AND d.kind = 'content' AND d.file_type = 'image'
+      AND d.file_type = 'image' AND d.kind = 'content'
   `);
 }
 
@@ -109,24 +109,45 @@ function resolverFor(locations: readonly ImageLocation[]): AssetPathResolver {
   };
 }
 
+/** The paths one `within` loaded, and the doors already known to share its project. */
+type Scope = { projectId: string | null; resolver: AssetPathResolver; members: Set<string> };
+
+const memberKey = (project: AssetPathProject) =>
+  "projectId" in project
+    ? `project:${project.projectId}`
+    : "threadId" in project
+      ? `thread:${project.threadId}`
+      : `document:${project.documentId}`;
+
 export function createDrizzleDocumentAssetPaths(
   db: Database,
   eventSink?: EventSink,
 ): DocumentAssetPaths {
-  const scope = new AsyncLocalStorage<AssetPathResolver>();
+  const scope = new AsyncLocalStorage<Scope>();
   const reportUnscoped = createUnscopedAssetPathObserver(eventSink);
   return {
     resolver: {
       pathForAsset(assetDocumentId) {
-        const resolver = scope.getStore();
-        if (resolver) return resolver.pathForAsset(assetDocumentId);
+        const active = scope.getStore();
+        if (active) return active.resolver.pathForAsset(assetDocumentId);
         reportUnscoped(assetDocumentId);
         return null;
       },
-      assetForPath: (path) => scope.getStore()?.assetForPath(path) ?? null,
+      assetForPath: (path) => scope.getStore()?.resolver.assetForPath(path) ?? null,
     },
     async within(project, operation) {
-      return scope.run(resolverFor(await loadImageLocations(db, project)), operation);
+      const outer = scope.getStore();
+      const key = memberKey(project);
+      // A nested call for the same project reads the enclosing operation's paths.
+      if (outer?.members.has(key)) return operation();
+      const projectId = await resolveProjectId(db, project);
+      if (outer && projectId !== null && outer.projectId === projectId) {
+        outer.members.add(key);
+        return operation();
+      }
+      const locations = projectId ? await loadImageLocations(db, projectId) : [];
+      const members = new Set([key, ...(projectId ? [`project:${projectId}`] : [])]);
+      return scope.run({ projectId, resolver: resolverFor(locations), members }, operation);
     },
   };
 }
