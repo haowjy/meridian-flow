@@ -133,6 +133,7 @@ export function MobileProject(props: MobileProjectProps) {
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
           retainWhileLoading={props.retainEditorWhileLoading}
+          onRetry={props.routeIssues?.main ? undefined : props.onRetryEditorRoute}
           issue={
             props.routeIssues?.main ??
             (props.activeScreen === "context" && props.editorScope.status === "ready"
@@ -266,7 +267,6 @@ function renderActiveView(
           <EditorReviewIntentClaimant
             editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}
-            activePath={props.activeContextPath}
           />
           {props.activeContextPath || localTab ? (
             <MobileDocumentHost

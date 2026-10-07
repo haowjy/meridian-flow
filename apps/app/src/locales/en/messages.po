@@ -101,11 +101,6 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
-#. placeholder {0}: group.drafts.length
-#: src/features/project/work/WorkDrafts.tsx
-msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
-msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
-
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -131,7 +126,7 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
-#. placeholder {0}: dock.serverActiveCount
+#. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr "{0} documents"
@@ -533,10 +528,6 @@ msgid "Appearance and behavior settings."
 msgstr "Appearance and behavior settings."
 
 #: src/features/chat/DraftDock.tsx
-msgid "Applied. Reopening live document."
-msgstr "Applied. Reopening live document."
-
-#: src/features/chat/DraftDock.tsx
 msgid "Apply"
 msgstr "Apply"
 
@@ -784,11 +775,6 @@ msgstr "Chats couldn’t load"
 msgid "Chats in this Work share its goal and scratch files."
 msgstr "Chats in this Work share its goal and scratch files."
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Check again"
-msgstr "Check again"
-
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
@@ -801,10 +787,6 @@ msgstr "Checked Work"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Checking whether Apply finished."
-msgstr "Checking whether Apply finished."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
@@ -860,8 +842,6 @@ msgstr "Choose Work for new chat, currently {0}"
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -880,6 +860,10 @@ msgstr "Close artifact preview"
 #: src/features/project/mobile/MobileChatSheetHeader.tsx
 msgid "Close chat"
 msgstr "Close chat"
+
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Close review"
+msgstr "Close review"
 
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
@@ -1098,9 +1082,7 @@ msgstr "Could not load files."
 msgid "Couldn't apply every change, so you're still in Draft."
 msgstr "Couldn't apply every change, so you're still in Draft."
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr "Couldn't apply. Check your connection and try again."
 
@@ -1115,6 +1097,10 @@ msgstr "Couldn't compact"
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't confirm whether this applied. It will update when you're back online."
+msgstr "Couldn't confirm whether this applied. It will update when you're back online."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
@@ -1160,13 +1146,11 @@ msgstr "Couldn't delete this document. Try again."
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr "Couldn't discard. Check your connection and try again."
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Try again."
 msgstr "Couldn't discard. Try again."
 
@@ -1257,6 +1241,10 @@ msgstr "Couldn't open review mode."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't open this draft. Try again."
+msgstr "Couldn't open this draft. Try again."
 
 #: src/features/chat/compaction/control-copy.ts
 msgid "Couldn't queue the compaction."
@@ -1869,16 +1857,6 @@ msgstr "Files"
 msgid "Filter subagents"
 msgstr "Filter subagents"
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish close"
-msgstr "Finish close"
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish reopening"
-msgstr "Finish reopening"
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "finished"
@@ -1887,14 +1865,6 @@ msgstr "finished"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
 msgstr "Finished"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing close"
-msgstr "Finishing close"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing reopening"
-msgstr "Finishing reopening"
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Finishing write mode change"
@@ -2834,6 +2804,10 @@ msgid "Paused to reread"
 msgstr "Paused to reread"
 
 #: src/features/project/work/WorkDrafts.tsx
+msgid "Pending draft"
+msgstr "Pending draft"
+
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
 
@@ -3158,15 +3132,14 @@ msgstr "Resume where I left off on any device"
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
+#: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
@@ -3513,8 +3486,6 @@ msgstr "Status unknown"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -4099,6 +4070,10 @@ msgstr "Top up any time. Extra usage carries over month to month."
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr "Try again"
+
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Try again, or close this tab. The draft stays in your list."
+msgstr "Try again, or close this tab. The draft stays in your list."
 
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."

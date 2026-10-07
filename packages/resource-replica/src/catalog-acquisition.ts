@@ -37,6 +37,8 @@ export interface ResourceCatalogTransport {
 type AcquisitionState = {
   hintedHighWater: bigint;
   inFlight: Promise<CatalogCacheView> | null;
+  /** The acquisition that starts once `inFlight` settles; shared by every `acquireAfter` caller meanwhile. */
+  followUp: Promise<CatalogCacheView> | null;
 };
 
 function checkpointFor(
@@ -120,7 +122,7 @@ export class ResourceCatalogAcquisition {
     const key = catalogProjectionKey(projectId, scope);
     let state = this.states.get(key);
     if (!state) {
-      state = { hintedHighWater: 0n, inFlight: null };
+      state = { hintedHighWater: 0n, inFlight: null, followUp: null };
       this.states.set(key, state);
     }
     return state;
@@ -272,6 +274,25 @@ export class ResourceCatalogAcquisition {
     this.operations.add(operation);
     state.inFlight = inFlight;
     return inFlight;
+  }
+
+  /**
+   * Observe membership no earlier than this call. `acquire` joins an in-flight
+   * acquisition whose snapshot may predate the caller's evidence, so a caller
+   * that needs fresher-than-now state waits for it to settle and starts a new
+   * one.
+   */
+  acquireAfter(projectId: string, scope: CatalogScope): Promise<CatalogCacheView> {
+    const running = this.state(projectId, scope).inFlight;
+    if (!running) return this.acquire(projectId, scope);
+    const state = this.state(projectId, scope);
+    state.followUp ??= running
+      .catch(() => undefined)
+      .then(() => {
+        state.followUp = null;
+        return this.acquire(projectId, scope);
+      });
+    return state.followUp;
   }
 
   hint(projectId: string, scope: CatalogScope, headRevision: string): Promise<CatalogCacheView> {

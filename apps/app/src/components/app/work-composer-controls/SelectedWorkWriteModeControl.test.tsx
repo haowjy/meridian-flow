@@ -85,14 +85,12 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
         documentId: "doc",
         documentName: "Chapter",
         contextPath: "manuscript://chapter.md",
-        drafts: [
-          {
-            draftId: "draft",
-            documentId: "doc",
-            status: null,
-            updatedAt: "2026-08-09T00:00:00.000Z",
-          },
-        ],
+        draft: {
+          draftId: "draft",
+          documentId: "doc",
+          status: null,
+          updatedAt: "2026-08-09T00:00:00.000Z",
+        },
       },
     ];
     let reject!: (cause: Error) => void;
@@ -136,7 +134,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     groups = [
       {
         documentId: "doc",
-        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+        draft: { draftId: "draft", documentId: "doc", status: "active" },
       },
     ];
     mutateAsync = vi
@@ -219,7 +217,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     groups = [
       {
         documentId: "doc",
-        drafts: [{ draftId: "draft", documentId: "doc", status: "active" }],
+        draft: { draftId: "draft", documentId: "doc", status: "active" },
       },
     ];
     mutateAsync = vi.fn().mockResolvedValue({

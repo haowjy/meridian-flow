@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
-import { createStandaloneEditorExtensions } from "../config";
+import {
+  createStandaloneEditor,
+  requireNode,
+  type StandaloneEditor,
+} from "@/test-support/standalone-editor";
 import {
   engageObject,
   registerObjectEngagement,
@@ -16,15 +20,15 @@ import {
 import { selectedObject } from "./object-selection";
 import { objectTypeSpec } from "./object-types";
 
-let editor: Editor | null = null;
+let fixture: StandaloneEditor | null = null;
 
 // Arrow keys reach gapcursor, which measures the line to decide whether Down
 // leaves the block. jsdom cannot measure.
 installJsdomLayout();
 
 afterEach(() => {
-  editor?.destroy();
-  editor = null;
+  fixture?.destroy();
+  fixture = null;
 });
 
 const paragraph = (text: string): JSONContent => ({
@@ -54,24 +58,12 @@ const mermaid: JSONContent = {
 };
 
 function mount(content: JSONContent[]): Editor {
-  const element = document.createElement("div");
-  document.body.append(element);
-  editor = new Editor({
-    element,
-    extensions: createStandaloneEditorExtensions(),
-    content: { type: "doc", content },
-  });
-  return editor;
+  fixture = createStandaloneEditor({ content: { type: "doc", content } });
+  return fixture.editor;
 }
 
 function positionOf(instance: Editor, type: string): number {
-  let found: number | null = null;
-  instance.state.doc.descendants((node, pos) => {
-    if (found === null && node.type.name === type) found = pos;
-    return found === null;
-  });
-  if (found === null) throw new Error(`no ${type} in the fixture`);
-  return found;
+  return requireNode(instance, type).pos;
 }
 
 /**

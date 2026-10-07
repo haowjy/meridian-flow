@@ -251,6 +251,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source: "agent",
         });
         if (!draft) throw new Error("Branch journal append is unavailable");
+        // The append can reject while `deletion` is still being awaited, before
+        // the assertion below attaches; mark it handled so load can't surface it
+        // as an unhandled rejection.
+        draft.catch(() => {});
         await waitForLock("transactionid");
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;

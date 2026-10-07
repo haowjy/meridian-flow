@@ -19,6 +19,24 @@ vi.mock("@/client/stores", async (importOriginal) => ({
 
 beforeEach(() => openTab.mockReset());
 
+function navigationFixture(
+  href: string,
+  overrides: Partial<Parameters<typeof createProjectNavigation>[0]> = {},
+) {
+  return createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
+      replaceEntry: () => undefined,
+      navigate: vi.fn(),
+      ...overrides,
+    },
+    () => ({ work: { kind: "none" } }),
+  );
+}
+
 function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   return {
     kind,
@@ -52,28 +70,16 @@ it.each([
 ] as const)("publishes %s metadata without revealing an unresolved alias", async (kind) => {
   openTab.mockReturnValue({ kind: "opened" });
   const onAdmission = vi.fn();
-  let finishReplace!: () => void;
   const href =
     kind === "alias"
       ? "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before"
       : "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigate = vi.fn(
-    () =>
-      new Promise<void>((resolve) => {
-        finishReplace = resolve;
-      }),
-  );
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate,
-    },
-    () => ({ work: { kind: "none" } }),
-  );
+  const navigate = vi.fn();
+  const replaceEntry = vi.fn();
+  const navigation = navigationFixture(href, {
+    replaceEntry,
+    navigate,
+  });
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: {
@@ -115,12 +121,12 @@ it.each([
         }),
       );
       if (kind === "alias") {
-        expect(navigate).toHaveBeenCalledWith(
+        expect(replaceEntry).toHaveBeenCalledWith(
           "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc",
-          expect.objectContaining({ replace: true }),
+          expect.any(Object),
         );
-        await act(async () => finishReplace());
-      } else expect(navigate).not.toHaveBeenCalled();
+      } else expect(replaceEntry).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
     },
   );
   navigation.dispose();
@@ -129,17 +135,10 @@ it.each([
 it("preserves a proven local resource handle during readable-route admission", async () => {
   openTab.mockReturnValue({ kind: "opened" });
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn(),
-    },
-    () => ({ work: { kind: "none" } }),
-  );
+  const navigation = navigationFixture(href, {
+    replaceEntry: () => undefined,
+    navigate: vi.fn(),
+  });
   const localFile: CatalogFile = {
     kind: "file",
     entryId: "doc-id",
@@ -198,17 +197,10 @@ it("preserves a proven local resource handle during readable-route admission", a
 it("admits one semantic address when parent state rebuilds equivalent lookup objects", async () => {
   openTab.mockReturnValue({ kind: "opened" });
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn(),
-    },
-    () => ({ work: { kind: "none" } }),
-  );
+  const navigation = navigationFixture(href, {
+    replaceEntry: () => undefined,
+    navigate: vi.fn(),
+  });
   function Harness() {
     const [admission, setAdmission] = useState<AddressAdmission | null>(null);
     return (
@@ -246,26 +238,20 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
 
 it.each([
   "current",
-  "before-failure",
-  "after-failure",
-] as const)("settles a rejected alias replace only while it owns the entry (superseded: %s)", async (superseded) => {
-  openTab.mockReturnValue({ kind: "opened" });
-  let reject!: (error: unknown) => void;
-  const pending = new Promise<void>((_resolve, fail) => {
-    reject = fail;
-  });
+  "before-replace",
+] as const)("settles a rejected alias repair only while it owns the entry (superseded: %s)", async (superseded) => {
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before";
-  const navigation = createProjectNavigation(
-    {
-      read: () => ({ key: "entry", href, state: {} }),
-      subscribe: () => () => undefined,
-      flush: () => undefined,
-      settlePendingTraversal: () => undefined,
-      replaceEntry: () => undefined,
-      navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
+  let navigation!: ReturnType<typeof createProjectNavigation>;
+  openTab.mockImplementation(() => {
+    if (superseded === "before-replace") navigation.beginIntent();
+    return { kind: "opened" };
+  });
+  navigation = navigationFixture(href, {
+    replaceEntry: () => {
+      throw new Error("router rejected replacement");
     },
-    () => ({ work: { kind: "none" } }),
-  );
+    navigate: vi.fn(),
+  });
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: { kind: "document", scheme: "kb", path: "before" },
@@ -274,12 +260,6 @@ it.each([
     results: false,
   };
   const onAdmission = vi.fn();
-  void pending.catch(() => {
-    if (superseded === "after-failure")
-      queueMicrotask(() => {
-        navigation.beginIntent();
-      });
-  });
   try {
     await withReactRoot(
       <ProjectAddressDocument
@@ -294,9 +274,10 @@ it.each([
         onAdmission={onAdmission}
       />,
       async () => {
-        expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "loading" }));
-        if (superseded === "before-failure") navigation.beginIntent();
-        await act(async () => reject(new Error("router rejected replacement")));
+        expect(onAdmission).toHaveBeenLastCalledWith(
+          expect.objectContaining({ issue: superseded === "current" ? "error" : "loading" }),
+        );
+        await act(async () => undefined);
         expect(onAdmission).toHaveBeenLastCalledWith(
           expect.objectContaining({
             issue: superseded === "current" ? "error" : "loading",
@@ -355,6 +336,46 @@ it("admits a manuscript in No Work without replacing its unchanged public href",
         documentId: "doc-id",
         issue: undefined,
       });
+    },
+  );
+  navigation.dispose();
+});
+
+it("keeps a draft-only document out of the live view and repairs only its review address", async () => {
+  const noWorkId = "00000000-0000-4000-8000-000000000009";
+  const projectId = "550e8400-e29b-41d4-a716-446655440000";
+  const href = `/p/${projectId}/editor/manuscript/doc`;
+  const replaceEntry = vi.fn();
+  const navigation = navigationFixture(href, { replaceEntry });
+  const result = documentResult("current");
+  if (result.kind === "unavailable") throw new Error("Invalid fixture");
+  result.document.entry.uri = "manuscript://doc";
+  const onAdmission = vi.fn();
+  await withReactRoot(
+    <ProjectAddressDocument
+      projectId={projectId}
+      href={href}
+      entryKey="entry"
+      address={{
+        projectId,
+        destination: { kind: "document", scheme: "manuscript", path: "doc" },
+        work: { kind: "none" },
+        results: false,
+      }}
+      result={result}
+      draftOnlyId="draft-1"
+      workId={noWorkId}
+      noWorkId={noWorkId}
+      navigation={navigation}
+      onAdmission={onAdmission}
+    />,
+    async () => {
+      await act(async () => {});
+      expect(openTab).not.toHaveBeenCalled();
+      expect(onAdmission).not.toHaveBeenCalled();
+      expect(replaceEntry).toHaveBeenCalledOnce();
+      // A No Work review address names its Work itself, so a copy opens the same draft.
+      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&draft=draft-1`);
     },
   );
   navigation.dispose();

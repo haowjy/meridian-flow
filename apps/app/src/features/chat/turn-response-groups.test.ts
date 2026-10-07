@@ -45,4 +45,12 @@ describe("buildTranscriptModel response grouping", () => {
     expect(ids(grouped.partsByFinalTurnId.get("later") ?? [])).toEqual(["later"]);
     expect(grouped.continuing).toEqual([true, false, false]);
   });
+  it("keeps the latest turn open only while background subagents run", () => {
+    const turns = [assistant("latest")];
+    expect(buildTranscriptModel(turns, true).continuing).toEqual([true]);
+    expect(buildTranscriptModel(turns, false).continuing).toEqual([false]);
+    expect(buildTranscriptModel([assistant("cancelled", "cancelled")], true).continuing).toEqual([
+      false,
+    ]);
+  });
 });

@@ -1,9 +1,10 @@
 /** One command/state policy for Work-draft selection and disposition. */
-import type {
-  ApplyExecutionResult,
-  ApplyReservationRef,
-  DraftRecoveryRef,
-} from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
+import {
+  beginDraftCommand,
+  type DraftCommandFailureCode,
+  failDraftCommand,
+  releaseDraftCommand,
+} from "@/client/query/draft-command-record";
 
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
@@ -69,27 +70,26 @@ export class DraftDispositionLock {
 export type DraftCommandOutcome =
   | { kind: "blocked" }
   | { kind: "applied" }
-  | { kind: "server-applied-awaiting-live"; recovery: DraftRecoveryRef }
-  | { kind: "apply-outcome-unknown"; reservation: ApplyReservationRef }
-  | {
-      kind: "server-applied-settled-elsewhere";
-      outcome: "live-ready" | "writer-abandoned";
-    }
+  | { kind: "apply-outcome-unknown" }
   | { kind: "discarded" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
-export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
+export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
 export type DraftReviewCommandPorts = {
-  apply: (selection: DraftReviewSelection) => Promise<ApplyExecutionResult>;
+  /** The Work these commands act in; part of every command record's identity. */
+  scope: { projectId: string; workId: string };
+  /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
+  apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
+  draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftFailed: (
     selection: DraftReviewSelection,
-    code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">,
+    code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">,
   ) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
@@ -117,14 +117,18 @@ export class DraftReviewSession {
     return this.withReservation(
       { kind: "discard-operation", ...selection, operationId },
       async (_reservation, ports) => {
-        ports.operationDiscardStarted();
+        const draft = { ...ports.scope, ...selection };
+        if (!beginDraftCommand(draft)) return { kind: "blocked" };
         try {
+          ports.operationDiscardStarted();
           await ports.discard(selection, {
             operationIds: [operationId],
           });
           return { kind: "discarded" };
         } catch {
           return { kind: "failed", code: "discard-offline" };
+        } finally {
+          releaseDraftCommand(draft);
         }
       },
     );
@@ -166,17 +170,29 @@ export class DraftReviewSession {
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
-    this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
+    const draft = { ...ports.scope, ...selection };
+    if (!beginDraftCommand(draft)) return { kind: "blocked" };
+    // Whatever throws after the claim, the finally gives it back unless the
+    // command already turned it into a confirmation or a held failure.
     try {
-      const result = await ports.apply(selection);
-      if (result.kind === "live-ready") {
-        ports.draftApplied(selection);
-        return { kind: "applied" };
+      this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
+      let result: "applied" | "unknown";
+      try {
+        result = await ports.apply(selection);
+      } catch {
+        releaseDraftCommand(draft);
+        ports.draftFailed(selection, "apply-failed");
+        return { kind: "failed", code: "apply-failed" };
       }
-      return result;
-    } catch {
-      ports.draftFailed(selection, "apply-failed");
-      return { kind: "failed", code: "apply-failed" };
+      if (result === "unknown") {
+        failDraftCommand(draft, "apply-unknown");
+        ports.draftFailed(selection, "apply-unknown");
+        return { kind: "apply-outcome-unknown" };
+      }
+      ports.draftApplied(selection);
+      return { kind: "applied" };
+    } finally {
+      releaseDraftCommand(draft);
     }
   }
 
@@ -185,14 +201,25 @@ export class DraftReviewSession {
     reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
   ): Promise<DraftCommandOutcome> {
-    this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+    const draft = { ...ports.scope, ...selection };
+    if (!beginDraftCommand(draft)) return { kind: "blocked" };
     try {
-      await ports.discard(selection);
+      this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
+      // The optimistic callback runs under the claim: if it throws, nothing was
+      // dispatched and the claim must not outlive the call.
+      ports.draftDiscardStarted(selection);
+      try {
+        await ports.discard(selection);
+      } catch {
+        failDraftCommand(draft, "discard-offline");
+        ports.draftFailed(selection, "discard-offline");
+        return { kind: "failed", code: "discard-offline" };
+      }
+      releaseDraftCommand(draft);
       ports.draftDiscarded(selection);
       return { kind: "discarded" };
-    } catch {
-      ports.draftFailed(selection, "discard-offline");
-      return { kind: "failed", code: "discard-offline" };
+    } finally {
+      releaseDraftCommand(draft);
     }
   }
 
@@ -222,11 +249,9 @@ function batchErrorCode(
   mode: "apply" | "discard",
   outcomes: readonly DraftCommandOutcome[],
 ): DraftBatchErrorCode | null {
-  return outcomes.at(-1)?.kind === "failed"
-    ? mode === "apply"
-      ? "apply-failed"
-      : "discard-offline"
-    : null;
+  const last = outcomes.at(-1)?.kind;
+  if (last === "apply-outcome-unknown") return "apply-unknown";
+  return last === "failed" ? (mode === "apply" ? "apply-failed" : "discard-offline") : null;
 }
 
 export type DraftReviewSelection = {
@@ -242,7 +267,7 @@ export type InlineDraftReview = DraftReviewSelection;
  * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
  * single source of message identity for both Apply messages and discard errors.
  */
-export type InlineReviewMessageCode = "apply-failed" | "discard-offline" | "discard-failed";
+export type InlineReviewMessageCode = "apply-failed" | DraftCommandFailureCode | "discard-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
@@ -271,7 +296,7 @@ export type DraftReviewAction =
   | {
       type: "draftCommandFailed";
       selection: DraftReviewSelection;
-      code: Extract<InlineReviewMessageCode, "apply-failed" | "discard-offline">;
+      code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">;
     }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }

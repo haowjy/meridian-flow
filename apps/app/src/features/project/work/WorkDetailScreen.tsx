@@ -118,7 +118,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
           {routeCommands.workView === "chats" ? (
             <WorkChatsTab projectId={projectId} work={work} scrollOwner={scrollOwner} />
           ) : (
-            <WorkFilesTab projectId={projectId} work={work} commands={routeCommands} />
+            <WorkFilesTab projectId={projectId} work={work} />
           )}
         </WorkToolbarSlotProvider>
         <DirtyDecision controller={controller} />

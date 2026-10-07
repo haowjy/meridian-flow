@@ -6,7 +6,7 @@
 
 import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -19,9 +19,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
-      "../test-support/drizzle-reset.js"
-    );
+    const { createDb } = await import("@meridian/database");
+    const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
@@ -36,15 +35,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     };
     const DOC_ID = "00000000-0000-4000-8000-000000000e07";
     const CHAPTER = "manuscript://chapter.md";
-    const database = useRollbackTestDatabase(DATABASE_URL, {
-      max: 4,
-      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
-    });
-    let db = database.current;
+    // Copies create documents, which repair the project catalog after commit:
+    // that background work needs real commits, so this suite doesn't roll back.
+    const db = createDb(DATABASE_URL, { max: 6 });
+    afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
 
     beforeEach(async () => {
-      db = database.current;
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "draft-mode-tools"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,

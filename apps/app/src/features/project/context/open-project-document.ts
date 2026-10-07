@@ -159,7 +159,7 @@ export class ProjectDocumentLiveOpener {
       async bind(ownerId: string): Promise<LiveDocumentBinding> {
         registry.retain(ownerId, [lease]);
         try {
-          const session = registry.get(lease);
+          let session = registry.get(lease);
           const snapshot = session.getSnapshot();
           if (
             snapshot.status === "access-lost" ||
@@ -167,6 +167,7 @@ export class ProjectDocumentLiveOpener {
             snapshot.connectionState?.kind === "terminal"
           ) {
             await registry.restartUnavailableRoom(lease);
+            session = registry.get(lease);
           }
           let released = false;
           return Object.freeze({

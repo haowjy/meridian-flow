@@ -3,11 +3,15 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
+  /** Replace only when the route already names this document; otherwise push. */
+  replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** Persist an inline review in this Editor history entry. Omission opens live. */
+  draftId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
 };
@@ -22,12 +26,14 @@ const ProjectNavigationContext = createContext<{
   screen?: ScreenKey;
   open: OpenContextRoute;
   capture?: () => () => boolean;
+  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
 
 export function ProjectNavigationProvider({
   children,
   openContextRoute,
   captureNavigation,
+  isCurrentContextRoute,
   screen,
   registerLeaveGuard,
 }: {
@@ -35,6 +41,7 @@ export function ProjectNavigationProvider({
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
+  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (
@@ -43,6 +50,7 @@ export function ProjectNavigationProvider({
         screen,
         open: openContextRoute,
         capture: captureNavigation,
+        isCurrentContextRoute,
         registerLeaveGuard,
       }}
     >
@@ -58,6 +66,11 @@ export function useOpenContextRoute(): OpenContextRoute | null {
 /** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
+}
+
+/** Whether the browser still shows a specific readable Editor destination. */
+export function useIsCurrentContextRoute() {
+  return useContext(ProjectNavigationContext)?.isCurrentContextRoute;
 }
 
 export function useProjectScreen(): ScreenKey {

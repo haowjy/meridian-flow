@@ -123,6 +123,45 @@ describe("readable project addresses", () => {
     expect(parse(`${P}/works/${WORK}?view=files&view=chats`).kind).toBe("invalid");
   });
 
+  it("round trips review identity only on an Editor document", () => {
+    const href = `${P}/editor/manuscript/chapter.md?work=${WORK}&draft=draft%2Fone`;
+    expect(parse(href)).toMatchObject({
+      kind: "valid",
+      href,
+      address: { draftId: "draft/one" },
+    });
+    const editor = parse(`${P}/editor?draft=draft-one`);
+    expect(editor).toMatchObject({ kind: "valid", href: `${P}/editor` });
+    if (editor.kind !== "valid") throw new Error(editor.reason);
+    expect(editor.address).not.toHaveProperty("draftId");
+    expect(parse(`${P}/chats?draft=draft-one`)).toMatchObject({ href: `${P}/chats` });
+    expect(parse(`${P}/editor/manuscript/chapter.md?draft=a&draft=b`)).toMatchObject({
+      kind: "invalid",
+      reason: "duplicate:draft",
+    });
+  });
+
+  it("states No Work on a review address so a copied link opens its own Work's draft", () => {
+    // A live No Work document keeps a clean URL (history state pins it); a review address is
+    // shared, so it names its Work itself. `?work=` reads back as No Work, never as absent.
+    const live = parse(`${P}/editor/manuscript/chapter.md?work=`);
+    if (live.kind !== "valid") throw new Error(live.reason);
+    const review = { ...live.address, draftId: "draft-one" };
+    expect(projectAddressHref(review)).toBe(
+      `${P}/editor/manuscript/chapter.md?work=&draft=draft-one`,
+    );
+    expect(parse(projectAddressHref(review))).toMatchObject({
+      kind: "valid",
+      address: { work: { kind: "none" }, draftId: "draft-one" },
+    });
+    // The address already says No Work, so no history-state pin repeats it (and no write is needed).
+    expect(projectAddressState(review)).toMatchObject({ meridianProjectEmptySelection: undefined });
+    expect(projectAddressState(live.address).meridianProjectEmptySelection).toBeDefined();
+    expect(projectAddressHref({ ...live.address, work: { kind: "none" } })).toBe(
+      `${P}/editor/manuscript/chapter.md`,
+    );
+  });
+
   it("preserves absent, explicitly empty, and malformed editing contexts", () => {
     expect(parse(`${P}/editor`)).toMatchObject({ address: { work: { kind: "absent" } } });
     expect(parse(`${P}/editor?work=`)).toMatchObject({

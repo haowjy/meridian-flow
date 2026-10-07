@@ -296,7 +296,7 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`DraftApplyRecoveryProvider` → `WorkingSetSyncPreferenceProvider` →
+`WorkingSetSyncPreferenceProvider` →
 `ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
 `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously

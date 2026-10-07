@@ -27,6 +27,43 @@ const tracked = (
 });
 
 describe("resolveWorkspaceRoute", () => {
+  it("keeps a bound document's tab as the route owner after the tab's path moved on", () => {
+    // A rename updates the tab before the address follows: the old locator names
+    // no tab by path, but it is still bound to this document.
+    const renamed = tracked("doc", "/renamed.md", "a");
+    const locator = { scheme: "scratch", path: "/old.md", workId: "a" } as const;
+    expect(resolveWorkspaceRoute({ tabs: [renamed], selectedDocumentId: "doc", locator })).toEqual({
+      kind: "unowned",
+    });
+    expect(
+      resolveWorkspaceRoute({
+        tabs: [renamed],
+        selectedDocumentId: "doc",
+        locator,
+        boundDocumentId: "doc",
+      }),
+    ).toMatchObject({ kind: "owner", tab: { documentId: "doc" } });
+  });
+  it("prefers the bound document over another tab that reuses the locator's path", () => {
+    expect(
+      resolveWorkspaceRoute({
+        tabs: [tracked("other", "/old.md", "a"), tracked("doc", "/renamed.md", "a")],
+        selectedDocumentId: "doc",
+        locator: { scheme: "scratch", path: "/old.md", workId: "a" },
+        boundDocumentId: "doc",
+      }),
+    ).toMatchObject({ kind: "owner", tab: { documentId: "doc" } });
+  });
+  it("never lets another tab own the route by its path while the bound document has no tab", () => {
+    expect(
+      resolveWorkspaceRoute({
+        tabs: [tracked("other", "/old.md", "a")],
+        selectedDocumentId: "other",
+        locator: { scheme: "scratch", path: "/old.md", workId: "a" },
+        boundDocumentId: "doc",
+      }),
+    ).toEqual({ kind: "unowned" });
+  });
   it("uses the exact selected ID among multiple empty tabs", () => {
     const tabs = [local("first"), local("second")];
     expect(

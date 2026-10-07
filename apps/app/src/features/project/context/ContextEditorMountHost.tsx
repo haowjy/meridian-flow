@@ -1,5 +1,6 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -16,9 +17,8 @@ import type { ResourceContentHandle } from "@/core/resources/resource-content-ac
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
-import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
-import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
+  useAccountResourceProjection,
   useAccountResourceReplica,
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
@@ -69,6 +69,7 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -99,6 +100,10 @@ export function ContextEditorMountHost({
     <div className="relative min-h-0 flex-1">
       {trackedTabs.map((tab) => {
         const resourceHandle = tab.resourceHandle;
+        const availabilityRevision = resourceAvailabilityRevision(
+          resourceProjection,
+          tab.documentId,
+        );
         const isMounted = mounted.has(tab.documentId);
         const isActive = tab.documentId === activeTabId;
         const selectedReviewDraftId =
@@ -110,12 +115,17 @@ export function ContextEditorMountHost({
           : null;
         const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
         const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
+        // A draft-only document has no live room until Apply promotes it, and
+        // the server refuses one. Review hosts the draft branch alone.
+        const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
         const renderEditor = (
           session: DocumentSession | null,
           failed = false,
           localContentReady = false,
+          retry?: () => void,
         ): ReactNode => {
           if (!isMounted) return null;
+          const hosted = session !== null || branchOnly;
           let bindingKey: string | undefined;
           if (session) {
             bindingKey = bindingKeysRef.current.get(session);
@@ -135,14 +145,23 @@ export function ContextEditorMountHost({
               )}
               // Defensive: aria-hidden hides background editors from AT.
               aria-hidden={!isActive}
-              aria-busy={!failed && !session}
+              aria-busy={!failed && !hosted}
             >
               {failed ? (
-                <div className="grid h-full place-items-center text-destructive text-sm">
-                  <Trans>Couldn't open this document.</Trans>
+                <div className="grid h-full place-items-center">
+                  <div className="space-y-3 text-center">
+                    <p className="text-destructive text-sm">
+                      <Trans>Couldn't open this document.</Trans>
+                    </p>
+                    {retry ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={retry}>
+                        <Trans>Retry</Trans>
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
-              {!failed && !session ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
+              {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
               {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
                 <UntitledInputObserver
                   documentId={tab.documentId}
@@ -152,14 +171,18 @@ export function ContextEditorMountHost({
               ) : null}
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              {failed || !session ? null : waitingForReviewRoom && controller.reviewRoomError ? (
+              {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
                 <div className="flex min-h-0 flex-1 items-center justify-center p-6">
                   <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
                     <p className="font-medium text-foreground text-sm">
                       <Trans>Couldn't open review mode.</Trans>
                     </p>
                     <p className="text-muted-foreground text-xs">
-                      <Trans>Try again, or return to the live document.</Trans>
+                      {branchOnly ? (
+                        <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
+                      ) : (
+                        <Trans>Try again, or return to the live document.</Trans>
+                      )}
                     </p>
                     <div className="flex justify-center gap-2">
                       <Button
@@ -176,18 +199,22 @@ export function ContextEditorMountHost({
                       >
                         <Trans>Retry</Trans>
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => controller.exitInlineReview()}
-                      >
-                        <Trans>Back to live</Trans>
-                      </Button>
+                      {branchOnly ? null : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => controller.exitInlineReview()}
+                        >
+                          <Trans>Back to live</Trans>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
-              ) : waitingForReviewRoom ? null : (
+              ) : (
+                // While the review room resolves, the live editor stays on
+                // screen (a draft-only tab has none, so its shell holds the place).
                 <>
                   {active && isActive ? (
                     <>
@@ -212,7 +239,7 @@ export function ContextEditorMountHost({
                   <EditorView
                     projectId={projectId}
                     documentId={tab.documentId}
-                    session={session}
+                    session={session ?? undefined}
                     bindingKey={bindingKey}
                     // A warm editor is hidden, not gone. Its chrome portals to
                     // the body, where `hidden` on an ancestor means nothing.
@@ -222,10 +249,16 @@ export function ContextEditorMountHost({
                     detached={tab.kind === "new"}
                     localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                    reviewDraftId={reviewDraftId}
+                    // The intent, not the resolved room: the live editor goes
+                    // read-only from the click, while the room is still resolving.
+                    reviewDraftId={selectedReviewDraftId}
                     reviewRoomName={reviewRoomName}
                     reviewWorkId={reviewDraftId ? controller.workId : null}
-                    onReviewSessionUnavailable={controller.exitInlineReview}
+                    // Leaving review would strand a draft-only tab on an empty
+                    // editor; the writer closes it from the tab bar instead.
+                    onReviewSessionUnavailable={
+                      branchOnly ? undefined : controller.exitInlineReview
+                    }
                   />
                 </>
               )}
@@ -238,7 +271,8 @@ export function ContextEditorMountHost({
             projectId={projectId}
             documentId={tab.documentId}
             resourceHandle={resourceHandle}
-            active={active && isActive}
+            availabilityRevision={availabilityRevision}
+            liveRoom={!branchOnly}
           >
             {renderEditor}
           </ContextTabSessionBoundary>
@@ -252,11 +286,14 @@ type ContextTabSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
-  active?: boolean;
+  availabilityRevision: string;
+  /** False for a document with no live room yet (draft-only until Apply promotes it). */
+  liveRoom?: boolean;
   children: (
     session: DocumentSession | null,
     failed: boolean,
     localContentReady: boolean,
+    retry: () => void,
   ) => ReactNode;
 };
 
@@ -265,7 +302,7 @@ type ContextTabSessionProps = {
  * closes. A room dropped because the server refused its edits reopens as a
  * fresh session: local probe and server binding both start over.
  */
-function ContextTabSessionBoundary(props: ContextTabSessionProps) {
+export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
   const [opening, setOpening] = useState(0);
   const reopen = useCallback(() => setOpening((value) => value + 1), []);
   return <ContextTabSession key={opening} {...props} onReopen={reopen} />;
@@ -275,15 +312,13 @@ function ContextTabSession({
   projectId,
   documentId,
   resourceHandle,
+  availabilityRevision,
+  liveRoom = true,
   children,
-  active = true,
   onReopen,
 }: ContextTabSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
-  const generation = useRef(++serverHostGeneration);
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
-  const currentDocumentId = useRef(documentId);
-  currentDocumentId.current = documentId;
   const resourceIdentity = resourceHandle ?? documentId;
   const resourceLookup = useMemo(
     () =>
@@ -296,44 +331,50 @@ function ContextTabSession({
     identity: string;
     documentId: string;
     handle: ResourceContentHandle | null;
-    phase: "probing" | "cached" | "server" | "failed";
+    phase: "probing" | "cached" | "server";
   }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
+  const installedHandle = useRef<ResourceContentHandle | null>(null);
+  // A tab can lose its resource handle while keeping its document (a review
+  // launch re-opens it without one). Same document, same cached session: keep
+  // painting it while the exact lookup re-probes, never drop to a skeleton.
   const currentLocal =
     local.identity === resourceIdentity
       ? local
       : {
           identity: resourceIdentity,
           documentId,
-          handle: null,
+          handle: local.documentId === documentId ? local.handle : null,
           phase:
             local.documentId === documentId && local.phase === "server"
               ? ("server" as const)
               : ("probing" as const),
         };
   useEffect(() => {
+    if (!liveRoom) return;
     const abort = new AbortController();
-    let retained: ResourceContentHandle | null = null;
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
-      handle: null,
+      handle:
+        prior.identity === resourceIdentity || prior.documentId === documentId
+          ? prior.handle
+          : null,
       phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
     }));
     void (async () => {
-      const requestedDocumentId = currentDocumentId.current;
-      const settleUnavailable = async () => {
-        try {
-          const remote = await resources.canAcquireRemoteDocument(projectId, requestedDocumentId);
-          if (!abort.signal.aborted)
-            setLocal({
-              identity: resourceIdentity,
-              documentId,
-              handle: null,
-              phase: remote ? "server" : "failed",
-            });
-        } catch {
-          if (!abort.signal.aborted)
-            setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "failed" });
+      const settleUnavailable = (releaseCachedHandle = false) => {
+        if (!abort.signal.aborted) {
+          if (releaseCachedHandle) {
+            installedHandle.current?.release();
+            installedHandle.current = null;
+          }
+          setLocal((prior) => ({
+            identity: resourceIdentity,
+            documentId,
+            handle:
+              !releaseCachedHandle && prior.identity === resourceIdentity ? prior.handle : null,
+            phase: "server",
+          }));
         }
       };
       try {
@@ -343,7 +384,7 @@ function ContextTabSession({
             : await resources.keyForDocument(projectId, resourceLookup.documentId);
         if (abort.signal.aborted) return;
         if (!key) {
-          setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "server" });
+          settleUnavailable();
           return;
         }
         const result = await resources.openDocument(
@@ -358,28 +399,48 @@ function ContextTabSession({
           return;
         }
         if (result.kind !== "opened") {
-          await settleUnavailable();
+          settleUnavailable(
+            result.kind === "unavailable" &&
+              ["terminal", "deleted", "schema-mismatch"].includes(result.reason),
+          );
           return;
         }
-        retained = result.handle;
-        setLocal({ identity: resourceIdentity, documentId, handle: retained, phase: "cached" });
+        const previous = installedHandle.current;
+        installedHandle.current = result.handle;
+        setLocal({
+          identity: resourceIdentity,
+          documentId,
+          handle: result.handle,
+          phase: "cached",
+        });
+        previous?.release();
       } catch {
-        await settleUnavailable();
+        settleUnavailable();
       }
     })();
     return () => {
       abort.abort();
-      retained?.release();
     };
-  }, [projectId, resourceIdentity, resourceLookup, resources]);
-  const serverDocumentId = currentLocal.phase === "server" ? documentId : null;
+  }, [availabilityRevision, liveRoom, projectId, resourceIdentity, resourceLookup, resources]);
+  useEffect(
+    () => () => {
+      installedHandle.current?.release();
+      installedHandle.current = null;
+    },
+    [],
+  );
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId: serverDocumentId,
+    documentId: liveRoom && currentLocal.phase === "server" ? documentId : null,
     owner: "desktop-server-tab",
   });
-  useLiveBindingAcknowledgementHost(projectId, active ? serverDocumentId : null, binding);
-  usePostApplyHostWake(projectId, serverDocumentId, generation.current);
+  const automaticRetryRevision = useRef(availabilityRevision);
+  useEffect(() => {
+    if (binding.state.kind !== "failed" || automaticRetryRevision.current === availabilityRevision)
+      return;
+    automaticRetryRevision.current = availabilityRevision;
+    binding.retry();
+  }, [availabilityRevision, binding.retry, binding.state.kind]);
   const state = binding.state;
   useEffect(() => {
     if (state.kind !== "opened" || state.documentId !== documentId) return;
@@ -388,19 +449,35 @@ function ContextTabSession({
       .catch(() => undefined);
   }, [documentId, projectId, resources, state]);
   const localSession = currentLocal.handle?.session ?? null;
-  const session = useRefusedEditsReopen(
-    localSession ??
-      (state.kind === "opened" && state.documentId === documentId ? state.session : null),
-    onReopen,
-  );
+  const liveSession =
+    state.kind === "opened" && state.documentId === documentId ? state.session : null;
+  const selectedSession = liveSession ?? localSession;
+  const session = useRefusedEditsReopen(selectedSession, onReopen);
   return children(
     session,
-    currentLocal.phase === "failed" || (state.kind === "failed" && state.documentId === documentId),
-    localSession !== null,
+    state.kind === "failed" && state.documentId === documentId,
+    selectedSession !== null && selectedSession === localSession,
+    binding.retry,
   );
 }
 
-let serverHostGeneration = 0;
+export function resourceAvailabilityRevision(
+  snapshot: ResourceProjectionSnapshot | null,
+  documentId: string,
+): string {
+  if (!snapshot) return "pending";
+  const resource = snapshot.records.find(
+    (record) => record.resource.identity.documentId === documentId,
+  )?.resource;
+  return JSON.stringify([
+    resource?.revision ?? null,
+    resource?.lifecycle.kind === "acknowledged"
+      ? resource.lifecycle.availabilityGeneration
+      : resource?.lifecycle.kind === "terminal"
+        ? resource.lifecycle.generation
+        : null,
+  ]);
+}
 
 function ActiveEditorProjection({
   documentId,
@@ -409,7 +486,8 @@ function ActiveEditorProjection({
   setProjection,
 }: {
   documentId: string;
-  session: DocumentSession;
+  /** Null while a draft-only document is hosted by its branch room alone. */
+  session: DocumentSession | null;
   inReview: boolean;
   setProjection: (
     documentId: string | null,
@@ -443,7 +521,8 @@ function RoomScopeCatalogCheck({
   readOnly,
 }: {
   projectId: string;
-  session: DocumentSession;
+  /** Null while a draft-only document is hosted by its branch room alone. */
+  session: DocumentSession | null;
   reviewRoomName: string | null;
   readOnly: boolean;
 }) {
@@ -456,7 +535,7 @@ function RoomScopeCatalogCheck({
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName
       ? registry.observeBranchRoom(reviewRoomName, observer)
-      : session.subscribe(observer);
+      : session?.subscribe(observer);
   }, [registry, reviewRoomName, session]);
   useEffect(() => {
     if (access === null || (access === "read") === readOnlyRef.current) return;
@@ -465,9 +544,15 @@ function RoomScopeCatalogCheck({
   return null;
 }
 
-function PresenceSuspension({ session, enabled }: { session: DocumentSession; enabled: boolean }) {
+function PresenceSuspension({
+  session,
+  enabled,
+}: {
+  session: DocumentSession | null;
+  enabled: boolean;
+}) {
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !session) return;
     session.suspendPresence();
     return () => session.resumePresence();
   }, [enabled, session]);

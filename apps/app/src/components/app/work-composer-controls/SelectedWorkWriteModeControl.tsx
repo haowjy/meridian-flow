@@ -21,7 +21,6 @@ import {
 } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
-import { usePostApplyDraftGroupProjections } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 
 /**
  * The confirmation page's lifecycle. `checking` waits for the server's count,
@@ -61,9 +60,7 @@ export function useSelectedWorkWriteModeToolbarControl({
 }): ComposerToolbarControl {
   const update = useUpdateWorkWriteMode(projectId, work.id);
   const drafts = useWorkDrafts(projectId, work.id);
-  const groups = activeWorkDraftGroups(
-    usePostApplyDraftGroupProjections(drafts.groups, projectId, work.id).commandEligibleGroups,
-  );
+  const groups = activeWorkDraftGroups(drafts.groups);
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const applyRef = useRef<HTMLButtonElement | null>(null);

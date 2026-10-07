@@ -19,7 +19,7 @@ export type ContextTab =
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
-      /** Transient exact draft and tab-generation fence for post-Apply settlement. */
+      /** Transient exact draft and tab-generation fence for promoting or closing the review tab. */
       reviewDraftId?: string;
       tabInstanceToken?: string;
       editable: true;

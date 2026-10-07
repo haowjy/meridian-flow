@@ -1,15 +1,20 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
+  gateLiveView,
   mergeLocalResourceState,
+  projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
   routeContinuityDocumentId,
 } from "./local-document-address";
+import type { ProjectAddress } from "./project-address";
 
 function catalog(localContent: boolean): CatalogContextView {
   const scope = { kind: "project" as const, projectId: "project-id" };
@@ -161,6 +166,19 @@ it("admits an exact cached readable path before a failed remote lookup matters",
   });
 });
 
+it("never answers a bound document the catalog does not list with the path's occupant", () => {
+  // Document A is bound to the route but is not in the live catalog (a pending new-document
+  // draft); B, which has local content, now holds the path the URL names.
+  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Cached.md" };
+  expect(
+    resolveLocalDocumentAddress("project-id", destination, null, catalog(true), "document-a"),
+  ).toBeUndefined();
+  // With no bound identity, the occupant is the route's document.
+  expect(
+    resolveLocalDocumentAddress("project-id", destination, null, catalog(true), null),
+  ).toMatchObject({ file: { documentId: "document-id" } });
+});
+
 it("does not turn metadata-only catalog discovery into blank local content", () => {
   expect(
     resolveLocalDocumentAddress(
@@ -280,6 +298,79 @@ it("keeps local ownership while canonical metadata replaces a stale same-ID path
   });
 });
 
+describe("gateLiveView", () => {
+  const resolved = {
+    kind: "current",
+    document: { kind: "available", documentId: "document-id" },
+  } as DocumentAddressResult;
+  const manifest = (ids: string[], state: { isFetching?: boolean; isError?: boolean } = {}) =>
+    ({
+      catalog: { normalized: { entries: new Map(ids.map((id) => [id, {}])) } },
+      isComplete: true,
+      isFetching: false,
+      isError: false,
+      ...state,
+    }) as unknown as Parameters<typeof gateLiveView>[2];
+  const group = (isNewDocument: boolean) =>
+    ({
+      documentId: "document-id",
+      draft: { draftId: "draft-id", status: "active", isNewDocument },
+    }) as unknown as ThreadDraftGroup;
+  const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+  const noTab = () => false;
+
+  it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
+    expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready(), noTab)).toEqual(
+      { outcome: "ready", result: resolved },
+    );
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)), noTab),
+    ).toMatchObject({
+      outcome: "ready",
+      result: resolved,
+      draftOnly: { draft: { draftId: "draft-id" } },
+    });
+    // Discarded, or a draft of an existing document: no live view and no review.
+    expect(gateLiveView(resolved, "manuscript", manifest([]), ready(), noTab).result).toEqual({
+      kind: "unavailable",
+    });
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), ready(group(false)), noTab).result,
+    ).toEqual({ kind: "unavailable" });
+  });
+
+  it("calls absence unavailable only on an authoritative read, and keeps a promoted tab live", () => {
+    // A stored checkpoint stays complete while its refresh is in flight: still pending.
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), noTab),
+    ).toEqual({ outcome: "pending", result: undefined });
+    expect(
+      gateLiveView(
+        resolved,
+        "manuscript",
+        manifest([]),
+        { status: "loading", groups: null },
+        noTab,
+      ),
+    ).toEqual({ outcome: "pending", result: undefined });
+    // Apply promoted the tab; the lagging catalog does not get to veto it.
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), () => true)
+        .result,
+    ).toBe(resolved);
+  });
+
+  it("reports a failed prerequisite as failed, distinct from one still loading", () => {
+    // A failed read is not evidence of no draft, and it must not wait forever.
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([], { isError: true }), ready(), noTab),
+    ).toEqual({ outcome: "failed", result: undefined });
+    expect(
+      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", groups: [] }, noTab),
+    ).toEqual({ outcome: "failed", result: undefined });
+  });
+});
+
 const kbRoute = { kind: "document" as const, scheme: "kb" as const, path: "Original.md" };
 function bound(workId: string, documentId = "doc-a") {
   return {
@@ -305,4 +396,99 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
+});
+
+describe("projectAddressMatchesContextTarget", () => {
+  const noWorkId = "no-work";
+  const address = (work: ProjectAddress["work"]): ProjectAddress => ({
+    projectId: "project-id",
+    destination: { kind: "document", scheme: "manuscript", path: "a.md" },
+    work,
+    results: false,
+  });
+  const target = (workId?: string) => ({ scheme: "manuscript", path: "/a.md", workId });
+
+  it("names a No Work document by its row id, whatever the address spells", () => {
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "none" }), target(noWorkId), noWorkId),
+    ).toBe(true);
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "none" }), target("work-1"), noWorkId),
+    ).toBe(false);
+  });
+
+  it("reads an address that names no Work (a copied live URL) as the Editor's own Work", () => {
+    // Same document, same Work: a review launch replaces the entry rather than pushing.
+    expect(
+      projectAddressMatchesContextTarget(
+        address({ kind: "absent" }),
+        target(noWorkId),
+        noWorkId,
+        undefined,
+        noWorkId,
+      ),
+    ).toBe(true);
+    // The Editor's Work is another one: a different destination.
+    expect(
+      projectAddressMatchesContextTarget(
+        address({ kind: "absent" }),
+        target(noWorkId),
+        noWorkId,
+        undefined,
+        "work-1",
+      ),
+    ).toBe(false);
+    expect(
+      projectAddressMatchesContextTarget(address({ kind: "absent" }), target(noWorkId), noWorkId),
+    ).toBe(false);
+  });
+
+  it("never matches a request whose Work is not yet resolved", () => {
+    expect(projectAddressMatchesContextTarget(address({ kind: "none" }), target(), noWorkId)).toBe(
+      false,
+    );
+  });
+  describe("with document identity", () => {
+    const named = (documentId: string, addressDocumentId?: string) =>
+      projectAddressMatchesContextTarget(
+        address({ kind: "none" }),
+        { ...target(noWorkId), documentId },
+        noWorkId,
+        addressDocumentId,
+      );
+
+    it("lets identity decide once both sides know it", () => {
+      // The same path reused by another document is not the same document.
+      expect(named("document-a", "document-b")).toBe(false);
+      // A renamed document is the same one, whatever path the request carries.
+      expect(
+        projectAddressMatchesContextTarget(
+          address({ kind: "none" }),
+          {
+            scheme: "manuscript",
+            path: "/old-name.md",
+            workId: noWorkId,
+            documentId: "document-a",
+          },
+          noWorkId,
+          "document-a",
+        ),
+      ).toBe(true);
+    });
+
+    it("falls back to the path while the address is unresolved", () => {
+      expect(named("document-a")).toBe(true);
+    });
+
+    it("still requires the Work to match when identity agrees", () => {
+      expect(
+        projectAddressMatchesContextTarget(
+          address({ kind: "none" }),
+          { ...target("work-1"), documentId: "document-a" },
+          noWorkId,
+          "document-a",
+        ),
+      ).toBe(false);
+    });
+  });
 });

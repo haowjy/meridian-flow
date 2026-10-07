@@ -15,8 +15,6 @@ export type RetainedLiveDocumentReference = Readonly<{
 
 export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
   get(lease: LiveDocumentSessionLease): DocumentSession;
-  getDetached(lease: LiveDocumentSessionLease): DocumentSession;
-  attachDetached(lease: LiveDocumentSessionLease): DocumentSession;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   /**
    * The registry drops a live room whose pending edits the server refused
@@ -35,12 +33,6 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   release(ownerId: string): void;
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
-  ): () => void;
-  peekLive(lease: LiveDocumentSessionLease): DocumentSession | undefined;
-  hasLive(lease: LiveDocumentSessionLease): boolean;
-  observeLive(
-    lease: LiveDocumentSessionLease,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void;
   getBranchRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a branch room, across rebuilds; never creates one. */

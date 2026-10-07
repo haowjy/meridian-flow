@@ -4,6 +4,8 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
+import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
   type DesiredIdentity,
@@ -41,6 +43,26 @@ export function identityCommitMayNavigate(
   committedDocumentId: string,
 ): boolean {
   return ownership.isLatest && activeDocumentId === committedDocumentId;
+}
+
+/**
+ * The route command that follows a committed rename or move of the document the
+ * address names. The address stays on that document, so it repairs in place: no
+ * history entry, and the review it carries survives.
+ */
+export function identityCommitRoute(
+  documentId: string,
+  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId">,
+): { request: ContextRouteRequest; options: OpenContextOptions } {
+  return {
+    request: {
+      scheme: next.scheme,
+      path: next.path,
+      workId: next.routeWorkId ?? undefined,
+      documentId,
+    },
+    options: { replace: true },
+  };
 }
 
 type IdentityCommitPlan =

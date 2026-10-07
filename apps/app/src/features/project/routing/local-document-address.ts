@@ -7,14 +7,58 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
+import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
-import type { ProjectDestination } from "./project-address";
+import { resolveLiveRouteDocument } from "../context/route-document-owner";
+import type { ProjectAddress, ProjectDestination } from "./project-address";
+import { workSelectionFor } from "./project-address-resolution";
 
 type DocumentDestination = Extract<ProjectDestination, { kind: "document" }>;
 type AvailableDocumentAuthority = Extract<
   ProjectContextIdentityResolution,
   { kind: "available" }
 >["authority"];
+
+export function canonicalDocumentPath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+/**
+ * Whether the address already names this document, in the Work the target
+ * resolves to. Open requests carry no Work until the route boundary resolves
+ * it, so an unresolved target never matches. When both sides know the document,
+ * identity alone decides: a reused path never makes two documents one. The path
+ * is only the fallback while either identity is unresolved.
+ */
+export function projectAddressMatchesContextTarget(
+  address: ProjectAddress,
+  target: { scheme: string; path: string; workId?: string; documentId?: string },
+  noWorkId: string | null,
+  /** The document the address resolved to, absent while it is still resolving. */
+  addressDocumentId?: string,
+  /** The Editor's resolved Work: the one an address that names none (a copied live URL) shows. */
+  editorWorkId?: string | null,
+): boolean {
+  const destination = address.destination;
+  if (destination.kind !== "document") return false;
+  const work = workSelectionFor(destination, target.workId, noWorkId);
+  // An address with no `?work=` is not a different Work from No Work: it shows the Editor's own.
+  const addressWork =
+    address.work.kind === "absent" && editorWorkId
+      ? workSelectionFor(destination, editorWorkId, noWorkId)
+      : address.work;
+  if (
+    work.kind !== addressWork.kind ||
+    (work.kind === "id" && !(addressWork.kind === "id" && addressWork.id === work.id))
+  )
+    return false;
+  if (target.documentId !== undefined && addressDocumentId !== undefined)
+    return target.documentId === addressDocumentId;
+  return (
+    destination.scheme === target.scheme &&
+    canonicalDocumentPath(destination.path) === canonicalDocumentPath(target.path)
+  );
+}
 
 /**
  * The document a route holds by continuity: bound to this route's locator in the Editor's
@@ -35,7 +79,7 @@ export function routeContinuityDocumentId(input: {
     selection.identity.kind !== "server" ||
     selection.identity.documentId !== input.admittedDocumentId ||
     selection.locator.scheme !== destination.scheme ||
-    selection.locator.path.replace(/^\/+/, "") !== destination.path.replace(/^\/+/, "") ||
+    canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
     selection.locator.workId !== input.editorWorkId
   )
     return null;
@@ -51,17 +95,20 @@ export function resolveLocalDocumentAddress(
   boundDocumentId: string | null = null,
 ): { result: DocumentAddressResult; file: CatalogFile; bound: boolean } | undefined {
   if (!catalog) return undefined;
-  const requested = `/${destination.path.replace(/^\/+/, "")}`;
+  const requested = `/${canonicalDocumentPath(destination.path)}`;
   // The document the route is bound to is the route's document wherever its placement goes:
   // an unconfirmed move of it or a folder above it, that move's rollback, or another document
   // taking a path it holds or left. The path is its current label, and admission repairs the
   // URL to it. It is already open, so it needs no exact local content, and the server's answer
-  // for a path in flux does not outrank it.
-  const bound = boundDocumentId ? (catalog.findDocument(boundDocumentId) ?? null) : null;
-  const file = bound ?? catalog.findPath(requested);
+  // for a path in flux does not outrank it. A bound document the catalog does not list yet is
+  // never answered by the path's occupant (the shared route-document order).
+  const owner = resolveLiveRouteDocument({ path: requested, boundDocumentId, catalog });
+  if (owner.kind !== "live") return undefined;
+  const { file } = owner;
+  const bound = owner.byIdentity ? file : null;
   // A document under the writer's own unconfirmed move is likewise a known server document.
   if (
-    file?.kind !== "file" ||
+    file.kind !== "file" ||
     !file.editable ||
     !(file.localContent || file.placementPending || bound)
   )
@@ -141,4 +188,48 @@ export function mergeLocalResourceState(
       ? {}
       : { namespaceFailureAt: local.namespaceFailureAt }),
   };
+}
+
+/**
+ * The server resolves every tree node, including a new document that only a
+ * pending draft proposes and one whose draft was discarded. The live manifest
+ * lists what can open live. A manuscript document missing from it has no live
+ * view: its pending new-document draft opens as review, and with no such draft
+ * the address is unavailable. Never a blank live editor.
+ *
+ * Absence concludes "unavailable" only on an authoritative read: the catalog is
+ * settled (a stored checkpoint stays "complete" while its refresh is in flight)
+ * and the drafts were read. A read still in flight is `pending`; a read that
+ * failed is `failed`, never evidence of absence and never an endless wait. A tab
+ * already open live (an Apply promoted it) is never second-guessed by a lagging catalog.
+ */
+export type GatedLiveView =
+  | { outcome: "ready"; result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup }
+  | { outcome: "pending" | "failed"; result: undefined };
+
+export function gateLiveView(
+  result: DocumentAddressResult | undefined,
+  scheme: string,
+  manifest: {
+    catalog: CatalogContextView | null;
+    isComplete: boolean;
+    isFetching: boolean;
+    isError: boolean;
+  },
+  drafts: { status: string; groups: ThreadDraftGroup[] | null },
+  hasLiveTab: (documentId: string) => boolean,
+): GatedLiveView {
+  if (scheme !== "manuscript" || !result || result.kind === "unavailable")
+    return { outcome: "ready", result };
+  const documentId = result.document.documentId;
+  if (hasLiveTab(documentId) || manifest.catalog?.normalized.entries.has(documentId))
+    return { outcome: "ready", result };
+  if (manifest.isError || drafts.status === "error")
+    return { outcome: "failed", result: undefined };
+  const settled = manifest.isComplete && !manifest.isFetching;
+  if (!settled || drafts.status === "loading") return { outcome: "pending", result: undefined };
+  const group = drafts.groups?.find((candidate) => candidate.documentId === documentId);
+  if (group && pendingReviewDraft(group)?.isNewDocument)
+    return { outcome: "ready", result, draftOnly: group };
+  return { outcome: "ready", result: { kind: "unavailable" } };
 }

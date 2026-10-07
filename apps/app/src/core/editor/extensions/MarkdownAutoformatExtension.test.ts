@@ -8,24 +8,20 @@
  * the writer. Every case types real characters through the input-rule engine
  * and presses real keys through the keymap.
  */
-import { Editor } from "@tiptap/core";
+import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createStandaloneEditorExtensions } from "../config";
+import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
 
-const live: Array<{ editor: Editor; host: HTMLElement }> = [];
+const live: StandaloneEditor[] = [];
 
 afterEach(() => {
-  for (const { editor, host } of live.splice(0)) {
-    editor.destroy();
-    host.remove();
-  }
+  for (const fixture of live.splice(0)) fixture.destroy();
 });
 
 function openEditor(content = "<p></p>"): Editor {
-  const element = document.createElement("div");
-  document.body.append(element);
-  const editor = new Editor({ element, extensions: createStandaloneEditorExtensions(), content });
-  live.push({ editor, host: element });
+  const fixture = createStandaloneEditor({ content });
+  live.push(fixture);
+  const { editor } = fixture;
   return editor;
 }
 

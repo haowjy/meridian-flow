@@ -60,11 +60,7 @@ type ContextTabsActions = {
     prior: ProjectTabsSlice,
     next: ProjectTabsSlice,
   ) => Promise<void>;
-  settleDraft: (
-    projectId: string,
-    tab: ContextTab,
-    disposition: "applied" | "discarded",
-  ) => Promise<DraftWorkspaceSettlementReceipt>;
+  settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
   consumeReviewTab: (
     projectId: string,
     identity: ReviewOverlayTabIdentity,
@@ -189,7 +185,20 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
+          const reviewOverlayTab = get()._reviewOverlayByProject[projectId]?.tabs.find(
+            (candidate) => candidate.documentId === tab.documentId && candidate.draftOnly,
+          );
           if (tab.draftOnly) {
+            const durableMember = sliceFor(get(), projectId).tabs.find(
+              (candidate) => candidate.documentId === tab.documentId,
+            );
+            if (durableMember?.tabInstanceId) {
+              dispatchResult(() => ({
+                kind: "close",
+                projectId,
+                tabInstanceId: durableMember.tabInstanceId as string,
+              }));
+            }
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
               const index = overlay.tabs.findIndex(
@@ -223,6 +232,30 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 _reviewOverlayByProject: {
                   ...base._reviewOverlayByProject,
                   [projectId]: { ...overlay, tabs },
+                },
+              };
+            });
+          } else if (reviewOverlayTab) {
+            // Readable-address resolution enriches the transient review tab
+            // with its live resource identity without admitting a durable
+            // shadow underneath it. Apply can then reopen that exact resource.
+            rawSet((base) => {
+              const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
+              return {
+                _reviewOverlayByProject: {
+                  ...base._reviewOverlayByProject,
+                  [projectId]: {
+                    ...overlay,
+                    tabs: overlay.tabs.map((candidate) =>
+                      candidate.documentId === tab.documentId && candidate.draftOnly
+                        ? ({
+                            ...candidate,
+                            ...tab,
+                            tabInstanceId: candidate.tabInstanceId,
+                          } as ContextTab)
+                        : candidate,
+                    ),
+                  },
                 },
               };
             });
@@ -362,13 +395,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        settleDraft: async (projectId, tab, disposition) => {
+        settleDraft: async (projectId, tab) => {
           if (tab.kind === "new") return { kind: "not-settled" };
           const result = await dispatchResult(() => ({
             kind: "settle-draft",
             projectId,
             tab,
-            disposition,
           }));
           return result?.kind === "committed" || result?.kind === "already-committed"
             ? { kind: "settled" }
@@ -486,7 +518,6 @@ export function commitPlannedContextRemoval(
 export function commitDraftApplyMetadata(
   projectId: string,
   identity: ReviewOverlayTabIdentity,
-  disposition: "applied" | "discarded" = "applied",
 ): Promise<DraftWorkspaceSettlementReceipt> {
   const tab = useContextTabsStore
     .getState()
@@ -501,7 +532,7 @@ export function commitDraftApplyMetadata(
         candidate.tabInstanceToken === identity.tabInstanceToken,
     );
   if (!tab) return Promise.resolve({ kind: "not-settled" });
-  return useContextTabsStore.getState().settleDraft(projectId, tab, disposition);
+  return useContextTabsStore.getState().settleDraft(projectId, tab);
 }
 
 /** Explicit-close-only exact review overlay consumption. Never dispatches to the browser-local workspace. */

@@ -551,6 +551,11 @@ export class AccountResourceReplica {
     return this.catalogs.acquire(projectId, scope);
   }
 
+  /** A catalog observation that starts after this call; never joins an older in-flight one. */
+  acquireCatalogAfter(projectId: string, scope: CatalogScope) {
+    return this.catalogs.acquireAfter(projectId, scope);
+  }
+
   hintCatalog(projectId: string, scope: CatalogScope, headRevision: string) {
     return this.catalogs.hint(projectId, scope, headRevision);
   }

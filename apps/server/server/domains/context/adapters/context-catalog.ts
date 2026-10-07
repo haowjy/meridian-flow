@@ -29,21 +29,31 @@ import {
 import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  deferUntilDrizzleCommit,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
+  ProjectCatalogLifecyclePort,
+  ProjectDocumentCatalogRefreshPort,
   WorkAuthorityCatalogMutationPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
+import {
+  type ManifestMembershipResolver,
+  resolveCatalogDocumentMembership,
+} from "../visible-document-membership.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
+const REFRESH_RETRY_DELAYS_MS = [10, 50, 250, 1_000] as const;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -157,7 +167,11 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
     .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
 }
 
-async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<CatalogEntry[]> {
+async function buildScopeEntries(
+  db: CatalogDb,
+  scope: CatalogScope,
+  manifestMembership?: ManifestMembershipResolver,
+): Promise<CatalogEntry[]> {
   if (scope.kind !== "user") {
     const [activeProject] = await db
       .select({ id: projects.id })
@@ -189,7 +203,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           .select()
           .from(folders)
           .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)));
-  const documentRows =
+  let documentRows =
     sourceIds.length === 0
       ? []
       : await db
@@ -202,6 +216,24 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
               isNull(documents.deletedAt),
             ),
           );
+  if (scope.kind === "project" && manifestMembership) {
+    const manuscriptSourceIds = new Set(
+      sourceRows.filter((source) => source.slug === "manuscript").map((source) => source.id),
+    );
+    if (manuscriptSourceIds.size > 0) {
+      const visibleMembership = await resolveCatalogDocumentMembership({
+        projectId: scope.projectId,
+        resolver: manifestMembership,
+      });
+      if (visibleMembership) {
+        documentRows = documentRows.filter(
+          (document) =>
+            !manuscriptSourceIds.has(document.contextSourceId) ||
+            visibleMembership.has(document.id),
+        );
+      }
+    }
+  }
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -325,14 +357,37 @@ export function createDrizzleContextCatalog(
   options: {
     retainedCommitsPerScope?: number;
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
+    manifestMembership?: ManifestMembershipResolver;
+    eventSink?: EventSink;
+    delay?: (milliseconds: number) => Promise<void>;
+    /** Owns the post-commit repair so shutdown and test resets can drain it. */
+    backgroundTasks?: DetachedWorkTracker;
   } = {},
-): ContextCatalog & ContextCatalogMutationPort & WorkAuthorityCatalogMutationPort {
+): ContextCatalog &
+  ContextCatalogMutationPort &
+  ProjectCatalogLifecyclePort &
+  ProjectDocumentCatalogRefreshPort &
+  WorkAuthorityCatalogMutationPort {
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
     1,
     Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
   );
+  async function retryRefresh<T>(operation: () => Promise<T>): Promise<T> {
+    let lastCause: unknown;
+    for (const delayMs of REFRESH_RETRY_DELAYS_MS) {
+      await (options.delay ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(
+        delayMs,
+      );
+      try {
+        return await operation();
+      } catch (cause) {
+        lastCause = cause;
+      }
+    }
+    throw lastCause;
+  }
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -350,7 +405,7 @@ export function createDrizzleContextCatalog(
         .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
         .limit(1);
       if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-      const authoritative = await buildScopeEntries(tx, scope);
+      const authoritative = await buildScopeEntries(tx, scope, options.manifestMembership);
       const existing = await tx
         .select()
         .from(contextCatalogEntries)
@@ -432,7 +487,7 @@ export function createDrizzleContextCatalog(
             .where(eq(contextCatalogScopeHeads.scopeKey, catalogScopeKey(scope)))
             .limit(1);
           if (!head) throw new Error(`Catalog head disappeared: ${catalogScopeKey(scope)}`);
-          const entries = await buildScopeEntries(tx as never, scope);
+          const entries = await buildScopeEntries(tx as never, scope, options.manifestMembership);
           return {
             scope,
             generation: head.generation,
@@ -557,28 +612,89 @@ export function createDrizzleContextCatalog(
               .leftJoin(projects, eq(contextSources.projectId, projects.id))
               .leftJoin(works, eq(contextSources.workId, works.id))
               .where(inArray(contextSources.id, [...new Set(sourceIds)] as never));
-      const availabilityGeneration = await availabilityMutations.advance({
-        projectIds: [
-          ...new Set(
-            ownershipRows.flatMap(
-              (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
-            ),
+      const manifestBackedProjectIds = new Set(
+        options.manifestMembership
+          ? ownershipRows.flatMap((row) =>
+              row.sourceSlug === "manuscript" && row.projectId ? [row.projectId] : [],
+            )
+          : [],
+      );
+      const projectIds = [
+        ...new Set(
+          ownershipRows.flatMap(
+            (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
           ),
-        ],
-        userIds: [
-          ...new Set(
-            ownershipRows.flatMap((row) =>
-              row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
-                ? [row.projectUserId]
-                : [],
-            ),
+        ),
+      ];
+      const userIds = [
+        ...new Set(
+          ownershipRows.flatMap((row) =>
+            row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
+              ? [row.projectUserId]
+              : [],
           ),
-        ],
-      });
-      for (const scope of [...scopes.values()].sort((a, b) =>
+        ),
+      ];
+      const orderedScopes = [...scopes.values()].sort((a, b) =>
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      )) {
-        await refreshScope(scope, invalidatedRootIds, commitId);
+      );
+      if (manifestBackedProjectIds.size > 0) {
+        const availabilityGeneration = await availabilityMutations.reserve();
+        const repair = async () => {
+          try {
+            await retryRefresh(() =>
+              runInDrizzleTransaction(db, async () => {
+                await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+                for (const scope of orderedScopes) {
+                  await refreshScope(scope, invalidatedRootIds, commitId);
+                }
+                await availabilityMutations.publishReserved({
+                  generation: availabilityGeneration,
+                  projectIds,
+                  userIds,
+                });
+              }),
+            );
+            return;
+          } catch (cause) {
+            if (options.eventSink) {
+              emitEvent(options.eventSink, {
+                level: "error",
+                source: "context-catalog",
+                name: "DeferredRefreshFailure",
+                payload: {
+                  sourceIds: [...new Set(sourceIds)],
+                  ...unknownToEventPayload(cause),
+                },
+              });
+            }
+            throw cause;
+          }
+        };
+        // Tracked from launch, not from the immediate: a drain between the two must wait.
+        const launchRepair = () => {
+          void (options.backgroundTasks ?? processDetachedWork).track(
+            new Promise<void>((resolve) => {
+              setImmediate(() => resolve(repair().catch(() => undefined)));
+            }),
+            "context catalog repair",
+          );
+        };
+        if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
+        await repair();
+        return availabilityGeneration;
+      }
+      const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
+      for (const scope of orderedScopes) {
+        const refresh = () => refreshScope(scope, invalidatedRootIds, commitId);
+        if (
+          scope.kind === "project" &&
+          manifestBackedProjectIds.has(scope.projectId) &&
+          deferUntilDrizzleCommit(refresh)
+        ) {
+          continue;
+        }
+        await refresh();
       }
       return availabilityGeneration;
     },
@@ -608,6 +724,20 @@ export function createDrizzleContextCatalog(
       )) {
         await refreshScope(scope, [], commitId);
       }
+    },
+    async refreshProjectDocuments(projectId) {
+      await retryRefresh(() =>
+        runInDrizzleTransaction(db, async () => {
+          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+          const generation = await availabilityMutations.reserve();
+          await refreshScope({ kind: "project", projectId });
+          await availabilityMutations.publishReserved({
+            generation,
+            projectIds: [projectId],
+            userIds: [],
+          });
+        }),
+      );
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
