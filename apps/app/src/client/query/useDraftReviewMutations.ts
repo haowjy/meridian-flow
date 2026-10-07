@@ -10,7 +10,12 @@ import type {
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
-import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  onlineManager,
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { applyDraft, applyDraftChanges, discardDraft } from "@/client/api/drafts-api";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -43,6 +48,24 @@ export class DraftApplyOutcomeUnknownError extends Error {
     super("Draft Apply outcome is unknown");
   }
 }
+
+/**
+ * The browser is offline, so the command was not sent. A refusal of the writer's
+ * click, not a held request: TanStack would pause these mutations and fire them
+ * when the network returned, with the change gone from the screen meanwhile.
+ */
+export class DraftCommandNotSentError extends Error {
+  constructor() {
+    super("Draft command was not sent: the browser is offline");
+  }
+}
+
+function assertOnline(): void {
+  if (!onlineManager.isOnline()) throw new DraftCommandNotSentError();
+}
+
+/** Disposition commands run now (and refuse when offline) instead of waiting for the network. */
+const SEND_NOW = { networkMode: "always" } as const;
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
   /** A selective Discard: the changes' operation ids and the revision tokens of the preview the writer saw. */
@@ -98,7 +121,9 @@ export function useApplyDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async (variables: DraftApplyMutationInput): Promise<void> => {
+      assertOnline();
       const draftsKey = projectQueryKeys.workDrafts(variables.projectId, variables.workId);
       void queryClient.cancelQueries({ queryKey: draftsKey });
       try {
@@ -128,6 +153,7 @@ export function useDiscardDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async ({
       projectId,
       workId,
@@ -136,6 +162,7 @@ export function useDiscardDraft() {
       request,
       onAnswered,
     }: DraftReviewMutationInput) => {
+      assertOnline();
       const response = await discardDraft(projectId, workId, documentId, {
         draftId,
         ...(request?.operationIds?.length ? request : {}),
@@ -166,6 +193,7 @@ export function useApplyDraftChanges() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async ({
       projectId,
       workId,
@@ -174,6 +202,7 @@ export function useApplyDraftChanges() {
       request,
       onAnswered,
     }: DraftChangesApplyInput) => {
+      assertOnline();
       let response: DraftApplyChangesResponse;
       try {
         response = await applyDraftChanges(projectId, workId, documentId, {
